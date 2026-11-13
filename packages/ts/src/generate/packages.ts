@@ -4,6 +4,7 @@
 // and only the binding crates need `make bindings`. They depend on nothing but the library name, the targets and the
 // core version, so a contract that the generator cannot generate yet still has them.
 
+import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
 
@@ -184,7 +185,8 @@ const pointName = (library: string): string => library.replaceAll('-', '_');
 
 // armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
 // (casePointLibraries).
-export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = []): Files {
+// foreign: the contracts of the libraries that the contract names, whose records go.mod requires (GN-15f).
+export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map()): Files {
   const files: Files = new Map();
   // G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
   const armed = [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
@@ -270,7 +272,7 @@ python-source = "generated/python"
     const module = (contract.packages['go'] as { module: string }).module;
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
-    files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
+    files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n${goRequires(contract, coreDependencies, foreign)}`);
     files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
@@ -350,6 +352,57 @@ export const platformPackage = (npm: string, platform: string): string => `${npm
 
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
+
+// GN-15f: the libraries of the records that the contract names, each of whose Go module go.mod requires.
+function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
+  const found = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (typeof value === 'object' && value !== null) {
+      const { unit, library } = value as { unit?: unknown; library?: unknown };
+      if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library) {
+        const owner = foreign.get(library);
+        if (owner === undefined) throw new Error(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
+        if (owner.units.some((u) => u.id === unit && u.kind === 'record')) found.add(library);
+      }
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(contract.units);
+  walk(contract.types);
+  return [...found].sort();
+}
+
+// GN-15f: the require lines of go.mod, a Go module of each library whose records the contract names, at the version of
+// the dependency line of the core: an exact version or a tag, or a path with a replace line to the Go module there.
+function goRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): string {
+  const requires: string[] = [];
+  const replaces: string[] = [];
+  for (const library of recordLibraries(contract, foreign)) {
+    const owner = foreign.get(library) as Contract;
+    const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
+    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record the Go binding names (GN-15f)`);
+    const crate = `polyspec-${library}`;
+    const spec = dependencies.get(crate);
+    const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown } : { version: spec };
+    const exact = typeof fields.version === 'string' ? /^=(\d+\.\d+\.\d+)$/.exec(fields.version)?.[1] : undefined;
+    const tag = typeof fields.tag === 'string' ? /^v(\d+\.\d+\.\d+)$/.exec(fields.tag)?.[1] : undefined;
+    if (typeof fields.path === 'string') {
+      const root = posix.normalize(posix.join(contract.core.path, fields.path));
+      if (!root.endsWith(`/${owner.core.path}`)) throw new Error(`${crate}: the path ${fields.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
+      const target = posix.join(root.slice(0, -owner.core.path.length), componentBase(owner), 'go');
+      requires.push(`${module} v0.0.0`);
+      replaces.push(`replace ${module} => ${posix.relative(`${componentBase(contract)}/go`, target)}`);
+    } else if (fields.branch === undefined && fields.rev === undefined && (exact ?? tag) !== undefined) {
+      requires.push(`${module} v${exact ?? tag ?? ''}`);
+    } else {
+      throw new Error(`${crate}: the dependency line of the core names no path, exact version or tag, so the Go module of ${library} has no version (GN-15f)`);
+    }
+  }
+  if (requires.length === 0) return '';
+  const require = requires.length === 1 ? `require ${requires[0] ?? ''}\n` : `require (\n${requires.map((r) => `\t${r}`).join('\n')}\n)\n`;
+  return `\n${require}${replaces.length === 0 ? '' : `\n${replaces.join('\n')}\n`}`;
+}
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
 // the path of the manifest, the item and the value it must have.

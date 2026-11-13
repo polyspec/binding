@@ -14,16 +14,18 @@ the design ids are those of the binding design.
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
-  repository, GN-6k), enums, constants, error classes and error units (GN-7a),
+  repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
+  interfaces of this contract that a class implements (GN-6w),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
-  that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  that GN-6i does not list, an abstract class, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository (GN-15f) and modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
+  refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  Go refuses a variant unit and a class that implements an interface (GN-6v, GN-6w).
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -177,12 +179,73 @@ the design ids are those of the binding design.
   it binds as the unit (`let (): () = …`): a core that returns anything else there, a `Result` too, does not compile, so
   its `Err` is not dropped (E-1c), and the unit pattern leaves no variable unused, which the lints deny. An integer return (uint, int,
   int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
-  for the integer and a reference to it); a parameter is the type of the table. A contract name that is a Rust keyword
+  for the integer and a reference to it; `usize` and `isize` widen as GN-6ac states); a parameter is converted into
+  the type of the table and then into the core's own type (GN-6ac). A contract name that is a Rust keyword
   is a raw identifier (`r#type`).
 - **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+- **GN-6t** A tuple (T-1) enters as a sequence of exactly its parts, and each part is converted as its type, so the
+  core gets the Rust tuple of the parts: Python takes a `tuple`, Node and WASM an `Array`, and PHP a list (an array
+  whose keys are 0 to n-1 in order). A value of another type, or a sequence with another number of items, is kind
+  `invalid_argument_type`. A tuple is taken at every place of an input: a parameter, an item of a list, a field of a
+  record parameter and inside an `optional`; the core takes a tuple parameter by reference (T-1). Go takes a tuple as
+  GN-16 states.
+  Why: a tuple leaves each language as that sequence, so a value that one call returns enters another call as it is.
+- **GN-6ac** A value enters the core in the core's own Rust type and leaves it from that type, which the contract does
+  not name (T-1). An integer of a parameter, of a field, of an item or of a part of a tuple is first converted into the
+  type of the table (u64 for `uint`, i64 for `int` and `int64`) and then given to the core through the trait
+  `IntoCore<T>` of the generated crate, and the place that takes the value, the core call or the field of a struct
+  literal, chooses `T`. `IntoCore` narrows an integer with `TryFrom` to the integer that the core takes (u8, u16, u32
+  and usize for `uint`; i8, i16, i32 and isize for `int`), takes a list and an optional item by item, and takes a tuple
+  to the Rust tuple of its parts or, when its parts have one type, to an array (`[T; n]`); a value outside the range of
+  the core's type is kind `invalid_number` (B-2) with the name of the argument as its subject, so on wasm32, where
+  `usize` has 32 bits, 2^32 is refused as it is for a core `u32` on every target. A tuple that leaves the core is read
+  through `partsN` (traits `Parts1` to `Parts8`), which gives a reference to each part of a Rust tuple, of an array and
+  of a reference to either. An integer result of `usize` or `isize` widens with `as`, after the assertion
+  `const _: () = assert!(usize::BITS <= 64);` (and the same for `isize`), which fails the build for a target where it
+  is wider, because the standard library implements `From` for neither; the widened value then leaves by the rules of a
+  result of its contract type in each language, as a u64 or i64 does. A list parameter is passed as GN-6ad states.
+  The crate of the Go C ABI converts in the same way, after it reads each parameter from the encoded arguments. The
+  compile test of GN-6ad covers these forms: a tuple parameter as `[usize; 2]`, `u32` and `u8` parameters, a tuple
+  result of `[u32; 2]`, a record parameter whose struct literal takes `[usize; 2]` and `u32` fields, and `usize` and
+  `isize` results.
+  Why: the core keeps the integer type that its own code needs, such as `usize` for an index or a length, and the
+  contract states only the range of the value. A trait whose target the core's signature chooses converts without a
+  core type in the contract, so the contract stays the same for every core that holds the value.
+- **GN-6ad** A list parameter whose items narrow (GN-6ac), a list of integers or of tuples that hold them, is converted
+  into a local `Vec` of the table's types, which `IntoCore` turns into a `Vec` of the core's item type, and the core
+  call takes `&values[..]`, so a core that borrows a slice of a narrower item, such as `&[usize]`, `&[u32]` or
+  `&[[usize; 2]]`, gets one. An item outside the range of the core's type is kind `invalid_number` (B-2) with the name
+  of the parameter as its subject. A list of other items is passed as `&values`, as GN-6 states. Go converts in the
+  same way.
+  Why: the core borrows a list as a slice, and `&values[..]` is that slice by its own type, `&[T]`, whose item type
+  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the bodies of the WASM
+  entry points that the generator writes for `tests/e2e/shapes`, with the helpers of GN-6ac and the core functions of
+  that fixture, for the host and for wasm32, so the compiler checks the generated calls and the inference.
+- **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
+  that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
+  contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a
+  unit that reaches the variant that owns it again through fields of units and `optional`s alone is `Box<T>` (or
+  `Option<Box<T>>`), because a Rust enum cannot hold itself; a `list` holds the variant without a box. Each binding
+  converts the variant both ways (`in_<variant>`, `out_<variant>`) with a match of its cases that has no wildcard,
+  so a case that the core or the contract lacks does not compile. Each case has the result form (GN-6a) of the record
+  of its fields, named `<Variant><Case>`: Python a frozen keyword-only `dataclass` in `<root>._types` and the alias
+  `type <Variant> = <Variant><Case> | ...`; Node and WASM a plain object whose tag member (the `tag` of the unit, by its
+  language name) holds the case value, and the declarations the union of the case interfaces; PHP a final class of
+  each case that implements the interface `<Variant>`. A value that is no case (an object without the tag, a tag that
+  names no case, an instance of another class) is kind `invalid_argument_type`. In a case file a variant value is an
+  object whose tag key holds the case value and whose other keys are the fields by their snake_case names (G-5).
+  An `optional` field whose default is `{literal: null}` (T-4) may be left out, and a field left out is null, which the
+  core gets as `None`: Python gives the dataclass field the default `None`, Node and WASM read a missing or `undefined`
+  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), and a case
+  value may leave out its key. Such a field always leaves with its value or null.
+  Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
+  not generated yet, any other field default of a case and a field that holds a class, a callback, a value alias or a
+  unit of another repository.
+  Why: the language value of a case says which case it is, so the binding converts it without a guess, and a match
+  without a wildcard makes a case that one side lacks a compile error instead of a value lost at run time.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
   native module, Node a napi class exported by its JavaScript name, PHP a `php_class` with the flag final. A method or
   property calls the core path with the held value as its receiver; a static member or the constructor that returns
@@ -249,6 +312,17 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
+  the interface that it does not declare under the same name, a method that calls the trait method on the held
+  value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
+  name the interface: Node and WASM `class <Class> implements <Interface>`, and PHP the interface that the extension
+  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names. An instance
+  of the class therefore enters where the callback is taken as any language object with those members does, and the
+  call of the callback reaches the held value through the method. In a case an instance value (GN-13f) may stand at
+  a place of the callback. Refused by name, not generated yet: an interface of another repository, a member that the
+  class implements with a receiver other than `&self`, and an abstract class (U-1).
+  Why: a class whose core type implements the trait is a callback already, so a caller passes its instance where the
+  callback is taken instead of an object of its own that forwards each call.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -312,9 +386,7 @@ the design ids are those of the binding design.
   (`text` or `text16`). Any other `make` is refused by name (G-4). Python, Node and PHP take and give it so; WASM takes and gives it
   as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go takes it as the Go type of the
   owner's class, whose `by` and `read` members the answers of the host questions of GN-15c call, and gives it by the
-  exported functions of the owner's Go package that the `out` rows name. Not implemented (defect 80, row B2.80): the
-  generator refuses it for Go by name, because the call of GN-15c has no description, read and making of an instance
-  yet.
+  exported functions of the owner's Go package that the `out` rows name, as GN-15c states.
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
@@ -624,7 +696,19 @@ the design ids are those of the binding design.
   module of the class makes the instance by that number, because `internal/binding` does not import that package. A
   member of another module that gives such a value is refused by name, because only the package of the class makes
   its instance. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in` function of an alias of
-  this repository alone.
+  this repository alone. A value class of another repository (GN-6x) is the pointer to the Go type of the owner's class
+  in the package of its module, which `internal/binding` imports. Package binding describes an instance by the `in` row
+  of the class for Go: it calls the `by` member and writes node 11 with the kind of the case whose `is` the result is
+  and a handle; the question read (op 2) of that handle calls the `read` member of the case and describes its result
+  by these rules, and an instance of a class of the owner whose `iterate` member yields `{key, value}` is a map of the
+  entries of that iteration. An error that a member of the owner returns is node 12 with the call and its index, so
+  the Go function returns that error unchanged, as it returns the error of a callback (U-3). A core value of the class
+  leaves as node 11 of the result with the number of the value class and the number of its Go `out` row, followed by
+  the content of the kind of the row: nothing for `null`, a bool, the literal of a number, a text, the items, or the
+  entries of a map; package binding calls the exported function of the owner that the row names on that content, a map
+  as an instance of the map class that its constructor makes and its insert method fills, and an error of that
+  function is the error of the call. A Go value of another type is described by the rules above, so the owner's `in`
+  function judges it.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
@@ -632,16 +716,19 @@ the design ids are those of the binding design.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value.
-- **GN-15f** Go records of another repository (T-3, GN-6c), not implemented yet: the generator refuses such a record
-  by name and names this row (G-4). A record of another repository is the struct `<Record>` of the package of its
-  module in the Go module of that repository, the module of `packages.go` of its contract, and the C ABI writes and
-  reads it field by field as a record of this repository. `binding scaffold` reads the contracts of the libraries whose
-  records the contract names, as `binding generate` does, and writes for each a line `require <module> <version>` in
-  `go.mod`: the version is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version
-  `=X.Y.Z` or the tag `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>/packages/go`
-  relative to `packages/go`; a dependency line that names a branch or a commit has no Go version and is refused by
-  name. The Go program then also links the static library of that repository, whose directory `CGO_LDFLAGS` names
-  beside the directory of this one (GN-15).
+- **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
+  module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
+  by its package name; the C ABI writes and reads it field by field as a record of this repository, through
+  `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
+  one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
+  contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
+  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
+  each library whose records the contract names it writes a line `require <module> <version>` in `go.mod`: the version
+  is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
+  `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
+  repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
+  Go version and is refused by name. The Go program then also links the static library of that repository, which the
+  end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
@@ -886,7 +973,8 @@ the design ids are those of the binding design.
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
-  parameter, an item of a list, a field of a record, an `optional`) may be an instance value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
+  parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
+  a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
   requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
@@ -937,6 +1025,9 @@ the design ids are those of the binding design.
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
+  `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
+  `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
+  repository, because the Go program of the repository imports its Go module (GN-15f);
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case

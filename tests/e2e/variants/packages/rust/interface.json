@@ -1,0 +1,421 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "variants",
+  "core": {
+    "crate": "polyspec-variants",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/variants",
+      "namespace": "Polyspec\\Variants"
+    },
+    "python": {
+      "package": "polyspec-variants",
+      "module": "polyspec.variants"
+    },
+    "node": {
+      "package": "@polyspec/variants",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/variants/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Variants\\VariantsValueError",
+        "python": "VariantsValueError",
+        "node": "VariantsValueError",
+        "wasm": "VariantsValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Variants\\VariantsTypeError",
+        "python": "VariantsTypeError",
+        "node": "VariantsTypeError",
+        "wasm": "VariantsTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Variants\\VariantsIoError",
+        "python": "VariantsIoError",
+        "node": "VariantsIoError",
+        "wasm": "VariantsIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Variants\\VariantsStoreError",
+        "python": "VariantsStoreError",
+        "node": "VariantsStoreError",
+        "wasm": "VariantsStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Variants\\VariantsBusyError",
+        "python": "VariantsBusyError",
+        "node": "VariantsBusyError",
+        "wasm": "VariantsBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Variants\\VariantsInternalError",
+        "python": "VariantsInternalError",
+        "node": "VariantsInternalError",
+        "wasm": "VariantsInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_variants::Error::Empty",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "changes": [],
+  "units": [
+    {
+      "id": "variants",
+      "name": [
+        "variants"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "variants.tally",
+          "name": [
+            "tally"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "figures"
+              ],
+              "type": {
+                "list": {
+                  "unit": "figure"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_variants::tally"
+        },
+        {
+          "id": "variants.grown",
+          "name": [
+            "grown"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "figure"
+              ],
+              "type": {
+                "unit": "figure"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "figure"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_variants::grown"
+        },
+        {
+          "id": "variants.tail_of",
+          "name": [
+            "tail",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tail"
+              ],
+              "type": {
+                "unit": "tail"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "bytes",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_variants::tail_of"
+        }
+      ]
+    },
+    {
+      "id": "figure",
+      "name": [
+        "figure"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_variants::Figure",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "dot",
+          "fields": []
+        },
+        {
+          "value": "circle",
+          "fields": [
+            {
+              "name": [
+                "radius"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "label",
+          "fields": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "at"
+              ],
+              "type": {
+                "optional": "uint"
+              },
+              "reason": "T-9",
+              "default": {
+                "literal": null
+              }
+            }
+          ]
+        },
+        {
+          "value": "group",
+          "fields": [
+            {
+              "name": [
+                "items"
+              ],
+              "type": {
+                "list": {
+                  "unit": "figure"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "frame"
+              ],
+              "type": {
+                "unit": "figure"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "back"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "figure"
+                }
+              },
+              "required": true,
+              "reason": "T-9"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tail",
+      "name": [
+        "tail"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_variants::Tail",
+      "thread": "any",
+      "members": [
+        {
+          "id": "tail.last",
+          "name": [
+            "last"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "bytes",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_variants::Tail::last",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ribbon",
+      "name": [
+        "ribbon"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_variants::Ribbon",
+      "implements": [
+        {
+          "unit": "tail"
+        }
+      ],
+      "final": true,
+      "members": [
+        {
+          "id": "ribbon.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "source",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_variants::Ribbon::new"
+        },
+        {
+          "id": "ribbon.size",
+          "name": [
+            "size"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_variants::Ribbon::size",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "member": "variants.tally",
+      "file": "contracts/cases.json",
+      "group": "tally"
+    },
+    {
+      "member": "variants.grown",
+      "file": "contracts/cases.json",
+      "group": "grown"
+    },
+    {
+      "member": "variants.tail_of",
+      "file": "contracts/cases.json",
+      "group": "tail_of"
+    },
+    {
+      "member": "ribbon.new",
+      "file": "contracts/cases.json",
+      "group": "ribbon_new"
+    },
+    {
+      "member": "ribbon.size",
+      "file": "contracts/cases.json",
+      "group": "ribbon_size"
+    }
+  ]
+}

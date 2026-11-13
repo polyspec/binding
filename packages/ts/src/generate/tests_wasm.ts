@@ -28,6 +28,8 @@ export function wasmTests(model: Model): string {
       return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}.${langName('wasm', member.name, 'callable')}()`;
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-6v: a case is an object of its tag and its fields, as for Node.
+    variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';

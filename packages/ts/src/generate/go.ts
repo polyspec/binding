@@ -10,10 +10,11 @@
 // a value alias a Go value of type any, which package binding describes to the core one level at a time (U-7).
 
 import { libraryParts } from '../check.ts';
-import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Contract, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
 import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo, waitsAsync } from './model.ts';
-import { type Echoes, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
+import { type Echoes, GO_VALUE_KINDS, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
+import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
 import type { Files } from './text.ts';
@@ -68,7 +69,7 @@ const PACKAGES = new WeakMap<Model, Set<string>>();
 const packageNames = (model: Model): Set<string> => {
   const known = PACKAGES.get(model);
   if (known !== undefined) return known;
-  const names = new Set(model.contract.units.map((u) => goPackage(model.contract, u.module)));
+  const names = new Set([...model.contract.units.map((u) => goPackage(model.contract, u.module)), ...model.foreignRecords.map((r) => goPackage(r.contract, r.unit.module))]);
   PACKAGES.set(model, names);
   return names;
 };
@@ -112,6 +113,8 @@ export interface GoScope {
   aliasInstances?: Set<ObjectClass>;
   // GN-15a: the classes and callbacks of other modules that the package reaches through binding.Token.
   reaches?: Set<string>;
+  // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
+  foreignImports?: Map<string, string>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesJson?: boolean;
@@ -143,6 +146,13 @@ function sameModule(scope: GoScope, unit: Unit, what: string): void {
   if (unit.module !== scope.module) throw new Unsupported(`${unit.id}: a ${what} of the module ${unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its handle and dispatch are unexported)`);
 }
 
+// Whether a type names a unit, inside another type too.
+const namesUnit = (type: Type): boolean => {
+  if (typeof type === 'string') return false;
+  if ('unit' in type) return true;
+  return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(namesUnit);
+};
+
 export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
     // T-1: a source is a []byte, which holds the bytes of any Go string ([]byte(s)).
@@ -170,13 +180,34 @@ export function goType(scope: GoScope, type: Type): string {
     (scope.usesTuples ??= new Set()).add(parts.length);
     return `Tuple${parts.length}[${parts.join(', ')}]`;
   }
+  // GN-6x: a value class of another repository is the pointer to the Go type of the owner's class.
+  const valueClass = aliasOf(scope.model, type);
+  if (valueClass?.owner !== undefined) {
+    const owner = valueClass.owner;
+    const pkg = goPackage(owner, valueClass.unit.module);
+    if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${owner.library}.${valueClass.unit.id}: the Go package ${pkg} of the value class has the name of a package of ${scope.model.contract.library} (GN-6x)`);
+    (scope.foreignImports ??= new Map()).set(goImport(owner, valueClass.unit.module), pkg);
+    return `*${pkg}.${goName(valueClass.unit.name)}`;
+  }
   // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
-  if (aliasOf(scope.model, type) !== undefined) return 'any';
+  if (valueClass !== undefined) return 'any';
   const object = objectUnit(scope.model, type);
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) return goUnitName(scope, callback.unit);
-  if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet (GN-15f): its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  const library = libraryOf(type);
+  if (library !== undefined) {
+    // GN-15f: a record of another repository is the struct of the package of its module in the Go module of that
+    // repository, which go.mod requires.
+    const record = unitOf(scope.model, type);
+    const owner = scope.model.foreign.get(library);
+    if (record?.kind !== 'record' || owner === undefined) throw new Unsupported(`${library}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias or a record is not generated for Go yet`);
+    if ((record.fields ?? []).some((f) => namesUnit(f.type))) throw new Unsupported(`${library}.${record.id}: a record of another repository with a field of a unit type is not generated for Go yet (GN-15f)`);
+    const pkg = goPackage(owner, record.module);
+    if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${library}.${record.id}: the Go package ${pkg} of the record has the name of a package of ${scope.model.contract.library} (GN-15f)`);
+    (scope.foreignImports ??= new Map()).set(goImport(owner, record.module), pkg);
+    return `${pkg}.${goName(record.name)}`;
+  }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
@@ -357,6 +388,8 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, tuplePart(scope, type.tuple, target, i), indent, depth));
   // U-7: a value of an alias is the Go value that its out rows make.
   const valueAlias = aliasOf(scope.model, type);
+  // GN-6x: package binding makes the instance of a value class of another repository; a failed result is nil.
+  if (valueAlias?.owner !== undefined) return [`${t}${target}, _ = dec.Value().(${goType(scope, type)})`];
   if (valueAlias !== undefined) {
     const instances = aliasInstances(scope.model, valueAlias);
     if (instances.length === 0) return [`${t}${target} = dec.Value()`];
@@ -741,7 +774,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
   const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
-  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`)];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
@@ -865,10 +898,7 @@ ${cDeclarations(model, fns.map((fn) => cSymbol(model, fn)), others)}
 */
 import "C"
 
-import (
-${std.map((s) => `\t"${s}"`).join('\n')}
-)
-
+${goImportBlock(std.map((s) => `"${s}"`), valueClassImports(model))}
 // entry is a function of the C ABI: the encoded arguments in, the encoded result or failure out, 0 or 1 back.
 type entry func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t
 
@@ -957,7 +987,9 @@ func (w *Writer) Bytes(value []byte) {
 type Reader struct {
 	bytes   []byte
 	failed  bool
-	problem string
+	problem string${valueClasses(model).length === 0 ? '' : `
+	// err is the error of a function of the owner of a value class of another repository that made a value (GN-6x).
+	err error`}
 }
 
 // NewReader reads an encoded result.
@@ -1026,7 +1058,10 @@ func (r *Reader) Bytes() []byte {
 }
 
 // Finish is nil when the result was read whole, and an error of kind internal otherwise.
-func (r *Reader) Finish() error {
+func (r *Reader) Finish() error {${valueClasses(model).length === 0 ? '' : `
+	if r.err != nil {
+		return r.err
+	}`}
 	if r.problem != "" {
 		return internalError(r.problem)
 	}
@@ -1187,7 +1222,7 @@ func (r *Reader) Key() Key {
 	r.failed = true
 	return Key{}
 }
-${GO_TOKEN}${model.aliases.length === 0 ? '' : GO_VALUE}
+${GO_TOKEN}${model.aliases.length === 0 ? '' : valueClasses(model).length === 0 ? GO_VALUE : `${GO_VALUE.replace('\tcase 255:\n', '\tcase 11:\n\t\treturn r.valueClass(made, instance)\n\tcase 255:\n')}${goValueClassReader(model)}`}
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -1269,11 +1304,19 @@ function goCallBack(model: Model): string {
 // Callback runs a member of a Go callback for the core (U-3): the decoded arguments in, the encoded result out.
 type Callback func(call *Call, member uint32, dec *Reader, enc *Writer) error
 
-// held is a Go value whose children the core may ask for (U-7), with the keys of a map in their order.
+// held is a Go value whose children the core may ask for (U-7), with the keys of a map in their order.${valueClasses(model).length === 0 ? `
 type held struct {
 	value reflect.Value
 	keys  []reflect.Value
-}
+}` : ` An instance of
+// a value class of another repository is the read member of its in case, and an instance of a class of its owner that
+// iterates keys and values is the entries of that iteration (GN-6x).
+type held struct {
+	value   reflect.Value
+	keys    []reflect.Value
+	read    func() (any, error)
+	entries [][2]reflect.Value
+}`}
 
 // Call is one call into the static library that runs Go code: the values that the core walks (U-7), the callbacks
 // that it runs and the errors that they returned (U-3). The static library names it by its cgo.Handle.
@@ -1317,7 +1360,10 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 	if !value.IsValid() {
 		enc.bytes = append(enc.bytes, 0)
 		return
-	}
+	}${valueClasses(model).length === 0 ? '' : `
+	if c.describeClass(enc, value) {
+		return
+	}`}
 	switch value.Kind() {
 	case reflect.Bool:
 		enc.bytes = append(enc.bytes, 1)
@@ -1372,27 +1418,38 @@ func (c *Call) hold(value held) uint64 {
 }
 
 // host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
-// of a map (op 1).
+// of a map (op 1)${valueClasses(model).length === 0 ? '' : ', or the content of an instance of a value class of another repository (op 2, GN-6x)'}.
 func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	if handle == 0 || handle > uint64(len(c.held)) {
 		return nil, false
 	}
-	value := c.held[handle-1].value
-	keys := c.held[handle-1].keys
+	held := c.held[handle-1]
+	value := held.value
+	keys := held.keys
 	enc := NewWriter()
 	switch {
 	case op == 0 && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) && index < uint64(value.Len()):
 		c.describe(enc, value.Index(int(index)))
 	case op == 1 && value.Kind() == reflect.Map && index < uint64(len(keys)):
 		c.describe(enc, keys[index])
-		c.describe(enc, value.MapIndex(keys[index]))
+		c.describe(enc, value.MapIndex(keys[index]))${valueClasses(model).length === 0 ? '' : `
+	case op == 1 && index < uint64(len(held.entries)):
+		c.describe(enc, held.entries[index][0])
+		c.describe(enc, held.entries[index][1])
+	case op == 2 && held.read != nil:
+		content, err := held.read()
+		if err != nil {
+			c.raiseIn(enc, err)
+		} else {
+			c.describe(enc, reflect.ValueOf(content))
+		}`}
 	default:
 		return nil, false
 	}
 	return enc.Done(), true
 }
 
-// run runs a callback of the call: 0 and the encoded result, or 1 and the index of the error that it returned.
+${goValueClassCall(model)}// run runs a callback of the call: 0 and the encoded result, or 1 and the index of the error that it returned.
 func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
 	if callback == 0 || callback > uint64(len(c.callbacks)) {
 		return c.raise(Malformed())
@@ -1453,6 +1510,194 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 	return 0
 }
 `}`;
+}
+
+// GN-6x: the Go name of the type of a class of the owner of a value class of another repository, in the package of its
+// module, and the import of that package.
+const ownerType = (owner: Contract, unit: Unit): { pkg: string; path: string; name: string } =>
+  ({ pkg: goPackage(owner, unit.module), path: goImport(owner, unit.module), name: `${goPackage(owner, unit.module)}.${goName(unit.name)}` });
+
+// GN-6x: the Go call of a member of the owner: a method or a property on an instance, a static member or a constructor
+// of the package of its class.
+function ownerCall(owner: Contract, unit: Unit, member: Member, args: string, on?: string): string {
+  const name = langName('go', member.name, 'callable');
+  if (member.kind === 'constructor') return `${ownerType(owner, unit).pkg}.New${goName(unit.name)}(${args})`;
+  if (member.kind === 'static') return `${ownerType(owner, unit).pkg}.${goName(unit.name)}${name}(${args})`;
+  return `${on ?? ''}.${name}(${args})`;
+}
+
+// GN-6x: the imports of package binding for the value classes of other repositories: the packages of their classes
+// and of the classes that their in and out rows name.
+function valueClassImports(model: Model): string[] {
+  const paths = new Set<string>();
+  for (const alias of valueClasses(model)) {
+    const owner = alias.owner as Contract;
+    paths.add(ownerType(owner, alias.unit).path);
+    for (const map of classIn(alias, 'go').maps) paths.add(ownerType(owner, map.unit).path);
+    for (const make of classMakes(alias, 'go')) if (make.form === 'map') paths.add(ownerType(owner, make.map).path);
+  }
+  return [...paths].map((path) => goString(path));
+}
+
+// GN-6x, GN-15c: the description of an instance of a value class of another repository by the in row of its class,
+// node 11 with the number of the kind of its case and a handle that the question read opens, and node 12 for an error
+// of a member of the owner.
+function goValueClassCall(model: Model): string {
+  const classes = valueClasses(model);
+  if (classes.length === 0) return '';
+  const seen = new Set<string>();
+  const cases = classes.flatMap((alias) => {
+    const owner = alias.owner as Contract;
+    const row = classIn(alias, 'go');
+    const type = ownerType(owner, alias.unit).name;
+    const arms = row.cases.map((kase) => {
+      const kind = GO_VALUE_KINDS.indexOf(kase.kind);
+      const read = kase.read === undefined ? 'nil' : `func() (any, error) { return ${ownerCall(owner, alias.unit, kase.read, '', 'found')} }`;
+      return `		case ${goString(kase.is)}:
+			c.describeValue(enc, ${kind}, ${read})`;
+    });
+    const own = seen.has(type) ? [] : [`	case *${type}:
+		if found == nil {
+			return false
+		}
+		kind, err := ${ownerCall(owner, alias.unit, row.by, '', 'found')}
+		if err != nil {
+			c.raiseIn(enc, err)
+			return true
+		}
+		switch string(kind) {
+${arms.join('\n')}
+		default:
+			c.raiseIn(enc, internalError(fmt.Sprintf("GN-6x: ${type} gives the kind %s, which its in row has no case for", kind)))
+		}
+		return true`];
+    seen.add(type);
+    const maps = row.maps.filter((map) => !seen.has(ownerType(owner, map.unit).name)).map((map) => {
+      const name = ownerType(owner, map.unit).name;
+      seen.add(name);
+      return `	case *${name}:
+		if found == nil {
+			return false
+		}
+		entries, err := ${ownerCall(owner, map.unit, map.iterate, '', 'found')}
+		if err != nil {
+			c.raiseIn(enc, err)
+			return true
+		}
+		var pairs [][2]reflect.Value
+		for key, item := range entries {
+			pairs = append(pairs, [2]reflect.Value{reflect.ValueOf(key), reflect.ValueOf(item)})
+		}
+		enc.bytes = append(enc.bytes, 8)
+		enc.Uint(c.hold(held{entries: pairs}))
+		enc.Uint(uint64(len(pairs)))
+		return true`;
+    });
+    return [...own, ...maps];
+  });
+  return `// describeClass describes an instance of a value class of another repository by the in row of its class, or an
+// instance of a class of its owner that iterates keys and values as a map of the entries of that iteration (GN-6x).
+func (c *Call) describeClass(enc *Writer, value reflect.Value) bool {
+	if !value.CanInterface() {
+		return false
+	}
+	switch found := value.Interface().(type) {
+${cases.join('\n')}
+	}
+	return false
+}
+
+// describeValue writes node 11: an instance of a value class of another repository, the number of the kind of its in
+// case and the handle under which the question read calls the read member of the case (GN-6x).
+func (c *Call) describeValue(enc *Writer, kind byte, read func() (any, error)) {
+	enc.bytes = append(enc.bytes, 11, kind)
+	enc.Uint(c.hold(held{read: read}))
+}
+
+// raiseIn writes node 12: the error that a member of the owner of a value class returned, which the call keeps under
+// its index, so that the function returns it (GN-6x).
+func (c *Call) raiseIn(enc *Writer, err error) {
+	c.raised = append(c.raised, err)
+	enc.bytes = append(enc.bytes, 12)
+	enc.Uint(uint64(c.handle))
+	enc.Uint(uint64(len(c.raised) - 1))
+}
+
+`;
+}
+
+// GN-6x, GN-15c: the making of an instance of a value class of another repository from node 11 of a result: the
+// number of the class and of its Go out row, then the content of the row, on which the owner's function of the row runs.
+function goValueClassReader(model: Model): string {
+  const classes = valueClasses(model);
+  if (classes.length === 0) return '';
+  const arms = classes.flatMap((alias, number) => {
+    const owner = alias.owner as Contract;
+    const type = ownerType(owner, alias.unit).name;
+    return classMakes(alias, 'go').map((make, row) => {
+      const when = `	case class == ${number} && row == ${row}:`;
+      if (make.form === 'content') {
+        const content = make.kind === 'null' ? '' : make.kind === 'bool' ? 'r.Bool()' : 'r.Text()';
+        return `${when}
+		value, err = ${ownerCall(owner, alias.unit, make.member, content)}`;
+      }
+      if (make.form === 'list') {
+        return `${when}
+		items := make([]*${type}, r.Len())
+		for at := range items {
+			items[at], _ = r.value(made, instance).(*${type})
+		}
+		value, err = ${ownerCall(owner, alias.unit, make.member, 'items')}`;
+      }
+      return `${when}
+		entries, failed := ${ownerCall(owner, make.map, make.map.members?.find((m) => m.kind === 'constructor') as Member, '')}
+		if failed != nil {
+			r.raise(failed)
+			return nil
+		}
+		for at, n := 0, r.Len(); at < n; at++ {
+			key, _ := r.value(made, instance).(*${type})
+			item, _ := r.value(made, instance).(*${type})
+			if _, failed := ${ownerCall(owner, make.map, make.insert, 'key, item', 'entries')}; failed != nil {
+				r.raise(failed)
+				return nil
+			}
+		}
+		value, err = ${ownerCall(owner, alias.unit, make.member, 'entries')}`;
+    });
+  });
+  return `
+// valueClass makes an instance of a value class of another repository from node 11 of a result (GN-6x): the number of
+// the class and of its out row for Go, then the content of the row, on which it calls the owner's function of the row.
+// An error of that function is the error of the call.
+func (r *Reader) valueClass(made *[]any, instance func(class uint64, handle uint64) any) any {
+	class, row := r.Uint(), r.Uint()
+	if r.failed {
+		return nil
+	}
+	var value any
+	var err error
+	switch {
+${arms.join('\n')}
+	default:
+		r.failed = true
+		return nil
+	}
+	if err != nil {
+		r.raise(err)
+		return nil
+	}
+	return value
+}
+
+// raise keeps the error of a function of the owner of a value class, which Finish returns (GN-6x).
+func (r *Reader) raise(err error) {
+	if r.err == nil {
+		r.err = err
+	}
+	r.failed = true
+}
+`;
 }
 
 // U-7: the Go values that the out rows of a value alias make: nil, bool, int64, float64, string, []byte, []any,
@@ -1730,11 +1975,13 @@ import "C"
 ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${p}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${p}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}${aliasIn}`;
 }
 
-// G-4: what the Go binding does not generate, each refused by name with its reason: a record of another repository
-// (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
-// another module than its own (its handle and dispatch are unexported).
+// G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
+// that a member names.
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet (GN-15f): its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  // GN-6v, GN-6w: Go declares no variant and no class that implements an interface yet; each is refused by its name, and
+  // a place of a variant is refused with it.
+  for (const variant of model.variants) refusals.refuse(`${variant.unit.id}: a variant unit is not generated for Go yet (GN-6v)`);
+  for (const object of model.objects.filter((o) => (o.unit.implements ?? []).length > 0)) refusals.refuse(`${object.unit.id}: a class that implements an interface is not generated for Go yet (GN-6w)`);
   // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // GN-6n: so does a Go member with wait async_driver.

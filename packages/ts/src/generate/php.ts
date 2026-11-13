@@ -2,11 +2,11 @@
 
 import type { Name, Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut } from './model.ts';
 import { aliasPhp, foreignFailurePhp, phpHost } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
+import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -61,9 +61,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -81,12 +82,11 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('map' in type) return `out_map(${value}, |item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
-    return `out_array(vec![${parts.join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_array(vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
-  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(${value})`;
   throw new Unsupported(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
@@ -204,6 +204,15 @@ fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fai
         return Err(type_error(subject, "list"));
     }
     array.values().map(item).collect()
+}
+
+/// GN-6t: a tuple is a list of exactly its parts.
+fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
+    let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
+    if !array.has_sequential_keys() {
+        return Err(type_error(subject, "list"));
+    }
+    <[&'a Zval; N]>::try_from(array.values().collect::<Vec<&'a Zval>>()).map_err(|_other| type_error(subject, &format!("a list of {N} items")))
 }
 
 /// null is the absence; any other value is converted.
@@ -425,7 +434,7 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
         let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
-    };`);
+    };${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
   const constructor = recordConstructor(name, fields, props, args);
@@ -459,6 +468,18 @@ ${library === undefined ? constructor : ''}`;
 }
 
 function recordConstructor(name: string, fields: Unit['fields'] & object, props: string[], args: string[]): string {
+  // GN-6v: a case without fields takes no argument and holds nothing.
+  if (fields.length === 0) {
+    return `
+ext_php_rs::zend_fastcall! {
+    extern fn ${name}_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| {
+            let _parsed: Result<(), _> = ex.parser().parse();
+        }));
+    }
+}
+`;
+  }
   return `
 ext_php_rs::zend_fastcall! {
     extern fn ${name}_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
@@ -481,6 +502,78 @@ ${args.join('\n')}
 }
 `;
 }
+
+// T-9, GN-6v: the classes of the result form that the extension registers: the records, then the case classes of the
+// variants, which implement the interface of their variant.
+const phpRecords = (model: Model): Unit[] => [...model.resultRecords, ...caseUnits(model)];
+
+// T-9, GN-6v: a value of a variant is an instance of the final class of one of its cases, whose properties are judged
+// as they enter (T-8); a value leaves as an instance of the class of its case, by a match without a wildcard.
+function variantRust(model: Model, layout: PhpLayout, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const phpName = `${phpNamespace(layout, variant.unit.module)}\\${langName('php', variant.unit.name, 'class')}`;
+  const index = (kase: VariantCase): number => phpRecords(model).indexOf(kase.unit);
+  const ins = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => `            let ${f.variable}: ${caseType(model, f)} = {
+                let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+                ${caseRead(f, `${convertIn(model, f.field.type, 'field', 'subject')}?`)}
+            };${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`);
+    return `    if ${fields.length === 0 ? `case_entry(${index(kase)}, object).is_some()` : `let Some(entry) = case_entry(${index(kase)}, object)`} {
+${reads.map((r) => `${r.replace(/^    /gm, '')}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
+    }`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const values = fields.map((f) => `(${rustString(langName('php', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?)`);
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => case_object(${index(kase)}, vec![${values.join(', ')}]),`;
+  });
+  return `
+/// T-9: a value of the variant ${phpName} is an instance of the class of one of its cases; its properties are judged as they enter (T-8).
+fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+    let Some(object) = value.object() else {
+        return Err(type_error(subject, ${rustString(phpName)}));
+    };
+${ins.join('\n')}
+    Err(type_error(subject, ${rustString(phpName)}))
+}
+
+/// T-9: a value of the variant ${phpName} leaves as an instance of the class of its case.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+    match value.borrow() {
+${arms.join('\n')}
+    }
+}
+`;
+}
+
+// T-9: the class of a case that an object is an instance of, and an instance of the class of a case with the values of
+// its properties.
+const CASE_OBJECT = `
+/// T-9: the class of the case of the index, when the object is an instance of it.
+fn case_entry(index: usize, object: &ZendObject) -> Option<&'static ClassEntry> {
+    match RECORDS.get(index).and_then(OnceLock::get).copied() {
+        Some(Class(entry)) if object.instance_of(entry) => Some(entry),
+        _ => None,
+    }
+}
+
+/// T-9: an instance of the class of a case of a variant, with the values of its properties.
+fn case_object(index: usize, properties: Vec<(&str, Zval)>) -> Result<Zval, Fail> {
+    let Some(Class(entry)) = RECORDS.get(index).and_then(OnceLock::get).copied() else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the class of a case is not registered") }));
+    };
+    let mut object = ZendObject::new(entry);
+    in_scope(entry, || -> Result<(), Fail> {
+        for (name, value) in properties {
+            object.set_property(name, value).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        }
+        Ok(())
+    })?;
+    object.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+}
+`;
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
@@ -510,8 +603,9 @@ ${body}
 }
 
 // N-4: the interfaces of the language that the special members of a class implement.
-function phpImplements(object: ObjectClass): string {
+function phpImplements(object: ObjectClass, implemented = ''): string {
   const names = [
+    ...(implemented === '' ? [] : [implemented.replace(/^ implements /, '')]),
     ...(object.members.some((fn) => fn.kind === 'iterate') ? ['\\IteratorAggregate'] : []),
     ...(object.members.some((fn) => fn.special === 'stringify') ? ['\\Stringable'] : []),
     ...(object.members.some((fn) => fn.special === 'to_json') ? ['\\JsonSerializable'] : []),
@@ -594,6 +688,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
+    if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(rustField(arg.name), rustString(variable), 'binding_error')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
@@ -778,7 +873,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
+#[php(flags = ClassFlags::Final)]${(object.unit.implements ?? []).flatMap((ref) => model.callbacks.filter((c) => ref.library === undefined && c.unit.id === ref.unit)).map((c) => `\n#[php(implements(ce = interface_${recordFn(c.unit)}, stub = ${rustString(`\\${phpNamespace(layout, c.unit.module)}\\${langName('php', c.unit.name, 'class')}`)}))]`).join('')}${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${heldType(object)},
 }
@@ -867,6 +962,13 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
+    ...model.variants.map((v) => variantRust(model, layout, v)),
+    model.variants.length > 0 ? CASE_OBJECT : '',
+    // GN-6v: the constructor of the class of each case, which holds the values as a record's does.
+    ...caseUnits(model).map((u) => {
+      const props = (u.fields ?? []).map((f) => langName('php', f.name, 'variable'));
+      return recordConstructor(recordFn(u), u.fields ?? [], props, props.map((p, i) => `            let mut arg${i} = Arg::new(${rustString(p)}, DataType::Mixed);`));
+    }),
     ...model.objects.map((object) => objectOut(model, object)),
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
@@ -876,7 +978,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
@@ -1019,12 +1121,25 @@ ${unitProperties}`;
         return 1;
     }`;
   }).join('');
-  const registerRecords = model.resultRecords.map((u, i) => {
+  // T-9, GN-6v: the interface of a variant, which the classes of its cases implement, is registered before them.
+  const variantName = (unit: Unit): string => `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
+  const registerVariants = model.variants.map((v) => `
+    if ClassBuilder::new(${rustString(variantName(v.unit))})
+        .flags(ClassFlags::Interface)
+        .registration(|_class, tables| std::mem::forget(tables))
+        .register()
+        .is_err()
+    {
+        return 1;
+    }`).join('');
+  const caseOf = (u: Unit): Variant | undefined => model.variants.find((v) => v.cases.some((c) => c.unit === u));
+  const registerRecords = phpRecords(model).map((u, i) => {
     const phpName = `${phpNamespace(layout, u.module)}\\${langName('php', u.name, 'class')}`;
     const fields = u.fields ?? [];
+    const variant = caseOf(u);
     return `
     let registered = ClassBuilder::new(${rustString(phpName)})
-        .flags(ClassFlags::Final)
+        .flags(ClassFlags::Final)${variant === undefined ? '' : `\n        .implements((variant_${recordFn(variant.unit)}, ${rustString(`\\${variantName(variant.unit)}`)}))`}
 ${fields.map((f) => `        .property(record_property(${rustString(langName('php', f.name, 'variable'))}))`).join('\n')}
         .method(
             FunctionBuilder::new("__construct", ${rustField(u.name)}_construct)${fields.map((f) => `\n                .arg(Arg::new(${rustString(langName('php', f.name, 'variable'))}, DataType::Mixed))`).join('')},
@@ -1081,9 +1196,9 @@ unsafe impl Sync for Class {}
 
 /// The library classes of the categories (E-2), in the order of the contract.
 static CLASSES: [OnceLock<Class>; ${model.classes.length + model.errorUnits.length}] = [${[...model.classes, ...model.errorUnits].map(() => 'const { OnceLock::new() }').join(', ')}];
-${model.resultRecords.length > 0 ? `
-/// The classes of the result form of the records (T-4), in the order of the contract.
-static RECORDS: [OnceLock<Class>; ${model.resultRecords.length}] = [${model.resultRecords.map(() => 'const { OnceLock::new() }').join(', ')}];
+${phpRecords(model).length > 0 ? `
+/// The classes of the result form of the records (T-4) and of the cases of the variants (T-9), in the order of the contract.
+static RECORDS: [OnceLock<Class>; ${phpRecords(model).length}] = [${phpRecords(model).map(() => 'const { OnceLock::new() }').join(', ')}];
 
 fn record_property(name: &str) -> ClassProperty {
     ClassProperty {
@@ -1105,6 +1220,12 @@ fn remember(index: usize, class: &'static ClassEntry) {
     }
 }
 
+${[...model.variants.map((v) => v.unit), ...model.objects.flatMap((o) => (o.unit.implements ?? []).flatMap((ref) => model.callbacks.filter((c) => ref.library === undefined && c.unit.id === ref.unit).map((c) => c.unit)))].filter((u, i, all) => all.indexOf(u) === i).map((u) => `
+/// ${u.kind === 'variant' ? 'T-9: the interface of the variant, which the classes of its cases implement' : 'GN-6w: the interface of the callback, which a class of the extension implements'}.
+fn ${u.kind === 'variant' ? 'variant' : 'interface'}_${recordFn(u)}() -> &'static ClassEntry {
+    builtin_class(${rustString(`${phpNamespace(layout, u.module)}\\${langName('php', u.name, 'class')}`)})
+}
+`).join('')}
 /// B-4: a class of PHP itself, found in the engine's class table when the module starts; a missing class fails the start.
 fn builtin_class(name: &str) -> &'static ClassEntry {
     // SAFETY: at module startup the compiler globals hold the class table, which outlives the module; the lookup copies
@@ -1256,7 +1377,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
-extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
+extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerVariants}${registerRecords}${registerInterfaces}
     0
 }
 
@@ -1354,7 +1475,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
   }
   const modules = [...new Set([
     ...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module),
-    ...model.resultRecords.map((u) => u.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module),
+    ...model.resultRecords.map((u) => u.module), ...model.variants.map((v) => v.unit.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module),
   ])].sort();
   const method = (fn: Fn, indent: string): string => {
     // U-2: the declaration shows a {literal} or {const} default; null stands for a default whose value is the core's.
@@ -1397,6 +1518,24 @@ ${props.join('\n')}
     }
 `);
     }
+    // T-9, GN-6v: the interface of a variant and the final class of each case, which implements it.
+    for (const v of model.variants.filter((u) => u.unit.module === module)) {
+      const iface = langName('php', v.unit.name, 'class');
+      items.push(`    /** T-9: a value of the variant is an instance of the class of one of its cases. */
+    interface ${iface}
+    {
+    }
+`);
+      for (const kase of v.cases) {
+        const props = (kase.unit.fields ?? []).map((f) => `            public readonly mixed $${langName('php', f.name, 'variable')},`);
+        items.push(`    /** T-9: the case ${kase.value} of the variant; the constructor holds the values, which the extension judges when they enter. */
+    final class ${langName('php', kase.unit.name, 'class')} implements ${iface}
+    {
+        public function __construct(${props.length === 0 ? ') {}' : `\n${props.join('\n')}\n        ) {}`}
+    }
+`);
+      }
+    }
     for (const cb of model.callbacks.filter((c) => c.unit.module === module)) {
       const lines = cb.members.map((m) => {
         const docs = m.params.map((p) => `         * @param ${docType(p.type)} $${langName('php', p.name, 'variable')}`);
@@ -1418,7 +1557,7 @@ ${lines.join('\n')}    }
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
       items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
+    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object, implementsClause(model, object, 'php', (unit) => `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`))}
     {
 ${members.join('\n')}    }
 `);
