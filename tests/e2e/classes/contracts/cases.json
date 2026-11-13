@@ -4,6 +4,35 @@
       "id": "no_tag_is_the_empty_text",
       "tags": [],
       "text": ""
+    },
+    {
+      "id": "the_names_of_the_tags_by_commas",
+      "tags": [
+        {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        {
+          "from": "tag.repeat",
+          "receiver": {
+            "new": "tag.new",
+            "args": {
+              "name": "c"
+            }
+          },
+          "args": {
+            "count": 1
+          },
+          "pick": [
+            {
+              "index": 0
+            }
+          ]
+        }
+      ],
+      "text": "a,c"
     }
   ],
   "shout": [],
@@ -69,7 +98,24 @@
       }
     }
   ],
-  "tag_same": [],
+  "tag_same": [
+    {
+      "id": "a_tag_of_the_same_name_is_the_same",
+      "receiver": {
+        "new": "tag.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "other": {
+        "new": "tag.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "result": true
+    }
+  ],
   "tag_repeat": [
     {
       "id": "a_tag_twice",

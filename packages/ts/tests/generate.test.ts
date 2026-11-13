@@ -1649,6 +1649,11 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
   assert.match(text(failing, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made1->close\(\);\n        self::assertStringContainsString\("'kind' => 'closed'", self::outcome\(fn \(\) => \$made1->close\(\)\), "G-5: then 1 fails with closed"\);\n[^]*private static function outcome/);
+  // GN-13f: an instance value is the value of a class at any place of a case, an item of a list included.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.join\(\[new pkg\.Tag\('a'\), \(\(\) => \{ const made0 = new pkg\.Tag\('c'\); const made1 = made0\.repeat\(1\); const made2 = made1\[0\]; return made2; \}\)\(\)\]\)\), ordered\('a,c'\)\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.join\(\[pkg\.Tag\("a"\), _made_\d+\(\)\]\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Classes\\join\(\[new \\Polyspec\\Classes\\Tag\("a"\), \(function \(\) \{ /);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.join\(\[new pkg\.Tag\('a'\), \(\(\) => \{ const made0/);
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
