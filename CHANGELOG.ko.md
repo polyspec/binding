@@ -1,11 +1,24 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e2e9e82eff55a592b190823dcb3e5b7ca9018a754eb2cd9be094e8a3d31c915c -->
+<!-- source-sha256: e0a5bab68d6ab21cc2ff48e46dc2ea54ded6a76811cbb7084636e0ee2b8e1bae -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 어떤 소비자도 라이브러리의 Go 모듈을 받을 수 없었다: Go 모듈은 tag의 소스로 받아지는데, 생성된 Go 파일과 정적
+  라이브러리는 추적 파일이 아니고, 생성 코드는 라이브러리의 디렉터리를 가리키지 않아서 빌드에 `CGO_LDFLAGS`가 필요했다.
+  이제 `binding generate`는 Go 모듈의 플랫폼(`linux_amd64`, `linux_arm64`, `darwin_arm64`)마다 지시문
+  `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>`을 담은 `internal/binding/zz_generated_link_<platform>.go`와 그것이
+  import하는 패키지 `internal/ffi/lib/<platform>`을 쓴다. 명세는 release가 모듈과 각 플랫폼의 라이브러리를 싣는 commit과
+  tag `packages/go/vX.Y.Z`를 적고(GN-15g), CK-19가 비교하는 Go 모듈의 파일을 적는다. checkout은 전과 같이 자기 라이브러리의
+  디렉터리를 `CGO_LDFLAGS`로 주고 빌드한다. end-to-end 검사에 release 형태의 단계가 생겼다(GN-14f): 실행 플랫폼에 대해 그
+  commit과 tag를 work 디렉터리의 레포에 만들고, 그 모듈만 require하는 소비자 모듈이 자기 시험과 받은 모듈의 시험을 읽기
+  전용 모듈 cache에서 `CGO_LDFLAGS`와 `replace` 없이 돌린다. 확인: `make test-ts`(시험 309개 통과), 그리고 darwin/arm64에서
+  `tests/e2e/points`와 함께 돌린 `tests/e2e/plot`의 `make e2e`. 그 기록은 증거이고, target go가 생성 시험 8개와 release
+  형태의 시험 18개로 통과했으며, release 형태에서는 한 프로그램이 plot과 points의 정적 라이브러리를 함께 링크한다. 그
+  실행의 target php, python, wasm은 이 변경이 건드리지 않는 단계에서 실패했다. 실행하지 않은 것: Linux의 release 형태,
+  `tests/e2e/sample`의 `make e2e`.
 - `tests/e2e/classes`의 Node 바인딩이 컴파일되지 않았다(E0515, E0597): 호출이 receiver guard의 참조를
   (`let receiver = &*receiver;`) 묶은 뒤 guard를 `Gate.enter_later`(async_driver)의 future와 `Gate.enter_slowly`
   (blocking_io)의 pool closure로 옮겼으므로, future와 closure가 호출의 지역 변수를 빌린 참조를 쥐었다. 이제 future와 pool

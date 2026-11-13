@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- No consumer could take the Go module of a library: a Go module is fetched as the source of a tag, the generated Go
+  files and the static library are no tracked files, and the generated code named no directory of the library, so a
+  build needed `CGO_LDFLAGS`. `binding generate` now writes, for each platform of a Go module (`linux_amd64`,
+  `linux_arm64`, `darwin_arm64`), `internal/binding/zz_generated_link_<platform>.go` with the directive
+  `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and the package `internal/ffi/lib/<platform>` that it imports, and
+  the specification states the commit and the tag `packages/go/vX.Y.Z` with which a release carries the module and
+  the library of each platform (GN-15g), and the files of the Go module that CK-19 compares. A checkout builds as
+  before, with the directory of its library in `CGO_LDFLAGS`. The end-to-end check has the step of the released form
+  (GN-14f): it makes that commit and tag for the platform of the run in a repository of the work directory, and a
+  consumer module that requires the module alone runs its test and the tests of the fetched modules from the
+  read-only module cache without `CGO_LDFLAGS` and without `replace`. Verified by `make test-ts` (309 tests passed)
+  and by `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on darwin/arm64, whose record is evidence: the target
+  go passed with 8 generated tests and 18 tests of the released form, in which one program links the static
+  libraries of plot and of points; the targets php, python and wasm of that run failed in steps that this change
+  does not touch. Not run: the released form on Linux, and `make e2e` of `tests/e2e/sample`.
 - The Node binding of `tests/e2e/classes` did not compile (E0515, E0597): the call bound the borrow of the guard of its
   receiver (`let receiver = &*receiver;`) before it moved the guard into the future of `Gate.enter_later` (async_driver)
   and into the closure of the pool of `Gate.enter_slowly` (blocking_io), so the future and the closure held a borrow of
