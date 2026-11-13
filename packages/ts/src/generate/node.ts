@@ -1240,7 +1240,7 @@ ${wraps.join('\n')}`;
   return `${header('//')}
 'use strict';
 
-// T-2: the addon is in the npm package of the machine's platform, which the package names in optionalDependencies; a
+// T-2: the addon is in the npm package of the machine's platform, which the release names in optionalDependencies; a
 // build in a checkout puts the file beside this entry instead.
 const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
 function loadAddon() {

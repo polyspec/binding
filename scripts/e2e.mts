@@ -578,8 +578,8 @@ if (targets.includes('node') || targets.includes('wasm')) {
   installed = stepOf(owner, `build the addon${mains.length === 1 ? '' : 's'}, pack and install the npm package${mains.length === 1 ? '' : 's'}`, () => {
     rmSync(nodeDir, { recursive: true, force: true });
     mkdirSync(nodeDir, { recursive: true });
-    // T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies;
-    // the run packs it as a release does and installs it from the tarball.
+    // T-2: the addon is the npm package of this machine's platform, which a release names in optionalDependencies of
+    // the manifest it packs (GN-3c); the run packs it as a release does and installs both tarballs.
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
     const packed = mains.filter((p) => p.contract.targets.includes('node') || p.contract.targets.includes('wasm'));
     for (const p of packed) {
