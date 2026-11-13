@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
+  `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
+  contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`
+  also when no generated code called them. `deadcode -test` of the repository that consumes the module reported each
+  of them as unreachable, and that repository cannot change a generated file. The generator now writes a helper of
+  the package only when the Go code of the generation uses it, and drops the import `math` with the helpers that
+  alone used it (GN-15h). Verified by `make test-ts`: the test of a contract without a `keyed_map<T>` failed before
+  the change, and the test of a contract with one keeps its helpers.
+
 - The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
   the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
   the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields

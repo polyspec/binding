@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: fe3f21db7f42ed82b6c447dbd24e61ba64962a5a08c33db2df2f5cf9cef32f9a -->
+<!-- source-sha256: 99a23b8cbce66c0f0ead349c49fc1e69a18f3e092e4b93ca541c1663d532c06d -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -50,3 +50,4 @@
 | B2.136 | WASM과 Go가 owner의 class를 이름하는 다른 레포의 값 alias의 행을 생성한다(GN-6ar). 둘 다 `out` 행과 `in` 행을 이름을 대고 거부한다 | `packages/ts/src/generate/alias_wasm.ts`, `packages/ts/src/generate/go.ts`, `packages/ts/src/generate/go_rust.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그런 alias를 주고받는 계약의 `make e2e`, 그 기록이 `evidence: true` | [ ] |
 | B2.137 | WASM과 Go가 다른 레포의 callback unit을 감싼다(GN-6s). 둘 다 그런 unit의 parameter를 이름을 대고 거부하고, Go는 그 타입을 "a unit of another repository other than a value alias or a record"로 거부한다 | `packages/ts/src/generate/wasm.ts`, `packages/ts/src/generate/go.ts`, `packages/ts/src/generate/go_rust.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; `tests/e2e/sample`의 callback을 받는 `make e2e REPO=tests/e2e/consumer`, 그 기록이 `evidence: true` | [ ] |
 | B2.138 | 결과 꼴을 가진 record의 기본값 있는 field를 빼도 되고, case 값이 그것을 뺀다(GN-6i, GN-6a, G-5). 생성기는 모든 field가 없는 record의 case 값을 거부하고, 결과 꼴은 모든 field를 받는다(기본값 없는 Python의 keyword와 PHP의 named argument). variant의 case에는 그 규칙이 이미 있다(GN-6v) | `packages/ts/src/generate/`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그런 record가 있는 `make e2e REPO=tests/e2e/shapes`, 그 기록이 `evidence: true` | [ ] |
+| B2.147 | Go 모듈의 패키지 `internal/binding`은 생성된 Go 코드가 쓰는 도우미만 담는다(GN-15h). `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않고, 어떤 코드도 부르지 않는 `Writer`나 `Reader`의 method는 쓰이지 않으며, 모듈을 쓰는 저장소의 `deadcode -test`는 생성된 함수를 보고하지 않는다 | `packages/ts/src/generate/go.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/shapes` | [~] |

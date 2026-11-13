@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 016eef7fed7b1703b55606b2466ede638a07c16feb1d58192fad6a26b8a41d6e -->
+<!-- source-sha256: f10892e73678b6a9875ed3791c77fe3dac7d29dc7e79182b59667e77ec38bc27 -->
 # 생성기
 
 [English](generator.md)
@@ -1388,6 +1388,15 @@
   `binding_core`와 Rust 표준 라이브러리의 사본을 따로 담는다. end-to-end 검사가 그런 프로그램을 release 형태로 실행
   플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다. 그 검사는 `darwin_arm64`에서만
   실행되었다. 사본들이 Linux에서 링크된다는 것은 아직 확인하지 않았다.
+- **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
+  `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
+  타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을
+  때만 쓴다. 빠진 도우미만 쓰던 import는 그 도우미와 함께 빠진다. 생성기는 쓰임을 주석과 literal 내용을 뺀 생성 Go
+  코드에서 읽고, 남는 도우미가 다른 도우미를 부를 수 있으므로 더 남는 도우미가 없을 때까지 되풀이한다. 생성 코드는
+  `Writer`를 `enc`, `tenc`, `w`로, `Reader`를 `dec`, `r`, `properties`로 부른다. 패키지가 아닌 다른 값으로 그 이름의
+  method를 부르면 둘 다의 쓰임으로 센다. 그래서 규칙이 모르는 이름 때문에 도우미가 빠지는 일은 없다. 이유: 어떤 main
+  패키지도 어떤 시험도 닿지 않는 함수는 모듈을 쓰는 저장소의 deadcode·unused lint를 실패시키고, 그 저장소는 생성
+  파일을 고칠 수 없다. 그러므로 `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않는다.
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은
