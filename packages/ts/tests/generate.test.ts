@@ -1403,6 +1403,15 @@ test('the core gets the value that the guard of a place holds, also where its pa
   }
 });
 
+test('a parameter of a class gives the core the value in the form that the core path takes, borrowed or a copy (GN-6h)', () => {
+  // The core of json takes `OrderedMap::insert(&mut self, key: Value, value: Value)` and `show(value: &Token)`; the
+  // contract names neither form, so the argument takes the one that the core path asks for.
+  const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const file of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, file), /let value = &\*value;\n[^\n]*polyspec_classes::show\(value\.core_form\(\)\)/, file);
+  }
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
