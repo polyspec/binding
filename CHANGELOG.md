@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- `binding scaffold` wrote a `package.json` without `napi.binaryName`, `napi.targets` and `type`, and a PHP extension
+  `composer.json` without `php-ext.download-url-method`, so the release of kit (K1189) refused the npm-native package
+  ("names no napi.binaryName") and the php-ext package ("lists no pre-packaged-binary in php-ext.download-url-method"),
+  and Node read the ES module glue of WASM with the warning `MODULE_TYPELESS_PACKAGE_JSON`. The `package.json` of a
+  library with the target `node` now names `napi.binaryName`, the npm name without scope, and `napi.targets`, the Rust
+  triples `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`; every `package.json` that
+  scaffold writes has `"type": "module"`; and the `composer.json` of a PHP extension, also `<host package>-native`,
+  names `php-ext.download-url-method` `["pre-packaged-binary"]`. `binding check` compares them as part of each file
+  (GN-3c, CK-19). Verified by `make test-ts` (291 tests).
 - The generator refused the type `path` with "the type path is not generated yet", so a member or a record field with a
   path, such as `host_options.files: optional<path>`, had no binding. A `path` is now the bytes of an OS path in
   Python, Node, PHP and Go, in every place: the core takes `&Path` and gives `PathBuf`. Python takes a `str`, `bytes`

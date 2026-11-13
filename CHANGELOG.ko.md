@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- `binding scaffold`는 `napi.binaryName`, `napi.targets`, `type`이 없는 `package.json`과,
+  `php-ext.download-url-method`가 없는 PHP 확장 `composer.json`을 썼다. 그래서 kit의 배포(K1189)가 npm-native 패키지를
+  ("names no napi.binaryName")와 php-ext 패키지를("lists no pre-packaged-binary in php-ext.download-url-method") 거부했고,
+  Node는 WASM의 ES 모듈 글루를 `MODULE_TYPELESS_PACKAGE_JSON` 경고와 함께 읽었다. 이제 target `node`를 가진 라이브러리의
+  `package.json`은 scope 없는 npm 이름인 `napi.binaryName`과, Rust triple `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`인 `napi.targets`를 적는다. scaffold가 쓰는 모든 `package.json`은
+  `"type": "module"`을 갖고, PHP 확장(`<host package>-native`도)의 `composer.json`은 `php-ext.download-url-method`
+  `["pre-packaged-binary"]`를 적는다. `binding check`는 각 파일의 일부로 이것을 비교한다(GN-3c, CK-19). `make test-ts`
+  (시험 291개)로 확인했다.
 - 생성기는 타입 `path`를 "the type path is not generated yet"로 거부했다. 그래서 `host_options.files: optional<path>`
   같은 path를 가진 member나 record field에 바인딩이 없었다. 이제 `path`는 Python, Node, PHP, Go에서 모든 자리에 OS
   경로의 바이트이고, 코어는 `&Path`를 받고 `PathBuf`를 준다. Python은 `str`, `bytes`, `os.PathLike`를 `os.fsencode`로
