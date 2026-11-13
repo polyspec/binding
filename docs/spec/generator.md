@@ -149,7 +149,7 @@ the design ids are those of the binding design.
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7); a Go value of another type at a number parameter (GN-13g) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`, `<prefix>__number_in`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
@@ -1013,7 +1013,7 @@ the design ids are those of the binding design.
   `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
   default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`). With the build tag
+  `__fault_left`, `__alias_in_`, `__number_in`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
@@ -1021,6 +1021,19 @@ the design ids are those of the binding design.
   refused; the cases of an alias of this repository run its `in` function alone through `AliasIn<Alias>`. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
+- **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
+  Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
+  integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
+  feature `codec-test` and the build tag `polyspec_codec_test` give the function `<Type>In(value any, subject string)
+  error` of `internal/binding` (`UintIn`, `IntIn`, `Int64In`, `FloatIn`) over the entry point `<prefix>__number_in`.
+  The function encodes the Go value as a host value: a bool, a Go integer in the range of int64, a Go integer above
+  it, a Go float, a Go string, or any other value. The entry point judges it by the conversion of that number type
+  of the binding: a value of the Go type of the number type passes the range of GN-12a, and a value of another type
+  is kind `invalid_number` of B-2 with the subject. So the error is the one that a call with that argument gives in
+  the other targets. `zz_generated_codec_test.go` checks the B-2 values of GN-13 for each such type, and a value of
+  the type (7, or 1.5 and NaN for a float) passes. A test of another repository that has a host value of another type
+  for a number parameter, such as a legacy case with an input type, passes it through this function, because the Go
+  call cannot take it.
 - **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
   members of a class among them, the tests of K-2 and the callback fixtures of a case among them, and the U-7 tests of
   an alias (GN-18b), with `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
