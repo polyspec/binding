@@ -553,14 +553,17 @@ the design ids are those of the binding design.
   it out, and the core decides its value.
 - **GN-15f** Go records of another repository (T-3, GN-6c), not implemented yet: the generator refuses such a record
   by name and names this row (G-4). A record of another repository is the struct `<Record>` of the package of its
-  module in the Go module of that repository, the module of `packages.go` of its contract, and the C ABI writes and
-  reads it field by field as a record of this repository. `binding scaffold` reads the contracts of the libraries whose
-  records the contract names, as `binding generate` does, and writes for each a line `require <module> <version>` in
-  `go.mod`: the version is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version
-  `=X.Y.Z` or the tag `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>/packages/go`
-  relative to `packages/go`; a dependency line that names a branch or a commit has no Go version and is refused by
-  name. The Go program then also links the static library of that repository, whose directory `CGO_LDFLAGS` names
-  beside the directory of this one (GN-15).
+  module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
+  by its package name; the C ABI writes and reads it field by field as a record of this repository, through
+  `in_<library>_<record>` and `out_<library>_<record>`. `binding scaffold` reads the contract of each library that the
+  contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
+  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
+  each library whose records the contract names it writes a line `require <module> <version>` in `go.mod`: the version
+  is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
+  `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
+  repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
+  Go version and is refused by name. The Go program then also links the static library of that repository, which the
+  end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`

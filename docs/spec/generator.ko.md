@@ -461,12 +461,15 @@
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c), 아직 구현하지 않음: 생성기는 그런 record를 이름으로 거부하고 이 행을
   적는다(G-4). 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
-  `<Record>`이며, C ABI는 이 레포의 record처럼 field마다 쓰고 읽는다. `binding scaffold`는 `binding generate`처럼
-  계약이 record를 이름하는 라이브러리의 계약을 읽고, 라이브러리마다 `go.mod`에 `require <module> <version>` 줄을
-  적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면 버전은 `vX.Y.Z`다. `path` 의존은
-  `v0.0.0`과 `packages/go` 기준 상대 경로의 `replace <module> => <path>/packages/go` 줄을 준다. branch나 commit을 적은
-  의존 줄에는 Go 버전이 없으므로 이름으로 거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며,
-  `CGO_LDFLAGS`가 이 레포의 디렉터리 옆에 그 디렉터리를 적는다(GN-15).
+  `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
+  `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. `binding scaffold`는 `binding generate`처럼 계약이
+  이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
+  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record를 이름하는 라이브러리마다 `go.mod`에
+  `require <module> <version>` 줄을 적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
+  버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
+  `replace <module> => <path>` 줄을 준다. branch, commit, 버전 범위를 적은 의존 줄에는 Go 버전이 없으므로 이름으로
+  거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
+  디렉터리에 빌드한다(GN-14).
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은

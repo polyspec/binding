@@ -808,6 +808,52 @@ const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; for
   };
 };
 
+// The plot of the end-to-end check, which takes and gives the record point of tests/e2e/points (GN-15f).
+const plotSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  return {
+    contract: read('plot/packages/rust/interface.json'),
+    caseFiles: new Map([['contracts/cases.json', read('plot/contracts/cases.json')]]),
+    foreign: new Map([['points', read('points/packages/rust/interface.json')]]),
+  };
+};
+
+test('Go: a record of another repository is the struct of its Go module, which go.mod requires (GN-15f)', () => {
+  const { contract, caseFiles, foreign } = plotSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['go'] });
+  const pkg = text(out, 'packages/go/zz_generated_plot.go');
+  assert.match(pkg, /\n\t"github\.com\/polyspec\/points\/packages\/go"\n/);
+  assert.match(pkg, /\nfunc Mirror\(point points\.Point\) \(points\.Point, error\) \{\n/);
+  assert.match(pkg, /\tenc\.Int\(point\.X\)\n\tenc\.Int\(point\.Y\)\n/);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_points_point\(input: &mut &\[u8\]\) -> Result<polyspec_points::Point, Fail> \{\n/);
+  assert.match(lib, /\nfn out_points_point\(output: &mut Vec<u8>, value: impl Borrow<polyspec_points::Point>\) \{\n/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /points\.Point\{X: 1, Y: 2\}/);
+  // binding scaffold requires the Go module of the library by the dependency line of the core.
+  const goMod = (spec: unknown, of = contract, libraries = foreign): string => String(trackedPackages(of, '0.0.0', new Map([['polyspec-points', spec], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries).get('packages/go/go.mod'));
+  const module = 'github\\.com\\/polyspec\\/points\\/packages\\/go';
+  assert.match(goMod({ path: '../../../points/packages/rust' }), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n\\nreplace ${module} => \\.\\.\\/\\.\\.\\/\\.\\.\\/points\\/packages\\/go\\n$`));
+  assert.match(goMod('=0.1.2'), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
+  assert.match(goMod({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
+  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }]) {
+    assert.throws(() => goMod(spec), /polyspec-points: the dependency line of the core names no path, exact version or tag, so the Go module of points has no version \(GN-15f\)/, JSON.stringify(spec));
+  }
+  // A library whose records the contract does not name is not required: the consumer names only a value alias.
+  const consumer = consumerSample();
+  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+});
+
+test('binding scaffold reads the contract of a path dependency and writes its Go module in go.mod (GN-15f)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
+  try {
+    for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('Go: a contract without a class unit has no table of instances in its C ABI (T-5, GN-15a)', () => {
   // A map insert of the generated code (made.insert) is no call of the helper that keeps an instance in a table.
   const { contract, caseFiles, foreign } = consumerSample();
