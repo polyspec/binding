@@ -18,8 +18,8 @@ the design ids are those of the binding design.
   recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
   `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a dependency kind, the
   type `source`) is refused by name
-  before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
-  repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit and a record of
+  another repository (T-3, U-3); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -272,6 +272,21 @@ the design ids are those of the binding design.
   instance broken; every later call fails with the same kind. The module is not instantiated again, because the state
   that earlier handles point to would be gone. Where the module unwinds, `catch_unwind` gives kind `internal` as in
   every binding (B-7).
+- **GN-18a** WASM, a class unit (T-5): a class that the ES module defines, with the members of the Node class (GN-6b,
+  GN-6f, GN-6g: the constructor, static members, methods, getters, `Symbol.iterator`, `toString` and `toJSON`) and the
+  same argument checks (G-7). The WebAssembly module keeps the core values of the instances of a class in a table of
+  that class, and an instance keeps the handle of its value in a private field, which no other code reads or forges: a
+  value is an instance of the class exactly when it has that field. The module exports each member as
+  `__<Class>_<member>`, which is not part of the API: `__<Class>_new` gives the handle of the new value, and a method, a
+  getter or a hook takes the handle of its instance first. When the module loads, the ES module hands over for each
+  class a function that makes an instance around a handle, by which a value of the class leaves, and one that reads the
+  handle of an instance and answers `undefined` for any other value, which is kind `invalid_argument_type`. A call
+  shares the value that it reads, so no table is borrowed while the core runs, and a parameter of a class gives the core
+  a copy of the value (GN-6b). A `FinalizationRegistry` drops the value of an instance that the engine collected, and its
+  handle is used again; an instance has no `free()`, so no call meets a released value. The class is not a class of
+  wasm-bindgen: wasm-bindgen gives up the instance when Rust takes its value from a `JsValue`, and after its `free()` a
+  call of the instance fails with an error that has no kind (P-2). A class unit with `cleanup` (B-10) is refused by
+  name, as for every target (GN-1).
 
 ## Generated tests (G-5)
 
@@ -326,8 +341,9 @@ the design ids are those of the binding design.
   refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
-- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
-  `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
+  members of a class among them, with `node --test` against the subpath `./wasm` of the installed package; it has no
+  test of K-2, because WASM generates no callback unit. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
 

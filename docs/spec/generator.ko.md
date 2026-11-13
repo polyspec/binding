@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, error unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
-  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부한다(T-3, T-5, U-3). Go는 다른 타입 안의 서로
+  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit과 다른 레포의 record를 거부한다(T-3, U-3). WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
@@ -222,6 +222,18 @@
   `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. 모듈을 다시 인스턴스화하지
   않는다. 그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
   `internal`을 낸다(B-7).
+- **GN-18a** WASM의 class unit(T-5): ES 모듈이 정의하는 class이며 Node class의 member(GN-6b, GN-6f, GN-6g: 생성자, static
+  member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
+  그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
+  읽거나 꾸며낼 수 없다: 어떤 값이 그 class의 인스턴스인 것은 그 field를 가질 때뿐이다. 모듈은 member마다
+  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__<Class>_new`는 새 값의 handle을 주고, 메서드, getter, hook은
+  인스턴스의 handle을 첫 인자로 받는다. 모듈을 읽을 때 ES 모듈은 class마다 handle로 인스턴스를 만드는 함수(그 class의 값이
+  나갈 때 쓴다)와 인스턴스의 handle을 읽는 함수를 넘긴다. 읽는 함수는 다른 값에 `undefined`를 답하고 그 값은 kind
+  `invalid_argument_type`이다. 호출은 읽은 값을 공유하므로 코어가 도는 동안 어떤 표도 빌리지 않으며, class parameter는 그 값의
+  사본을 코어에 준다(GN-6b). 엔진이 회수한 인스턴스의 값은 `FinalizationRegistry`가 버리고 그 handle은 다시 쓰인다. 인스턴스에
+  `free()`가 없으므로 어떤 호출도 놓인 값을 만나지 않는다. 이 class는 wasm-bindgen의 class가 아니다: wasm-bindgen은 Rust가
+  `JsValue`에서 값을 꺼낼 때 인스턴스를 포기시키고, `free()` 뒤 그 인스턴스의 호출은 kind 없는 오류로 실패한다(P-2).
+  `cleanup`(B-10)이 있는 class unit은 모든 target과 같이 이름으로 거부한다(GN-1).
 
 ## 생성 시험(G-5)
 
@@ -264,8 +276,9 @@
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 계약이 모든 key 종류를
   적지 않은 `keyed_map` parameter·field는 빠진 종류의 key로 kind `invalid_argument_type`을 시험한다. case의 latin1 값은 그 rune의 Go 문자열이다. case는 `map`을 순서대로의 항목을 가진 객체로,
   `keyed_map`을 GN-13처럼 준다.
-- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
-  `./wasm`에 대해 `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을, class member의 시험을
+  포함해, 설치한 패키지의 subpath `./wasm`에 대해 `node --test`로 실행한다. WASM은 callback unit을 생성하지 않으므로 K-2
+  시험은 없다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
   `internal`을 기대하고, 그 뒤의 호출은 인스턴스가 trap했으면 kind `internal`이고 모듈이 unwind하면 성공해야 한다(GW-7).
 
 ## 끝에서 끝까지 확인

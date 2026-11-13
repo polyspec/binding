@@ -595,3 +595,83 @@ test('Go, WASM: each variant that a member raises is asserted against the core e
     assert.doesNotMatch(text(none, crate), /matches!\(error,/, crate);
   }
 });
+
+// The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
+// Go and WASM refuse by name.
+function classSample(targets: string[]): any {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.targets.push(...targets);
+  if (targets.includes('go')) sample.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  if (targets.includes('wasm')) {
+    sample.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
+    for (const row of Object.values(sample.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
+  }
+  sample.units = sample.units.filter((u: any) => u.id === 'sample' || u.id === 'tag');
+  const owner = sample.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => ['sample.join', 'sample.shout'].includes(m.id));
+  sample.cases = sample.cases.filter((row: any) => ['sample.join', 'sample.shout'].includes(row.member) || String(row.member).startsWith('tag.'));
+  return sample;
+}
+
+test('WASM: a class unit is a class of the ES module over the handle of its value (T-5, GN-18a)', () => {
+  const full = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  full.targets.push('wasm');
+  for (const row of Object.values(full.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
+  assert.throws(() => generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /data: a value alias is not generated for WASM yet/);
+  const sample = classSample(['wasm']);
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(lib, /static TABLE_TAG: RefCell<Table<polyspec_sample::Tag>> = const \{ RefCell::new\(Table::new\(\)\) \};/);
+  // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn class_tag_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
+  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let this: &polyspec_sample::Tag = &held;\n {12}let result = polyspec_sample::Tag::name\(this\);/);
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_free"\)\]/);
+  assert.match(lib, /\nfn in_tag\(value: &JsValue, subject: &str\) -> Result<polyspec_sample::Tag, Fail> \{\n {4}let handle = handle_of\(0, value\)\?/);
+  assert.match(lib, /pub fn register\(classes: Vec<Function>, makers: Vec<Function>, readers: Vec<Function>\)/);
+  // Q-4 only: the to_json of the sample names php and node, so WASM has none.
+  assert.doesNotMatch(lib, /host_json/);
+  const entry = text(out, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(entry, /\nexport class Tag \{\n {2}#handle;\n/);
+  assert.match(entry, /this\.#handle = enter\(SampleInternalError, \(\) => glue\.__Tag_new\(args\[0\]\)\);/);
+  assert.match(entry, /released\.register\(this, \[glue\.__Tag_free, this\.#handle\]\);/);
+  assert.match(entry, /\n {2}get name\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_name\(this\.#handle\)\);/);
+  assert.match(entry, /\n {2}\[Symbol\.iterator\]\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_iterate\(this\.#handle\)\)\[Symbol\.iterator\]\(\);/);
+  assert.match(entry, /\n {2}toString\(\) \{/);
+  assert.doesNotMatch(entry, /toJSON/);
+  // A private field is the brand: no other value has a handle.
+  assert.match(entry, /readers\.push\(\(value\) => \(typeof value === 'object' && value !== null && #handle in value \? value\.#handle : undefined\)\);/);
+  // The classes are defined before the module takes the functions that make and read their instances.
+  assert.ok(entry.indexOf('export class Tag') < entry.indexOf('glue.__register('), 'the class is defined after the registration');
+  assert.match(entry, /glue\.__register\(\[[A-Za-z, ]+\], makers, readers\);/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare class Tag \{\n {2}constructor\(name: string\);\n {2}get name\(\): string;\n {2}\[Symbol\.iterator\]\(\): IterableIterator<\[string, Tag\]>;\n {2}toString\(\): string;\n\}/);
+  const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(tests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
+  assert.match(tests, /test\('G-7: Tag\.constructor counts and names its arguments'/);
+  // Q-4 only: with wasm in its targets the to_json is the hook toJSON, which never returns.
+  const hooked = classSample(['wasm']);
+  hooked.units.find((u: any) => u.id === 'tag').members.find((m: any) => m.kind === 'to_json').only.targets.push('wasm');
+  const withHook = generate({ contract: hooked, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  assert.match(text(withHook, 'packages/ts/wasm/generated/index.mjs'), /\n {2}toJSON\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_toJSON\(this\.#handle\)\);/);
+  assert.match(text(withHook, 'packages/ts/wasm/generated/lib.rs'), /match result \{\}/);
+  assert.match(text(withHook, 'packages/ts/wasm/generated/index.d.ts'), /toJSON\(\): never;/);
+  assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.
+  const alone = classSample(['wasm']);
+  alone.units = alone.units.filter((u: any) => u.id === 'tag');
+  const tag = alone.units[0];
+  tag.constructible = false;
+  tag.members = tag.members.filter((m: any) => m.kind !== 'constructor');
+  alone.cases = [];
+  const kept = generate({ contract: alone, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  assert.doesNotMatch(text(kept, 'packages/ts/wasm/generated/lib.rs'), /\nfn (in_tag|handle_of)\(/);
+  assert.match(text(kept, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) throw new TypeError\('Tag has no public constructor'\);/);
+  assert.match(text(kept, 'packages/ts/wasm/generated/index.d.ts'), /export declare class Tag \{\n {2}private constructor\(\);/);
+  // A contract without a class unit registers the library classes alone.
+  const { contract, caseFiles } = load();
+  contract.targets.push('wasm');
+  contract.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
+  for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
+  const plain = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(plain, 'packages/ts/wasm/generated/lib.rs'), /pub fn register\(classes: Vec<Function>\) -> Result/);
+  assert.doesNotMatch(text(plain, 'packages/ts/wasm/generated/lib.rs') + text(plain, 'packages/ts/wasm/generated/index.mjs'), /Table<|makers|FinalizationRegistry/);
+});
