@@ -1287,3 +1287,20 @@ export const aliasFailureFn = (alias: ValueAlias): string =>
 // The value aliases of other repositories, one per library: the first of each names the library's error enum.
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
   model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);
+
+// GN-6o: the member whose generated test gives an object through a native row and back: a function without a receiver
+// that takes a value alias of this repository, with an out row of kind native in the target, as its one parameter and
+// returns it. The contract alone decides it, so that the manifest and the tests agree.
+export function nativeRoundTrip(contract: Contract, lang: Lang): Member | undefined {
+  const isUnit = (type: Type | undefined, id: string): boolean => typeof type === 'object' && 'unit' in type && type.unit === id && type.library === undefined;
+  for (const unit of contract.units) {
+    if (unit.kind !== 'alias' || unit.origin !== 'value') continue;
+    if (!(unit.out ?? []).some((row) => row.kind === 'native' && row.make[lang] !== undefined)) continue;
+    for (const owner of contract.units) {
+      if (owner.kind !== 'functions') continue;
+      const found = (owner.members ?? []).find((m) => m.kind === 'function' && (m.parameters ?? []).length === 1 && isUnit(m.parameters?.[0]?.type, unit.id) && isUnit(m.returns, unit.id));
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}

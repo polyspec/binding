@@ -21,6 +21,7 @@ import {
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
   objectUnit, places, pointName, unitOf,
+  nativeRoundTrip,
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, comparableResult, expectedErrno, fixtureOf, fixturesOf, instanceOf, isInstanceValue,
@@ -723,7 +724,38 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
-  if (out.main.length + out.fault.length + out.held.length === 0) return [];
+  // GN-6o: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
+  // comparable, so the test checks the count of the live handles of the Natives.
+  const roundTrip = nativeRoundTrip(model.contract, 'go');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id && f.module === module);
+  const native = roundFn === undefined ? [] : [`
+func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
+	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
+		t.Fatalf("GN-6o: %v", err)
+	}
+	before, err := binding.NativeCount()
+	if err != nil {
+		t.Fatalf("GN-6o: %v", err)
+	}
+	got, err := ${invoke(roundFn, ['func() {}'], '')}
+	if err != nil {
+		t.Fatalf("GN-6o: %v", err)
+	}
+	if _, ok := got.(func()); !ok {
+		t.Fatalf("GN-6o: %#v is no func", got)
+	}
+	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
+		t.Fatalf("GN-6o: %v", err)
+	}
+	after, err := binding.NativeCount()
+	if err != nil {
+		t.Fatalf("GN-6o: %v", err)
+	}
+	if after != before {
+		t.Fatalf("GN-6o: %d Natives after the call, %d before", after, before)
+	}
+}`];
+  if (out.main.length + out.fault.length + out.held.length + native.length === 0) return [];
   const pkg = goPackage(model.contract, module);
   // The helpers are in the file without a build tag, which every run compiles.
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
@@ -745,6 +777,7 @@ ${testImports(model, module, body, scope)}${body}`;
   const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers)]];
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
+  if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
   return files;
 }
 

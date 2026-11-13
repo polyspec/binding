@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, NODE_NATIVE, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, usesNative, takesFunction, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, usesNative, takesFunction, nativeRoundTrip, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -949,7 +949,16 @@ ${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${fu
 pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
-${takesFunction(model) ? `
+${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
+/// GN-6o: the entry point of the generated release test: the count of the references that the table of this thread
+/// holds.
+#[cfg(feature = "native-count-test")]
+#[napi(js_name = "__nativeCount")]
+pub fn native_count() -> u32 {
+    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+`}${takesFunction(model) ? `
 /// U-3, GN-6m: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
 /// gives on another thread, whose drop of the Native the owner releases at its next entry point.
 #[cfg(feature = "thread-test")]

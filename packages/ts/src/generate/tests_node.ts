@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Arg, type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, takesFunction, unitOf } from './model.ts';
+import { type Arg, type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, nativeRoundTrip, takesFunction, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
@@ -358,6 +358,23 @@ test('U-3: a function called on another thread is kind wrong_thread (GN-6m)', ()
   assert.equal(addon().__threadTest(() => null), 'wrong_thread');
 });`);
   }
+  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native.
+  const roundTrip = nativeRoundTrip(model.contract, 'node');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    usesAddon = true;
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+test('GN-6o: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  ${same('new Subject()')};
+  const before = addon().__nativeCount();
+  const subject = new Subject();
+  assert.equal(${same('subject')}, subject);
+  await new Promise(setImmediate);
+  ${same('new Subject()')};
+  assert.equal(addon().__nativeCount(), before);
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesAddon = true;
@@ -374,7 +391,7 @@ import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } fro
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
+${roundFn === undefined ? '' : '\n// GN-6o: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

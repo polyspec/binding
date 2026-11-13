@@ -1,7 +1,7 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Arg, type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, errorUnitOfKind, hookCall, langName, nativeRoundTrip, unitOf } from './model.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, functionFixturesOf, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
@@ -290,6 +290,23 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native.
+  const roundTrip = nativeRoundTrip(model.contract, 'wasm');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    usesGlue = true;
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+test('GN-6o: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  ${same('new Subject()')};
+  const before = (await glueModule()).__nativeCount();
+  const subject = new Subject();
+  assert.equal(${same('subject')}, subject);
+  await new Promise(setImmediate);
+  ${same('new Subject()')};
+  assert.equal((await glueModule()).__nativeCount(), before);
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesGlue = true;
@@ -303,7 +320,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
 import assert from 'node:assert/strict';
 import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
-${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${roundFn === undefined ? '' : '\n// GN-6o: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

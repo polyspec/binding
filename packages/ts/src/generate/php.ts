@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, usesNative, takesFunction, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, usesNative, takesFunction, nativeRoundTrip, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
 import { PHP_HOST, PHP_NATIVE, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { elsewhereRust } from './alias_shared.ts';
 import { phpTests } from './tests_php.ts';
@@ -156,6 +156,17 @@ pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
             Err(_panic) => Err(binding_error(BindingError::Internal { detail: String::from("U-3: the thread of the test panicked") })),
         }
     })
+}
+`;
+
+// GN-6o: the entry point of the generated release test: the count of the Natives that the table of this thread holds.
+const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6o: the entry point of the generated release test.
+#[cfg(feature = "native-count-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\nativeCount`)})]
+pub fn native_count() -> i64 {
+    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
+    i64::try_from(count).unwrap_or(i64::MAX)
 }
 `;
 
@@ -1269,7 +1280,7 @@ mod entry {
     #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_function and php_module macros of ext-php-rs")]
     use super::*;
 ${functions}
-${PANIC_TEST(layout)}${takesFunction(model) ? THREAD_TEST(layout) : ''}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
+${PANIC_TEST(layout)}${takesFunction(model) ? THREAD_TEST(layout) : ''}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : NATIVE_COUNT(layout)}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[php_function]
@@ -1290,7 +1301,9 @@ ${poisonRust(model, layout)}
         // GN-6o: the Natives of a request are released at its end, while the engine is alive.
         let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `
         #[cfg(feature = "thread-test")]
-        let module = module.function(wrap_function!(thread_test));`}
+        let module = module.function(wrap_function!(thread_test));`}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : `
+        #[cfg(feature = "native-count-test")]
+        let module = module.function(wrap_function!(native_count));`}
         #[cfg(feature = "panic-test")]
         let module = module.function(wrap_function!(panic_test));${model.objects.some((o) => o.lock?.writes === true) ? `
         #[cfg(feature = "panic-test")]

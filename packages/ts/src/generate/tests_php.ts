@@ -2,7 +2,7 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, takesFunction, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, nativeRoundTrip, takesFunction, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, functionFixturesOf, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
@@ -399,6 +399,23 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         $held = ${test.instance};${test.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(test.fn.member.id)}, ${phpText(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}${test.armed === undefined ? '' : `
         // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
+    }`);
+  }
+  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native at
+  // the next entry point.
+  const roundTrip = nativeRoundTrip(model.contract, 'php');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    const same = (value: string): string => invoke(roundFn, value, '');
+    methods.push(`
+    public function testGn6o${langName('php', roundFn.member.name, 'class')}GivesBackTheSameObjectAndReleasesIt(): void
+    {
+        ${same('new class {}')};
+        $before = \\${layout.namespace}\\Internal\\nativeCount();
+        $subject = new class {};
+        self::assertSame($subject, ${same('$subject')});
+        ${same('new class {}')};
+        self::assertSame($before, \\${layout.namespace}\\Internal\\nativeCount());
     }`);
   }
   // U-3, GN-6m: a function of the language called on a thread other than its owner is kind wrong_thread, through the

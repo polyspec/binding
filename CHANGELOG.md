@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- No generated test gave a language object through a `native` row and back, so a binding that kept or lost the
+  object passed. For a value alias with a `native` out row and a function that takes it and gives it back, each target
+  now tests that the object comes back as the same object and that the binding keeps no reference to it (GN-6o):
+  Python by `sys.getrefcount` and a `weakref`, Node, PHP and WASM by the count of their owner table, which the entry
+  point of the new feature `native-count-test` gives (`__nativeCount`, `Internal\nativeCount`), and Go by the count of
+  its live handles (`binding.NativeCount`, build tag `polyspec_native_count_test`). A Go func that enters is now a
+  `Native` that the static library counts. The end-to-end check fails a static library without features that holds
+  `__native_count`.
 - `tests/e2e/functions` checked a function type in Python only. It now declares the targets PHP, Node and WASM as
   well, so the end-to-end check runs the stored functions of every target that takes one (GN-6m).
 - WASM refused a member that takes a function type (GN-6m). It now holds the function as a `Native` of the table of

@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, usesNative, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, WASM_NATIVE, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -993,6 +993,14 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
             binding_core::fault::left(u64::from(id)).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
         })
         .map_err(throw)
+    }
+
+`}${nativeRoundTrip(model.contract, 'wasm') === undefined ? '' : `    /// GN-6o: the entry point of the generated release test: the count of the values that the table of Natives holds.
+    #[cfg(feature = "native-count-test")]
+    #[wasm_bindgen(js_name = "__nativeCount")]
+    pub fn native_count() -> u32 {
+        let count = NATIVE.with_borrow(|native| native.values.len());
+        u32::try_from(count).unwrap_or(u32::MAX)
     }
 
 `}    /// B-7: the entry point of the generated panic test.

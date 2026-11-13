@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, unitOf } from './model.ts';
 import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -1455,6 +1455,40 @@ func PanicTestHeld(class, handle uint64) error {
 ` : ''}`;
 }
 
+// GN-6o: the Go side of the count of the live Natives, with the build tag polyspec_native_count_test.
+function goBindingNativeCount(model: Model): string {
+  const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
+  return `${goHeader()}
+
+//go:build polyspec_native_count_test
+
+package binding
+
+/*
+${cDeclarations(model, [`${p}__native_count`])}
+*/
+import "C"
+
+// NativeCount gives the count of the live Natives of the static library, each of which holds a cgo.Handle (GN-6o), or
+// the failure of the call.
+func NativeCount() (uint64, error) {
+	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__native_count(pointer, length, result)
+	}, nil)
+	if err != nil {
+		return 0, err
+	}
+	dec := NewReader(out)
+	count := dec.Uint()
+	if err := dec.Finish(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+`;
+}
+
 // G-5: the Go side of the arming of fault injection points, with the build tag polyspec_fault_test.
 function goBindingFault(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
@@ -1626,6 +1660,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
+  if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
   const echo = echoes(model);
   if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined)) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));

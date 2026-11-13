@@ -774,7 +774,8 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(php, /extern "C" fn release_native\(_kind: i32, _module: i32\) -> i32 \{\n    clean_up_native\(\);\n    0\n\}/);
   // Go holds the cgo.Handle, which the drop deletes on any thread.
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(go, /\[9\] => HostValue::Callable\(Native::new\(GoNative \{ handle: in_uint\(input\)\? \}\)\),/);
+  assert.match(go, /\[9\] => HostValue::Callable\(go_native\(in_uint\(input\)\?\)\),/);
+  assert.match(go, /fn go_native\(handle: u64\) -> Native \{\n    NATIVE_COUNT\.fetch_add\(1, Ordering::SeqCst\);\n    Native::new\(GoNative \{ handle \}\)/);
   assert.match(go, /impl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n        \/\/ SAFETY: [^\n]*\n        unsafe \{ polyspec_sample__go_release\(self\.handle\) \};/);
   assert.match(go, /OutValue::Native\(native\) => match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(10\);/);
   const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
@@ -792,15 +793,16 @@ test('a generated test gives an object through a native row and back, and counts
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /def test_gn6o_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
-  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+  for (const [path, entry] of [['packages/ts/generated/tests/generated.test.mjs', 'addon\\(\\)'], ['packages/ts/wasm/generated/tests/generated.test.mjs', '\\(await glueModule\\(\\)\\)']] as const) {
     const js = text(out, path);
-    assert.match(js, /test\('GN-6o: same gives back the same object and releases it', async \(\) => \{\n  pkg\.same\(new Subject\(\)\);\n  const before = addon\(\)\.__nativeCount\(\);\n  const subject = new Subject\(\);\n  assert\.equal\(pkg\.same\(subject\), subject\);\n  await new Promise\(setImmediate\);\n  pkg\.same\(new Subject\(\)\);\n  assert\.equal\(addon\(\)\.__nativeCount\(\), before\);\n\}\);/, path);
+    assert.match(js, new RegExp(`test\\('GN-6o: same gives back the same object and releases it', async \\(\\) => \\{\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  const before = ${entry}\\.__nativeCount\\(\\);\\n  const subject = new Subject\\(\\);\\n  assert\\.equal\\(pkg\\.same\\(subject\\), subject\\);\\n  await new Promise\\(setImmediate\\);\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  assert\\.equal\\(${entry}\\.__nativeCount\\(\\), before\\);\\n\\}\\);`), path);
   }
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, /public function testGn6oSameGivesBackTheSameObjectAndReleasesIt\(\): void\n    \{\n        \\Polyspec\\Sample\\same\(new class \{\}\);\n        \$before = \\Polyspec\\Sample\\Internal\\nativeCount\(\);\n        \$subject = new class \{\};\n        self::assertSame\(\$subject, \\Polyspec\\Sample\\same\(\$subject\)\);/);
-  const go = text(out, 'packages/go/internal/binding/zz_generated_native_count_test.go');
+  const go = text(out, 'packages/go/zz_generated_native_count_test.go');
   assert.match(go, /\/\/go:build polyspec_native_count_test/);
-  assert.match(go, /before := NativeCount\(\)/);
+  assert.match(go, /before, err := binding\.NativeCount\(\)/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_native_count.go'), /func NativeCount\(\) \(uint64, error\) \{/);
   // The count is the entry point of the feature native-count-test.
   const packages = trackedPackages(sample, '0.0.0');
   for (const path of ['packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml', 'packages/ts/wasm/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
@@ -1667,7 +1669,7 @@ test('the errno of a case is the value of its symbol in Python and Node, and PHP
     cases.measure[0].raises.errno = 'ENOSPC';
   };
   const out = sampleWith(withErrno, ['python', 'node']);
-  assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
+  assert.match(text(out, pythonTests), /^import errno\nimport sys\nimport unittest$/m);
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
@@ -1695,7 +1697,7 @@ test('fault injection points, the kinds of an alias and the point of another lib
   assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__armFaults"\)\]/);
   assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length);
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n/);
+  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
   assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'callable' }; }), /of the alias data: a value \{"host": \.\.\.\} is not generated yet/);
@@ -1742,8 +1744,10 @@ test('the kinds of an alias are checked against its error, run alone and through
 test('a binding crate has the test features that its contract needs (GN-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const packages = trackedPackages(sample, '0.0.0');
-  for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
-    assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n\[/, path);
+  assert.match(String(packages.get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n\[/);
+  // GN-6o: a target that gives a Native back through a round trip counts the Natives that its table holds.
+  for (const path of ['packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
+    assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n\[/, path);
   }
   delete sample.faults;
   delete sample.units.find((u: any) => u.id === 'data').in_raises;

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- 언어 객체를 `native` 행으로 보냈다가 돌려받는 생성 시험이 없어서, 객체를 붙잡거나 잃는 바인딩도 통과했다. `native` out
+  행이 있는 값 alias와 그것을 받아 그대로 돌려주는 함수가 있으면, 이제 각 target이 객체가 같은 객체로 돌아오는지와 바인딩이
+  그 객체의 참조를 남기지 않는지 시험한다(GN-6o). Python은 `sys.getrefcount`와 `weakref`로, Node, PHP, WASM은 새 feature
+  `native-count-test`의 진입점(`__nativeCount`, `Internal\nativeCount`)이 주는 owner 표의 개수로, Go는 살아 있는 handle의
+  개수(`binding.NativeCount`, build tag `polyspec_native_count_test`)로 본다. 들어오는 Go func는 이제 정적 라이브러리가 세는
+  `Native`다. end-to-end 확인은 feature 없이 빌드한 정적 라이브러리에 `__native_count`가 있으면 실패한다.
 - `tests/e2e/functions`는 함수 타입을 Python에서만 확인했다. 이제 PHP, Node, WASM target도 선언하므로, end-to-end 확인이
   함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6m).
 - WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6o)로 갖고

@@ -10,7 +10,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, lockLines, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, lockLines, nativeRoundTrip, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -393,7 +393,7 @@ fn read_host(input: &mut &[u8]) -> Result<HostValue, Fail> {
         [6] => HostValue::Bytes(in_bytes(input)?),
         [7] => HostValue::List { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
         [8] => HostValue::Map { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
-        [9] => HostValue::Callable(Native::new(GoNative { handle: in_uint(input)? })),
+        [9] => HostValue::Callable(go_native(in_uint(input)?)),
         [10] => {
             let type_name = in_text(input, "a type name")?;
             HostValue::Other { type_name, handle: Handle::new(in_uint(input)?) }
@@ -732,7 +732,17 @@ impl Drop for GoNative {
     fn drop(&mut self) {
         // SAFETY: the handle is one that package binding made for this Native, and deleted here only.
         unsafe { ${p}__go_release(self.handle) };
+        NATIVE_COUNT.fetch_sub(1, Ordering::SeqCst);
     }
+}
+
+/// GN-6o: the count of the live Natives, which the entry point of native-count-test gives.
+static NATIVE_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// GN-6o: the func of a cgo.Handle that package binding made, as a Native.
+fn go_native(handle: u64) -> Native {
+    NATIVE_COUNT.fetch_add(1, Ordering::SeqCst);
+    Native::new(GoNative { handle })
 }
 
 /// U-7: the walk of a Go value of a call, which package binding describes one level at a time (B-1).
@@ -1103,6 +1113,9 @@ function testEntries(model: Model): string {
     ], 'codec-test'));
   }
   out.push(entry(model, `${p}__panic_test`, 'B-7: the entry point of the generated panic test.', ['        finish_input(input)?;', '        panic!("panic-test")'], 'panic-test'));
+  if (nativeRoundTrip(model.contract, 'go') !== undefined) {
+    out.push(entry(model, `${p}__native_count`, 'GN-6o: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        out_uint(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
+  }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
   const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => o.lock?.writes === true);
   if (written.length > 0) {

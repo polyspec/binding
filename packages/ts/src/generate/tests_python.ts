@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, nativeRoundTrip, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, functionFixturesOf, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
@@ -373,14 +373,32 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
+  // GN-6o: an object goes through the native row and back as the same object, and the binding keeps no reference to it.
+  const roundTrip = nativeRoundTrip(model.contract, 'python');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    const name = langName('python', roundFn.member.name, 'variable');
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+    def test_gn6o_${name}_gives_back_the_same_object_and_releases_it(self) -> None:
+        ${same('_Subject()')}
+        subject = _Subject()
+        before = sys.getrefcount(subject)
+        self.assertIs(${same('subject')}, subject)
+        ${same('_Subject()')}
+        self.assertEqual(sys.getrefcount(subject), before)
+        alive = weakref.ref(subject)
+        del subject
+        self.assertIsNone(alive())`);
+  }
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
+${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest${roundFn === undefined ? '' : '\nimport weakref'}
 
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:
@@ -395,6 +413,14 @@ if __name__ == "__main__":
     unittest.main()
 `;
 }
+
+// GN-6o: the subject of the round-trip test, an instance of a class of the test, since a built-in value may be
+// interned or cached.
+const PYTHON_SUBJECT = `
+
+class _Subject:
+    """An object that only the test makes."""
+`;
 
 const pythonBaseOf = (category: string): string =>
   ({ value: 'ValueError', type: 'TypeError', io: 'OSError', store: 'RuntimeError', busy: 'RuntimeError', internal: 'RuntimeError' })[category] ?? 'Exception';

@@ -6,7 +6,7 @@
 
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction } from './model.ts';
+import { holdsFunction, nativeRoundTrip } from './model.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
@@ -98,7 +98,11 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
   // that holds a function on its owner thread.
   const owned = suffix === 'node' || suffix === 'php-ext';
   const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type)))) ? 'thread-test = []\n' : '';
-  return `${faults}${codec}${thread}`;
+  // GN-6o: native-count-test adds the entry point that counts the Natives that the binding holds, in a target that
+  // gives a Native back through a round trip.
+  const lang = ({ node: 'node', 'php-ext': 'php', wasm: 'wasm', go: 'go' } as const)[suffix as 'node' | 'php-ext' | 'wasm' | 'go'];
+  const count = lang !== undefined && nativeRoundTrip(contract, lang) !== undefined ? 'native-count-test = []\n' : '';
+  return `${faults}${codec}${thread}${count}`;
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
