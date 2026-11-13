@@ -1289,6 +1289,27 @@ test('a tracked package that scaffold cannot write is named, and the other packa
   }
 });
 
+test('generate refuses the Go target alone, with its sentence, when a library whose record the contract names has no Go module (GN-15f, GN-1c)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.targets = points.targets.filter((target: string) => target !== 'go');
+    delete points.packages.go;
+    writeFileSync(pointsPath, JSON.stringify(points));
+    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'plot'), '--out', join(root, 'out')], { encoding: 'utf8', env });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /go: not generated \(G-4\), 1 item:\n {2}points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n/);
+    assert.doesNotMatch(run.stderr, /\n {4}at /);
+    // The other targets are written.
+    for (const written of ['python/generated/lib.rs', 'ts/generated/lib.rs', 'ts/wasm/generated/lib.rs', 'php-ext/generated/lib.rs']) {
+      assert.equal(existsSync(join(root, 'out/packages', written)), true, written);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a failure that a case file causes is a refused target with its sentence and no stack trace (GN-1c)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-sentence-'));
   try {
