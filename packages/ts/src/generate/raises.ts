@@ -2,6 +2,7 @@
 // member names in `raises`: the path is a variant of the error type that the member's core path returns. A path of
 // another type, or one that names no variant, does not compile.
 
+import { variantPattern } from '../contract.ts';
 import type { Model } from './model.ts';
 
 // The assertions of a crate, one for each variant that a member of the model raises, in the order the members first
@@ -17,10 +18,11 @@ export function raisesAssertions(model: Model): string {
   }
   if (variants.length === 0) return '';
   const assertions = variants.map((variant) => `#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-const _: fn(&${source}) -> bool = |error| matches!(error, ${variant} { .. });`);
+const _: fn(&${source}) -> bool = |error| matches!(error, ${variantPattern(variant)});`);
   return `
 // E-5: each variant that a member raises is a variant of the error that its core path returns (I-2). The pattern
-// \`{ .. }\` matches a variant with or without data, which the generator does not see.
+// \`{ .. }\` matches a variant with or without data, which the generator does not see; a kind that the core passes on
+// is the inner variant of its outer variant (GN-7c).
 ${assertions.join('\n')}
 `;
 }

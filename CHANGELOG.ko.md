@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1647f9d7e38eae43cf18dbb131c74361fcc143dc996fdbfc89090fbf8030b6be -->
+<!-- source-sha256: d06a56197d73c371eb739cd5c8850d1b47d6db1a8287afd07948cde238ad5197 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -248,6 +248,38 @@
   module로), Go는 그런 시험을 fault를 장전하는 case와 함께 두고 그 goroutine을 thread에 고정한다. 아무 receiver나 필요한
   시험은 fault를 장전하는 receiver를 쓰지 않는다.
 
+- callback unit은 있고 class unit은 없는 계약의 Go C ABI가 컴파일되지 않았다(`tests/e2e/consumer`에서 E0425 `Table`,
+  E0433 `Arc`). 생성기는 도우미 이름이 코드의 단어로 나오면 쓰인 것으로 셌기 때문에, method 호출
+  `lock(&THROWN).insert(handle, error)`가 class unit의 `Table`과 `Arc`를 적는 table 도우미 `insert`를 끌어들였다. 이제 도우미와
+  이름이 같은 method(`.insert(`)는 그 도우미를 쓰는 것이 아니며, 모든 target이 `usedHelpers`로 도우미를 고르므로 다섯 target에
+  같이 적용된다(GN-4). `make test-ts`로 검증했다: 293 통과.
+- 다른 레포의 callback unit을 받는 class나 member를 언어 코드에 닿지 않는 것으로 판정했다. 언어 코드를 담는 타입의 계산(GN-6h)이
+  다른 레포의 모든 타입에 false를 돌려주어서, 그런 callback을 받는 wait `blocking_io`나 `async_driver` member가 생성되었고 그
+  class의 lock도 그것을 세지 않았다. 이제 그런 callback unit은 언어 코드를 담으므로 lock이 그것을 세고, 그것을 받는 `async_driver`
+  member는 "a member with wait async_driver that reaches language code is not generated"로 거부되며, 그것을 받는
+  `blocking_io` member는 언어 코드에 닿는 member로 생성된다(GN-6s). `make test-ts`로 검증했다.
+- 다른 레포의 callback unit을 parameter로 받는 member(unit의 origin이 `callback`인 `{unit, library}` 타입)는 어떤 target도
+  생성되지 않았다. "the type ... is not generated yet"으로 거부되었기 때문이다. 이제 PHP, Python, Node는 언어 객체를 소유 레포의
+  코어 trait 구현으로 감싸고, 그 method는 `binding_core::Failure<<소유 레포 오류>>`를 돌려준다. 선언은 소유 패키지의 타입을
+  적는다. PHP는 소유 namespace의 interface, Python은 소유 패키지에서 가져온 Protocol, TypeScript는
+  `import("<소유 npm>").<이름>`이다. Go와 WASM은 그런 parameter를 이름으로 거부하고, id가 이 계약의 unit과 같은 callback unit도
+  거부한다(GN-6s). `make test-ts`로 검증했다.
+- 코어가 의존 레포의 kind를 그대로 전달하는 계약(E-1b (a))은 어떤 target도 생성되지 않았다. `errors.kinds`의 그런 행마다 "a kind of
+  another library (E-1b (a)) is not generated yet"으로 거부되었기 때문이다. 이제 그런 행은 `<바깥>/<안쪽>`을 적는다. 바깥은 그
+  라이브러리의 오류를 담은 코어 오류의 variant이고 안쪽은 그 오류의 variant이며, member는 `raises`에 같은 경로를 적는다. 모든
+  target은 코어 오류의 클래스·property match와 `raises`의 단언에서 그것을 `<바깥>(<안쪽> { .. })`로 맞추고, category는 라이브러리
+  계약에서 `<안쪽>` 행의 것이며, 그런 kind만 내는 member는 코어를 실패할 수 있는 호출로 부른다. schema는 `errors.kinds`와
+  `raises`에서 그 경로를 받고, 계약 검사는 `library`가 있는데 `<바깥>/`이 없는 행과 `library`가 없는데 그것이 있는 행을 보고한다
+  (CK-10, GN-7c). `packages/ts`의 `npm test`로 검증했다.
+- origin이 `host`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. host class와 host functions unit은 "a host class unit is not
+  generated yet"과 "a host functions unit is not generated yet"으로 거부되었고, host record의 field는 생성 record의 것처럼
+  판정되었다. 이제 생성기는 어느 target에도 host unit을 쓰지 않는다. 그 소스가 선언이고 host 패키지가 그것을 내보내기 때문이다.
+  타입에 host unit을 적는 생성 unit은 그 이유로 거부한다(GN-6ag). `packages/ts`의 `npm test`로 검증했다.
+- visibility가 `internal`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. 그런 unit마다 "an internal unit is not generated
+  yet"으로 거부되었기 때문이다. 이제 internal unit은 같은 kind의 public unit처럼 생성되고 공개 API가 아니라고 표시된다. PHP stub과
+  Node·WASM 선언에는 `@internal`이 있고, Python 이름은 어느 `__all__`에도 없으며(루트 module은 `<root>._root`에, 다른 module `m`은
+  `<root>._m`에 둔다), Go doc comment에는 U-1의 문장이 있다. 생성기가 public처럼 생성하던 public unit의 internal member는 이름을 대고
+  거부하며, 계약 검사는 internal unit의 예약어를 판정한다(CK-23)(GN-6r). `packages/ts`의 `npm test`로 검증했다.
 - 코어 receiver가 `self`인 method와 `cleanup`이 있는 class unit은 모든 target이 거부했다("a receiver self is not
   generated yet", "cleanup is not generated yet"). 그래서 닫는 호출이 소비하는 자원에는 binding이 없었다. 이제 PHP·Python·
   Node는 class의 잠금에서 값을 꺼내고(`Exclusive`와 `Shared`의 `take`, 객체는 그 뒤 kind `consumed`다, GN-6o), `cleanup`이

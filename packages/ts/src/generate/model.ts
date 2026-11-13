@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, innerVariant, outerVariant } from '../contract.ts';
 import { convert } from '../names.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
@@ -44,6 +44,9 @@ export class Refusals {
   }
 }
 
+// GN-6r, U-1: a unit of visibility internal is no public API of its package.
+export const isInternal = (unit: Unit): boolean => unit.visibility === 'internal';
+
 export interface Arg {
   name: Name;
   type: Type;
@@ -61,6 +64,10 @@ export interface CallbackUnit {
   members: CallbackMember[];
   // thread owner: a call from another thread is kind wrong_thread.
   owner: boolean;
+  // GN-6s: a callback unit of another repository, whose trait methods return the failure of that repository's core
+  // error; its types name that repository's units with their library.
+  library?: string;
+  error?: string;
 }
 
 export interface CallbackMember {
@@ -253,6 +260,8 @@ export interface Model {
   // GN-6af: the value classes without core_type.
   kept: KeptClass[];
   callbacks: CallbackUnit[];
+  // GN-6s: the callback units of other repositories that a parameter takes; the owning package declares them.
+  foreignCallbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
   // E-2: the error units, a parent before the units that extend it (P-4).
@@ -301,6 +310,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
+    // GN-6ag: the binding converts only the types that it generates, and it generates nothing of a host unit.
+    if (unit?.origin === 'host') throw new Unsupported(`${where}: a host unit ${unit.id} in a type of a generated unit is not generated (GN-6ag)`);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
@@ -355,8 +366,49 @@ export function collectModel(
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
-  const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
-  const carrying = carriers(contract.units);
+  // GN-6s: the callback units of other repositories that parameters take, each wrapped once. A unit of the owning
+  // contract that a member names without a library is that repository's unit.
+  const foreignCallbacks: CallbackUnit[] = [];
+  const foreignCallback = (id: string, library: string, where: string): boolean => {
+    const owner = foreign.get(library);
+    const unit = owner?.units.find((u) => u.id === id);
+    if (owner === undefined || unit?.kind !== 'interface' || unit.origin !== 'callback') return false;
+    if (units.has(id)) throw new Unsupported(`${where}: the callback unit ${id} of ${library} has the name of a unit of this contract (GN-6s)`);
+    if (foreignCallbacks.some((c) => c.unit.id === id && c.library === library)) return true;
+    const resolved = resolveNamedTypes(owner).units.find((u) => u.id === id) ?? unit;
+    const qualify = (type: Type): Type => {
+      if (typeof type === 'string') return type;
+      if ('list' in type) return { ...type, list: qualify(type.list) };
+      if ('optional' in type) return { ...type, optional: qualify(type.optional) };
+      if ('map' in type) return { ...type, map: qualify(type.map) };
+      if ('keyed_map' in type) return { ...type, keyed_map: qualify(type.keyed_map) };
+      if ('tuple' in type) return { ...type, tuple: type.tuple.map(qualify) };
+      if ('unit' in type && type.library === undefined) return { ...type, library };
+      return type;
+    };
+    const members: CallbackMember[] = (resolved.members ?? []).map((member) => {
+      if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
+      if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
+      if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
+      const params = (member.parameters ?? []).map((parameter) => {
+        if (parameter.required !== true) throw new Unsupported(`${member.id}: a default or rest parameter is not generated yet`);
+        const typed = { ...parameter, type: qualify(parameter.type) };
+        supportedType(typed.type, units, `${library}.${member.id}.${parameter.name.join('_')}`, foreign);
+        return typed;
+      });
+      const returns = qualify(member.returns ?? 'none');
+      supportedType(returns, units, `${library}.${member.id} returns`, foreign);
+      return { member, params, returns, receiver };
+    });
+    const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
+    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
+    return true;
+  };
+  // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
+  const ownVariants = new Set(contract.errors.kinds.map((row) => row.variant));
+  const carrying = carriers(contract.units, foreign);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
@@ -399,9 +451,11 @@ export function collectModel(
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
         continue;
       }
+      // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
+      const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
-      if (!source) supportedType(type, units, where, foreign, true);
+      if (!source && !foreignDirect) supportedType(type, units, where, foreign, true);
       args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
     }
     // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
@@ -409,9 +463,10 @@ export function collectModel(
     const firstDefault = args.findIndex((a) => a.default !== undefined);
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
+    const isForeignCallback = (type: Type): boolean => typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallbacks.some((c) => c.unit.id === type.unit && c.library === type.library);
     // E-1c: a member that calls language code, a callback or a function (GN-6z), fails with the core error or with
     // what that code raised.
-    const takesCallback = args.some((a) => holdsCallback(units, a.type) || holdsFunction(a.type));
+    const takesCallback = args.some((a) => holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -512,7 +567,14 @@ export function collectModel(
     if (refusals.found.length > before) refusedUnits.add(unit.id);
   }
   function collectUnit(unit: Unit): void {
-    if (unit.visibility !== 'public') throw new Unsupported(`${unit.id}: an internal unit is not generated yet`);
+    // GN-6ag, I-1: a host unit is code of the repository whose source is its declaration; the binding writes nothing of it.
+    if (unit.origin === 'host') return;
+    // GN-6r: an internal unit is generated as a public one and marked by each target; a member of a public unit has
+    // one form in every language, so an internal one is refused.
+    if (unit.visibility === 'public') {
+      const hidden = (unit.members ?? []).filter((m) => m.visibility !== 'public');
+      if (hidden.length > 0) throw new Unsupported(hidden.map((m) => `${m.id}: an internal member of a public unit is not generated yet (GN-6r)`));
+    }
     if (unit.native !== undefined) throw new Unsupported(`${unit.id}: native is not generated yet`);
     if (unit.kind === 'enum') {
       enums.push(unit);
@@ -651,7 +713,7 @@ export function collectModel(
       return true;
     }
   }
-  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks));
+  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks, foreign));
   const classes: ErrorClass[] = CATEGORIES.map((category) => {
     const row = contract.errors.classes[category] ?? {};
     // E-7: Go has no class table; its category types have fixed names, so a contract whose only target is Go names none.
@@ -682,20 +744,26 @@ export function collectModel(
     if (twice !== undefined) refusals.refuse(`${unit.unit.id}: the property ${twice} is declared twice (E-3 names kind, status and errno)`);
   }
   const kinds: CoreKind[] = contract.errors.kinds.flatMap((row) => refusals.attempt((): CoreKind[] => {
-    // E-1b (a): a row of another library, whose variant holds the error of that library, is not generated yet. A row
-    // with `source` is a variant of this crate (E-1b (b)) and is generated as any other.
-    if (row.library !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a kind of another library (E-1b (a)) is not generated yet`);
+    // GN-7c, E-1b (a): a row of another library names <outer>/<inner>, the variant of the core error that holds the error
+    // of the library and the variant of that error, and takes the category of the library's row of <inner>. A row with
+    // `source` is a variant of this crate (E-1b (b)) and is generated as any other.
+    if (row.library !== undefined && outerVariant(row.variant) === undefined) {
+      throw new Unsupported(`${row.variant}: a kind of another library names the variant of the core error that holds it, <outer>/<inner> (GN-7c)`);
     }
-    if (row.class === undefined) return [{ variant: row.variant, category: row.category, className: className(row.category) }];
+    if (row.library === undefined && outerVariant(row.variant) !== undefined) throw new Unsupported(`${row.variant}: a kind of this library names no inner variant (GN-7c)`);
+    const category = row.library === undefined ? row.category : foreign.get(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
+    if (category === undefined) {
+      throw new Unsupported(row.library === undefined ? `${row.variant}: a kind of this library names its category` : `${row.variant}: ${row.library} declares no kind ${innerVariant(row.variant)} (GN-7c)`);
+    }
+    if (row.class === undefined) return [{ variant: row.variant, category, className: className(category) }];
     // The unit that the row names was refused, and is named already.
     if (refusedUnits.has(row.class)) return [];
     const unit = errorUnits.find((u) => u.unit.id === row.class);
-    if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
-    return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
+    if (unit === undefined || unit.category !== category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${category} (E-2)`);
+    return [{ variant: row.variant, category, className: className(category), unit }];
   }) ?? []);
   if (contract.errors.binding.length > 0) refusals.refuse('errors.binding overrides are not generated yet');
-  const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
+  const enumPaths = new Set(kinds.map((k) => (outerVariant(k.variant) ?? k.variant)).map((v) => v.slice(0, v.lastIndexOf('::'))));
   if (enumPaths.size > 1) refusals.refuse(`the kinds name ${enumPaths.size} error enums; one is generated`);
   const [coreError] = [...enumPaths];
   // E-1c: the error of a Result is the core error of E-1, which a contract without kinds does not name.
@@ -773,10 +841,10 @@ export function collectModel(
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
   }
   for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
-  for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
+  for (const callback of [...callbacks, ...foreignCallbacks]) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, kept, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, kept, callbacks, foreignCallbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -790,7 +858,7 @@ const waits = (member: Member): boolean => member.wait !== undefined && member.w
 
 // GN-6h: the class units that carry language code, the least set that satisfies the two definitions. The set is read
 // from the contract alone, so it also counts members that the generator refuses for another reason.
-export function carriers(units: readonly Unit[]): { classes: Set<string>; carries: (type: Type) => boolean } {
+export function carriers(units: readonly Unit[], foreign: ReadonlyMap<string, Contract> = new Map()): { classes: Set<string>; carries: (type: Type) => boolean } {
   const byId = new Map(units.map((u) => [u.id, u]));
   const found = new Set<string>();
   const carries = (type: Type, seen: Set<string> = new Set()): boolean => {
@@ -801,7 +869,9 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
     if ('map' in type) return carries(type.map, seen);
     if ('keyed_map' in type) return carries(type.keyed_map, seen);
     if ('tuple' in type) return type.tuple.some((part) => carries(part, seen));
-    if (!('unit' in type) || type.library !== undefined) return false;
+    if (!('unit' in type)) return false;
+    // GN-6s: a callback unit of another repository carries language code as one of this repository does.
+    if (type.library !== undefined) return foreign.get(type.library)?.units.find((u) => u.id === type.unit)?.origin === 'callback';
     const unit = byId.get(type.unit);
     if (unit === undefined) return false;
     if (unit.origin === 'callback') return true;
@@ -844,8 +914,8 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
 }
 
 // GN-6h: the lock of each class unit.
-function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[]): void {
-  const carrying = carriers(contract.units);
+function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[], foreign: ReadonlyMap<string, Contract>): void {
+  const carrying = carriers(contract.units, foreign);
   const names = (value: unknown, id: string, seen: Set<string> = new Set()): boolean => {
     if (Array.isArray(value)) return value.some((item) => names(item, id, seen));
     if (typeof value !== 'object' || value === null) return false;
@@ -1074,7 +1144,7 @@ export function takesFunction(model: Model): boolean {
 
 // U-3: whether a contract has a callback or a function type, whose call keeps what the language code threw.
 export function keepsThrown(model: Model): boolean {
-  return model.callbacks.length > 0 || takesFunction(model);
+  return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || takesFunction(model);
 }
 
 // GN-6u: whether the binding holds Natives: for a value alias, or for a function type.

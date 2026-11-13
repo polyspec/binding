@@ -167,6 +167,11 @@
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$"
     },
+    "variantPath": {
+      "description": "A variant of the core error (E-1), or <outer>/<inner>: the variant of the core error that holds the error of a dependency and the variant of that error, for a kind that the core passes on (E-1b (a), GN-7c).",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(/[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*)?$"
+    },
     "word": {
       "oneOf": [
         {
@@ -708,7 +713,7 @@
             ],
             "properties": {
               "variant": {
-                "$ref": "#/$defs/rustPath"
+                "$ref": "#/$defs/variantPath"
               },
               "category": {
                 "$ref": "#/$defs/category"
@@ -1360,7 +1365,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/rustPath"
+            "$ref": "#/$defs/variantPath"
           }
         },
         "wait": {

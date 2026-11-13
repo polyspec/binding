@@ -10,7 +10,8 @@ the design ids are those of the binding design.
 ## Scope
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
-  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
+  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for public and internal units
+  (GN-6r), and nothing for a host unit (GN-6ag):
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
@@ -20,8 +21,8 @@ the design ids are those of the binding design.
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
-  that GN-6i does not list, `native`, a naming exception, a kind of another library, the
-  type `source` outside a parameter) is refused by name
+  that GN-6i does not list, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
+  type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
   refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
@@ -126,6 +127,9 @@ the design ids are those of the binding design.
   the entry points of a test feature (`panic-test`, `fault-test`, `codec-test`) use is compiled under those features
   alone (`#[cfg(any(feature = ...))]`), because the static library without them has no such entry point and would
   hold the helper unused.
+  A helper is used where the code calls it or passes it by its name; a method of the same name
+  (`map.insert(...)`) is no use of the helper `insert`, because a helper that only a method names is dead code that
+  may name types the crate does not declare.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
@@ -222,7 +226,7 @@ the design ids are those of the binding design.
   class unit holds its core value in a lock that is only tried when (1) a member of it has a write place, (2) a value
   of the class comes in from the language (a parameter, a field of a record or an element of a list in one, or the
   return of a callback), or (3) a member of it reaches language code. A type carries language code when it is a
-  callback unit, a function type, `host_value`, a value alias with an `out` row of kind `native`, or a class that
+  callback unit, also of another repository (GN-6s), a function type, `host_value`, a value alias with an `out` row of kind `native`, or a class that
   carries it, also through a field of a record, an `optional`, a `list`, a `tuple` or the value of a map. A class
   carries language code when a member with a receiver of it has a parameter of a type that carries it, or when a
   member that returns the class has such a parameter or is a member, with a receiver, of another class that carries
@@ -439,8 +443,8 @@ the design ids are those of the binding design.
   scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
-  `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row
-  are refused by name (G-4). An error unit of a module other than the root is a class of the
+  `errno` or `message`, a `class` that names no error unit of the category of its row are refused by name (G-4); a row
+  with `library` (E-1b (a)) is generated as GN-7c states. An error unit of a module other than the root is a class of the
   namespace of its module in PHP (GN-10), a class of `<root>._errors` that `<root>.<module>` imports in Python (GN-11),
   and an export of the entry by its name in Node and WASM, as every other name of a module is. Go generates an error
   unit as GN-15d states, in package `errors` whatever its module. WASM generates an
@@ -449,9 +453,21 @@ the design ids are those of the binding design.
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
   core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
-  returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
-  the path of a variant that holds the error of a dependency
-  (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
+  returns the one core error enum of E-1, so a variant that several members raise is asserted once. The variant of a
+  dependency that the core passes on is asserted by the pattern of GN-7c. Not generated yet: the projection function of
+  an error struct that holds a code enum.
+- **GN-7c** A kind of a dependency that the core passes on as it is (E-1b (a)): the row of `errors.kinds` names the
+  library and the path `<outer>/<inner>`, where `<outer>` is the variant of the core error of this repository that
+  holds the error of the library and `<inner>` the variant of that error as the row of the library's contract names
+  it; a member names the same path in `raises`. Every match of the core error (the class, the properties) and the
+  assertion of GN-7b take the pattern `<outer>(<inner> { .. })`, so a path whose outer variant does not hold that
+  inner variant does not compile (I-2). The category is that of the row of `<inner>` in the library's contract, the
+  class is the class of that category in this repository's table of E-2, or the error unit that the row names in
+  `class`, and the kind, status and errno are those that the core error gives (`Kinds`), as for its own rows. The
+  generated test of a raising case of such a kind is the test of GN-13 with that class. A row with `library` whose
+  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
+  the core error holds the error of the library inside one of its own variants, so only the path down to the inner
+  variant gives a pattern that the compiler checks against the core error (E-1b (a)).
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
   every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`
@@ -670,6 +686,45 @@ the design ids are those of the binding design.
   string key of those bytes. An object and a reference are made before their content and are the same object or
   reference at every position of their handle, so a cycle through them is made; an array, which is a value, stays
   kind `internal` inside its own making.
+- **GN-6ag** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
+  hand, and its source is its declaration (I-1, L-3). The generator writes nothing of it in any target: no entry
+  point, conversion, declaration, re-export or generated test, and the contract check requires no case of it (CK-22).
+  The host package exports it with its own entry (L-2a). A host unit takes a generated unit as a parameter (U-2 of the
+  design: a host operation on a generated unit is a function of a host functions unit), and a generated unit that
+  names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
+  generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
+  host unit would be a second declaration that could differ from its source.
+- **GN-6r** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
+  same conversions, refusals and generated tests, and each language marks it as no public API:
+  - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
+  - Python: its names are in no `__all__`, so `<root>` does not re-export them. The names of the root module are in
+    `<root>._root`, and those of the module `m` in `<root>._m`, a module of the internal names alone; the generated
+    tests call them there.
+  - Node and WASM: the JSDoc of each of its declarations holds the tag `@internal`, which a package that builds its
+    declarations with `stripInternal` leaves out.
+  - Go: the doc comment of each of its declarations ends with the sentence `It is internal to <library> (U-1) and is
+    no public API.`, because Go has no marker of an exported name that only one module uses.
+  Every member of an internal unit is internal with its unit. An internal member of a public unit is refused by name
+  (G-4), because its forms differ by language and no contract has one yet. The contract check judges the names of an
+  internal unit as those of a public one (CK-23), because the generated code declares them. Why: the code of the
+  repository (its hosts, its command tool and its cases) calls an internal unit through the binding as it calls a
+  public one, while a user of a package reads it as no API (U-1, P-3).
+- **GN-6s** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
+  an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
+  members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
+  calls the method of the language object through the API of its language, so the binding never takes the native
+  object of another binding out. A trait method returns the failure of the core error of the owning repository
+  (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the
+  language code is `Failure::Raised`, which the core of this repository passes on. The binding declares no type of
+  the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
+  Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
+  type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
+  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
+  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
+  The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
+  the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
+  native object of another binding lives in another module, so the binding of this repository can reach it only
+  through the methods that the language gives every object (T-3).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

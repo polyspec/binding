@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 6d78dde7831ae35b1a08fb1d57622a50a0d959a6bf81bcb1ae90222ce8b8afee -->
+<!-- source-sha256: 7cd9190b19d9c748b6b9fb6a0c11872c92d230b1ad3027b1f2ed87c7e0f634ee -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -80,7 +80,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `HttpCookieValueError`와 `HTTPCookieValueError`. 레포 이름의 약어 낱말은 아래 binding의 표다). PHP 클래스는
   `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의
   `class` 덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). variant와 binding
-  kind는 한 번만 선언한다.
+  kind는 한 번만 선언한다. `library`가 있는 행은 variant `<바깥>/<안쪽>`을 적고 그
+  `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은 `/`를 적지 않는다(GN-7c).
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
@@ -156,7 +157,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
   fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고, 그 행의 키는 `args`, `result`, `once`뿐이며
   `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다.
-- **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
+- **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
   parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는

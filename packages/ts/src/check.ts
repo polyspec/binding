@@ -18,7 +18,9 @@ import {
   type Parameter,
   type Type,
   type Unit,
+  innerVariant,
   kindsOf,
+  outerVariant,
 } from './contract.ts';
 import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
@@ -237,7 +239,7 @@ class Checker {
   kindCategories(): Map<string, Category | undefined> {
     const kinds = new Map<string, Category | undefined>();
     for (const row of this.contract.errors.kinds) {
-      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant);
+      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
       for (const kind of kindsOf(owner ?? row)) kinds.set(kind, owner?.category);
     }
     return kinds;
@@ -918,10 +920,17 @@ class Checker {
       if (variants.has(key)) this.report('CK-10', path, `${row.variant} is declared twice`);
       variants.add(key);
       let category = row.category;
+      // GN-7c: a kind that the core passes on is <outer>/<inner>, and a kind of the core error itself names no inner.
+      if (row.library !== undefined && outerVariant(row.variant) === undefined) {
+        this.report('CK-10', `${path}/variant`, `${row.variant} names no variant of the core error that holds the error of ${row.library}; a kind that the core passes on is <outer>/<inner> (GN-7c, E-1b (a))`);
+      }
+      if (row.library === undefined && outerVariant(row.variant) !== undefined) {
+        this.report('CK-10', `${path}/variant`, `${row.variant} names the inner variant of a dependency, but the row names no library (GN-7c)`);
+      }
       if (row.library !== undefined) {
         const dependency = this.dependency(row.library, `${path}/library`, 'CK-10');
-        const own = dependency?.errors.kinds.find((k) => k.variant === row.variant);
-        if (dependency !== null && own === undefined) this.report('CK-10', `${path}/variant`, `${row.library} declares no kind ${row.variant}`);
+        const own = dependency?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
+        if (dependency !== null && own === undefined) this.report('CK-10', `${path}/variant`, `${row.library} declares no kind ${innerVariant(row.variant)}`);
         category = own?.category;
       }
       if (row.class !== undefined) this.errorUnit(row.class, `${path}/class`, category);
@@ -1141,7 +1150,8 @@ class Checker {
       if (reserved === undefined) continue;
       const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
       for (const { value: unit, path } of this.units.values()) {
-        if (unit.origin === 'host' || unit.visibility !== 'public') continue;
+        // GN-6r: the generated code declares the names of an internal unit as those of a public one.
+        if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');
         if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
@@ -1150,7 +1160,6 @@ class Checker {
           if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
         }
         for (const [m, member] of (unit.members ?? []).entries()) {
-          if (member.visibility !== 'public') continue;
           const memberPath = `${path}${pointer('members', m)}`;
           const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
           const name = this.langName(lang, unit, member.name, role, member);
@@ -1291,7 +1300,7 @@ class Checker {
     const reported = new Set<string>();
     for (const [i, row] of this.contract.errors.kinds.entries()) {
       const library = row.library ?? this.contract.library;
-      const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant)?.category;
+      const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
       if (category !== 'internal' || mapped.has(library) || reported.has(library)) continue;
       reported.add(library);
       this.report('CK-22', `/errors/kinds/${i}`, `no case arms the point ${pointLibrary(library)}.internal as broken and raises a kind of the category internal, the one case that checks the class, kind and status of the error enum of ${library} (X-1, G-5)`);

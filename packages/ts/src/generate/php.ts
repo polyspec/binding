@@ -1,8 +1,9 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Name, Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed } from './model.ts';
 import { PHP_HOST, PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -726,9 +727,9 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 // a failure of the binding in the callback, goes to the core as a Raised that the generated caller throws again.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const label = langName('php', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('php', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -801,7 +802,7 @@ thread_local! {
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
 ${THREAD_THROWN}
-fn thrown(error: Thrown) -> ${failure} {
+fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     binding_core::Failure::Raised(keep_thrown(error))
 }
 
@@ -930,7 +931,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.objects.map((object) => objectOut(model, object)),
-    ...model.callbacks.map((c) => callbackRust(model, c)),
+    ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
@@ -1032,14 +1033,14 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
+${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
     };
 ${!withProperties ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
         Ok(object) => object,
         Err(fail) => return fail,
     };
     let written = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
+${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
     };
     match written {
         Ok(()) => error_exception(object, Kinds::kind(&error)),
@@ -1479,7 +1480,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
 ${indent} * N-4: the items${yields.key === undefined ? ' under their positions' : ' under their keys'}, a snapshot of the value.
 ${indent} *
 ${indent} * @return \\Iterator<${yields.key === undefined ? 'int' : docType(yields.key)}, ${docType(yields.value)}>
-${indent} */
+${isInternal(fn.unit) ? `${indent} * @internal\n` : ''}${indent} */
 ${indent}public function getIterator(): \\Iterator {}
 `;
     }
@@ -1488,16 +1489,20 @@ ${indent}public function getIterator(): \\Iterator {}
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
     return `${indent}/**
 ${indent} * T-8: the parameters take any value, which the extension judges.
-${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'constructor' ? '' : `${indent} * @return ${docType(fn.returns)}\n`}${indent} */
+${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'constructor' ? '' : `${indent} * @return ${docType(fn.returns)}\n`}${isInternal(fn.unit) ? `${indent} * @internal\n` : ''}${indent} */
 ${indent}${prefix} ${name}(${params.join(', ')})${returns} {}
 `;
+  };
+  // GN-6r: the docblock of a declaration of an internal unit holds @internal.
+  const doc = (unit: Unit, line: string | undefined, indent: string): string => {
+    if (!isInternal(unit)) return line === undefined ? '' : `${indent}/** ${line} */\n`;
+    return line === undefined ? `${indent}/** @internal */\n` : `${indent}/**\n${indent} * ${line}\n${indent} *\n${indent} * @internal\n${indent} */\n`;
   };
   for (const module of modules) {
     const items: string[] = [];
     for (const unit of model.resultRecords.filter((u) => u.module === module)) {
       const props = (unit.fields ?? []).map((f) => `            public readonly mixed $${langName('php', f.name, 'variable')},`);
-      items.push(`    /** T-4: the result form of the record; the constructor holds the values, which the extension judges when they enter. */
-    final class ${langName('php', unit.name, 'class')}
+      items.push(`${doc(unit, 'T-4: the result form of the record; the constructor holds the values, which the extension judges when they enter.', '    ')}    final class ${langName('php', unit.name, 'class')}
     {
         public function __construct(
 ${props.join('\n')}
@@ -1512,12 +1517,11 @@ ${props.join('\n')}
          * U-3: the extension calls it; the value it returns is judged as it enters (T-8).
          *
 ${docs.join('\n')}${docs.length > 0 ? '\n' : ''}         * @return ${docType(m.returns)}
-         */
+${isInternal(cb.unit) ? '         * @internal\n' : ''}         */
         public function ${langName('php', m.member.name, 'callable')}(${m.params.map((p) => `mixed $${langName('php', p.name, 'variable')}`).join(', ')}): mixed;
 `;
       });
-      items.push(`    /** U-3: a callback that PHP code implements. */
-    interface ${langName('php', cb.unit.name, 'class')}
+      items.push(`${doc(cb.unit, 'U-3: a callback that PHP code implements.', '    ')}    interface ${langName('php', cb.unit.name, 'class')}
     {
 ${lines.join('\n')}    }
 `);
@@ -1525,21 +1529,20 @@ ${lines.join('\n')}    }
     for (const object of model.objects.filter((o) => o.unit.module === module)) {
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
-      items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
+      items.push(`${doc(object.unit, 'T-5.', '    ')}    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
     {
 ${members.join('\n')}    }
 `);
     }
     for (const unit of model.enums.filter((u) => u.module === module)) {
-      items.push(`    enum ${langName('php', unit.name, 'class')}: string
+      items.push(`${doc(unit, undefined, '    ')}    enum ${langName('php', unit.name, 'class')}: string
     {
 ${(unit.variants ?? []).map((v) => `        case ${phpCase(v.name)} = '${v.value}';`).join('\n')}
     }
 `);
     }
     for (const constant of model.constants.filter((c) => c.module === module)) {
-      items.push(`    const ${langName('php', constant.member.name, 'constant')} = ${JSON.stringify(constant.member.value)};\n`);
+      items.push(`${doc(constant.unit, undefined, '    ')}    const ${langName('php', constant.member.name, 'constant')} = ${JSON.stringify(constant.member.value)};\n`);
     }
     for (const fn of model.functions.filter((f) => f.module === module)) items.push(method(fn, '    '));
     blocks.push(`namespace ${phpNamespace(layout, module)} {

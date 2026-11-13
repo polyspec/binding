@@ -87,7 +87,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   acronym words of a repository name are binding's table, below), and a PHP class is in the namespace of
   `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
-  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once.
+  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once. A row with
+  `library` names the variant `<outer>/<inner>`, whose `<inner>` the library's contract declares, and a row without
+  `library` names no `/` (GN-7c).
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row
@@ -183,7 +185,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   value of a function type is `{"function": [<row>]}`, whose rows have no key but `args`, `result` and `once` and
   give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an object of the
   language has no row.
-- **CK-23** Reserved words (N-2): the name that a target language gives a public unit, member, parameter or field is
+- **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its
   keywords everywhere; JavaScript (Node, WASM) its reserved words and `eval` and `arguments` for a class, a function

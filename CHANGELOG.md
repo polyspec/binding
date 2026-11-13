@@ -286,6 +286,45 @@
   through the glue module that a hook before the tests loads), and Go puts such a test with the cases that arm faults,
   its goroutine locked to its thread. A test that needs any receiver takes none that arms faults.
 
+- The Go C ABI of a contract with a callback unit and no class unit did not compile (E0425 `Table`, E0433 `Arc`, in
+  `tests/e2e/consumer`): the generator counted a helper as used where its name was a word of the code, so
+  the method call `lock(&THROWN).insert(handle, error)` brought in the table helper `insert`, which names the `Table`
+  and `Arc` of class units. A method of the name of a helper (`.insert(`) is now no use of it, in the helpers of every
+  target, which all select them through `usedHelpers` (GN-4). Verified by `make test-ts`: 293 pass.
+- A class or a member that took a callback unit of another repository was judged as one that reaches no language
+  code: the computation of the types that carry language code (GN-6h) returned false for every type of another
+  repository, so a member with wait `blocking_io` or `async_driver` that took such a callback was generated, and the
+  lock of its class did not count it. Such a callback unit now carries language code, so the lock counts it, a member
+  with `async_driver` that takes it is refused with "a member with wait async_driver that reaches language code is not
+  generated", and a member with `blocking_io` that takes it is generated as a member that reaches language code
+  (GN-6s). Verified by `make test-ts`.
+- A member whose parameter is a callback unit of another repository (a `{unit, library}` type whose unit has origin
+  `callback`) generated no target: it was refused with "the type ... is not generated yet". PHP, Python and Node now
+  wrap the language object as an implementation of the owner's core trait, whose methods return
+  `binding_core::Failure<<owner error>>`, and the declarations name the type of the owning package: the PHP interface
+  in the owner namespace, the Python Protocol imported from the owner package, and `import("<owner npm>").<Name>` in
+  TypeScript. Go and WASM refuse such a parameter by name, and a callback unit whose id is a unit of this contract is
+  refused (GN-6s). Verified by `make test-ts`.
+- A contract whose core passes on the kinds of a dependency (E-1b (a)) generated no target: every such row of
+  `errors.kinds` was refused with "a kind of another library (E-1b (a)) is not generated yet". Such a row now names
+  `<outer>/<inner>`, the variant of the core error that holds the error of the library and the variant of that error,
+  and a member names the same path in `raises`. Every target matches it as `<outer>(<inner> { .. })` in the class and
+  property matches of the core error and in the assertion of `raises`, with the category of the library's row of
+  `<inner>`, and a member that raises only such a kind calls its core as fallible. The schema takes the path in
+  `errors.kinds` and `raises`, and the contract check reports a row with `library` without `<outer>/` and a row without
+  `library` with it (CK-10, GN-7c). Verified by `npm test` in `packages/ts`.
+- A contract with a unit of origin `host` generated no target: a host class and a host functions unit were refused
+  with "a host class unit is not generated yet" and "a host functions unit is not generated yet", and the fields of a
+  host record were judged as those of a generated one. The generator now writes nothing of a host unit in any
+  target, because its source is its declaration and the host package exports it, and a generated unit that names a
+  host unit in a type is refused with that reason (GN-6ag). Verified by `npm test` in `packages/ts`.
+- A contract with a unit of visibility `internal` generated no target: every such unit was refused with "an internal
+  unit is not generated yet". An internal unit is now generated as a public unit of its kind and marked as no public
+  API: `@internal` in the PHP stub and in the Node and WASM declarations, its Python names in no `__all__` (the root
+  module keeps them in `<root>._root`, another module `m` in `<root>._m`), and a sentence of U-1 in its Go doc comment.
+  An internal member of a public unit, which the generator generated as a public one, is refused by name, and the
+  contract check judges the reserved words of an internal unit (CK-23) (GN-6r). Verified by `npm test` in
+  `packages/ts`.
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,

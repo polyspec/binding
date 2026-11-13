@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync, holdsFunction } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, refuseConsumers, Refusals, waitsAsync, holdsFunction } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -109,6 +109,18 @@ export function generate(inputs: Inputs): Files {
     for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
       for (const arg of fn.args.filter((a) => holdsFunction(a.type))) {
         refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} (GN-6z)`);
+      }
+    }
+  }
+  // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
+  for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
+    const forTarget = membersFor(model, target);
+    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
+      for (const arg of fn.args) {
+        const library = libraryOf(arg.type);
+        if (library !== undefined && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === (arg.type as { unit: string }).unit)) {
+          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6s)`);
+        }
       }
     }
   }

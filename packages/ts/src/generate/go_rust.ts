@@ -5,6 +5,7 @@
 // exports, and the test features add the entry points of the generated tests (GN-5).
 
 import type { Name, Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
@@ -1095,7 +1096,7 @@ function foreignFailureRust(model: Model): string {
     const library = (alias.library ?? '').replaceAll('-', '_');
     const error = alias.error ?? { path: '', kinds: [] };
     const variant = (category: string): string => `Category::${category.charAt(0).toUpperCase()}${category.slice(1)}`;
-    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${variant(k.category)},`).join('\n');
+    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${variant(k.category)},`).join('\n');
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the category that its E-1 gives it.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
@@ -1122,17 +1123,17 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const variant = (category: string): string => `Category::${category.charAt(0).toUpperCase()}${category.slice(1)}`;
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${variant(k.category)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${variant(k.category)},`).join('\n');
   const hasUnits = model.kinds.some((k) => k.unit !== undefined);
   const hasProperties = model.kinds.some((k) => k.unit !== undefined && errorProperties(k.unit).length > 0);
   // E-2, I-3: the class of the kind, 1 + the index of its error unit or 0 for its category, and the properties of the
   // unit and its parents, read from the core error by a second match without a wildcard.
   const classArms = model.kinds.map((k) => {
-    if (k.unit === undefined) return `        ${k.variant} { .. } => 0,`;
+    if (k.unit === undefined) return `        ${variantPattern(k.variant)} => 0,`;
     const index = model.errorUnits.indexOf(k.unit) + 1;
     const properties = errorProperties(k.unit);
-    if (properties.length === 0) return `        ${k.variant} { .. } => ${index},`;
-    return `        ${k.variant} { .. } => {
+    if (properties.length === 0) return `        ${variantPattern(k.variant)} => ${index},`;
+    return `        ${variantPattern(k.variant)} => {
             let output = &mut properties;
 ${properties.map(({ property }) => `            ${convertOut(model, property.returns, `${property.corePath}(&error)`)};`).join('\n')}
             ${index}

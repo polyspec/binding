@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2c506a0ab7c0cc4b207ccc55eb914d93e71efbca57a1c0101cebf9e2ff205ece -->
+<!-- source-sha256: 4d1c5c2de4c161da828e0cdc6baa6c3f6f0500ea3e60b267de0f11eab0b7d593 -->
 # 생성기
 
 [English](generator.md)
@@ -13,8 +13,8 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
+  recognize가 있는 callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -101,6 +101,9 @@
   시험 feature(`panic-test`, `fault-test`, `codec-test`)의 진입점만 쓰는 Go C ABI의 도우미는 그 feature에서만
   컴파일된다(`#[cfg(any(feature = ...))]`). 그 feature 없는 정적 라이브러리에는 그런 진입점이 없어서 도우미가 쓰이지 않기
   때문이다.
+  도우미를 쓰는 것은 코드가 그 이름으로 그것을 부르거나 넘길 때다. 같은 이름의 method(`map.insert(...)`)는 도우미
+  `insert`를 쓰는 것이 아니다. method만 그 이름을 적는 도우미는 죽은 코드이고, crate가 선언하지 않은 타입을 적을 수 있기
+  때문이다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는
@@ -183,7 +186,7 @@
   그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`다. 그 밖의 자리는 모두 읽기 쪽 자리이며, parameter는
   계약이 그 빌림을 적기 전까지 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
   unit의 member에 쓰기 쪽 자리가 있다, (2) 그 class의 값이 언어에서 들어온다(parameter, 그 안의 record field나 list 원소,
-  callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit, 함수 타입,
+  callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit(다른 레포의 것 포함, GN-6s), 함수 타입,
   `host_value`, kind `native`인 `out` 행을 가진 값 alias, 언어 코드를 담는 class일 때이며, record field, `optional`, `list`,
   `tuple`, map 값을 거쳐서도 그렇다. class가 언어 코드를 담는 것은 그 class를 receiver로 받는 member가 언어 코드를 담는
   타입의 parameter를 갖거나, 그 class를 돌려주는 member가 그런 parameter를 갖거나 언어 코드를 담는 다른 class의 receiver를
@@ -359,8 +362,8 @@
   bytes이거나 그 optional이다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
-  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). 루트가
+  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property,
+  그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). `library`가 있는 행(E-1b (a))은 GN-7c대로 생성한다. 루트가
   아닌 module의 오류 unit은 PHP에서는 그 module의 namespace에 있는 클래스이고(GN-10), Python에서는 `<root>.<module>`이
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
@@ -368,8 +371,17 @@
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
   컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
-  한 번 단언한다. 아직 생성하지 않는 것: 의존 레포의 오류를 담은 variant의 경로
-  (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
+  한 번 단언한다. 코어가 그대로 전달하는 의존 레포의 variant는 GN-7c의 pattern으로 단언한다. 아직 생성하지 않는 것: code enum을
+  담은 오류 구조체의 투영 함수.
+- **GN-7c** 코어가 그대로 전달하는 의존 레포의 kind(E-1b (a)): `errors.kinds`의 행은 라이브러리와 경로 `<바깥>/<안쪽>`을 적는다.
+  `<바깥>`은 그 라이브러리의 오류를 담은 이 레포 코어 오류의 variant이고, `<안쪽>`은 그 라이브러리 계약의 행이 적은 그 오류의
+  variant다. member는 `raises`에 같은 경로를 적는다. 코어 오류의 모든 match(클래스, property)와 GN-7b의 단언은 pattern
+  `<바깥>(<안쪽> { .. })`을 쓰므로, 바깥 variant가 그 안쪽 variant를 담지 않는 경로는 컴파일되지 않는다(I-2). category는 라이브러리
+  계약에서 `<안쪽>` 행의 category이고, 클래스는 이 레포 E-2 표의 그 category 클래스이거나 행이 `class`에 적은 오류 unit이며, kind,
+  status, errno는 자기 행처럼 코어 오류가 주는 것(`Kinds`)이다. 그런 kind를 내는 case의 생성 시험은 그 클래스로 쓴 GN-13의
+  시험이다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
+  (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
+  컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature
@@ -560,6 +572,35 @@
   가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
   그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는
   중에 다시 나오면 여전히 kind `internal`이다.
+- **GN-6ag** origin이 `host`인 unit(U-1: class, functions unit, record)은 레포가 손으로 쓰는 코드이고, 그 소스가 선언이다(I-1, L-3).
+  생성기는 어느 target에도 그것을 쓰지 않는다. 진입점, 변환, 선언, 다시 내보내기, 생성 시험이 없고, 계약 검사는 그 case를
+  요구하지 않는다(CK-22). host 패키지가 자기 진입점으로 그것을 내보낸다(L-2a). host unit은 생성 unit을 parameter로 받는다(설계의
+  U-2: 생성 unit에 대한 host 동작은 host functions unit의 함수다). 타입에 host unit을 적는 생성 unit은 이름을 대고 거부한다(G-4).
+  바인딩은 자기가 생성하는 타입만 변환하기 때문이다. 이유: host 코드가 바인딩을 부르고 바인딩은 host 코드를 부르지 않으므로,
+  host unit을 생성한 사본은 그 소스와 달라질 수 있는 두 번째 선언이 된다.
+- **GN-6r** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 시험으로 생성하고,
+  각 언어는 그것을 공개 API가 아니라고 표시한다.
+  - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
+  - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
+    module `m`의 이름은 internal 이름만 담은 module `<root>._m`에 있고, 생성 시험는 그 자리에서 부른다.
+  - Node와 WASM: 그 선언마다 JSDoc에 태그 `@internal`을 둔다. 선언을 `stripInternal`로 만드는 패키지는 그것을 뺀다.
+  - Go: 그 선언마다 doc comment가 문장 `It is internal to <library> (U-1) and is no public API.`로 끝난다. Go에는 한
+    module만 쓰는 export 이름을 나타내는 표시가 없기 때문이다.
+  internal unit의 member는 모두 그 unit과 함께 internal이다. public unit의 internal member는 이름을 대고 거부한다(G-4).
+  그 꼴이 언어마다 다르고 아직 그런 member를 가진 계약이 없기 때문이다. 계약 검사는 internal unit의 이름을 public unit의
+  이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
+  internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
+- **GN-6s** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
+  trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member를 확인하고(kind `invalid_callback`), `thread: owner`가 적용되며, 각
+  trait method는 그 언어의 API로 언어 객체의 method를 부르므로, 바인딩은 다른 바인딩의 native 객체를 꺼내지 않는다. trait
+  method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
+  언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
+  패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
+  타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
+  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
+  의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
+  method로만 그것에 닿을 수 있다(T-3).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

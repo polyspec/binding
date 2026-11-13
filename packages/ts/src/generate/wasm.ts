@@ -4,7 +4,8 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, type ObjectClass, RECEIVER_GUARD, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
+import { variantPattern } from '../contract.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -804,7 +805,7 @@ fn failure_error(failure: ${failure}) -> Fail {
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${kindClass(model, k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -824,7 +825,7 @@ ${arms}
   const propertyArms = model.kinds.map((k) => {
     const properties = k.unit === undefined ? [] : errorProperties(k.unit);
     const values = properties.map(({ property }) => `(${rustString(langName('wasm', property.member.name, 'variable'))}, ${convertOut(model, property.returns, `${property.corePath}(&error)`)})`);
-    return `        ${k.variant} { .. } => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
+    return `        ${variantPattern(k.variant)} => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
   }).join('\n');
   return `
 ${doc}
@@ -1313,6 +1314,8 @@ export function enter(Internal, call) {
 }
 
 function indexDts(model: Model): string {
+  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
+  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${jsBase(c.category)} {
@@ -1330,16 +1333,16 @@ export declare class ${langName('wasm', u.unit.name, 'class')} extends ${u.paren
     return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
   };
   const enums = model.enums.map((u) => `
-/** T-6. */
+/** T-6.${tag(u)} */
 export type ${langName('wasm', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
   const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent. */
+/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
 export interface ${langName('wasm', u.name, 'class')} {
 ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
-  const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
-  const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
+  const fns = model.functions.map((fn) => `${isInternal(fn.unit) ? '/** @internal */\n' : ''}export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
+  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
@@ -1356,7 +1359,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
-/** T-5. */
+/** T-5.${tag(o.unit)} */
 export declare class ${langName('wasm', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
@@ -1369,7 +1372,7 @@ export declare class ${langName('wasm', k.unit.name, 'class')} {
 ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
 }`).join('\n');
   const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements. */
+/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
 export interface ${langName('wasm', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');

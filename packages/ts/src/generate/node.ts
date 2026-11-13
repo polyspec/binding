@@ -2,10 +2,11 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -684,9 +685,9 @@ impl Unarmed {
 // that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -757,7 +758,7 @@ thread_local! {
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
 ${THREAD_THROWN}
-${!keepsThrown(model) ? '' : `fn thrown(error: Thrown) -> ${failure} {
+${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     binding_core::Failure::Raised(keep_thrown(error))
 }
 `}
@@ -877,7 +878,7 @@ function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const classIndex = (k: Model['kinds'][number]): number =>
     k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${classIndex(k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${classIndex(k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -916,7 +917,7 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
     })
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
@@ -938,7 +939,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -1168,6 +1169,11 @@ function tsType(model: Model, type: Type, input: boolean): string {
   // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
   if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
+  // GN-6s: a callback unit of another repository is the interface that its package declares.
+  const library = libraryOf(type);
+  if (unit?.origin === 'callback' && library !== undefined) {
+    return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
+  }
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
@@ -1401,6 +1407,8 @@ export const { ${exports.join(', ')} } = entry;
 }
 
 function indexDts(model: Model): string {
+  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
+  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
   // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
   const shown = (a: Arg | undefined): string => {
     if (a?.default === undefined) return '';
@@ -1412,6 +1420,8 @@ function indexDts(model: Model): string {
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
+    if (isInternal(fn.unit)) lines.push(`${indent} * @internal`);
+    if (lines.length === 1 && isInternal(fn.unit)) return `${indent}/** @internal */\n`;
     return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;
   };
   const classes = model.classes.map((c) => `
@@ -1426,10 +1436,10 @@ export declare class ${c.name} extends ${nodeBase(c.category)} {
 export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
 }`).join('\n');
   const enums = model.enums.map((u) => `
-/** T-6. */
+/** T-6.${tag(u)} */
 export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
   const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent. */
+/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
 export interface ${langName('node', u.name, 'class')} {
 ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
@@ -1437,7 +1447,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     const params = fn.params.map((p) => param(fn, p));
     return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
-  const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
+  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
@@ -1454,7 +1464,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
-/** T-5. */
+/** T-5.${tag(o.unit)} */
 export declare class ${langName('node', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
@@ -1467,7 +1477,7 @@ export declare class ${langName('node', k.unit.name, 'class')} {
 ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
 }`).join('\n');
   const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements. */
+/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
 export interface ${langName('node', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
