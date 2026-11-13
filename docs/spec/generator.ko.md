@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit(T-5), callback unit, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), Go는 다른 레포의 record, 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
+  `self`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit(T-5), callback unit, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), Go는 다른 레포의 record, 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -356,6 +356,24 @@
   attribute(`#[pyo3(name = ...)]`, `#[getter(...)]`, `#[php(name = ...)]`)다. 그래서 member의 이름이 lint가 메서드에
   판정하는 이름 규칙(`self`를 받는 `from_*`, std trait 메서드의 이름)에 걸리지 않는다. hook은 언어가 부르는 이름을
   유지한다(N-4). T-1 scalar의 field는 WASM 변환에 값으로 넘긴다. `Copy` 값의 borrow는 필요 없기 때문이다.
+- **GN-6m** `only`가 있는 unit(Q-4)은 `only`가 있는 member와 같이 그것이 적은 target에만 생성하고, 다른 target의
+  바인딩·선언·시험에는 그 unit의 아무것도 없다. `core_type`이 없는 origin `value`의 class(U-1, T-5)는 받은 언어 값을
+  보관하는 언어의 class이고, 그 뒤에 코어 값은 없다. 그 constructor는 `core`에 인자를 판정하고
+  `Result<(), Failure<E>>`를 돌려주는 코어 함수를 적는다. 그 함수의 첫 parameter는 `&mut dyn HostValues`이고, 값 alias의
+  parameter, 또는 값 alias의 list나 keyed map인 parameter는 바인딩이 기술하는 `HostValue`(그것들의 `Vec`이나
+  `KeyedMap`)이며, 기본값이 있는 parameter는 그것의 `Option`이고 호출이 생략하면 `None`이다. 실패는 다른 member의
+  실패와 같이 던진다(E-2). instance는 각 인자를 언어가 준 그대로 보관하고, 생략된 인자는 그 기본값을 언어의 값으로
+  보관한다: `{literal: null}`은 언어의 null이고 `{empty: "map"}`은 새 빈 map(`Map`, `dict`)이다. 코어가 `None`을 받으므로
+  이 기본값에는 `default_core`가 필요 없다. `core`가 없는 property는 같은 이름의 constructor parameter가 보관한 값을
+  준다. 쓰기 가능한 property(U-1 `writable`)는 그 값을 바꾸기도 하며, 바꾼 값은 쓰이는 곳에서, 곧 member가 값 alias로
+  그것을 읽을 때 판정된다. 각 instance는 정체성을 가진다. 그것은 instance가 만들어질 때 바인딩의 카운터 하나가 주는
+  수다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind와 그 정체성을 handle로 가진
+  `HostValue::Value`로 기술한다. 정체성이 없는 `core_type`이 있는 class의 handle은 같은 카운터의 새 수다.
+  `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한 것, 또는 그
+  property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의 constructor를 적은 `out`
+  행은 코어를 부르지 않고 instance를 만든다: `object`는 그 entry들의 map이고 `reference`는 그것이 담은 값이며,
+  instance는 내용보다 먼저 만들어지고 그 handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이
+  class를 생성한다. Go는 이름으로 거부하고(G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

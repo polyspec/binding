@@ -20,7 +20,7 @@ the design ids are those of the binding design.
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  `self`, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5), a callback unit and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses a
   record of another repository, the type `source`, a default and an error unit (GN-7a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
@@ -427,6 +427,27 @@ the design ids are those of the binding design.
   name of a member meets a naming convention that the lints judge for methods (`from_*` with `self`, the names of the
   methods of std traits); a hook keeps the name the language calls (N-4). A field of a scalar of T-1 is passed to its
   WASM conversion by value, because a borrow of a `Copy` value is needless.
+- **GN-6m** A unit with `only` (Q-4) is generated for the targets that it lists, as a member with `only` is, and the
+  binding, the declarations and the tests of every other target hold nothing of it. A class of origin `value` without
+  `core_type` (U-1, T-5) is a class of the language that keeps the language values that it was given; no core value is
+  behind it. Its constructor names in `core` a function of the core that judges the arguments and returns
+  `Result<(), Failure<E>>`: its first parameter is `&mut dyn HostValues`, and a parameter of a value alias, or a list or
+  a keyed map of one, is the `HostValue` that the binding describes (a `Vec` or a `KeyedMap` of them), an `Option` of it
+  when the parameter has a default, `None` when the call leaves it out. A failure is thrown as the failure of any
+  member (E-2). The instance keeps each argument as the language gave it, or, when it was left out, its default as a
+  value of the language: `{literal: null}` is the null of the language, `{empty: "map"}` a new empty map (a `Map`, a
+  `dict`); such a default needs no `default_core`, because the core takes `None`. A property without `core` gives the
+  kept value of the constructor parameter with its name; a writable property (U-1 `writable`) also sets it, and the
+  value that it sets is judged where it is used, when a member reads it through its value alias. Each instance has an
+  identity, a number that one counter of the binding gives when the instance is made. An `in` row of a value alias
+  that names a class (U-1) describes an instance of it as `HostValue::Value` with the kind of the row and that identity
+  as its handle; for a class with `core_type`, which has no identity, the handle is a new number of the same counter.
+  `read` of `HostValues` gives, for the handle, the property that the row names as `read`: the kept value, described
+  again, or the value that the core path of the property returns (a bool, an integer or a float). An `out` row whose
+  make names the constructor of a class without `core_type` makes an instance without calling the core: an `object`
+  is the map of its entries and a `reference` the value that it holds, and the instance is made before its content and
+  is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these classes; Go
+  refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

@@ -1694,3 +1694,51 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
+
+test('a unit with only is generated for the targets that it lists and is absent from the others (Q-4, GN-6m)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const only = { targets: ['python'], reason: 'the test of GN-6m' };
+  for (const unit of contract.units) {
+    if (unit.id === 'gate') unit.only = only;
+    for (const member of unit.members ?? []) if (member.id === 'tag.gate' || member.id === 'tag.gates') member.only = only;
+  }
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'node'] });
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /struct PyGate\b/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /class Gate\b/);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/generated/index.d.ts', 'packages/ts/generated/index.mjs', 'packages/ts/generated/tests/generated.test.mjs']) {
+    assert.doesNotMatch(text(out, path), /\bGate\b/, path);
+  }
+});
+
+test('a value class without core_type keeps the language values that its constructor judges and that a value alias reads and makes (U-1, U-7, GN-6m)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  sample.units.push({
+    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6m' },
+    members: [
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: 'data', default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: 'data', raises: [], wait: 'none', writable: true },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', ...targets] as Inputs['targets'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The constructor judges its argument as a HostValue, and None when it is left out; no core value is kept.
+    assert.match(lib, /polyspec_sample::check_boxed\(&mut host, /, path);
+    // The in row describes an instance by its identity, and read gives its kept value again.
+    assert.match(lib, /HostValue::Value \{ kind: ValueKind::Reference, handle: /, path);
+    assert.doesNotMatch(lib, /no value class is read/, path);
+    // The out row makes the instance before its content, without the core.
+    assert.match(lib, /OutValue::Reference \{ handle, value \} =>/, path);
+    assert.doesNotMatch(lib, /polyspec_sample::Boxed\b/, path);
+  }
+  // The property is writable in the declarations; the default is the null of the language.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi'), /class Boxed:[\s\S]*def __init__\(self, value: [^=]+= None\)[\s\S]*@value\.setter/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export class Boxed \{[^}]*constructor\(value\?: [^)]*\);[^}]*\n {2}value: /);
+  // PHP holds nothing of the class.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
+});
