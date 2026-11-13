@@ -248,7 +248,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if (typeof type === 'string') {
     // T-1: a source is the original of a parsing operation, so it is a parameter (toFn) and no other place.
     if (type === 'source') throw new Unsupported(`${where}: the type source is generated as a parameter only (T-1)`);
-    if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'none'].includes(type)) {
+    if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'path', 'none'].includes(type)) {
       throw new Unsupported(`${where}: the type ${type} is not generated yet`);
     }
     return;
@@ -866,7 +866,7 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
 export function rustType(model: Model, type: Type): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
-      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', none: '()',
+      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()',
     };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type}`);

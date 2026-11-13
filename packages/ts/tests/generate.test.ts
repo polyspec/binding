@@ -1524,7 +1524,7 @@ test('a path is the bytes of an OS path in every place, and each target judges i
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(nodeTests, /test\('T-1: joined refuses a NUL byte in dir'/);
   assert.match(nodeTests, /test\('B-3: joined refuses an unpaired surrogate in dir'/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function testT1JoinedDirRefusesANulByte\(\): void/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function testT1joineddirRefusesANulByte\(\): void/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestT1JoinedRefusesANulByteInDir\(t \*testing\.T\)/);
   // WASM has no OS path: the members are absent, and a path that reaches the target is refused by name.
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });

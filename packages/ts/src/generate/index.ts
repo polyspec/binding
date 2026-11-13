@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { type Model, collectModel, forLanguage, membersFor, refuseConsumers, Refusals, unitOf, waitsAsync } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -99,6 +99,10 @@ export function generate(inputs: Inputs): Files {
     for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)].filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for WASM yet (GN-6n)`);
     // GN-6o, GN-6p: nor a method with the receiver self, nor the finalizer of a class unit with cleanup.
     refuseConsumers(forWasm, 'WASM', refusals);
+    // GN-6y: WASM has no OS path; the contract leaves such a member out by only (Q-4, CK-15).
+    for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)]) {
+      if ([...fn.args.map((a) => a.type), fn.returns].some((type) => holdsPath(model, type, new Set()))) refusals.refuse(`${fn.member.id}: a path is not generated for WASM, which has no OS path (Q-4, CK-15, GN-6y)`);
+    }
   }
   refusals.fail();
   const files: Files = new Map();
@@ -109,4 +113,18 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
   refusals.fail();
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+// GN-6y: whether a type holds a path, also through the fields of a record of this contract.
+function holdsPath(model: Model, type: Type, seen: Set<string>): boolean {
+  if (typeof type === 'string') return type === 'path';
+  if ('list' in type) return holdsPath(model, type.list, seen);
+  if ('map' in type) return holdsPath(model, type.map, seen);
+  if ('keyed_map' in type) return holdsPath(model, type.keyed_map, seen);
+  if ('optional' in type) return holdsPath(model, type.optional, seen);
+  if ('tuple' in type) return type.tuple.some((part) => holdsPath(model, part, seen));
+  const unit = unitOf(model, type);
+  if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+  seen.add(unit.id);
+  return (unit.fields ?? []).some((field) => holdsPath(model, field.type, seen));
 }

@@ -20,7 +20,7 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source', path: 'in_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -44,7 +44,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes', path: 'out_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
@@ -121,6 +121,11 @@ fn in_source(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
     in_bytes(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
 }
 
+/// T-1 path, GN-6y: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array, which binding_core judges.
+fn in_path(value: Unknown<'_>, subject: &str) -> Result<std::path::PathBuf, Fail> {
+    binding_core::path_from_bytes(in_source(value, subject)?, subject).map_err(binding_error)
+}
+
 /// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
 fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.get_type().map_err(internal)? == ValueType::Undefined {
@@ -132,6 +137,16 @@ fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) ->
 /// T-7: bytes leave as a Uint8Array of their copy.
 fn out_bytes<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
     ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env).map_err(internal)
+}
+
+/// T-1 path, GN-6y: a string when the bytes of the path are UTF-8, and a Uint8Array of them when they are not, so that
+/// no byte is replaced.
+fn out_path<'env>(env: &'env Env, value: impl AsRef<std::path::Path>) -> Result<Unknown<'env>, Fail> {
+    let bytes = binding_core::path_bytes(value.as_ref());
+    match std::str::from_utf8(bytes) {
+        Ok(text) => out_text(env, text),
+        Err(_not_utf8) => out_bytes(env, bytes),
+    }
 }
 
 fn in_bool(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
@@ -1095,7 +1110,7 @@ pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', path: 'string | Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;

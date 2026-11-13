@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPath, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -16,6 +16,34 @@ const BAD_NUMBERS: Record<string, string[]> = {
 };
 
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
+
+// GN-6y: the directory of a test, in which a case resolves its relative paths; PHPUnit makes an instance per test, and
+// tearDown removes the directory.
+const PHP_CASE_PATH = `
+    private ?string $caseDir = null;
+
+    private function casePath(string $relative): string
+    {
+        if ($this->caseDir === null) {
+            $this->caseDir = sys_get_temp_dir() . '/case-' . bin2hex(random_bytes(8));
+            mkdir($this->caseDir);
+        }
+        return $this->caseDir . '/' . $relative;
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->caseDir === null) {
+            return;
+        }
+        $files = new \\RecursiveIteratorIterator(new \\RecursiveDirectoryIterator($this->caseDir, \\FilesystemIterator::SKIP_DOTS), \\RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($this->caseDir);
+        $this->caseDir = null;
+    }
+`;
 
 export function phpTests(model: Model, layout: PhpLayout): string {
   const enumRef = (name: string, value: string): string => {
@@ -30,7 +58,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';
     return `new class { ${(unit.members ?? []).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
   };
-  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew };
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
@@ -132,6 +160,29 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (${cls('value')} $error) {
             self::assertSame('invalid_number', $error->kind());
+        }
+    }`);
+      }
+      // GN-6y: a path with a NUL byte is kind invalid_path, and a value that is no string kind invalid_argument_type.
+      if (isPath(arg.type)) {
+        methods.push(`
+    public function testT1${name}${argName}RefusesANulByte(): void
+    {
+        try {
+            ${call(new Map([[arg, '"a\\x00b"']]))};
+            self::fail('no error');
+        } catch (${cls('value')} $error) {
+            self::assertSame('invalid_path', $error->kind());
+        }
+    }
+
+    public function testT1${name}${argName}RefusesWhatIsNoString(): void
+    {
+        try {
+            ${call(new Map([[arg, '1']]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_argument_type', $error->kind());
         }
     }`);
       }
@@ -477,7 +528,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{
+{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}
     public function testB7APanicIsKindInternal(): void
     {
         try {

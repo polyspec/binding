@@ -31,6 +31,8 @@ export interface Context {
   target?: 'wasm';
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
+  // GN-6y: the expression of a relative path of a case inside the directory of the test.
+  casePath?: (relative: string) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -39,9 +41,9 @@ export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: str
 export function placeholder(model: Model, ctx: Context, type: Type, rich = false): string {
   if (typeof type === 'string') {
     const table: Record<Lang3, Record<string, string>> = {
-      python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""', source: '"a"' },
-      node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()', source: "'a'" },
-      php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""', source: '"a"' },
+      python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""', source: '"a"', path: '"a"' },
+      node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()', source: "'a'", path: "'a'" },
+      php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""', source: '"a"', path: '"a"' },
     };
     return table[ctx.lang][type] ?? 'null';
   }
@@ -73,6 +75,16 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
   }
   throw new Unsupported(`no placeholder for ${shown(type)} is written yet (G-5)`);
+}
+
+// GN-6y: a case value of a path is a relative path inside the directory of the test; an empty or absolute path and a
+// part .. would leave it.
+export function casePathOf(value: unknown): string {
+  const parts = typeof value === 'string' ? value.split('/') : [];
+  if (typeof value !== 'string' || value === '' || value.startsWith('/') || value.includes('\\') || parts.includes('..') || parts.includes('')) {
+    throw new Unsupported(`a case value of the type path is a relative path inside the directory of the test, without .. (GN-6y), not ${shown(value)}`);
+  }
+  return value;
 }
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
@@ -121,6 +133,11 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
       if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
       if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
       return `hex2bin(${phpText(hex)})`;
+    }
+    if (type === 'path') {
+      const relative = casePathOf(value);
+      if (ctx.casePath === undefined) throw new Unsupported(`a case value of the type path is not generated for ${ctx.target ?? ctx.lang} (GN-6y)`);
+      return ctx.casePath(relative);
     }
     throw new Unsupported(`no case value of the type ${type}`);
   }
@@ -378,6 +395,9 @@ export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
 }
 
 // T-1, T-7: the base type of a parameter that takes bytes: bytes, or a source, which takes a text too.
+// GN-6y: whether a parameter or a field is a path, also an optional one.
+export const isPath = (type: Type): boolean => (typeof type === 'object' && 'optional' in type ? type.optional : type) === 'path';
+
 export const bytesKind = (type: Type): 'bytes' | 'source' | undefined => {
   const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
   return base === 'bytes' || base === 'source' ? base : undefined;

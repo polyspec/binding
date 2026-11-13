@@ -155,7 +155,7 @@ const namesUnit = (type: Type): boolean => {
 export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
     // T-1: a source is a []byte, which holds the bytes of any Go string ([]byte(s)).
-    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte' };
+    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte', path: 'string' };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type} is not generated for Go yet`);
     return found;
@@ -290,7 +290,7 @@ function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boo
 function goEncode(scope: GoScope, type: Type, expr: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes', path: 'Text' };
     return [`${t}enc.${method[type] ?? ''}(${expr})`];
   }
   if ('list' in type) {
@@ -338,7 +338,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
 export function goDecode(scope: GoScope, type: Type, target: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes', path: 'Text' };
     return [`${t}${target} = dec.${method[type] ?? ''}()`];
   }
   if ('list' in type) {

@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, takesNull } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -74,8 +74,19 @@ def _outcome(call):
         return ("error", type(error), getattr(error, "kind", None))
 `;
 
+// GN-6y: the directory of a test, in which a case resolves its relative paths; unittest makes an instance per test,
+// and the directory is removed at its end.
+const PYTHON_CASE_PATH = `
+    def _case_path(self, relative: str) -> str:
+        if not hasattr(self, "_case_dir"):
+            self._case_dir = tempfile.TemporaryDirectory()
+            self.addCleanup(self._case_dir.cleanup)
+        return os.path.join(self._case_dir.name, *relative.split("/"))
+`;
+
 export function pythonTests(model: Model, module: string): string {
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
+    casePath: (relative) => `self._case_path(${pyString(relative)})`,
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
@@ -184,6 +195,20 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises((pkg.${cls('value')}, pkg.${cls('type')})) as caught:
             ${call(new Map([[arg, 'None']]))}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
+      }
+      // GN-6y: a path with a NUL byte is kind invalid_path, and a value that os.fsencode refuses by its type is kind
+      // invalid_argument_type.
+      if (isPath(arg.type)) {
+        out.push(`
+    def test_t1_${name}_${argName}_refuses_a_nul_byte(self) -> None:
+        with self.assertRaises(pkg.${cls('value')}) as caught:
+            ${call(new Map([[arg, '"a\\x00b"']]))}
+        self.assertEqual(caught.exception.kind, "invalid_path")
+
+    def test_t1_${name}_${argName}_refuses_what_is_no_path(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${call(new Map([[arg, '1']]))}
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
       }
       const bytes = bytesKind(arg.type);
       if (bytes !== undefined) {
@@ -426,16 +451,17 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
+  const usesCasePath = out.some((block) => block.includes('self._case_path('));
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesCasePath ? 'import os\nimport tempfile\n' : ''}import unittest
 ${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
 from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
 
-class GeneratedTest(unittest.TestCase):
+class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
         with self.assertRaises(pkg.${cls('internal')}) as caught:
             _native._panic_test()

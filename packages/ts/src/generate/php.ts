@@ -31,7 +31,7 @@ const phpEnumType = (unit: Unit): string => `Php${langName('php', unit.name, 'cl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1', path: 'in_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -54,7 +54,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(Zval::new())';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', path: 'out_path' };
     return `${fn[type]}(${value})`;
   }
   if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
@@ -125,6 +125,11 @@ fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
         Some(text) => Ok(text.as_bytes().to_vec()),
         None => Err(type_error(subject, "string")),
     }
+}
+
+/// T-1 path, GN-6y: the bytes of a string, as they are, which binding_core judges.
+fn in_path(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
+    binding_core::path_from_bytes(in_latin1(value, subject)?, subject).map_err(binding_error)
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
@@ -207,6 +212,11 @@ fn out_bytes(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_zend_string(ZendStr::new(value.as_ref(), false));
     Ok(zval)
+}
+
+/// T-1 path, GN-6y: a string of the bytes of the path.
+fn out_path(value: impl AsRef<std::path::Path>) -> Result<Zval, Fail> {
+    out_bytes(binding_core::path_bytes(value.as_ref()))
 }
 
 fn out_bool(value: impl Borrow<bool>) -> Result<Zval, Fail> {
@@ -1290,7 +1300,7 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
-      return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
+      return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', path: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
