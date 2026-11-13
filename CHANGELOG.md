@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The scaffold wrote a `[lints]` table of its own into each binding manifest, and a repository whose packages must take
+  the lints of their workspace (`lints.workspace = true`) refused those manifests. Each binding manifest now says
+  `lints.workspace = true`, so the workspace table states the lints of R-1 for the core and the bindings, and an
+  exception of one crate is an attribute of its source with its reason (GN-4). The workspaces of `tests/e2e` hold the
+  lints of R-1. Verified by `npm test` in `packages/ts`.
 - The end-to-end run left out a raising case that gave its receiver as an instance value (GN-13f) or whose
   arguments did not have the shape of their types, and failed only at its end; so the classes contract failed CK-22.
   Every case of the repository now runs, and a case that a target cannot write is a refusal of that target. The

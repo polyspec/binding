@@ -73,25 +73,6 @@ export function usedHelpers(block: string, code: string): string {
   return named.filter(({ name }) => used.has(name)).map(({ item }) => `\n${item}\n`).join('');
 }
 
-// R-1 and K-2: the lints of every generated crate. They are the generated crate's own, not the workspace's, because a
-// binding framework's macros expand to unsafe code, which a repository's workspace may forbid for its core; the
-// generated code's own unsafe blocks carry an allow with its reason.
-export const GENERATED_LINTS = `[lints.rust]
-warnings = "deny"
-unsafe_code = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-allow_attributes_without_reason = "deny"
-unwrap_used = "deny"
-expect_used = "deny"
-let_underscore_must_use = "deny"
-let_underscore_untyped = "deny"
-map_err_ignore = "deny"
-as_conversions = "deny"
-`;
-
 // T-1: an integer return (uint, int, int64) may be a narrower Rust integer, which the generated code widens with From;
 // a parameter is the type of the table. Each trait takes the integer and a reference to it, as a return is read in
 // either form. The two methods have their own names because u8, u16 and u32 implement both traits.

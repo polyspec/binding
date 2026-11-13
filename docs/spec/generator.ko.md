@@ -87,9 +87,11 @@
   Cargo를 어디서 어떻게 시작하느냐에 따라 다르게 링크된다. build script는 host에서 돌므로 대상의 OS는 `cfg!(target_os)`가
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
-- **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) R-1의 lint를 스스로 갖는다. `unsafe_code`는 forbid가 아니라
-  deny다. ext-php-rs와 napi-rs의 macro가 unsafe 코드로 펼쳐지고 코어의 workspace는 그것을 금할 수 있기 때문이며, 생성
-  코드의 unsafe 블록마다 이유를 단 allow가 있다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
+- **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
+  받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
+  ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
+  있기 때문이다. Cargo는 workspace 표를 모든 구성원에 똑같이 적용하므로, 한 crate의 예외는 이유를 단 그 소스의
+  attribute(`#![allow(<lint>, reason = "...")]`)다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩

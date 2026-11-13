@@ -110,9 +110,12 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
-- **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
-  with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
-  workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
+- **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
+  `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
+  and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3
+  and wasm-bindgen expand to unsafe code, and each unsafe block of the generated code carries an allow with its reason.
+  An exception of one crate is an attribute of its source with its reason (`#![allow(<lint>, reason = "...")]`),
+  because Cargo applies the workspace table to every member alike. The generated
   code holds only the helper functions it uses, because the lints deny dead code.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.

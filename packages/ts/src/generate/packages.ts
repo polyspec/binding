@@ -5,7 +5,7 @@
 // core version, so a contract that the generator cannot generate yet still has them.
 
 import type { Contract } from '../contract.ts';
-import { type Files, GENERATED_LINTS, header } from './text.ts';
+import { type Files, header } from './text.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
@@ -112,7 +112,9 @@ ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../r
 ${bindingCore(suffix)}
 ${dependencies.join('\n')}
 
-${GENERATED_LINTS}`;
+[lints]
+workspace = true
+`;
 }
 
 const MANY = ['clippy::too_many_arguments', 'T-4: a record parameter is one argument per field'] as [string, string];
