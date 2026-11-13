@@ -819,6 +819,14 @@ export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: s
   return kind === undefined ? undefined : { kind, value: literals[ctx.lang][kind] ?? '' };
 }
 
+// GN-12a: a keyed_map parameter whose contract lists int keys, given the key 2^53, which is no safe integer.
+export function unsafeKeyMap(model: Model, ctx: Context, type: Type): string | undefined {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  if (typeof base !== 'object' || !('keyed_map' in base) || !base.key.includes('int')) return undefined;
+  const value = placeholder(model, ctx, base.keyed_map);
+  return { python: `{2**53: ${value}}`, node: `new Map([[2 ** 53, ${value}]])`, php: `[2 ** 53 => ${value}]` }[ctx.lang];
+}
+
 // U-3: the first parameter of a member that is a callback, for the tests of K-2.
 // G-5 callback fixture: the value of a callback parameter in a case, {"callback": {<callback member id>: [<row>]},
 // "calls": [{"member", "args"}]}. A row is {"args": {...}} with "result" (absent for a return of none) and "once".

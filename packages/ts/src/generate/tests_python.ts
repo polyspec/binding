@@ -3,13 +3,13 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**64'],
-  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
+  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
+  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**53', '-(2**53)', '2**63'],
   int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
   float: ['True', '"7"', '1'],
 };
@@ -205,6 +205,14 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, refused.value]]))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+    def test_b2_${name}_${argName}_refuses_a_key_outside_the_safe_integers(self) -> None:
+        with self.assertRaises(pkg.${cls('value')}) as caught:
+            ${call(new Map([[arg, unsafeKey]]))}
+        self.assertEqual(caught.exception.kind, "invalid_number")`);
       }
       if (arg.default !== undefined) {
         out.push(`
