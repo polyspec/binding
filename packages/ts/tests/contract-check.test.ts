@@ -575,7 +575,23 @@ describe('CK-68 the state machine of a member that reaches language code', () =>
   test('machine on a member that does not wait with async_driver', () =>
     fails('CK-68', `${at('session')}/members/2/core/machine`, (c) => { member(c, 'session.load').core.machine = true; }));
   test('a member with async_driver that reaches language code and names machine is accepted', () => {
-    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; }), []);
+    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; m.core.receiver = '&self'; }), []);
+  });
+});
+
+describe('CK-69 the receiver of a method with a state machine', () => {
+  const machine = (c: any, receiver: string): void => {
+    const m = member(c, 'session.load');
+    m.wait = 'async_driver';
+    m.core.machine = true;
+    m.core.receiver = receiver;
+  };
+  test('a method with machine that names &mut self', () =>
+    fails('CK-69', `${at('session')}/members/2/core/receiver`, (c) => { machine(c, '&mut self'); }));
+  test('a method with machine that names self', () =>
+    fails('CK-69', `${at('session')}/members/2/core/receiver`, (c) => { machine(c, 'self'); }));
+  test('a method with machine that names &self is accepted', () => {
+    assert.deepEqual(findings((c) => { machine(c, '&self'); }), []);
   });
 });
 
