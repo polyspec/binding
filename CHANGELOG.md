@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A contract error that `binding check` passed was first reported by `binding generate` as a refusal. The contract
+  check now reports three of them. CK-69: a `constructor`, a `property`, an `iterate` or a hook (`stringify`,
+  `to_json`, `primitive`) of a unit that is no host unit with a `wait` other than `none` is a finding that names the
+  member, its wait and the member that can wait in its place, a static member that makes the instance or a method
+  that gives the value or the items (GN-6m, GN-6n, N-4). CK-70: a class with `core_type` that has no constructor and
+  no `constructible: false`, or `constructible: false` and a constructor, is a finding (U-1). CK-71: a `variant` unit
+  of the origin `generated` without `core_type` is a finding (T-9). The refusals of the generator stay. Verified by
+  `npm test` in `packages/ts`: the 12 new tests of a finding failed before the change, each for its missing finding,
+  and `tests/contract-check.test.ts` passes 246 of 246 with it.
 - For a contract with a class that has a write place and no member that takes a class as an argument, the generated
   Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
   poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of

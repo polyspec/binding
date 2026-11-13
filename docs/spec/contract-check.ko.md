@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: efa4984cc38497d67d1317b169ab6272ddc9ec34cddc121e16d24b2b261d6fa5 -->
+<!-- source-sha256: ae73ae8677eaf05ffda60cdbad789c21ba8f2f35e30da9a2625304f7e0692021 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -148,6 +148,18 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-69** 기다리지 않는 member(generator GN-6m, GN-6n, N-4): host unit이 아닌 unit에서 `constructor`, `property`,
+  `iterate`, hook(`stringify`, `to_json`, `primitive`)은 `none`이 아닌 `wait`를 갖지 않는다. 어느 언어에도 constructor,
+  property, 순회를 await하는 형태가 없고, 언어는 hook을 자기 프로토콜로 호출하며 그 호출은 아무것도 await하지 않기
+  때문이다. finding은 그 member와 wait, 그리고 그 자리에서 기다릴 수 있는 member를 적는다: constructor에는 인스턴스를
+  만드는 `static` member, 나머지에는 값이나 항목을 주는 `method`다. host unit은 판정하지 않는다. 그 코드는 손으로 쓰기
+  때문이다(L-2a).
+- **CK-70** 생성할 수 있는 class(U-1): `core_type`을 적고 `abstract`가 아닌 origin `generated`나 `value`의 class는
+  생성할 수 있을 때에만 `constructor` member를 가지며, `constructible: false`를 적지 않으면 생성할 수 있다. 그래서
+  constructor가 없고 `static` member가 인스턴스를 만드는 class는 `constructible: false`를 적고, `constructible: false`인
+  class는 constructor를 갖지 않는다. 모든 언어가 class를 constructor와 함께 쓰거나 생성을 막아서 쓰기 때문이다.
+- **CK-71** variant의 코어 enum(T-9): origin `generated`인 `variant` unit은 `core_type`에 자기 Rust enum을 적는다. 각
+  case는 그 enum의 struct variant로 생성되고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d1a4eb319d27bc48e8968baeb07c14c440010f1ccc91d3e23d53a79f21cea9f8 -->
+<!-- source-sha256: b3aa05d72090f7d076530bd89e7496b92490215c2d7d6b4d315a3ebfdb676458 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding check`가 통과시킨 계약 오류를 `binding generate`가 거부로 처음 보고했다. 이제 계약 검사가 그 가운데 셋을
+  보고한다. CK-69: host unit이 아닌 unit의 `constructor`, `property`, `iterate`, hook(`stringify`, `to_json`,
+  `primitive`)이 `none`이 아닌 `wait`를 적으면 finding이고, 그 member와 wait, 그 자리에서 기다릴 수 있는 member를
+  적는다. 인스턴스를 만드는 static member, 또는 값이나 항목을 주는 method다(GN-6m, GN-6n, N-4). CK-70: `core_type`이
+  있는 class에 constructor도 `constructible: false`도 없거나, `constructible: false`와 constructor가 함께 있으면
+  finding이다(U-1). CK-71: `core_type`이 없는 origin `generated`의 `variant` unit은 finding이다(T-9). 생성기의 거부는
+  그대로 둔다. `packages/ts`의 `npm test`로 검증했다. finding을 요구하는 새 시험 12개가 변경 전에는 각각 그 finding이
+  없어서 실패했고, 변경 후 `tests/contract-check.test.ts`는 246개 중 246개가 통과한다.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
   `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
   feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는

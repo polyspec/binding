@@ -198,6 +198,9 @@ class Checker {
     this.wasmOnly();
     this.awaitableNames();
     this.reservedNames();
+    this.waitingMembers();
+    this.constructibleClasses();
+    this.variantCores();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
@@ -1143,6 +1146,54 @@ class Checker {
       if (only === undefined || only.targets.includes('wasm')) {
         const cause = blocking ? `wait ${member.wait}` : 'a path';
         this.report('CK-15', path, `${member.id} has ${cause}, so it needs only without wasm and a reason (Q-4)`);
+      }
+    }
+  }
+
+  // ---- CK-69: members that do not wait (GN-6m, GN-6n, N-4) ----
+
+  waitingMembers(): void {
+    // The member that can wait in the place of each kind that cannot.
+    const instead: Readonly<Record<string, string>> = {
+      constructor: 'make the instance by a static member, which can wait',
+      property: 'give the value by a method, which can wait',
+      iterate: 'give the items by a method, which can wait',
+    };
+    const hooks = ['stringify', 'to_json', 'primitive'];
+    const rules = { blocking_io: 'GN-6m', process_wait: 'GN-6m', async_driver: 'GN-6n' } as const;
+    for (const { member, unit, path } of this.members.values()) {
+      // L-2a: the code of a host unit is written by hand, so the binding writes no form of its members.
+      if (unit.origin === 'host' || member.wait === undefined || member.wait === 'none') continue;
+      const hook = hooks.includes(member.kind);
+      const remedy = hook ? 'the language calls this hook in its own protocol, so give the value by a method, which can wait' : instead[member.kind];
+      if (remedy === undefined) continue;
+      const article = member.kind === 'iterate' ? 'an' : 'a';
+      this.report('CK-69', `${path}/wait`, `${member.id}: ${article} ${member.kind} does not wait (wait ${member.wait}); ${remedy} (${hook ? 'N-4, ' : ''}${rules[member.wait]})`);
+    }
+  }
+
+  // ---- CK-70: constructible classes (U-1) ----
+
+  constructibleClasses(): void {
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'class' || (unit.origin !== 'generated' && unit.origin !== 'value')) continue;
+      if (unit.core_type === undefined || unit.abstract === true) continue;
+      const made = (unit.members ?? []).find((m) => m.kind === 'constructor');
+      if (unit.constructible !== false && made === undefined) {
+        this.report('CK-70', path, `${unit.id}: a class without a constructor declares constructible: false, or one constructor (U-1)`);
+      }
+      if (unit.constructible === false && made !== undefined) {
+        this.report('CK-70', `${path}/constructible`, `${unit.id}: a class with constructible: false has no constructor, so the constructor ${made.id} is a static member, or the class is constructible (U-1)`);
+      }
+    }
+  }
+
+  // ---- CK-71: the core enum of a variant (T-9) ----
+
+  variantCores(): void {
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind === 'variant' && unit.origin === 'generated' && unit.core_type === undefined) {
+        this.report('CK-71', path, `${unit.id}: a variant names its core enum in core_type (T-9)`);
       }
     }
   }
