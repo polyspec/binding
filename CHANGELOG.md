@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
+  of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
+  with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
+  runs the three to their end and names each failed one.
 - A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
   so one core with `fault-test` turned on the points of every core: a binding crate that left
   `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
