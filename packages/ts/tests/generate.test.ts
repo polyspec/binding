@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
@@ -13,7 +13,8 @@ import { caseTestTargets, generate as generateTargets, type Inputs } from '../sr
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
-import { trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, trackedPackages } from '../src/generate/packages.ts';
+import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
 // some of them for each contract by name, which the end-to-end check reports as the failures of those targets
@@ -592,6 +593,63 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   assert.equal(host.get('packages/php/native/build.rs'), PHP_BUILD);
 });
 
+test('every scaffolded manifest carries the licence of the core, and a core without one is a finding (GN-3f, CK-71)', () => {
+  const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  contract.targets = ['php', 'python', 'node', 'go', 'wasm'];
+  const out = trackedPackages(contract, '0.0.0', new Map(), [], new Map(), [], 'Apache-2.0');
+  for (const crate of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/ts/wasm/Cargo.toml', 'packages/php-ext/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
+    assert.match(String(out.get(crate)), /\n\[package\]\n(?:[^[]*\n)?license = "Apache-2\.0"\n/, crate);
+  }
+  assert.match(String(out.get('packages/python/pyproject.toml')), /\n\[project\]\n(?:[^[]*\n)?license = "Apache-2\.0"\n/);
+  assert.equal(JSON.parse(String(out.get('packages/ts/package.json'))).license, 'Apache-2.0');
+  assert.equal(JSON.parse(String(out.get('packages/php-ext/composer.json'))).license, 'Apache-2.0');
+  // No manifest names a licence that the core does not name.
+  for (const [path, body] of trackedPackages(contract, '0.0.0')) assert.doesNotMatch(body, /licen[cs]e|MIT/i, path);
+
+  const { root, contract: path } = fixtureCopy(() => {});
+  try {
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    const named = readFileSync(manifest, 'utf8');
+    assert.match(named, /\nlicense = "MIT"\n/);
+    const check = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', path], { encoding: 'utf8' });
+    // The licence of the core itself.
+    writeFileSync(manifest, named.replace('license = "MIT"', 'license = "Apache-2.0"'));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/php-ext/composer.json'), 'utf8')).license, 'Apache-2.0');
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /\nlicense = "Apache-2\.0"\n/);
+    assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
+    // The licence of the workspace, which the core inherits.
+    writeFileSync(manifest, named.replace('license = "MIT"', 'license.workspace = true'));
+    writeFileSync(join(root, 'Cargo.toml'), '[workspace]\nmembers = ["packages/rust"]\n\n[workspace.package]\nlicense = "BSD-3-Clause"\n');
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')).license, 'BSD-3-Clause');
+    assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
+    // A core without a licence: scaffold writes no licence, and check names the core manifest.
+    writeFileSync(manifest, named.replace('license = "MIT"\n', ''));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal('license' in JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')), false);
+    const missing = check();
+    assert.equal(missing.status, 1);
+    assert.match(String(missing.stderr), /packages\/rust\/Cargo\.toml: CK-71 the core polyspec-sample names no license, which every manifest of its binding packages carries \(GN-3f\)\n/);
+    assert.doesNotMatch(String(missing.stderr), /CK-19/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the PHP extension registers under the extension-name of its composer.json (GN-3g)', () => {
+  // The fixture, and the points of the end-to-end check, whose library has another name.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const points = { contract: read('points/packages/rust/interface.json'), caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]) };
+  for (const [sample, want] of [[load(), 'polyspec_sample'], [points, 'polyspec_points']] as const) {
+    const name = JSON.parse(String(trackedPackages(sample.contract, '0.0.0').get('packages/php-ext/composer.json')))['php-ext']['extension-name'];
+    assert.equal(name, want);
+    const lib = text(generateTargets({ contract: sample.contract, version: '0.0.0', coreLib: name, caseFiles: sample.caseFiles, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+    // The first call on the builder names the module, before anything is registered.
+    assert.ok(lib.includes(`\n    #[php_module]\n    #[php(startup = "startup")]\n    pub fn module(module: ModuleBuilder) -> ModuleBuilder {\n        let module = module\n            .name("${name}")\n`), name);
+  }
+});
+
 test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
   contract.targets.push('wasm');
@@ -684,6 +742,10 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
+    // GN-3f: the host's manifest names the licence of the core.
+    assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 project\.license is missing, not "MIT"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 license is missing, not "MIT"/);
+    assert.match(missing.stderr, /php\/composer\.json: CK-19 license is missing, not "MIT"/);
     // GN-3c: the release writes the platform packages into the packed manifest; the source manifest does not name them.
     assert.doesNotMatch(missing.stderr, /optionalDependencies/);
     // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
@@ -691,22 +753,25 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.binaryName is missing, not "sample"/);
     assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.targets is missing, not \["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"\]/);
     const pyproject = (module: string): string =>
-      `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
+      `[build-system]\nbuild-backend = "maturin"\n\n[project]\nlicense = "MIT"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
     // GN-3b: the host names its files and the fields of a release; the release writes the platform packages (GN-3c).
     const hostNpm = (targets: string[]): string => JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
+      license: 'Apache-2.0',
       type: 'module',
       files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
       napi: { binaryName: 'sample', targets },
     });
     writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
-    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
+    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', license: 'MIT', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 license is "Apache-2\.0", not "MIT"/);
+    assert.doesNotMatch(wrongModule.stderr, /(pyproject\.toml|composer\.json): CK-19 (project\.)?license/);
     assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
     assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 napi\.targets is \["x86_64-unknown-linux-gnu","aarch64-apple-darwin"\], not \[/);
-    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']));
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']).replace('Apache-2.0', 'MIT'));
     // The extension of a host PHP package is written by scaffold, so check compares it whole (GN-3b, GN-3c).
     const nativeComposer = join(root, 'packages/php/native/composer.json');
     const scaffolded = readFileSync(nativeComposer, 'utf8');
@@ -1075,12 +1140,24 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.match(goMod({ path: '../../../points/packages/rust' }), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n\\nreplace ${module} => \\.\\.\\/\\.\\.\\/\\.\\.\\/points\\/packages\\/go\\n$`));
   assert.match(goMod('=0.1.2'), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
   assert.match(goMod({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
-  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }]) {
-    assert.throws(() => goMod(spec), /polyspec-points: the dependency line of the core names no path, exact version or tag, so the Go module of points has no version \(GN-15f\)/, JSON.stringify(spec));
+  // GN-3e: a branch, a commit and a version range are development forms, which give v0.0.0 without a replace line; a
+  // tag beside a branch is no release form either.
+  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }, { git: 'https://github.com/polyspec/points.git', branch: 'main', tag: 'v0.1.2' }]) {
+    assert.match(goMod(spec), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n$`), JSON.stringify(spec));
   }
   // A library whose records the contract does not name is not required: the consumer names only a value alias.
   const consumer = consumerSample();
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+});
+
+test('pyproject.toml names another library at the version of a release form, and alone for a development form (GN-3e)', () => {
+  const { contract, foreign } = plotSample();
+  const pyproject = (spec: unknown): string => String(trackedPackages(contract, '0.0.0', new Map([['polyspec-points', spec]]), [], foreign).get('packages/python/pyproject.toml'));
+  assert.match(pyproject('=0.1.2'), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  assert.match(pyproject({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  for (const spec of [{ path: '../../../points/packages/rust' }, { git: 'https://github.com/polyspec/points.git', branch: 'main' }, '0.1']) {
+    assert.match(pyproject(spec), /\ndependencies = \["polyspec-points"\]\n/, JSON.stringify(spec));
+  }
 });
 
 test('a record of another repository is named in the package of its repository in the tests of every target (T-3, GN-6c)', () => {
@@ -1126,6 +1203,282 @@ test('binding scaffold reads the contract of a path dependency and writes its Go
     for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
     execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The plot and the points of the end-to-end check in a directory, with a cargo whose metadata names the core of points,
+// as Cargo names the checkout of a git dependency.
+const plotCopy = (): { root: string; env: NodeJS.ProcessEnv } => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
+  for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  execFileSync('mkdir', ['-p', join(root, 'bin')]);
+  const metadata = JSON.stringify({ packages: [{ name: 'polyspec-points', manifest_path: join(root, 'points/packages/rust/Cargo.toml') }] });
+  writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
+};
+
+test('a branch dependency of the core generates every target, and only the check of a release reports it (GN-3e, GN-15f, CK-70)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    const path = 'polyspec-points = { path = "../../../points/packages/rust" }';
+    assert.ok(readFileSync(manifest, 'utf8').includes(path));
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(path, 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
+    const contract = join(root, 'plot/packages/rust/interface.json');
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const scaffold = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(scaffold.status, 0, scaffold.stderr);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n$/);
+    assert.match(readFileSync(join(root, 'plot/packages/python/Cargo.toml'), 'utf8'), /\npolyspec-points = \{ git = "https:\/\/github\.com\/polyspec\/points\.git", branch = "main" \}\n/);
+    // No command stops with a stack trace or with the Go version, for any target.
+    const out = join(root, 'out');
+    for (const target of ['python', 'node', 'php', 'wasm', 'go']) {
+      const generated = run('generate', '--root', join(root, 'plot'), '--out', out, '--target', target);
+      assert.doesNotMatch(generated.stderr, /GN-15f|\n {4}at /, target);
+    }
+    const checked = run('check', contract);
+    assert.doesNotMatch(checked.stderr, /CK-19|CK-70|GN-15f|\n {4}at /);
+    // CK-70: the check of a release names the line.
+    const release = run('check', contract, '--release');
+    assert.equal(release.status, 1);
+    assert.match(release.stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-points names the branch main, a development form, and a release names the version =X\.Y\.Z or the tag vX\.Y\.Z \(GN-3e\)\n/);
+    assert.doesNotMatch(release.stderr, /CK-19|\n {4}at /);
+    // CK-70: the line on polyspec-binding-core of the core and of each binding crate, which follows the core's.
+    for (const crate of ['rust', 'python', 'ts', 'ts/wasm', 'php-ext', 'go/internal/ffi']) {
+      assert.match(release.stderr, new RegExp(`plot/packages/${crate}/Cargo\\.toml: CK-70 the dependency line of polyspec-binding-core names the branch v1/rust-core, a development form, and a release names the version =X\\.Y\\.Z or the tag vX\\.Y\\.Z \\(GN-3e\\)\\n`), crate);
+    }
+    // A tag is the release form, which CK-70 passes; the binding crates take the tag of binding that the core names.
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('branch = "main"', 'tag = "v0.1.2"').replace('branch = "v1/rust-core"', 'tag = "v0.3.0"'));
+    assert.equal(run('scaffold', '--root', join(root, 'plot')).status, 0);
+    assert.match(readFileSync(join(root, 'plot/packages/python/Cargo.toml'), 'utf8'), /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", tag = "v0\.3\.0", features = \["construct", "lock"\] \}\n/);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+    assert.doesNotMatch(run('check', contract, '--release').stderr, /CK-70/);
+    // An option that check does not know is an error of the command line.
+    assert.equal(run('check', contract, '--publish').status, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a scaffold whose cargo metadata fails names the Go module alone and writes the other packages (GN-15f, GN-3e)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
+    // A cargo that fails as it does without network for a Git dependency that was never fetched.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: failed to get polyspec-points as a dependency of package polyspec-plot" >&2\nexit 101\n', { mode: 0o755 });
+    const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
+    const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')], { encoding: 'utf8', env });
+    assert.equal(scaffold.status, 1);
+    assert.match(scaffold.stderr, new RegExp(`\\nbinding: packages/go: not written: points: the contract of the library is not found, so binding scaffold cannot tell whether go\\.mod requires its Go module \\(GN-15f\\): ${advice}\\nbinding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names \\(GN-3e\\): ${advice}\\n$`));
+    assert.doesNotMatch(scaffold.stderr, /\n {4}at /);
+    assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
+    for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
+      assert.equal(existsSync(join(root, 'plot/packages', written)), true, written);
+    }
+    // check and generate read the contracts for every target, so they fail with the same instruction.
+    for (const args of [['check', join(root, 'plot/packages/rust/interface.json')], ['generate', '--root', join(root, 'plot'), '--out', join(root, 'out')]]) {
+      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      assert.equal(run.status, 1, args[0]);
+      assert.match(run.stderr, new RegExp(`\\nbinding: ${advice}\\n$`), args[0]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the line of a binding crate on polyspec-binding-core follows the line of the core (GN-3e)', () => {
+  const contract = load().contract;
+  const line = (spec: unknown, path = 'packages/python/Cargo.toml', of = contract): string => /\npolyspec-binding-core = [^\n]*\n/.exec(String(trackedPackages(of, '0.0.0', spec === undefined ? new Map() : new Map([['polyspec-binding-core', spec]])).get(path)))?.[0] ?? '';
+  const git = 'https://github.com/polyspec/binding.git';
+  assert.equal(line({ git, tag: 'v0.3.0' }), `\npolyspec-binding-core = { git = "${git}", tag = "v0.3.0", features = ["construct", "lock"] }\n`);
+  assert.equal(line({ git, branch: 'next', features: ['fault-test'], optional: true }), `\npolyspec-binding-core = { git = "${git}", branch = "next", features = ["construct", "lock"] }\n`);
+  assert.equal(line('=0.3.0'), '\npolyspec-binding-core = { version = "=0.3.0", features = ["construct", "lock"] }\n');
+  // A path climbs to the place of the binding crate: the Go crate is two directories below the level of the core.
+  assert.equal(line({ path: '../../../binding/packages/core/rust' }), '\npolyspec-binding-core = { path = "../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
+  assert.equal(line({ path: '../../../binding/packages/core/rust' }, 'packages/go/internal/ffi/Cargo.toml'), '\npolyspec-binding-core = { path = "../../../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
+  // A core without the line: the development line of binding.
+  assert.equal(line(undefined), `\npolyspec-binding-core = { git = "${git}", branch = "v1/rust-core", features = ["construct", "lock"] }\n`);
+});
+
+test('a core without a line on polyspec-binding-core gives the binding crates the line of the generator itself: the tag of its version for a release, the development branch otherwise (GN-3e, CK-70)', () => {
+  const contract = load().contract;
+  const git = 'https://github.com/polyspec/binding.git';
+  const manifests = (own: { version: string; commit: string | undefined }, core?: unknown): string[] =>
+    [...trackedPackages(contract, '0.0.0', core === undefined ? new Map() : new Map([['polyspec-binding-core', core]]), [], new Map(), [], 'MIT', own)].filter(([path]) => path.endsWith('Cargo.toml')).map(([, text]) => text);
+  // The generator of a release knows no commit of itself (CK-20): it was installed at its version.
+  const released = { version: '0.3.0', commit: undefined };
+  const tagged = manifests(released);
+  assert.ok(tagged.length >= 5, `the fixture has ${tagged.length} binding crates`);
+  for (const text of tagged) {
+    assert.match(text, /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", tag = "v0\.3\.0", features = \[/);
+    // The tag of a release is a release form, so the check of a release reports nothing in the crate (CK-70).
+    assert.equal(bindingCoreFinding(parse(text)), undefined);
+  }
+  // A generator that knows its commit is a development generator: a checkout, a tree of git archive, an install from Git.
+  const development = { version: '0.3.0', commit: 'a'.repeat(40) };
+  for (const text of manifests(development)) {
+    assert.match(text, /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", branch = "v1\/rust-core", features = \[/);
+    assert.match(String(bindingCoreFinding(parse(text))), /^the dependency line of polyspec-binding-core names the branch v1\/rust-core, a development form/);
+  }
+  // The line of the core, when it names one, is followed by either generator.
+  for (const text of manifests(released, { git, branch: 'next' })) assert.match(text, /\npolyspec-binding-core = \{ git = "[^"]+", branch = "next", features = \[/);
+});
+
+test('a tracked package that scaffold cannot write is named, and the other packages are written and compared (GN-3e, CK-19)', () => {
+  const { root, env } = plotCopy();
+  try {
+    // points has no Go module, whose record the Go binding of plot names.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.targets = points.targets.filter((target: string) => target !== 'go');
+    delete points.packages.go;
+    writeFileSync(pointsPath, JSON.stringify(points));
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const scaffold = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(scaffold.status, 1);
+    assert.match(scaffold.stderr, /^binding: packages\/go: not written: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n$/);
+    assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
+    for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
+      assert.equal(existsSync(join(root, 'plot/packages', written)), true, written);
+    }
+    const checked = run('check', join(root, 'plot/packages/rust/interface.json'));
+    assert.equal(checked.status, 1);
+    assert.match(checked.stderr, /plot\/packages\/go: CK-19 binding scaffold does not write it: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\) \(L-2\)\n/);
+    assert.doesNotMatch(checked.stderr, /CK-19 (is missing|differs)|\n {4}at /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Three libraries: consumer takes the callback unit lookup of sample, whose member gives the record point of points, a
+// library that the contract of consumer does not name. cargo names the cores of sample and of points, as it does for
+// every package of the resolution of a workspace.
+const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-three-'));
+  for (const repository of ['consumer', 'sample', 'points']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  const edit = (path: string, change: (json: any) => void): void => {
+    const json = JSON.parse(readFileSync(join(root, path), 'utf8'));
+    change(json);
+    writeFileSync(join(root, path), JSON.stringify(json));
+  };
+  edit('consumer/packages/rust/interface.json', (contract) => {
+    const unit = contract.units.find((u: any) => (u.members ?? []).some((m: any) => m.id === 'consumer.fetch'));
+    const fetch = unit.members.find((m: any) => m.id === 'consumer.fetch');
+    unit.members.push({ ...fetch, id: 'consumer.ask', name: ['ask'], parameters: [{ name: ['lookup'], type: { unit: 'lookup', library: 'sample' }, required: true }, { name: ['key'], type: 'text', required: true }], returns: 'text', raises: [], core: 'polyspec_consumer::ask' });
+    contract.cases.push({ member: 'consumer.ask', file: 'contracts/cases.json', group: 'consumer_ask' });
+  });
+  edit('consumer/contracts/cases.json', (cases) => { cases.consumer_ask = []; });
+  edit('sample/packages/rust/interface.json', (contract) => {
+    contract.units.find((u: any) => u.id === 'lookup').members[0].returns = { optional: { unit: 'point', library: 'points' } };
+  });
+  const manifest = join(root, 'consumer/packages/rust/Cargo.toml');
+  const sample = 'polyspec-sample = { path = "../../../sample/packages/rust" }';
+  assert.ok(readFileSync(manifest, 'utf8').includes(sample));
+  writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(sample, `${sample}\npolyspec-points = { path = "../../../points/packages/rust" }`));
+  const sampleManifest = join(root, 'sample/packages/rust/Cargo.toml');
+  writeFileSync(sampleManifest, readFileSync(sampleManifest, 'utf8').replace('\n[dependencies]\n', '\n[dependencies]\npolyspec-points = { path = "../../../points/packages/rust" }\n'));
+  assert.ok(readFileSync(sampleManifest, 'utf8').includes('polyspec-points'));
+  execFileSync('mkdir', ['-p', join(root, 'bin')]);
+  const metadata = JSON.stringify({ packages: ['sample', 'points'].map((name) => ({ name: `polyspec-${name}`, manifest_path: join(root, `${name}/packages/rust/Cargo.toml`) })) });
+  writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
+};
+
+test('the contract of a library that only a unit of another library names is read, and the manifests name that library (T-3, CK-9, GN-3e, GN-15f)', () => {
+  const { root, env } = threeLibraries();
+  try {
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    // The contract check takes the unit of the third library, which is a record of its contract.
+    const checked = run('check', join(root, 'consumer/packages/rust/interface.json'));
+    assert.doesNotMatch(checked.stderr, /CK-9|has no unit|\n {4}at /);
+    // The targets that take a callback unit of another library generate, and their crates name the core of points.
+    const generated = run('generate', '--root', join(root, 'consumer'), '--out', join(root, 'out'));
+    assert.doesNotMatch(generated.stderr, /points has no unit point|\n {4}at /);
+    assert.match(generated.stderr, /\ngenerated: php, python, node\n$/);
+    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs']) {
+      assert.match(readFileSync(join(root, 'out/packages', lib), 'utf8'), /polyspec_points::Point\b/, lib);
+    }
+    // The manifests name the library whose types the generated code names: the Cargo manifest of each binding crate
+    // by the dependency line of the core, pyproject.toml, and go.mod for a record. scaffold reads the contracts by the
+    // path of each dependency line, of the core and then of the core of sample.
+    const scaffold = run('scaffold', '--root', join(root, 'consumer'));
+    assert.equal(scaffold.status, 0, scaffold.stderr);
+    const tracked = (path: string): string => readFileSync(join(root, 'consumer/packages', path), 'utf8');
+    for (const manifest of ['python/Cargo.toml', 'ts/Cargo.toml', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml']) {
+      assert.match(tracked(manifest), /\npolyspec-points = \{ path = "(\.\.\/)+points\/packages\/rust" \}\n/, manifest);
+    }
+    assert.match(tracked('python/pyproject.toml'), /\ndependencies = \["polyspec-points", "polyspec-sample"\]\n/);
+    assert.match(tracked('go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+    // A unit that the third library does not have is a finding of the check, with the libraries on the way.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.units = points.units.filter((u: any) => u.id !== 'point');
+    writeFileSync(pointsPath, JSON.stringify(points));
+    assert.match(run('check', join(root, 'consumer/packages/rust/interface.json')).stderr, /: CK-9 points has no unit point\n/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('libraries whose contracts name each other in a cycle are refused by name (T-3)', () => {
+  const { root, env } = threeLibraries();
+  try {
+    // points names a unit of sample, which names the record of points.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.units.find((u: any) => u.id === 'point').fields[0].type = { unit: 'data', library: 'sample' };
+    writeFileSync(pointsPath, JSON.stringify(points));
+    for (const args of [['check', join(root, 'consumer/packages/rust/interface.json')], ['generate', '--root', join(root, 'consumer'), '--out', join(root, 'out')], ['scaffold', '--root', join(root, 'consumer')]]) {
+      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      assert.equal(run.status, 1, args[0]);
+      assert.match(run.stderr, /^binding: the contracts of the libraries sample -> points -> sample name each other in a cycle, which is not generated \(T-3\)\n/m, args[0]);
+      assert.doesNotMatch(run.stderr, /\n {4}at /, args[0]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('generate refuses the Go target alone, with its sentence, when a library whose record the contract names has no Go module (GN-15f, GN-1c)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.targets = points.targets.filter((target: string) => target !== 'go');
+    delete points.packages.go;
+    writeFileSync(pointsPath, JSON.stringify(points));
+    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'plot'), '--out', join(root, 'out')], { encoding: 'utf8', env });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /go: not generated \(G-4\), 1 item:\n {2}points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n/);
+    assert.doesNotMatch(run.stderr, /\n {4}at /);
+    // The other targets are written.
+    for (const written of ['python/generated/lib.rs', 'ts/generated/lib.rs', 'ts/wasm/generated/lib.rs', 'php-ext/generated/lib.rs']) {
+      assert.equal(existsSync(join(root, 'out/packages', written)), true, written);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a failure that a case file causes is a refused target with its sentence and no stack trace (GN-1c)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-sentence-'));
+  try {
+    execFileSync('cp', ['-r', new URL('../../../tests/e2e/sample', import.meta.url).pathname, root]);
+    // A value {"host"} outside its closed table, which the generator reads when it writes the case of an alias.
+    const casesPath = join(root, 'sample/contracts/cases.json');
+    const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
+    const kase = cases.data_in.find((k: any) => k.raises !== undefined);
+    kase.value = { host: 'bogus' };
+    writeFileSync(casesPath, JSON.stringify(cases));
+    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'sample'), '--out', join(root, 'out')], { encoding: 'utf8' });
+    assert.equal(run.status, 1);
+    for (const target of ['php', 'python', 'node', 'go', 'wasm']) {
+      assert.match(run.stderr, new RegExp(`${target}: not generated \\(G-4\\), 1 item:\\n  the case ${kase.id} of the alias data: a value \\{"host"\\} is [^\\n]*, not "bogus" \\(G-5\\)\\n`));
+    }
+    assert.doesNotMatch(run.stderr, /\n {4}at /);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

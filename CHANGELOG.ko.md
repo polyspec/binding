@@ -1,11 +1,94 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3bb9ad834510875a1e7a57a5286ab14215af8183ee39c9835b1aefcc465843a5 -->
+<!-- source-sha256: 70b17e8d65f8a1835e53458afc0c1b63b1bce521fd9f5d8011ca7f8261e9ebdd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약이 다른 라이브러리의 callback unit을 받고 그 member가 제3 라이브러리의 unit을 그 라이브러리 계약의 이름 있는
+  타입(`types`)으로 이름하면, 제3 라이브러리에 그 unit이 있는데도 모든 target이 "`<library>.<member>` returns: `<third>`
+  has no unit `<unit>` (T-3)"로 거부되었다. `binding`이 계약 자신이 이름하는 라이브러리의 계약만 읽었기 때문이다. member가
+  제3 라이브러리를 타입으로 이름하면 자기 라이브러리의 unit만 쓸 수 있다는 CK-9의 finding이었다. 이제 `binding`은 계약을
+  닫힘까지 읽는다. 곧 읽은 계약이 이름하는 라이브러리의 계약을 Cargo가 코어에 대해 해석한 package에서 읽고, `scaffold`는
+  의존 줄의 `path`를 그것을 이름하는 코어에서 따라간다. CK-9는 제3 라이브러리의 unit을, 이름 있는 타입이 이름하는 것도, 그
+  소유자의 계약에 대해 확인하고 소유자에 없는 unit을 보고한다. 계약이 서로를 순환으로 이름하는 라이브러리는 그 이름과 함께
+  거부한다. manifest는 생성된 코드가 그 타입을 이름하는 라이브러리를 적는다(GN-3e, GN-15f). 그런 callback unit의 member가
+  이름하는 라이브러리도 바인딩 crate의 Cargo manifest에 의존 줄을, `pyproject.toml`에 package를 가지며, 그 타입이 record나 값
+  class이면 `go.mod`가 require한다. 코어는 그 라이브러리를 자기 manifest에 적는다. `scaffold`는 이제 모든 target에서 `path`가
+  없는 의존의 계약을 Cargo에 묻고, Cargo가 실패하면 계약 자신이 이름하는 라이브러리로 package를 쓴 뒤 그 사실을 적은 문장과
+  상태 1로 실패한다. `tests/e2e`의 어느 계약도 다른 라이브러리의 callback unit을 받지 않으므로 이 꼴을 컴파일하는
+  end-to-end 실행은 없다. Go와 WASM은 다른 라이브러리의 callback unit을 이름으로 거부한다(GN-6s). `make test-ts`로
+  확인했다. 새 테스트 둘과 `cargo metadata` 실패의 바뀐 테스트는 변경 전에 실패했고(425개 가운데 3개), 변경 후 425개
+  가운데 425개가 통과한다. 다른 라이브러리의 callback이 제3 라이브러리의 값을 주는 레포의 `binding generate`는 그 거부를 더
+  이름하지 않는다.
+- target go가 있는 계약이, 계약에 Go module(`packages.go`)을 적지 않은 라이브러리의 record나 값 class를 이름하면
+  `binding generate`가 stack trace와 함께 멈췄다("Cannot read properties of undefined"). Go 생성기가 그 계약에 module이
+  있는지 묻지 않고 읽었기 때문이다. `scaffold`와 `check`는 이미 이 이유로 Go module을 이름했다. 이제 `generate`는 Go
+  target을 그 라이브러리와 이유와 함께 거부하고 다른 target을 생성한다(GN-15f, GN-1c). `Cargo.lock`이 다른 라이브러리의
+  Go module이 생기기 전 commit을 고정한 레포에서 `binding generate --target go`로 발견했다. `make test-ts`로 확인했다. 새
+  테스트는 변경 전에 stack trace로 실패했고, 변경 후 423개 가운데 423개가 통과한다.
+- 다른 라이브러리의 값을 넘겨주기만 하는 코어처럼 `polyspec-binding-core` 줄을 적지 않은 코어에 대해, `binding scaffold`는
+  어느 생성기가 실행되든 binding의 개발 줄인 branch `v1/rust-core`를 모든 바인딩 crate에 썼다. 그래서 release의 생성기가
+  scaffold한 레포의 바인딩 crate도 branch를 적었고 `binding check --release`가 그것을 하나씩 보고했다. 이제 그런 코어는
+  생성기 자신의 줄을 받는다(GN-3e). 자신의 commit을 알지 못하는 생성기, 곧 그 버전으로 설치된 release의 생성기(CK-20)는
+  자기 버전의 tag `vX.Y.Z`를 쓰며 이것은 release 꼴이다. 자신의 commit을 아는 생성기(checkout, `git archive`의 tree,
+  Git에서의 설치)는 branch `v1/rust-core`를 그대로 쓴다. 코어가 적은 줄은 전과 같이 따른다. `make test-ts`로 확인했다. 새
+  테스트는 변경 전에 release의 생성기에 대해 manifest가 branch를 적어서 실패했고, 변경 후 422개 가운데 422개가 통과한다.
+- target go가 있고 코어가 다른 라이브러리를 `path`가 아닌 의존으로 적는 계약의 `binding scaffold`는 그 라이브러리의 계약을
+  `cargo metadata`에 묻는데, Cargo가 실패하면 모든 target의 scaffold가 멈췄다. 그 계약을 읽는 것은 `go.mod`뿐이므로, 이제
+  실패는 Go module만 쓰지 않은 것으로 이름하고, Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를 fetch하는 install
+  target(`cargo fetch --locked`)을 실행하라는 안내를 적으며, 다른 target의 package는 쓴다(GN-15f, GN-3e). 모든 target에서
+  계약을 읽는 `check`와 `generate`는 같은 안내와 함께 실패한다. `cargo metadata`는 Cargo가 workspace를 해석할 수 없는 곳에서
+  실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을 때다.
+  `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했고(401개 중 1개), 변경 뒤 401개 중 401개가 통과한다.
+- `binding check`는 host 패키지(L-2a)의 손으로 쓴 manifest의 licence를 읽지 않았다. 그래서 host 패키지가 코어와 다른
+  licence를 적거나 적지 않을 수 있었다. 이제 코어의 licence를 host manifest의 항목으로 읽는다(GN-3f, CK-19). host의
+  `pyproject.toml`의 `project.license`, host의 `package.json`과 host 라이브러리의 `composer.json`의 `license`다. 없거나 다른
+  값은 가져야 할 값과 함께 finding이다. host 패키지는 이 manifest들에 코어의 licence를 적는다. `make test-ts`로 확인했다.
+  L-2a의 바뀐 시험은 변경 전에 실패했고(400개 중 1개), 변경 뒤 400개 중 400개가 통과한다.
+- `binding scaffold`는 모든 바인딩 crate의 `polyspec-binding-core` 의존 줄을 코어가 무엇을 적든 고정 값, 곧 binding의 Git
+  저장소의 branch `v1/rust-core`로 썼다. 이제 그 줄은 코어의 `polyspec-binding-core` 줄을 따른다(GN-3e). 코어의 `git`과 그
+  `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`를 바인딩 crate의 feature와 함께 쓴다. 그 줄이
+  없는 코어는 binding의 개발 줄을 그대로 갖는다. `binding check --release`는 코어와 추적하는 바인딩 crate 각각에서 그 줄의
+  개발 꼴도 보고한다(CK-70). 코어가 branch `v1/rust-core`가 아닌 줄을 적는 레포는 `binding scaffold`를 다시 실행한다.
+  `make test-ts`로 확인했다. 새 시험과 CK-70의 바뀐 시험은 변경 전에 실패했고(400개 중 2개), 변경 뒤 400개 중 400개가
+  통과한다.
+- 생성된 PHP 확장은 그 crate의 이름 `polyspec-<library>-php-ext`로 등록되었다. ext-php-rs 0.16.4의 `#[php_module]`이 module을
+  crate 이름으로 이름하기 때문이다. 한편 그 `composer.json`은 `php-ext.extension-name`으로 `polyspec_<library>`를 적는다.
+  그래서 로드된 확장에 대해 `extension_loaded('polyspec_<library>')`가 거짓이었다. 이제 module은 `ModuleBuilder::name`으로
+  자기를 `polyspec_<library>`로 이름한다(GN-3g). end-to-end 확인은 이것을 찾지 못했다. PHP는 module의 이름이 무엇이든 확장의
+  class와 function을 등록하고, 어느 단계도 PHP에 확장을 이름으로 묻지 않았기 때문이다. 이제 end-to-end 확인에서 시험을
+  실행하는 PHP 프로세스는 먼저 실행의 각 `composer.json`의 `extension-name`에 대해 `extension_loaded`를 묻고, 시험이 실행되기
+  전에 그 이름과 함께 실패한다. 레포는 `binding generate`를 다시 실행한다. `make test-ts`로 확인했다. 새 시험은 변경 전에
+  실패했고(399개 중 1개), 변경 뒤 399개 중 399개가 통과한다.
+- `binding scaffold`는 코어의 licence가 무엇이든 `package.json`과 `composer.json`에 licence `MIT`를 고정 값으로 썼고, 바인딩
+  crate의 Cargo manifest와 `pyproject.toml`에는 licence를 쓰지 않았다. 이제 licence 항목이 있는 모든 manifest는 코어 crate의
+  licence를 담는다(GN-3f). 그것은 코어의 `package.license`이며, 코어가 `license.workspace = true`를 적으면
+  `workspace.package.license`다. 바인딩 crate, `package.json`, `composer.json`은 `license`로, `pyproject.toml`은
+  `project.license`로 갖는다. licence를 적지 않은 코어는 `binding check`의 finding, 곧 새 검사 CK-71이며, 그때 `scaffold`는 그
+  항목 없이 manifest를 쓴다. 모든 레포는 `binding scaffold`를 다시 실행한다. CK-19가 manifest를 비교하기 때문이다. licence가
+  없는 코어는 먼저 그것을 적는다. `tests/e2e`의 코어와 단위 시험 fixture의 코어는 `MIT`를 적는다. `make test-ts`로 확인했다.
+  새 시험은 변경 전에 실패했고(398개 중 1개), 변경 뒤 398개 중 398개가 통과한다.
+- `binding scaffold`는 `pyproject.toml`이 다른 polyspec 라이브러리의 Python 패키지에 거는 의존을 코어의 의존 줄이 무엇을
+  적든 이름만으로, `dependencies = ["polyspec-<library>"]`로 썼다. 그래서 release의 패키지가 그 라이브러리의 버전을 요구하지
+  않았다. 이제 의존은 그 줄의 꼴을 따른다(GN-3e). tag `vX.Y.Z`나 버전 `=X.Y.Z`는 `polyspec-<library>==X.Y.Z`를 주고, 개발
+  꼴(path, branch, commit, 버전 범위)은 이름만 두며, 개발 설치가 그것을 해석하고 `binding check --release`가 그 줄과 함께
+  보고한다(CK-70). 코어가 다른 라이브러리의 tag나 정확한 버전을 적는 레포는 `binding scaffold`를 다시 실행한다. CK-19가
+  `pyproject.toml`을 비교하기 때문이다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했고(397개 중 1개), 변경 뒤
+  397개 중 397개가 통과한다.
+- 코어의 다른 polyspec 라이브러리 의존 줄이 branch, commit, 버전 범위를 적으면 `binding check`, `binding scaffold`,
+  `binding generate`가 모든 target에서 stack trace와 함께 멈췄다. 그 라이브러리의 Go module에 `go.mod`에 적을 버전이 없었기
+  때문이다. 이제 그런 줄은 개발 꼴이다(GN-3e). `go.mod`는 `replace` 줄 없이 그 module을 `v0.0.0`으로 require하고, 개발
+  checkout은 추적하지 않는 `go.work`로 그것을 해석한다. `path`는 `v0.0.0`과 `replace` 줄을 그대로 갖고, tag나 정확한 버전은
+  `vX.Y.Z`를 그대로 갖는다(GN-15f). release 도구가 주는 옵션인 `binding check <interface.json> --release`는 개발 꼴을 하나씩
+  새 검사 CK-70의 finding으로 보고하며, finding은 코어 manifest, crate, 그 꼴을 이름한다. `scaffold`가 쓸 수 없는 추적
+  package(코어가 이름한 라이브러리에 의존하지 않는다, 라이브러리에 Go module이 없다, path가 그 라이브러리의 코어가 아니다,
+  계약을 찾지 못한다)는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓰고 상태 1로 실패하고, `check`는 그것을
+  CK-19로 보고하며 다른 것을 비교하고, `generate`는 더 이상 추적 package를 읽지 않는다. 계약이나 case 파일이 일으킨
+  `generate`의 실패는 그 문장을 가진 거부된 target이며 stack trace가 없어서 다른 target을 멈추지 않는다(GN-1c).
+  `make test-ts`로 확인했다. 새 시험 셋과 GN-15f의 바뀐 시험은 변경 전에 실패했고(396개 중 4개), 변경 뒤 396개 중 396개가
+  통과한다.
 - json의 계약으로 돌린 end-to-end 검사의 relay가 드러낸 생성기의 텍스트가 더 있고, 모두 lint가 deny하는 죽은 코드다.
   PHP, Python, Node, WASM host의 enum `ReadAs`는 모든 variant를, 읽기는 모든 갈래를 가졌는데, json의 in case는 `Units`를
   만들지 않는다. 이제 host는 그 계약의 in case가 만드는 variant와 그 갈래만 가진다(GN-6x). PHP는 유일한 alias가 다른

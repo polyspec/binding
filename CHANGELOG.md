@@ -5,6 +5,104 @@
 
 ## Unreleased
 
+- A contract that takes a callback unit of another library whose member names a unit of a third library, by a named
+  type of that library's contract (`types`), was refused for every target as "`<library>.<member>` returns: `<third>`
+  has no unit `<unit>` (T-3)", although the third library has the unit: `binding` read only the contracts of the
+  libraries that the contract itself names. A member that named the third library by a type instead was a finding of
+  CK-9, "it may use only units of" its own library. `binding` now reads the contracts to the closure, the contract
+  of each library that a read contract names, among the packages that Cargo resolved for the core, and `scaffold`
+  follows the `path` of each dependency line from the core that names it. CK-9 checks a unit of a third library, also
+  one that a named type names, against the contract of its owner, and reports a unit that the owner does not have.
+  Libraries whose contracts name each other in a cycle are refused with their names. The manifests name the
+  libraries whose types the generated code names (GN-3e, GN-15f): also a library that the members of such a callback
+  unit name gets its dependency line in the Cargo manifest of each binding crate and its package in `pyproject.toml`,
+  and `go.mod` requires it when the type is a record or a value class; the core names that library in its own
+  manifest. `scaffold` now asks Cargo for the contracts of the dependencies without a `path` for every target, and a
+  failure of Cargo writes the packages with the libraries that the contract itself names and fails with status 1 and
+  a sentence that says so. No contract of `tests/e2e` takes a callback unit of another library, so no end-to-end run
+  compiles this form; Go and WASM refuse a callback unit of another library by name (GN-6s). Verified by
+  `make test-ts`: the two new tests and the changed test of the failing `cargo metadata` failed before the change (3
+  of 425), and 425 of 425 pass with it; `binding generate` of a repository whose callback of another library gives a
+  value of a third one no longer names the refusal.
+- `binding generate` of a contract with the target go that names a record or a value class of a library whose
+  contract names no Go module (`packages.go`) stopped with a stack trace ("Cannot read properties of undefined"),
+  because the Go generator read the module of that contract without asking whether it has one; `scaffold` and `check`
+  already named the Go module with this reason. `generate` now refuses the Go target with the library and the reason
+  and generates the other targets (GN-15f, GN-1c). Found by `binding generate --target go` in a repository whose
+  `Cargo.lock` pins a commit of the other library from before it had a Go module. Verified by `make test-ts`: the new
+  test failed with the stack trace before the change, and 423 of 423 pass with it.
+- For a core that names no line on `polyspec-binding-core`, such as a core that only passes the values of another
+  library on, `binding scaffold` wrote the development line of binding, the branch `v1/rust-core`, into every binding
+  crate, whichever generator ran, so the binding crates of a repository that a released generator scaffolded named a
+  branch and `binding check --release` reported each of them. Such a core now gets the line of the generator itself
+  (GN-3e): a generator that knows no commit of itself, which is the generator of a release installed at its version
+  (CK-20), writes the tag `vX.Y.Z` of its own version, a release form, and a generator that knows its commit (a
+  checkout, a tree of `git archive`, an install from Git) keeps the branch `v1/rust-core`. A line that the core names
+  is followed as before. Verified by `make test-ts`: the new test failed before the change, because the manifest named
+  the branch for the generator of a release, and 422 of 422 pass with it.
+- `binding scaffold` of a contract with the target go whose core names another library by a dependency that is no
+  `path` asks `cargo metadata` for the contract of that library, and a failure of Cargo stopped the scaffold for every
+  target. Only `go.mod` reads those contracts, so a failure now names the Go module alone as not written, with the
+  status of Cargo and the instruction to run the install target of the repository that fetches the crates of its
+  `Cargo.lock` (`cargo fetch --locked`), and the packages of the other targets are written (GN-15f, GN-3e). `check`
+  and `generate`, which read the contracts for every target, fail with the same instruction. `cargo metadata` fails
+  where Cargo cannot resolve the workspace: without network for a Git dependency that the machine has not fetched, or
+  for a manifest that names a crate that no longer exists. Verified by `make test-ts`: the new test failed before the
+  change (1 of 401), and 401 of 401 pass with it.
+- `binding check` did not read the licence of the hand-written manifest of a host package (L-2a), so a host package
+  could name another licence than its core or none. It now reads the licence of the core as an item of the host's
+  manifest (GN-3f, CK-19): `project.license` of the host's `pyproject.toml`, and `license` of the host's `package.json`
+  and of the host library's `composer.json`; a missing or different value is a finding with the value it must have.
+  A host package adds the licence of its core to these manifests. Verified by `make test-ts`: the changed test of
+  L-2a failed before the change (1 of 400), and 400 of 400 pass with it.
+- `binding scaffold` wrote the dependency line of every binding crate on `polyspec-binding-core` as a fixed value, the
+  Git repository of binding at the branch `v1/rust-core`, whatever the core named. The line now follows the line of
+  the core on `polyspec-binding-core` (GN-3e): its `git` with its `branch` or `tag`, its `version`, or its `path`,
+  which climbs to the place of the binding crate, with the features of the binding crate. A core without the line
+  keeps the development line of binding. `binding check --release` also reports a development form of that line in
+  the core and in each tracked binding crate (CK-70). A repository whose core names another line than the branch
+  `v1/rust-core` runs `binding scaffold` again. Verified by `make test-ts`: the new test and the changed test of CK-70
+  failed before the change (2 of 400), and 400 of 400 pass with it.
+- The generated PHP extension registered under the name of its crate, `polyspec-<library>-php-ext`, because
+  `#[php_module]` of ext-php-rs 0.16.4 names a module after the crate, while its `composer.json` names
+  `php-ext.extension-name` `polyspec_<library>`; `extension_loaded('polyspec_<library>')` was false for a loaded
+  extension. The module now names itself `polyspec_<library>` with `ModuleBuilder::name` (GN-3g). The end-to-end check
+  did not find this, because PHP registers the classes and functions of an extension whatever its module is named and
+  no step asked PHP for the extension by name. Each PHP process of the end-to-end check that runs tests now first
+  asks `extension_loaded` for the `extension-name` of each `composer.json` of the run and fails with the name before
+  a test runs. A repository runs `binding generate` again. Verified by `make test-ts`: the new test failed before the
+  change (1 of 399), and 399 of 399 pass with it.
+- `binding scaffold` wrote the licence `MIT` as a fixed value into `package.json` and `composer.json`, whatever the
+  licence of the core was, and wrote no licence into the Cargo manifests of the binding crates and into
+  `pyproject.toml`. Every manifest with a licence field now carries the licence of the core crate (GN-3f):
+  `package.license` of the core, or `workspace.package.license` when the core names `license.workspace = true`, as
+  `license` of each binding crate, of `package.json` and of `composer.json` and as `project.license` of
+  `pyproject.toml`. A core that names no licence is a finding of `binding check`, the new check CK-71, and `scaffold`
+  then writes the manifests without the field. Every repository runs `binding scaffold` again, because CK-19 compares
+  the manifests, and a core without a licence adds one first. The cores of `tests/e2e` and of the fixture of the unit
+  tests name `MIT`. Verified by `make test-ts`: the new test failed before the change (1 of 398), and 398 of 398 pass
+  with it.
+- `binding scaffold` wrote the dependency of `pyproject.toml` on the Python package of another polyspec library as the
+  name alone, `dependencies = ["polyspec-<library>"]`, whatever the dependency line of the core named, so the package
+  of a release required no version of that library. The dependency now follows the form of the line (GN-3e): a tag
+  `vX.Y.Z` or the version `=X.Y.Z` gives `polyspec-<library>==X.Y.Z`, and a development form (a path, a branch, a
+  commit, a version range) keeps the name alone, which the development install resolves and which
+  `binding check --release` reports with its line (CK-70). A repository whose core names a tag or an exact version of
+  another library runs `binding scaffold` again, because CK-19 compares `pyproject.toml`. Verified by `make test-ts`:
+  the new test failed before the change (1 of 397), and 397 of 397 pass with it.
+- When the dependency line of the core on another polyspec library named a branch, a commit or a version range,
+  `binding check`, `binding scaffold` and `binding generate` stopped for every target with a stack trace, because the
+  Go module of that library had no version for `go.mod`. Such a line is now a development form (GN-3e): `go.mod`
+  requires the module at `v0.0.0` without a `replace` line, which the development checkout resolves through its
+  untracked `go.work`; a `path` keeps `v0.0.0` with its `replace` line and a tag or an exact version keeps `vX.Y.Z`
+  (GN-15f). `binding check <interface.json> --release`, the option that a release tool passes, reports each
+  development form as a finding of the new check CK-70, which names the core manifest, the crate and the form. A
+  tracked package that `scaffold` cannot write (the core does not depend on a named library, a library has no Go
+  module, a path is not the core of its library, a contract is not found) is named with its reason: `scaffold` writes
+  the other packages and fails with status 1, `check` reports it as CK-19 and compares the others, and `generate` no
+  longer reads the tracked packages. A failure of `generate` that a contract or a case file causes is a refused target
+  with its sentence and no stack trace, so it does not stop another target (GN-1c). Verified by `make test-ts`: the
+  three new tests and the changed test of GN-15f failed before the change (4 of 396), and 396 of 396 pass with it.
 - More texts of the generator that the relay of the end-to-end check shows with the contract of json, each dead
   code, which the lints deny. The enum `ReadAs` of the PHP, Python, Node and WASM hosts had every variant and
   the read every arm, while the in cases of json construct no `Units`; a host now has the variants that an in case of

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: efa4984cc38497d67d1317b169ab6272ddc9ec34cddc121e16d24b2b261d6fa5 -->
+<!-- source-sha256: a917f50c0505140f0f34cc0d9e3f169239807136dcd205e8d6896b30ea6fbd8f -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -18,6 +18,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 스키마와 package 이름(CK-1, CK-18)을 통과한 계약에서 실행된다. 실행되지 않은 검사는 그것을 멈춘 검사와 함께 이름을 적는다.
 이유: 처음 실패한 검사에서 멈추는 실행은 다른 검사의 finding을 가린다. 예를 들어 계약의 finding 뒤에 다른 binding의 pin이
 숨는다.
+
+`binding check <interface.json> --release`는 release의 검사 CK-70도 실행한다. release를 빌드하는 도구가 이 옵션을 준다. 옵션이
+없는 검사는 CK-70을 실행하지 않는다. 개발 checkout은 release가 담으면 안 되는 개발 꼴을 담기 때문이다.
 
 ## 검사
 
@@ -78,8 +81,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼
     수 있는 kind이며, 그 alias를 받는 모든 member에 붙고 `raises`에는 적지 않는다(U-7, E-5).
 - **CK-9** 다른 레포의 unit(T-3): 타입에 쓴 다른 라이브러리의 unit은 그 계약의 `value`, `callback`, `enum`, `record`,
-  `variant` unit이다. 다른 라이브러리의 callback·record·variant는 자기 라이브러리의 unit만 쓰며 재귀적으로 확인한다.
-  `types`의 값 타입은 소유자의 `value` unit을 가리킨다.
+  `variant` unit이다. 다른 라이브러리의 callback·record·variant가 쓰는 unit은 자기 라이브러리의 것이든 제3 라이브러리의
+  것이든, 타입으로 적었든 그 계약의 이름 있는 타입(`types`)으로 적었든, 그것을 가진 라이브러리의 계약에 대해 같은 규칙으로
+  재귀적으로 확인한다. `types`의 값 타입은 소유자의 `value` unit을 가리킨다. `binding`은 계약을 닫힘까지 읽는다. 곧 계약이
+  이름하는 라이브러리의 계약과 그 계약들이 이름하는 라이브러리의 계약을, Cargo가 코어에 대해 해석한 package에서 읽는다. 그
+  라이브러리에 없는 unit과 계약을 찾지 못한 라이브러리는 finding이다. 계약이 서로를 순환으로 이름하는 라이브러리는 그
+  이름과 함께 거부한다. Cargo가 crate의 순환을 해석하지 않기 때문이다.
 - **CK-10** 오류(E-1, E-1a, E-2, U-1): 오류 unit은 category를 갖고, category와 parent는 오류 unit만 갖는다. parent는 같은
   category의 오류 unit이고 `final`이 아니다. `errors.classes`는 Go를 뺀 모든 target에서 모든 category의 클래스를 갖는다(Go의
   category 타입은 E-7이 정한다). category 클래스 이름은 `<Library><Category>Error`이며 `<Library>`는 각 언어의 클래스
@@ -141,6 +148,15 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-65** 실패 주입점(`faults`, G-5)을 가진 코어는 manifest의 `[dev-dependencies]`에 자기 자신을 `fault-test`와 함께
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
+- **CK-70** release의 의존(generator GN-3e), `binding check --release`만 실행한다: 계약이 타입을 이름하거나 case가 실패 주입점을
+  장전하는 `polyspec-<library>`마다 코어의 의존 줄은 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않는다. 코어의
+  `polyspec-binding-core` 의존 줄(있을 때)과 추적하는 바인딩 crate 각각의 그 줄도 그렇다. 개발
+  꼴(path, branch, commit, 버전 범위)은 그 줄의 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
+  manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
+  추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
+- **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의
+  `workspace.package.license`에서 받아 적는다. 그것이 없는 코어는 코어 manifest를 이름하는 finding이다. 그 바인딩 package의
+  모든 manifest가 그 licence를 담기 때문이다.
 - **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 origin `generated`인 class unit이거나
   그 `optional`인 모든 parameter는 `core`(`&`, `&mut`, `value`)를 갖고, 다른 parameter는 갖지 않는다. 코어가 빌림을 받는
   자리는 class의 인스턴스뿐이고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.

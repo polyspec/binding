@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// binding check <interface.json>
+// binding check <interface.json> [--release]
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
-//   tracked binding packages with what `binding scaffold` writes (L-2).
+//   tracked binding packages with what `binding scaffold` writes (L-2). --release adds the check of a release (CK-70).
 // binding scaffold [--root <repository> | --contract <interface.json>]
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
 // binding generate [--root <repository> | --contract <interface.json>] [--out <directory>]
@@ -19,7 +19,7 @@ import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -41,10 +41,13 @@ function libraries(contract: unknown): Set<string> {
 
 // The contracts of the named libraries, read from the packages that Cargo resolved for the crate beside the contract:
 // each library's crate is polyspec-<library> (P-1) and ships its interface.json (I-1). No other checkout is read (S15).
-function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
+// GN-15f: cargo metadata resolves the workspace, so it fails where Cargo cannot: without network for a Git dependency
+// that the machine has not fetched, or for a manifest that names a crate that no longer exists. The failure is given
+// back with what to run, so that scaffold can name the Go module alone.
+function cargoContracts(contract: unknown, crateDir: string): { found: Map<string, unknown>; failure?: string } {
   const wanted = libraries(contract);
   const found = new Map<string, unknown>();
-  if (wanted.size === 0) return found;
+  if (wanted.size === 0) return { found };
   // Cargo writes the metadata into a file rather than a pipe, so its size (megabytes for a workspace with the binding
   // crates) meets no buffer limit of the child process.
   const scratch = mkdtempSync(join(tmpdir(), 'binding-metadata-'));
@@ -57,7 +60,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
         stdio: ['ignore', fd, 'inherit'],
       });
       if (run.error !== undefined) throw run.error;
-      if (run.status !== 0) fail(`cargo metadata failed with status ${String(run.status)}`);
+      if (run.status !== 0) return { found, failure: `cargo metadata failed with status ${String(run.status)}; run the install target of the repository that fetches the crates of its Cargo.lock (cargo fetch --locked), then run the command again` };
     } finally {
       closeSync(fd);
     }
@@ -65,11 +68,39 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-  for (const library of wanted) {
+  // T-3: the contract of a library names the libraries of its own types, so the contracts are read to the closure: a
+  // library that only a unit of another library names, such as the value that a callback of that library gives, is a
+  // package of the same resolution of Cargo.
+  closure(contract, found, (library) => {
     const crate = metadata.packages.find((p) => p.name === `polyspec-${library}`);
-    if (crate === undefined) continue;
-    found.set(library, JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')));
-  }
+    return crate === undefined ? undefined : JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')) as unknown;
+  });
+  return { found };
+}
+
+// T-3: reads into found the contract of each library that the contract names and of each library that one of those
+// contracts names, to the closure; read gives the contract of a library, with the libraries that named it from the
+// contract of the command on, or undefined when it is not found. Libraries that name each other in a cycle are refused
+// by name: Cargo resolves no cycle of crates, so such contracts describe no cores.
+function closure(contract: unknown, found: Map<string, unknown>, read: (library: string, from: string[]) => unknown): void {
+  const own = String((contract as { library?: unknown }).library);
+  const visit = (of: unknown, path: string[]): void => {
+    for (const library of libraries(of)) {
+      if (path.includes(library)) fail(`the contracts of the libraries ${[...path.slice(path.indexOf(library)), library].join(' -> ')} name each other in a cycle, which is not generated (T-3)`);
+      if (found.has(library)) continue;
+      const other = read(library, path);
+      if (other === undefined) continue;
+      found.set(library, other);
+      visit(other, [...path, library]);
+    }
+  };
+  visit(contract, [own]);
+}
+
+// check and generate read the contracts for every target, so a failure of Cargo stops them.
+function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
+  const { found, failure } = cargoContracts(contract, crateDir);
+  if (failure !== undefined) fail(failure);
   return found;
 }
 
@@ -81,18 +112,27 @@ function fail(message: string): never {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
   process.exit(2);
 }
 
+// GN-1c: the sentences of a failure that a contract, a case file or a manifest causes, which the generator throws as a
+// refusal or as an Error with its sentence. Any other error is a defect of binding and keeps its stack trace.
+function sentences(error: unknown): string[] {
+  if (error instanceof Unsupported) return error.refusals;
+  if (error instanceof Error && error.constructor === Error && !error.message.startsWith('internal:')) return [error.message];
+  throw error;
+}
 
 const [command, ...rest] = process.argv.slice(2);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
 if (command === 'check') {
-  const [path, ...extra] = rest;
-  if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
+  // CK-70: --release, which the tool that builds a release passes, adds the check of a release.
+  const [path, ...extra] = rest.filter((argument) => argument !== '--release');
+  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the option --release');
+  if (rest.includes('--release')) options.set('--release', 'true');
   contractPath = resolve(path);
 } else {
   for (let i = 0; i < rest.length; i += 2) {
@@ -153,41 +193,79 @@ const root = resolve(dirname(contractPath), ...checked.core.path.split('/').map(
 // The version and the library name of the core crate from its manifest (T-3), read as TOML: a version inherited from the
 // workspace (version.workspace = true) is the root manifest's workspace.package.version.
 const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'), 'utf8')) as {
-  package?: { name?: string; version?: string | { workspace?: boolean } };
+  package?: { name?: string; version?: string | { workspace?: boolean }; license?: string | { workspace?: boolean } };
   lib?: { name?: string };
   dependencies?: Record<string, unknown>;
   'dev-dependencies'?: Record<string, unknown>;
 };
 const core = manifest.package;
 let version = core?.version;
-if (typeof version === 'object' && version.workspace === true) {
-  const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string } } };
-  version = workspace.workspace?.package?.version;
+// GN-3f: the licence of the core, which every manifest of its binding packages carries, read as the version is.
+let license = core?.license;
+if ((typeof version === 'object' && version.workspace === true) || (typeof license === 'object' && license.workspace === true)) {
+  const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string; license?: string } } };
+  if (typeof version === 'object') version = workspace.workspace?.package?.version;
+  if (typeof license === 'object') license = workspace.workspace?.package?.license;
 }
+const coreLicense = typeof license === 'string' ? license : undefined;
 if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 // G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
 // GN-15f: go.mod requires the Go module of each library whose records the contract names, so scaffold of a contract
 // with the target go reads the contracts of the libraries it names: the contract of a path dependency of the core is
 // the interface.json of that path, which needs no Cargo, and one of any other dependency is found through Cargo, as
 // generate finds it.
+let metadataFailure: string | undefined;
 function scaffolded(): Map<string, unknown> {
   const found = new Map<string, unknown>();
-  if (!checked.targets.includes('go')) return found;
+  // The directory of the core of each library that a path names, from the directory of the core that names it.
+  const dirs = new Map<string, string>([[checked.library, join(root, checked.core.path)]]);
   let others = false;
-  for (const library of libraries(contract)) {
-    const spec = manifest.dependencies?.[`polyspec-${library}`];
-    const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
-    if (typeof path === 'string') {
-      const file = join(root, checked.core.path, path, 'interface.json');
-      if (!existsSync(file)) fail(`${file}: the contract of ${library}, a path dependency of the core, is not there, so scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-      found.set(library, JSON.parse(readFileSync(file, 'utf8')));
+  closure(contract, found, (library, from) => {
+    const dir = dirs.get(from[from.length - 1] ?? '');
+    if (dir === undefined) return undefined;
+    let spec: unknown;
+    try {
+      spec = (parse(readFileSync(join(dir, 'Cargo.toml'), 'utf8')) as { dependencies?: Record<string, unknown> }).dependencies?.[`polyspec-${library}`];
+    } catch {
+      spec = undefined;
     }
-    else others = true;
+    const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
+    // A contract that is not there is not found: the package that reads it is then named as not written (GN-3e), and
+    // the other packages are written.
+    const file = typeof path === 'string' ? join(dir, path, 'interface.json') : undefined;
+    if (file !== undefined && existsSync(file)) {
+      dirs.set(library, join(dir, path as string));
+      return JSON.parse(readFileSync(file, 'utf8')) as unknown;
+    }
+    if (typeof path !== 'string') others = true;
+    return undefined;
+  });
+  // A failure of Cargo leaves the contracts of the other dependencies not found: the Go module is then named as not
+  // written with the failure, and the other packages are written with the libraries that the contract itself names.
+  if (others) {
+    const cargo = cargoContracts(contract, join(root, checked.core.path));
+    metadataFailure = cargo.failure;
+    for (const [library, other] of cargo.found) if (!found.has(library)) found.set(library, other);
   }
-  if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
   return found;
 }
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
+const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
+// GN-3e: the running generator, whose own line on polyspec-binding-core the binding crates of a core without that line
+// get: the version of its package and the commit that it knows of itself (CK-20).
+const packageDir = resolve(dirname(new URL(import.meta.url).pathname), '..');
+const generator = { version: (JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version: string }).version, commit: ownCommit(packageDir) };
+// GN-3e: the tracked packages, which check and scaffold read and generate does not. A package that cannot be written is
+// named with its reason, and so is a failure of the whole that the contract, a case file or a manifest causes.
+function trackedOf(): Tracked {
+  try {
+    const result = trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense, generator);
+    const failure = metadataFailure;
+    return failure === undefined ? result : { files: result.files, refused: result.refused.map((r) => (r.path === goModuleDir(checked) ? { path: r.path, message: `${r.message}: ${failure}` } : r)) };
+  } catch (error) {
+    return { files: new Map(), refused: sentences(error).map((message) => ({ path: componentBase(checked), message })) };
+  }
+}
+const tracked: Tracked = command === 'generate' ? { files: new Map(), refused: [] } : trackedOf();
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.
@@ -225,9 +303,39 @@ if (command === 'check') {
       process.stderr.write(`${join(coreDir, 'Cargo.toml')}: CK-65 the core ${checked.core.crate} has fault injection points, but its [dev-dependencies] name no ${checked.core.crate} = { path = ".", features = ["fault-test"] }, so cargo test without flags does not arm them (GN-5)\n`);
     }
   }
+  // CK-71 (GN-3f): the core names the licence that the manifests of its binding packages carry.
+  if (coreLicense === undefined) {
+    differs = true;
+    process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-71 the core ${checked.core.crate} names no license, which every manifest of its binding packages carries (GN-3f)\n`);
+  }
+  // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
+  if (options.has('--release')) {
+    for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles), foreign as ReadonlyMap<string, Contract>)) {
+      differs = true;
+      process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-70 ${message}\n`);
+    }
+    // The line on polyspec-binding-core of each tracked binding crate, as the repository holds it.
+    for (const path of [...tracked.files.keys()].filter((file) => file.endsWith('/Cargo.toml'))) {
+      let message: string | undefined;
+      try {
+        message = existsSync(join(root, path)) ? bindingCoreFinding(parse(readFileSync(join(root, path), 'utf8'))) : undefined;
+      } catch {
+        // not TOML: CK-19 reports the file
+      }
+      if (message !== undefined) {
+        differs = true;
+        process.stderr.write(`${join(root, path)}: CK-70 ${message}\n`);
+      }
+    }
+  }
   const names = failedChecks.has('CK-18');
   if (names) process.stderr.write(`${contractPath}: CK-19 did not run: it compares with what binding scaffold writes, which needs the package names of CK-18\n`);
-  for (const [path, text] of names ? [] : tracked) {
+  // GN-3e: a package that scaffold cannot write is a finding with its reason.
+  for (const { path, message } of names ? [] : tracked.refused) {
+    differs = true;
+    process.stderr.write(`${join(root, path)}: CK-19 binding scaffold does not write it: ${message} (L-2)\n`);
+  }
+  for (const [path, text] of names ? [] : tracked.files) {
     const full = join(root, path);
     const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;
     if (found !== text) {
@@ -236,7 +344,7 @@ if (command === 'check') {
     }
   }
   // L-2a: a host package's manifest holds what its native module and its release need (GN-3b).
-  for (const requirement of names ? [] : hostRequirements(checked, parse)) {
+  for (const requirement of names ? [] : hostRequirements(checked, parse, coreLicense)) {
     const full = join(root, requirement.path);
     let found: unknown;
     try {
@@ -246,7 +354,7 @@ if (command === 'check') {
     }
     if (!isDeepStrictEqual(found, requirement.want)) {
       differs = true;
-      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module and its release need (L-2a)\n`);
+      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module and its release need (L-2a, GN-3f)\n`);
     }
   }
   process.exit(differs || findings.length > 0 ? 1 : 0);
@@ -255,11 +363,16 @@ if (command === 'check') {
 if (command === 'scaffold') {
   // --out writes the same files under another directory, as for generate.
   const target = resolve(options.get('--out') ?? root);
-  for (const [path, text] of tracked) {
+  for (const [path, text] of tracked.files) {
     mkdirSync(dirname(join(target, path)), { recursive: true });
     writeFileSync(join(target, path), text);
   }
-  process.exit(0);
+  // GN-3e: a package that cannot be written is named with its reason after the others are written.
+  for (const { path, message } of tracked.refused) process.stderr.write(`binding: ${path}: not written: ${message}\n`);
+  // GN-3e: without the contracts that Cargo finds, the libraries that only a callback unit of another library names are
+  // not known, so the packages are written with the libraries that the contract itself names and the run fails.
+  if (metadataFailure !== undefined) process.stderr.write(`binding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names (GN-3e): ${metadataFailure}\n`);
+  process.exit(tracked.refused.length > 0 || metadataFailure !== undefined ? 1 : 0);
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
@@ -275,8 +388,7 @@ for (const target of targets) {
   try {
     for (const [path, text] of generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets: [target] })) files.set(path, text);
   } catch (error) {
-    if (!(error instanceof Unsupported)) throw error;
-    refused.push({ target, refusals: error.refusals });
+    refused.push({ target, refusals: sentences(error) });
   }
 }
 const out = resolve(options.get('--out') ?? root);

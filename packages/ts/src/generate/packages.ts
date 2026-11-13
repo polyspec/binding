@@ -7,15 +7,35 @@
 import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction, nativeRoundTrip } from './model.ts';
+import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported } from './model.ts';
 
-// Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
+// GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
+// (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
+// and none that binding pins. A core without the line gets the line of the generator itself (generatorLine).
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // Every binding crate holds the core value of a class unit in the locks of the feature lock (GN-6h, GN-18a).
 // GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core,
 // but WASM, whose futures the event loop of JavaScript polls (wasm-bindgen-futures) and which has no tokio runtime.
-const bindingCore = (driver: boolean): string =>
-  `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock', ...(driver ? ['driver'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`;
+export const BINDING_CORE = 'polyspec-binding-core';
+const BINDING_GIT = 'https://github.com/polyspec/binding.git';
+// GN-3e: the running generator, by the version of its package and the commit that it knows of itself (CK-20).
+export interface Generator {
+  version: string;
+  commit: string | undefined;
+}
+// GN-3e: the line of the generator itself, for a core that names none. The generator of a release was installed at its
+// version and knows no commit of itself: the tag of that version, a release form. A generator that knows its commit (a
+// checkout, a tree of git archive, an install from Git) is a development generator: the development branch, which the
+// check of a release reports (CK-70).
+const generatorLine = (generator: Generator | undefined): Record<string, string> =>
+  generator !== undefined && generator.commit === undefined ? { git: BINDING_GIT, tag: `v${generator.version}` } : { git: BINDING_GIT, branch: 'v1/rust-core' };
+const SOURCE_KEYS = ['git', 'branch', 'tag', 'rev', 'version', 'path', 'registry'];
+function bindingCore(spec: unknown, depth: number, driver: boolean, generator: Generator | undefined): string {
+  const fields = spec === undefined ? generatorLine(generator) : typeof spec === 'object' && spec !== null ? spec as Record<string, unknown> : { version: spec };
+  const source = Object.entries(fields).filter(([key]) => SOURCE_KEYS.includes(key)).map(([key, value]): [string, unknown] =>
+    [key, key === 'path' && typeof value === 'string' && !value.startsWith('/') ? `${'../'.repeat(depth)}${value}` : value]);
+  return `${BINDING_CORE} = ${tomlValue({ ...Object.fromEntries(source), features: ['construct', 'lock', ...(driver ? ['driver'] : [])] })}`;
+}
 
 // GN-6n: whether the crate of a target, named by its suffix, has a member with wait async_driver.
 const SUFFIX_TARGET: Record<string, string> = { python: 'python', node: 'node', wasm: 'wasm', 'php-ext': 'php', go: 'go' };
@@ -49,6 +69,27 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/lib.rs"));
 `;
 }
 
+// GN-3e: the reason that a tracked package is not written, which a contract or a manifest gives. scaffold names the
+// package with it and writes the others, and check reports it (CK-19).
+export class Refused extends Error {}
+
+// GN-3e: the form of the dependency line of the core on another polyspec library. A line with the version =X.Y.Z or
+// the tag vX.Y.Z and no branch or commit is the release form, whose version a manifest names; every other line is a
+// development form, which named says in the words of a finding (CK-70). path is the path of a path dependency.
+export function dependencyForm(spec: unknown): { version?: string; path?: string; named: string } {
+  const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown; git?: unknown } : { version: spec };
+  if (typeof fields.path === 'string') return { path: fields.path, named: `the path ${fields.path}` };
+  if (typeof fields.branch === 'string') return { named: `the branch ${fields.branch}` };
+  if (typeof fields.rev === 'string') return { named: `the commit ${fields.rev}` };
+  const exact = typeof fields.version === 'string' ? /^=(\d+\.\d+\.\d+)$/.exec(fields.version)?.[1] : undefined;
+  const tag = typeof fields.tag === 'string' ? /^v(\d+\.\d+\.\d+)$/.exec(fields.tag)?.[1] : undefined;
+  const version = exact ?? tag;
+  if (version !== undefined) return { version, named: `the version ${version}` };
+  if (typeof fields.tag === 'string') return { named: `the tag ${fields.tag}` };
+  if (typeof fields.version === 'string') return { named: `the version range ${fields.version}` };
+  return { named: typeof fields.git === 'string' ? `the default branch of ${fields.git}` : 'no version' };
+}
+
 // T-3: the crates of the other repositories whose types the contract names, as the core's manifest gives them (the
 // binding sits at the same depth as the core, so a relative path means the same place).
 export type CoreDependencies = ReadonlyMap<string, unknown>;
@@ -60,16 +101,37 @@ const tomlValue = (value: unknown): string => {
   return `{ ${Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k} = ${tomlValue(v)}`).join(', ')} }`;
 };
 
-export function namedLibraries(contract: Contract): string[] {
-  const found = new Set<string>();
-  const walk = (value: unknown, key: string): void => {
-    if (Array.isArray(value)) value.forEach((item) => walk(item, key));
-    else if (typeof value === 'object' && value !== null) for (const [k, v] of Object.entries(value)) walk(v, k);
-    else if (key === 'library' && typeof value === 'string' && value !== contract.library) found.add(value);
+// T-3: the libraries whose types the binding of the contract converts, each of which its manifests name (GN-3e): the
+// libraries that the contract names, and the libraries that the members of a callback unit of another library name
+// when the contract takes that unit, because the binding wraps the callback and converts the values of its members
+// (GN-6s). foreign: the contracts of the libraries; a library whose contract is not there adds none.
+export function namedLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
+  return [...new Set(namedUnits(contract, foreign).map((named) => named.library))].sort();
+}
+
+// The units of other libraries in the types that the binding converts (namedLibraries), each once.
+function namedUnits(contract: Contract, foreign: ReadonlyMap<string, Contract>): { library: string; unit: string }[] {
+  const found = new Map<string, { library: string; unit: string }>();
+  const libraries = new Set<string>();
+  const walk = (value: unknown, key: string, own: string): void => {
+    if (Array.isArray(value)) value.forEach((item) => walk(item, key, own));
+    else if (typeof value === 'object' && value !== null) {
+      const { unit, library } = value as { unit?: unknown; library?: unknown };
+      if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library && !found.has(`${library}\u0000${unit}`)) {
+        found.set(`${library}\u0000${unit}`, { library, unit });
+        // GN-6s: the members of a callback unit of another library, with the named types of its contract resolved; a
+        // unit of its own library without a library is that library's unit.
+        const owner = foreign.get(library);
+        const callback = owner === undefined ? undefined : resolveNamedTypes(owner).units.find((u) => u.id === unit && u.kind === 'interface' && u.origin === 'callback');
+        for (const member of callback?.members ?? []) walk([member.parameters ?? [], member.returns ?? 'none'], '', library);
+      }
+      for (const [k, v] of Object.entries(value)) walk(v, k, own);
+    } else if (key === 'library' && typeof value === 'string' && value !== contract.library) libraries.add(value);
   };
-  walk(contract.units, '');
-  walk(contract.types, '');
-  return [...found].sort();
+  walk(contract.units, '', contract.library);
+  walk(contract.types, '', contract.library);
+  // A library that the contract names without a unit, such as the owner of a kind, has no unit here.
+  return [...found.values(), ...[...libraries].filter((library) => ![...found.values()].some((n) => n.library === library)).map((library) => ({ library, unit: '' }))];
 }
 
 // T-3: the dependency lines of the cores of the libraries whose types the contract names, as the core names them.
@@ -78,11 +140,11 @@ export function namedLibraries(contract: Contract): string[] {
 // ffi two).
 // G-5: also the cores of the other libraries whose fault injection points a case arms (armed), whose feature fault-test
 // the binding crate turns on.
-function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number, armed: string[]): string[] {
-  return [...new Set([...namedLibraries(contract), ...armed])].sort().map((library) => {
+function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number, armed: string[], foreign: ReadonlyMap<string, Contract>): string[] {
+  return [...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => {
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
-    if (spec === undefined) throw new Error(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names or whose fault injection points a case arms (T-3, G-5)`);
+    if (spec === undefined) throw new Refused(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names or whose fault injection points a case arms (T-3, G-5)`);
     const deeper = depth > 0 && typeof spec === 'object' && spec !== null && typeof (spec as { path?: unknown }).path === 'string' && !(spec as { path: string }).path.startsWith('/')
       ? { ...(spec as Record<string, unknown>), path: `${'../'.repeat(depth)}${(spec as { path: string }).path}` }
       : spec;
@@ -118,13 +180,24 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
 // staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm). libExtra: lines of [lib] after its type.
-function manifest(contract: Contract, version: string, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+// GN-3f: the version and the licence of the core, which the manifests of its binding packages carry.
+interface Core {
+  version: string;
+  license: string | undefined;
+  // GN-3e: the dependency line of the core on polyspec-binding-core, which the binding crates follow.
+  binding: unknown;
+  // GN-3e: the running generator, whose own line a core without that line gets; none is a development generator.
+  generator: Generator | undefined;
+}
+
+function manifest(contract: Contract, core: Core, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+  const corePath = crate?.core ?? (host ? '../../rust' : '../rust');
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
-version = ${JSON.stringify(version)}
+version = ${JSON.stringify(core.version)}
 edition = "2021"
-rust-version = "1.99.0"
+rust-version = "1.99.0"${core.license === undefined ? '' : `\nlicense = ${JSON.stringify(core.license)}`}
 publish = false${extra}
 
 [lib]
@@ -136,8 +209,8 @@ crate-type = ["${crate?.type ?? 'cdylib'}"]${libExtra}
 panic-test = []
 ${testFeatures(contract, suffix, armed)}
 [dependencies]
-${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
-${bindingCore(suffix !== 'wasm' && drives(contract, suffix))}
+${contract.core.crate} = { path = "${corePath}"${coreFeatures(contract, suffix)} }
+${bindingCore(core.binding, corePath.split('../').length - 2, suffix !== 'wasm' && drives(contract, suffix), core.generator)}
 ${dependencies.join('\n')}
 
 [lints]
@@ -193,29 +266,108 @@ export const extensionName = (contract: Contract): string => `polyspec_${contrac
 // G-5: a library in a point name is in snake_case, as the library name of its crate is (pointLibrary of check.ts).
 const pointName = (library: string): string => library.replaceAll('-', '_');
 
+// G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
+function armedLibraries(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>): string[] {
+  return [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
+    const crate = [...coreDependencies.keys()].find((name) => name.startsWith('polyspec-') && pointName(name.slice('polyspec-'.length)) === prefix);
+    if (crate === undefined) throw new Refused(`a case arms a fault injection point of ${prefix}, whose crate ${contract.core.path}/Cargo.toml does not depend on (G-5)`);
+    return crate.slice('polyspec-'.length);
+  });
+}
+
+const developmentFinding = (crate: string, named: string): string =>
+  `the dependency line of ${crate} names ${named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+
+// CK-70: the development forms among the dependency lines of the core on the libraries whose types the contract names
+// or whose points a case arms, each a finding of the check of a release (GN-3e). A library that the core does not
+// depend on is no finding here: no package is written for it, which CK-19 reports.
+export function releaseFindings(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
+  let armed: string[] = [];
+  try {
+    armed = armedLibraries(contract, coreDependencies, armedPoints);
+  } catch (error) {
+    if (!(error instanceof Refused)) throw error;
+  }
+  // The line on polyspec-binding-core of the core, when it has one; the lines of the binding crates are read from
+  // their tracked manifests (bindingCoreFinding).
+  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
+    if (!coreDependencies.has(crate)) return [];
+    const form = dependencyForm(coreDependencies.get(crate));
+    return form.version !== undefined ? [] : [developmentFinding(crate, form.named)];
+  });
+}
+
+// GN-3e: the requirement of pyproject.toml on the Python package of another library: at the version of a release form of
+// the dependency line of the core, and the name alone for a development form, which the development install resolves.
+function pythonRequirement(library: string, dependencies: CoreDependencies): string {
+  const version = dependencyForm(dependencies.get(`polyspec-${library}`)).version;
+  return JSON.stringify(`polyspec-${library}${version === undefined ? '' : `==${version}`}`);
+}
+
+// CK-70: the finding of the line on polyspec-binding-core of a tracked binding crate, from its manifest as TOML; none
+// for a release form and for a manifest without the line.
+export function bindingCoreFinding(manifest: unknown): string | undefined {
+  const dependencies = (manifest as { dependencies?: Record<string, unknown> } | undefined)?.dependencies ?? {};
+  if (!(BINDING_CORE in dependencies)) return undefined;
+  const form = dependencyForm(dependencies[BINDING_CORE]);
+  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form.named);
+}
+
+// What scaffold writes: the tracked files, and each package that it cannot write with its reason (GN-3e).
+export interface Tracked {
+  files: Files;
+  refused: { path: string; message: string }[];
+}
+
+// The tracked files alone, for a caller that takes no refused package: a refused package is thrown with its reason.
+export function trackedPackages(...inputs: Parameters<typeof trackedResult>): Files {
+  const { files, refused } = trackedResult(...inputs);
+  if (refused.length > 0) throw new Unsupported(refused.map((r) => `${r.path}: not written: ${r.message}`));
+  return files;
+}
+
 // armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
 // (casePointLibraries).
 // foreign: the contracts of the libraries that the contract names, whose records go.mod requires (GN-15f).
-export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = []): Files {
+// license: the licence of the core, which every manifest with a licence field carries (GN-3f); a core without one gives
+// manifests without the field.
+// generator: the running generator, whose own line on polyspec-binding-core a core without that line gets (GN-3e).
+export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = [], license?: string, generator?: Generator): Tracked {
+  const core: Core = { version, license, binding: coreDependencies.get(BINDING_CORE), generator };
   // GN-13: a target with a case whose value has no form in its language has the feature case-test.
   const caseTest = new Set(caseTargets);
   const files: Files = new Map();
-  // G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
-  const armed = [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
-    const crate = [...coreDependencies.keys()].find((name) => name.startsWith('polyspec-') && pointName(name.slice('polyspec-'.length)) === prefix);
-    if (crate === undefined) throw new Error(`a case arms a fault injection point of ${prefix}, whose crate ${contract.core.path}/Cargo.toml does not depend on (G-5)`);
-    return crate.slice('polyspec-'.length);
-  });
-  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed);
+  const refused: Tracked['refused'] = [];
+  // GN-3e: a package whose files a reason of the contract or of a manifest refuses is named and none of its files is
+  // written; the packages of the other targets are.
+  const packageOf = (dir: string, write: () => void): void => {
+    const before = new Set(files.keys());
+    try {
+      write();
+    } catch (error) {
+      if (!(error instanceof Refused)) throw error;
+      for (const path of [...files.keys()]) if (!before.has(path)) files.delete(path);
+      refused.push({ path: place(contract, dir), message: error.message });
+    }
+  };
+  let armed: string[];
+  try {
+    armed = armedLibraries(contract, coreDependencies, armedPoints);
+  } catch (error) {
+    if (!(error instanceof Refused)) throw error;
+    // Every binding crate names the features of the armed cores, so none is written.
+    return { files, refused: [{ path: componentBase(contract), message: error.message }] };
+  }
+  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed, foreign);
   // L-2a: the WASM crate is wasm/ of the Node package, native/wasm/ of a host Node package.
   const wasmDepth = isHost(contract, 'node') ? 2 : 1;
   // L-2a: a host package's language manifest is the host's, which check only reads (hostRequirements).
   const languageManifest = (lang: 'php' | 'python' | 'node', path: string, text: string): void => {
     if (!isHost(contract, lang)) files.set(path, text);
   };
-  if (contract.targets.includes('python')) {
+  if (contract.targets.includes('python')) packageOf('packages/python', () => {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, core, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
     files.set('packages/python/build.rs', PYTHON_BUILD);
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
@@ -228,17 +380,17 @@ build-backend = "maturin"
 [project]
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
-requires-python = ">=3.14"${namedLibraries(contract).length === 0 ? '' : `
-dependencies = [${namedLibraries(contract).map((library) => JSON.stringify(`polyspec-${library}`)).join(', ')}]`}
+requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract, foreign).length === 0 ? '' : `
+dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}
 python-source = "generated/python"
 `);
-  }
-  if (contract.targets.includes('node')) {
+  });
+  if (contract.targets.includes('node')) packageOf('packages/ts', () => {
     const npm = (contract.packages['node'] as { package: string }).package;
-    files.set('packages/ts/Cargo.toml', manifest(contract, version, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
+    files.set('packages/ts/Cargo.toml', manifest(contract, core, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       ...foreignOf('node'),
       // GN-6n: the future of a member with wait async_driver runs on the tokio runtime of napi.
       `napi = { version = "=3.16.2", default-features = false, features = [${['napi8', ...(drives(contract, 'node') ? ['tokio_rt'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`,
@@ -246,27 +398,27 @@ python-source = "generated/python"
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'GN-4: napi casts a value to its type after its type was checked']]));
-    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
-  }
-  if (contract.targets.includes('wasm')) {
-    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
+    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
+  });
+  if (contract.targets.includes('wasm')) packageOf('packages/ts/wasm', () => {
+    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
-    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, armed, 'wasm', `${extensionName(contract)}_wasm`, [
-      ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, core, armed, 'wasm', `${extensionName(contract)}_wasm`, [
+      ...foreignCrates(contract, coreDependencies, wasmDepth, armed, foreign),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
       // GN-6n: the promise of a member with wait async_driver; the release of wasm-bindgen and js-sys above.
       ...(drives(contract, 'wasm') ? ['wasm-bindgen-futures = "=0.4.80"'] : []),
     ], '', false, { type: 'cdylib', core: `${'../'.repeat(wasmDepth + 1)}rust` }));
     files.set('packages/ts/wasm/src/lib.rs', entry(`The WebAssembly module of ${(contract.packages['node'] as { package: string }).package}.`, [MANY]));
-  }
-  if (contract.targets.includes('php')) {
+  });
+  if (contract.targets.includes('php')) packageOf('packages/php-ext', () => {
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, core, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
       .replace('panic-test = []\n', caseTest.has('php') ? 'panic-test = []\ncase-test = []\n' : 'panic-test = []\n'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
@@ -279,23 +431,23 @@ python-source = "generated/python"
       name: isHost(contract, 'php') ? `${php.package}-native` : php.package,
       description: `The ${contract.library} library of polyspec as a PHP extension`,
       type: 'php-ext',
-      license: 'MIT',
+      ...(license === undefined ? {} : { license }),
       require: { php: '>=8.4' },
       // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
       'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
-  }
-  if (contract.targets.includes('go')) {
+  });
+  if (contract.targets.includes('go')) packageOf('packages/go', () => {
     const module = (contract.packages['go'] as { module: string }).module;
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n${goRequires(contract, coreDependencies, foreign)}`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, core, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed, foreign), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));
-  }
-  return placed(contract, files);
+  });
+  return { files: placed(contract, files), refused };
 }
 
 // GN-6u: the build script of the Python binding crate. The generated code reads the cfg pyo3_disable_reference_pool,
@@ -338,7 +490,7 @@ export const WASM_BINDGEN = '0.2.130';
 
 // The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
 // at each entry whose conditions choose it in the browser.
-function npmManifest(contract: Contract, version: string): string {
+function npmManifest(contract: Contract, core: Core): string {
   const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
   const node = contract.targets.includes('node');
   const wasm = contract.targets.includes('wasm');
@@ -355,9 +507,9 @@ function npmManifest(contract: Contract, version: string): string {
   if (wasm) exports['./wasm'] = browser;
   return `${JSON.stringify({
     name: npm.package,
-    version,
+    version: core.version,
     description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
-    license: 'MIT',
+    ...(core.license === undefined ? {} : { license: core.license }),
     // GN-3c: the only .js files of the package are the glue of wasm-bindgen --target web, an ES module.
     type: 'module',
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
@@ -388,47 +540,38 @@ export const GO_VERSION = '1.27.3';
 // module go.mod requires, because the Go binding imports the package of each (B2.87).
 function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
   const found = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) value.forEach(walk);
-    else if (typeof value === 'object' && value !== null) {
-      const { unit, library } = value as { unit?: unknown; library?: unknown };
-      if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library) {
-        const owner = foreign.get(library);
-        if (owner === undefined) throw new Error(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-        if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
-      }
-      Object.values(value).forEach(walk);
-    }
-  };
-  walk(contract.units);
-  walk(contract.types);
+  // Also the records and the value classes that the members of a callback unit of another library name (namedUnits).
+  for (const { library, unit } of namedUnits(contract, foreign)) {
+    if (unit === '') continue;
+    const owner = foreign.get(library);
+    if (owner === undefined) throw new Refused(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
+    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
+  }
   return [...found].sort();
 }
 
 // GN-15f: the require lines of go.mod, a Go module of each library whose records or value classes the contract names, at the version of
-// the dependency line of the core: an exact version or a tag, or a path with a replace line to the Go module there.
+// the dependency line of the core: an exact version or a tag, a path with v0.0.0 and a replace line to the Go module
+// there, or another development form with v0.0.0 alone (GN-3e).
 function goRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): string {
   const requires: string[] = [];
   const replaces: string[] = [];
   for (const library of recordLibraries(contract, foreign)) {
     const owner = foreign.get(library) as Contract;
     const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
-    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
+    if (module === undefined) throw new Refused(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
     const crate = `polyspec-${library}`;
-    const spec = dependencies.get(crate);
-    const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown } : { version: spec };
-    const exact = typeof fields.version === 'string' ? /^=(\d+\.\d+\.\d+)$/.exec(fields.version)?.[1] : undefined;
-    const tag = typeof fields.tag === 'string' ? /^v(\d+\.\d+\.\d+)$/.exec(fields.tag)?.[1] : undefined;
-    if (typeof fields.path === 'string') {
-      const root = posix.normalize(posix.join(contract.core.path, fields.path));
-      if (!root.endsWith(`/${owner.core.path}`)) throw new Error(`${crate}: the path ${fields.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
+    const form = dependencyForm(dependencies.get(crate));
+    if (form.path !== undefined) {
+      const root = posix.normalize(posix.join(contract.core.path, form.path));
+      if (!root.endsWith(`/${owner.core.path}`)) throw new Refused(`${crate}: the path ${form.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
       const target = posix.join(root.slice(0, -owner.core.path.length), componentBase(owner), 'go');
       requires.push(`${module} v0.0.0`);
       replaces.push(`replace ${module} => ${posix.relative(`${componentBase(contract)}/go`, target)}`);
-    } else if (fields.branch === undefined && fields.rev === undefined && (exact ?? tag) !== undefined) {
-      requires.push(`${module} v${exact ?? tag ?? ''}`);
     } else {
-      throw new Error(`${crate}: the dependency line of the core names no path, exact version or tag, so the Go module of ${library} has no version (GN-15f)`);
+      // GN-3e: a release form gives its version; another development form gives v0.0.0, which the development link of
+      // the checkout resolves (go.work).
+      requires.push(`${module} v${form.version ?? '0.0.0'}`);
     }
   }
   if (requires.length === 0) return '';
@@ -445,13 +588,16 @@ export interface HostRequirement {
   found: (manifest: string) => unknown;
 }
 
-export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown): HostRequirement[] {
+// license: the licence of the core, which the host's manifest names too (GN-3f); a core without one asks for none, and
+// CK-71 reports the core.
+export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown, license?: string): HostRequirement[] {
   const out: HostRequirement[] = [];
   const toml = (text: string): Record<string, any> => parseToml(text) as Record<string, any>;
   const json = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>;
   if (contract.targets.includes('python') && isHost(contract, 'python')) {
     const python = contract.packages['python'] as { module: string };
     const path = `${componentBase(contract)}/python/pyproject.toml`;
+    if (license !== undefined) out.push({ path, item: 'project.license', want: license, found: (t) => toml(t)['project']?.['license'] });
     out.push({ path, item: 'build-system.build-backend', want: 'maturin', found: (t) => toml(t)['build-system']?.['build-backend'] });
     out.push({ path, item: 'tool.maturin.manifest-path', want: 'native/Cargo.toml', found: (t) => toml(t)['tool']?.['maturin']?.['manifest-path'] });
     out.push({ path, item: 'tool.maturin.python-source', want: 'src', found: (t) => toml(t)['tool']?.['maturin']?.['python-source'] });
@@ -464,6 +610,7 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const npm = (contract.packages['node'] as { package: string }).package;
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
+    if (license !== undefined) out.push({ path, item: 'license', want: license, found: (t) => json(t)['license'] });
     // GN-3b: the host package is the package of a release, which reads the fields of GN-3c.
     out.push({ path, item: 'type', want: 'module', found: (t) => json(t)['type'] });
     out.push({ path, item: 'napi.binaryName', want: npm.slice(npm.indexOf('/') + 1), found: (t) => json(t)['napi']?.['binaryName'] });
@@ -479,6 +626,7 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const path = `${componentBase(contract)}/php/composer.json`;
     const extension = `ext-${extensionName(contract)}`;
     out.push({ path, item: `require.${extension}`, want: '*', found: (t) => json(t)['require']?.[extension] });
+    if (license !== undefined) out.push({ path, item: 'license', want: license, found: (t) => json(t)['license'] });
   }
   return out;
 }

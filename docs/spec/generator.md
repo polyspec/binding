@@ -43,7 +43,10 @@ the design ids are those of the binding design.
   (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
   items and the targets that it generated, keeps the files of a refused target as they are, and then fails with
   status 1 when a target was refused. A refusal, like any failure that is no error of the command line, prints no
-  usage line; only an error of the command line prints it, with status 2. A repository that builds and tests one
+  usage line; only an error of the command line prints it, with status 2. A failure that a contract, a case file or a
+  manifest causes prints its sentence and no stack trace, and a target whose generation fails with such a sentence is
+  a refused target with that item, so it does not stop another target; only a defect of binding itself prints a
+  stack trace. A repository that builds and tests one
   target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
   one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
   usage line would say that the command was written wrong when it was not.
@@ -137,6 +140,59 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
+- **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
+  the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
+  code names: each library that the contract names, and each library that the members of a callback unit of another
+  library name when the contract takes that unit, because the binding wraps the callback and converts the values of
+  its members (GN-6s). The Cargo manifest of each binding crate has the dependency line of each of them, which the
+  core names too, and `pyproject.toml` has the Python package of each; `go.mod` requires those of them that own a
+  record or a value class among those types (GN-15f); `package.json` and `composer.json` name no other library. A
+  library that only the contract of another library names in another place, such as the type of a member of a class
+  that this contract does not take, is in no manifest. `scaffold` reads the contract of a library by the `path` of its
+  dependency line, from the core of the library that names it, and the others through `cargo metadata`; when Cargo
+  fails, it writes the packages with the libraries that the contract itself names and fails with status 1 and the
+  instruction of GN-15f, because the libraries that only a callback unit names are then not known. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
+  is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
+  dependency `polyspec-<library>==X.Y.Z`). Every other line (a path, a
+  branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
+  the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
+  `polyspec-<library>` alone), and the development checkout
+  resolves it through its development links and its development install. No form of the line stops `scaffold`, `generate` or `check`;
+  `binding check --release` reports each development form (CK-70). The dependency line of each binding crate on
+  `polyspec-binding-core` follows the line of the core on it in the same way: `scaffold` writes the source that the
+  core names (its `git` with its `branch` or `tag`, its `version`, or its `path`, which climbs to the place of the
+  binding crate) with the features that the binding crate needs, and pins none by itself, so a core that names the
+  tag of a release of binding gives binding crates of that release. For a core that names no line on
+  `polyspec-binding-core`, such as a core that only passes the values of another library on, `scaffold` writes the
+  line of the generator itself: the generator of a release, which was installed at its version and knows no commit of
+  itself (docs/spec/contract-check.md CK-20), writes the Git repository of binding at the tag `vX.Y.Z` of its own
+  version, a release form; a development generator, which knows its commit (a checkout, a tree that `git archive`
+  wrote, an install from Git), writes the Git repository of binding at the development branch `v1/rust-core`, which
+  the check of a release reports in each binding crate. The generated code is written for the `binding_core` of the
+  generator that writes it (L-2), so the line of the generator is the one line that fits when the core names none. A tracked package that `scaffold` cannot write,
+  such as the Go module of a contract that names a record of a library without a Go module, is named with its reason:
+  `scaffold` writes the other packages and then fails with status 1, `check` reports it as a finding of CK-19 and
+  compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a
+  question of one manifest of one target, so it does not stop the other targets, and what a release may not hold is a
+  finding that names the line, which a thrown error did not.
+- **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
+  `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
+  names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
+  `project.license`, and `package.json` and `composer.json` as `license`; `go.mod` has no such field. A core that
+  names no licence is a finding of `binding check` (CK-71), and `scaffold` then writes the manifests without the
+  field. The hand-written manifest of a host package (GN-3b) names the same licence, which `check` reads as an item of
+  the host's manifest (CK-19): `project.license` of the host's `pyproject.toml`, and `license` of the host's
+  `package.json` and of the host library's `composer.json`. Why: a binding package is the
+  core in another language, so it has the licence of the core, and a licence that binding wrote by itself would state
+  terms that the repository did not choose.
+- **GN-3g** The generated PHP extension registers under the name `php-ext.extension-name` of its `composer.json`
+  (GN-3c), `polyspec_<library>`: its module names itself with `ModuleBuilder::name`, because `#[php_module]` of
+  ext-php-rs 0.16.4 names a module after the crate, `polyspec-<library>-php-ext`. PHP registers the classes and
+  functions of an extension whatever the module is named, so the tests of a binding pass under either name; the
+  end-to-end check therefore asks, in each PHP process that runs tests, whether `extension_loaded` is true for the
+  `extension-name` of each `composer.json` of the run, and the process fails with the name before a test runs when it
+  is not. Why: PIE and a release tool load the binary and ask PHP for the extension by `extension-name`, so an
+  extension under another name is installed and reported as not loaded.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3
@@ -1082,15 +1138,26 @@ the design ids are those of the binding design.
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through
   `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
-  one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
+  one whose package has the name of a package of this repository, are refused by name. A library whose contract names no
+  Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
+  targets are generated (GN-1c), as `scaffold` names the Go module alone as not written (GN-3e). `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
-  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
-  each library whose records or value classes (GN-6x) the contract names it writes a line `require <module> <version>`
+  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`.
+  `cargo metadata` resolves the workspace, so it fails where Cargo cannot resolve it: without network for a Git
+  dependency that the machine has not fetched, or for a manifest that names a crate that no longer exists. `scaffold`
+  then names the Go module as not written (GN-3e), with the status of Cargo and the instruction to run the install
+  target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
+  again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
+  them for every target, so they fail with the same instruction. For
+  each library whose records or value classes (GN-6x) the contract names, or the members of a callback unit of
+  another library that the contract takes name (GN-3e), it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
-  repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
-  Go version and is refused by name. The Go program then also links the static library of that repository, which the
+  repository to the Go module of that one; every other dependency line (a branch, a commit, a version
+  range) is a development form too (GN-3e) and gives `v0.0.0` without a `replace` line, which the development
+  checkout resolves through its development link, an untracked `go.work` that names the checkout of that repository
+  (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
