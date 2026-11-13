@@ -143,6 +143,12 @@ impl Tag {
         Gate { tag: self.name.clone(), open: true }
     }
 
+    /// The lease of the tag, a resource whose release call ends it (B-10).
+    #[must_use]
+    pub fn lease(&self) -> Lease {
+        Lease { tag: self.name.clone() }
+    }
+
     /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
     #[must_use]
     pub fn gates(&self, count: u64) -> Vec<Gate> {
@@ -154,6 +160,28 @@ impl Tag {
                 gate
             })
             .collect()
+    }
+}
+
+/// A lease of a tag, a resource that its release call ends (B-10: a class unit with `cleanup`).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Lease {
+    tag: String,
+}
+
+impl binding_core::Cleanup for Lease {}
+
+impl Lease {
+    /// The name of the tag that holds the lease.
+    #[must_use]
+    pub fn holder(&self) -> String {
+        self.tag.clone()
+    }
+
+    /// Releases the lease, which consumes it (GN-6o).
+    #[must_use]
+    pub fn release(self) -> String {
+        format!("the lease of {} is released", self.tag)
     }
 }
 
@@ -177,6 +205,25 @@ impl Gate {
         Ok(format!("{} passes", self.tag))
     }
 
+    /// What enters the gate, read as a blocking I/O call would be (B-5 (a): the token of wait blocking_io).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed.
+    pub fn enter_slowly(&self, _io: binding_core::Io) -> Result<String, Error> {
+        self.enter()
+    }
+
+    /// What enters the gate, awaited as an async driver would be (I-2 (4): wait async_driver).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed, and kind `unsupported` when the call runs on no tokio runtime (GN-6n).
+    pub async fn enter_later(&self) -> Result<String, Error> {
+        on_runtime().await?;
+        self.enter()
+    }
+
     /// Closes the gate.
     ///
     /// # Errors
@@ -188,6 +235,41 @@ impl Gate {
         }
         self.open = false;
         Ok(())
+    }
+}
+
+/// The text of a name, read as a blocking I/O call would be (B-5 (a): the token of wait blocking_io).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty.
+pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
+    if name.is_empty() {
+        return Err(Error::Missing { key: String::from("name") });
+    }
+    Ok(format!("the text of {name}"))
+}
+
+/// The text of a name, awaited as an async driver would be (I-2 (4): wait async_driver).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty, and kind `unsupported` when the call runs on no tokio runtime (GN-6n).
+pub async fn fetch(name: &str) -> Result<String, Error> {
+    on_runtime().await?;
+    if name.is_empty() {
+        return Err(Error::Missing { key: String::from("name") });
+    }
+    Ok(format!("the fetched text of {name}"))
+}
+
+/// GN-6n: a core of tokio needs the runtime of its call, so an async member fails where the binding gives none. The
+/// call yields once, so that the future is polled again.
+async fn on_runtime() -> Result<(), Error> {
+    tokio::task::yield_now().await;
+    match tokio::runtime::Handle::try_current() {
+        Ok(_handle) => Ok(()),
+        Err(error) => Err(Error::Unsupported { what: format!("a call outside a tokio runtime: {error}") }),
     }
 }
 

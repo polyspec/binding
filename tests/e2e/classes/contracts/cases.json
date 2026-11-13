@@ -129,6 +129,42 @@
       "name": "a"
     }
   ],
+  "tag_lease": [
+    {
+      "id": "a_tag_has_a_lease",
+      "name": "a"
+    }
+  ],
+  "lease_holder": [
+    {
+      "id": "a_lease_is_held_by_its_tag",
+      "receiver": {
+        "new": "tag.lease",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a"
+    }
+  ],
+  "lease_release": [
+    {
+      "id": "a_lease_is_released",
+      "receiver": {
+        "new": "tag.lease",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "the lease of a is released"
+    }
+  ],
   "tag_gates": [
     {
       "id": "a_tag_has_two_gates",
@@ -239,6 +275,116 @@
     },
     {
       "id": "a_gate_closes_once",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
+    }
+  ],
+  "read": [
+    {
+      "id": "a_name_is_read",
+      "name": "a",
+      "result": "the text of a"
+    },
+    {
+      "id": "an_empty_name_is_missing",
+      "name": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for name"
+      }
+    }
+  ],
+  "fetch": [
+    {
+      "id": "a_name_is_fetched",
+      "name": "a",
+      "result": "the fetched text of a"
+    },
+    {
+      "id": "an_empty_name_is_missing_when_fetched",
+      "name": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for name"
+      }
+    }
+  ],
+  "gate_enter_slowly": [
+    {
+      "id": "an_open_gate_lets_its_tag_pass_after_a_wait",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a passes"
+    },
+    {
+      "id": "a_closed_gate_lets_nothing_pass_after_a_wait",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
+    }
+  ],
+  "gate_enter_later": [
+    {
+      "id": "an_open_gate_lets_its_tag_pass_when_awaited",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a passes"
+    },
+    {
+      "id": "a_closed_gate_lets_nothing_pass_when_awaited",
       "receiver": {
         "new": "tag.gate",
         "receiver": {

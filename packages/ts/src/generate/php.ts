@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -31,7 +31,7 @@ const phpEnumType = (unit: Unit): string => `Php${langName('php', unit.name, 'cl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -146,21 +146,30 @@ fn in_bool(value: &Zval, subject: &str) -> Result<bool, Fail> {
     Err(type_error(subject, "bool"))
 }
 
-/// B-2: an int (IS_LONG) in the range of the contract type; any other value is kind invalid_number.
+/// B-2, GN-12a: an int (IS_LONG) that is a safe integer for the contract type int; any other value is kind
+/// invalid_number.
 fn in_int(value: &Zval, subject: &str) -> Result<i64, Fail> {
+    match (value.is_long(), value.long()) {
+        (true, Some(integer)) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
+    }
+}
+
+/// B-2, T-1: an int (IS_LONG) of the range of i64 for the contract type int64.
+fn in_int64(value: &Zval, subject: &str) -> Result<i64, Fail> {
     match (value.is_long(), value.long()) {
         (true, Some(integer)) => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
     }
 }
 
+/// B-2, GN-12a: an int (IS_LONG) of 0 to 2^53 - 1 for the contract type uint.
 fn in_uint(value: &Zval, subject: &str) -> Result<u64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
-    let integer = match (value.is_long(), value.long()) {
-        (true, Some(integer)) => integer,
-        _ => return Err(invalid()),
-    };
-    u64::try_from(integer).map_err(|_negative| invalid())
+    match (value.is_long(), value.long()) {
+        (true, Some(integer @ 0..=9_007_199_254_740_991)) => Ok(integer.unsigned_abs()),
+        _ => Err(invalid()),
+    }
 }
 
 fn in_float(value: &Zval, subject: &str) -> Result<f64, Fail> {
@@ -286,7 +295,9 @@ fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, it
     while let Some((key, value)) = entries.next_zval() {
         let key = if let Some(integer) = key.long() {
             match (kinds.contains(&0), kinds.contains(&2)) {
-                (true, _) => binding_core::Key::Int(integer),
+                // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+                (true, _) if integer.unsigned_abs() <= 9_007_199_254_740_991 => binding_core::Key::Int(integer),
+                (true, _) => return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
                 (false, true) => binding_core::Key::Text(integer.to_string()),
                 (false, false) => return Err(type_error(subject, expected)),
             }
@@ -572,7 +583,9 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
-  const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`);
+  const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  // GN-6n: the calling thread blocks on the future of an async member, on the runtime of binding_core.
+  const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => wait, 'binding_error') : armedCall(model, fn, core);
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -754,7 +767,16 @@ pub struct ${struct} {
 
 #[php_impl]
 impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).join('')}}
-`;
+${object.cleanup === undefined ? '' : `
+/// GN-6p, B-10: an object freed without its cleanup call warns, and dropping the value releases its resource.
+impl Drop for ${struct} {
+    fn drop(&mut self) {
+        if !self.inner.taken() {
+            ext_php_rs::error::php_error(&ext_php_rs::flags::ErrorType::Warning, ${rustString(cleanupWarning(langName('php', object.unit.name, 'class'), memberName('php', object.cleanup)))});
+        }
+    }
+}
+`}`;
 }
 
 // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
@@ -836,7 +858,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
@@ -1214,7 +1236,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
+${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
 extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
     0
