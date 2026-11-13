@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 129edc283e5ec37c56ffce3421d72e664bac5930fbb6a0eddab63e83d6959fe5 -->
+<!-- source-sha256: 1479c72da03d9c5434d57f15f0d54faffab01014c005810eef8d8b6f2dd784ac -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- WASM crate의 `Driven` 객체의 `advance`는 작업을 `shielded` 밖에서 돌렸다. 그래서 언어 코드가 다른 member의 호출
+  안에서 하는 advance는 시험이 그 member에 장전한 fault를 보았다. Node crate는 그것을 shield했다. 이제 WASM crate도
+  shield한다(GN-8a). fault 진입의 테스트는 장전 호출의 수와 shield의 수만 비교했다. 새 테스트는 sample의 WASM crate를
+  진입마다 읽고, member의 각 진입이 guard 하나, shield 하나, 장전 하나(`with_faults` 또는 `armed_future`)를 갖고
+  `advance`는 shield 하나를 갖고 장전은 없기를 요구한다. `packages/ts`의 `npm test`로 검증했다. 이 변경에 대해 생성된
+  crate는 컴파일하지 않았다.
 - WASM crate의 class의 member의 진입은 `class_<unit>_<member>`였고, 이 이름은 두 가지로 읽힌다. class `a`의 member
   `new_x`와 class `a_new`의 member `x`가 둘 다 `class_a_new_x`였고, member `free`는 class의 해제처럼
   `class_<unit>_free`와 export `__<Class>_free`였다. 이제 진입은 export의 module 안의 module `class_<unit>`의 함수

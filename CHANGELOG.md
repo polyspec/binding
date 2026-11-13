@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The `advance` of a `Driven` object of the WASM crate ran its work outside `shielded`, so an advance that language
+  code makes inside the call of another member saw the faults that a test armed for that member; the Node crate
+  shielded it. The WASM crate now shields it too (GN-8a). The test of the fault entries compared only the count of
+  the arming calls with the count of the shields; a new test reads the WASM crate of the sample entry by entry and
+  requires that each entry of a member holds one guard, one shield and one arming, `with_faults` or `armed_future`,
+  and that `advance` holds one shield and no arming. Verified by `npm test` in `packages/ts`. The generated crates
+  were not compiled for this change.
 - The entry of a member of a class of the WASM crate was `class_<unit>_<member>`, which reads in two ways: the member
   `new_x` of the class `a` and the member `x` of the class `a_new` were both `class_a_new_x`, and a member `free` was
   `class_<unit>_free` with the export `__<Class>_free`, as the release of the class was. The entry is now the function

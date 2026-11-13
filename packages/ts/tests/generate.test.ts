@@ -2330,8 +2330,11 @@ test('fault injection points, the kinds of an alias and the point of another lib
   const lib = text(wasm, 'packages/ts/wasm/generated/lib.rs');
   assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/);
   assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__armFaults"\)\]/);
-  // Every entry arms its core call: a call with_faults, and the future of a machine armed_future (GN-6n).
-  assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length);
+  // Every entry of a member is shielded once and arms its core call once: a call with_faults, and the future of a
+  // machine armed_future (GN-6n); the advance of a Driven object is shielded and arms nothing. The test of the entries
+  // of the WASM crate reads this entry by entry; here the counts of the crate agree with it.
+  const advances = (lib.match(/pub fn advance\(&mut self/g) ?? []).length;
+  assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
@@ -3391,7 +3394,7 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, passed_out\(value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, passed_out\(result\)\?\)\)/);
   // A fulfilled value enters the table again, and a rejection is kept as the exception of the function.
   assert.match(lib, /fn outcome_of\(settled: &JsValue\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.is_undefined\(\) \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = tuple_in\(settled, "settled"\)\?;\n {4}if bool_in\(&fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(value\)\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Js\(value\)\)\)\)\)\n\}/);
-  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let advanced = \(self\.advance\)\(settled\);\n\s+\/\/ U-3: [^\n]*\n\s+self\.raised\.append\(&mut raised_taken\(\)\);\n\s+if !matches!\(advanced, Ok\(\(0 \| 1, _\)\)\) \{\n\s+raised_released\(&std::mem::take\(&mut self\.raised\)\);\n\s+\}\n\s+let \(step, value\) = advanced\?;\n\s+tuple_out\(&\[JsValue::from\(step\), value\]\)/);
+  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let advanced = \(self\.advance\)\(settled\);\n\s+\/\/ U-3: [^\n]*\n\s+self\.raised\.append\(&mut raised_taken\(\)\);\n\s+if !matches!\(advanced, Ok\(\(0 \| 1, _\)\)\) \{\n\s+raised_released\(&std::mem::take\(&mut self\.raised\)\);\n\s+\}\n\s+let \(step, value\) = advanced\?;\n\s+tuple_out\(&\[JsValue::from\(step\), value\]\)/);
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
   assert.match(mjs, /return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.__Store_transaction\(this\.#handle, args\[0\]\)\)\);/);
@@ -4034,4 +4037,30 @@ test('the entry of a member of a class of the WASM crate is a function of the mo
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__free_Tag"\)\]\n {4}pub fn free_tag\(this: u32\) \{/);
   const entry = text(out, 'packages/ts/wasm/generated/index.js') + [...out].filter(([path]) => path.endsWith('.js') || path.endsWith('.mjs')).map(([, file]) => String(file)).join('\n');
   assert.match(entry, /released\.register\(this, \[glue\.__free_Tag, this\.#handle\]\);/);
+});
+
+test('every entry point of the WASM crate is shielded once, and the entry of a member arms its core call once: with_faults, or armed_future around the wait of a machine (G-5, GN-8a)', () => {
+  // The count of the arming calls of the whole crate equals the count of the shields only when each entry holds one of
+  // each, which this test reads entry by entry. The advance of a Driven object is an entry point without a core call
+  // of its own: it is shielded, as that of the Node crate is, and arms nothing, because the member that made the
+  // machine arms each wait.
+  const lib = text(scopedSample(['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  const exports = lib.slice(lib.indexOf('\nmod exports {'));
+  const entries = [...exports.matchAll(/\n( *)((?:(?:\/\/\/|#\[)[^\n]*\n *)*)pub fn ([a-z_0-9]+)\([^\n]*\{\n([\s\S]*?)\n\1\}\n/g)].map(([, , attributes, name, body]) => ({
+    name: name ?? '',
+    test: /#\[cfg\(feature = "(?:panic|fault|codec)-test"\)\]/.test(attributes ?? ''),
+    guards: (body ?? '').match(/\bguard\(/g)?.length ?? 0,
+    shields: (body ?? '').match(/shielded\(\|\| /g)?.length ?? 0,
+    arms: (body ?? '').match(/(?:with_faults|armed_future)\("/g)?.length ?? 0,
+  }));
+  const members = entries.filter((entry) => /^(?:function|member)_/.test(entry.name));
+  assert.ok(members.length >= 30, String(members.length));
+  assert.ok(members.some((entry) => entry.name === 'member_transaction'));
+  assert.deepEqual(members.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 1), []);
+  const others = entries.filter((entry) => !/^(?:function|member)_/.test(entry.name) && !entry.test && entry.guards > 0);
+  assert.deepEqual(others.map((entry) => entry.name), ['advance']);
+  assert.deepEqual(others.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 0), []);
+  // No arming and no shield is outside an entry, so the counts of the crate are the sums of its entries.
+  assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future)\("/g)?.length);
+  assert.equal(entries.reduce((sum, entry) => sum + entry.shields, 0), lib.match(/shielded\(\|\| /g)?.length);
 });

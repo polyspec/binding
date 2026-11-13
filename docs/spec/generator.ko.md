@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 78c9074967a12093d6333e1e1f715f1cde7c35341570197c4c33c29192fc7364 -->
+<!-- source-sha256: 216e97d15d7a01b46a7b7cfbe8aa8dc299e45c8890ec7bdb39edc9af78170e43 -->
 # 생성기
 
 [English](generator.md)
@@ -441,7 +441,10 @@
   변환하고 place의 잠금을 잡는다(GN-6h). 그래서 코어에 닿기 전에 실패한 호출은(거부된 인자, kind `busy`) 장전을 그
   member의 다음 호출에 남긴다. iterate의 코어 호출은 순회 전체이며, 진입점은 그 항목을 `with_faults` 안에서 모은다.
   그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback 안에서 다시 들어온
-  진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
+  진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `machine`이 있는 member는 그 대신 machine의 wait마다
+  `armed_future("<member id>", …)`로 장전한다(GN-6n). 그래서 member의 각 진입은 장전 하나와 shield 하나를 갖는다. Node와
+  WASM의 `Driven` 객체의 `advance`(GN-6ab)는 자기 코어 호출이 없는 진입점이다. 언어 코드가 다른 member의 호출 안에서
+  그것을 부를 수 있으므로 그 작업은 `shielded(…)` 안에서 돌고, 아무것도 장전하지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.
   `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
   동기 작업에만 설치된다.

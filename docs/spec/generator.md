@@ -545,7 +545,11 @@ the design ids are those of the binding design.
   kind `busy`, leaves the arming for the next call of the member, and the core call of an iterate is the whole
   iteration, whose items the entry point collects inside `with_faults`. So the call that makes a receiver or an
   argument does not take the arming of the member under test, and an entry point that a callback enters, the
-  conversion of its arguments too, does not see the arming around it. `_arm_faults(member, faults)` takes
+  conversion of its arguments too, does not see the arming around it. A member with `machine` arms each wait of
+  its machine instead, with `armed_future("<member id>", …)` (GN-6n), so each entry of a member holds one arming and
+  one shield. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
+  its own: its work runs in `shielded(…)`, because language code may call it inside the call of another member, and
+  it arms nothing. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
   gives the names of the points whose fault did not fire. A member that waits is not generated yet (GN-1), so the

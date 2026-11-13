@@ -1160,12 +1160,20 @@ impl Driven {
 `;
 
 // GN-6ab: whether a member of the model drives a state machine.
-const drivesMachine = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true);
+const machineMember = (model: Model): Fn | undefined => [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.machine === true);
+const drivesMachine = (model: Model): boolean => machineMember(model) !== undefined;
+
+// GN-6ab, G-5: the Driven class of a contract with a machine. Its advance is an entry point, whose work runs with no
+// fault, as the work of every entry point does: language code may call it inside the call of another member.
+function machineRust(model: Model): string {
+  const machine = machineMember(model);
+  return machine === undefined ? '' : withFaults(model, machine, machineText(carriesThrown(model)));
+}
 
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
-  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), drivesMachine(model) ? machineText(carriesThrown(model)) : ''].join('');
+  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
   const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
