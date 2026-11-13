@@ -324,6 +324,11 @@ fn out_float(output: &mut Vec<u8>, value: impl Borrow<f64>) {
     output.extend_from_slice(&value.borrow().to_le_bytes());
 }
 
+/// N-4: the items of an iterate, which the core gives as an iterator or a collection.
+fn collected<T>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    items.into_iter().collect()
+}
+
 fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: impl Fn(&mut Vec<u8>, T)) {
     let items: Vec<T> = value.into_iter().collect();
     write_length(output, items.len());
@@ -596,7 +601,7 @@ function functionRust(model: Model, fn: Fn): string {
     const yields = fn.yields ?? { value: 'none' };
     const item = (type: Type, value: string): string => convertOut(model, type, borrowedItem(model, type, value));
     const call = armedCall(model, fn, coreCall(model, fn));
-    lines.push(`        let items: Vec<_> = ${model.faults.length === 0 ? `${call}.into_iter().collect()` : call};`);
+    lines.push(`        let items: Vec<_> = ${model.faults.length === 0 ? `collected(${call})` : call};`);
     lines.push('        let mut buffer = Vec::new();', '        let output = &mut buffer;', '        write_length(output, items.len());', '        for item in items {');
     if (yields.key === undefined) {
       lines.push(`            ${item(yields.value, 'item')};`);
