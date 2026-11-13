@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
+  9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
+  refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a
+  place (CK-64).
 - The Node and WASM declarations named an `int64` parameter `number | bigint` and an `int64` result `bigint`, but the
   binding took and gave a number of the safe integers only, so the case 9223372036854775807 was refused as an
   argument, and `binding` read that integer of a case file as the nearest double. The binding now takes a `bigint` of
