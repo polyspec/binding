@@ -29,11 +29,11 @@
 // lint reads the code and runs nothing, so only the tests verify a target, and a target without a test that ran fails.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { consumerFiles, goRemote, requiredVersion, type Required } from './go-release.mts';
+import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -369,6 +369,11 @@ const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhic
 // BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
 const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
 const llvmNm = targets.includes('go') ? need('go', 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))) : '';
+// GN-15g: llvm-strip removes the debug sections of the static library that the released form carries, and llvm-size
+// names the sections that are left.
+const llvmTool = (name: string): string => (targets.includes('go') ? need('go', `${name} of the component llvm-tools`, 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin', name))) : '');
+const llvmStrip = llvmTool('llvm-strip');
+const llvmSize = llvmTool('llvm-size');
 const wasmBindgen = targets.includes('wasm') ? need('wasm', 'the wasm-bindgen CLI', 'mise.toml', miseWhich('wasm-bindgen')) : '';
 if (targets.includes('wasm')) {
   const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' });
@@ -784,7 +789,15 @@ if (targets.includes('go')) {
         execFileSync('cp', ['-R', goModule, moduleDir]);
         // The contract cases of the run are no file of the repository: the run copied them into the module (GN-14).
         rmSync(join(moduleDir, 'tests/cases_test.go'), { force: true });
-        copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`));
+        const carriedLibrary = join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`);
+        copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), carriedLibrary);
+        // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
+        // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
+        const built = statSync(carriedLibrary).size;
+        run(llvmStrip, ['--strip-debug', carriedLibrary]);
+        const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+        if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
+        process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${platform}: ${String(built)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
         // The packages that a consumer can import: the directories of the module with a Go file that is no test,
         // outside internal.
         const packages: string[] = [];

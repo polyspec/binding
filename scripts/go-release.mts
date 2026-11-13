@@ -61,3 +61,16 @@ export function consumerFiles(goVersion: string, required: readonly Required[]):
     ].join('\n')],
   ]);
 }
+
+// GN-15g: the debug sections of a static library, from the output of `llvm-size -A`, which gives for each member of the
+// archive a line of each section with its name and its size. A section whose name holds `debug` after its leading
+// dots or underscores (__debug_info of Mach-O, .debug_info and .zdebug_info of ELF) and whose size is not 0 is named
+// once, in the order of the names.
+export function debugSections(sizes: string): string[] {
+  const found = new Set<string>();
+  for (const line of sizes.split('\n')) {
+    const [name, size] = line.trim().split(/\s+/);
+    if (name !== undefined && /^[._]+z?debug/.test(name) && size !== undefined && /^[1-9][0-9]*$/.test(size)) found.add(name);
+  }
+  return [...found].sort();
+}
