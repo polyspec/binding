@@ -509,6 +509,7 @@ pub fn describe(value: Option<&Data>) -> String {
         Some(Data::Text(_)) => "text",
         Some(Data::List(_)) => "list",
         Some(Data::Map(_)) => "map",
+        Some(Data::Native(_)) => "native",
     };
     String::from(kind)
 }
