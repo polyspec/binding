@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -347,10 +347,12 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
+  // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.
+  const usesDatetime = out.some((line) => line.includes(HOST_VALUES.date.python));
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
+${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
 
 import ${module} as pkg
 from ${module} import _native

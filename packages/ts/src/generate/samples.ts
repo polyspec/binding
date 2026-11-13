@@ -212,6 +212,8 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 // places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
 // every place of an id holds the same instance and a later place inside the first makes a cycle.
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+  const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
+  if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
   const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
   const value_ = valueOf(model, ctx, value, where, making, false);
   if (making.made.length === 0 && making.fills.length === 0) return value_;
@@ -219,6 +221,15 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   if (ctx.lang === 'node') return `(() => { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
   return `(static function () { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
 }
+
+// G-5: the closed table of the values of a language that are no value of a value type, {"host": <sort>}: the value
+// that each language makes for a sort. WASM takes the value of Node; Go writes no test of the kinds of an alias yet
+// (U-7), and its values are those of the specification. A Python test that makes a date imports datetime.
+export const HOST_VALUES = {
+  callable: { python: 'lambda: None', node: '() => null', php: 'static fn (): null => null' },
+  date: { python: 'datetime.date(1970, 1, 1)', node: 'new Date(0)', php: "new \\DateTimeImmutable('@0')" },
+  object: { python: 'object()', node: 'new (class Other {})()', php: 'new class {}' },
+} as const satisfies Record<string, Record<Lang3, string>>;
 
 // GN-13: what a case value makes before it is returned: the instances of its ids, in the order of their first places,
 // the statements that fill them, in the order in which their first places end, and the ids that a place named.
@@ -983,8 +994,11 @@ export function aliasCases(model: Model): AliasCase[] {
       const row = model.contract.errors.kinds.find((k) => typeof kind === 'string' && k.library === undefined && kindsOf(k).includes(kind));
       if (typeof kind !== 'string' || row?.category === undefined) throw new Error(`${where} raises no kind of errors.kinds (U-7)`);
       const value = record['value'];
-      // G-5: a value of the language by its kind, {"host": ...}, waits for the closed table of those kinds.
-      if (typeof value === 'object' && value !== null && 'host' in value) throw new Unsupported(`${where}: a value {"host": ...} is not generated yet (G-5)`);
+      // G-5: a value of the language that is no value of the alias is {"host": <sort>} of the closed table HOST_VALUES.
+      const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
+      if (sort !== undefined && (typeof sort !== 'string' || !Object.hasOwn(HOST_VALUES, sort) || Object.keys(value as object).length !== 1)) {
+        throw new Error(`${where}: a value {"host"} is ${Object.keys(HOST_VALUES).map((k) => JSON.stringify(k)).join(', ').replace(/, ([^,]*)$/, ' or $1')}, not ${shown(sort)} (G-5)`);
+      }
       out.push({ alias, id: String(record['id']), value, kind, category: row.category });
     }
   }
@@ -1028,6 +1042,8 @@ export function phpFormless(value: unknown, slot = false): string | undefined {
     case 'reference':
       if (!slot) return 'a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place';
       return phpFormless((held as Record<string, unknown> | undefined)?.['value'], false);
+    case 'int':
+      return typeof held === 'string' && /^-?[0-9]+$/.test(held) && (BigInt(held) < -(2n ** 63n) || BigInt(held) >= 2n ** 63n) ? 'an integer outside 64 bits, which PHP has no form of: a PHP int is 64 bits' : undefined;
     default:
       return undefined;
   }
@@ -1037,7 +1053,8 @@ export function phpFormless(value: unknown, slot = false): string | undefined {
 // case-test, which makes the value as the host values that PHP would describe and gives them to the in function of the
 // alias, so the rule of the core that refuses the value runs in the binding. raises is what the case expects.
 export interface CaseTest {
-  fn: Fn;
+  // The member of the case, or none for a case of the alias itself (U-7).
+  fn?: Fn;
   id: string;
   alias: ValueAlias;
   value: unknown;
@@ -1062,6 +1079,10 @@ export function phpCaseTests(model: Model): CaseTest[] {
         out.push({ fn, id: kase.id, alias, value, reason, ...(kase.raises === undefined ? {} : { raises: kase.raises }) });
       }
     }
+  }
+  for (const kase of aliasCases(model)) {
+    const reason = phpFormless(kase.value);
+    if (reason !== undefined) out.push({ id: kase.id, alias: kase.alias, value: kase.value, reason });
   }
   return out;
 }

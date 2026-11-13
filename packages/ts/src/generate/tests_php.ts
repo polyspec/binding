@@ -428,11 +428,20 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     const alias = langName('php', kase.alias.unit.name, 'class');
-    methods.push(`
+    // GN-13: a value of the case that has no PHP form runs through the entry point of the feature case-test.
+    const entry = caseTestList.findIndex((t) => t.fn === undefined && t.alias === kase.alias && t.id === kase.id);
+    const call = entry >= 0
+      ? `\\${layout.namespace}\\Internal\\caseTest${entry}()`
+      : `\\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})`;
+    methods.push(`${entry >= 0 ? `
+    /**
+     * GN-13: the in function of ${kase.alias.unit.id} runs on the value of the case as host values, because the value
+     * has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */` : ''}
     public function testU7${alias}In${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
     {
         try {
-            \\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)});
+            ${call};
             self::fail('no error');
         } catch (${cls(kase.category)} $error) {
             self::assertSame(${cls(kase.category)}::class, $error::class);

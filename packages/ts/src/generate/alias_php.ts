@@ -6,7 +6,7 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
-import { type CaseTest, caseKey } from './samples.ts';
+import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
@@ -482,7 +482,8 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
     switch (record['kind']) {
       case 'null': return 'HostValue::Null';
       case 'bool': return `HostValue::Bool(${String(held === true)})`;
-      case 'int': return `HostValue::Int(${String(held)}_i64)`;
+      // An integer outside 64 bits is the decimal token that Python and JavaScript describe for it.
+      case 'int': return typeof held === 'string' && phpFormless(record) !== undefined ? `HostValue::Number(String::from(${rustString(held)}))` : `HostValue::Int(${String(held)}_i64)`;
       case 'float': {
         const number = Number(held);
         return `HostValue::Float(${Number.isInteger(number) ? `${String(number)}.0` : String(number)}_f64)`;
@@ -561,7 +562,7 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
     const reserved = [...objects.keys()].map((id) => `let object_${id} = host.reserve();\n            `).join('');
     const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
     return `
-    /// GN-13: the case ${t.id} of ${t.fn.member.id}, as the host values that PHP would describe, given to the in
+    /// GN-13: the case ${t.id} of ${t.fn?.member.id ?? `the alias ${t.alias.unit.id}`}, as the host values that PHP would describe, given to the in
     /// function of ${t.alias.unit.id}. Its value has no PHP form: ${t.reason}.
     #[cfg(feature = "case-test")]
     #[php_function]

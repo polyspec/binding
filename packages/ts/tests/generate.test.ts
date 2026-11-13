@@ -1503,22 +1503,24 @@ test('fault injection points, the kinds of an alias and the point of another lib
 
 test('a case of an alias gives a value of the language that is no value of the alias by its sort, and an integer outside 64 bits runs in PHP as host values (G-5, GN-13)', () => {
   const raises = { kind: 'unsupported', status: null, category: 'value' };
-  const out = sampleWith((c, cases) => {
+  const change = (c: any, cases: any): void => {
     cases.data_in.push(
       { id: 'a_function', value: { host: 'callable' }, raises },
       { id: 'a_date', value: { host: 'date' }, raises },
       { id: 'an_object', value: { host: 'object' }, raises },
       { id: 'a_wide_integer', value: { kind: 'int', value: '9223372036854775808' }, raises },
     );
-  });
+  };
+  const out = sampleWith(change);
+  const wasm = sampleWith(change, ['wasm']);
   const python = text(out, pythonTests);
   assert.match(python, /^import datetime\n/m);
   assert.match(python, /_native\._alias_in_data\(lambda: None\)/);
   assert.match(python, /_native\._alias_in_data\(datetime\.date\(1970, 1, 1\)\)/);
   assert.match(python, /_native\._alias_in_data\(object\(\)\)/);
   assert.match(python, /_native\._alias_in_data\(9223372036854775808\)/);
-  for (const [path, entry] of [[nodeTests, 'addon\\(\\)'], ['packages/ts/wasm/generated/tests/generated.test.mjs', 'glue']] as const) {
-    const js = text(out, path);
+  for (const [js, entry] of [[text(out, nodeTests), 'addon\\(\\)'], [text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), 'glue']] as const) {
+    const path = entry;
     assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(\\(\\) => null\\)`), path);
     assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new Date\\(0\\)\\)`), path);
     assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new \\(class Other \\{\\}\\)\\(\\)\\)`), path);

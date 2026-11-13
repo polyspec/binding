@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A case value of the language that is no value of a value type is `{"host": <sort>}` of a closed table (G-5, GN-13):
+  `callable`, `date` and `object`, which Python makes as `lambda: None`, `datetime.date(1970, 1, 1)` and `object()`,
+  Node and WASM as `() => null`, `new Date(0)` and `new (class Other {})()`, and PHP as `static fn (): null => null`,
+  `new \DateTimeImmutable('@0')` and `new class {}`; the specification gives Go `func() {}`, `time.Unix(0, 0).UTC()`
+  and `struct{}{}`, whose tests of the kinds of an alias stay refused by name (U-7). A PHP case value with an integer
+  outside 64 bits runs through the entry point of the feature `case-test` as the decimal token
+  (`HostValue::Number`), for the cases of an alias as for those of a member. Before, a case `{"host": ...}` of an alias
+  refused the generation of every target, and PHP refused the generation for an integer outside 64 bits, so the cases
+  of such an alias were in no generated test. Verified by `make test-ts` (274 tests).
 - The case convention (G-5) gives an object an identity, a reference a place inside its own value and an object nested
   deeper than a JSON reader takes a form: a `reference` holds `{"id": n, "value": ...}` at the first place of its id
   and `{"id": n}` at every later place; an `object` with `"id": n` is named at a later place by

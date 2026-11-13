@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- 값 타입의 값이 아닌 언어의 case 값은 닫힌 표의 `{"host": <종류>}`다(G-5, GN-13). 종류는 `callable`, `date`, `object`이며,
+  Python은 `lambda: None`, `datetime.date(1970, 1, 1)`, `object()`로, Node와 WASM은 `() => null`, `new Date(0)`,
+  `new (class Other {})()`로, PHP는 `static fn (): null => null`, `new \DateTimeImmutable('@0')`, `new class {}`로
+  만든다. 명세는 Go에 `func() {}`, `time.Unix(0, 0).UTC()`, `struct{}{}`를 주며, Go의 alias kind 시험은 여전히 이름을 대고
+  거부한다(U-7). 64비트 밖의 정수를 가진 PHP case 값은 10진 token(`HostValue::Number`)으로 feature `case-test`의 진입점을
+  지나며, member의 case에도 alias의 case에도 그렇다. 전에는 alias의 `{"host": ...}` case가 모든 target의 생성을 거부했고,
+  PHP는 64비트 밖의 정수에서 생성을 거부했으므로, 그런 alias의 case는 어느 생성 시험에도 없었다. `make test-ts`(시험
+  274개)로 확인했다.
 - case 규약(G-5)이 객체에 동일성을, 참조에 자기 값 안의 자리를, JSON reader가 받는 것보다 깊이 중첩된 객체에 형식을
   준다. `reference`는 그 id의 첫 자리에서 `{"id": n, "value": ...}`를, 뒤의 모든 자리에서 `{"id": n}`을 담는다.
   `"id": n`을 가진 `object`는 뒤의 자리에서 `{"kind": "object", "id": n}`으로 부른다.
