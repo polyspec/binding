@@ -156,6 +156,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
   the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
   source to tell them apart.
+- **CK-69** The receiver of a method with a state machine (generator GN-6ae): a method whose `core` names `"machine":
+  true` names the receiver `&self`, because the generated code gives the core a clone of the value of the instance,
+  which neither writes back into the instance as `&mut self` would nor consumes it as `self` would.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

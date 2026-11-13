@@ -699,13 +699,51 @@ the design ids are those of the binding design.
     returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
     Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
     both and no tokio runtime is used.
-  A method with `machine` is refused by name: a machine that borrowed its receiver across its steps would borrow from
-  the guard that the driver holds, a type that the core cannot name; a function and a static member are generated. A
-  callback with `async_allowed: true`, whose call would give an awaitable to the machine, and `core.reaches` (c6 6.3)
-  are not generated yet (G-4). Why: a future that a runtime polls on its own threads would call language code there,
+  A method with `machine` takes a clone of its receiver, a parameter of a function type and a result `passthrough`
+  are generated, and a function with `async_allowed: true` is awaited, as GN-6ae states. `core.reaches` (c6 6.3) is
+  not generated yet (G-4). Why: a future that a runtime polls on its own threads would call language code there,
   against the owner of a Node or PHP reference, and a callback that calls another member with `async_driver` would run
   `block_on` inside the runtime, which tokio refuses; a machine without I/O lets the runtime of each language decide
   where each step runs, and the core keeps its I/O on tokio.
+- **GN-6ae** A member with `machine` (GN-6ab) may be a method, take a parameter of a function type (T-2) and return
+  `passthrough`, which the scope of a transaction needs: the member calls language code with a class instance that its
+  machine made, and returns what that code returned. Defect 86.
+  - Receiver: a method with `machine` names the receiver `&self`, and the generated code gives the core path a clone of
+    the value that the instance holds, `Clone::clone(&*<receiver>)`, by value before its arguments; the core type of
+    the class implements `Clone` as a handle whose clones share one state, so the machine owns what it uses and the
+    instance stays usable in language code while the machine runs. `&mut self` and `self` are refused by name with
+    `machine` (CK-68), because a clone neither writes back nor consumes the instance.
+  - Function parameter: the core takes a closure `FnMut(<arguments>) -> Result<binding_core::Passthrough,
+    Failure<E>>`, generic in the core path, which the generated code makes from the language function (a Python
+    callable, a Node and WASM `Function`, a PHP `callable`, a Go `func` of the generated signature). Its machine calls
+    it only from `Machine::call`, on the thread of the language code (GN-6ab). The closure converts each argument out:
+    a class argument is the core value that the machine made, which becomes a new instance of the generated class (the
+    `tx` that `db.transaction` makes); it calls the function and gives the value that the function returned as a
+    `Passthrough`, or an exception of the function as `Failure::Raised`, which the core may answer, by a rollback, and
+    then return, so that the caller gets the same exception object.
+  - `passthrough`: `binding_core::Passthrough` holds a language value in the table of the binding (B-3) without
+    converting it; the core moves it and never reads it. A result `passthrough` of the member returns that value to
+    language code unchanged, and a `Passthrough` that the core drops releases its value.
+  - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
+    to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
+    the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
+    value that is no thenable included, and gives its value or its rejection to the next `advance()`. Python: `a<name>`
+    awaits a coroutine or another awaitable on the event loop of the caller with `asyncio.run_coroutine_threadsafe`
+    from its worker thread, and `<name>` gives an awaitable result kind `invalid_callback` with the message that names
+    `a<name>`, because no event loop of the caller runs. PHP and Go have no awaitable: the driver settles the value at
+    once, so a PHP or Go function returns its result.
+  - Case: an argument of a function type is a function fixture, `{"function": {"calls": [<step>], "result": <case
+    value>}}` or with `"raise"` in place of `"result"`: the generated function makes each step on its arguments in
+    order, `{"on": "<parameter name>", "call": "<member id>", "args": {...}}`, where an argument of a function type of a
+    step is again a function fixture, and then returns `result`, raises the error unit of `raise` (GN-13) or, with
+    `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
+    `after` (c6 1.2) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
+    nested scope.
+  The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
+  `passthrough`, and the class `scope`, whose `put` and `get` write and read the pending entries and whose `nested`
+  takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. Why: a transaction is a
+  scope that the core opens, hands to language code and closes after that code returns, so the core decides when the
+  language code runs and what its failure means, and the machine keeps the I/O of the scope on tokio (GN-6ab).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

@@ -577,12 +577,44 @@
     모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[false, promise]`를, 끝에서는
     `[true, result]`를 돌려준다. 두 곳 모두 JavaScript의 event loop가 모듈의 스레드에서 각 Io future를 poll하고 tokio
     runtime은 쓰지 않으므로, 브라우저와 Node는 같은 단계를 밟는다.
-  `machine`이 있는 method는 이름을 대고 거부한다. 단계들에 걸쳐 receiver를 빌리는 machine은 driver가 쥔 guard에서
-  빌리게 되는데, 코어는 그런 타입을 적을 수 없기 때문이다. 함수와 static member는 생성한다. 호출이 machine에 awaitable을
-  줄 `async_allowed: true`인 callback과 `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기
+  `machine`이 있는 method는 receiver의 clone을 받고, 함수 타입의 parameter와 결과 `passthrough`를 생성하며,
+  `async_allowed: true`인 함수는 기다린다. GN-6ae가 적는 대로다. `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기
   스레드에서 poll하는 future는 그 스레드에서 언어 코드를 불러 Node나 PHP 참조의 owner를 어기고, `async_driver`인 다른
   member를 부르는 callback은 runtime 안에서 `block_on`을 돌리게 되는데 tokio는 이를 거부한다. I/O 없는 machine이면 각
   단계를 어디서 돌릴지는 각 언어의 runtime이 정하고, 코어는 자기 I/O를 tokio에 둔다.
+- **GN-6ae** `machine`이 있는 member(GN-6ab)는 method일 수 있고, 함수 타입(T-2)의 parameter를 받고 `passthrough`를
+  돌려줄 수 있다. transaction의 범위가 이것을 필요로 한다: member는 그 machine이 만든 class 인스턴스로 언어 코드를
+  부르고, 그 코드가 돌려준 것을 돌려준다. 결함 86.
+  - Receiver: `machine`이 있는 method는 receiver `&self`를 적고, 생성 코드는 인스턴스가 쥔 값의 clone
+    `Clone::clone(&*<receiver>)`을 인자보다 앞에 값으로 코어 경로에 준다. class의 코어 타입은 clone들이 한 상태를
+    나누는 handle로 `Clone`을 구현하므로, machine은 쓰는 것을 소유하고 인스턴스는 machine이 도는 동안에도 언어 코드에서
+    쓸 수 있다. `&mut self`와 `self`는 `machine`과 함께 이름을 대고 거부한다(CK-69). clone은 인스턴스에 다시 쓰지도,
+    인스턴스를 소비하지도 않기 때문이다.
+  - 함수 parameter: 코어는 코어 경로에서 generic인 closure `FnMut(<arguments>) -> Result<binding_core::Passthrough,
+    Failure<E>>`를 받고, 생성 코드는 그것을 언어 함수(Python callable, Node와 WASM `Function`, PHP `callable`, 생성된
+    signature의 Go `func`)로 만든다. machine은 그것을 `Machine::call`에서만, 언어 코드의 스레드에서 부른다(GN-6ab).
+    closure는 각 인자를 내보내 변환한다: class 인자는 machine이 만든 코어 값이고, 생성된 class의 새 인스턴스가 된다
+    (`db.transaction`이 만드는 `tx`). closure는 함수를 부르고, 함수가 돌려준 값을 `Passthrough`로, 함수의 예외를
+    `Failure::Raised`로 준다. 코어는 그것에 rollback으로 답한 뒤 돌려줄 수 있고, 그러면 호출자는 같은 예외 객체를 받는다.
+  - `passthrough`: `binding_core::Passthrough`는 언어 값을 변환하지 않고 binding의 table(B-3)에 쥔다. 코어는 그것을
+    옮기기만 하고 읽지 않는다. member의 결과 `passthrough`는 그 값을 그대로 언어 코드에 돌려주며, 코어가 버린
+    `Passthrough`는 그 값을 놓는다.
+  - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
+    driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
+    WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
+    다음 `advance()`에 준다. Python: `a<name>`은 worker 스레드에서 `asyncio.run_coroutine_threadsafe`로 호출자의 event
+    loop에서 coroutine이나 다른 awaitable을 기다리고, `<name>`은 호출자의 event loop가 돌지 않으므로 awaitable 결과를
+    `a<name>`을 이름하는 message의 kind `invalid_callback`으로 한다. PHP와 Go에는 awaitable이 없다: driver는 값을 곧바로
+    settle하므로 PHP나 Go 함수는 그 결과를 돌려준다.
+  - Case: 함수 타입의 인자는 함수 fixture `{"function": {"calls": [<step>], "result": <case value>}}`이거나 `"result"`
+    대신 `"raise"`를 가진다. 생성된 함수는 인자에 각 단계 `{"on": "<parameter name>", "call": "<member id>", "args":
+    {...}}`를 차례로 하고(단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
+    던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
+    `after`(c6 1.2)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
+  end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class
+  `scope`의 `put`과 `get`은 대기 중인 항목을 쓰고 읽고 `nested`는 안쪽 `scope`의 함수를 받는다. 그 case는 commit하고,
+  던진 뒤 rollback하고, 중첩한다. 이유: transaction은 코어가 열고 언어 코드에 넘기고 그 코드가 돌아온 뒤 닫는 범위이므로,
+  언어 코드가 언제 돌고 그 실패가 무엇을 뜻하는지는 코어가 정하고, machine은 범위의 I/O를 tokio에 둔다(GN-6ab).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

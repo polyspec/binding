@@ -128,6 +128,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-69** state machine이 있는 method의 receiver(generator GN-6ae): `core`에 `"machine": true`를 적은 method는
+  receiver `&self`를 적는다. 생성 코드는 코어에 인스턴스 값의 clone을 주는데, 그것은 `&mut self`처럼 인스턴스에 다시
+  쓰지도, `self`처럼 인스턴스를 소비하지도 않기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
