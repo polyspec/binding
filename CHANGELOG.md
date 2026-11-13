@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The generator refused the Go binding of a contract that takes or gives a value class of another repository, with
+  "a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and
+  making of an instance (GN-6x)", so a function that takes and gives the value class of the owner had no Go binding.
+  Go now names the pointer to the owner's Go type, which package binding imports. Package binding describes an
+  instance by the Go in row of the class as node 11, with the kind of its case and a handle whose question read (op 2)
+  calls the read member of the case, and an instance of a class of the owner that iterates keys and values as a map
+  of its entries; an error of a member of the owner is node 12, which the Go function returns unchanged. A core value
+  leaves as node 11 of the result with the numbers of the class and of its out row and the content of the row, from
+  which package binding makes the instance through the owner's exported function (GN-6x, GN-15c). Verified by
+  `npm test` in `packages/ts` and `gofmt` and `go vet` of the generated Go module of the consumer sample with the
+  owner fixture, beside the Go package generated from the owner's contract.
 - The unit test of GN-6ac required nothing of the Go C ABI for `shapes.stride_count`, whose record `stride` the core
   holds with a `[usize; 2]` and a u32 field, and for `shapes.offset`, which takes u8 parameters and gives an isize. It
   now requires that the Go crate gives each field through `IntoCore` before the struct literal, narrows both u8

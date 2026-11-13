@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+- 생성기는 다른 레포의 값 class를 받거나 주는 계약의 Go 바인딩을 "a value class of another repository is not
+  generated for Go yet: the call of GN-15c has no description, read and making of an instance (GN-6x)"로 거부해서,
+  owner의 값 class를 받고 주는 함수에는 Go 바인딩이 없었다. 이제 Go는 패키지 binding이 import하는 owner Go 타입의
+  포인터를 이름한다. 패키지 binding은 인스턴스를 class의 Go in 행으로 node 11로 묘사한다. node 11은 case의 kind와 handle을
+  담고, 그 handle의 질문 read(op 2)는 case의 read member를 부른다. key와 value를 순회하는 owner class의 인스턴스는 그
+  entry들의 map으로 묘사한다. owner member의 오류는 node 12이며, Go 함수는 그 오류를 그대로 돌려준다. 코어 값은 class와
+  out 행의 번호, 행의 내용을 담은 결과의 node 11로 나가고, 패키지 binding이 owner의 export 함수로 인스턴스를 만든다
+  (GN-6x, GN-15c). `packages/ts`의 `npm test`, 그리고 owner 계약에서 생성한 Go 패키지 옆에서 owner fixture와 함께 생성한
+  consumer 샘플 Go module의 `gofmt`, `go vet`으로 확인했다.
 - GN-6ac의 단위 시험은 Go C ABI에 대해 `shapes.stride_count`와 `shapes.offset`에 아무것도 요구하지 않았다.
   `shapes.stride_count`는 코어가 `[usize; 2]`와 u32 field로 가진 record `stride`를 받고, `shapes.offset`은 u8 parameter를
   받아 isize를 준다. 이제 시험은 Go crate가 struct literal 앞에서 각 field를 `IntoCore`로 주고, 두 u8 parameter를 좁히고,
