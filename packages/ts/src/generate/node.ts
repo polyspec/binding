@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -203,7 +203,7 @@ fn out_float<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'e
 }
 
 fn out_none(env: &Env) -> Result<Unknown<'_>, Fail> {
-    Ok(env.get_undefined().map_err(internal)?.to_unknown())
+    ToNapiValue::into_unknown((), env).map_err(internal)
 }
 
 fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
@@ -373,9 +373,9 @@ function iterateRust(model: Model, fn: Fn): string {
   return `
     #[napi(js_name = "__iterate", enumerable = false)]
     pub fn iterate<'env>(&self, env: &'env Env) -> napi::Result<Unknown<'env>> {
-        guard(|| {
+        guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut items = Vec::new();
-            for item in ${fn.corePath}(&self.inner) {
+            for item in ${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')}) {
 ${body}
             }
             out_tuple(env, items)
@@ -384,6 +384,12 @@ ${body}
     }
 `;
 }
+
+// GN-6h: the name of a class in the message of kind busy and of a poisoned object.
+const classLabel = (object: ObjectClass): string => langName('node', object.unit.name, 'class');
+
+// GN-6h: the lines that take the locks of the places of a call.
+const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel);
 
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
@@ -402,14 +408,18 @@ function functionRust(model: Model, fn: Fn): string {
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
       lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${fields} };`);
     } else {
-      lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`);
+      const held = heldParam(model, parameter.type);
+      lines.push(held === undefined
+        ? `        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`
+        : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${rustString(langName('node', parameter.name, 'variable'))})?;`);
     }
   }
+  lines.push(...locks(model, fn));
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    lines.push(`        ${resultLet(fn)} = ${call};`);
   }
   // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
   // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the
@@ -561,6 +571,9 @@ fn failure_error(failure: ${failure}) -> Fail {
 
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
 // members (G-7).
+// A value of a class that comes in is unwrapped as a ClassInstance, by its type tag: napi-rs gives a reference `&T` only
+// in the argument conversion that it generates, which these functions do not use, because they take the raw values and
+// judge them (T-8), and a reference made in the body of a call is refused.
 function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('node', object.unit.name, 'class');
   const struct = jsClass;
@@ -573,26 +586,71 @@ pub mod class_${rustField(object.unit.name)} {
 
     #[napi]
     pub struct ${struct} {
-        pub(crate) inner: ${core},
+        pub(crate) inner: ${heldType(object)},
     }
 
     #[napi]
     impl ${struct} {${object.members.map((fn) => functionRust(model, fn).replaceAll('\n', '\n    ')).join('')}}
 }
 
-fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: value }, env).map_err(internal)
+${object.lock?.kind === 'shared' ? `/// GN-6h: calls read the value of ${jsClass} at the same time, so its core type is Sync.
+const _: () = {
+    const fn sync<T: Sync>() {}
+    sync::<${core}>();
+};
+
+` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value')} }, env).map_err(internal)
 }
 
-${takesObject(model, object) ? `/// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
+${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${jsClass} inside another type is an instance of it, whose value is read, cloned and
+/// released.
 fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
-    // SAFETY: napi unwraps the native object of an instance of the class and refuses any other value.
-    match unsafe { <&class_${rustField(object.unit.name)}::${struct} as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+    // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+        Ok(instance) => match instance.inner.read(${rustString(jsClass)}, &[]) {
+            Ok(held) => Ok((*held).clone()),
+            Err(error) => Err(binding_error(error)),
+        },
+        Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
+    }
+}
+` : ''}${takesHeld(model, object) ? `
+/// T-5, GN-6h: a parameter of the class ${jsClass} takes an instance of it, whose lock the call takes.
+fn held_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${heldType(object)}, Fail> {
+    // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
         Ok(instance) => Ok(instance.inner.clone()),
         Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
     }
 }
 ` : ''}`;
+}
+
+// GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
+function poisonRust(model: Model): string {
+  const written = model.objects.filter((o) => o.lock?.writes === true);
+  if (written.length === 0) return '';
+  const arms = written.map((o) => {
+    const jsClass = langName('node', o.unit.name, 'class');
+    return `        // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+        if let Ok(instance) = unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${jsClass}> as FromNapiValue>::from_napi_value(env.raw(), object.raw()) } {
+            let _held = instance.inner.write(${rustString(jsClass)}).map_err(binding_error)?;
+            panic!("panic-test");
+        }`;
+  }).join('\n');
+  return `
+/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[cfg(feature = "panic-test")]
+#[napi(js_name = ${rustString(POISON_ENTRY.node)})]
+pub fn panic_test_held(env: &Env, object: Unknown<'_>) -> napi::Result<()> {
+    guard(|| {
+${arms}
+        Err(binding_error(BindingError::Internal { detail: String::from("B-5c: the object is of no class with a write place") }))
+    })
+    .map_err(|fail| throw(env, fail))
+}
+`;
 }
 
 function coreErrorRust(model: Model): string {
@@ -615,7 +673,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + poisonRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -626,7 +684,7 @@ function libRust(model: Model): string {
     model.aliases.length > 0 ? NODE_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
-  const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
+  const napiTypes = ['Array', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
   if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
@@ -635,8 +693,8 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'ClassInstance' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'ClassInstance' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}

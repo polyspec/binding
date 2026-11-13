@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
+import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
@@ -607,4 +608,92 @@ test('WASM: map<T> is a Map of string keys, through the entries of the ES module
   assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /fn out_map<T>\(value: impl Borrow<binding_core::OrderedMap<T>>/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
+});
+
+test('a class with a write place holds its value in a tried lock, which each call takes for its places (B-5c, GN-6h)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const libs = { python: text(out, 'packages/python/generated/lib.rs'), node: text(out, 'packages/ts/generated/lib.rs'), php: text(out, 'packages/php-ext/generated/lib.rs') };
+  for (const [lang, lib] of Object.entries(libs)) {
+    // A write place and no &self member that reaches language code: the mutex. A &self member that takes a callback:
+    // the read-write lock, whose core type is Sync. No write place and a value that comes in: the read-write lock.
+    assert.match(lib, /inner: binding_core::Exclusive<polyspec_sample::Counter>,/, lang);
+    assert.match(lib, /inner: binding_core::Shared<polyspec_sample::Ledger>,/, lang);
+    assert.match(lib, /inner: binding_core::Shared<polyspec_sample::Tag>,/, lang);
+    assert.match(lib, /sync::<polyspec_sample::Ledger>\(\);/, lang);
+    assert.match(lib, /sync::<polyspec_sample::Tag>\(\);/, lang);
+    assert.doesNotMatch(lib, /sync::<polyspec_sample::Counter>/, lang);
+    // The receiver &mut self writes and &self reads; a parameter of the class reads, and the core borrows the guards.
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let result = polyspec_sample::Counter::add\(&mut receiver, amount\);/, lang);
+    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let result = polyspec_sample::Counter::total\(&receiver\);/, lang);
+    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let \(\): \(\) = polyspec_sample::Counter::absorb\(&mut receiver, &other\);/, lang);
+    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let result = polyspec_sample::shout\(&tag\);/, lang);
+    // A value inside another type is read, cloned and released by the conversion in.
+    assert.match(lib, /fn in_tag[^\n]*\n(?:[^\n]*\n){1,4}?[^\n]*inner\.read\("Tag", &\[\]\) \{\n\s+Ok\(held\) => Ok\(\(\*held\)\.clone\(\)\),/, lang);
+    assert.doesNotMatch(lib, /fn in_counter/, lang);
+    // GN-5: the poison entry point takes the write guard of each class with a write place and panics.
+    assert.match(lib, /#\[cfg\(feature = "panic-test"\)\]\n[^\n]*\n(?:[^\n]*\n)?(?:pub )?fn _?panic_test_held\(/, lang);
+    assert.match(lib, /let _held = [a-z.()]+\.inner\.write\("Counter"\)[^\n]*\n\s+panic!\("panic-test"\);/, lang);
+    assert.match(lib, /let _held = [a-z.()]+\.inner\.write\("Ledger"\)/, lang);
+    assert.doesNotMatch(lib, /inner\.write\("Tag"\)/, lang);
+  }
+  assert.match(libs.node, /#\[napi\(js_name = "__panicTestHeld"\)\]/);
+  assert.match(libs.php, /#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\panicTestHeld"\)\]/);
+  // napi-rs refuses a reference that the body of a call makes, so a class value is unwrapped by its type tag.
+  assert.match(libs.node, /<ClassInstance<'_, class_counter::Counter> as FromNapiValue>::from_napi_value/);
+  assert.doesNotMatch(libs.node, /<&class_/);
+  // G-5: a poisoned object is kind internal at every place, and an instance at a write place and another is busy.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_b5c_counter_refuses_a_poisoned_object\(self\) -> None:\n {8}held = pkg\.Counter\(0\)\n[^\n]*\n {12}_native\._panic_test_held\(held\)\n(?:[^\n]*\n){3} {12}held\.total\n(?:[^\n]*\n){3} {12}pkg\.Counter\(0\)\.absorb\(held\)\n/);
+  assert.match(python, /def test_b5c_counter_absorb_refuses_the_instance_at_two_places\(self\) -> None:\n {8}held = pkg\.Counter\(0\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.absorb\(held\)\n(?:[^\n]*\n){2} {8}held\.total\n/);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /test\('B-5c: Ledger refuses a poisoned object', \(\) => \{\n {2}const held = new pkg\.Ledger\('a'\);\n {2}assert\.throws\(\(\) => addon\.__panicTestHeld\(held\), [^\n]*error\.kind === 'internal'\);\n {2}assert\.throws\(\(\) => held\.size, /);
+  assert.match(node, /assert\.throws\(\(\) => held\.absorb\(held\), \(error\) => error\.constructor === pkg\.SampleBusyError && error\.kind === 'busy'\);\n {2}held\.total;/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /public function testB5cCounterRefusesAPoisonedObject\(\): void\n {4}\{\n {8}\$held = new \\Polyspec\\Sample\\Counter\(0\);\n {8}try \{\n {12}\\Polyspec\\Sample\\Internal\\panicTestHeld\(\$held\);/);
+  assert.match(php, /\$held->absorb\(\$held\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleBusyError \$error\)/);
+  // A class that meets no condition of GN-6h holds its value without a lock.
+  const owner = sample.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => !['sample.join', 'sample.shout'].includes(m.id));
+  sample.cases = sample.cases.filter((c: any) => !['sample.join', 'sample.shout'].includes(c.member));
+  const plain = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    assert.match(text(plain, path), /inner: polyspec_sample::Tag,/, path);
+    assert.match(text(plain, path), /polyspec_sample::Tag::name\(&self\.inner\)/, path);
+  }
+});
+
+test('the classes that carry language code are the least set of both definitions (GN-6h)', () => {
+  const method = (id: string, parameters: unknown[], returns?: unknown): any => ({ id, name: [id], kind: 'method', visibility: 'public', parameters, ...(returns === undefined ? {} : { returns }), core: { path: `x::${id}`, receiver: '&self' } });
+  const cls = (id: string, members: unknown[]): any => ({ id, name: [id], module: '', kind: 'class', visibility: 'public', origin: 'generated', members });
+  const param = (type: unknown): any => ({ name: ['value'], type, required: true });
+  const units: any[] = [
+    { id: 'hook', name: ['hook'], module: '', kind: 'interface', visibility: 'public', origin: 'callback', members: [] },
+    { id: 'options', name: ['options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', fields: [{ name: ['hook'], type: { optional: { unit: 'hook' } } }] },
+    // (i): a member with a receiver takes a record that holds a callback.
+    cls('engine', [method('engine.configure', [param({ unit: 'options' })]), method('engine.session', [], { unit: 'session' })]),
+    // (ii): a member with a receiver of a class that carries language code returns the class.
+    cls('session', [method('session.child', [], { unit: 'leaf' }), method('session.name', [], 'text')]),
+    cls('leaf', [method('leaf.name', [], 'text')]),
+    // A class that only gives another class carries nothing.
+    cls('plain', [method('plain.other', [], { unit: 'bare' })]),
+    cls('bare', [method('bare.name', [param({ list: 'text' })], 'text')]),
+    // (ii): a member without a receiver that returns the class takes a callback.
+    { id: 'make', name: ['make'], module: '', kind: 'functions', visibility: 'public', origin: 'generated', members: [{ id: 'make.watch', name: ['watch'], kind: 'function', visibility: 'public', parameters: [param({ list: { unit: 'hook' } })], returns: { unit: 'watch' }, core: 'x::watch' }] },
+    cls('watch', []),
+  ];
+  const found = carriers(units);
+  assert.deepEqual([...found.classes].sort(), ['engine', 'leaf', 'session', 'watch']);
+  assert.equal(found.carries({ tuple: ['text', { unit: 'leaf' }] }), true);
+  assert.equal(found.carries({ list: { unit: 'bare' } }), false);
+});
+
+test('the binding crates of Python, Node and PHP turn on the locks of binding_core, and Go and WASM do not (GN-6h)', () => {
+  const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  contract.targets = ['php', 'python', 'node', 'go', 'wasm'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  const files = trackedPackages(contract, '0.0.0');
+  const core = (path: string): string => /^polyspec-binding-core = .*$/m.exec(files.get(path) ?? '')?.[0] ?? '';
+  for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) assert.match(core(path), /features = \["construct", "lock"\] \}$/, path);
+  for (const path of ['packages/go/internal/ffi/Cargo.toml', 'packages/ts/wasm/Cargo.toml']) assert.match(core(path), /features = \["construct"\] \}$/, path);
 });

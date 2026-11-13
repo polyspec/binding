@@ -103,5 +103,42 @@
         "message": "not data: the JSON form of the tag a"
       }
     }
-  ]
+  ],
+  "counter_new": [
+    {
+      "id": "a_counter_starts_at_its_total",
+      "start": 2
+    }
+  ],
+  "counter_total": [
+    {
+      "id": "the_total_of_a_counter",
+      "start": 2,
+      "result": 2
+    }
+  ],
+  "counter_add": [
+    {
+      "id": "an_amount_is_added",
+      "start": 2,
+      "amount": 3,
+      "result": 5
+    }
+  ],
+  "counter_absorb": [],
+  "ledger_new": [
+    {
+      "id": "a_ledger_starts_with_a_key",
+      "key": "a"
+    }
+  ],
+  "ledger_note": [],
+  "ledger_size": [
+    {
+      "id": "a_new_ledger_has_one_key",
+      "key": "a",
+      "result": 1
+    }
+  ],
+  "ledger_known": []
 }

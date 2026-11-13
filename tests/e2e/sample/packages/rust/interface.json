@@ -680,6 +680,206 @@
           ]
         }
       ]
+    },
+    {
+      "id": "counter",
+      "name": [
+        "counter"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Counter",
+      "final": true,
+      "members": [
+        {
+          "id": "counter.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Counter::new"
+        },
+        {
+          "id": "counter.total",
+          "name": [
+            "total"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::total",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "counter.add",
+          "name": [
+            "add"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "amount"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::add",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "counter.absorb",
+          "name": [
+            "absorb"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "other"
+              ],
+              "type": {
+                "unit": "counter"
+              },
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::absorb",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "name": [
+        "ledger"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Ledger",
+      "final": true,
+      "members": [
+        {
+          "id": "ledger.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Ledger::new"
+        },
+        {
+          "id": "ledger.note",
+          "name": [
+            "note"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Ledger::note",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "ledger.size",
+          "name": [
+            "size"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Ledger::size",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "ledger.known",
+          "name": [
+            "known"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Ledger::known",
+            "receiver": "&self"
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -738,6 +938,46 @@
       "member": "tag.to_json",
       "file": "contracts/cases.json",
       "group": "tag_to_json"
+    },
+    {
+      "member": "counter.new",
+      "file": "contracts/cases.json",
+      "group": "counter_new"
+    },
+    {
+      "member": "counter.total",
+      "file": "contracts/cases.json",
+      "group": "counter_total"
+    },
+    {
+      "member": "counter.add",
+      "file": "contracts/cases.json",
+      "group": "counter_add"
+    },
+    {
+      "member": "counter.absorb",
+      "file": "contracts/cases.json",
+      "group": "counter_absorb"
+    },
+    {
+      "member": "ledger.new",
+      "file": "contracts/cases.json",
+      "group": "ledger_new"
+    },
+    {
+      "member": "ledger.note",
+      "file": "contracts/cases.json",
+      "group": "ledger_note"
+    },
+    {
+      "member": "ledger.size",
+      "file": "contracts/cases.json",
+      "group": "ledger_size"
+    },
+    {
+      "member": "ledger.known",
+      "file": "contracts/cases.json",
+      "group": "ledger_known"
     }
   ]
 }

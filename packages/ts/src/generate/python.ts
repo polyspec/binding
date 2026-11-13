@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -365,10 +365,10 @@ const fieldInit = (field: string, variable: string): string => (field === variab
 // items are converted when the iteration starts, a snapshot of the class's value.
 function iterateRust(model: Model, fn: Fn): string {
   const yields = fn.yields ?? { value: 'none' };
-  const call = `${fn.corePath}(&self.inner)`;
+  const call = `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`;
   const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
   const iter = (body: string): string => `
-        guard(py, || {
+        guard(py, || {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let items = PyList::empty(py);
             for item in ${call} {
 ${body}
@@ -392,6 +392,13 @@ ${body}
 `;
 }
 
+// GN-6h: the name of a class in the message of kind busy and of a poisoned object.
+const classLabel = (object: ObjectClass): string => langName('python', object.unit.name, 'class');
+
+// GN-6h: the lines that take the locks of the places of a call.
+const locks = (model: Model, fn: Fn): string[] =>
+  lockLines(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner', '|error| binding_error(py, error)', classLabel);
+
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   // N-4: the string form is __str__.
@@ -404,21 +411,25 @@ function functionRust(model: Model, fn: Fn): string {
   const lines: string[] = [];
   for (const arg of fn.args) {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
-    lines.push(`        let ${variable}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(langName('python', arg.name, 'variable')))}?;`);
+    const held = arg.field ? undefined : heldParam(model, arg.type);
+    lines.push(held === undefined
+      ? `        let ${variable}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(langName('python', arg.name, 'variable')))}?;`
+      : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${rustString(langName('python', arg.name, 'variable'))})?;`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustIdent(langName('python', f.name, 'variable')))).join(', ');
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
+  lines.push(...locks(model, fn));
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    lines.push(`        ${resultLet(fn)} = ${call};`);
   }
   if (fn.kind === 'constructor') {
-    lines.push('        Ok(Self { inner: result })');
+    lines.push(`        Ok(Self { inner: ${heldNew(objectUnit(model, { unit: fn.unit.id }) ?? { unit: fn.unit, members: [], constructible: true }, 'result')} })`);
     return `
     #[new]
     #[pyo3(signature = (${signature}))]
@@ -454,7 +465,7 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 }
 
 // T-5: a class unit is a class of the native module that holds the core value; its members call the core (U-2).
-function objectRust(model: Model, layout: PythonLayout, object: ObjectClass): string {
+function objectRust(model: Model, layout: PythonLayout, object: ObjectClass, givesOut: boolean): string {
   const pyClass = langName('python', object.unit.name, 'class');
   const struct = `Py${pyClass}`;
   const core = object.unit.core_type ?? '';
@@ -463,18 +474,37 @@ function objectRust(model: Model, layout: PythonLayout, object: ObjectClass): st
 /// T-5: ${pyClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
 #[pyclass(name = ${rustString(pyClass)}, module = ${rustString(moduleOf(layout, object.unit.module))}, frozen)]
 pub struct ${struct} {
-    inner: ${core},
+    inner: ${heldType(object)},
 }
-
+${object.lock?.kind === 'shared' ? `
+/// GN-6h: calls read the value of ${pyClass} at the same time, so its core type is Sync.
+const _: () = {
+    const fn sync<T: Sync>() {}
+    sync::<${core}>();
+};
+` : ''}
 #[pymethods]
 impl ${struct} {${members}}
 
+${givesOut ? `
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
-    Ok(Bound::new(py, ${struct} { inner: value })?.into_any())
+    Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
 }
-
-${takesObject(model, object) ? `/// T-5: a value of the class ${pyClass} is an instance of it; the core takes a copy of the value it holds.
+` : ''}
+${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${pyClass} inside another type is an instance of it, whose value is read, cloned and
+/// released.
 fn in_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    match value.cast::<${struct}>() {
+        Ok(object) => match object.get().inner.read(${rustString(pyClass)}, &[]) {
+            Ok(held) => Ok((*held).clone()),
+            Err(error) => Err(binding_error(py, error)),
+        },
+        Err(_other) => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
+    }
+}
+` : ''}${takesHeld(model, object) ? `
+/// T-5, GN-6h: a parameter of the class ${pyClass} takes an instance of it, whose lock the call takes.
+fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${heldType(object)}> {
     match value.cast::<${struct}>() {
         Ok(object) => Ok(object.get().inner.clone()),
         Err(_other) => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
@@ -579,6 +609,30 @@ fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreErro
 `;
 }
 
+// GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
+function poisonRust(model: Model): string {
+  const written = model.objects.filter((o) => o.lock?.writes === true);
+  if (written.length === 0) return '';
+  const arms = written.map((o) => {
+    const pyClass = langName('python', o.unit.name, 'class');
+    return `        if let Ok(object) = object.cast::<Py${pyClass}>() {
+            let _held = object.get().inner.write(${rustString(pyClass)}).map_err(|error| binding_error(py, error))?;
+            panic!("panic-test");
+        }`;
+  }).join('\n');
+  return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[cfg(feature = "panic-test")]
+#[pyfunction]
+fn ${POISON_ENTRY.python}(py: Python<'_>, object: &Bound<'_, PyAny>) -> PyResult<()> {
+    guard(py, || {
+${arms}
+        Err(binding_error(py, BindingError::Internal { detail: String::from("B-5c: the object is of no class with a write place") }))
+    })
+}
+
+`;
+}
+
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.className)},`).join('\n');
@@ -608,7 +662,12 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.aliases.map((a) => aliasPython(model, a)),
     model.aliases.length > 0 ? PYTHON_HOST : '',
   ].join('\n');
-  const objects = model.objects.map((o) => objectRust(model, layout, o)).join('') + model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
+  // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
+  // a class that no member returns has none (the lints deny dead code).
+  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
+  const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
+  const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
+  const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
     static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
@@ -690,13 +749,15 @@ fn _panic_test(py: Python<'_>) -> PyResult<()> {
     guard(py, || panic!("panic-test"))
 }
 
-#[pymodule]
+${poisonRust(model)}#[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // B-4: the classes are found when the module loads; a missing one fails the import.
 ${classChecks}
 ${register}
     #[cfg(feature = "panic-test")]
-    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;
+    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;${model.objects.some((o) => o.lock?.writes === true) ? `
+    #[cfg(feature = "panic-test")]
+    module.add_function(wrap_pyfunction!(${POISON_ENTRY.python}, module)?)?;` : ''}
     Ok(())
 }
 `;

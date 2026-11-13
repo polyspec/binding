@@ -1,7 +1,8 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, hookCall, langName, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -168,6 +169,22 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.
+  const held = heldTests(model, ctx, invoke, 'held');
+  const refused = (category: string, kind: string, call: string): string => `
+  assert.throws(() => ${call}, (error) => error.constructor === pkg.${cls(category)} && error.kind === ${jsString(kind)});`;
+  for (const test of held.poison) {
+    out.push(`
+test('B-5c: ${langName('node', test.object.unit.name, 'class')} refuses a poisoned object', () => {
+  const held = ${test.instance};${[`addon.${POISON_ENTRY.node}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
+});`);
+  }
+  for (const test of held.busy) {
+    out.push(`
+test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', test.fn.member.name, 'callable')} refuses the instance at two places', () => {
+  const held = ${test.instance};${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n  ${test.after};`}
+});`);
+  }
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -177,15 +194,16 @@ import * as pkg from ${jsString(npm)};
 
 const require = createRequire(import.meta.url);
 ${usesFixture ? NODE_FIXTURE : ''}
+// T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
+const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+let addon;
+try {
+  addon = require(\`${npm}-\${platform}\`);
+} catch {
+  addon = require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
+}
+
 test('B-7: a panic is kind internal', () => {
-  // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
-  const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
-  let addon;
-  try {
-    addon = require(\`${npm}-\${platform}\`);
-  } catch {
-    addon = require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
-  }
   assert.throws(() => addon.__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
 });
 

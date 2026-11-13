@@ -76,7 +76,9 @@
   parameter는 빌려서 넘기고(`&String`과 `&Vec<u8>`는 `&str`과 `&[u8]`로 바뀐다), 그런 타입의 `optional<T>`는
   `as_deref()`로, Copy 타입(bool, 수, enum)은 값으로, 그 밖의 타입(list, record)은 참조로 넘긴다. record는 소유 형태인
   펼친 field로 만든다. 반환은 그 Rust 함수에 보통인 형태이므로(접근자는 빌린 형태, 계산한 값은 소유) 생성 코드는 타입을
-  적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다. 정수 반환(uint, int,
+  적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다. `none` 반환은 예외이며
+  `let (): () = …`로 묶는다: 다른 것을 돌려주는 코어는 컴파일되지 않고, unit 패턴은 lint가 거부하는 쓰지 않는 변수를 남기지
+  않는다. 정수 반환(uint, int,
   int64)은 더 좁은 Rust 정수여도 되며 생성 코드가 `From`으로 넓힌다(정수와 그 참조에 대한 trait `WideUint`, `WideInt`).
   parameter는 표의 타입 그대로다. Rust 키워드인 계약 이름은 raw identifier(`r#type`)다.
 - **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
@@ -90,7 +92,9 @@
   napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를 유지하지 않으므로, Node
   생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를 내보낸다(`instanceof`는
   proxy를 거쳐 클래스의 prototype을 읽는다). 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind `invalid_argument_type`)
-  코어는 가진 값을 빌린다(GN-6h). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
+  코어는 가진 값을 빌린다(GN-6h). Node에서는 인스턴스를 그 class의 type tag를 확인하는 `ClassInstance`로 꺼낸다: napi-rs는
+  참조 `&T`를 자기가 생성한 인자 변환에서만 주고 호출 본문이 만든 참조를 거부하는데, 생성 함수는 값을 직접 판정하려고
+  날 값을 받기 때문이다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
   그런 클래스로 생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
 - **GN-6h** class unit의 잠금(U-2 busy, B-5c). class의 자리는 호출이 그 인스턴스를 받는 곳이다: member의 receiver, 또는 타입이
@@ -277,9 +281,11 @@
   `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
   poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
   parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
-  가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한다.
+  가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한 뒤
+  그 인스턴스의 member를 부른다. 거부된 호출은 잠금을 쥐고 있지 않으므로 그 호출은 성공한다. 이 시험들의 인스턴스는 그
+  class를 돌려주는 첫 생성자나 static member가 placeholder 인자로 만든다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
-  같은 객체로 다시 들어온 호출의 시험, 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4).
 

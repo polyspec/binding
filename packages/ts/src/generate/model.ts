@@ -65,7 +65,28 @@ export interface ObjectClass {
   members: Fn[];
   // Whether the language may construct it; false leaves only its static factories (U-1 constructible).
   constructible: boolean;
+  // B-5c, GN-6h: the lock that holds the core value, when the class has one: the mutex (Exclusive) or the read-write
+  // lock (Shared), and whether the class has a write place, which gives it kind busy and the poisoned flag.
+  lock?: Lock;
 }
+
+export interface Lock {
+  kind: 'exclusive' | 'shared';
+  writes: boolean;
+}
+
+// B-5c, GN-6h: the place of a class in a call, which takes the lock of the instance: the receiver or a parameter whose
+// type is the class itself.
+export interface Place {
+  object: ObjectClass;
+  // The parameter, or undefined for the receiver.
+  param?: Parameter;
+  write: boolean;
+}
+
+// GN-5: the poison entry point of the B-5c test in each language, under the feature panic-test. The name is stated
+// here only; the emitters and the generated tests read it.
+export const POISON_ENTRY = { python: '_panic_test_held', node: '__panicTestHeld', php: 'panicTestHeld' } as const;
 
 // T-3: a record of another repository, which that repository's binding owns in each language.
 export interface ForeignRecord {
@@ -190,7 +211,6 @@ export function buildModel(
     const receiver = typeof core === 'object' ? core.receiver : undefined;
     const wantsReceiver = kind === 'method' || kind === 'property' || kind === 'iterate';
     if (receiver === 'self') throw new Unsupported(`${member.id}: a receiver self is not generated yet`);
-    if (receiver === '&mut self') throw new Unsupported(`${member.id}: a receiver &mut self (B-5c busy) is not generated yet`);
     if (wantsReceiver !== (receiver !== undefined)) throw new Unsupported(`${member.id}: a ${kind} ${wantsReceiver ? 'needs' : 'takes no'} receiver`);
     const params = member.parameters ?? [];
     if (kind === 'property' && params.length > 0) throw new Unsupported(`${member.id}: a property takes no parameter`);
@@ -324,6 +344,7 @@ export function buildModel(
       functions.push(toFn(unit, member, 'function'));
     }
   }
+  assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks);
   const classes: ErrorClass[] = CATEGORIES.map((category) => {
     const row = contract.errors.classes[category] ?? {};
     // E-7: Go has no class table; its category types have fixed names, so a contract whose only target is Go names none.
@@ -376,6 +397,189 @@ export function buildModel(
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
     objects, callbacks, aliases, classes, coreError, kinds, cases,
   };
+}
+
+// B-5c: how the core takes a class parameter. The contract does not name the borrow of a parameter yet, so every class
+// parameter is borrowed shared, a read place; a contract that names `&mut` makes it a write place here.
+export const paramBorrow = (_parameter: Parameter): '&' | '&mut' | 'value' => '&';
+
+const WRITE_RECEIVERS: ReadonlySet<string> = new Set(['&mut self', 'self']);
+const receiverOfMember = (member: Member): string | undefined => (typeof member.core === 'object' ? member.core.receiver : undefined);
+const waits = (member: Member): boolean => member.wait !== undefined && member.wait !== 'none';
+
+// GN-6h: the class units that carry language code, the least set that satisfies the two definitions. The set is read
+// from the contract alone, so it also counts members that the generator refuses for another reason.
+export function carriers(units: readonly Unit[]): { classes: Set<string>; carries: (type: Type) => boolean } {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const found = new Set<string>();
+  const carries = (type: Type, seen: Set<string> = new Set()): boolean => {
+    if (typeof type === 'string') return type === 'host_value';
+    if ('function' in type) return true;
+    if ('list' in type) return carries(type.list, seen);
+    if ('optional' in type) return carries(type.optional, seen);
+    if ('map' in type) return carries(type.map, seen);
+    if ('keyed_map' in type) return carries(type.keyed_map, seen);
+    if ('tuple' in type) return type.tuple.some((part) => carries(part, seen));
+    if (!('unit' in type) || type.library !== undefined) return false;
+    const unit = byId.get(type.unit);
+    if (unit === undefined) return false;
+    if (unit.origin === 'callback') return true;
+    if (unit.kind === 'alias') return (unit.out ?? []).some((row) => row.kind === 'native');
+    if (unit.kind === 'class') return found.has(unit.id);
+    if (unit.kind === 'record' && !seen.has(unit.id)) {
+      seen.add(unit.id);
+      return (unit.fields ?? []).some((f) => carries(f.type, seen));
+    }
+    return false;
+  };
+  const classOf = (type: Type | undefined): string | undefined =>
+    type !== undefined && typeof type === 'object' && 'unit' in type && type.library === undefined && byId.get(type.unit)?.kind === 'class' ? type.unit : undefined;
+  for (let grew = true; grew; ) {
+    grew = false;
+    const add = (id: string | undefined): void => {
+      if (id !== undefined && !found.has(id)) {
+        found.add(id);
+        grew = true;
+      }
+    };
+    for (const unit of units) {
+      for (const member of unit.members ?? []) {
+        const receiver = unit.kind === 'class' && receiverOfMember(member) !== undefined;
+        const parameters = member.parameters ?? [];
+        const takes = parameters.some((p) => carries(p.type));
+        // (i) a member with a receiver of the class has a parameter that carries language code.
+        if (receiver && takes) add(unit.id);
+        // (ii) a member that returns the class, or takes it as &mut, has such a parameter or is a member, with a
+        // receiver, of another class that carries language code.
+        const made = [
+          unit.kind === 'class' && member.kind === 'constructor' ? unit.id : classOf(member.returns),
+          ...parameters.filter((p) => paramBorrow(p) === '&mut').map((p) => classOf(p.type)),
+        ];
+        for (const id of made) if (id !== undefined && (takes || (receiver && unit.id !== id && found.has(unit.id)))) add(id);
+      }
+    }
+  }
+  return { classes: found, carries: (type) => carries(type) };
+}
+
+// GN-6h: the lock of each class unit.
+function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[]): void {
+  const carrying = carriers(contract.units);
+  const names = (value: unknown, id: string, seen: Set<string> = new Set()): boolean => {
+    if (Array.isArray(value)) return value.some((item) => names(item, id, seen));
+    if (typeof value !== 'object' || value === null) return false;
+    const record = value as Record<string, unknown>;
+    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
+      if (record['unit'] === id) return true;
+      const unit = units.get(record['unit']);
+      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+      seen.add(unit.id);
+      return names((unit.fields ?? []).map((f) => f.type), id, seen);
+    }
+    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item, id, seen));
+  };
+  const allMembers = contract.units.flatMap((u) => (u.kind === 'interface' ? [] : (u.members ?? [])));
+  for (const object of objects) {
+    const unit = object.unit;
+    const members = unit.members ?? [];
+    const id = unit.id;
+    const takenAs = (borrows: string[], waiting: boolean): boolean =>
+      allMembers.some((m) => (!waiting || waits(m)) && (m.parameters ?? []).some((p) => names(p.type, id) && borrows.includes(paramBorrow(p))));
+    const writes = members.some((m) => WRITE_RECEIVERS.has(receiverOfMember(m) ?? '')) || takenAs(['&mut'], false);
+    const comesIn = fns.some((fn) => fn.args.some((a) => names(a.type, id))) || callbacks.some((c) => c.members.some((m) => names(m.returns, id)));
+    // A member reaches language code when the type of a parameter or the class of its receiver carries it.
+    const reaches = (m: Member): boolean => (m.parameters ?? []).some((p) => carrying.carries(p.type)) || (receiverOfMember(m) !== undefined && carrying.classes.has(id));
+    const reaching = members.filter((m) => waits(m) || reaches(m));
+    if (!writes && !comesIn && reaching.length === 0) continue;
+    const shared = !writes || reaching.some((m) => receiverOfMember(m) === '&self') || takenAs(['&', 'value'], true);
+    object.lock = { kind: shared ? 'shared' : 'exclusive', writes };
+  }
+}
+
+// GN-6h: the Rust type in which a class holds its core value.
+export const heldType = (object: ObjectClass): string => {
+  const core = object.unit.core_type ?? '';
+  return object.lock === undefined ? core : `binding_core::${object.lock.kind === 'exclusive' ? 'Exclusive' : 'Shared'}<${core}>`;
+};
+
+// GN-6h: the expression that holds a core value in the type of heldType.
+export const heldNew = (object: ObjectClass, value: string): string =>
+  object.lock === undefined ? value : `binding_core::${object.lock.kind === 'exclusive' ? 'Exclusive' : 'Shared'}::new(${value})`;
+
+const objectOfUnit = (model: Model, unit: Unit | undefined): ObjectClass | undefined => model.objects.find((o) => o.unit === unit);
+
+// GN-6h: the class whose lock a parameter takes: a parameter whose type is the class itself. A class inside another
+// type and an expanded field of a record are read, cloned and released by the conversion in.
+export function heldParam(model: Model, type: Type): ObjectClass | undefined {
+  const object = libraryOf(type) === undefined ? objectOfUnit(model, unitOf(model, type)) : undefined;
+  return object?.lock === undefined ? undefined : object;
+}
+
+// GN-6h: the places of a call, the receiver first and then the parameters in order.
+export function places(model: Model, fn: Fn): Place[] {
+  const out: Place[] = [];
+  const own = objectOfUnit(model, fn.unit);
+  if (fn.receiver !== undefined && own?.lock !== undefined) out.push({ object: own, write: WRITE_RECEIVERS.has(fn.receiver) });
+  for (const param of fn.params) {
+    if (fn.record !== undefined && param === fn.record.param) continue;
+    const object = heldParam(model, param.type);
+    if (object !== undefined) out.push({ object, param, write: paramBorrow(param) === '&mut' });
+  }
+  return out;
+}
+
+// GN-6h: whether a conversion in of each form is written for a class: the handle of a parameter that is a place
+// (held_<class>), and the clone of a value inside another type (in_<class>).
+export function takesNested(model: Model, object: ObjectClass): boolean {
+  const seen = new Set<string>();
+  const names = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(names);
+    if (typeof value !== 'object' || value === null) return false;
+    const record = value as Record<string, unknown>;
+    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
+      if (record['unit'] === object.unit.id) return true;
+      const unit = model.contract.units.find((u) => u.id === record['unit']);
+      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+      seen.add(unit.id);
+      return names(unit.fields ?? []);
+    }
+    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+  };
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
+  const place = (arg: Arg): boolean => !arg.field && heldParam(model, arg.type) !== undefined;
+  return fns.some((fn) => fn.args.some((a) => !place(a) && names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
+}
+
+export function takesHeld(model: Model, object: ObjectClass): boolean {
+  return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => places(model, fn).some((p) => p.param !== undefined && p.object.unit === object.unit));
+}
+
+// GN-6: the binding of the result of the core call. A return of none binds the unit pattern with its type, so a core
+// that returns anything else does not compile, and no variable is left unused.
+export const resultLet = (fn: Fn): string => (fn.returns === 'none' ? 'let (): ()' : 'let result');
+
+// GN-6h: the name of the guard of the receiver in a generated call.
+export const RECEIVER_GUARD = 'receiver';
+
+// GN-6h: the lines that take the locks of the places of a call, each a `let` of the guard under the name of the place.
+// `fail` maps a BindingError to the error of the language's call, and `label` is the name of a class in the language,
+// for the message of kind busy and of a poisoned object.
+export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string, fail: string, label: (object: ObjectClass) => string): string[] {
+  const lines: string[] = [];
+  const reads = new Map<ObjectClass['unit'], string[]>();
+  for (const place of places(model, fn)) {
+    const name = place.param === undefined ? RECEIVER_GUARD : variable(place.param);
+    const cell = place.param === undefined ? receiver : name;
+    const text = JSON.stringify(label(place.object));
+    if (place.write) {
+      lines.push(`        let mut ${name} = ${cell}.write(${text}).map_err(${fail})?;`);
+      continue;
+    }
+    const beside = reads.get(place.object.unit) ?? [];
+    lines.push(`        let ${name} = ${cell}.read(${text}, &[${beside.map((b) => `Some(&${b})`).join(', ')}]).map_err(${fail})?;`);
+    reads.set(place.object.unit, [...beside, name]);
+  }
+  return lines;
 }
 
 // The Rust type of a contract type at the core boundary (T-1, T-2).
@@ -476,8 +680,18 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 // The arguments of the core call of a member: the receiver first (U-2 core.receiver), then the parameters. The record
 // parameter is the record that the expanded fields built (T-4).
 export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
-  const args = fn.params.map((p) => (fn.record !== undefined && p === fn.record.param ? `&${rustField(p.name)}` : coreArg(model, p.type, variable(p))));
-  return fn.receiver === undefined ? args : [`${fn.receiver === '&mut self' ? '&mut ' : '&'}${receiver}`, ...args];
+  const held = places(model, fn);
+  const args = fn.params.map((p) => {
+    if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
+    // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
+    const place = held.find((h) => h.param === p);
+    if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    return coreArg(model, p.type, variable(p));
+  });
+  if (fn.receiver === undefined) return args;
+  const mut = fn.receiver === '&mut self';
+  if (held.some((h) => h.param === undefined)) return [`${mut ? '&mut ' : '&'}${RECEIVER_GUARD}`, ...args];
+  return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
 
 // The class units of the contract with the members of each kind, for the emitters.

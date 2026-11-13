@@ -1,7 +1,8 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
@@ -172,6 +173,23 @@ export function pythonTests(model: Model, module: string): string {
             ${target(callArgs(model, ctx, fn, values, 'None'))}
         with self.assertRaisesRegex(TypeError, "unexpected keyword"):
             ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
+  }
+  // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.
+  const held = heldTests(model, ctx, invoke, 'held');
+  const refused = (category: string, kind: string, call: string): string => `
+        with self.assertRaises(pkg.${cls(category)}) as caught:
+            ${call}
+        self.assertIs(type(caught.exception), pkg.${cls(category)})
+        self.assertEqual(caught.exception.kind, ${pyString(kind)})`;
+  for (const test of held.poison) {
+    out.push(`
+    def test_b5c_${langName('python', test.object.unit.name, 'variable')}_refuses_a_poisoned_object(self) -> None:
+        held = ${test.instance}${[`_native.${POISON_ENTRY.python}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}`);
+  }
+  for (const test of held.busy) {
+    out.push(`
+    def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
+        held = ${test.instance}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}`);
   }
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""

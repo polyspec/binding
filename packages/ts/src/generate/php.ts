@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -393,9 +393,9 @@ function iterateRust(model: Model, fn: Fn): string {
   return `
     #[php(name = "getIterator")]
     pub fn get_iterator(&self) -> Result<Zval, PhpException> {
-        guard(|| {
+        guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut pairs = Vec::new();
-            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${fn.corePath}(&self.inner)${yields.key === undefined ? '.enumerate()' : ''} {
+            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})${yields.key === undefined ? '.enumerate()' : ''} {
 ${body}
             }
             pairs_iterator(pairs)
@@ -456,6 +456,12 @@ impl PhpPairs {
 }
 `;
 
+// GN-6h: the name of a class in the message of kind busy and of a poisoned object.
+const classLabel = (object: ObjectClass): string => langName('php', object.unit.name, 'class');
+
+// GN-6h: the lines that take the locks of the places of a call.
+const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel);
+
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   if (fn.special === 'stringify') {
@@ -464,7 +470,9 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
     return `
     #[php(name = "__toString")]
     pub fn to_string_form(&self) -> Result<String, PhpException> {
-        guard(|| Ok(${fn.corePath}(&self.inner)))
+        guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
+            Ok(${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')}))
+        })
     }
 `;
   }
@@ -474,22 +482,26 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   const lines: string[] = [];
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
-    lines.push(`        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, rustIdent(variable), rustString(variable))}?;`);
+    const held = arg.field ? undefined : heldParam(model, arg.type);
+    lines.push(held === undefined
+      ? `        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, rustIdent(variable), rustString(variable))}?;`
+      : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
+  lines.push(...locks(model, fn));
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    lines.push(`        ${resultLet(fn)} = ${call};`);
   }
   const params = variables.map((v) => `${rustIdent(v)}: &Zval`);
   if (fn.kind === 'constructor') {
-    lines.push('        Ok(Self { inner: result })');
+    lines.push(`        Ok(Self { inner: ${heldNew(objectUnit(model, { unit: fn.unit.id }) ?? { unit: fn.unit, members: [], constructible: true }, 'result')} })`);
     return `
     pub fn __construct(${params.join(', ')}) -> Result<Self, PhpException> {
         guard(|| {
@@ -655,7 +667,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 #[php(name = ${rustString(phpName)})]
 #[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
-    pub(crate) inner: ${object.unit.core_type ?? ''},
+    pub(crate) inner: ${heldType(object)},
 }
 
 #[php_impl]
@@ -663,12 +675,54 @@ impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).jo
 `;
 }
 
+// GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
+function poisonRust(model: Model, layout: PhpLayout): string {
+  const written = model.objects.filter((o) => o.lock?.writes === true);
+  if (written.length === 0) return '';
+  const arms = written.map((o) => {
+    const label = langName('php', o.unit.name, 'class');
+    return `        if let Some(instance) = <&Php${label} as ext_php_rs::convert::FromZval>::from_zval(object) {
+            let _held = instance.inner.write(${rustString(label)}).map_err(binding_error)?;
+            panic!("panic-test");
+        }`;
+  }).join('\n');
+  return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[cfg(feature = "panic-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\${POISON_ENTRY.php}`)})]
+pub fn panic_test_held(object: &Zval) -> Result<Zval, PhpException> {
+    guard(|| {
+${arms}
+        Err(binding_error(BindingError::Internal { detail: String::from("B-5c: the object is of no class with a write place") }))
+    })
+}
+`;
+}
+
 function objectOut(model: Model, object: ObjectClass): string {
   const struct = `entry::Php${langName('php', object.unit.name, 'class')}`;
   const label = langName('php', object.unit.name, 'class');
   return `
-${takesObject(model, object) ? `/// T-5: a value of the class ${label} is an instance of it; the core takes a copy of the value it holds.
+${object.lock?.kind === 'shared' ? `/// GN-6h: calls read the value of ${label} at the same time, so its core type is Sync.
+const _: () = {
+    const fn sync<T: Sync>() {}
+    sync::<${object.unit.core_type ?? ''}>();
+};
+` : ''}
+${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${label} inside another type is an instance of it, whose value is read, cloned and
+/// released.
 fn in_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${object.unit.core_type ?? ''}, Fail> {
+    match <&${struct} as FromZval>::from_zval(value) {
+        Some(object) => match object.inner.read(${rustString(label)}, &[]) {
+            Ok(held) => Ok((*held).clone()),
+            Err(error) => Err(binding_error(error)),
+        },
+        None => Err(type_error(subject, ${rustString(label)})),
+    }
+}
+` : ''}${takesHeld(model, object) ? `
+/// T-5, GN-6h: a parameter of the class ${label} takes an instance of it, whose lock the call takes.
+fn held_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${heldType(object)}, Fail> {
     match <&${struct} as FromZval>::from_zval(value) {
         Some(object) => Ok(object.inner.clone()),
         None => Err(type_error(subject, ${rustString(label)})),
@@ -676,7 +730,7 @@ fn in_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${ob
 }
 ` : ''}
 fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
-    ZendClassObject::new(${struct} { inner: value })
+    ZendClassObject::new(${struct} { inner: ${heldNew(object, 'value')} })
         .into_zval(false)
         .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
 }
@@ -989,13 +1043,16 @@ mod entry {
     use super::*;
 ${functions}
 ${PANIC_TEST(layout)}
+${poisonRust(model, layout)}
     #[php_module]
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
     ${register.join('\n')};
         #[cfg(feature = "panic-test")]
-        let module = module.function(wrap_function!(panic_test));
+        let module = module.function(wrap_function!(panic_test));${model.objects.some((o) => o.lock?.writes === true) ? `
+        #[cfg(feature = "panic-test")]
+        let module = module.function(wrap_function!(panic_test_held));` : ''}
         module
     }
 }

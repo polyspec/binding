@@ -2,7 +2,8 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, hookCall, langName, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -225,6 +226,30 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
             self::assertSame(\\Error::class, $error::class);
             self::assertStringContainsString('Unknown named parameter', $error->getMessage());
         }
+    }`);
+  }
+  // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.
+  const held = heldTests(model, ctx, invoke, '$held');
+  const refused = (category: string, kind: string, call: string): string => `
+        try {
+            ${call};
+            self::fail('no error');
+        } catch (${cls(category)} $error) {
+            self::assertSame(${cls(category)}::class, $error::class);
+            self::assertSame('${kind}', $error->kind());
+        }`;
+  for (const test of held.poison) {
+    methods.push(`
+    public function testB5c${langName('php', test.object.unit.name, 'class')}RefusesAPoisonedObject(): void
+    {
+        $held = ${test.instance};${[`\\${layout.namespace}\\Internal\\${POISON_ENTRY.php}($held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
+    }`);
+  }
+  for (const test of held.busy) {
+    methods.push(`
+    public function testB5c${langName('php', test.fn.unit.name, 'class')}${langName('php', test.fn.member.name, 'class')}RefusesTheInstanceAtTwoPlaces(): void
+    {
+        $held = ${test.instance};${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}
     }`);
   }
   return `<?php

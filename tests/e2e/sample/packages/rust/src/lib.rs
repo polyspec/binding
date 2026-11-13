@@ -312,3 +312,69 @@ pub fn size(value: &Data) -> u64 {
         _ => 1,
     }
 }
+
+/// A counter, which its members change (U-2: a receiver `&mut self`, held in the mutex of B-5c).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Counter {
+    total: u64,
+}
+
+impl Counter {
+    /// A counter that starts at a total.
+    #[must_use]
+    pub fn new(start: u64) -> Self {
+        Self { total: start }
+    }
+
+    /// The total.
+    #[must_use]
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+
+    /// Adds an amount and gives the new total; a total above the range of `u64` stays at its end.
+    pub fn add(&mut self, amount: u64) -> u64 {
+        self.total = self.total.saturating_add(amount);
+        self.total
+    }
+
+    /// Adds the total of another counter.
+    pub fn absorb(&mut self, other: &Self) {
+        self.total = self.total.saturating_add(other.total);
+    }
+}
+
+/// The keys that were noted, which a member reads while it calls language code (B-5c: a class with a write place and
+/// a `&self` member that reaches language code is held in the read-write lock).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ledger {
+    keys: Vec<String>,
+}
+
+impl Ledger {
+    /// A ledger that starts with a key.
+    #[must_use]
+    pub fn new(key: &str) -> Self {
+        Self { keys: vec![key.to_owned()] }
+    }
+
+    /// Notes a key.
+    pub fn note(&mut self, key: &str) {
+        self.keys.push(key.to_owned());
+    }
+
+    /// The number of the noted keys.
+    #[must_use]
+    pub fn size(&self) -> u64 {
+        self.keys.len() as u64
+    }
+
+    /// The number of the noted keys that the lookup holds.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the lookup.
+    pub fn known(&self, lookup: &mut dyn Lookup) -> Result<u64, Failure<Error>> {
+        count(lookup, &self.keys)
+    }
+}

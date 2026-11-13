@@ -92,7 +92,9 @@ the design ids are those of the binding design.
   `optional<T>` of one with `as_deref()`, a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
   record) by reference. A record is built from its expanded fields, which are owned. A return has the form that is usual for its Rust function
   (an accessor borrows, a computed value is owned), so the generated code binds it without a type and reads either
-  form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field). An integer return (uint, int,
+  form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field), except a return of `none`, which
+  it binds as `let (): () = …`: a core that returns anything else does not compile, and the unit pattern leaves no
+  variable unused, which the lints deny. An integer return (uint, int,
   int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
   for the integer and a reference to it); a parameter is the type of the table. A contract name that is a Rust keyword
   is a raw identifier (`r#type`).
@@ -110,7 +112,10 @@ the design ids are those of the binding design.
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
   Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
   arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
-  instance of it (another value is kind `invalid_argument_type`) and the core borrows the held value (GN-6h). A class of origin `value` whose `in` rows name only the class itself (U-1) is
+  instance of it (another value is kind `invalid_argument_type`) and the core borrows the held value (GN-6h). In Node
+  the instance is unwrapped as a `ClassInstance`, which checks the type tag of the class: napi-rs gives a reference
+  `&T` only in the argument conversion that it generates and refuses one that the body of a call makes, and the
+  generated functions take the raw values, which they judge themselves (T-8). A class of origin `value` whose `in` rows name only the class itself (U-1) is
   generated as such a class, and a value type named in `types` is that unit.
 - **GN-6h** The lock of a class unit (U-2 busy, B-5c). A place of a class is where a call takes an instance of it: the
   receiver of a member, or a parameter whose type is the class itself. A write place is a receiver `&mut self` or
@@ -339,9 +344,12 @@ the design ids are those of the binding design.
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
-  parameter, a test passes the instance as that argument and requires kind `busy` of the busy class.
+  parameter, a test passes the instance as that argument and requires kind `busy` of the busy class, and then calls a member on
+  the instance, which works because the refused call holds no lock. The instance of these tests is made by the first
+  constructor or static member of the class that returns it, with placeholder arguments.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
-  overlaps a waiting call and of a call that re-enters an object from a callback; the identity of a default; the round trip
+  overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
+  constructor or static member makes; the identity of a default; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4).
 
