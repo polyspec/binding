@@ -464,7 +464,7 @@ the design ids are those of the binding design.
   (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
   directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
-  is a Go keyword or a name of the generated body takes a trailing `_`.
+  is a Go keyword, a name of the generated body or the package name of a module of the contract takes a trailing `_`.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
