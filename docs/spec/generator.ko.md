@@ -235,7 +235,8 @@
 - **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
   코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
   `toJSON`, PHP `jsonSerialize`이고 그 PHP class는 `\JsonSerializable`을 구현한다. Python에는 JSON hook이 없으므로 그
-  member가 없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
+  member가 없다. 수를 돌려주는 primitive는 Node와 WASM의 `valueOf`이며, Python·PHP·Go에는 그런 hook이 없으므로 그 member가
+  없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
   인터페이스를 주고, 그것을 한 번 더 적은 class를 확장이 로드될 때 거부하기 때문이다. stub은 그 인터페이스를 선언한다. Node의
   hook은 진입 파일의 인자 검사(G-7) 없이 자기 이름을 가진 addon의 메서드다. 언어가 hook을 자기 규약의 인자로 부르기
   때문이며(`JSON.stringify`는 `toJSON`에 key를 넘긴다) 메서드는 그 인자를 읽지 않는다. class의 두 번째 stringify·to_json,
@@ -366,14 +367,22 @@
   보관한다: `{literal: null}`은 언어의 null이고 `{empty: "map"}`은 새 빈 map(`Map`, `dict`)이다. 코어가 `None`을 받으므로
   이 기본값에는 `default_core`가 필요 없다. `core`가 없는 property는 같은 이름의 constructor parameter가 보관한 값을
   준다. 쓰기 가능한 property(U-1 `writable`)는 그 값을 바꾸기도 하며, 바꾼 값은 쓰이는 곳에서, 곧 member가 값 alias로
-  그것을 읽을 때 판정된다. 각 instance는 정체성을 가진다. 그것은 instance가 만들어질 때 바인딩의 카운터 하나가 주는
-  수다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind와 그 정체성을 handle로 가진
-  `HostValue::Value`로 기술한다. 정체성이 없는 `core_type`이 있는 class의 handle은 같은 카운터의 새 수다.
-  `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한 것, 또는 그
-  property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의 constructor를 적은 `out`
-  행은 코어를 부르지 않고 instance를 만든다: `object`는 그 entry들의 map이고 `reference`는 그것이 담은 값이며,
-  instance는 내용보다 먼저 만들어지고 그 handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이
-  class를 생성한다. Go는 이름으로 거부하고(G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e).
+  그것을 읽을 때 판정된다. constructor가 받는 keyed map은 type이 적은 kind의 각 key를 코어에 주며, Node와 WASM의 byte
+  string key는 `Uint8Array`다. instance는 `Map` 자체를 보관하므로, entry가 entry들로 `Map`을 만드는 곳에서 그런 key를
+  거부하는 GN-12는 여기에 적용되지 않는다. Python은 native module에 값마다 field를 둔 class를 정의하고, Node와 WASM은
+  JavaScript entry에 값마다 자기 열거 가능한 data property(property가 쓰기 가능하면 쓰기 가능)를 둔 class를 정의하며,
+  인자는 addon이 판정한다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind를 가진
+  `HostValue::Value`로 기술한다. 코어가 자기 각 위치에서 한 객체를 보도록, 코어의 한 walk 안에서 같은 instance의
+  handle은 같다. `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한
+  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
+  constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
+  `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
+  handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
+  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
+  가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
+  그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는
+  중에 다시 나오면 여전히 kind `internal`이다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
@@ -517,7 +526,10 @@
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
-  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다.
+  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP reference는 배열이나 property의
+  자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`를 가진 PHP case 값은 id마다 변수 하나를 정하고
+  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. 그런 자리가 아닌 reference, 곧 값 자체나
+  reference의 값인 reference는 PHP 형태가 없으며, 그 case의 시험은 그 이유로 실패한다(G-4).
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고

@@ -1318,7 +1318,7 @@ test('WASM: a value alias, its in_raises and a callback unit are generated as fo
   const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
-  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost \{ held: Vec::new\(\) \};/);
+  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost::new\(\);/);
   assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_error\(failure\)\)/);
   assert.match(lib, /OutValue::Map\(value\) => \{\n {12}let handle = value\.handle\(\);\n {12}let len = value\.len\(\);\n {12}if let Some\(made\)/);
   // B-1: an operation that may run code of the value is imported with catch.
@@ -1717,20 +1717,20 @@ test('a value class without core_type keeps the language values that its constru
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6m' },
     members: [
-      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: 'data', default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
-      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: 'data', raises: [], wait: 'none', writable: true },
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
     ],
   });
   const data = sample.units.find((u: any) => u.id === 'data');
   data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
   for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', ...targets] as Inputs['targets'] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     // The constructor judges its argument as a HostValue, and None when it is left out; no core value is kept.
     assert.match(lib, /polyspec_sample::check_boxed\(&mut host, /, path);
     // The in row describes an instance by its identity, and read gives its kept value again.
-    assert.match(lib, /HostValue::Value \{ kind: ValueKind::Reference, handle: /, path);
+    assert.match(lib, /HostValue::Value \{ kind: ValueKind::Reference, handle \}/, path);
     assert.doesNotMatch(lib, /no value class is read/, path);
     // The out row makes the instance before its content, without the core.
     assert.match(lib, /OutValue::Reference \{ handle, value \} =>/, path);
@@ -1738,7 +1738,34 @@ test('a value class without core_type keeps the language values that its constru
   }
   // The property is writable in the declarations; the default is the null of the language.
   assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi'), /class Boxed:[\s\S]*def __init__\(self, value: [^=]+= None\)[\s\S]*@value\.setter/);
-  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export class Boxed \{[^}]*constructor\(value\?: [^)]*\);[^}]*\n {2}value: /);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class Boxed \{[^}]*constructor\(value\?: [^)]*\);[^}]*\n {2}value: /);
   // PHP holds nothing of the class.
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
+});
+
+test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'null', node: 'null', go: 'null', wasm: 'null' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const one = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
+  file['echo']?.push(
+    { id: 'a_shared_reference', value: { kind: 'list', value: [one, one] } },
+    { id: 'a_top_reference', value: one },
+  );
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // The make keeps the objects and references that it made under their handles, and makes each before its content.
+  assert.match(lib, /struct PhpMaking \{[^}]*objects: std::collections::BTreeMap<u64, \*mut ZendObject>,[^}]*references: std::collections::BTreeMap<u64, \*mut ext_php_rs::ffi::zend_reference>,/);
+  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*php_set_reference\(reference, content\);/);
+  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*php_property\(object, key, item\)\?;/);
+  // A property name and an array key are the bytes of the key.
+  assert.match(lib, /fn php_property\(object: \*mut ZendObject, key: OutValue, item: Zval\)/);
+  assert.match(lib, /OutValue::Bytes\(bytes\) => \{\n\s*let name = ZendStr::new\(bytes\.value\(\), false\);\n\s*array\.insert\(ext_php_rs::types::ArrayKey::ZendString\(&name\), item\)/);
+  const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  // A shared reference is one variable, which both places take by reference.
+  assert.match(tests, /\(static function \(\) \{ \$r0 = "x"; return \[&\$r0, &\$r0\]; \}\)\(\)/);
+  // A reference that is the value itself has no PHP form: its test fails with the reason.
+  assert.match(tests, /public function testGn13esameATopReference\(\): void\n {4}\{\n {8}self::fail\("[^"]*no place of an array or of a property[^"]*"\);/);
 });

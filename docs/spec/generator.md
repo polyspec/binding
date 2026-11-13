@@ -284,7 +284,8 @@ the design ids are those of the binding design.
 - **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
   of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
   `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node and `jsonSerialize` in PHP, whose class
-  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. The PHP extension names no
+  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. A primitive, which returns a
+  number, is `valueOf` in Node and WASM; Python, PHP and Go have no such hook, so the member is absent there. The PHP extension names no
   `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
   and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
   addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
@@ -438,16 +439,25 @@ the design ids are those of the binding design.
   value of the language: `{literal: null}` is the null of the language, `{empty: "map"}` a new empty map (a `Map`, a
   `dict`); such a default needs no `default_core`, because the core takes `None`. A property without `core` gives the
   kept value of the constructor parameter with its name; a writable property (U-1 `writable`) also sets it, and the
-  value that it sets is judged where it is used, when a member reads it through its value alias. Each instance has an
-  identity, a number that one counter of the binding gives when the instance is made. An `in` row of a value alias
-  that names a class (U-1) describes an instance of it as `HostValue::Value` with the kind of the row and that identity
-  as its handle; for a class with `core_type`, which has no identity, the handle is a new number of the same counter.
-  `read` of `HostValues` gives, for the handle, the property that the row names as `read`: the kept value, described
-  again, or the value that the core path of the property returns (a bool, an integer or a float). An `out` row whose
-  make names the constructor of a class without `core_type` makes an instance without calling the core: an `object`
-  is the map of its entries and a `reference` the value that it holds, and the instance is made before its content and
-  is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these classes; Go
-  refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e).
+  value that it sets is judged where it is used, when a member reads it through its value alias. A keyed map that the
+  constructor takes gives the core each key of the kinds that the type lists, a byte string key of Node and WASM
+  being a `Uint8Array`; the instance keeps the `Map` itself, so GN-12, which refuses such keys where the entry makes a
+  `Map` of entries, does not apply. Python defines the class in the native module, with a field per value; Node and
+  WASM define it in the JavaScript entry, with an own enumerable data property per value (writable when the property
+  is), and the addon judges the arguments. An `in` row of a value alias that names a class (U-1) describes an
+  instance of it as `HostValue::Value` with the kind of the row; the handle is the same for the same instance within
+  one walk of the core, so that the core sees one object at each of its positions. `read` of `HostValues` gives, for
+  the handle, the property that the row names as `read`: the kept value, described again, or the value that the core
+  path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
+  class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
+  entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
+  content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
+  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e). PHP makes the form
+  `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
+  byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
+  string key of those bytes. An object and a reference are made before their content and are the same object or
+  reference at every position of their handle, so a cycle through them is made; an array, which is a value, stays
+  kind `internal` inside its own making.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
@@ -626,7 +636,10 @@ the design ids are those of the binding design.
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes.
+  the built-in form of the kind makes. A PHP reference is a place of an array or of a property, so a case value of
+  PHP whose places hold `{"kind": "reference", "value": {"id", "value"}}` is made in a closure that sets one variable
+  per id and returns the value whose places take the variables by reference; a reference that is no such place, the
+  value itself or the value of a reference, has no PHP form, and the test of its case fails with that reason (G-4).
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
