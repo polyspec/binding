@@ -2,9 +2,9 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, hookCall, langName, unitOf } from './model.ts';
+import { type Model, Unsupported, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -88,6 +88,21 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         }
     }`);
       }
+      // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
+      const refusedValue = aliasRepresentative(model, ctx, arg.type);
+      if (refusedValue !== undefined) {
+        methods.push(`
+    public function testU7${name}${argName}GivesTheKindOf${langName('php', refusedValue.kase.alias.unit.name, 'class')}(): void
+    {
+        try {
+            ${call(new Map([[arg, refusedValue.value]]))};
+            self::fail('no error');
+        } catch (${cls(refusedValue.kase.category)} $error) {
+            self::assertSame(${cls(refusedValue.kase.category)}::class, $error::class);
+            self::assertSame(${phpText(refusedValue.kase.kind)}, $error->kind());
+        }
+    }`);
+      }
       if (textKind(arg.type) === 'text') {
         methods.push(`
     public function testB3${name}${argName}RefusesBytesThatAreNotUtf8(): void
@@ -139,19 +154,28 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : found.name;
       };
+      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
+      // between the arming and that call, and requires every armed fault to have fired.
+      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.map((arg, i) => [`$arg${i}`, caseArg(arg)])];
+      const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
+      const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => `$arg${fn.args.indexOf(arg)}`), made_ === '' ? '' : '$receiver');
+      const errno = expectedErrno(kase);
+      // PHP has no table of the errno symbols of its machine, and where a test reads their values is not decided.
+      if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
       methods.push(`
     public function testB4${name}${id}(): void
-    {${before}
+    {${before}${arming}
         try {
-            ${invoke(fn, callArgs(model, ctx, fn, caseArg), kase.receiver === undefined ? '' : made(kase.receiver))};
+            ${call};
             self::fail('no error');
         } catch (${cls(kase.raises.category)} $error) {
             self::assertSame(${cls(kase.raises.category)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
-            self::assertNull($error->errno());
-        }${after}
+            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${String(errno.value)}, $error->errno());`}
+        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -224,6 +248,21 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } catch (\\Error $error) {
             self::assertSame(\\Error::class, $error::class);
             self::assertStringContainsString('Unknown named parameter', $error->getMessage());
+        }
+    }`);
+  }
+  // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
+  for (const kase of aliasCases(model)) {
+    const alias = langName('php', kase.alias.unit.name, 'class');
+    methods.push(`
+    public function testU7${alias}In${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    {
+        try {
+            \\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)});
+            self::fail('no error');
+        } catch (${cls(kase.category)} $error) {
+            self::assertSame(${cls(kase.category)}::class, $error::class);
+            self::assertSame(${phpText(kase.kind)}, $error->kind());
         }
     }`);
   }

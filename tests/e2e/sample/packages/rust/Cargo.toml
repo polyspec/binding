@@ -9,6 +9,10 @@ publish = false
 name = "polyspec_sample"
 path = "src/lib.rs"
 
+[features]
+# G-5: compiles the arming of the fault injection points; for tests only.
+fault-test = ["polyspec-binding-core/fault-test"]
+
 [dependencies]
 polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }
 

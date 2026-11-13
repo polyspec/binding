@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, aliasKindsRust, aliasesWithKinds, faultRust, withFaults, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -68,6 +68,31 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
+
+// G-5: the entry points of the feature fault-test, which arm the faults of a case and report what did not fire.
+const FAULT_TEST = (layout: PhpLayout): string => `
+/// G-5: arms the faults of a case for the next call of the member from this thread, and gives the id of the arming.
+#[cfg(feature = "fault-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\armFaults`)})]
+pub fn arm_faults(member: String, faults: String) -> Result<i64, PhpException> {
+    guard(|| {
+        let id: u64 = binding_core::fault::arm(&member, &faults).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        i64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+    })
+}
+
+/// G-5: the points of an arming whose fault did not fire.
+#[cfg(feature = "fault-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\faultLeft`)})]
+pub fn fault_left(id: i64) -> Result<Vec<String>, PhpException> {
+    guard(|| {
+        let id: u64 = u64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+    })
+}
+`;
 
 const PANIC_TEST = (layout: PhpLayout): string => `/// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
@@ -456,7 +481,9 @@ impl PhpPairs {
 }
 `;
 
-function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
+const functionRust = (model: Model, layout: PhpLayout, fn: Fn): string => withFaults(model, fn, entryRust(model, layout, fn));
+
+function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   if (fn.special === 'stringify') {
     // N-4: __toString returns a string. The class names no Stringable: PHP adds it to a class that has __toString,
@@ -485,7 +512,8 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    // E-1c: a core that returns nothing is bound as (), so a Result that it returns does not compile.
+    lines.push(`        let result${fn.returns === 'none' ? ': ()' : ''} = ${call};`);
   }
   const params = variables.map((v) => `${rustIdent(v)}: &Zval`);
   if (fn.kind === 'constructor') {
@@ -975,7 +1003,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${used}
+${faultRust(model)}${aliasKindsRust(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
 extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerRecords}${registerInterfaces}
     0
@@ -988,14 +1016,29 @@ mod entry {
     #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_function and php_module macros of ext-php-rs")]
     use super::*;
 ${functions}
-${PANIC_TEST(layout)}
+${PANIC_TEST(layout)}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
+/// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
+#[cfg(feature = "codec-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\aliasIn${langName('php', alias.unit.name, 'class')}`)})]
+pub fn alias_in_${rustField(alias.unit.name)}(value: &Zval) -> Result<(), PhpException> {
+    guard(|| {
+        let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(value, "value")?;
+        Ok(())
+    })
+}
+`).join('')}
     #[php_module]
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
     ${register.join('\n')};
         #[cfg(feature = "panic-test")]
-        let module = module.function(wrap_function!(panic_test));
+        let module = module.function(wrap_function!(panic_test));${model.faults.length === 0 ? '' : `
+        #[cfg(feature = "fault-test")]
+        let module = module.function(wrap_function!(arm_faults)).function(wrap_function!(fault_left));`}${aliasesWithKinds(model).map((alias) => `
+        #[cfg(feature = "codec-test")]
+        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));`).join('')}
         module
     }
 }

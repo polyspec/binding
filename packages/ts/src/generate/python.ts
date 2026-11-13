@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, withFaults, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -392,7 +392,9 @@ ${body}
 `;
 }
 
-function functionRust(model: Model, fn: Fn): string {
+const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
+
+function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   // N-4: the string form is __str__.
   const name = memberName('python', fn);
@@ -415,7 +417,8 @@ function functionRust(model: Model, fn: Fn): string {
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    // E-1c: a core that returns nothing is bound as (), so a Result that it returns does not compile.
+    lines.push(`        let result${fn.returns === 'none' ? ': ()' : ''} = ${call};`);
   }
   if (fn.kind === 'constructor') {
     lines.push('        Ok(Self { inner: result })');
@@ -682,21 +685,52 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${used}${functions}${objects}
+${faultRust(model)}${aliasKindsRust(model)}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]
 fn _panic_test(py: Python<'_>) -> PyResult<()> {
     guard(py, || panic!("panic-test"))
 }
+${model.faults.length === 0 ? '' : `
+/// G-5: arms the faults of a case for the next call of the member from this thread, and gives the id of the arming.
+#[cfg(feature = "fault-test")]
+#[pyfunction]
+fn _arm_faults(py: Python<'_>, member: &str, faults: &str) -> PyResult<u64> {
+    guard(py, || binding_core::fault::arm(member, faults).map_err(|error| binding_error(py, BindingError::Internal { detail: error.to_string() })))
+}
 
+/// G-5: the points of an arming whose fault did not fire.
+#[cfg(feature = "fault-test")]
+#[pyfunction]
+fn _fault_left(py: Python<'_>, id: u64) -> PyResult<Vec<String>> {
+    guard(py, || binding_core::fault::left(id).map_err(|error| binding_error(py, BindingError::Internal { detail: error.to_string() })))
+}
+`}
+${aliasesWithKinds(model).map((alias) => `
+/// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
+#[cfg(feature = "codec-test")]
+#[pyfunction]
+fn _alias_in_${rustField(alias.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    guard(py, || {
+        let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(py, value, "value")?;
+        Ok(())
+    })
+}
+`).join('')}
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // B-4: the classes are found when the module loads; a missing one fails the import.
 ${classChecks}
 ${register}
     #[cfg(feature = "panic-test")]
-    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;
+    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;${aliasesWithKinds(model).map((alias) => `
+    #[cfg(feature = "codec-test")]
+    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
+    #[cfg(feature = "fault-test")]
+    module.add_function(wrap_pyfunction!(_arm_faults, module)?)?;
+    #[cfg(feature = "fault-test")]
+    module.add_function(wrap_pyfunction!(_fault_left, module)?)?;`}
     Ok(())
 }
 `;

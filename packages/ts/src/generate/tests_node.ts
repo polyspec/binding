@@ -3,7 +3,7 @@
 
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -53,6 +53,8 @@ export function nodeTests(model: Model): string {
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
   let usesFixture = false;
+  let usesErrno = false;
+  let usesAddon = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
@@ -93,6 +95,14 @@ test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
+      // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
+      const refusedValue = aliasRepresentative(model, ctx, arg.type);
+      if (refusedValue !== undefined) {
+        out.push(`
+test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${cls(refusedValue.kase.category)} && error.kind === ${jsString(refusedValue.kase.kind)});
+});`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
@@ -106,23 +116,32 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
-      const args = callArgs(model, ctx, fn, (arg) => {
+      const caseArg = (arg: Fn['args'][number]): string => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : `${found.name}.object`;
-      });
-      const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
+      };
+      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
+      // between the arming and that call, and requires every armed fault to have fired.
+      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.map((arg, i) => [`arg${i}`, caseArg(arg)])];
+      const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = addon().__armFaults(${jsString(fn.member.id)}, ${jsString(kase.faults)});`;
+      const args = callArgs(model, ctx, fn, kase.faults === undefined ? caseArg : (arg) => `arg${fn.args.indexOf(arg)}`);
+      const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
+      const errno = expectedErrno(kase);
+      usesErrno ||= errno !== null && 'symbol' in errno;
+      usesAddon ||= kase.faults !== undefined;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       out.push(`
-test('B-4: ${name} ${kase.id}', () => {${before}
+test('B-4: ${name} ${kase.id}', () => {${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${cls(kase.raises.category)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === null);${after}
+    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -168,25 +187,36 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
+  for (const kase of aliasCases(model)) {
+    usesAddon = true;
+    out.push(`
+test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
+  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
+});`);
+  }
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
-import * as pkg from ${jsString(npm)};
+${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(npm)};
 
 const require = createRequire(import.meta.url);
 ${usesFixture ? NODE_FIXTURE : ''}
-test('B-7: a panic is kind internal', () => {
-  // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
+${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
+// T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
+function addon() {
   const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
-  let addon;
   try {
-    addon = require(\`${npm}-\${platform}\`);
+    return require(\`${npm}-\${platform}\`);
   } catch {
-    addon = require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
+    return require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
   }
-  assert.throws(() => addon.__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
+}
+
+test('B-7: a panic is kind internal', () => {
+  assert.throws(() => addon().__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
 });
 
 test('the CommonJS and the ESM entries share their classes', () => {

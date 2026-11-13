@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasKindsRust, aliasesWithKinds, faultRust, withFaults, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -385,7 +385,9 @@ ${body}
 `;
 }
 
-function functionRust(model: Model, fn: Fn): string {
+const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
+
+function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
@@ -409,7 +411,8 @@ function functionRust(model: Model, fn: Fn): string {
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    lines.push(`        let result = ${call};`);
+    // E-1c: a core that returns nothing is bound as (), so a Result that it returns does not compile.
+    lines.push(`        let result${fn.returns === 'none' ? ': ()' : ''} = ${call};`);
   }
   // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
   // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the
@@ -718,14 +721,47 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${used}${functions}
+${faultRust(model)}${aliasKindsRust(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
 pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
-`;
+${aliasesWithKinds(model).map((alias) => `
+/// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
+#[cfg(feature = "codec-test")]
+#[napi(js_name = ${rustString(`__aliasIn${langName('node', alias.unit.name, 'class')}`)})]
+pub fn alias_in_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<()> {
+    guard(|| {
+        let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
+        Ok(())
+    })
+    .map_err(|fail| throw(env, fail))
+}
+`).join('')}${model.faults.length === 0 ? '' : `
+/// G-5: arms the faults of a case for the next call of the member from this thread, and gives the id of the arming.
+#[cfg(feature = "fault-test")]
+#[napi(js_name = "__armFaults")]
+pub fn arm_faults(env: &Env, member: String, faults: String) -> napi::Result<i64> {
+    guard(|| {
+        let id: u64 = binding_core::fault::arm(&member, &faults).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        i64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+    })
+    .map_err(|fail| throw(env, fail))
+}
+
+/// G-5: the points of an arming whose fault did not fire.
+#[cfg(feature = "fault-test")]
+#[napi(js_name = "__faultLeft")]
+pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
+    guard(|| {
+        let id: u64 = u64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+    })
+    .map_err(|fail| throw(env, fail))
+}
+`}`;
 }
 
 // ---- JavaScript and declarations ----

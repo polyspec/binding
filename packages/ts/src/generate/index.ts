@@ -82,6 +82,13 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) throw new Unsupported(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) throw new Unsupported(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
+  // G-5, U-7: the entry points of the features fault-test and codec-test of an alias are generated for Python, Node
+  // and PHP so far; a contract with fault injection points or the kinds of an alias and another target is refused by
+  // name (G-4).
+  const untested = inputs.contract.targets.filter((target) => target === 'go' || target === 'wasm');
+  if (untested.length > 0 && model.faults.length > 0) throw new Unsupported(`faults: the entry points of the feature fault-test are not generated for ${untested.join(', ')} yet (G-5)`);
+  const withKinds = model.aliases.find((alias) => alias.inRaises.length > 0);
+  if (untested.length > 0 && withKinds !== undefined) throw new Unsupported(`${withKinds.unit.id}: the entry point of in_raises (codec-test) is not generated for ${untested.join(', ')} yet (U-7)`);
   const files: Files = new Map();
   const targets = inputs.contract.targets;
   if (targets.includes('python')) python(forLanguage(model, 'python'), files);
