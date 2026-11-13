@@ -1,9 +1,9 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
-import type { Name, Type, Unit } from '../contract.ts';
-import { variantPattern } from '../contract.ts';
+import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
+import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -50,25 +50,28 @@ const phpCase = (name: Name): string => {
   return PHP_CASE_REFUSED.has(plain.toLowerCase()) ? `${plain}_` : plain;
 };
 
+// GN-4c: the Rust name of the entry of a function of a functions unit, which no helper of the crate has.
+const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'rust', 'variable')}`;
+
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1', path: 'in_path' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+    return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
   if ('function' in type) return functionIn(model, type.function, value, subject);
-  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
+  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
-  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -81,7 +84,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
   const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
   const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"').replace(/\?$/, '')}.map_err(Thrown::Binding)`;
-  return `in_function(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 if let Err(error) = native_thread(&native, ${subject}) {
                     return Err(thrown_elsewhere(error));
@@ -105,21 +108,23 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(Zval::new())';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', path: 'out_path' };
+    const fn: Record<string, string> = { text: 'text_out', latin1: 'bytes_out', bytes: 'bytes_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', float: 'float_out', path: 'path_out' };
     return `${fn[type]}(${value})`;
   }
-  if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
+  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
+  if ('passthrough' in type) return `passed_out(${value})`;
+  if ('list' in type) return `list_out(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('map' in type) return `out_map(${value}, |item| ${convertOut(model, type.map, 'item')})`;
-  if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
+  if ('keyed_map' in type) return `keyed_map_out(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('map' in type) return `map_out(${value}, |item| ${convertOut(model, type.map, 'item')})`;
+  if ('optional' in type) return `optional_out(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_array(vec![${parts.join(', ')}])`);
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `array_out(vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
-  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `${unitFn('out', unit, aliasOf(model, type)?.library)}(${value})`;
   throw new Unsupported(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -174,14 +179,14 @@ const THREAD_TEST = (layout: PhpLayout): string => `/// U-3, GN-6z: the entry po
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\threadTest`)})]
 pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
     guard(|| {
-        let native = in_function(value, "value")?;
+        let native = kept_function_in(value, "value")?;
         let kind = std::thread::spawn(move || match native_thread(&native, "value") {
             Ok(()) => String::from("none"),
             Err(error) => error.kind().to_owned(),
         })
         .join();
         match kind {
-            Ok(kind) => out_text(kind),
+            Ok(kind) => text_out(kind),
             Err(_panic) => Err(binding_error(BindingError::Internal { detail: String::from("U-3: the thread of the test panicked") })),
         }
     })
@@ -205,14 +210,14 @@ fn type_error(subject: &str, expected: &str) -> Fail {
 }
 
 /// B-3: text is a string whose bytes are UTF-8.
-fn in_text(value: &Zval, subject: &str) -> Result<String, Fail> {
+fn text_in(value: &Zval, subject: &str) -> Result<String, Fail> {
     let Some(text) = value.zend_str() else { return Err(type_error(subject, "string")) };
     String::from_utf8(text.as_bytes().to_vec())
         .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
 }
 
 /// T-1 latin1, bytes and source: the bytes of a string; a PHP string is its bytes, which the core judges.
-fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
+fn latin1_in(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
     match value.zend_str() {
         Some(text) => Ok(text.as_bytes().to_vec()),
         None => Err(type_error(subject, "string")),
@@ -220,20 +225,20 @@ fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
 }
 
 /// T-1 path, GN-6y: the bytes of a string, as they are, which binding_core judges.
-fn in_path(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
-    binding_core::path_from_bytes(in_latin1(value, subject)?, subject).map_err(binding_error)
+fn path_in(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
+    binding_core::path_from_bytes(latin1_in(value, subject)?, subject).map_err(binding_error)
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
 /// parameter that a call with named arguments skips, so null is an argument that was left out (GN-10).
-fn in_default<T>(value: Option<&Zval>, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn default_in<T>(value: Option<&Zval>, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     match value.filter(|value| !value.is_null()) {
         Some(value) => item(value).map(Some),
         None => Ok(None),
     }
 }
 
-fn in_bool(value: &Zval, subject: &str) -> Result<bool, Fail> {
+fn bool_in(value: &Zval, subject: &str) -> Result<bool, Fail> {
     if value.is_true() {
         return Ok(true);
     }
@@ -245,7 +250,7 @@ fn in_bool(value: &Zval, subject: &str) -> Result<bool, Fail> {
 
 /// B-2, GN-12a: an int (IS_LONG) that is a safe integer for the contract type int; any other value is kind
 /// invalid_number.
-fn in_int(value: &Zval, subject: &str) -> Result<i64, Fail> {
+fn int_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
     match (value.is_long(), value.long()) {
         (true, Some(integer)) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -253,7 +258,7 @@ fn in_int(value: &Zval, subject: &str) -> Result<i64, Fail> {
 }
 
 /// B-2, T-1: an int (IS_LONG) of the range of i64 for the contract type int64.
-fn in_int64(value: &Zval, subject: &str) -> Result<i64, Fail> {
+fn int64_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
     match (value.is_long(), value.long()) {
         (true, Some(integer)) => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -261,7 +266,7 @@ fn in_int64(value: &Zval, subject: &str) -> Result<i64, Fail> {
 }
 
 /// B-2, GN-12a: an int (IS_LONG) of 0 to 2^53 - 1 for the contract type uint.
-fn in_uint(value: &Zval, subject: &str) -> Result<u64, Fail> {
+fn uint_in(value: &Zval, subject: &str) -> Result<u64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     match (value.is_long(), value.long()) {
         (true, Some(integer @ 0..=9_007_199_254_740_991)) => Ok(integer.unsigned_abs()),
@@ -269,7 +274,7 @@ fn in_uint(value: &Zval, subject: &str) -> Result<u64, Fail> {
     }
 }
 
-fn in_float(value: &Zval, subject: &str) -> Result<f64, Fail> {
+fn float_in(value: &Zval, subject: &str) -> Result<f64, Fail> {
     match (value.is_double(), value.double()) {
         (true, Some(float)) => Ok(float),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
@@ -277,7 +282,7 @@ fn in_float(value: &Zval, subject: &str) -> Result<f64, Fail> {
 }
 
 /// T-2: a list is an array whose keys are 0 to n-1 in order; another array would lose its keys (P-4).
-fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
+fn list_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
     if !array.has_sequential_keys() {
         return Err(type_error(subject, "list"));
@@ -286,7 +291,7 @@ fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fai
 }
 
 /// GN-6t: a tuple is a list of exactly its parts.
-fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
+fn tuple_in<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
     if !array.has_sequential_keys() {
         return Err(type_error(subject, "list"));
@@ -295,59 +300,59 @@ fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Z
 }
 
 /// null is the absence; any other value is converted.
-fn in_optional<T>(value: &Zval, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn optional_in<T>(value: &Zval, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.is_null() {
         return Ok(None);
     }
     item(value).map(Some)
 }
 
-fn out_text(value: impl AsRef<str>) -> Result<Zval, Fail> {
+fn text_out(value: impl AsRef<str>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_zend_string(ZendStr::new(value.as_ref().as_bytes(), false));
     Ok(zval)
 }
 
 /// T-1 latin1 and bytes: a string of the bytes.
-fn out_bytes(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
+fn bytes_out(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_zend_string(ZendStr::new(value.as_ref(), false));
     Ok(zval)
 }
 
 /// T-1 path, GN-6y: a string of the bytes of the path.
-fn out_path(value: impl AsRef<std::path::Path>) -> Result<Zval, Fail> {
-    out_bytes(binding_core::path_bytes(value.as_ref()))
+fn path_out(value: impl AsRef<std::path::Path>) -> Result<Zval, Fail> {
+    bytes_out(binding_core::path_bytes(value.as_ref()))
 }
 
-fn out_bool(value: impl Borrow<bool>) -> Result<Zval, Fail> {
+fn bool_out(value: impl Borrow<bool>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_bool(*value.borrow());
     Ok(zval)
 }
 
-fn out_int(value: impl WideInt) -> Result<Zval, Fail> {
+fn int_out(value: impl WideInt) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_long(value.widen_int());
     Ok(zval)
 }
 
 /// B-2: a uint leaves as an int; one above PHP_INT_MAX is kind internal.
-fn out_uint(value: impl WideUint) -> Result<Zval, Fail> {
+fn uint_out(value: impl WideUint) -> Result<Zval, Fail> {
     let value = value.widen_uint();
     match i64::try_from(value) {
-        Ok(value) => out_int(value),
+        Ok(value) => int_out(value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is above PHP_INT_MAX") })),
     }
 }
 
-fn out_float(value: impl Borrow<f64>) -> Result<Zval, Fail> {
+fn float_out(value: impl Borrow<f64>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_double(*value.borrow());
     Ok(zval)
 }
 
-fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
+fn array_out(items: Vec<Zval>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     for item in items {
         array.push(item).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
@@ -359,7 +364,7 @@ fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
 
 /// T-2: an array in its order whose keys are texts. A string key is its UTF-8 text (other bytes are kind invalid_text),
 /// and an int key is its decimal text, the inverse of PHP's own conversion of a decimal string key.
-fn in_map<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "array")) };
     let mut map = binding_core::OrderedMap::new();
     let mut entries = array.iter();
@@ -380,8 +385,8 @@ fn in_map<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail
 }
 
 /// T-2: a map, owned or borrowed, as an array in its order; PHP makes a decimal text key an int key, which comes back
-/// as the same text (in_map).
-fn out_map<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+/// as the same text (map_in).
+fn map_out<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     for (key, value) in value.borrow().iter() {
         let before = array.len();
@@ -399,7 +404,7 @@ fn out_map<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T)
 /// and not integers (PHP makes a decimal string key an int, so an array cannot hold the text); a string key is a text
 /// when it is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
 /// invalid_argument_type.
-fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
+fn keyed_map_in<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, expected)) };
     let mut map = binding_core::KeyedMap::new();
     let mut entries = array.iter();
@@ -431,7 +436,7 @@ fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, it
 
 /// T-2: a keyed map, owned or borrowed, as an array in its order. PHP makes a decimal text or byte string key an int,
 /// so a map whose keys PHP makes one (Int(1) and Text("1")) cannot be an array: kind internal, not a lost entry (P-4).
-fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn keyed_map_out<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     let failed = |error: ext_php_rs::error::Error| binding_error(BindingError::Internal { detail: error.to_string() });
     for (key, value) in value.borrow().iter() {
@@ -457,11 +462,11 @@ fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn
     Ok(zval)
 }
 
-fn out_list<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
-    out_array(value.into_iter().map(item).collect::<Result<Vec<_>, Fail>>()?)
+fn list_out<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+    array_out(value.into_iter().map(item).collect::<Result<Vec<_>, Fail>>()?)
 }
 
-fn out_optional<T>(value: Option<T>, item: impl FnOnce(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn optional_out<T>(value: Option<T>, item: impl FnOnce(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     match value {
         Some(value) => item(value),
         None => Ok(Zval::new()),
@@ -506,7 +511,7 @@ ${outArms}
 // T-4: the result form of a record, a final class of public readonly properties whose constructor takes every field by
 // name and only holds the values; they are judged when the record enters the core (T-8).
 function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, library?: string): string {
-  const name = recordFn(unit, library);
+  const name = recordFn(unit);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
@@ -516,7 +521,7 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
   const props = fields.map((f) => langName('php', f.name, 'variable'));
   const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
-        let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
     };${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
@@ -541,7 +546,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
         return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(entry, || -> Result<(), Fail> {
+    let written = with_scope(entry, || -> Result<(), Fail> {
 ${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;')).join('\n')}
         Ok(())
     });
@@ -577,7 +582,7 @@ ${args.join('\n')}
             let class = this.get_class_entry();
             for (name, value) in [${props.map((p) => rustString(p)).join(', ')}].into_iter().zip(values) {
                 let Some(value) = value else { return };
-                if in_scope(class, || this.set_property(name, value)).is_err() {
+                if with_scope(class, || this.set_property(name, value)).is_err() {
                     return;
                 }
             }
@@ -601,7 +606,7 @@ function variantRust(model: Model, layout: PhpLayout, variant: Variant): string 
   const ins = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
     const reads = fields.map((f) => `            let ${f.variable}: ${caseType(model, f)} = {
-                let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+                let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
                 ${caseRead(f, `${convertIn(model, f.field.type, 'field', 'subject')}?`)}
             };${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`);
     return `    if ${fields.length === 0 ? `case_entry(${index(kase)}, object).is_some()` : `let Some(entry) = case_entry(${index(kase)}, object)`} {
@@ -649,7 +654,7 @@ fn case_object(index: usize, properties: Vec<(&str, Zval)>) -> Result<Zval, Fail
         return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the class of a case is not registered") }));
     };
     let mut object = ZendObject::new(entry);
-    in_scope(entry, || -> Result<(), Fail> {
+    with_scope(entry, || -> Result<(), Fail> {
         for (name, value) in properties {
             object.set_property(name, value).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         }
@@ -669,7 +674,7 @@ function iterateRust(model: Model, fn: Fn): string {
   const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
   const body = yields.key === undefined
     ? `                let position = i64::try_from(position).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
-                pairs.push((out_int(position)?, ${item(yields.value, 'item')}));`
+                pairs.push((int_out(position)?, ${item(yields.value, 'item')}));`
     : `                let (key, value) = item;
                 pairs.push((${item(yields.key, 'key')}, ${item(yields.value, 'value')}));`;
   return `
@@ -768,7 +773,12 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
+    // GN-6ae: a function parameter of a member with machine is the closure that the machine calls.
+    if (machineFunction(arg.type)) {
+      lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
+      continue;
+    }
+    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
@@ -808,7 +818,7 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 /// ${phpName} (G-7: PHP counts the arguments and checks their names by the arginfo of these parameters).
 #[php_function]
 #[php(name = ${rustString(phpName)})]
-pub fn ${rustField(fn.member.name)}(${params.join(', ')}) -> Result<Zval, PhpException> {
+pub fn ${functionEntry(fn)}(${params.join(', ')}) -> Result<Zval, PhpException> {
     guard(|| {
 ${lines.join('\n')}
     })
@@ -887,7 +897,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Php(exception) = &error else {
         return thrown(error);
     };
-    let core = recognized_kind(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = kind_of_recognized(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
         Some(core) => binding_core::Failure::Kind(core),
         None => thrown(error),
@@ -924,19 +934,94 @@ ${recognizing}`;
 // members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
-fn recognized_kind(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
+fn kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
     for index in classes {
         let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
         if exception.instance_of(class) {
             let scope = category_scope(class);
-            let kind = in_scope(scope, || exception.get_property::<String>("kind")).ok()?;
-            let message = in_scope(scope, || exception.get_property::<String>("message")).ok()?;
+            let kind = with_scope(scope, || exception.get_property::<String>("kind")).ok()?;
+            let message = with_scope(scope, || exception.get_property::<String>("message")).ok()?;
             return Some((kind, message));
         }
     }
     None
 }
 `;
+
+// GN-6ae: the lines that make the closure of a function parameter from a PHP callable. The closure owns a reference to
+// the callable; each call makes the PHP value of each argument, a class argument as a new instance of its class, and
+// gives what the callable returned as a Passthrough, or its exception as a Raised.
+function functionClosure(model: Model, type: Type & { function: unknown }, name: string, value: string, subject: string): string[] {
+  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return [
+    `        let ${name} = callable_in(${value}, ${subject})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
+    ...parts.map((part, i) => `                let arg${i}: Zval = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
+    `                Ok(pass(called(&${name}, vec![${parts.map((_part, i) => `&arg${i}`).join(', ')}])?))`,
+    '            };',
+    '            call().map_err(thrown)',
+    '        };',
+  ];
+}
+
+// GN-6ae: whether a member takes a function parameter or returns passthrough.
+const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+
+// GN-6ae, B-3: the table of the values that the functions of PHP code returned, each under the handle of its
+// Passthrough; the call of a PHP callable; and the check of a callable that enters.
+function passingRust(model: Model): string {
+  if (![...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes)) return '';
+  return `
+thread_local! {
+    /// GN-6ae, B-3: the values that the functions of PHP code returned, each until its Passthrough ends.
+    static PASSED: RefCell<BTreeMap<u64, Zval>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+static NEXT_PASSED: AtomicU64 = AtomicU64::new(1);
+
+/// GN-6ae: holds a PHP value in the table, which the core moves and never reads.
+fn pass(value: Zval) -> binding_core::Passthrough {
+    let handle = NEXT_PASSED.fetch_add(1, Ordering::Relaxed);
+    PASSED.with_borrow_mut(|map| map.insert(handle, value));
+    binding_core::Passthrough::from_generated(binding_core::Handle::new(handle), release_passed)
+}
+
+/// GN-6ae: removes the value of a Passthrough that the core dropped. The value ends after the table is released,
+/// because its destructor may run PHP code that enters the binding again; a thread that ends holds no table.
+fn release_passed(handle: binding_core::Handle) {
+    let gone = PASSED.try_with(|map| map.borrow_mut().remove(&handle.raw()));
+    drop(gone);
+}
+
+/// GN-6ae: the value of a result passthrough, which leaves the table unchanged.
+fn passed_out(value: binding_core::Passthrough) -> Result<Zval, Fail> {
+    let handle = value.into_handle();
+    PASSED
+        .with_borrow_mut(|map| map.remove(&handle.raw()))
+        .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))
+}
+
+/// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback), to which the closure keeps a reference.
+fn callable_in(value: &Zval, subject: &str) -> Result<Zval, Fail> {
+    if !value.is_callable() {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    Ok(value.shallow_clone())
+}
+
+/// GN-6ae: calls a PHP callable; an exception of its code is the Thrown of the call.
+fn called(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
+    let callable = ext_php_rs::types::ZendCallable::new(function).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+    let returned = callable.try_call(args).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+    if let Some(exception) = ExecutorGlobals::take_exception() {
+        return Err(Thrown::Php(exception));
+    }
+    Ok(returned)
+}
+`;
+}
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
@@ -1087,7 +1172,6 @@ function libRust(model: Model, layout: PhpLayout): string {
   const enums = [
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
-    ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.variants.map((v) => variantRust(model, layout, v)),
     model.variants.length > 0 ? CASE_OBJECT : '',
     // GN-6v: the constructor of the class of each case, which holds the values as a record's does.
@@ -1100,14 +1184,16 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.interfaces.map((i) => interfaceRust(model, i)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
+    passingRust(model),
     foreignFailurePhp(model),
-    ...model.aliases.map((a) => aliasPhp(model, a)),
+    ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? `${phpHost(model)}${phpMaking(model)}` : '',
     usesNative(model) ? PHP_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`, {},
+    libraryBlocks(model, (unit, library) => recordRust(model, layout, unit, -1, library), (a) => aliasPhp(model, a)));
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
@@ -1127,7 +1213,7 @@ ${errorProperties(u).map(({ owner, property }) => {
     const name = langName('php', property.member.name, 'variable');
     return `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`)};
     let property = ${convertOut(model, property.returns, 'value')}?;
-    if let Err(error) = in_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
+    if let Err(error) = with_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
         return Err(PhpException::from_message(format!("B-4: the property ${name} could not be written: {error}")));
     }`;
   }).join('\n')}
@@ -1143,7 +1229,7 @@ ext_php_rs::zend_fastcall! {
 /// I-3: a property of an error unit, read in the scope of the class that declares it.
 fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, name: &str) {
     let Some(this) = ex.get_self() else { return };
-    if let Ok(value) = in_scope(registered_class(class), || this.get_property::<&Zval>(name)) {
+    if let Ok(value) = with_scope(registered_class(class), || this.get_property::<&Zval>(name)) {
         *retval = value.shallow_clone();
     }
 }
@@ -1308,7 +1394,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
   // lines; #[php_module] of ext-php-rs names it after the crate.
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
-    ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
+    ...model.functions.map((fn) => `        .function(wrap_function!(${functionEntry(fn)}))`),
     // N-4: the iterator is registered before the classes whose getIterator names it as its return type.
     ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
@@ -1441,7 +1527,7 @@ fn private_property(name: &str) -> ClassProperty {
 
 /// Runs \`body\` with the scope of \`class\`, as zend_update_property does, so that the properties that \`class\` sees can be
 /// written.
-fn in_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
+fn with_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
     let previous = {
         let mut globals = ExecutorGlobals::get_mut();
         let previous = globals.fake_scope;
@@ -1457,14 +1543,14 @@ fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     let Some(this) = ex.get_self() else { return };
     let class = ${scopeOf('this.get_class_entry()')};
     if name == "kind" {
-        if let Ok(kind) = in_scope(class, || this.get_property::<String>(name)) {
+        if let Ok(kind) = with_scope(class, || this.get_property::<String>(name)) {
             if retval.set_string(&kind, false).is_err() {
                 retval.set_null();
             }
         }
         return;
     }
-    match in_scope(class, || this.get_property::<Option<i64>>(name)) {
+    match with_scope(class, || this.get_property::<Option<i64>>(name)) {
         Ok(Some(number)) => retval.set_long(number),
         Ok(None) | Err(_) => retval.set_null(),
     }
@@ -1485,7 +1571,7 @@ fn construct_error(ex: &mut ExecuteData) {
     let errno = errno.val::<i64>();
     let Some(this) = ex.get_self() else { return };
     let class = ${scopeOf('this.get_class_entry()')};
-    let written = in_scope(class, || -> ext_php_rs::error::Result<()> {
+    let written = with_scope(class, || -> ext_php_rs::error::Result<()> {
         this.set_property("message", message)?;
         this.set_property("kind", kind)?;
         this.set_property("status", status)?;
@@ -1539,7 +1625,7 @@ fn error_object(class: usize, message: &str, kind: &str, status: Option<u16>, er
         return Err(PhpException::from_message(format!("B-4: the class of {kind} is not registered")));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(${scopeOf('entry')}, || -> ext_php_rs::error::Result<()> {
+    let written = with_scope(${scopeOf('entry')}, || -> ext_php_rs::error::Result<()> {
         object.set_property("message", message)?;
         object.set_property("kind", kind)?;
         object.set_property("status", status.map(i64::from))?;
@@ -1672,7 +1758,8 @@ function stub(model: Model, layout: PhpLayout): string {
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
-    if ('function' in type) return '\\Closure';
+    // GN-6z: a function type is a Closure; GN-6ae: the function parameter of a member with machine is any callable.
+    if ('function' in type) return machineFunction(type) ? 'mixed' : '\\Closure';
     const unit = unitOf(model, type);
     const library = libraryOf(type);
     const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
@@ -1686,6 +1773,8 @@ function stub(model: Model, layout: PhpLayout): string {
     if (typeof type === 'object' && 'keyed_map' in type) return `array<${type.key.includes('int') || type.key.includes('text') ? 'array-key' : 'string'}, ${docType(type.keyed_map)}>`;
     if (typeof type === 'object' && 'tuple' in type) return `array{${type.tuple.map(docType).join(', ')}}`;
     if (typeof type === 'object' && 'optional' in type) return `${docType(type.optional)}|null`;
+    // GN-6ae: a function parameter is a callable of its parameters, whose value is any value.
+    if (machineFunction(type)) return `callable(${type.function.parameters.map(docType).join(', ')}): mixed`;
     return phpType(type);
   };
   const blocks: string[] = [];

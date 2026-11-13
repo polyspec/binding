@@ -95,6 +95,112 @@
       "result": "1"
     }
   ],
+  "resolve_driven": [
+    {
+      "id": "a_key_with_a_value_is_found_after_its_read",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_key_without_a_value_is_missing",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": null
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for a"
+      }
+    },
+    {
+      "id": "an_empty_key_fails_its_read_before_the_lookup",
+      "lookup": {
+        "callback": {
+          "lookup.find": []
+        },
+        "calls": []
+      },
+      "key": "",
+      "raises": {
+        "kind": "unreadable",
+        "status": null,
+        "category": "io",
+        "message": "the text could not be read"
+      }
+    },
+    {
+      "id": "a_lookup_that_raises_a_recognized_error_refuses_the_key",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "refused"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "refused",
+        "status": null,
+        "category": "value",
+        "message": "the lookup refused the key"
+      }
+    }
+  ],
   "count": [],
   "shout": [],
   "tag_new": [
@@ -364,6 +470,548 @@
   ],
   "checked": [],
   "touch": [],
+  "scoped": [
+    {
+      "id": "a_function_of_a_scope_returns_what_its_function_returns",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      }
+    },
+    {
+      "id": "a_function_of_a_scope_raises_what_its_function_raises",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback"
+    },
+    {
+      "id": "a_function_of_a_scope_returns_what_its_awaitable_gives",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      }
+    }
+  ],
+  "store_new": [
+    {
+      "id": "a_store_starts_empty"
+    }
+  ],
+  "store_get": [
+    {
+      "id": "a_key_that_was_not_committed_has_no_value",
+      "key": "a",
+      "result": null
+    }
+  ],
+  "store_transaction": [
+    {
+      "id": "the_entries_of_a_function_that_returns_are_committed",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_function_that_raises_are_dropped",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback",
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_nested_scope_are_committed_with_those_of_its_scope",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "a"
+                        },
+                        "result": "1"
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "b"
+                        },
+                        "result": "2"
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "value": 2
+          }
+        }
+      },
+      "result": {
+        "kind": "int",
+        "value": 2
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "b"
+          },
+          "result": "2"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_function_that_awaits_are_committed",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "a"
+                        },
+                        "result": "1"
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "b"
+          },
+          "result": "2"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_an_awaitable_that_raises_are_dropped",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback",
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        }
+      ]
+    }
+  ],
+  "store_once": [
+    {
+      "id": "a_store_of_one_call_returns_what_its_function_returns",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      }
+    },
+    {
+      "id": "a_store_of_one_call_raises_what_its_function_raises",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback"
+    },
+    {
+      "id": "a_store_of_one_call_returns_what_its_awaitable_gives",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      }
+    }
+  ],
+  "scope_put": [],
+  "scope_get": [],
+  "scope_nested": [],
   "data_in": [
     {
       "id": "bytes_that_are_no_text_are_not_data",

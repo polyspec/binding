@@ -1401,6 +1401,7 @@ class Checker {
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
+        this.caseScope(row.member, record, `/cases/${i}`);
         const raises = record['raises'];
         const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
         const kind = expected['kind'];
@@ -1743,8 +1744,7 @@ class Checker {
   // itself, a field of a record, an item of a list or an optional, and a function value at each place of a function
   // type. A callback fixture is {"callback": {<callback member id>: [<row>]}, "calls": [{"member", "args"}]}; a row is
   // {"args": {<parameter>: <value>}} with "result", or "raise" {"error", "kind"} of a class that the member
-  // recognizes, and "once" and "async". A function value is {"function": [<row>]}, a row {"args": {"0": <value>, ...}}
-  // by the positions of the parameters, with "result" and "once".
+  // recognizes, and "once" and "async". A function value is the function fixture of GN-6ae.
   caseFixtures(memberId: string, group: unknown[], path: string): void {
     const member = this.members.get(memberId)?.member;
     const snake = (name: Name): string => convert(name, 'python', 'variable');
@@ -1772,7 +1772,9 @@ class Checker {
       for (const [k, item] of value.entries()) this.codeValue(type.list, item, `${what}[${k}]`, report);
       return;
     }
-    if ('function' in type) return this.functionValue(type.function.parameters, value, what, report);
+    // GN-6ae: a function whose return is passthrough is the function of a member with machine, given as a function
+    // fixture; any other function type is the value of GN-6z, given by its rows.
+    if ('function' in type) return typeof type.function.returns === 'object' && 'passthrough' in type.function.returns ? this.functionValue(type.function, value, what, report) : this.functionRows(type.function.parameters, value, what, report);
     if (!('unit' in type) || type.library !== undefined) return;
     const unit = this.units.get(type.unit)?.value;
     // CK-77, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
@@ -1816,8 +1818,8 @@ class Checker {
     }
   }
 
-  // G-5: a function value, {"function": [<row>]}.
-  functionValue(parameters: readonly Type[], value: unknown, what: string, report: (message: string) => void): void {
+  // G-5 (GN-6z): a function value, {"function": [<row>]}.
+  functionRows(parameters: readonly Type[], value: unknown, what: string, report: (message: string) => void): void {
     const form = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
     const rows = form?.['function'];
     if (form === undefined || !Array.isArray(rows) || Object.keys(form).length !== 1) return report(`${what} is not {"function": [<row>]}`);
@@ -1833,6 +1835,107 @@ class Checker {
       const given = row['args'];
       const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
       if (keys === undefined || keys.length !== positions.length || positions.some((n) => !keys.includes(n))) report(`the args of ${at} are not the positions ${positions.join(', ')} of its parameters`);
+    }
+  }
+
+  // G-5 (GN-6ae): a function fixture, {"function": {"calls": [<step>], "result": <value>}} or with "raise" in place
+  // of "result". A step is {"on": "<position>", "call": "<member id>", "args": {...}}: a method of the class of the
+  // parameter at that position, with exactly its parameters, where an argument of a function type is again a function
+  // fixture; a step may name "result", the value that its call returns. "awaits": true marks a function that returns an
+  // awaitable, of a function type with async_allowed, and inside a step only where the fixture of the step names it. "raise" is "exception" or {"error", "kind"} of an error unit that the function recognizes (U-3).
+  functionValue(fn: Extract<Type, { function: unknown }>['function'], value: unknown, what: string, report: (message: string) => void): void {
+    const record = (given: unknown): Record<string, unknown> | undefined => (typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined);
+    const form = record(value);
+    const fixture = record(form?.['function']);
+    if (form === undefined || fixture === undefined || Object.keys(form).length !== 1) return report(`${what} is not a function fixture {"function": {"calls": [<step>], "result" | "raise": <value>}}`);
+    for (const key of Object.keys(fixture)) if (!['calls', 'result', 'raise', 'awaits'].includes(key)) report(`the function fixture ${what} has no key ${key}`);
+    // GN-6ae: awaits, the marker of a function that returns an awaitable.
+    const awaits = Object.hasOwn(fixture, 'awaits');
+    if (awaits && fixture['awaits'] !== true) report(`the awaits of the function fixture ${what} is ${JSON.stringify(fixture['awaits'])}, not true`);
+    else if (awaits && !fn.async_allowed) report(`the function fixture ${what} names awaits, and its function type has no async_allowed: true`);
+    else if (awaits && this.stepAwaits === false) report(`the function fixture ${what} names awaits, and the fixture of its step does not`);
+    if (Object.hasOwn(fixture, 'result') === Object.hasOwn(fixture, 'raise')) report(`the function fixture ${what} has a result or a raise, one of them`);
+    const raise = fixture['raise'];
+    if (Object.hasOwn(fixture, 'raise') && raise !== 'exception') {
+      const error = record(raise)?.['error'];
+      if (error === undefined || typeof record(raise)?.['kind'] !== 'string') report(`the function fixture ${what} raises ${JSON.stringify(raise)}, which is neither "exception" nor {"error", "kind"}`);
+      else if (!(fn.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error)) report(`the function fixture ${what} raises ${String(error)}, which the function does not recognize (U-3)`);
+    }
+    const calls = fixture['calls'];
+    if (!Array.isArray(calls)) return report(`the calls of ${what} are not a list of steps`);
+    for (const [i, item] of calls.entries()) {
+      const step = record(item) ?? {};
+      const at = `step ${i} of ${what}`;
+      for (const key of Object.keys(step)) if (!['on', 'call', 'args', 'result'].includes(key)) report(`${at} has no key ${key}`);
+      const on = step['on'];
+      const type = typeof on === 'string' && /^(0|[1-9][0-9]*)$/.test(on) ? fn.parameters[Number(on)] : undefined;
+      const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.units.get(type.unit)?.value : undefined;
+      if (unit?.kind !== 'class') {
+        report(`${at} is on ${String(on)}, which is no parameter of the function whose type is a class of this contract`);
+        continue;
+      }
+      const outer = this.stepAwaits;
+      this.stepAwaits = awaits;
+      this.methodCall(unit.id, step, at, report);
+      this.stepAwaits = outer;
+    }
+  }
+
+  // GN-6ae: whether the function fixture of the step in reading names awaits; undefined outside a step.
+  stepAwaits: boolean | undefined = undefined;
+
+  // G-5: a call {"call": "<member id>", "args": {...}} of a method of the class `unitId`, with exactly its parameters;
+  // an argument that may hold language code is judged as the value of a case is. Gives the member.
+  methodCall(unitId: string, call: Record<string, unknown>, at: string, report: (message: string) => void): Member | undefined {
+    const found = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
+    const method = found !== undefined && typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
+    if (found === undefined || found.unit.id !== unitId || !method) {
+      report(`${at} calls ${String(call['call'])}, which is no method of ${unitId}`);
+      return undefined;
+    }
+    const given = call['args'];
+    const args = typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
+    const names = (found.member.parameters ?? []).map((p) => convert(p.name, 'python', 'variable'));
+    if (args === undefined || Object.keys(args).length !== names.length || names.some((n) => !Object.hasOwn(args, n))) {
+      report(`the args of ${at} are not the parameters ${names.join(', ')} of ${found.member.id}`);
+      return found.member;
+    }
+    for (const parameter of found.member.parameters ?? []) {
+      const key = convert(parameter.name, 'python', 'variable');
+      if (this.takesCode(parameter.type)) this.codeValue(parameter.type, args[key], `${key} of ${at}`, report);
+    }
+    return found.member;
+  }
+
+  // G-5 (GN-6ae): whether a function fixture of the value, at any depth of its steps, raises an exception of the
+  // language.
+  raisesException(value: unknown): boolean {
+    if (typeof value !== 'object' || value === null) return false;
+    if (Array.isArray(value)) return value.some((item) => this.raisesException(item));
+    const fixture = (value as Record<string, unknown>)['function'];
+    if (typeof fixture === 'object' && fixture !== null && (fixture as Record<string, unknown>)['raise'] === 'exception') return true;
+    return Object.values(value).some((item) => this.raisesException(item));
+  }
+
+  // G-5 (GN-6ae): raises "callback" of a case, and after, the calls that observe the receiver after the call.
+  caseScope(memberId: string, record: Record<string, unknown>, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const report = (message: string): void => this.report('CK-22', path, `the case ${String(record['id'])} of ${memberId}: ${message} (G-5, GN-6ae)`);
+    const raises = record['raises'];
+    if (raises !== undefined && (typeof raises !== 'object' || raises === null || Array.isArray(raises))) {
+      if (raises !== 'callback') report(`raises ${JSON.stringify(raises)}, which is neither {"kind": <kind>, ...} nor "callback"`);
+      else if (!(found.member.parameters ?? []).some((p) => this.raisesException(record[convert(p.name, 'python', 'variable')]))) report('raises "callback", and no function fixture of its arguments raises "exception"');
+    }
+    const after = record['after'];
+    if (after === undefined) return;
+    const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
+    if (!method) return report(`${memberId} has no receiver, so the case names no after`);
+    if (!Array.isArray(after)) return report('after is not a list of calls');
+    for (const [i, item] of after.entries()) {
+      const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      for (const key of Object.keys(call)) if (!['call', 'args', 'result'].includes(key)) report(`after ${i} has no key ${key}`);
+      if (this.methodCall(found.unit.id, call, `after ${i}`, report) !== undefined && !Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
     }
   }
 
@@ -1989,6 +2092,9 @@ class Checker {
       const machine = typeof member.core === 'object' && member.core.machine === true;
       if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
       if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
+      // CK-69, GN-6ae: the core of a method with machine takes a clone of the value of the instance.
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (machine && needs && member.kind === 'method' && receiver !== '&self') this.report('CK-69', `${path}/core/receiver`, `${member.id} has a state machine, which takes a clone of the value of its instance, so its receiver is &self (GN-6ae)`);
     }
   }
 

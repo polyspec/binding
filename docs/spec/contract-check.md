@@ -197,6 +197,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
   the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
   source to tell them apart.
+- **CK-69** The receiver of a method with a state machine (generator GN-6ae): a method whose `core` names `"machine":
+  true` names the receiver `&self`, because the generated code gives the core a clone of the value of the instance,
+  which neither writes back into the instance as `&mut self` would nor consumes it as `self` would.
 - **CK-72** The tag of a variant (T-9, generator GN-6v): no field of a case of a variant has the name of the `tag` of
   the variant, compared by their words, because the value of a case in Node, WASM and a case file is an object whose
   tag member holds the case value, so a field of that name would take the place of the tag. The finding names the
@@ -269,9 +272,28 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   language (a class, a callback, a function, a host value), which a row cannot give, are reported. The same holds at
   every other place of a callback interface: a field of a record, an item of a list and an `optional`, where an
   instance value (GN-13f) of a class of the contract that `implements` the interface may stand for the fixture. A
-  value of a function type is `{"function": [<row>]}`, whose rows have no key but `args`, `result` and `once` and
-  give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an object of the
-  language has no row.
+  value of a function type is `{"function": [<row>]}` (generator GN-6z), whose rows have no key but `args`, `result`
+  and `once` and give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an
+  object of the language has no row. A value of a function type whose return is `passthrough`, the function of a
+  member with a state machine, is a function fixture (generator GN-6ae), `{"function": {"calls": [<step>], "result":
+  <value>}}` or with `"raise"` in place of `"result"`: the fixture has no key but `function`, whose object has the
+  list `calls`, one of `result` and `raise`, and no other key but `awaits`. `"awaits": true` states that the function
+  returns an awaitable of its language, whose outcome is the `result` or the `raise` of the fixture (generator
+  GN-6ae): only a fixture of a function type with `async_allowed: true` names it, its value is `true`, and a fixture
+  of an argument of a step names it only when the fixture of that step names it, because a function that does not
+  await cannot await the call of its step. A step is `{"on": "<position>", "call": "<member id>",
+  "args": {...}}` with no other key but `result`: `on` is the position of a parameter of the function, `"0"`, `"1"` and so on,
+  because a parameter of a function type has no name, and the type of that parameter is a class unit of this
+  contract; `call` is a method of that class; `args` are exactly the parameters of that method, and an argument of
+  a function type of a step is again a function fixture. A step may also name `"result": <value>`, the value that
+  its call returns: the generated function requires it before its next step, so a case verifies what a class
+  argument holds while the function runs. `raise` is the text `"exception"`, an exception of the
+  language, or `{"error": <unit>, "kind": <kind>}` of an error unit that the function recognizes (U-3). The `raises`
+  of a case may be the text `"callback"`: the case expects the exception that a function fixture of its arguments
+  raises by `"raise": "exception"`, and a case without such a fixture, at any depth of its steps, is refused. A case
+  of a method may name `after`, a list of `{"call": "<member id>", "args": {...}, "result": <value>}` with no other
+  key: each `call` is a method of the class of the receiver, `args` are exactly its parameters, and the generated
+  test calls it on the receiver after the call of the case, also after a call that raised, and requires `result`.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

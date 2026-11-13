@@ -441,11 +441,6 @@ fn handle_count(value: usize) -> u64 {
 fn handle_position(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
 }
-
-/// U-3: an exception of Python code while the core walks a value, as the Raised that the caller throws again.
-fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
-    keep_thrown(error.into_value(py).into_any())
-}
 `).replace(/\n\n(?=[ }])/g, '\n');
 
 // U-7 (a'): the failure of the `in` of a value alias of another repository. Its kind, status and errno are the owner's;
@@ -459,16 +454,16 @@ export function foreignFailurePython(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(py: Python<'_>, error: ${error.path}) -> PyErr {
+fn error_of_${library}(py: Python<'_>, error: ${error.path}) -> PyErr {
     let class = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 
-fn ${library}_failure_error(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
+fn failure_of_${library}(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(py, error),
+        binding_core::Failure::Kind(error) => error_of_${library}(py, error),
         binding_core::Failure::Raised(raised) => failure_error(py, binding_core::Failure::Raised(raised)),
         binding_core::Failure::Callback(error) => failure_error(py, binding_core::Failure::Callback(error)),
     }
@@ -618,7 +613,7 @@ export function keptPython(module: string, kept: KeptClass): string {
     if (typeof type === 'object' && 'keyed_map' in type) {
       const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
       return `{
-                let given = in_keyed_map(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, |_py, item| Ok(item.clone()))?;
+                let given = keyed_map_in(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, |_py, item| Ok(item.clone()))?;
                 let mut described = binding_core::KeyedMap::new();
                 for (key, item) in given {
                     described.insert(key, host.describe(&item)?);
@@ -628,7 +623,7 @@ export function keptPython(module: string, kept: KeptClass): string {
     }
     if (typeof type === 'object' && 'list' in type) {
       return `{
-                let given = in_list(py, ${value}, ${subject}, |_py, item| Ok(item.clone()))?;
+                let given = list_in(py, ${value}, ${subject}, |_py, item| Ok(item.clone()))?;
                 let mut described = Vec::new();
                 for item in given {
                     described.push(host.describe(&item)?);

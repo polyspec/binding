@@ -17,19 +17,19 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'null':
       return 'Ok(Zval::new())';
     case 'bool':
-      return 'out_bool(value)';
+      return 'bool_out(value)';
     case 'int':
       if (kind === 'number') return 'php_literal_int(&value)';
-      return kind === 'int64' ? 'out_int(value)' : 'out_int(value.value())';
+      return kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())';
     case 'float':
       if (kind === 'number') return 'php_literal_float(&value)';
-      if (kind === 'float') return 'out_float(value.value())';
+      if (kind === 'float') return 'float_out(value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `php_literal_float(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'php_utf8(value.value())' : 'out_text(value)';
+      return kind === 'bytes' ? 'php_utf8(value.value())' : 'text_out(value)';
     case 'bytes':
-      return kind === 'text' ? 'out_bytes(value.as_bytes())' : 'out_bytes(value.value())';
+      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
     case 'list': {
       const parts = container(alias, kind, form);
       return `{
@@ -678,7 +678,7 @@ fn php_set_reference(reference: *mut ext_php_rs::ffi::zend_reference, content: Z
 /// U-7: the literal token of a number as an int; one beyond the range of an int is kind internal.
 fn php_literal_int(literal: &str) -> Result<Zval, Fail> {
     match literal.parse::<i64>() {
-        Ok(integer) => out_int(integer),
+        Ok(integer) => int_out(integer),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no int") })),
     }
 }
@@ -686,7 +686,7 @@ fn php_literal_int(literal: &str) -> Result<Zval, Fail> {
 /// U-7: the literal token of a number as the nearest float.
 fn php_literal_float(literal: &str) -> Result<Zval, Fail> {
     match literal.parse::<f64>() {
-        Ok(float) => out_float(float),
+        Ok(float) => float_out(float),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -694,7 +694,7 @@ fn php_literal_float(literal: &str) -> Result<Zval, Fail> {
 /// U-7: bytes that are UTF-8 as a string.
 fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(text),
+        Ok(text) => text_out(text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }
@@ -726,16 +726,16 @@ export function foreignFailurePhp(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(error: ${error.path}) -> Fail {
+fn error_of_${library}(error: ${error.path}) -> Fail {
     let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 
-fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Kind(error) => error_of_${library}(error),
         binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
         binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
     }
@@ -924,7 +924,7 @@ fn php_native(value: &Zval) -> Result<Native, Fail> {
         let Some((owner, generation)) = native_owner() else {
             return Err(binding_error(BindingError::Internal { detail: String::from("GN-6u: the table of the owners is poisoned") }));
         };
-        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+        OWNED.with_borrow_mut(|owned| *owned = Some(OwnerTable { owner, generation, next: 0, values: BTreeMap::new() }));
     }
     keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: this thread has no table") }))
 }
@@ -952,7 +952,7 @@ fn php_failed(error: ext_php_rs::error::Error) -> Fail {
 }
 
 /// GN-6z: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
-fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
+fn kept_function_in(value: &Zval, subject: &str) -> Result<Native, Fail> {
     let closure = match value.object() {
         Some(object) => object.get_class_name().map_err(php_failed)? == "Closure",
         None => false,

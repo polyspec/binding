@@ -5,6 +5,478 @@
 
 ## Unreleased
 
+- The function parameter of a member with machine (GN-6ae) and the function type that the core keeps (GN-6z) are
+  generated together, and a `Raised` has one form. A function type whose return is `passthrough` is the function of a
+  member with machine, and any other function type is the value of GN-6z; a case gives the first as a function
+  fixture and the second by its rows (CK-22), a member with machine that takes the second is refused by name, and Go
+  refuses only the second. A `Raised` holds a `Native` (GN-6u) whose last drop removes what was thrown from the table
+  of the binding, so the scope `RAISING` of each entry point, `raised_released`, `raised_taken` and the list of
+  handles of a `Driven` object are removed from the five crates: a `Raised` that is dropped on another thread than
+  that of its entry point is released as well, which the scope did not do. The Node callback of a machine finds the
+  pending exception by the key of the `Raised`. The names of GN-4c hold for every helper: the conversions of the
+  built-in types that were still `in_<type>` and `out_<type>` (`in_path`, `out_entries`, `in_uint` of the Go crate
+  and the others) state their direction last, the helper of GN-6z is `kept_function_in`, and the conversions of a
+  value class of another repository are functions of `library_<library>`. The Node crate of a contract with a value
+  alias and a machine defined the struct `Owned` twice, once for the table of the owner of the Natives and once for
+  the reference of a machine; the first is now `OwnerTable`. The feature `thread-test` and its entry are written only
+  for a function type of GN-6z. Verified by `npm test` in `packages/ts`, which passes with no failure: its tests
+  require the drop of `ThrownKey` and no scope in the five crates of the sample, and a new test generates the crates
+  of the eight contracts of `tests/e2e` for each of their targets, 39 crates, and requires that only a conversion of
+  a unit starts with `in_` or `out_` and that no function is defined twice; that test fails when the PHP helper of
+  GN-6z is named `in_function`. The generated crates and the tests of `binding_core`, whose test of an awaited
+  failure now makes its `Raised` from a `Native`, were not compiled for this change.
+- The WASM crates of `tests/e2e/plot` and `tests/e2e/consumer` did not compile, which their first `make e2e` on WASM
+  showed. The crate imported `Array` only where a function or a helper named it, while the error of every crate
+  calls `Array::of4`, so the crate of the plot, which has no list, failed with `cannot find type Array`. The helper
+  `caught`, an `async fn`, was read as an item without a name and kept in every crate, so the crate of the consumer,
+  which has no member that waits, failed with `function caught is never used`. The crate now always imports `Array`,
+  and a helper that starts with `async fn` is kept only where the code names it. Verified by `npm test` in
+  `packages/ts`, whose test generates the two crates. The crates were not compiled again for this change.
+- The scope of the `Raised` values of the Python crate named `std::cell::RefCell` by its path, while the crate
+  imports `RefCell` wherever its text names it, so the crate of a contract without a class held an unused import,
+  which the lints deny: `make e2e` of `tests/e2e/consumer` failed at the lint of the Python crate with
+  `unused import: std::cell::RefCell`. The scope now names `RefCell` by the import. Verified by `npm test` in
+  `packages/ts`, whose test generates the Python crate of the consumer. The crate was not compiled again for this
+  change.
+- The `advance` of a `Driven` object of the WASM crate ran its work outside `shielded`, so an advance that language
+  code makes inside the call of another member saw the faults that a test armed for that member; the Node crate
+  shielded it. The WASM crate now shields it too (GN-8a). The test of the fault entries compared only the count of
+  the arming calls with the count of the shields; a new test reads the WASM crate of the sample entry by entry and
+  requires that each entry of a member holds one guard, one shield and one arming, `with_faults` or `armed_future`,
+  and that `advance` holds one shield and no arming. Verified by `npm test` in `packages/ts`. The generated crates
+  were not compiled for this change.
+- The entry of a member of a class of the WASM crate was `class_<unit>_<member>`, which reads in two ways: the member
+  `new_x` of the class `a` and the member `x` of the class `a_new` were both `class_a_new_x`, and a member `free` was
+  `class_<unit>_free` with the export `__<Class>_free`, as the release of the class was. The entry is now the function
+  `member_<member>` of the module `class_<unit>` of the module of the exports, and the release is `free_<unit>` with
+  the export `__free_<Class>` (GN-4c); the exports of the members keep their names. Verified by `npm test` in
+  `packages/ts`: its test generates the WASM crate of the sample with the two classes and with the members `free` and
+  `guard`, and requires that no module defines a function twice and that no export has the name of another. The same
+  contract gives the Go crate the C symbol `polyspec_sample_tag_new_x` twice, which is not fixed (task B2.86-3). The
+  generated crates were not compiled for this change.
+- The conversion of a unit of another repository was named `in_<library>_<name>`, which reads in two ways: the record
+  `a_b` of the library `c` and the record `b` of the library `c_a` were both `in_c_a_b`, two definitions of one
+  function, and an own unit `c_a_b` was a third. The conversions of the units of another repository (`in_`, `out_`,
+  and `make_` of a value alias) are now functions of the module `library_<library>` of the crate, and the code names
+  them by their path, `library_<library>::in_<name>` (GN-4c); one helper of the generator gives the name at every
+  use. The module is not named `<library>` alone, because a library named `std` would hide the crate `std` in the
+  whole generated crate. A closure that only calls a conversion is the conversion itself also by its path, and the
+  Node callback that gives an alias of another library keeps its own environment. Verified by `npm test` in
+  `packages/ts`: its test generates the five crates of a contract with the record `a_b` of the library `c`, the
+  record `b` of the library `c_a` and an own record `c_a_b`, and requires that no module defines a function twice.
+  The generated crates were not compiled for this change.
+- A `Raised` that the core dropped and did not return left what was thrown in the table of the PHP, Python and Go
+  crates, because only the Node and WASM crates released it. The `guard` of every entry point of the three crates now
+  opens a scope of its thread, the function that makes a `Raised` records its handle in the innermost scope, and the
+  entry point removes from the table what nothing took when it returns (GN-6ae): PHP drops it after the table is
+  released, and Python with the GIL. Their machine runs inside one entry point, so no object keeps handles between
+  two entry points. A `Raised` that is made on another thread than that of its entry point is recorded in no scope
+  and is not released yet (G-4). Verified by `npm test` in `packages/ts`, whose test requires the scope, the record
+  and the release in the three crates and none of them in a crate without a table. The generated crates were not
+  compiled for this change.
+- The entry of a function of a functions unit had two names: `function_<name>` in the PHP and Python crates and
+  `entry_<member>` in the Node and WASM crates, whose helper of a function parameter, `function_in`, started with the
+  prefix of the first. The Node and WASM crates now name the entry `function_<name>` and the helper `callable_in`, so
+  GN-4c states one rule for the five crates. The Node and WASM lanes are merged, and no target refuses a member with a
+  parameter of a function type or a result `passthrough`. Verified by `npm test` in `packages/ts`, which passes with
+  no failure: its test generates the Node and WASM crates with functions named `guard`, `pass`, `called`, `throw`,
+  `internal` and `in` and requires that no function is defined twice and that no helper starts with `function_`. The
+  generated crates were not compiled for this change.
+- The end-to-end sample had a function parameter only on methods, so the entries of a function of a functions unit and
+  of a static member that take a function were generated and never compiled. The sample now has the function `scoped`
+  and the static member `store.once`, each with a case that returns, a case that raises and a case that awaits
+  (GN-6ae). Verified by `make e2e` of `tests/e2e/sample`: PHP passes 98 generated tests, Python 100 and Go 77, none
+  failed and none skipped, with the lints of each clean; Node and WASM fail there by their refusal.
+- A panic of a method of a Go callback unwound through the frames of the static library, which skipped the
+  destructors of the core: the instance that the member borrowed stayed locked, and a later member that writes it
+  failed with kind `busy`. The call (`Call.run`) now recovers the panic of every Go callback and every Go `func`,
+  keeps its value as the error of the call, and the member panics with the same value after the call of the C ABI
+  returned (GN-15b); the dispatch of a `func` no longer recovers on its own. The Go test of a member that takes a
+  callback requires the value of the panic at the caller, the member again on the same instance, and a member that
+  writes the instance that is not `busy`. Verified by `npm test` in `packages/ts` and by `make e2e` of
+  `tests/e2e/sample`: before the change the Go test of `ledger.known` failed with "the panic of the callback left
+  ledger.note busy", and after it the 77 Go tests pass.
+- The Go lane is merged: the refusal of a parameter of a function type and of a result `passthrough` names Node and
+  WASM alone, and GN-4c states the family of the entries of the Go crate, the C symbol
+  `polyspec_<library>_<module>_<member>`, with which no helper starts. The test of functions named as helpers
+  generates the Go crate too, with functions named `pass`, `guard`, `raised`, `held`, `lock`, `taken`, `thrown` and
+  `called`, and finds no function defined twice. Verified by `npm test` in `packages/ts`, where 20 tests that
+  generate the sample for every target still fail with the refusal of Node and WASM, and by `make e2e` of
+  `tests/e2e/sample`, where PHP passed 88 generated tests, Python 88 and Go 61 before the sample grew.
+- The generated crates of a contract that names a library `core`, `binding`, `failure` or `library` did not compile:
+  the helpers of the error of that library, `<library>_error` and `<library>_failure_error`, had the names of the
+  helpers `core_error`, `binding_error`, `failure_error` and `library_error`. They are now `error_of_<library>` and
+  `failure_of_<library>`, two families of GN-4c with which no helper starts, in the five crates. Verified by `npm
+  test` in `packages/ts`, whose test generates the crates of a contract that takes a value alias of each such library
+  and requires that no function of a crate is defined twice; before the change it found two definitions of
+  `core_error` in the Go crate. The generated crates were not compiled for this change.
+- The Python crate of a contract whose class is only an argument of a function parameter, as `scope` of the sample
+  is, did not pass clippy: the crate held the conversion `in_<class>`, which nothing called, because the parameters
+  of a function type were read as values that come in. They go out to the function, so only what a function type
+  returns counts as coming in, and the conversion is not written. Found by `make e2e` of the sample, where clippy of
+  the Python crate failed with "function `in_scope` is never used"; verified by `npm test` in `packages/ts`, whose
+  test of the Python crate requires that it holds no `in_scope`.
+- The PHP and Python crates of a contract with a function named as a helper of the crate, such as `pass`, `guard` or
+  `raised`, did not compile: the entry of a function of a functions unit had the bare name of the function, which the
+  helper also had. The entry is now `function_<name>`, with the name of its language given by an attribute, the
+  Python entry with an event loop is `loop_function_<name>`, and the helper `recognized_kind` is `kind_of_recognized`,
+  so that no helper starts with the prefix of a family of names of the contract (GN-4c). The Python crate of a
+  contract with a value alias and a function parameter also defined the helper `raised` twice, once for the values
+  of an alias and once for the awaited value of a function; it is now defined once. Verified by `npm test` in
+  `packages/ts`, whose test generates the PHP crate with functions named `pass`, `guard` and `raised` and the Python
+  crate with `guard`, `raised` and `driven` and requires that no function of the crate is defined twice; before the
+  change it found two definitions of `pass`. Also verified by `make e2e` of the sample, where the PHP and Python
+  crates pass clippy and their generated tests pass, 88 each.
+- Python refused a member with a parameter of a function type or a result `passthrough` by name. The Python binding
+  now generates it: the callable is checked when it enters (kind `invalid_callback`), the closure calls it with the
+  GIL and gives each class argument as a new instance, the value that it returned is held in a thread-local table
+  under a handle that is never given again, and the member returns that object unchanged. A member whose function
+  may return an awaitable has the entry `_<name>_on_loop`: `a<name>` runs it in a thread of asyncio with the running
+  event loop of its caller, on which the driver awaits an awaitable with `asyncio.run_coroutine_threadsafe`, and
+  `<name>` given an awaitable closes it and fails with kind `invalid_callback`, whose message names `a<name>`. The
+  Python test writes a function fixture as a function of the test module, a fixture with `awaits` as a coroutine
+  function, the step results, the case of `raises: "callback"` and the calls of `after` (GN-6ae, CK-22). Verified by
+  `npm test` in `packages/ts`, whose tests of the Python crate and of the Python test pass; the tests that generate
+  the sample for every target still fail with the refusal of Node, Go and WASM. Also verified by `make e2e` of the
+  sample, where the Python crate passes clippy and the 88 generated tests pass on unittest, the five cases of
+  `store.transaction` among them; that run names Node, Go and WASM as failed by their refusal.
+- The generated Go crate of a contract with a unit named `text`, `list` or another word of a helper did not compile:
+  the conversion `in_<unit>` or `out_<unit>` had the name of the helper `in_<word>` or `out_<word>`. The helpers of
+  the Go crate now state their direction last, as GN-4c states: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`,
+  `key_out`, `no_form_out`, `passed_out`. No function of the Go crate has the name of a member: an entry point is
+  `<prefix>_<module>_<member>`. Verified by `npm test` in `packages/ts`, whose test generates the Go crate of the
+  sample with the enums `default`, `callable` and `text` and requires one definition of each conversion and no other
+  function named `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_text`.
+- The Go binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates them: the parameter is a Go `func(<parameters>) (any, error)` and the result is `any`; the `func` enters
+  as a callback of the call and runs through the export `<prefix>__go_callback` on the goroutine and the thread of
+  the member, with each class argument as a new instance; package `binding` holds what the `func` returned in a
+  table behind a mutex under a handle that is a count, the static library removes the value of a dropped
+  `Passthrough` through the export `<prefix>__go_release_passed`, and a result whose handle names no value is kind
+  `internal`; the member returns the error value that the `func` returned, and a panic of the `func`, which the
+  dispatch recovers so that it does not unwind through the frames of the static library, is the panic of the member
+  with the same value. The Go test writes a function fixture as a `func`, whose step that names `result`
+  returns an error when its call returned another value and whose marker `"awaits": true` changes nothing, the case
+  with `raises: "callback"`, the calls of `after`, and the tests of a nil `func`, of the error and of the panic of a
+  `func`, and no longer refuses a case with `after` or `raises: "callback"` (GN-6ae, CK-22). Verified by `npm test`
+  in `packages/ts`, whose two tests of the Go crate, package and test pass; 20 tests that generate the sample for
+  every target still fail with the refusal of Python, Node and WASM. Verified by `make e2e` of `tests/e2e/sample`,
+  where Go passes 61 generated tests on `go test`, the five cases of `store.transaction` among them, with clippy,
+  `gofmt -l` and `go vet` clean, and PHP passes 88; Python, Node and WASM fail there by their refusal.
+- A `Raised` that the core dropped and did not return left what was thrown in the table `THROWN` of the Node and
+  WASM crates for the life of the thread, because a `Raised` has no release function. The rule is now that the call
+  that made a `Raised` releases it: each entry point records the handles that are made while it runs and, when it
+  returns, removes what was thrown under each handle that `failure_error` did not take; a machine keeps the handles
+  of its advances until the advance that gives its result or fails, or until its `Driven` object ends (U-3, GN-6ae).
+  The crates of PHP, Python and Go do not apply the rule yet. Verified by `npm test` in `packages/ts`, whose test
+  found no table `RAISING` in the crates of the sample before the change. No generated test observes the table, so
+  the end-to-end run shows only that the crates compile, pass clippy and keep their results.
+- A callback that a machine of the Node crate owns (`Owned<Callback>`) left its exception pending in the environment
+  while the machine went on, so a later call of Node-API in the same advance, such as the promise of the next Io
+  future, would fail. The owned callback now takes the exception out of the environment and holds it under the handle
+  of its `Raised`, as the function of a machine does, and `failure_error` throws the same object again (GN-6ab). A
+  crate whose machine owns a callback and takes no function now has the variant `Thrown::Held`, `Owned::boxed` and
+  `thrown_again`. Verified by `npm test` in `packages/ts`, whose test found no `kept` in the owned callback of the
+  sample before the change.
+- The Node crate of a contract with a class that is only the argument of a function parameter (the `scope` of
+  `store.transaction`) wrote the conversion in of that class, `in_<class>`, which nothing calls: dead code that fails
+  the build with `-D warnings`. The argument of a function parameter leaves to language code and never comes in, so
+  the check of the classes that come in no longer reads a function type (T-5, GN-6ae). Found by the first compile of
+  the generated crates of the sample. Verified by `npm test` in `packages/ts`, whose test found `fn in_scope` in the
+  Node crate of the sample before the change.
+- The generated Node crate of a contract with a value alias and a member that takes a function parameter defined the
+  function `raised` twice, once for the walk of a value and once for the exception of a function, which does not
+  compile (E0428). The walk of a value now keeps an error of napi through `js_raised`, which holds a pending
+  exception as it is and any other error as a failure of the binding, and the crate has the one `raised`. The WASM
+  crate wrote the boxed closure of an advance as the type of a field of `Driven`, which clippy refuses
+  (`type_complexity`); the type now has the name `Advance` (GN-6ae). Found by the first compile of the generated
+  crates in `make e2e` of the sample. Verified by `npm test` in `packages/ts`, whose test found `raised` twice in the
+  Node crate of the sample before the change.
+- The Node crate of a contract whose only language code is a function parameter, with no callback unit and no value
+  alias, held the variant `Thrown::Js` that nothing in the crate makes, which is dead code and fails the build with
+  `-D warnings`. The variant and its arm are now written only for a contract with a callback unit or a value alias
+  (GN-6ae). Verified by `npm test` in `packages/ts`, whose test generates the sample without its callback units and
+  its alias and requires that the crate makes every variant that it names; before the change it found `Js`. No
+  contract of `tests/e2e` has this form, so no end-to-end run compiles it.
+- The generated Node and WASM crates of a contract with a unit named `default`, `text`, `list` or another word of a
+  helper defined the function `in_<word>` or `out_<word>` twice, and a function member named `guard`, `pass`,
+  `called`, `throw` or `internal` took the name of a helper of the crate: a second definition in the Node crate, and
+  in the WASM crate an export that hides the helper in the module of the exports. The helpers of the Node and WASM
+  crates now state their direction last (`text_in`, `list_out`, `default_in`, `function_in`, `passed_out`), and the
+  entry point of a function member is `entry_<member>`, exported under the name of the member (GN-4c). Verified by
+  `npm test` in `packages/ts`: the test of the sample with the enums `default`, `callable` and `text` found two
+  definitions of `in_default` in the Node crate before the change, and the test of the functions `guard`, `pass`,
+  `called`, `throw` and `internal` found two definitions of `guard`; both pass, and the two tests that compile
+  generated WASM entry points with `rustc` pass with the new names. The 20 tests that generate the sample for Python
+  or Go still fail with the refusal of those targets.
+- The Node and WASM tests did not write the result of a step of a function fixture nor the marker `awaits`. A step
+  that names a result is now `assert.deepStrictEqual` of its call inside the function, and a fixture with `awaits` is
+  an async function, so the two cases of the sample that await run the awaited step of the machine with a promise
+  that is fulfilled and with one that is rejected (GN-6ae, CK-22). Verified by `npm test` in `packages/ts`, whose
+  tests of the Node and WASM fixtures pass; the 20 tests that generate the sample for Python or Go still fail with the
+  refusal of those targets.
+- The WASM binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member as Node does (GN-6ae): the machine owns the function as a `js_sys::Function` and calls it on
+  the thread of the module with a new instance of the class of each class argument; the value that the function
+  returned is held in a thread-local table of `JsValue` under a handle that is never given again; the value that the
+  function threw is kept under the handle of its `Raised` and thrown again, so the caller gets the same object.
+  `advance(settled)` of the `Driven` object and `drive` of the ES module take the steps of Node, `[0, promise]`,
+  `[1, value]` and `[2, result]`, each advance through `state.mjs`, and the machine is freed at its end, also after
+  a rejected wait. The declarations and the generated test are those of Node. Verified by `npm test` in
+  `packages/ts`: the three tests of the WASM closure, of `drive` run against a played machine and of the WASM test
+  pass, and the test of the WASM value alias, which generates the sample for WASM, passes again; the 20 tests that
+  generate the sample for Python or Go still fail with the refusal of those targets.
+- The Node binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member (GN-6ae): the machine owns the function as a reference of napi and calls it on the JavaScript
+  thread with a new instance of the class of each class argument; the value that the function returned is held in a
+  thread-local table under a handle that is never given again and leaves it unchanged as the result; an exception of
+  the function is taken out of the environment, held, and thrown again at the end of the member, so the caller gets
+  the same object. `advance(settled)` of the `Driven` object returns `[0, promise]` for a wait, `[1, value]` for a
+  value that the machine awaits and `[2, result]` at the end, and `drive` of the JavaScript entry awaits the value of
+  step `1`, a promise or any other value, and gives `[true, value]` or `[false, rejection]` to the next advance; a
+  rejection of the promise of a wait rejects the call and is not given to the machine. The declarations name each
+  `passthrough` as a type parameter, `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`. The Node test
+  writes the function fixture, the case of `raises: "callback"` with the same exception object, the calls of `after`,
+  and a test that a value that is no function is kind `invalid_callback`. Verified by `npm test` in `packages/ts`: the
+  three tests of the Node closure, of `drive` run against a played machine (a value, a promise, a thenable, a
+  rejected awaited value and a rejected wait) and of the Node test pass; the 21 tests that generate the sample for
+  Python, Go or WASM still fail with the refusal of those targets.
+- The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
+  helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
+  `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to
+  the conversions of units alone, and a helper states its direction last: `text_in`, `list_out`, `default_in`,
+  `callable_in`, `passed_out` (GN-4c). The crates of PHP and Python apply the rule; those of Node, WASM and Go do
+  not yet. Verified by `npm test` in `packages/ts`, whose test generates the PHP crate of the sample with the enums
+  `default`, `callable` and `text` and requires one definition of each conversion and no other function named
+  `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_default`.
+- No case could give a function that returns an awaitable, so the path of `Step::Await` whose awaitable settles later,
+  or raises, had no case. A function fixture may now name `"awaits": true`: the function returns an awaitable of its
+  language whose outcome is the `result` or the `raise` of the fixture. The contract check accepts the marker only
+  with the value `true`, only for a function type with `async_allowed: true`, and inside a step only where the
+  fixture of that step names it. PHP and Go have no awaitable, so there the same fixture is a plain function and a
+  case with the marker runs on the five targets; the PHP test writes it so. The sample has two such cases of
+  `store.transaction`: a function and a nested function that await and commit, and an awaitable that raises and
+  drops its entries (CK-22, GN-6ae). Verified by `npm test` in `packages/ts`, whose tests of the marker pass.
+- A step of a function fixture could not state what its call returns, so the cases of `store.transaction` called
+  `scope.get` inside the function without verifying its value, and a scope that held nothing would have passed. A
+  step may now name `result`, which the contract check accepts and the generated function requires before its next
+  step; the PHP test writes it as an assertion inside the function. The three cases of the sample now require what
+  the scope holds: the pending entry before the commit and before the raise, the entry of the outer scope inside the
+  nested scope, and the entry of the nested scope in the outer one (CK-22, GN-6ae). Verified by `npm test` in
+  `packages/ts`, whose tests of the function fixture pass.
+- The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
+  word once their target generates a function parameter, because only the PHP test writes them. Each of those test
+  generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>
+  yet", until it writes them (GN-6ae, G-4). Verified by `npm test` in `packages/ts`, whose test of the refusal passes;
+  the 21 tests that generate the sample for those targets still fail with the refusal of the members.
+- The generated PHP extension of a contract with the classes `store` and `scope` did not compile: the conversion of a
+  class named `scope` had the name `in_scope` of the helper that reads a property in the scope of a class, and a
+  method with `machine` gave the core `Clone::clone(&*receiver)`, a clone of a borrow of the borrow that the lock
+  gives, while the core path of the sample took `&self`. The helper is now `with_scope`; the receiver of a method with
+  `machine` is `Clone::clone(receiver)`; and `Store::transaction` and `Scope::nested` of the sample core take `self`,
+  as GN-6ae states (GN-6h). Found by `make e2e` of the sample, where clippy of the PHP crate failed with E0428 and
+  E0308; verified by `make e2e` of the sample for PHP.
+- No generated test ran a member with a parameter of a function type, and the contract of the end-to-end sample held
+  no such member. The PHP test now writes the function of a function fixture, whose steps call methods on its
+  arguments and which returns its result or throws; a case with `raises: "callback"` requires the same exception
+  object; the calls of `after` observe the receiver after the call; and a value that is no callable is required to be
+  kind `invalid_callback`. A case gives a value `passthrough` as a value of GN-13. The contract of `tests/e2e/sample`
+  now holds `store` (`new`, `get`, `transaction`) and `scope` (`put`, `get`, `nested`) with three cases of
+  `store.transaction`: a commit, a rollback after the function raises, and a nested scope (GN-6ae, CK-22). Python,
+  Node, Go and WASM still refuse these members, so `npm test` in `packages/ts` fails 21 tests that generate the
+  sample for those targets, each with that refusal, and the end-to-end check of the sample names those targets as
+  failed, until each target generates the members.
+- `binding_core::Passthrough` was `Send`, so a core could move it to another thread, where its drop would call the
+  release function of a table that is bound to the thread of the language code, and the value would stay in the
+  table. A `Passthrough` is now not `Send` (GN-6ae). `docs/core-api.md` now holds `Passthrough`, `Step::Await`,
+  `Machine::settle`, the `awaited` argument of `machine::drive`, `Next::Await` and `Driving::settle`, which the crate
+  had and the document did not. Verified by `make test-rust`, whose `tests/construct.rs` requires that a crate that
+  sends a `Passthrough` to another thread does not compile.
+- The contract check read a value of a function type as `{"function": [<row>]}`, a form that no generator wrote and
+  that could not give a class argument, while GN-6ae names the function fixture. The check now reads only the function
+  fixture `{"function": {"calls": [<step>], "result" | "raise"}}`: a step `{"on", "call", "args"}` calls a method of
+  the class of the parameter at the position `on` with exactly its parameters, an argument of a function type of a
+  step is again a fixture, and `raise` is `"exception"` or an error unit that the function recognizes. A case may
+  expect `raises: "callback"`, which needs a fixture that raises `"exception"`, and a case of a method may name
+  `after`, calls of methods of the receiver with their `result` (CK-22, GN-6ae). No contract or case file held the form
+  of rows. Verified by `npm test` in `packages/ts`.
+- PHP refused a member with a parameter of a function type or a result `passthrough` by name. The PHP binding now
+  generates it: the parameter takes a `callable` (any other value is kind `invalid_callback`), from which the entry
+  makes the closure that the machine calls, with each class argument as a new instance of its class; the value that
+  the callable returned is held in a thread-local table under the handle of its `Passthrough`, released when the core
+  drops it and returned unchanged as the result of the member; an exception of the callable is a `Raised`, which the
+  caller gets as the same object; and the driver settles an awaited value at once. The stub declares `@param
+  callable(<parameters>): mixed` and the result `mixed`. Python, Node, Go and WASM still refuse the member by name
+  (GN-6ae). Verified by `npm test` in `packages/ts`; the generated extension is not compiled yet, because no contract
+  of an end-to-end repository holds such a member until every target generates it.
+- A parameter of a function type and a result `passthrough` were refused as "the type ... is not generated yet" for
+  every member, so the refusal named neither the rule nor the target. The model now takes them on a member with
+  `machine` only, requires the function to return `passthrough` and checks the types of its parameters; another
+  member is refused with "a parameter of a function type is generated for a member with machine only" or "a result
+  passthrough is generated for a member with machine only", and each target refuses such a member by name with "a
+  parameter of a function type and a result passthrough are not generated for <Target> yet" until it generates them
+  (GN-6ae, G-4). Verified by `npm test` in `packages/ts`.
+- Two generated tests failed in `make e2e` of `tests/e2e/sample` for a reason of the generator: the Node test file
+  did not load, because only the first test of a block that awaits was an async function, and the K-2 test
+  `resolveSlowly lets the exception of a callback through` used `await` in a plain function; and the Go test of a
+  fixture that expects no call compared its nil calls with an empty slice by `reflect.DeepEqual`, which tells them
+  apart. Each test of a Node block is now async when it awaits, and a Go fixture that expects no call requires the
+  length 0 of its calls (GN-6m, G-5). Verified by `npm test` in `packages/ts` and by `make e2e` of the sample.
+- The end-to-end sample had no core for a transaction, so no case could show what GN-6ae generates. The sample core
+  now has `Store` and `Scope`, handles whose clones share one state, with `Store::transaction` and `Scope::nested`,
+  whose state machine `Scoped` begins the scope by an I/O future, calls its function on the thread of the driver,
+  awaits the value of the function through `Step::Await`, commits the pending entries by an I/O future when the
+  value settles, and drops them when the function or its awaitable raises. The contract members `store.transaction`
+  and `scope.put/get/nested` and their cases are not added yet, because no target generates a function parameter yet
+  (defect 86). Verified by `cargo clippy --all-targets` of the sample core against the binding_core of this branch.
+- Two more defects kept `make e2e` of `tests/e2e/sample` from running the tests of Node, WASM and Go: the Node
+  `Driven` object was made by a function `new` that returns no `Self` (clippy `new_ret_no_self`), and the Go binding
+  crate held the helper `out_list`, which only the entry point `_fault_left` of the feature `fault-test` uses, in the
+  build without features, which denies dead code. The Node function is `Driven::start`, and a Go helper that only the
+  test entry points of a feature use carries `#[cfg(feature = ...)]` of each such feature (GN-6ab, GN-15). Verified
+  by `npm test` in `packages/ts` and by `make e2e` of the sample.
+- No binding crate of a contract with a member with `machine` compiled or passed its lints, so `make e2e` of
+  `tests/e2e/sample` failed in every target before any test ran: PHP, Python and Go made the machine in a block that
+  was the scrutinee of the match of its result (clippy `blocks_in_conditions`) and wrapped each Io future in
+  `async move { io.await }` (clippy `redundant_async_block`); the WASM function `caught` returned `impl Future` from an
+  `async move` block (clippy `manual_async_fn`); and the Node machine owned the callback struct that borrows the
+  `Env` of the call, which the `Driven` object outlives (E0521). The machine is now a temporary of the call of
+  `drive`, each Io future is polled as the machine gave it, in `armed_future` when the contract names faults,
+  `caught` is an `async fn`, and a Node callback that a machine owns is the struct `Owned<Callback>`, which holds a
+  reference of napi to its object and deletes it when it is dropped (GN-6ab). Verified by `npm test` in
+  `packages/ts`, whose test of the WASM future compiles `caught` with rustc, and by `make e2e` of the sample.
+- The generated driver of a machine passed `machine::drive` two functions and matched no `Next::Await`, so no
+  binding crate compiled against the binding_core that awaits a passthrough value. PHP, Python and Go now give
+  `drive` the function `|value| Ok(Ok(value))`, which settles a value at once; Node and WASM answer `Next::Await` of a
+  member without a function parameter with kind `internal` that names the member, because the core makes a
+  `Passthrough` only from a value that the binding gave it; the machine of the sample implements `settle` (GN-6ae).
+  Verified by `make test-ts`.
+- binding_core had no form for a value of language code that a machine of a member receives from a function and
+  returns unchanged, and no step at which a machine hands an awaitable to its driver, so a machine of a transaction
+  could neither return the value of its function nor wait for an async function. binding_core now has
+  `Passthrough`, a handle of the table of the binding that the core moves without reading and whose drop gives the
+  handle to the release function of the binding, `Step::Await(Passthrough)`, `Machine::settle(Result<Passthrough,
+  Raised>)`, `Next::Await` and `Driving::settle`; `machine::drive` takes a third function `awaited`, which gives the
+  outcome of each awaited value, and ends with its error (GN-6ae). Verified by `cargo test --all-features` and
+  `cargo test` of binding_core and their clippy runs.
+- A method with `wait: async_driver` that reaches language code was refused ("a method with machine is not generated,
+  because its machine would borrow its receiver"), so `db.transaction`, `tx.savepoint` and `db.close` of orm were
+  generated in no target. Such a method now names the receiver `&self`, and every target gives its core path a clone
+  of the value of the instance, `Clone::clone(&*receiver)`, by value before its arguments, so the machine owns a
+  handle whose clones share one state; `binding check` reports another receiver of a method with machine (CK-69,
+  GN-6ae). A parameter of a function type, a result `passthrough` and an awaited `async_allowed` function, which GN-6ae
+  states with the function fixture of a case, are not generated yet (defect 86). Verified by `npm test` in
+  `packages/ts`.
+- The end-to-end sample had no contract case of a callback that raises, so only the generated test K-2 of each
+  target showed what a member that takes a callback does with an exception of language code. The sample now has the
+  error unit `refused_error` of the kind `refused`, which `lookup.find` recognizes through `Error::recognized` (U-3),
+  and the case `a_lookup_that_raises_a_recognized_error_refuses_the_key` of `sample.resolve_driven`, whose lookup
+  raises that error unit in its call, so that every target expects the kind `refused` from the machine. Verified by
+  `make test-ts`; the targets run the case in `make e2e`.
+- WASM refused every member with `wait: async_driver` ("wait async_driver is not generated for WASM yet"), a member
+  with `machine` (GN-6ab) with them, so such a contract generated no WASM module. WASM now returns a promise of
+  `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the future on the thread of the module,
+  in a browser as in Node, and no tokio runtime is used; the WASM crate depends on `wasm-bindgen-futures` 0.4.80, the
+  release of its `wasm-bindgen` 0.2.130 and `js-sys` 0.3.107, and not on the driver of binding_core (GN-6n). A member
+  with `machine` returns a `Driven` object whose `advance()` makes the calls of the machine on that thread and gives
+  `[false, promise]` for a wait or `[true, result]`, which the ES entry `drive` awaits and then frees (GN-6ab). The
+  ES entry of such a member is an async function, its declaration a `Promise`, and its generated tests await it.
+  `tests/e2e/classes` has `classes.settle`, whose future is pending once and needs no tokio runtime, and a unit test
+  compiles its generated WASM entry with its core with rustc for the host and for wasm32. Verified by `npm test` in
+  `packages/ts`.
+- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
+  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
+  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
+  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
+  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
+  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
+  only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
+  An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
+  target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
+  `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
+  array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
+  not convert yet. `tests/e2e/shapes` has
+  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
+  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
+  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
+  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
+  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
+- A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
+  generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
+  a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM
+  member that is missing or `undefined` and declared optional, and null at its place in the PHP constructor; a case
+  value may leave out its key (GN-6v). Any other default of a case field stays refused by name. `tests/e2e/variants`
+  has the field `at` of the case `label` with this default. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
+  contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
+  parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or
+  another number of items is kind `invalid_argument_type` (GN-6t). `tests/e2e/shapes` has `shapes.span_length`,
+  `shapes.spans_total` and `shapes.labelled`, a tuple parameter, a list of tuples and a tuple of different part
+  types. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
+  no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
+  wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of
+  its tag, and a PHP final class of the variant's interface (GN-6v). A class that implements a callback interface of
+  the contract has the members of the interface, which call the trait on the held value, and its instance stands for
+  the callback, also in a case (GN-6w). Go refuses both by name. `tests/e2e/variants` has the variant `figure`, whose
+  case `group` holds figures in a list, a box and an optional box, and the class `ribbon` that implements `tail`.
+  Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/variants`.
+- A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
+  with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
+  polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
+  `core`, and its core path returns a state machine without I/O, `binding_core::machine::Machine`, whose steps are an
+  I/O future that touches no language code, a call of language code and the result. PHP drives the machine on the
+  calling thread, Python `<name>` drives it with each wait outside the GIL and `a<name>` runs `<name>` in
+  `asyncio.to_thread`, and Node returns a `Driven` object that the JavaScript entry advances, each call on the
+  JavaScript thread and each wait on the tokio runtime of napi. `binding check` reports such a member without
+  `machine` and `machine` on any other member (CK-68). Go drives the machine on the calling thread inside the call of
+  its C ABI, each wait blocked on and each callback called through cgo. A machine takes its arguments by value, so
+  the generated code passes a class parameter as a clone of its value. The generator refuses a method with `machine`,
+  whose machine would borrow its receiver, and a parameter with a default of such a member (GN-6ab). The end-to-end sample adds `sample.resolve_driven`, whose
+  machine passes an I/O step, a call of the lookup and its result, with the cases of a found key, a missing key and a
+  failed read; a lookup that throws is the generated test of each member that takes a callback. Verified by
+  `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
+- A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
+  `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
+  property of an error unit that raises is not generated yet" and "a property of an error unit of type
+  {\"list\":\"text\"} is not generated yet", so no target of such a contract was generated. Every target now
+  generates both: the generated code reads every property when it makes the error, so the `Err` of a property that
+  raises is raised as the error of its own kind in place of the error that the core returned, and a `list<text>`
+  property is a list of strings. A variant of the `raises` of a property that is no kind, or whose class has a property
+  that raises, is refused by name (GN-7a). Verified by `npm test` and `npm run typecheck` in `packages/ts`.
+- No constructor of the generated PHP error classes took a kind, so PHP code could make an error with its kind only
+  by writing the private property `kind` in the scope of the category class, which is no public API, and the fixture
+  of a raise row did so. Each category class now has the public constructor `__construct(string $message, string
+  $kind, ?int $status = null, ?int $errno = null)`, which every error unit inherits, and the fixture of a raise row
+  makes its error by it, as Python, Node and WASM do (GN-10, GN-13). Verified by `npm test` and `npm run typecheck` in
+  `packages/ts`.
+- A case whose callback fixture has a raise row, such as a loader that reports a missing file, was refused with "a
+  raise row of a callback fixture is not generated yet". The fixture of every target now throws, for such a row, an
+  instance of the error unit of the row with its kind and the message `G-5: <kind>`, as language code makes one; Go
+  makes it with `Raised<Unit>` of `internal/binding` (GN-13). Verified by `npm test` in `packages/ts`.
+- A callback member with `errors.recognize`, such as `file_loader.load` of a loader that reports a missing file, was
+  refused with "recognized callback errors are not generated yet", so no target of such a contract was generated. An
+  exception of the member that is an instance of a recognized error unit, with a kind of a row of that unit, now
+  reaches the core as that kind: `errors.recognized` names the core function that makes the core error from the value
+  of the kind and the message, and Python, Node, PHP, WASM and Go read the kind and the message of the instance; any
+  other exception goes back to the caller as the same object. `binding check` reports a contract whose callback
+  recognizes its own error unit without `errors.recognized` (CK-17), and the generator refuses a recognized unit of
+  another library by name (GN-6d). Verified by `npm test` in `packages/ts`.
+- A class parameter always gave the core a shared borrow (`&guard`), so a core that takes `&mut Form` did not
+  compile, and a core that takes the class by value got no value. A parameter now names the borrow of the core in
+  `core` (`&`, `&mut` or `value`), which every parameter of a generated class or an optional of one names: `&mut` is a
+  write place, `value` gives a clone under the read guard, and every crate asserts the borrows of such a member as the
+  fn pointer type of its core path. `binding check` reports a class parameter without `core` and a `core` of a
+  parameter that is no class (CK-67), and the generator refuses both and the borrow of an optional class by name
+  (GN-6h); the contracts of `tests/e2e/classes` and `tests/e2e/sample` name the borrow `&` of their class parameters. Verified by `npm test` in `packages/ts`.
+- A contract whose core error is a struct that holds a code enum, such as `FormError { code: FormErrorCode, .. }`,
+  named the variants of the code in `errors.kinds`, and the generator refused it with "the kinds name 2 error enums"
+  when a variant of the code held a code of a dependency, or wrote `match error` against the code variants, which does
+  not compile. `errors.code` now names the type of the error and its projection to the code, and every crate matches
+  and asserts the code (`match <projection>(&error)`); a variant that holds a value of another enum is written
+  `<outer>/<inner>` and matched as `Outer(Inner { .. })` (GN-7b). Verified by `npm test` in `packages/ts`.
 - The job `e2e` of `.github/workflows/ci.yml` named `tests/e2e/json` as the dependency of `tests/e2e/relay`, a
   directory that the checkout does not hold, because the core of relay depends on the repository json, so that entry
   could only fail. The job now runs the contracts whose core depends only on repositories of `tests/e2e`, and
@@ -639,17 +1111,6 @@
   and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6z). Node, PHP and WASM
   refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
   function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
-- WASM refused every member with `wait: async_driver` ("wait async_driver is not generated for WASM yet"), a member
-  with `machine` (GN-6ab) with them, so such a contract generated no WASM module. WASM now returns a promise of
-  `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the future on the thread of the module,
-  in a browser as in Node, and no tokio runtime is used; the WASM crate depends on `wasm-bindgen-futures` 0.4.80, the
-  release of its `wasm-bindgen` 0.2.130 and `js-sys` 0.3.107, and not on the driver of binding_core (GN-6n). A member
-  with `machine` returns a `Driven` object whose `advance()` makes the calls of the machine on that thread and gives
-  `[false, promise]` for a wait or `[true, result]`, which the ES entry `drive` awaits and then frees (GN-6ab). The
-  ES entry of such a member is an async function, its declaration a `Promise`, and its generated tests await it.
-  `tests/e2e/classes` has `classes.settle`, whose future is pending once and needs no tokio runtime, and a unit test
-  compiles its generated WASM entry with its core with rustc for the host and for wasm32. Verified by `npm test` in
-  `packages/ts`.
 - A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
   with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
   polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
@@ -661,45 +1122,6 @@
   `machine` and `machine` on any other member (CK-68); the generator refuses a method with `machine`, whose machine
   would borrow its receiver, and Go and WASM refuse it with every member with `async_driver` (GN-6ab). Verified by
   `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
-- A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
-  `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
-  property of an error unit that raises is not generated yet" and "a property of an error unit of type
-  {\"list\":\"text\"} is not generated yet", so no target of such a contract was generated. Every target now
-  generates both: the generated code reads every property when it makes the error, so the `Err` of a property that
-  raises is raised as the error of its own kind in place of the error that the core returned, and a `list<text>`
-  property is a list of strings. A variant of the `raises` of a property that is no kind, or whose class has a property
-  that raises, is refused by name (GN-7a). Verified by `npm test` and `npm run typecheck` in `packages/ts`.
-- No constructor of the generated PHP error classes took a kind, so PHP code could make an error with its kind only
-  by writing the private property `kind` in the scope of the category class, which is no public API, and the fixture
-  of a raise row did so. Each category class now has the public constructor `__construct(string $message, string
-  $kind, ?int $status = null, ?int $errno = null)`, which every error unit inherits, and the fixture of a raise row
-  makes its error by it, as Python, Node and WASM do (GN-10, GN-13). Verified by `npm test` and `npm run typecheck` in
-  `packages/ts`.
-- A case whose callback fixture has a raise row, such as a loader that reports a missing file, was refused with "a
-  raise row of a callback fixture is not generated yet". The fixture of every target now throws, for such a row, an
-  instance of the error unit of the row with its kind and the message `G-5: <kind>`, as language code makes one; Go
-  makes it with `Raised<Unit>` of `internal/binding` (GN-13). Verified by `npm test` in `packages/ts`.
-- A callback member with `errors.recognize`, such as `file_loader.load` of a loader that reports a missing file, was
-  refused with "recognized callback errors are not generated yet", so no target of such a contract was generated. An
-  exception of the member that is an instance of a recognized error unit, with a kind of a row of that unit, now
-  reaches the core as that kind: `errors.recognized` names the core function that makes the core error from the value
-  of the kind and the message, and Python, Node, PHP, WASM and Go read the kind and the message of the instance; any
-  other exception goes back to the caller as the same object. `binding check` reports a contract whose callback
-  recognizes its own error unit without `errors.recognized` (CK-17), and the generator refuses a recognized unit of
-  another library by name (GN-6d). Verified by `npm test` in `packages/ts`.
-- A class parameter always gave the core a shared borrow (`&guard`), so a core that takes `&mut Form` did not
-  compile, and a core that takes the class by value got no value. A parameter now names the borrow of the core in
-  `core` (`&`, `&mut` or `value`), which every parameter of a generated class or an optional of one names: `&mut` is a
-  write place, `value` gives a clone under the read guard, and every crate asserts the borrows of such a member as the
-  fn pointer type of its core path. `binding check` reports a class parameter without `core` and a `core` of a
-  parameter that is no class (CK-67), and the generator refuses both and the borrow of an optional class by name
-  (GN-6h); the contracts of `tests/e2e/classes` and `tests/e2e/sample` name the borrow `&` of their class parameters. Verified by `npm test` in `packages/ts`.
-- A contract whose core error is a struct that holds a code enum, such as `FormError { code: FormErrorCode, .. }`,
-  named the variants of the code in `errors.kinds`, and the generator refused it with "the kinds name 2 error enums"
-  when a variant of the code held a code of a dependency, or wrote `match error` against the code variants, which does
-  not compile. `errors.code` now names the type of the error and its projection to the code, and every crate matches
-  and asserts the code (`match <projection>(&error)`); a variant that holds a value of another enum is written
-  `<outer>/<inner>` and matched as `Outer(Inner { .. })` (GN-7b). Verified by `npm test` in `packages/ts`.
 - A WASM member with
   `wait: async_driver` whose receiver or parameter is a class bound the borrows of its guards outside its future, which
   does not own them; the future now owns the guards and binds the borrows inside it, as the Node future does (GN-6h,
@@ -1329,45 +1751,6 @@
   members of its `out` rows through the owner's package; the owner's `in` and `out` functions are the only conversion
   (GN-6x). Go refuses it by name, because the call of GN-15c has no form of an instance yet, and a value class of
   another repository without those functions is refused by name. Verified with `make test-ts` (300 passed).
-- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
-  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
-  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
-  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
-  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
-  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
-- PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
-  only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
-  An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
-  target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
-  `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
-  array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
-  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
-  not convert yet. `tests/e2e/shapes` has
-  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
-  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
-  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
-  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
-  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
-- A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
-  generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
-  a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM
-  member that is missing or `undefined` and declared optional, and null at its place in the PHP constructor; a case
-  value may leave out its key (GN-6v). Any other default of a case field stays refused by name. `tests/e2e/variants`
-  has the field `at` of the case `label` with this default. Verified by `npm test` in `packages/ts`.
-- PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
-  contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
-  parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or
-  another number of items is kind `invalid_argument_type` (GN-6t). `tests/e2e/shapes` has `shapes.span_length`,
-  `shapes.spans_total` and `shapes.labelled`, a tuple parameter, a list of tuples and a tuple of different part
-  types. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
-- The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
-  no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
-  wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of
-  its tag, and a PHP final class of the variant's interface (GN-6v). A class that implements a callback interface of
-  the contract has the members of the interface, which call the trait on the held value, and its instance stands for
-  the callback, also in a case (GN-6w). Go refuses both by name. `tests/e2e/variants` has the variant `figure`, whose
-  case `group` holds figures in a list, a box and an optional box, and the class `ribbon` that implements `tail`.
-  Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/variants`.
 - The host of Python, Node and WASM read an instance of a value class of this contract (a class without `core_type`,
   or a class that an `in` row of a value alias names) and had no form for an instance of a value class of another
   repository in the same contract. One host now holds both: an instance of a class of this contract as

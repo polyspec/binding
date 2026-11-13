@@ -2,10 +2,10 @@
 // extension loaded.
 
 import type { Member, Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
+import { type Model, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -165,6 +165,31 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   let usesOutcome = false;
   let usesSame = false;
   let usesTokens = false;
+  // GN-6ae: the function of a function fixture: each step calls a method on one of its arguments, and a step that
+  // names a result requires it by an assertion, whose failure is an exception of the function; it then returns its
+  // result, throws the instance of an error unit, or throws the exception that the test of the case holds. PHP has no
+  // awaitable, so a fixture with awaits is the same plain function.
+  let usesRaised = false;
+  ctx.machineFunctionNew = (fixture) => {
+    const steps = fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, `$args[${step.on}]`);
+      if (step.expected === undefined) return `${call}; `;
+      if ('refused' in step.expected) return `self::fail(${phpText(step.expected.refused)}); `;
+      usesSame = true;
+      return `self::assertSame(self::same(${step.expected.text}), self::same(${call})); `;
+    }).join('');
+    usesRaised ||= 'exception' in fixture.end;
+    const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw self::$raised;';
+    return `function (mixed ...$args): mixed { ${steps}${end} }`;
+  };
+  // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
+  const afterChecks = (after: After[] | undefined, receiver: string): string =>
+    (after ?? []).map((call) => {
+      const expected = stepExpected(model, ctx, call.fn, call.result);
+      if ('refused' in expected) return `\n        self::fail(${phpText(expected.refused)});`;
+      usesSame = true;
+      return `\n        self::assertSame(self::same(${expected.text}), self::same(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}));`;
+    }).join('');
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -174,7 +199,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
     // GN-6z: a value of a function type that is not a Closure is refused as it enters.
-    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
     if (functionArg !== undefined && reachable) {
       methods.push(`
     public function testGn6z${name}Refuses${langName('php', functionArg.name, 'class')}ThatIsNotAClosure(): void
@@ -297,6 +322,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
       }
     }
+    // GN-6ae: a parameter of a function type takes a callable, and any other value is kind invalid_callback.
+    for (const arg of reachable ? fn.args.filter((a) => machineFunction(a.type)) : []) {
+      methods.push(`
+    public function testGn6ae${name}${langName('php', arg.name, 'class')}RefusesWhatIsNoCallable(): void
+    {
+        try {
+            ${call(new Map([[arg, '1']]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_callback', $error->kind());
+        }
+    }`);
+    }
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       methods.push(`
@@ -375,7 +413,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const receiverMade = receiverOfCase(kase.receiver);
-      const made_ = receiverMade.expr;
+      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+      const held = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      if (held) receiverMade.lines += `\n        $receiver = ${receiverMade.expr};`;
+      const made_ = held ? '$receiver' : receiverMade.expr;
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];
       const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
       const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
@@ -395,7 +436,34 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
             ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
-        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}
+        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}
+    }`);
+    }
+    // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
+    for (const kase of callbackCases(model, fn)) {
+      const id = casePascal(kase.id);
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        methods.push(`
+    public function testGn6ae${name}${id}(): void
+    {
+        self::fail(${phpText(refusal)});
+    }`);
+        continue;
+      }
+      const receiverMade = receiverOfCase(kase.receiver);
+      const call = invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr === '' ? '' : '$receiver');
+      usesRaised = true;
+      methods.push(`
+    public function testGn6ae${name}${id}(): void
+    {${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
+        self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});
+        try {
+            ${call};
+            self::fail('no error');
+        } catch (\\LogicException $error) {
+            self::assertSame(self::$raised, $error);
+        }${afterChecks(kase.after, '$receiver')}
     }`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -434,6 +502,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       }
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const receiverMade = receiverOfCase(kase.receiver);
+      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+      if (kase.after !== undefined && receiverMade.expr !== '') {
+        receiverMade.lines += `\n        $receiver = ${receiverMade.expr};`;
+        receiverMade.expr = '$receiver';
+      }
       const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
@@ -452,7 +525,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
-    {${receiverMade.lines}${before}${check}${after}
+    {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -668,7 +741,10 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}
+{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}${usesRaised ? `
+    /** GN-6ae: the exception that a function fixture of the test in progress raises. */
+    private static ?\\Throwable $raised = null;
+` : ''}
     public function testB7APanicIsKindInternal(): void
     {
         try {

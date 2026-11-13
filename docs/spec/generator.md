@@ -219,6 +219,50 @@ the design ids are those of the binding design.
   an unsupported OS with the feature stops there. A member or unit that uses an item of a feature that WASM turns off
   is `only` of the other targets; the WASM build, not the contract check, judges that, because the check reads no Rust
   source.
+- **GN-4c** The names of the functions of a generated crate: `in_<name>` and `out_<name>` are the conversions of
+  the units of the contract, where `<name>` is the snake_case name of the unit, and no other function of the crate
+  has a name that starts with `in_` or `out_`. The conversions of a unit of another repository, `in_<name>`,
+  `out_<name>` and `make_<name>` of a value alias, are functions of the module `library_<library>` of the crate,
+  which holds `use super::*;`, and the code of every module names them by their path, `library_<library>::in_<name>`.
+  Why: a name that joins the library and the unit with `_` reads in two ways, so the unit `a_b` of the library `c`
+  and the unit `b` of the library `c_a` were one function `in_c_a_b`, and an own unit `c_a_b` a third; `::` is in no
+  name, so the path reads in one way. The module states its family first, as a function does, because a library
+  takes any name, also `std`, `core`, `exports` or the name of a crate that the generated code uses, and a module of
+  that bare name would hide the crate or be a second definition of a module of the generated code. A helper
+  states its direction last: the conversion of a built-in type is `<type>_in` and `<type>_out` (`text_in`,
+  `list_out`), and the helpers of a default, of a callable and of a passthrough are `default_in`, `callable_in` and
+  `passed_out`; the helper that makes the function of GN-6z, which the core may keep, is `kept_function_in`, because
+  `function_` is the family of the entries and `callable_in` checks the function of a machine (GN-6ae). A new helper
+  follows the same rule. Why: a unit takes any name, also `default`, `callable`, `text`,
+  `list` or `scope`, and a helper named `in_<word>` is defined a second time in the crate of a contract that has a
+  unit of that name, which does not compile. The same holds for every function whose name comes from the contract: a
+  name of the contract and a helper of the crate share no name. Such a function states its family first, and no
+  helper starts with the prefix of a family: `in_` and `out_` (a unit), `held_` (a class at a parameter), `make_` (a
+  value alias), `alias_in_` (the entry of `codec-test`), `recognized_<callback>_<member>`, `error_of_<library>` and
+  `failure_of_<library>` (the error of another library, U-7), `check_<unit>` (the check of a value class without
+  `core_type`, GN-6af), `alias_round_<unit>` (the entry of the round trip of an alias, GN-13e), and `function_`, the
+  entry of a function of a functions unit, to which an attribute gives the name of its language (`#[php(name =
+  ...)]`, `#[pyfunction(name = ...)]`, `#[napi(js_name = ...)]`, `#[wasm_bindgen(js_name = ...)]`); the Python entry of a function with an event loop (GN-6ae) is
+  `loop_function_<name>`. The members of a class are functions of its `impl` block, which holds no helper. The
+  entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
+  where the attribute already gives the name of the language, while a module would change every path from an entry
+  to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
+  crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
+  family is `polyspec_`, with which no helper starts. The helper of a
+  function parameter of Node and WASM is `callable_in`, as that of PHP and Python is. A function takes any name, also
+  `guard`, `pass`, `called`, `throw` or `in`, and an entry of the bare name is a second definition of the helper in
+  the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
+  class of the WASM crate, which has no `impl` block of the class, is the function `member_<member>` of the module
+  `class_<unit>` of that module, which holds `use super::*;`, and the release of a class is the function
+  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. Why: a name that joins the class and
+  the member with `_` reads in two ways, so the member `new_x` of the class `a` and the member `x` of the class
+  `a_new` were one function `class_a_new_x`, and a member `free` was the release `class_<unit>_free` with its export
+  `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
+  prefix inside the module of its class, because a member named as a helper, such as `guard`, would hide the helper
+  there; no export of a member is `__free_<Class>`, because the name of a class starts with a capital letter. The
+  five crates apply the rule. Not applied yet (G-4): the C symbol of a member of a class of the Go crate,
+  `polyspec_<library>_<unit>_<member>`, and its function of package `binding` join the class and the member the same
+  way, so the two classes above give one symbol.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -348,7 +392,7 @@ the design ids are those of the binding design.
   A field of a case holds a unit of another repository (T-3, GN-6c) as a field of a record does: a record with
   fields of built-in types, a value alias or a value class of that repository, also inside a `list`, an `optional`,
   a `map`, a `keyed_map` or a tuple. The conversions of the variant call the conversions of that unit
-  (`in_<library>_<unit>`, `out_<library>_<unit>`) and take what those need: in Node the `in` conversion of every
+  (`library_<library>::in_<unit>`, `library_<library>::out_<unit>`, GN-4c) and take what those need: in Node the `in` conversion of every
   record and variant takes the env first, which a value alias and a class read, and in Go the function `encode<Variant>`
   of a variant with a value alias or a callback in a case takes the call of the member first, which walks the value.
   The result form of the case names the unit as GN-6c states for each target.
@@ -610,7 +654,8 @@ the design ids are those of the binding design.
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
   owner's contract. The two core functions of the owner are the only conversion (P-1). The conversions are named
-  `in_<library>_<alias>` and `out_<library>_<alias>`, so that the aliases of two libraries with one name do not meet.
+  `in_<alias>` and `out_<alias>` of the module `library_<library>` (GN-4c), so that the aliases of two libraries
+  with one name do not meet.
   A failure of `in` is a variant of the owner's error enum: its kind, status and errno are the owner's (`Kinds`), and
   its class is this repository's class of the category that the owner's E-1 gives the variant (E-2), chosen by a
   match over the owner's kinds without a wildcard, so a variant that the owner's contract lacks does not compile
@@ -822,7 +867,11 @@ the design ids are those of the binding design.
   kind `busy`, leaves the arming for the next call of the member, and the core call of an iterate is the whole
   iteration, whose items the entry point collects inside `with_faults`. So the call that makes a receiver or an
   argument does not take the arming of the member under test, and an entry point that a callback enters, the
-  conversion of its arguments too, does not see the arming around it. `_arm_faults(member, faults)` takes
+  conversion of its arguments too, does not see the arming around it. A member with `machine` arms each wait of
+  its machine instead, with `armed_future("<member id>", …)` (GN-6n), so each entry of a member holds one arming and
+  one shield. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
+  its own: its work runs in `shielded(…)`, because language code may call it inside the call of another member, and
+  it arms nothing. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
   gives the names of the points whose fault did not fire. The PHP extension of every contract has, with the feature
@@ -857,7 +906,8 @@ the design ids are those of the binding design.
   API. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
   enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
   refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
-  (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
+  (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and
+  `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
   `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
   contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
@@ -1145,7 +1195,9 @@ the design ids are those of the binding design.
 - **GN-6ab** A member with `wait: async_driver` that reaches language code (GN-6q: the type of a parameter or the class
   of its receiver carries language code) names `"machine": true` in its `core` (CK-68), and its core path returns a
   state machine without I/O in place of a future (c6 6.2): a value of `binding_core::machine::Machine`, which owns the
-  arguments. `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
+  arguments, so the core path takes each argument by value: a callback as the generated struct (`impl <Trait> +
+  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h); a parameter with a
+  default is refused by name (G-4). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
   and gives one step:
   - `Step::Io(future)`: a future of the core that touches no language code, which the driver polls on a tokio runtime
     and whose output it gives to the next `resume`;
@@ -1161,26 +1213,202 @@ the design ids are those of the binding design.
     GIL on the thread that drives the machine, which GN-6q allows, because a Python reference is bound to the GIL and
     not to a thread.
   - Node: the entry makes the machine on the JavaScript thread and returns a `Driven` object of the addon, and the
-    JavaScript entry, an async function, calls its `advance()` until the machine ends. Each `advance()` gives the output
-    of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
-    future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
-    on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
-  - Go drives the machine as PHP does, with `binding_core::machine::drive` in the cgo call of the member on the thread
-    of the calling goroutine, which waits for each Io future in `binding_core::driver::block_on`, so a callback is
-    called on the thread that gave it (GN-6q).
+    JavaScript entry, an async function, calls its `advance(settled)` until the machine ends. Each advance gives the
+    output of the last wait to the machine, makes its calls on the JavaScript thread and returns `[step, value]`:
+    `[0, promise]` for an Io future, which runs on the tokio runtime of napi and which the entry awaits, `[1, value]`
+    for a value that the machine awaits (GN-6ae), or `[2, result]` at the end, converted on the JavaScript thread. A
+    failure of the member throws from the advance and rejects the promise of the entry.
+    The machine outlives the call that made it, so a callback that it owns is the generated struct
+    `Owned<Callback>`, which holds a reference of napi (`napi_ref`) to the object and the environment of the
+    JavaScript thread, makes the borrowed callback struct from them at each call, and deletes the reference when it
+    is dropped, which happens on the JavaScript thread, where the `Driven` object ends.
+    An exception of a callback that the machine owns is taken out of the environment
+    (`napi_get_and_clear_last_exception`) and held as an `Owned` (GN-6ae) under the key of its `Raised`, because
+    the machine goes on after the call and an exception that stays pending fails each later call of Node-API in the
+    advance, such as the promise of the next Io future; `failure_error` throws the held value again, so the caller
+    gets the same object. An exception that the callback recognizes as an error unit (U-3) is the core error of its
+    kind and is not held.
+  - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
+    goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
+    `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6
+    6.4), so a callback is called on the thread that gave it (GN-6q).
   - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
-    module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
-    `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
-    returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
+    module, and the ES entry, an async function, calls its `advance(settled)` until the machine ends and then frees it.
+    Each advance gives the output of the last wait to the machine, makes its calls on the thread of the module and
+    returns `[0, promise]` for an Io future, the promise of GN-6n, `[1, value]` for a value that the machine awaits
+    (GN-6ae), or `[2, result]` at the end. A browser and
     Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
     both and no tokio runtime is used.
-  A method with `machine` is refused by name: a machine that borrowed its receiver across its steps would borrow from
-  the guard that the driver holds, a type that the core cannot name; a function and a static member are generated. A
-  callback with `async_allowed: true`, whose call would give an awaitable to the machine, and `core.reaches` (c6 6.3)
-  are not generated yet (G-4). Why: a future that a runtime polls on its own threads would call language code there,
+  A method with `machine` takes a clone of its receiver, a parameter of a function type and a result `passthrough`
+  are generated, and a function with `async_allowed: true` is awaited, as GN-6ae states. `core.reaches` (c6 6.3) is
+  not generated yet (G-4). Why: a future that a runtime polls on its own threads would call language code there,
   against the owner of a Node or PHP reference, and a callback that calls another member with `async_driver` would run
   `block_on` inside the runtime, which tokio refuses; a machine without I/O lets the runtime of each language decide
   where each step runs, and the core keeps its I/O on tokio.
+- **GN-6ae** A member with `machine` (GN-6ab) may be a method, take a parameter of a function type (T-2) and return
+  `passthrough`, which the scope of a transaction needs: the member calls language code with a class instance that its
+  machine made, and returns what that code returned. Defect 86. A function type whose return is `passthrough` is the
+  function of this rule and belongs to a member with `machine`; any other function type is the value of GN-6z, which
+  the core may keep, and a member with `machine` that takes one is refused by name, because the machine settles what
+  its function returned as a `Passthrough`. A case gives the function of this rule as a function fixture and the
+  value of GN-6z by its rows (CK-22).
+  - Receiver: a method with `machine` names the receiver `&self`, and the generated code gives the core path a clone of
+    the value that the instance holds, `Clone::clone(<receiver>)` of the borrow that the lock of the instance gives
+    (GN-6h), by value before its arguments, so the core path takes `self`; the core type of
+    the class implements `Clone` as a handle whose clones share one state, so the machine owns what it uses and the
+    instance stays usable in language code while the machine runs. `&mut self` and `self` are refused by name with
+    `machine` (CK-68), because a clone neither writes back nor consumes the instance.
+  - Function parameter: the core takes a closure `FnMut(<arguments>) -> Result<binding_core::Passthrough,
+    Failure<E>>`, generic in the core path, which the generated code makes from the language function (a Python
+    callable, a Node and WASM `Function`, a PHP `callable`, a Go `func` of the generated signature). Its machine calls
+    it only from `Machine::call`, on the thread of the language code (GN-6ab). The closure converts each argument out:
+    a class argument is the core value that the machine made, which becomes a new instance of the generated class (the
+    `tx` that `db.transaction` makes); it calls the function and gives the value that the function returned as a
+    `Passthrough`, or an exception of the function as `Failure::Raised`, which the core may answer, by a rollback, and
+    then return, so that the caller gets the same exception object.
+  - `passthrough`: `binding_core::Passthrough` holds a language value in the table of the binding (B-3) without
+    converting it; the core moves it and never reads it. A result `passthrough` of the member returns that value to
+    language code unchanged, and a `Passthrough` that the core drops releases its value. A `Passthrough` is not `Send`:
+    the table is bound to the thread of its language code, and a value that ended on another thread would release
+    nothing there and stay in the table. A handle of the table is a
+    count that is never given again, so the handle of a released value names no value and never another value; a
+    result whose handle names no value is kind `internal`.
+  - `Raised`: a `Raised` is released by its last drop, as GN-6u states for the `Native` that it holds. The core may
+    answer a `Raised` and drop it, as a scope does that rolls back and then returns another failure, and what was
+    thrown leaves the table of the binding at that drop, on any thread: a drop on the thread of the table removes
+    the entry at once, and a drop on another thread, where the core calls a callback of Python or Go from a thread
+    of its own while the entry point waits, removes it behind the mutex of the Python and Go tables or queues its
+    key for the thread that keeps it (Node, PHP). So no entry point records the `Raised` values of its call, and a
+    machine of Node and WASM, which several entry points advance, keeps no list of them. A function of a machine
+    makes its `Raised` by the function that a callback uses (`thrown`), and `failure_error` takes what was thrown
+    out of the table by the key of the `Raised`.
+  - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
+    stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
+    callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
+    `Raised` of U-3, so `failure_error` throws the same object again. The table of the values is a thread-local map
+    from a handle to a `Zval`; the release function takes the value out of the table and ends it after the table is
+    released, because the destructor of a PHP value may run PHP code that enters the binding again.
+  - Python: the parameter takes a callable (`callable()`; any other value is kind `invalid_callback`), declared in
+    `_native.pyi` as `Callable[[<parameters>], object]`, and the result is `object`. The closure keeps a reference to
+    the callable and calls it with the GIL of the thread on which the machine calls it (`Python::attach`); an
+    exception of its code is kept as the `Raised` of U-3, so the caller gets the same exception object. The table of
+    the values is a thread-local map from a handle to a `Py<PyAny>`: the machine runs on the thread of its call from
+    its start to its end, `<name>` on the thread of the caller and `a<name>` on its worker thread, so a value enters
+    and leaves the table of one thread, and a released value ends with the GIL. A member whose function may return an
+    awaitable has the entry `_<name>_on_loop(<event loop>, /, <parameters>)`: `<name>` calls it with no loop, and
+    `a<name>` is a coroutine that runs it in `asyncio.to_thread` with the running event loop of its caller. The
+    driver asks `inspect.isawaitable` of each value that the function returned: a value that is no awaitable is
+    settled at once; an awaitable is wrapped in a coroutine, given to that loop with
+    `asyncio.run_coroutine_threadsafe`, and the worker thread waits for the outcome of its future, which releases the
+    GIL; without a loop a coroutine is closed, so that Python does not warn that it was never awaited, and the call
+    fails with kind `invalid_callback`. The two coroutine functions are a module that the crate makes from its own
+    source when it first needs one, because Rust code writes no `async def`.
+  - Go: the parameter is a Go `func` of the generated signature, `func(<parameters>) (any, error)`, and the result
+    `passthrough` is `any`, because a method of Go has no type parameter. A nil `func` is kind `invalid_callback`. The
+    function enters as a callback of the call (GN-15b), the handle of the call (`cgo.Handle`) and its index in it, and
+    the closure of the C ABI calls it through the export `<prefix>__go_callback`, the trampoline of every Go
+    callback. It runs on the goroutine of the member, on its thread: the goroutine holds its thread for the call of
+    the C ABI, `machine::drive` makes each call of the machine there (GN-6ab), and Go runs an exported function on the
+    thread that calls it, so no `Passthrough` leaves the thread that made it. The dispatch of the function decodes
+    each argument, a class argument as a new instance around the handle that the closure wrote (GN-15a), calls the
+    function and holds what it returned in the table of package `binding`: a map from a handle to the value behind a
+    mutex, which keeps the value reachable for the garbage collector until its `Passthrough` ends, and whose handle
+    is a count of the table. The closure makes the `Passthrough` of that handle; its release function removes the
+    value through the export `<prefix>__go_release_passed`, on any thread, because a Go value is bound to no thread.
+    A result `passthrough` crosses the C ABI as its handle, and the member takes the value out of the table. An
+    `error` that the function returns is kept by the call under its index and is the `Raised` of U-3 (GN-15b), so the
+    member returns the same error value. A panic of the function is recovered by the call, as the panic of a method of a callback
+    is (GN-15b), because a panic that
+    unwinds through the frames of the C ABI skips the destructors of the core, its guards and its machine: the call
+    keeps the value of the panic as the `Raised`, the core ends as for an error, and the member panics with the same
+    value after the call of the C ABI returned.
+  - Node: the parameter takes a function (a value whose `typeof` is `function`; any other value is kind
+    `invalid_callback`), and the declarations name each `passthrough` as a type parameter of the member,
+    `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`: the entry is an async function, so its promise
+    takes the state of a result that is a thenable. The machine owns the function as an `Owned` (GN-6ab), whose
+    reference of napi is deleted on the JavaScript thread, where the `Driven` object ends, and the closure calls it
+    with `napi_call_function` and the receiver `undefined`. An `Owned` of a value of the table and of an exception
+    holds its value as the one element of an array, because Node-API version 8 makes a reference only to an object, a
+    function or a symbol, while a function returns and throws any value. An exception of the
+    function is taken out of the environment (`napi_get_and_clear_last_exception`) and held as such an `Owned` under
+    the key of its `Raised`, because the machine goes on after the call and no promise of an Io future can be made
+    while an exception is pending; `failure_error` throws the held value again (`napi_throw`), so the caller gets the
+    same object. The table of the values is a thread-local map from a handle to an `Owned`; the release function
+    removes the entry, and its drop deletes the reference.
+    Await: `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table. The function `drive`
+    of the JavaScript entry awaits it, a value that is no thenable included, and gives the outcome to the next advance
+    as `settled`, `[true, <value>]` or `[false, <rejection>]`: that advance stores the value in the table again, or
+    holds the rejection as a `Raised`, and calls `Driving::settle` before the machine resumes. `settled` is
+    `undefined` at the start and after a wait, and an advance that gets an outcome while its machine awaits no value,
+    or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from an awaited value
+    by the step of the advance that returned it and never by the value: a rejection of the promise of step `0` is a
+    failure of the binding (a panic of a poll, kind `internal`), which `drive` does not catch, so it rejects the
+    promise of the entry and the machine is not advanced again; a rejection of the value of step `1` is the outcome
+    of the function, which goes to the machine, and the core decides what it means.
+  - WASM: the parameter takes a function (any other value is kind `invalid_callback`), and the declarations are those
+    of Node. The machine owns the function as a `js_sys::Function`, a value of the module that lives until the ES
+    entry frees the `Driven` object, and the closure calls it with `apply` and the receiver `undefined`, on the thread
+    of the module. An exception of the function is the value that the call gives back to the module (the import
+    catches it, GN-18b), kept under the key of its `Raised`, so the caller gets the same value. The table of the
+    values is a thread-local map from a handle to a `JsValue`; the release function removes the entry. Await: as for
+    Node, `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table; the function `drive` of
+    the ES module awaits it, a value that is no thenable included, and gives `[true, <value>]` or `[false,
+    <rejection>]` to the next advance, which stores the value in the table again, or keeps the rejection as a
+    `Raised`, and calls `Driving::settle` before the machine resumes; an advance that gets an outcome while its machine
+    awaits no value, or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from
+    an awaited value by the step of the advance, as for Node: a rejection of the promise of step `0` rejects the
+    promise of the entry and the machine is freed without another advance. Each advance runs through `state.mjs`
+    (GN-18), also the advance in which the function calls a member of the module again.
+  - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
+    to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
+    the next `resume`. Node and WASM await the value in their JavaScript entry, as their items below state. Python:
+    `a<name>`
+    awaits a coroutine or another awaitable on the event loop of the caller with `asyncio.run_coroutine_threadsafe`
+    from its worker thread, and `<name>` gives an awaitable result kind `invalid_callback` with the message that names
+    `a<name>`, because no event loop of the caller runs. PHP and Go have no awaitable: the driver settles the value at
+    once, so a PHP or Go function returns its result.
+  - Case: an argument of a function type is a function fixture, `{"function": {"calls": [<step>], "result": <case
+    value>}}` or with `"raise"` in place of `"result"`: the generated function makes each step on its arguments in
+    order, `{"on": "<position>", "call": "<member id>", "args": {...}}`, where `on` is the position of the parameter
+    (`"0"`, `"1"`, ...; CK-22) and an argument of a function type of a step is again a function fixture; a step that names `result` requires
+    that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
+    function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
+    `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
+    `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
+    nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
+    def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose
+    `result` or `raise` is the outcome of that awaitable; a step of such a function awaits the call of a member that
+    waits (`await <argument>.a<name>(...)` in Python), and the Python test of the case calls `a<name>` on an event
+    loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
+    settles at once: a case with the marker runs on the five targets and requires the same result, exception and
+    `after` on each.
+  The five targets generate the member. The PHP and Python tests write the function fixture, the test of a
+  case with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a
+  value that is no callable is kind `invalid_callback`. A Python function fixture
+  is a function of the test module, because a lambda holds no statement, and the Python test also requires that
+  `<name>` given a function that returns an awaitable is kind `invalid_callback` with a message that names
+  `a<name>`. The Go test writes the function fixture as a `func` whose steps return their
+  error, and a step that names `result` returns an error that names its member when the call returned another value;
+  a fixture with `"awaits": true` is the same `func`; it writes the test of a case with `raises: "callback"`, whose `func` returns the error value that the test holds and
+  which requires that same value, the calls of `after`, and for each parameter of a function type a test that a nil
+  `func` is kind `invalid_callback`, a test that the member returns the error value that the `func` returned, and a
+  test that the member panics with the value of a panic of the `func`; package `binding` tests that a handle of its
+  table is not given again and that a result whose handle names no value is kind `internal`. A function fixture that
+  raises an error unit fails its Go test by name, because no function recognizes an error yet. The Node test and the WASM test write the same tests as the PHP test, with a value that is no function for the value that is no callable. The function of a Node or WASM fixture is an arrow function, whose step that
+  names a result requires it with `assert.deepStrictEqual` inside the function, an async one when the fixture names
+  `awaits` or a step of it calls a member that waits,
+  so the nested case of the sample runs the awaited step with a promise and its other cases with a value that is no
+  thenable. The contract of the end-to-end sample
+  holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
+  until that target generates them (GN-14c).
+  The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
+  `passthrough`, and the class `scope`, whose `put` and `get` write and read the pending entries and whose `nested`
+  takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. The function `scoped`
+  of its functions unit and the static member `store.once` take the same function, over entries that end with the
+  call, and their cases return, raise and await, so the end-to-end check compiles and runs the entry of each kind of
+  member that takes a function: a method, a function and a static member. Why: a transaction is a
+  scope that the core opens, hands to language code and closes after that code returns, so the core decides when the
+  language code runs and what its failure means, and the machine keeps the I/O of the scope on tokio (GN-6ab).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
@@ -1218,6 +1446,13 @@ the design ids are those of the binding design.
   `error`. The C ABI holds a callback as the handle of the call and of the Go value, calls back through the export
   `<prefix>__go_callback`, and a nil callback is kind `invalid_callback`. An error that a method returns stops the
   core and comes back to the caller as the same error value, which the call keeps by its index until it returns.
+  A panic of a method is recovered by the call (`Call.run`), which runs every Go callback and every Go `func`
+  (GN-6ae), because a panic that unwinds through the frames of the C ABI skips the destructors of the core, its
+  guards and the locks of the places (GN-6h), so an instance that the member borrowed would stay locked: the call
+  keeps the value of the panic as the `Raised` of U-3, the core ends as for an error, and the member panics with the
+  same value after the call of the C ABI returned. The Go test of a member that takes a callback requires that
+  value at the caller, that the member runs again on the same instance, and that a member that writes the instance
+  is not kind `busy` after the panic.
 - **GN-15c** Go value aliases (U-7, T-3): a value alias, also of another repository, is `any`. The C ABI reads the Go
   value through questions to the export `<prefix>__go_host` (its kind, its items, the keys of a map in the order of
   `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the
@@ -1260,7 +1495,7 @@ the design ids are those of the binding design.
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through
-  `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
+  `library_<library>::in_<record>` and `library_<library>::out_<record>` (GN-4c); a record of another repository with a field of a unit type, and
   one whose package has the name of a package of this repository, are refused by name. A library whose contract names no
   Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
   targets are generated (GN-1c), as `scaffold` names the Go module alone as not written (GN-3e). `binding scaffold` reads the contract of each library that the
@@ -1488,8 +1723,7 @@ the design ids are those of the binding design.
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
   core that swallows the exception still fails, and the calls to be those of `calls`, in order, when the case names
   them. A callback inside another type (a field of a record, an item of a list, an `optional`) is given as the same
-  fixture, and a function as `{"function": [<row>]}`, whose `args` are the positions of its parameters (`"0"`, `"1"`,
-  ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
+  fixture, and a function as the function fixture of GN-6ae. `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; a

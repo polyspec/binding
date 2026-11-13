@@ -7,7 +7,7 @@
 import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported } from './model.ts';
+import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported, machineFunction } from './model.ts';
 
 // GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
 // (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
@@ -170,7 +170,7 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
   // U-3, GN-6z: thread-test adds the entry point that calls a function of the language on another thread, in a target
   // that holds a function on its owner thread.
   const owned = suffix === 'node' || suffix === 'php-ext';
-  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type)))) ? 'thread-test = []\n' : '';
+  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type) && !machineFunction(p.type)))) ? 'thread-test = []\n' : '';
   // GN-6u: native-count-test adds the entry point that counts the Natives that the binding holds, in a target that
   // gives a Native back through a round trip.
   const lang = ({ node: 'node', 'php-ext': 'php', wasm: 'wasm', go: 'go' } as const)[suffix as 'node' | 'php-ext' | 'wasm' | 'go'];

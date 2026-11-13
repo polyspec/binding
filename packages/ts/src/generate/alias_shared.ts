@@ -220,7 +220,7 @@ ${wakes ? NODE_WAKER : ''}
 static OWNERS: Mutex<Vec<Owner>> = Mutex::new(Vec::new());
 
 /// GN-6u: the language references that this thread holds for its Natives, under their keys.
-struct Owned {
+struct OwnerTable {
     owner: usize,
     generation: u64,
     next: u64,
@@ -231,7 +231,7 @@ thread_local! {
     /// GN-6u: the index of the owner of this thread, which its later tables keep.
     static OWNER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// GN-6u: the table of this thread, until the cleanup of its owner.
-    static OWNED: RefCell<Option<Owned>> = const { RefCell::new(None) };
+    static OWNED: RefCell<Option<OwnerTable>> = const { RefCell::new(None) };
 }
 
 /// GN-6u: what a Native of this binding holds: the owner, its generation and the key of the table of the owner.

@@ -1,11 +1,414 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3430fff3c10e28470fb4b9d78af3389740995c44985ec515f7e6f314303af8a9 -->
+<!-- source-sha256: 98e23d954707c551d118c2b4ad7ae9ae5bc1d19220259ec3f052f42ee0ee021e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- machine이 있는 member의 함수 parameter(GN-6ae)와 코어가 보관하는 함수 타입(GN-6z)을 함께 생성하고, `Raised`는 한 가지
+  꼴을 갖는다. 반환이 `passthrough`인 함수 타입은 machine이 있는 member의 함수이고, 그 밖의 함수 타입은 GN-6z의 값이다.
+  case는 앞의 것을 함수 fixture로, 뒤의 것을 그 행으로 준다(CK-22). 뒤의 것을 받는 machine member는 이름을 대어 거부하고,
+  Go는 뒤의 것만 거부한다. `Raised`는 `Native`(GN-6u)를 쥐고, 그 마지막 drop이 던져진 것을 binding의 table에서 제거한다.
+  그래서 각 진입점의 scope `RAISING`, `raised_released`, `raised_taken`, `Driven` 객체의 handle 목록을 다섯 crate에서
+  없앴다. 진입점의 스레드가 아닌 스레드에서 drop된 `Raised`도 해제되며, scope는 그것을 하지 못했다. machine의 Node
+  callback은 `Raised`의 key로 pending 예외를 찾는다. GN-4c의 이름은 모든 helper에 적용된다. 아직 `in_<type>`,
+  `out_<type>`이던 내장 타입의 변환(`in_path`, `out_entries`, Go crate의 `in_uint` 등)은 방향을 뒤에 적고, GN-6z의
+  helper는 `kept_function_in`이며, 다른 레포의 value class의 변환은 `library_<library>`의 함수다. value alias와 machine이
+  있는 계약의 Node crate는 struct `Owned`를 두 번 정의했다. Native의 owner table에 한 번, machine의 참조에 한 번이다.
+  앞의 것은 이제 `OwnerTable`이다. feature `thread-test`와 그 진입은 GN-6z의 함수 타입에만 쓴다. `packages/ts`의
+  `npm test`로 검증했고 실패 없이 통과한다. 그 시험은 sample의 다섯 crate에 `ThrownKey`의 drop이 있고 scope가 없음을
+  요구한다. 새 시험은 `tests/e2e`의 여덟 계약의 crate를 각 target마다, 모두 39개 생성하여, unit의 변환만 `in_`이나
+  `out_`으로 시작하고 어떤 함수도 두 번 정의되지 않음을 요구한다. 그 시험은 GN-6z의 PHP helper 이름이 `in_function`이면
+  실패한다. 생성된 crate와 `binding_core`의 시험은 이 변경에 대해 컴파일하지 않았다. `binding_core`의 기다린 실패의
+  시험은 이제 `Native`로 `Raised`를 만든다.
+- `tests/e2e/plot`과 `tests/e2e/consumer`의 WASM crate는 컴파일되지 않았고, WASM에서의 첫 `make e2e`가 그것을 보였다.
+  crate는 함수나 helper가 `Array`를 이름할 때만 그것을 import했는데, 모든 crate의 오류는 `Array::of4`를 부른다. 그래서
+  list가 없는 plot의 crate는 `cannot find type Array`로 실패했다. `async fn`인 helper `caught`는 이름 없는 항목으로
+  읽혀 모든 crate에 남았다. 그래서 기다리는 member가 없는 consumer의 crate는 `function caught is never used`로
+  실패했다. 이제 crate는 `Array`를 항상 import하고, `async fn`으로 시작하는 helper는 코드가 이름하는 곳에만 남는다.
+  `packages/ts`의 `npm test`로 검증했다. 그 테스트는 두 crate를 생성한다. 이 변경에 대해 crate를 다시 컴파일하지 않았다.
+- Python crate의 `Raised` 값의 scope는 `std::cell::RefCell`을 경로로 이름했는데, crate는 본문이 `RefCell`을 이름하는
+  곳마다 그것을 import한다. 그래서 class가 없는 계약의 crate는 쓰지 않는 import를 가졌고 lint가 그것을 거부했다.
+  `tests/e2e/consumer`의 `make e2e`가 Python crate의 lint에서 `unused import: std::cell::RefCell`로 실패했다. 이제 scope는
+  `RefCell`을 import로 이름한다. `packages/ts`의 `npm test`로 검증했다. 그 테스트는 consumer의 Python crate를 생성한다.
+  이 변경에 대해 crate를 다시 컴파일하지 않았다.
+- WASM crate의 `Driven` 객체의 `advance`는 작업을 `shielded` 밖에서 돌렸다. 그래서 언어 코드가 다른 member의 호출
+  안에서 하는 advance는 시험이 그 member에 장전한 fault를 보았다. Node crate는 그것을 shield했다. 이제 WASM crate도
+  shield한다(GN-8a). fault 진입의 테스트는 장전 호출의 수와 shield의 수만 비교했다. 새 테스트는 sample의 WASM crate를
+  진입마다 읽고, member의 각 진입이 guard 하나, shield 하나, 장전 하나(`with_faults` 또는 `armed_future`)를 갖고
+  `advance`는 shield 하나를 갖고 장전은 없기를 요구한다. `packages/ts`의 `npm test`로 검증했다. 이 변경에 대해 생성된
+  crate는 컴파일하지 않았다.
+- WASM crate의 class의 member의 진입은 `class_<unit>_<member>`였고, 이 이름은 두 가지로 읽힌다. class `a`의 member
+  `new_x`와 class `a_new`의 member `x`가 둘 다 `class_a_new_x`였고, member `free`는 class의 해제처럼
+  `class_<unit>_free`와 export `__<Class>_free`였다. 이제 진입은 export의 module 안의 module `class_<unit>`의 함수
+  `member_<member>`이고, 해제는 `free_<unit>`과 export `__free_<Class>`다(GN-4c). member의 export는 이름을 유지한다.
+  `packages/ts`의 `npm test`로 검증했다. 그 테스트는 두 class와 member `free`, `guard`를 가진 sample의 WASM crate를
+  생성하고, 어느 module도 함수를 두 번 정의하지 않고 어느 export도 다른 export의 이름을 갖지 않기를 요구한다. 같은 계약은
+  Go crate에 C 심볼 `polyspec_sample_tag_new_x`를 두 번 주며, 이것은 고치지 않았다(task B2.86-3). 이 변경에 대해 생성된
+  crate는 컴파일하지 않았다.
+- 다른 레포의 unit의 변환은 `in_<library>_<name>`이었고, 이 이름은 두 가지로 읽힌다. 라이브러리 `c`의 record `a_b`와
+  라이브러리 `c_a`의 record `b`가 둘 다 `in_c_a_b`여서 한 함수의 두 정의였고, 자체 unit `c_a_b`가 세 번째였다. 이제 다른
+  레포의 unit의 변환(`in_`, `out_`, 그리고 value alias의 `make_`)은 crate의 module `library_<library>`의 함수이고, 코드는
+  경로 `library_<library>::in_<name>`으로 부른다(GN-4c). 생성기의 helper 하나가 모든 사용처에 그 이름을 준다. module의
+  이름은 `<library>`만으로 하지 않는다. `std`라는 라이브러리가 생성된 crate 전체에서 crate `std`를 가리기 때문이다.
+  변환만 부르는 closure는 경로로 불러도 그 변환 자체이고, 다른 라이브러리의 alias를 주는 Node callback은 자기 환경을
+  유지한다. `packages/ts`의 `npm test`로 검증했다. 그 테스트는 라이브러리 `c`의 record `a_b`, 라이브러리 `c_a`의 record
+  `b`, 자체 record `c_a_b`를 가진 계약의 다섯 crate를 생성하고, 어느 module도 함수를 두 번 정의하지 않기를 요구한다. 이
+  변경에 대해 생성된 crate는 컴파일하지 않았다.
+- 코어가 drop하고 반환하지 않은 `Raised`는 PHP, Python, Go crate의 table에 던져진 것을 남겼다. Node와 WASM crate만 그것을
+  해제했기 때문이다. 이제 세 crate의 모든 진입점의 `guard`가 자기 스레드의 scope를 열고, `Raised`를 만드는 함수가 그
+  handle을 가장 안쪽 scope에 기록하며, 진입점은 반환할 때 아무도 가져가지 않은 것을 table에서 제거한다(GN-6ae). PHP는
+  table을 놓은 뒤에, Python은 GIL과 함께 drop한다. 세 crate의 machine은 한 진입점 안에서 돌므로, 두 진입점 사이에
+  handle을 보관하는 객체는 없다. 진입점의 스레드가 아닌 스레드에서 만들어진 `Raised`는 어느 scope에도 기록되지 않아
+  아직 해제되지 않는다(G-4). `packages/ts`의 `npm test`로 검증했다. 그 테스트는 세 crate에 scope, 기록, 해제가 있고
+  table이 없는 crate에는 그 어느 것도 없기를 요구한다. 이 변경에 대해 생성된 crate는 컴파일하지 않았다.
+- functions unit의 함수의 진입에는 이름이 둘 있었다. PHP와 Python crate에서는 `function_<name>`, Node와 WASM crate에서는
+  `entry_<member>`였고, Node와 WASM의 함수 parameter의 helper `function_in`은 앞의 접두로 시작했다. Node와 WASM crate는 이제
+  진입을 `function_<name>`, helper를 `callable_in`으로 이름하므로 GN-4c는 다섯 crate에 한 규칙을 적는다. Node와 WASM lane을
+  병합했고, 어떤 target도 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 거부하지 않는다. `packages/ts`의
+  `npm test`로 검증했고 실패 없이 통과한다. 그 시험은 `guard`, `pass`, `called`, `throw`, `internal`, `in`이라는 함수가 있는
+  Node와 WASM crate를 생성하고 어떤 함수도 두 번 정의되지 않을 것과 어떤 helper도 `function_`으로 시작하지 않을 것을
+  요구한다. 이 변경으로 생성된 crate를 컴파일하지는 않았다.
+- end-to-end sample에는 함수 parameter가 method에만 있어서, 함수를 받는 functions unit의 함수와 static member의 진입은
+  생성되기만 하고 컴파일된 적이 없었다. sample에 이제 함수 `scoped`와 static member `store.once`가 있고, 각각 돌려주는
+  case, 던지는 case, 기다리는 case를 가진다(GN-6ae). `tests/e2e/sample`의 `make e2e`로 검증했다: PHP는 생성된 시험 98개,
+  Python은 100개, Go는 77개를 통과하고 실패와 skip은 없으며 각 lint는 깨끗하다. Node와 WASM은 거기서 그 거부로 실패한다.
+- Go callback의 method의 panic은 static library의 frame을 지나 unwind했고, 코어의 destructor를 건너뛰었다. member가 빌린
+  인스턴스는 잠긴 채 남았고, 그 뒤 그것을 쓰는 member는 kind `busy`로 실패했다. 이제 호출(`Call.run`)이 모든 Go callback과
+  모든 Go `func`의 panic을 recover하고 그 값을 호출의 error로 쥐며, member는 C ABI 호출이 돌아온 뒤 같은 값으로
+  panic한다(GN-15b). `func`의 dispatch는 더는 따로 recover하지 않는다. callback을 받는 member의 Go 시험은 호출자가 panic의
+  값을 받을 것, member가 같은 인스턴스에서 다시 돌 것, 그 인스턴스를 쓰는 member가 `busy`가 아닐 것을 요구한다.
+  `packages/ts`의 `npm test`와 `tests/e2e/sample`의 `make e2e`로 검증했다: 변경 전에 `ledger.known`의 Go 시험은 "the
+  panic of the callback left ledger.note busy"로 실패했고, 변경 후 Go 시험 77개가 통과한다.
+- Go lane을 병합했다: 함수 타입의 parameter와 결과 `passthrough`의 거부는 Node와 WASM만 이름하고, GN-4c는 Go crate의 진입의
+  계열, 곧 C symbol `polyspec_<library>_<module>_<member>`를 적으며 어떤 helper도 그것으로 시작하지 않는다. helper와 이름이
+  같은 함수의 시험은 Go crate도 생성한다. 함수 이름은 `pass`, `guard`, `raised`, `held`, `lock`, `taken`, `thrown`,
+  `called`이고, 두 번 정의된 함수를 찾지 못한다. `packages/ts`의 `npm test`로 검증했고, 모든 target으로 sample을 생성하는
+  시험 20개는 Node와 WASM의 거부로 아직 실패한다. `tests/e2e/sample`의 `make e2e`로도 검증했다. sample이 커지기 전에 PHP는
+  생성된 시험 88개, Python은 88개, Go는 61개를 통과했다.
+- library `core`, `binding`, `failure`, `library`를 이름하는 계약의 생성된 crate는 컴파일되지 않았다. 그 library의 오류의
+  helper `<library>_error`와 `<library>_failure_error`가 helper `core_error`, `binding_error`, `failure_error`,
+  `library_error`의 이름을 가졌기 때문이다. 이제 다섯 crate에서 `error_of_<library>`와 `failure_of_<library>`이고, 이
+  둘은 어떤 helper도 시작하지 않는 GN-4c의 계열이다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 그런 library마다 그
+  값 alias를 받는 계약의 crate를 생성하고 crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 Go
+  crate에서 `core_error`의 정의 둘을 찾았다. 이 변경으로 생성된 crate를 컴파일하지는 않았다.
+- sample의 `scope`처럼 class가 함수 parameter의 인자로만 쓰이는 계약의 Python crate는 clippy를 통과하지 못했다. 함수
+  타입의 parameter를 들어오는 값으로 읽어서, 아무도 부르지 않는 변환 `in_<class>`가 crate에 있었기 때문이다. 그
+  parameter는 함수로 나가는 값이므로 이제 함수 타입이 돌려주는 것만 들어오는 값으로 세고, 그 변환은 쓰지 않는다.
+  sample의 `make e2e`에서 찾았다. Python crate의 clippy가 "function `in_scope` is never used"로 실패했다.
+  `packages/ts`의 `npm test`로 검증했고, Python crate의 시험은 `in_scope`가 없을 것을 요구한다.
+- `pass`, `guard`, `raised`처럼 crate의 helper와 이름이 같은 함수가 있는 계약의 PHP와 Python crate는 컴파일되지 않았다.
+  functions unit의 함수의 진입이 함수의 이름을 그대로 가졌고 helper도 그 이름이었기 때문이다. 진입은 이제
+  `function_<name>`이고 언어의 이름은 attribute가 준다. event loop를 받는 Python 진입은 `loop_function_<name>`이고,
+  helper `recognized_kind`는 `kind_of_recognized`다. 그래서 어떤 helper도 계약 이름의 계열의 접두로 시작하지 않는다
+  (GN-4c). 값 alias와 함수 parameter가 함께 있는 계약의 Python crate는 helper `raised`도 두 번 정의했다. alias의 값을
+  위해 한 번, 함수의 기다린 값을 위해 한 번이었다. 이제 한 번 정의한다. `packages/ts`의 `npm test`로 검증했다. 그
+  시험은 `pass`, `guard`, `raised`라는 함수가 있는 PHP crate와 `guard`, `raised`, `driven`이 있는 Python crate를 생성하고
+  crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 `pass`의 정의 둘을 찾았다. sample의
+  `make e2e`로도 검증했다. PHP와 Python crate는 clippy를 통과하고 생성된 시험은 각각 88개가 통과한다.
+- Python은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. Python binding은 이제 그것을
+  생성한다. callable은 들어올 때 검사하고(kind `invalid_callback`), closure는 GIL을 쥐고 그것을 부르며 각 class 인자를 새
+  인스턴스로 준다. 그것이 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐고, member는 그 객체를 그대로
+  돌려준다. 함수가 awaitable을 돌려줄 수 있는 member에는 진입 `_<name>_on_loop`가 있다. `a<name>`은 호출자의 돌고 있는
+  event loop와 함께 그것을 asyncio의 스레드에서 돌리고, driver는 그 loop에서 `asyncio.run_coroutine_threadsafe`로
+  awaitable을 기다린다. awaitable을 받은 `<name>`은 그것을 닫고 `a<name>`을 이름하는 message의 kind `invalid_callback`으로
+  실패한다. Python 시험은 함수 fixture를 시험 module의 함수로, `awaits`가 있는 fixture를 coroutine 함수로 쓰고, step의
+  결과, `raises: "callback"` case, `after`의 호출을 쓴다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Python
+  crate와 Python 시험의 시험은 통과한다. 모든 target으로 sample을 생성하는 시험은 Node, Go, WASM의 거부로 아직 실패한다.
+  sample의 `make e2e`로도 검증했다. Python crate는 clippy를 통과하고 생성된 시험 88개가 unittest에서 통과하며,
+  `store.transaction`의 case 다섯이 그 안에 있다. 그 실행은 Node, Go, WASM을 거부로 실패한 target으로 이름한다.
+- 이름이 `text`, `list`이거나 helper의 다른 단어인 unit이 있는 계약의 생성된 Go crate는 컴파일되지 않았다. 변환
+  `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`의 이름을 가졌기 때문이다. Go crate의 helper는 이제
+  GN-4c가 적는 대로 방향을 끝에 적는다: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`, `key_out`,
+  `no_form_out`, `passed_out`. Go crate의 어떤 함수도 member의 이름을 갖지 않는다: 진입점은
+  `<prefix>_<module>_<member>`다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`, `callable`,
+  `text`가 있는 sample의 Go crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는 이름의 다른
+  함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_text`의 정의 둘을 찾았다.
+- Go 바인딩은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그것을 생성한다:
+  parameter는 Go `func(<parameters>) (any, error)`이고 결과는 `any`다. `func`는 호출의 callback으로 들어가 export
+  `<prefix>__go_callback`으로 member의 goroutine과 스레드에서 돌고, class 인자는 각각 새 인스턴스다. package
+  `binding`은 `func`가 돌려준 것을 mutex 뒤의 table에 수인 handle로 쥐고, static library는 버려진 `Passthrough`의
+  값을 export `<prefix>__go_release_passed`로 지우며, handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  member는 `func`가 돌려준 error 값을 돌려주고, `func`의 panic은 static library의 frame을 지나 unwind하지 않도록
+  dispatch가 recover하며, member가 같은 값으로 panic한다. Go 시험은 함수 fixture를 `func`로 쓴다. `result`를 적은
+  step은 호출이 다른 값을 돌려주면 error를 돌려주고, 표시 `"awaits": true`는 아무것도 바꾸지 않는다. Go 시험은 또
+  `raises: "callback"` case, `after`의 호출, nil `func`와 `func`의 error와 panic의 시험을 쓰며, `after`나 `raises:
+  "callback"`이 있는 case를 더는 거부하지 않는다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Go crate, package,
+  시험의 시험 2개는 통과한다. 모든 target으로 sample을 생성하는 시험 20개는 아직 Python, Node, WASM의 거부로 실패한다.
+  `tests/e2e/sample`의 `make e2e`로 검증했다: Go는 `go test`에서 생성된 시험 61개를 통과하고(`store.transaction`의
+  case 다섯 개 포함) clippy, `gofmt -l`, `go vet`이 깨끗하며, PHP는 88개를 통과한다. Python, Node, WASM은 거기서 그
+  거부로 실패한다.
+- 코어가 반환하지 않고 drop한 `Raised`는 던져진 것을 Node와 WASM crate의 table `THROWN`에 스레드가 끝날 때까지 남겼다.
+  `Raised`에 해제 함수가 없기 때문이다. 이제 규칙은 `Raised`를 만든 호출이 그것을 해제한다는 것이다. 각 진입점은 자기가
+  도는 동안 만들어진 handle을 기록하고, 반환할 때 `failure_error`가 가져가지 않은 각 handle 아래의 던져진 것을 제거한다.
+  machine은 자기 advance들의 handle을, 결과를 주거나 실패하는 advance까지, 또는 그 `Driven` 객체가 끝날 때까지
+  보관한다(U-3, GN-6ae). PHP, Python, Go의 crate는 아직 이 규칙을 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다.
+  그 시험은 변경 전에 sample의 crate에서 table `RAISING`을 찾지 못했다. 생성된 시험은 그 table을 관찰하지 않으므로,
+  end-to-end 실행은 crate가 컴파일되고 clippy를 통과하며 결과를 유지한다는 것만 보인다.
+- Node crate의 machine이 소유하는 callback(`Owned<Callback>`)은 machine이 계속 진행하는 동안 예외를 환경에 pending으로
+  남겼고, 같은 advance에서 뒤따르는 Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출이 실패할 수 있었다.
+  이제 소유된 callback은 machine의 함수와 같이 예외를 환경에서 꺼내어 그 `Raised`의 handle 아래에 보관하고,
+  `failure_error`가 같은 객체를 다시 던진다(GN-6ab). machine이 callback을 소유하고 함수를 받지 않는 crate도 이제 variant
+  `Thrown::Held`, `Owned::boxed`, `thrown_again`을 가진다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에
+  sample의 소유된 callback에서 `kept`를 찾지 못했다.
+- 함수 parameter의 argument로만 쓰이는 class(`store.transaction`의 `scope`)가 있는 계약의 Node crate는 그 class의 들어오는
+  변환 `in_<class>`를 썼고 아무도 그것을 호출하지 않는다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 함수
+  parameter의 argument는 언어 코드로 나가고 들어오지 않으므로, 들어오는 class를 찾는 검사는 이제 함수 타입을 읽지
+  않는다(T-5, GN-6ae). sample의 생성 crate를 처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은
+  변경 전에 sample의 Node crate에서 `fn in_scope`를 찾았다.
+- value alias와 함수 parameter를 받는 member가 함께 있는 계약의 Node 생성 crate는 함수 `raised`를 두 번 정의했다. 하나는
+  값의 walk를 위한 것이고 하나는 함수의 예외를 위한 것이며, 이는 컴파일되지 않는다(E0428). 이제 값의 walk는 napi의
+  error를 `js_raised`로 보관한다. `js_raised`는 pending 예외를 그대로 보관하고 다른 error는 binding의 실패로 보관하며,
+  crate에는 `raised`가 하나만 있다. WASM crate는 advance의 boxed closure를 `Driven`의 field 타입으로 직접 썼고 clippy가
+  이를 거부한다(`type_complexity`). 이제 그 타입의 이름은 `Advance`이다(GN-6ae). sample의 `make e2e`에서 생성 crate를
+  처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에 sample의 Node crate에서 `raised`를
+  두 번 찾았다.
+- callback unit도 value alias도 없이 함수 parameter만 언어 코드인 계약의 Node crate는 crate 안에서 아무도 만들지 않는
+  variant `Thrown::Js`를 가졌다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 이제 그 variant와 그 arm은
+  callback unit이나 value alias가 있는 계약에만 쓴다(GN-6ae). `packages/ts`의 `npm test`로 검증했다. 그 시험은 callback
+  unit과 alias를 뺀 sample을 생성하고 crate가 이름하는 모든 variant를 crate가 만들 것을 요구하며, 변경 전에는 `Js`를
+  찾았다. `tests/e2e`의 어떤 계약도 이 형태가 아니므로 end-to-end 실행은 그것을 컴파일하지 않는다.
+- `default`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 Node와 WASM 생성 crate는 함수
+  `in_<word>`나 `out_<word>`를 두 번 정의했고, `guard`, `pass`, `called`, `throw`, `internal`이라는 이름의 function
+  member는 crate의 helper 이름을 가졌다. Node crate에서는 두 번째 정의이고, WASM crate에서는 export의 모듈 안에서
+  helper를 가리는 export다. 이제 Node와 WASM crate의 helper는 방향을 끝에 적고(`text_in`, `list_out`, `default_in`,
+  `function_in`, `passed_out`), function member의 진입점은 `entry_<member>`이며 member의 이름으로 내보낸다(GN-4c).
+  `packages/ts`의 `npm test`로 검증했다. enum `default`, `callable`, `text`가 있는 sample의 시험은 변경 전에 Node
+  crate에서 `in_default`의 정의 둘을 찾았고, 함수 `guard`, `pass`, `called`, `throw`, `internal`의 시험은 `guard`의 정의
+  둘을 찾았다. 둘 다 통과하고, 생성된 WASM 진입점을 `rustc`로 컴파일하는 두 시험도 새 이름으로 통과한다. Python이나
+  Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
+- Node와 WASM 시험은 함수 fixture의 step의 결과와 표시 `awaits`를 쓰지 않았다. 이제 결과를 이름하는 step은 함수 안에서
+  그 호출의 `assert.deepStrictEqual`이고, `awaits`가 있는 fixture는 async 함수다. 그래서 sample의 기다리는 두 case는
+  machine의 기다리는 step을 이행된 promise와 거부된 promise로 돌린다(GN-6ae, CK-22). `packages/ts`의 `npm test`로
+  검증했다. Node와 WASM fixture의 시험이 통과한다. Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의
+  거부로 여전히 실패한다.
+- WASM binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 Node처럼 그
+  member를 생성한다(GN-6ae). machine은 함수를 `js_sys::Function`으로 소유하고, 모듈의 스레드에서 각 class 인자의
+  class의 새 인스턴스와 함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 `JsValue`의 thread-local
+  table에 쥔다. 함수가 던진 값은 그 `Raised`의 handle 아래에 두었다가 다시 던지므로 호출자는 같은 객체를 받는다.
+  `Driven` 객체의 `advance(settled)`와 ES 모듈의 `drive`는 Node의 step `[0, promise]`, `[1, value]`, `[2, result]`를
+  쓰고, 각 advance는 `state.mjs`를 거치며, machine은 거부된 기다림 뒤에도 끝에서 해제된다. 선언과 생성된 시험은 Node의
+  것과 같다. `packages/ts`의 `npm test`로 검증했다. WASM closure의 시험, 시험이 연기하는 machine에 대고 돌린 `drive`의
+  시험, WASM 시험의 시험 세 개가 통과하고, WASM에 대해 sample을 생성하는 WASM value alias의 시험이 다시 통과한다.
+  Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
+- Node binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그 member를
+  생성한다(GN-6ae). machine은 함수를 napi 참조로 소유하고, JavaScript 스레드에서 각 class 인자의 class의 새 인스턴스와
+  함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐었다가 결과로 그대로
+  내보낸다. 함수의 예외는 환경에서 꺼내 쥐었다가 member의 끝에서 다시 던지므로 호출자는 같은 객체를 받는다. `Driven`
+  객체의 `advance(settled)`는 기다림에 `[0, promise]`, machine이 기다리는 값에 `[1, value]`, 끝에 `[2, result]`를
+  돌려주고, JavaScript 진입의 `drive`는 step `1`의 값을 promise든 다른 값이든 기다려 `[true, value]`나
+  `[false, rejection]`을 다음 advance에 준다. 기다림의 promise의 거부는 호출을 reject하고 machine에 주지 않는다. 선언은
+  각 `passthrough`를 타입 parameter로 이름한다. `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`다.
+  Node 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case, `after`의 호출, 함수가 아닌 값이 kind
+  `invalid_callback`이라는 시험을 쓴다. `packages/ts`의 `npm test`로 검증했다. Node closure의 시험, 시험이 연기하는
+  machine에 대고 돌린 `drive`의 시험(값, promise, thenable, 거부된 기다리는 값, 거부된 기다림), Node 시험의 시험 세
+  개가 통과한다. Python, Go, WASM에 대해 sample을 생성하는 21개 시험은 그 target의 거부로 여전히 실패한다.
+- `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
+  않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
+  정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:
+  `text_in`, `list_out`, `default_in`, `callable_in`, `passed_out`(GN-4c). PHP와 Python의 crate는 이 규칙을 적용하고,
+  Node, WASM, Go의 crate는 아직 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`,
+  `callable`, `text`가 있는 sample의 PHP crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는
+  이름의 다른 함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_default`의 정의 둘을 찾았다.
+- awaitable을 돌려주는 함수를 주는 case가 없어서, awaitable이 나중에 settle되거나 예외를 내는 `Step::Await`의 경로에는
+  case가 없었다. 함수 fixture는 이제 `"awaits": true`를 적을 수 있다. 그 함수는 그 언어의 awaitable을 돌려주고 그
+  결과는 fixture의 `result`나 `raise`다. 계약 검사는 그 표시를 값이 `true`일 때만, `async_allowed: true`인 함수 타입에만,
+  step 안에서는 그 step의 fixture가 그것을 적을 때만 받아들인다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은
+  fixture가 보통 함수이고, 표시가 있는 case는 다섯 target에서 돈다. PHP 시험은 그렇게 쓴다. sample은 `store.transaction`에
+  그런 case 둘을 가진다: 기다리고 commit하는 함수와 중첩된 함수, 그리고 예외를 내고 항목을 버리는 awaitable이다(CK-22,
+  GN-6ae). `packages/ts`의 `npm test`로 검증했고 그 표시의 시험은 통과한다.
+- 함수 fixture의 step은 그 호출이 돌려주는 값을 적을 수 없었다. 그래서 `store.transaction`의 case는 함수 안에서
+  `scope.get`을 부르면서 그 값을 검증하지 않았고, 아무것도 쥐지 않은 scope도 통과했을 것이다. step은 이제 `result`를
+  적을 수 있다. 계약 검사는 그것을 받아들이고, 생성된 함수는 다음 step 전에 그 값을 요구한다. PHP 시험은 그것을 함수
+  안의 단언으로 쓴다. sample의 세 case는 이제 scope가 쥔 것을 요구한다: commit 전과 예외 전의 대기 중인 항목, 중첩된
+  scope 안에서 본 바깥 scope의 항목, 바깥 scope에서 본 중첩된 scope의 항목이다(CK-22, GN-6ae). `packages/ts`의
+  `npm test`로 검증했고 함수 fixture의 시험은 통과한다.
+- Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
+  case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
+  때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,
+  G-4). `packages/ts`의 `npm test`로 검증했고 그 거부의 시험은 통과한다. 그 target으로 sample을 생성하는 시험 21개는
+  아직 member의 거부로 실패한다.
+- class `store`와 `scope`가 있는 계약의 생성된 PHP extension은 컴파일되지 않았다. 이름이 `scope`인 class의 변환이
+  class의 scope 안에서 property를 읽는 helper의 이름 `in_scope`를 가졌고, `machine`이 있는 method는 lock이 주는
+  borrow의 borrow를 clone하는 `Clone::clone(&*receiver)`를 코어에 주었으며, sample의 코어 경로는 `&self`를 받았다.
+  helper는 이제 `with_scope`이고, `machine`이 있는 method의 receiver는 `Clone::clone(receiver)`이며, sample 코어의
+  `Store::transaction`과 `Scope::nested`는 GN-6ae가 적는 대로 `self`를 받는다(GN-6h). sample의 `make e2e`에서 PHP
+  crate의 clippy가 E0428과 E0308로 실패하여 찾았고, sample의 `make e2e`의 PHP로 검증했다.
+- 생성된 시험은 함수 타입의 parameter가 있는 member를 실행하지 않았고, end-to-end sample의 계약에는 그런 member가
+  없었다. PHP 시험은 이제 함수 fixture의 함수를 쓴다. 그 step은 인자의 method를 호출하고, 함수는 결과를 돌려주거나
+  던진다. `raises: "callback"` case는 같은 예외 객체를 요구하고, `after`의 호출은 호출 뒤의 receiver를 관찰하며, callable이
+  아닌 값은 kind `invalid_callback`이어야 한다. case는 `passthrough` 값을 GN-13의 값으로 준다. `tests/e2e/sample`의
+  계약은 이제 `store`(`new`, `get`, `transaction`)와 `scope`(`put`, `get`, `nested`)를 가지며, `store.transaction`의
+  case는 셋이다. commit, 함수가 던진 뒤의 rollback, 중첩된 scope다(GN-6ae, CK-22). Python, Node, Go, WASM은 아직 이
+  member를 거부하므로, `packages/ts`의 `npm test`는 그 target으로 sample을 생성하는 시험 21개가 그 거부로 실패하고,
+  sample의 end-to-end 검사는 그 target을 실패로 이름한다. 각 target이 그 member를 생성할 때까지 그렇다.
+- `binding_core::Passthrough`는 `Send`였으므로 코어가 그것을 다른 스레드로 옮길 수 있었고, 거기서 버려지면 언어 코드의
+  스레드에 묶인 table의 release 함수가 불려 값이 table에 남았다. `Passthrough`는 이제 `Send`가 아니다(GN-6ae).
+  `docs/core-api.md`는 이제 crate에는 있고 문서에는 없던 `Passthrough`, `Step::Await`, `Machine::settle`,
+  `machine::drive`의 `awaited` 인자, `Next::Await`, `Driving::settle`을 적는다. `make test-rust`로 검증했다. 그
+  `tests/construct.rs`는 `Passthrough`를 다른 스레드로 보내는 crate가 컴파일되지 않을 것을 요구한다.
+- 계약 검사는 함수 타입의 값을 `{"function": [<행>]}`으로 읽었다. 이 형식은 어느 생성기도 쓰지 않았고 class 인자를 줄 수
+  없었으며, GN-6ae는 함수 fixture를 적는다. 검사는 이제 함수 fixture `{"function": {"calls": [<step>], "result" |
+  "raise"}}`만 읽는다. step `{"on", "call", "args"}`는 위치 `on`의 parameter의 class의 method를 정확히 그 parameter로
+  호출하고, step의 함수 타입 인자는 다시 fixture이며, `raise`는 `"exception"`이거나 함수가 인식하는 error unit이다. case는
+  `raises: "callback"`을 기대할 수 있고, 그러려면 `"exception"`을 던지는 fixture가 있어야 한다. method의 case는 `after`,
+  곧 receiver의 method 호출과 그 `result`를 적을 수 있다(CK-22, GN-6ae). 행 형식을 가진 계약이나 case 파일은 없었다.
+  `packages/ts`의 `npm test`로 검증했다.
+- PHP는 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. PHP 바인딩은 이제 그것을
+  생성한다. parameter는 `callable`을 받고(다른 값은 kind `invalid_callback`이다), 진입점은 그것으로 machine이 부르는
+  closure를 만들며 각 class 인자는 그 class의 새 인스턴스가 된다. callable이 돌려준 값은 그 `Passthrough`의 handle
+  아래 thread-local table에 쥐고, 코어가 버리면 놓으며, member의 결과로 그대로 돌려준다. callable의 예외는 `Raised`이고
+  호출자는 같은 객체를 받는다. driver는 기다리는 값을 곧바로 settle한다. stub은 `@param callable(<parameters>):
+  mixed`와 결과 `mixed`를 선언한다. Python, Node, Go, WASM은 여전히 그 member를 이름을 대고 거부한다(GN-6ae).
+  `packages/ts`의 `npm test`로 검증했다. 생성된 확장은 아직 컴파일하지 않았다. 모든 target이 생성하기 전에는 어느
+  end-to-end 레포의 계약도 그런 member를 갖지 않기 때문이다.
+- 함수 타입의 parameter와 결과 `passthrough`는 모든 member에서 "the type ... is not generated yet"로 거부되어, 그
+  거부는 규칙도 target도 대지 않았다. 이제 model은 그것을 `machine`이 있는 member에서만 받고, 함수가 `passthrough`를
+  돌려주기를 요구하며 그 parameter의 타입을 검사한다. 다른 member는 "a parameter of a function type is generated for a
+  member with machine only"나 "a result passthrough is generated for a member with machine only"로 거부하고, 각
+  target은 그것을 생성하기 전까지 그런 member를 "a parameter of a function type and a result passthrough are not
+  generated for <Target> yet"로 이름을 대고 거부한다(GN-6ae, G-4). `packages/ts`의 `npm test`로 확인했다.
+- 생성된 테스트 둘이 생성기 때문에 `tests/e2e/sample`의 `make e2e`에서 실패했다. Node 테스트 파일은 load되지 않았는데,
+  기다리는 block의 첫 테스트만 async 함수였고 K-2 테스트 `resolveSlowly lets the exception of a callback through`는
+  보통 함수에서 `await`를 썼기 때문이다. 또 호출을 기대하지 않는 fixture의 Go 테스트는 nil인 calls를 빈 slice와
+  `reflect.DeepEqual`로 비교했는데, 그것은 둘을 구별한다. 이제 Node block의 각 테스트는 기다릴 때 async이고, 호출을
+  기대하지 않는 Go fixture는 calls의 길이 0을 요구한다(GN-6m, G-5). `packages/ts`의 `npm test`와 sample의 `make
+  e2e`로 확인했다.
+- end-to-end sample에는 transaction의 코어가 없어서 어떤 case도 GN-6ae가 생성하는 것을 보일 수 없었다. 이제 sample
+  코어에는 clone들이 한 상태를 나누는 handle `Store`와 `Scope`가 있고, `Store::transaction`과 `Scope::nested`의 state
+  machine `Scoped`는 I/O future로 scope를 시작하고, driver의 스레드에서 함수를 부르고, `Step::Await`로 함수의 값을
+  기다리고, 값이 settle되면 I/O future로 보류 entry를 commit하며, 함수나 그 awaitable이 예외를 던지면 그것을 버린다.
+  아직 어느 target도 함수 parameter를 생성하지 않으므로 계약 member `store.transaction`, `scope.put/get/nested`와 그
+  case는 아직 더하지 않았다(결함 86). 이 branch의 binding_core에 대한 sample 코어의 `cargo clippy --all-targets`로
+  확인했다.
+- 두 결함이 더 `tests/e2e/sample`의 `make e2e`가 Node, WASM, Go의 테스트를 돌리지 못하게 했다. Node `Driven` 객체는
+  `Self`를 돌려주지 않는 함수 `new`로 만들어졌고(clippy `new_ret_no_self`), Go binding crate는 feature `fault-test`의
+  진입점 `_fault_left`만 쓰는 helper `out_list`를 dead code를 거부하는 feature 없는 build에도 지녔다. 이제 Node 함수는
+  `Driven::start`이고, 한 feature의 테스트 진입점만 쓰는 Go helper는 그런 각 feature의 `#[cfg(feature = ...)]`를
+  지닌다(GN-6ab, GN-15). `packages/ts`의 `npm test`와 sample의 `make e2e`로 확인했다.
+- `machine`이 있는 member를 가진 계약의 binding crate는 compile되지도 lint를 통과하지도 못해서, `tests/e2e/sample`의
+  `make e2e`는 모든 target에서 테스트가 돌기 전에 실패했다. PHP, Python, Go는 결과를 match하는 식이 block인 곳에서
+  machine을 만들었고(clippy `blocks_in_conditions`) 각 Io future를 `async move { io.await }`로 감쌌다(clippy
+  `redundant_async_block`). WASM 함수 `caught`는 `async move` block에서 `impl Future`를 돌려주었다(clippy
+  `manual_async_fn`). Node machine은 호출의 `Env`를 빌리는 callback struct를 소유했는데 `Driven` 객체는 그 호출보다 오래
+  산다(E0521). 이제 machine은 `drive` 호출의 임시 값이고, 각 Io future는 machine이 준 그대로, 계약이 fault를 적으면
+  `armed_future` 안에서 poll되며, `caught`는 `async fn`이고, machine이 소유하는 Node callback은 객체에 대한 napi 참조를
+  지니고 drop될 때 그것을 지우는 struct `Owned<Callback>`이다(GN-6ab). `packages/ts`의 `npm test`(그 WASM future
+  테스트는 rustc로 `caught`를 compile한다)와 sample의 `make e2e`로 확인했다.
+- 생성된 machine driver는 `machine::drive`에 함수 두 개를 주고 `Next::Await`를 match하지 않아서, passthrough 값을
+  기다리는 binding_core로는 어느 binding crate도 compile되지 않았다. 이제 PHP, Python, Go는 값을 바로 settle하는 함수
+  `|value| Ok(Ok(value))`를 `drive`에 주고, Node와 WASM은 함수 parameter가 없는 member의 `Next::Await`에 그 member를
+  적은 kind `internal`로 답한다. 코어는 binding이 준 값으로만 `Passthrough`를 만들기 때문이다. sample의 machine은
+  `settle`을 구현한다(GN-6ae). `make test-ts`로 확인했다.
+- binding_core에는 member의 machine이 함수에서 받아 그대로 돌려주는 언어 코드 값의 형식도, machine이 awaitable을
+  driver에 넘기는 step도 없어서, transaction의 machine은 함수의 값을 돌려줄 수도 async 함수를 기다릴 수도 없었다. 이제
+  binding_core에는 코어가 읽지 않고 옮기며 drop되면 handle을 binding의 해제 함수에 주는 binding table의 handle
+  `Passthrough`, `Step::Await(Passthrough)`, `Machine::settle(Result<Passthrough, Raised>)`, `Next::Await`,
+  `Driving::settle`이 있다. `machine::drive`는 기다린 각 값의 결과를 주는 세 번째 함수 `awaited`를 받고, 그 오류로
+  끝난다(GN-6ae). binding_core의 `cargo test --all-features`, `cargo test`와 그 clippy 실행으로 확인했다.
+- 언어 코드에 닿는 `wait: async_driver` method는 거부되어("a method with machine is not generated, because its machine
+  would borrow its receiver") orm의 `db.transaction`, `tx.savepoint`, `db.close`는 어느 target에서도 생성되지 않았다.
+  이제 그런 method는 receiver `&self`를 적고, 모든 target은 인스턴스 값의 clone `Clone::clone(&*receiver)`을 인자보다
+  앞에 값으로 코어 경로에 주므로, machine은 clone들이 한 상태를 나누는 handle을 소유한다. `binding check`는 machine이
+  있는 method의 다른 receiver를 보고한다(CK-69, GN-6ae). GN-6ae가 case의 함수 fixture와 함께 적는 함수 타입의
+  parameter, 결과 `passthrough`, 기다리는 `async_allowed` 함수는 아직 생성하지 않는다(결함 86). `packages/ts`에서
+  `npm test`로 확인했다.
+- end-to-end sample에는 예외를 던지는 callback의 계약 case가 없어서, callback을 받는 member가 언어 코드의 예외를 어떻게
+  다루는지는 각 target의 생성 테스트 K-2만 보였다. 이제 sample에는 `lookup.find`가 `Error::recognized`로 인식하는(U-3)
+  kind `refused`의 오류 unit `refused_error`가 있고, `sample.resolve_driven`의 case
+  `a_lookup_that_raises_a_recognized_error_refuses_the_key`에서는 lookup이 call에서 그 오류 unit을 던지므로, 모든
+  target이 machine에서 kind `refused`를 기대한다. `make test-ts`로 확인했고, target들은 `make e2e`에서 그 case를 실행한다.
+- WASM은 `wait: async_driver`인 모든 member와 `machine`인 member(GN-6ab)를 거부해서("wait async_driver is not generated
+  for WASM yet"), 그런 계약은 WASM 모듈을 생성하지 못했다. 이제 WASM은 `wasm_bindgen_futures::future_to_promise`의
+  promise를 돌려준다: 브라우저에서도 Node에서도 JavaScript의 event loop가 모듈의 스레드에서 future를 poll하며 tokio
+  runtime은 쓰지 않는다. WASM crate는 자기 `wasm-bindgen` 0.2.130과 `js-sys` 0.3.107의 release인 `wasm-bindgen-futures`
+  0.4.80에 의존하고 binding_core의 driver에는 의존하지 않는다(GN-6n). `machine`인 member는 `Driven` 객체를 돌려주며, 그
+  `advance()`는 그 스레드에서 machine의 call을 하고 기다림에는 `[false, promise]`를, 끝에는 `[true, result]`를 준다. ES
+  진입의 `drive`가 그것을 기다린 뒤 해제한다(GN-6ab). 그런 member의 ES 진입은 async 함수이고 선언은 `Promise`이며, 생성된
+  시험은 그것을 await한다. `tests/e2e/classes`는 future가 한 번 pending이고 tokio runtime이 필요 없는 `classes.settle`을
+  갖고, 단위 시험은 그 생성된 WASM 진입을 코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로
+  확인했다.
+- list parameter를 표의 타입으로 된 `Vec`으로 코어에 줘서, `&[usize]`, `&[u32]`나 더 좁은 정수의 tuple slice를 빌리는 코어는
+  컴파일되지 않았다. 이제 그런 list는 `IntoCore`를 거쳐 코어 항목 타입의 `Vec`으로 들어가고, 코어 호출은 `&values[..]`를
+  받는다. 코어 타입 밖의 항목은 kind `invalid_number`다(GN-6ad). Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `&[usize]`를
+  받는 `shapes.width_sum`과 `&[u32]`를 받는 `shapes.largest`를 갖고, 단위 시험은 그 fixture의 생성된 WASM 진입점을 그
+  코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로 확인했다.
+- PHP, Python, Node, WASM은 각 정수를 표의 타입(u64나 i64)으로 코어에 주고 결과는 u8, u16, u32에서만 넓혀서, `u32`,
+  `usize`, `[usize; 2]`를 받거나 `usize`를 돌려주는 코어는 컴파일되지 않았다. 이제 인자, record나 case의 field, tuple의
+  부분은 코어 호출이 대상을 정하는 `IntoCore`를 거쳐 코어에 들어간다: 정수는 `TryFrom`으로 좁히고 코어 타입 밖의 값은 kind
+  `invalid_number`이므로, 코어 `u32`와 wasm32의 `usize`에 대해 2^32를 거부한다. tuple은 Rust tuple이나 배열로 들어간다.
+  tuple 결과는 Rust tuple이나 배열에서 `partsN`으로 읽고, `usize`와 `isize`는 `const _: () = assert!(usize::BITS <= 64);`
+  뒤에 `as`로 넓힌다(GN-6ac). list parameter는 GN-6ad대로 넘기며, Go는 아직
+  바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`, `u32` parameter에 `[u32; 2]` 결과를 가진
+  `shapes.span_at`, 코어 struct가 `ends: [usize; 2]`와 `step: u32`를 가진 record `stride`를 받는 `shapes.stride_count`,
+  `u8` parameter에 `isize` 결과를 가진 `shapes.offset`을 갖는다. 2^32인 step과 256인 start는 kind `invalid_number`다.
+  GN-6ad의 컴파일 시험은 그들의 생성된 WASM 진입점을 코어와 함께 host와 wasm32에 대해 컴파일하며, 이 변경 전의 생성기에서는
+  실패한다. `packages/ts`의 `npm test`로 확인했다.
+- 기본값이 `{literal: null}`인 `optional` 타입의 case field를 거부해서("a field default of a case is not generated yet"),
+  template AST처럼 case에서 그런 field를 빼는 variant는 어떤 target도 생성하지 못했다. 이제 그런 field는 빠질 수 있고 빠지면
+  null이다: Python은 기본값 `None`인 dataclass field, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 선택적으로
+  선언하며, PHP는 생성자의 그 자리에서 null을 받는다. case 값은 그 키를 뺄 수 있다(GN-6v). case field의 그 밖의 기본값은
+  계속 이름으로 거부한다. `tests/e2e/variants`는 이 기본값을 가진 case `label`의 field `at`을 갖는다. `packages/ts`의
+  `npm test`로 확인했다.
+- Go는 tuple을 받는 member를 받았지만 PHP, Python, Node, WASM은 그것을 거부해서("no input conversion"), 그런 member를 가진
+  계약은 그 target들을 생성하지 못했다. 이제 tuple은 정확히 그 부분들로 된 열로 들어온다: Python `tuple`, Node와 WASM `Array`,
+  PHP list이고, 각 부분은 그 타입대로 바뀐다. 다른 값이나 항목 수가 다른 열은 kind `invalid_argument_type`이다(GN-6t).
+  `tests/e2e/shapes`는 tuple parameter, tuple의 list, 부분 타입이 다른 tuple인 `shapes.span_length`, `shapes.spans_total`,
+  `shapes.labelled`를 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/shapes`의 `make e2e`로 확인했다.
+- 생성기는 variant unit(T-9)과 `implements`를 가진 class unit을 거부해서, 둘 중 하나를 가진 계약은 어떤 target도 생성하지
+  않았다. 이제 variant는 그 `core_type`의 Rust enum이고 wildcard 없는 case의 match로 양방향으로 바뀐다. variant를 다시 담는
+  field는 상자에 담는다. 각 case는 Python dataclass, tag를 가진 Node·WASM 객체, variant의 interface를 구현하는 PHP final 클래스다
+  (GN-6v). 계약의 callback interface를 구현하는 class는 가진 값에 trait를 부르는 interface의 member를 갖고, 그 인스턴스는 case에서도
+  callback을 대신한다(GN-6w). Go는 둘을 이름으로 거부한다. `tests/e2e/variants`는 case `group`이 list, 상자, optional 상자에 figure를
+  담는 variant `figure`와 `tail`을 구현하는 class `ribbon`을 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/variants`의 `make e2e`로
+  확인했다.
+- 콜백을 받는 함수처럼 언어 코드에 닿는 `wait: async_driver` member는 "a member with wait async_driver that reaches
+  language code is not generated"로 거부되었다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
+  부르게 되기 때문이다. 이제 그런 member는 `core`에 `"machine": true`를 적고, 그 코어 경로는 I/O 없는 state machine인
+  `binding_core::machine::Machine`을 돌려준다. 그 단계는 언어 코드에 닿지 않는 I/O future, 언어 코드의 call, 결과다.
+  PHP는 호출 스레드에서 machine을 돌리고, Python `<name>`은 각 기다림을 GIL 밖에서 하며 machine을 돌리고 `a<name>`은
+  `<name>`을 `asyncio.to_thread`에서 돌린다. Node는 JavaScript 진입이 진행시키는 `Driven` 객체를 돌려주며, 각 call은
+  JavaScript 스레드에서, 각 기다림은 napi의 tokio runtime에서 한다. `binding check`는 `machine`이 없는 그런 member와 다른
+  member의 `machine`을 보고한다(CK-68). Go는 C ABI 호출 안에서 호출 스레드로 machine을 돌리며, 각 기다림은 block하고 각
+  callback은 cgo로 부른다. machine은 인자를 값으로 받으므로, 생성 코드는 class parameter를 그 값의 clone으로 넘긴다.
+  생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method와 그런 member의 기본값이 있는 parameter를 거부한다(GN-6ab). end-to-end sample에 `sample.resolve_driven`을
+  더했다. 그 machine은 I/O 단계, lookup의 call, 그 결과를 지나며, case는 찾은 key, 없는 key, 읽기가 실패한 경우다.
+  lookup이 던지는 경우는 callback을 받는 각 member의 생성 테스트다. `make test-ts`와 `make test-rust`로 확인했고,
+  `tests/machine.rs`는 `drive`와 `Driving`으로 machine을 돌린다.
+- 코어 함수가 `Result<String, Error>`를 돌려주는 `partial_target_error.removal_kind` 같은 `raises`가 있는 오류 unit의
+  property와, 오류의 trace 같은 타입 `list<text>`의 property는 "a property of an error unit that raises is not generated
+  yet"와 "a property of an error unit of type {\"list\":\"text\"} is not generated yet"로 거부되어, 그런 계약의 어떤
+  대상도 생성되지 않았다. 이제 모든 대상이 둘 다 생성한다. 생성 코드는 오류를 만들 때 모든 property를 읽으므로, raise하는
+  property의 `Err`는 코어가 돌려준 오류 대신 그 자신의 kind의 오류로 일어나고, `list<text>` property는 문자열 list다.
+  kind가 아니거나 그 class가 raise하는 property를 가진 property `raises`의 변형은 이름을 대어 거부한다(GN-7a). `packages/ts`에서
+  `npm test`와 `npm run typecheck`로 확인했다.
+- 생성된 PHP 오류 클래스의 어떤 생성자도 kind를 받지 않아서, PHP 코드는 category 클래스의 scope에서 private 속성 `kind`를
+  적어야만 kind를 가진 오류를 만들 수 있었고, 그것은 공개 API가 아니며 raise 행의 fixture가 그렇게 했다. 이제 모든 category
+  클래스는 공개 생성자 `__construct(string $message, string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든
+  오류 unit이 이를 상속하고, raise 행의 fixture는 Python·Node·WASM처럼 그것으로 오류를 만든다(GN-10, GN-13). `packages/ts`에서
+  `npm test`와 `npm run typecheck`로 확인했다.
+- callback fixture에 raise 행이 있는 case(없는 파일을 알리는 loader 같은)는 "a raise row of a callback fixture is not
+  generated yet"로 거부되었다. 이제 모든 target의 fixture가 그런 행에서 그 행의 오류 unit 인스턴스를 언어 코드가 만들듯이
+  kind와 메시지 `G-5: <kind>`로 만들어 던진다. Go는 `internal/binding`의 `Raised<Unit>`로 만든다(GN-13). `packages/ts`에서
+  `npm test`로 확인했다.
+- `errors.recognize`가 있는 callback member(없는 파일을 알리는 loader의 `file_loader.load` 같은)는 "recognized callback errors
+  are not generated yet"로 거부되어 그런 계약의 target은 생성되지 않았다. 이제 member의 예외가 recognize한 오류 unit의
+  인스턴스이고 그 unit 행의 kind를 가지면 코어에 그 kind로 간다. `errors.recognized`가 kind의 값과 메시지로 코어 오류를 만드는
+  코어 함수를 적고, Python·Node·PHP·WASM·Go가 인스턴스의 kind와 메시지를 읽는다. 그 밖의 예외는 같은 객체로 호출자에게
+  돌아간다. `binding check`는 callback이 자기 오류 unit을 recognize하는데 `errors.recognized`가 없는 계약을 보고하고(CK-17),
+  생성기는 다른 라이브러리의 unit을 recognize하는 것을 이름을 대어 거부한다(GN-6d). `packages/ts`에서 `npm test`로 확인했다.
+- class parameter는 늘 코어에 공유 빌림(`&guard`)을 주었다. 그래서 `&mut Form`을 받는 코어는 컴파일되지 않았고, class를 값으로
+  받는 코어는 값을 받지 못했다. 이제 generated class나 그 optional인 모든 parameter는 코어의 빌림을 `core`에 적는다(`&`, `&mut`,
+  `value`). `&mut`는 쓰기 쪽 자리이고, `value`는 읽기 guard 아래의 복제를 주며, 모든 crate는 그런 member의 빌림을 코어 경로의
+  fn pointer 타입으로 단언한다. `binding check`는 `core`가 없는 class parameter와 class가 아닌 parameter의 `core`를 보고하고
+  (CK-67), 생성기는 둘 다와 optional class의 빌림을 이름을 대어 거부한다(GN-6h). `tests/e2e/classes`와 `tests/e2e/sample`의
+  계약은 class parameter의 빌림 `&`를 적는다. `packages/ts`에서 `npm test`로 확인했다.
+- 코어 오류가 code enum을 담은 구조체(`FormError { code: FormErrorCode, .. }` 같은)인 계약은 `errors.kinds`에 code의 variant를
+  적었다. code의 variant가 의존 레포의 code를 담으면 생성기는 "the kinds name 2 error enums"로 거부했고, 아니면 code의 variant에
+  대해 `match error`를 써서 컴파일되지 않았다. 이제 `errors.code`가 오류의 타입과 code로 가는 투영을 적고, 모든 crate가 code를
+  match하고 단언한다(`match <투영>(&error)`). 다른 enum의 값을 담은 variant는 `<바깥>/<안쪽>`으로 적고 `Outer(Inner { .. })`로
+  match한다(GN-7b). `packages/ts`에서 `npm test`로 확인했다.
 - `.github/workflows/ci.yml`의 job `e2e`가 `tests/e2e/relay`의 의존으로 checkout에 없는 디렉터리 `tests/e2e/json`을
   적었다. relay의 코어가 json 레포에 의존하기 때문이며, 그 항목은 실패할 수밖에 없었다. 이제 job은 코어가 `tests/e2e`의
   레포에만 의존하는 계약을 실행하고, `tests/e2e` 밖 레포의 release tag를 기다리는 계약은 `tests/e2e/not-in-ci.json`이
@@ -554,16 +957,6 @@
   예외는 `Raised`로 코어에 간다(GN-6z). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
   거부한다. callback member와 함수 타입은 빌린 parameter의 규칙 하나를 함께 쓴다(T-1). `packages/ts`의 `npm test`로
   확인했다.
-- WASM은 `wait: async_driver`인 모든 member와 `machine`인 member(GN-6ab)를 거부해서("wait async_driver is not generated
-  for WASM yet"), 그런 계약은 WASM 모듈을 생성하지 못했다. 이제 WASM은 `wasm_bindgen_futures::future_to_promise`의
-  promise를 돌려준다: 브라우저에서도 Node에서도 JavaScript의 event loop가 모듈의 스레드에서 future를 poll하며 tokio
-  runtime은 쓰지 않는다. WASM crate는 자기 `wasm-bindgen` 0.2.130과 `js-sys` 0.3.107의 release인 `wasm-bindgen-futures`
-  0.4.80에 의존하고 binding_core의 driver에는 의존하지 않는다(GN-6n). `machine`인 member는 `Driven` 객체를 돌려주며, 그
-  `advance()`는 그 스레드에서 machine의 call을 하고 기다림에는 `[false, promise]`를, 끝에는 `[true, result]`를 준다. ES
-  진입의 `drive`가 그것을 기다린 뒤 해제한다(GN-6ab). 그런 member의 ES 진입은 async 함수이고 선언은 `Promise`이며, 생성된
-  시험은 그것을 await한다. `tests/e2e/classes`는 future가 한 번 pending이고 tokio runtime이 필요 없는 `classes.settle`을
-  갖고, 단위 시험은 그 생성된 WASM 진입을 코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로
-  확인했다.
 - 콜백을 받는 함수처럼 언어 코드에 닿는 `wait: async_driver` member는 "a member with wait async_driver that reaches
   language code is not generated"로 거부되었다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
   부르게 되기 때문이다. 이제 그런 member는 `core`에 `"machine": true`를 적고, 그 코어 경로는 I/O 없는 state machine인
@@ -574,39 +967,6 @@
   member의 `machine`을 보고한다(CK-68). 생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method를 거부하고, Go와
   WASM은 `async_driver`인 모든 member와 함께 이를 거부한다(GN-6ab). `make test-ts`와 `make test-rust`로 확인했고,
   `tests/machine.rs`는 `drive`와 `Driving`으로 machine을 돌린다.
-- 코어 함수가 `Result<String, Error>`를 돌려주는 `partial_target_error.removal_kind` 같은 `raises`가 있는 오류 unit의
-  property와, 오류의 trace 같은 타입 `list<text>`의 property는 "a property of an error unit that raises is not generated
-  yet"와 "a property of an error unit of type {\"list\":\"text\"} is not generated yet"로 거부되어, 그런 계약의 어떤
-  대상도 생성되지 않았다. 이제 모든 대상이 둘 다 생성한다. 생성 코드는 오류를 만들 때 모든 property를 읽으므로, raise하는
-  property의 `Err`는 코어가 돌려준 오류 대신 그 자신의 kind의 오류로 일어나고, `list<text>` property는 문자열 list다.
-  kind가 아니거나 그 class가 raise하는 property를 가진 property `raises`의 변형은 이름을 대어 거부한다(GN-7a). `packages/ts`에서
-  `npm test`와 `npm run typecheck`로 확인했다.
-- 생성된 PHP 오류 클래스의 어떤 생성자도 kind를 받지 않아서, PHP 코드는 category 클래스의 scope에서 private 속성 `kind`를
-  적어야만 kind를 가진 오류를 만들 수 있었고, 그것은 공개 API가 아니며 raise 행의 fixture가 그렇게 했다. 이제 모든 category
-  클래스는 공개 생성자 `__construct(string $message, string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든
-  오류 unit이 이를 상속하고, raise 행의 fixture는 Python·Node·WASM처럼 그것으로 오류를 만든다(GN-10, GN-13). `packages/ts`에서
-  `npm test`와 `npm run typecheck`로 확인했다.
-- callback fixture에 raise 행이 있는 case(없는 파일을 알리는 loader 같은)는 "a raise row of a callback fixture is not
-  generated yet"로 거부되었다. 이제 모든 target의 fixture가 그런 행에서 그 행의 오류 unit 인스턴스를 언어 코드가 만들듯이
-  kind와 메시지 `G-5: <kind>`로 만들어 던진다. Go는 `internal/binding`의 `Raised<Unit>`로 만든다(GN-13). `packages/ts`에서
-  `npm test`로 확인했다.
-- `errors.recognize`가 있는 callback member(없는 파일을 알리는 loader의 `file_loader.load` 같은)는 "recognized callback errors
-  are not generated yet"로 거부되어 그런 계약의 target은 생성되지 않았다. 이제 member의 예외가 recognize한 오류 unit의
-  인스턴스이고 그 unit 행의 kind를 가지면 코어에 그 kind로 간다. `errors.recognized`가 kind의 값과 메시지로 코어 오류를 만드는
-  코어 함수를 적고, Python·Node·PHP·WASM·Go가 인스턴스의 kind와 메시지를 읽는다. 그 밖의 예외는 같은 객체로 호출자에게
-  돌아간다. `binding check`는 callback이 자기 오류 unit을 recognize하는데 `errors.recognized`가 없는 계약을 보고하고(CK-17),
-  생성기는 다른 라이브러리의 unit을 recognize하는 것을 이름을 대어 거부한다(GN-6d). `packages/ts`에서 `npm test`로 확인했다.
-- class parameter는 늘 코어에 공유 빌림(`&guard`)을 주었다. 그래서 `&mut Form`을 받는 코어는 컴파일되지 않았고, class를 값으로
-  받는 코어는 값을 받지 못했다. 이제 generated class나 그 optional인 모든 parameter는 코어의 빌림을 `core`에 적는다(`&`, `&mut`,
-  `value`). `&mut`는 쓰기 쪽 자리이고, `value`는 읽기 guard 아래의 복제를 주며, 모든 crate는 그런 member의 빌림을 코어 경로의
-  fn pointer 타입으로 단언한다. `binding check`는 `core`가 없는 class parameter와 class가 아닌 parameter의 `core`를 보고하고
-  (CK-67), 생성기는 둘 다와 optional class의 빌림을 이름을 대어 거부한다(GN-6h). `tests/e2e/classes`와 `tests/e2e/sample`의
-  계약은 class parameter의 빌림 `&`를 적는다. `packages/ts`에서 `npm test`로 확인했다.
-- 코어 오류가 code enum을 담은 구조체(`FormError { code: FormErrorCode, .. }` 같은)인 계약은 `errors.kinds`에 code의 variant를
-  적었다. code의 variant가 의존 레포의 code를 담으면 생성기는 "the kinds name 2 error enums"로 거부했고, 아니면 code의 variant에
-  대해 `match error`를 써서 컴파일되지 않았다. 이제 `errors.code`가 오류의 타입과 code로 가는 투영을 적고, 모든 crate가 code를
-  match하고 단언한다(`match <투영>(&error)`). 다른 enum의 값을 담은 variant는 `<바깥>/<안쪽>`으로 적고 `Outer(Inner { .. })`로
-  match한다(GN-7b). `packages/ts`에서 `npm test`로 확인했다.
 - receiver나 parameter가 class인 `wait: async_driver`
   WASM member는 guard의 참조를 future 밖에서 묶었는데, future는 그 guard를 소유하지 않는다. 이제 Node의 future처럼 future가
   guard를 소유하고 참조를 그 안에서 묶는다(GN-6h, GN-6n). case의 함수 값의 행은 값이 넷이고 callback fixture의 행은
@@ -1144,40 +1504,6 @@
   entry로 읽는다. 코어 값은 owner 패키지를 통해 `out` 행의 static과 constructor member로 만든다. owner의 `in`과 `out` 함수가
   유일한 변환이다(GN-6x). Go는 GN-15c의 호출에 아직 인스턴스의 꼴이 없으므로 이름으로 거절하고, 그 함수가 없는 다른 레포의
   값 class도 이름으로 거절한다. `make test-ts`로 검증했다(300개 통과).
-- list parameter를 표의 타입으로 된 `Vec`으로 코어에 줘서, `&[usize]`, `&[u32]`나 더 좁은 정수의 tuple slice를 빌리는 코어는
-  컴파일되지 않았다. 이제 그런 list는 `IntoCore`를 거쳐 코어 항목 타입의 `Vec`으로 들어가고, 코어 호출은 `&values[..]`를
-  받는다. 코어 타입 밖의 항목은 kind `invalid_number`다(GN-6ad). Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `&[usize]`를
-  받는 `shapes.width_sum`과 `&[u32]`를 받는 `shapes.largest`를 갖고, 단위 시험은 그 fixture의 생성된 WASM 진입점을 그
-  코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로 확인했다.
-- PHP, Python, Node, WASM은 각 정수를 표의 타입(u64나 i64)으로 코어에 주고 결과는 u8, u16, u32에서만 넓혀서, `u32`,
-  `usize`, `[usize; 2]`를 받거나 `usize`를 돌려주는 코어는 컴파일되지 않았다. 이제 인자, record나 case의 field, tuple의
-  부분은 코어 호출이 대상을 정하는 `IntoCore`를 거쳐 코어에 들어간다: 정수는 `TryFrom`으로 좁히고 코어 타입 밖의 값은 kind
-  `invalid_number`이므로, 코어 `u32`와 wasm32의 `usize`에 대해 2^32를 거부한다. tuple은 Rust tuple이나 배열로 들어간다.
-  tuple 결과는 Rust tuple이나 배열에서 `partsN`으로 읽고, `usize`와 `isize`는 `const _: () = assert!(usize::BITS <= 64);`
-  뒤에 `as`로 넓힌다(GN-6ac). list parameter는 GN-6ad대로 넘기며, Go는 아직
-  바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`, `u32` parameter에 `[u32; 2]` 결과를 가진
-  `shapes.span_at`, 코어 struct가 `ends: [usize; 2]`와 `step: u32`를 가진 record `stride`를 받는 `shapes.stride_count`,
-  `u8` parameter에 `isize` 결과를 가진 `shapes.offset`을 갖는다. 2^32인 step과 256인 start는 kind `invalid_number`다.
-  GN-6ad의 컴파일 시험은 그들의 생성된 WASM 진입점을 코어와 함께 host와 wasm32에 대해 컴파일하며, 이 변경 전의 생성기에서는
-  실패한다. `packages/ts`의 `npm test`로 확인했다.
-- 기본값이 `{literal: null}`인 `optional` 타입의 case field를 거부해서("a field default of a case is not generated yet"),
-  template AST처럼 case에서 그런 field를 빼는 variant는 어떤 target도 생성하지 못했다. 이제 그런 field는 빠질 수 있고 빠지면
-  null이다: Python은 기본값 `None`인 dataclass field, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 선택적으로
-  선언하며, PHP는 생성자의 그 자리에서 null을 받는다. case 값은 그 키를 뺄 수 있다(GN-6v). case field의 그 밖의 기본값은
-  계속 이름으로 거부한다. `tests/e2e/variants`는 이 기본값을 가진 case `label`의 field `at`을 갖는다. `packages/ts`의
-  `npm test`로 확인했다.
-- Go는 tuple을 받는 member를 받았지만 PHP, Python, Node, WASM은 그것을 거부해서("no input conversion"), 그런 member를 가진
-  계약은 그 target들을 생성하지 못했다. 이제 tuple은 정확히 그 부분들로 된 열로 들어온다: Python `tuple`, Node와 WASM `Array`,
-  PHP list이고, 각 부분은 그 타입대로 바뀐다. 다른 값이나 항목 수가 다른 열은 kind `invalid_argument_type`이다(GN-6t).
-  `tests/e2e/shapes`는 tuple parameter, tuple의 list, 부분 타입이 다른 tuple인 `shapes.span_length`, `shapes.spans_total`,
-  `shapes.labelled`를 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/shapes`의 `make e2e`로 확인했다.
-- 생성기는 variant unit(T-9)과 `implements`를 가진 class unit을 거부해서, 둘 중 하나를 가진 계약은 어떤 target도 생성하지
-  않았다. 이제 variant는 그 `core_type`의 Rust enum이고 wildcard 없는 case의 match로 양방향으로 바뀐다. variant를 다시 담는
-  field는 상자에 담는다. 각 case는 Python dataclass, tag를 가진 Node·WASM 객체, variant의 interface를 구현하는 PHP final 클래스다
-  (GN-6v). 계약의 callback interface를 구현하는 class는 가진 값에 trait를 부르는 interface의 member를 갖고, 그 인스턴스는 case에서도
-  callback을 대신한다(GN-6w). Go는 둘을 이름으로 거부한다. `tests/e2e/variants`는 case `group`이 list, 상자, optional 상자에 figure를
-  담는 variant `figure`와 `tail`을 구현하는 class `ribbon`을 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/variants`의 `make e2e`로
-  확인했다.
 - Python, Node, WASM의 host는 이 계약의 값 class(`core_type`이 없는 class, 또는 값 alias의 `in` 행이 이름하는 class)의
   인스턴스를 읽었고, 같은 계약 안의 다른 레포 값 class의 인스턴스를 담을 형태가 없었다.
   이제 host 하나가 둘을 모두 갖는다. 이 계약의 class의 인스턴스는 읽기의 번호와 함께 `Held::Value`로, 다른 레포의

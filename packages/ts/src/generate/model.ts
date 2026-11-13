@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, innerVariant, outerVariant, variantPattern } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, outerVariant, variantPattern } from '../contract.ts';
 import { convert, sameName } from '../names.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
@@ -499,7 +499,12 @@ export function collectModel(
       // state machine; a machine that borrowed its receiver across its steps would borrow from the guard of the driver.
       if (reachesCode && member.wait === 'async_driver') {
         if (typeof member.core !== 'object' || member.core.machine !== true) throw new Unsupported(`${member.id}: a member with wait async_driver that reaches language code names machine: true in its core (GN-6ab, CK-68)`);
-        if (kind === 'method') throw new Unsupported(`${member.id}: a method with machine is not generated, because its machine would borrow its receiver (GN-6ab)`);
+        // GN-6ae, CK-69: a method with machine gives the core a clone of the value of its instance.
+        if (kind === 'method' && typeof member.core === 'object' && member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a method with machine names the receiver &self (GN-6ae, CK-69)`);
+        for (const p of member.parameters ?? []) {
+          if (p.default !== undefined) throw new Unsupported(`${member.id}.${p.name.join('_')}: a parameter with a default of a member with machine is not generated yet (GN-6ab)`);
+          if (p.core !== undefined && p.core !== 'value') throw new Unsupported(`${member.id}.${p.name.join('_')}: a machine owns its arguments, so a class parameter of a member with machine takes the borrow value (GN-6ab)`);
+        }
       }
     }
     const core = member.core;
@@ -535,6 +540,18 @@ export function collectModel(
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true, units) });
         continue;
       }
+      // GN-6ae: a parameter of a function type whose function returns passthrough belongs to a member with machine;
+      // the core moves that value without reading it. Any other function type is a value of GN-6z.
+      // A function of a member with machine that returns another type is refused by name: the machine owns its function
+      // and settles what it returned as a Passthrough, which GN-6z does not make.
+      if (typeof type === 'object' && 'function' in type && !machineFunction(type) && reachesCode && member.wait === 'async_driver') throw new Unsupported(`${where}: a function parameter of a member with machine returns passthrough (GN-6ae)`);
+      if (machineFunction(type)) {
+        if (!(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${where}: a parameter of a function type that returns passthrough is generated for a member with machine only (GN-6ae)`);
+        if (type.function.errors !== undefined) throw new Unsupported(`${where}: the recognized errors of a function parameter are not generated yet (GN-6ae)`);
+        for (const [i, part] of type.function.parameters.entries()) supportedType(part, units, `${where} parameter ${i}`, foreign);
+        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
+        continue;
+      }
       // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
       const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
       // T-1: a source is taken as a parameter, or an optional one.
@@ -553,13 +570,16 @@ export function collectModel(
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
     const isForeignCallback = (type: Type): boolean => typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallbacks.some((c) => c.unit.id === type.unit && c.library === type.library);
-    // E-1c: a member that calls language code, a callback or a function (GN-6z), fails with the core error or with
+    // E-1c: a member that calls language code, a callback or a function (GN-6z, GN-6ae), fails with the core error or with
     // what that code raised.
     const takesCallback = args.some((a) => holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
-    if (returns !== 'never') supportedType(returns, units, `${member.id} returns`, foreign);
+    // GN-6ae: a result passthrough is the value that a function of the machine returned.
+    const passes = typeof returns === 'object' && 'passthrough' in returns;
+    if (passes && !(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${member.id}: a result passthrough is generated for a member with machine only (GN-6ae)`);
+    if (returns !== 'never' && !passes) supportedType(returns, units, `${member.id} returns`, foreign);
     let yields: Fn['yields'];
     if (kind === 'iterate') {
       const given = member.yields;
@@ -1212,6 +1232,8 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
+    // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
+    if (typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
     return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
@@ -1342,6 +1364,13 @@ export function holdsCallback(units: ReadonlyMap<string, Unit>, type: Type): boo
   return 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
 }
 
+// GN-6ae: whether a type is a function type whose function returns passthrough, the function parameter of a member
+// with machine; any other function type is a value of GN-6z.
+export type MachineFunction = { function: { parameters: Type[]; returns: { passthrough: string }; async_allowed?: boolean; errors?: { recognize: UnitRef[]; reason: string } } };
+export function machineFunction(type: Type): type is MachineFunction {
+  return typeof type === 'object' && 'function' in type && typeof type.function.returns === 'object' && 'passthrough' in type.function.returns;
+}
+
 // GN-6z: whether a type holds a function type, at any place of a list, an optional, a map or a tuple.
 export function holdsFunction(type: Type): boolean {
   if (typeof type === 'string') return false;
@@ -1354,14 +1383,16 @@ export function holdsFunction(type: Type): boolean {
   return false;
 }
 
-// GN-6z: whether a member of the contract takes a function type.
+// GN-6z: whether a member of the contract takes a function type that the core may keep; the function of a member with
+// machine (GN-6ae) is no such value, so it brings none of the helpers of GN-6z.
 export function takesFunction(model: Model): boolean {
-  return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+  return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
 }
 
-// U-3: whether a contract has a callback or a function type, whose call keeps what the language code threw.
+// U-3: whether a contract has a callback or a function type, of GN-6z or of GN-6ae, whose call keeps what the language
+// code threw.
 export function keepsThrown(model: Model): boolean {
-  return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || takesFunction(model);
+  return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
 
 // GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
@@ -1408,10 +1439,19 @@ export const unitOf = (model: Model, type: Type): Unit | undefined => {
 // The library that owns a unit type, undefined for this contract's own (T-3).
 export const libraryOf = (type: Type): string | undefined => (typeof type === 'object' && 'unit' in type ? type.library : undefined);
 
-// The Rust name of the conversion helpers of a record: in_<name> and out_<name>; a record of another repository is
-// prefixed with its library, so that two libraries' records of one name do not meet.
-export const recordFn = (unit: { name: Name }, library?: string): string =>
-  library === undefined ? rustField(unit.name) : `${library.replaceAll('-', '_')}_${rustField(unit.name)}`;
+// The snake_case name of a unit in the names of its conversions, in_<name> and out_<name>.
+export const recordFn = (unit: { name: Name }): string => rustField(unit.name);
+
+// GN-4c: the module of a generated crate that holds the conversions of the units of another library. The path names
+// the library and the unit apart, so the unit a_b of the library c and the unit b of the library c_a share no name,
+// and neither shares one with an own unit c_a_b. The module states its family first, as a function does, because a
+// library takes any name, also std, core or the name of a crate that the generated code uses.
+export const libraryModule = (library: string): string => `library_${library.replaceAll('-', '_')}`;
+
+// GN-4c: the path, from any module of the crate, of a function of a family (in, out, make) of a unit: the function
+// itself for an own unit, and the function of the module of its library for a unit of another library.
+export const unitFn = (family: string, unit: { name: Name }, library?: string): string =>
+  library === undefined ? `${family}_${recordFn(unit)}` : `${libraryModule(library)}::${family}_${recordFn(unit)}`;
 
 const RUST_KEYWORDS = new Set([
   'as', 'break', 'const', 'continue', 'crate', 'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
@@ -1441,6 +1481,14 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 // parameter is the record that the expanded fields built (T-4).
 export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
   const held = places(model, fn);
+  // GN-6ab: a state machine owns its arguments, so the core takes each by value, a class by the clone of its value.
+  if (fn.machine === true) {
+    const owned = fn.params.map((p) => (held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
+    if (fn.receiver === undefined) return owned;
+    // GN-6ae: the receiver is a clone of the value of the instance, a handle whose clones share one state.
+    // GN-6h: the receiver of a class with a lock is the borrow of the value that its guard holds.
+    return [held.some((h) => h.param === undefined) ? `Clone::clone(${RECEIVER_GUARD})` : `Clone::clone(&*${receiver})`, ...owned];
+  }
   const args = fn.params.map((p) => {
     // GN-6aa: a record that holds a callback moves into the core.
     if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && unitOf(model, a.type)?.origin === 'callback') ? rustField(p.name) : `&${rustField(p.name)}`;
@@ -1514,12 +1562,18 @@ export function futureOf(model: Model, fn: Fn, body: string): string {
 
 // GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
 // gives the form of the wait around block_on, and failed the conversion of a BindingError. GN-6ab: the core call of a
-// member with machine makes the machine, and drive makes its calls on the calling thread and waits for each of its
-// futures in the same form.
-export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string): string =>
+// member with machine makes the machine, a temporary of the call of drive, and drive makes its calls on the calling
+// thread and waits for each of its futures in the same form. GN-6ae: awaited gives the outcome of a value that a function of the machine returned; PHP
+// and Go have no awaitable, so they settle the value at once.
+export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string, awaited = '|value| Ok(Ok(value))'): string =>
   fn.machine === true
-    ? `{\n            let mut machine = ${core};\n            binding_core::machine::drive(&mut machine, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, 'io.await')}))`)})).map_err(${failed})?\n        }`
+    ? `binding_core::machine::drive(&mut ${core}, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${model.faults.length === 0 ? 'io' : `armed_future(${JSON.stringify(fn.member.id)}, io)`}))`)}), ${awaited}).map_err(${failed})?`
     : `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
+
+// GN-6ae: the arm of an awaited value of a machine that Node or WASM advances, for a member without a function
+// parameter: the core makes a Passthrough only from a value that the binding gave it, so such a machine awaits none.
+export const awaitsNone = (fn: Fn): string =>
+  `binding_core::machine::Next::Await(_value) => Err(binding_error(BindingError::Internal { detail: String::from(${JSON.stringify(`GN-6ae: ${fn.member.id} awaits no value of language code`)}) })),`;
 
 // GN-6n: the end of the future of a member with wait async_driver on the calling thread: a runtime that cannot be made,
 // or a panic of a poll, is a failure of kind internal (B-7).
@@ -1554,7 +1608,9 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+    // class that a function type names does not come in by it.
+    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
@@ -1842,13 +1898,26 @@ export function aliasKindsRust(model: Model): string {
   return asserts.length === 0 ? '' : `\n/// U-7, I-2: the kinds of in_raises are variants of the error of the alias's in function.\n${asserts.join('\n')}\n`;
 }
 
-// The Rust name of the conversions of a value alias, in_<name> and out_<name>: another repository's is prefixed with its
-// library, as its records are (recordFn).
-export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit, alias.library);
+// The name of a value alias in the names of its conversions, in_<name>, out_<name> and make_<name>, which are functions
+// of the module of its library when the alias is of another library (unitFn).
+export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit);
+
+// GN-4c: the conversions of the units of other libraries, as the blocks of usedHelpers: the text of the records and
+// of the value aliases of each library under the name of its module.
+export function libraryBlocks(model: Model, record: (unit: Unit, library: string) => string, alias: (alias: ValueAlias) => string): Record<string, string> {
+  const blocks: Record<string, string> = {};
+  const add = (library: string, text: string): void => {
+    const module = libraryModule(library);
+    blocks[module] = blocks[module] === undefined ? text : `${blocks[module]}\n${text}`;
+  };
+  for (const r of model.foreignRecords) add(r.library, record(r.unit, r.library));
+  for (const a of model.aliases) if (a.library !== undefined) add(a.library, alias(a));
+  return blocks;
+}
 
 // U-7 (a'): the Rust name of the function that turns a failure of the `in` of a library's alias into the language error.
 export const aliasFailureFn = (alias: ValueAlias): string =>
-  alias.library === undefined ? 'failure_error' : `${alias.library.replaceAll('-', '_')}_failure_error`;
+  alias.library === undefined ? 'failure_error' : `failure_of_${alias.library.replaceAll('-', '_')}`;
 
 // The value aliases of other repositories, one per library: the first of each names the library's error enum.
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>

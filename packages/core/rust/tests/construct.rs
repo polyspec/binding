@@ -88,3 +88,19 @@ fn a_crate_with_the_feature_makes_tokens() -> Result<(), String> {
     assert!(success, "the generated crate did not compile:\n{stderr}");
     Ok(())
 }
+
+const SENDS_PASSTHROUGH: &str =
+    "fn sent<T: Send>() {}\n\npub fn send() {\n    sent::<binding_core::Passthrough>();\n}\n";
+
+/// GN-6ae: the table of a binding is bound to its thread, so a `Passthrough` does not leave the thread that made it.
+#[test]
+fn a_passthrough_is_not_sent_to_another_thread() -> Result<(), String> {
+    let root = write_crate("sends_passthrough", ", features = [\"construct\"]", SENDS_PASSTHROUGH)?;
+    let (success, stderr) = check(&root)?;
+    assert!(!success, "a crate that sends a Passthrough to another thread compiled");
+    assert!(
+        stderr.contains("error[E0277]") && stderr.contains("cannot be sent between threads safely"),
+        "the build failed for another reason:\n{stderr}"
+    );
+    Ok(())
+}

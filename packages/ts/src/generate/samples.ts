@@ -7,7 +7,7 @@ import type { Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -45,9 +45,26 @@ export interface Context {
   foreignValue?: (library: string, unit: Unit, member: Member) => string;
   // GN-13e: the steps that make a deep case value in local variables (Python), at the depth of the values in making.
   steps?: Steps | undefined;
+  // GN-6ae: how the generated test writes the function of a function fixture.
+  machineFunctionNew?: (fixture: FunctionFixture) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
 }
+
+// GN-6ae: a function fixture as its language writes it: each step calls the method `fn` on the argument at the position
+// `on` with the arguments `args`, already in the language, and requires the value `expected` of the call when the step
+// names a result (CK-22); the function then returns `result`, raises the instance of an error unit `raise`, or raises
+// the exception of the language that the test of the case holds.
+export interface FunctionFixture {
+  parameters: number;
+  // CK-22: the function returns an awaitable, in a language that has one.
+  awaits: boolean;
+  steps: { on: number; fn: Fn; args: string; expected?: { text: string } | { refused: string } }[];
+  end: { result: string } | { raise: string } | { exception: true };
+}
+
+// GN-6ae: the message of the exception and of the error that a function fixture raises.
+export const FIXTURE_RAISED = 'raised by the function of the case';
 
 // GN-13e: bind gives a value that reaches the bound of nesting a local variable and returns its name; done ends the
 // whole value, in a function of the module when a step was bound; drop forgets the steps of a value that failed.
@@ -71,6 +88,8 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     return table[ctx.lang][type] ?? 'null';
   }
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
+  // GN-6ae: a function that makes no step and returns no value.
+  if (machineFunction(type) && ctx.machineFunctionNew !== undefined) return ctx.machineFunctionNew({ parameters: type.function.parameters.length, awaits: false, steps: [], end: { result: ctx.lang === 'python' ? 'None' : 'null' } });
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   // GN-6z: a function that returns the placeholder of its return type, whatever its arguments.
@@ -216,6 +235,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     throw new Unsupported(`no case value of the type ${type}`);
   }
   if ('optional' in type) return fromJson(model, ctx, type.optional, value, out);
+  // GN-6ae: a function is its fixture, and a passthrough is a value of the language, given as a value of GN-13.
+  if (machineFunction(type)) return functionFixture(model, ctx, type.function, value);
+  if ('passthrough' in type) return valueFromJson(model, ctx, value, 'a passthrough');
   if ('tuple' in type) {
     if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Unsupported(`a case value of the tuple ${shown(type)} is an array of ${type.tuple.length} values`);
     const items = type.tuple.map((part, i) => fromJson(model, ctx, part, value[i], out));
@@ -397,6 +419,14 @@ export class CaseRefused extends Unsupported {}
 // test of the case fails with.
 // GN-13e: `round` names the alias whose entry points of codec-test (in_raises) take the result back by its in function
 // and give it again by its out function, so its test compares the texts of that value too.
+// GN-6ae: the result that a step of a function fixture or a call of after requires, compared as a value of its type; a
+// result of a value alias, which a case compares by its tokens (GN-13e), is refused by name there.
+export function stepExpected(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+  const expected = expectedText(model, ctx, fn, value);
+  if ('tokens' in expected) throw new Unsupported(`the result of ${fn.member.id} in a step of a function fixture or in after is a value alias, which is not compared there yet (GN-6ae, GN-13e)`);
+  return expected;
+}
+
 export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string; round?: Name } | { refused: string } {
   // GN-6af: a property of a value class without core_type gives the value that the language gave its constructor, so
   // the value is written as an argument is, not by the out rows of its alias.
@@ -414,6 +444,41 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
   }
 }
 
+// GN-6ae: the function of a function fixture, {"function": {"calls": [<step>], "result" | "raise"}} (CK-22 has judged
+// the form): a step is a call of a method of the class of the parameter at its position, whose arguments are case
+// values of the parameters of that method, a function fixture among them.
+function functionFixture(model: Model, ctx: Context, type: Extract<Type, { function: unknown }>['function'], value: unknown): string {
+  const fixture = (value as { function?: Record<string, unknown> } | null)?.function;
+  if (ctx.machineFunctionNew === undefined || typeof fixture !== 'object' || fixture === null) throw new Unsupported(`a case value of a function type is a function fixture, not ${shown(value)} (GN-6ae)`);
+  const steps = (Array.isArray(fixture['calls']) ? (fixture['calls'] as Record<string, unknown>[]) : []).map((step) => {
+    const fn = memberById(model, String(step['call']));
+    const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
+    if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${shown(step['args'])}, which are not the parameters of a member (GN-6ae)`);
+    return { on: Number(step['on']), fn, args: callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, args)), ...(Object.hasOwn(step, 'result') ? { expected: stepExpected(model, ctx, fn, step['result']) } : {}) };
+  });
+  const raise = fixture['raise'];
+  const awaits = fixture['awaits'] === true;
+  if (raise === undefined) return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { result: fromJson(model, ctx, type.returns, fixture['result'] ?? null) } });
+  if (raise === 'exception') return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { exception: true } });
+  const { error, kind } = raise as { error: string; kind: string };
+  const unit = model.contract.units.find((u) => u.id === error);
+  if (unit === undefined || ctx.errorNew === undefined) throw new Unsupported(`a function fixture raises the error unit ${error}, which is not generated for this language yet (GN-6ae, GN-13)`);
+  return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { raise: ctx.errorNew(unit, kind, FIXTURE_RAISED) } });
+}
+
+// GN-6ae (CK-22): whether an argument of a case is a function fixture that names awaits, so that the test of a language
+// with awaitables calls the awaited form of the member.
+export const awaitsFunction = (args: Map<Arg, unknown>): boolean =>
+  [...args.values()].some((value) => (value as { function?: { awaits?: unknown } } | null)?.function?.awaits === true);
+
+// GN-6ae: whether a value of a case holds a function fixture that raises the exception of the language.
+export const raisesException = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) return false;
+  if (Array.isArray(value)) return value.some(raisesException);
+  const fixture = (value as Record<string, unknown>)['function'];
+  if (typeof fixture === 'object' && fixture !== null && (fixture as Record<string, unknown>)['raise'] === 'exception') return true;
+  return Object.values(value).some(raisesException);
+};
 // GN-13e: the result of a member that returns a value alias is compared as the texts of its places in pre-order,
 // depth first, which a loop writes on both sides, so a value nested deeper than a recursion takes is compared too. The
 // generator writes the texts of the case value by the out rows of the alias (the row whose kind and predicate the
@@ -950,6 +1015,15 @@ export interface RaisingCase {
   faults?: string;
   // The instance that a method or property is called on, made by a static member or the constructor (T-5).
   receiver?: Receiver;
+  // GN-6ae: the calls that observe the receiver after the call of the case.
+  after?: After[];
+}
+
+// GN-6ae (CK-22): a call of `after` of a case: a method of the class of the receiver, its arguments and its result.
+export interface After {
+  fn: Fn;
+  args: Map<Arg, unknown>;
+  result: unknown;
 }
 
 // The callables whose tests are generated: the functions, then the members of each class unit.
@@ -989,7 +1063,7 @@ export const isInstanceValue = (value: unknown): boolean =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && (typeof (value as Record<string, unknown>)['new'] === 'string' || typeof (value as Record<string, unknown>)['from'] === 'string');
 
 // Every member of the model by its id: the functions and the members of the class units.
-const memberById = (model: Model, id: string): Fn | undefined =>
+export const memberById = (model: Model, id: string): Fn | undefined =>
   [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.member.id === id);
 
 // The type that the steps of a pick reach from a type, or a reason.
@@ -1160,7 +1234,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
 }
 
 // The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
-function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
+export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
   const args = new Map<Arg, unknown>();
   for (const arg of fn.args) {
     const snake = langName('python', arg.name, 'variable');
@@ -1248,6 +1322,36 @@ export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: stri
   }
 }
 
+// GN-6ae (CK-22): the calls of `after` of a case.
+function afterOf(model: Model, fn: Fn, record: Record<string, unknown>): { after?: After[] } {
+  const given = record['after'];
+  if (!Array.isArray(given)) return {};
+  return {
+    after: (given as Record<string, unknown>[]).map((call) => {
+      const method = memberById(model, String(call['call']));
+      const args = method === undefined ? undefined : argsOf(method, (call['args'] ?? {}) as Record<string, unknown>);
+      if (method === undefined || args === undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: after calls ${String(call['call'])} with ${shown(call['args'])}, which are not the parameters of a member (GN-6ae)`);
+      return { fn: method, args, result: call['result'] };
+    }),
+  };
+}
+
+// GN-6ae: the cases that expect the exception of the language that a function fixture of the case raises
+// (raises: "callback"), with the arguments, the receiver and the calls of after.
+export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[] }[] {
+  const out: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[] }[] = [];
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== 'callback') continue;
+    const id = String(record['id']);
+    const args = argsOf(fn, record);
+    const receiver = receiverOf(model, fn, record);
+    if (args === undefined || (fn.receiver !== undefined && receiver === undefined)) throw new Unsupported(`the case ${id} of ${fn.member.id} gives ${args === undefined ? 'not every parameter' : `no arguments of a factory of ${fn.unit.id}`} (G-5)`);
+    out.push({ id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
+  }
+  return out;
+}
+
 // GN-13d: a parameter with a default for which an explicit null is a refused value: every default but {literal: null},
 // whose declared value is that null.
 export const refusesNull = (arg: Arg): boolean =>
@@ -1272,8 +1376,9 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
   const out: RaisingCase[] = [];
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
-    const raises = record['raises'] as RaisingCase['raises'] | undefined;
-    if (raises === undefined) continue;
+    const raises = record['raises'] as RaisingCase['raises'] | 'callback' | undefined;
+    // GN-6ae: a case that expects the exception of a function fixture is one of callbackCases.
+    if (raises === undefined || raises === 'callback') continue;
     const args = argsOf(fn, record);
     if (args === undefined) {
       const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
@@ -1288,7 +1393,7 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const own = `${model.contract.library.replaceAll('-', '_')}.`;
     const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
     if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
-    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }) });
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
   }
   return out;
 }
@@ -1302,6 +1407,8 @@ export interface ResultCase {
   receiver?: Receiver;
   expected?: { value: unknown };
   refused?: string;
+  // GN-6ae: the calls that observe the receiver after the call of the case.
+  after?: After[];
 }
 
 // GN-13e: whether the language compares a result of the type with the value of a case: a class has no case value
@@ -1315,6 +1422,8 @@ export function comparableResult(model: Model, type: Type, seen: Set<string> = n
   if ('keyed_map' in type) return comparableResult(model, type.keyed_map, seen);
   if ('tuple' in type) return type.tuple.map((t) => comparableResult(model, t, seen)).find((reason) => reason !== undefined);
   if (objectUnit(model, type) !== undefined) return 'a class has no case value form';
+  // GN-6ae: a passthrough is the value that the function fixture returned, a value of GN-13.
+  if ('passthrough' in type) return undefined;
   // A value alias is compared where its out rows make the built-in form of each kind (expectedText).
   if (aliasOf(model, type) !== undefined) return undefined;
   const unit = unitOf(model, type);
@@ -1352,7 +1461,7 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
       out.push({ id, args, refused: `the case ${id} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)` });
       continue;
     }
-    const base = { id, args, ...(receiver === undefined ? {} : { receiver }) };
+    const base = { id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) };
     if (!(key in record)) {
       out.push(base);
       continue;
@@ -1527,7 +1636,8 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
   const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   return fn.args.flatMap((arg) => {
     const type = arg.type;
-    if (typeof type !== 'object' || !('function' in type)) return [];
+    // GN-6ae: the function of a member with machine is a function fixture, which the test writes with its own hook.
+    if (typeof type !== 'object' || !('function' in type) || machineFunction(type)) return [];
     const what = `the case ${id} of ${fn.member.id} for ${langName('python', arg.name, 'variable')}`;
     return [{ arg, members: [text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
   });
@@ -1593,6 +1703,17 @@ export const caseSnake = (id: string): string => caseWords(id).join('_');
 
 // GN-13e: two ids of the cases of one member, or of one value alias, that give one test name refuse the target, PHP
 // comparing the names without case as it does for its methods; an id without a word gives no name.
+// GN-6ae (G-4): a test generator that does not write the calls of after and the case of raises "callback" yet refuses
+// the cases that name them, so that no such case is left out of the tests of its target unseen.
+export function refuseScopedCases(model: Model, target: string): void {
+  for (const [member, cases] of model.cases) {
+    for (const kase of cases) {
+      const record = kase as Record<string, unknown>;
+      if (record['after'] !== undefined || record['raises'] === 'callback') throw new Unsupported(`the case ${String(record['id'])} of ${member}: after and raises "callback" are not written in the test of ${target} yet (GN-6ae)`);
+    }
+  }
+}
+
 export function checkCaseNames(model: Model, name: (id: string) => string, caseless: boolean): void {
   const groups: [string, unknown[]][] = [...model.cases.entries(), ...[...model.aliasCases.entries()].map(([id, cases]): [string, unknown[]] => [`the alias ${id}`, cases])];
   for (const [owner, cases] of groups) {

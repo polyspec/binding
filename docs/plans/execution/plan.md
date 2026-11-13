@@ -30,3 +30,12 @@ specification states how it is generated, or a statement that the specification 
 is fixed when the defect is found, and its row is `B2.<number>`, so that rows that several branches add at once never
 share an ID. A row states the input, the behaviour and the expected behaviour, and is done when its unit tests and the
 end-to-end check of the repositories it names pass.
+
+A member with `machine` may be a method, take a parameter of a function type and return `passthrough` (GN-6ae), which
+the scope of a transaction needs, and each of the five targets generates it. The entries of such members are functions
+of the generated crate whose names come from the contract, so the wave also holds the names of GN-4c.
+A generated crate holds functions whose names come from the contract beside the helpers of the generator, and a
+contract may name a unit, a function or a library with any word. GN-4c gives each function of a name of the contract a
+family prefix that no helper starts with. The wave brings the names that are still outside that rule under it: the
+helpers of the error of another library, and the conversions of a unit of another repository, whose name
+`<library>_<name>` an own unit may also have.

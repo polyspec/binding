@@ -12,10 +12,10 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction } from './model.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
-import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
+import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
 import type { Files } from './text.ts';
 
@@ -179,6 +179,10 @@ export function goType(scope: GoScope, type: Type): string {
   }
   // GN-15e: a pointer whose nil is no value of its type takes no second pointer.
   if ('optional' in type) return `${nilAbsent(scope.model, type.optional) ? '' : '*'}${goType(scope, type.optional)}`;
+  // GN-6ae: a function is a Go func that returns any value and an error, and a passthrough is any value, because a
+  // method of Go has no type parameter.
+  if ('function' in type) return `func(${type.function.parameters.map((part) => goType(scope, part)).join(', ')}) (any, error)`;
+  if ('passthrough' in type) return 'any';
   if ('tuple' in type) {
     // T-2, GN-16: a tuple inside another type or as a parameter is a Go array of its one part type, else a struct of
     // its parts in order (a Go array has one element type).
@@ -307,6 +311,9 @@ function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boo
   if ('keyed_map' in type) return needsCall(model, type.keyed_map, seen);
   if ('optional' in type) return needsCall(model, type.optional, seen);
   if ('tuple' in type) return type.tuple.some((t) => needsCall(model, t, seen));
+  // GN-6ae: a func is a callback of the call.
+  if ('function' in type) return true;
+  if ('passthrough' in type) return false;
   if (aliasOf(model, type) !== undefined || callbackOf(model, type) !== undefined) return true;
   const unit = unitOf(model, type);
   if (unit === undefined || libraryOf(type) !== undefined || (unit.kind !== 'record' && unit.kind !== 'variant') || seen.has(unit.id)) return false;
@@ -345,6 +352,25 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : `*${expr}`, indent + 1, depth), `${t}}`];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
+  // GN-6ae: a func is a callback of the call, whose dispatch decodes the arguments, a class argument as a new
+  // instance, and calls the func; a nil func is kind invalid_callback.
+  if ('function' in type) {
+    const parts = type.function.parameters;
+    return [
+      `${t}if ${expr} == nil {`,
+      `${t}\tenc.Tag(false)`,
+      `${t}} else {`,
+      `${t}\tenc.Tag(true)`,
+      `${t}\tcall.Callback(enc, binding.Function(func(dec *binding.Reader) (any, error) {`,
+      ...parts.flatMap((part, i) => [`${t}\t\tvar arg${i} ${goType(scope, part)}`, ...goDecode(scope, part, `arg${i}`, indent + 2, depth)]),
+      `${t}\t\tif err := dec.Finish(); err != nil {`,
+      `${t}\t\t\treturn nil, err`,
+      `${t}\t\t}`,
+      `${t}\t\treturn ${expr}(${parts.map((_part, i) => `arg${i}`).join(', ')})`,
+      `${t}\t}))`,
+      `${t}}`,
+    ];
+  }
   // U-7: a value of an alias is the call that walks it and its first level.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
   // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
@@ -414,6 +440,8 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
     ];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, tuplePart(scope, type.tuple, target, i), indent, depth));
+  // GN-6ae: a result passthrough is the value under its handle, which leaves the table of package binding.
+  if ('passthrough' in type) return [`${t}${target} = dec.Passed()`];
   // U-7: a value of an alias is the Go value that its out rows make.
   const valueAlias = aliasOf(scope.model, type);
   // GN-6x: package binding makes the instance of a value class of another repository; a failed result is nil.
@@ -1092,7 +1120,7 @@ func Recognize${goName(u.unit.name)}(err error) error {
     ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) ? ['sync'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1169,7 +1197,7 @@ func NewRef(handle uint64, release func(uint64)) *Ref {
 
 // Handle is the handle of the value.
 func (r *Ref) Handle() uint64 { return r.handle }
-`}${back ? goCallBack(model) : ''}
+`}${back ? goCallBack(model) : ''}${passes(model) ? goPassed(model) : ''}
 // Writer encodes the arguments of a call: each value in the order of the parameters (B-8).
 type Writer struct{ bytes []byte }
 
@@ -1716,9 +1744,23 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
-// index, the kind and the message of an error that the member recognizes (U-3).
-func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
+${goValueClassCall(model)}// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
+// of the C ABI returned and the member panics with the same value.
+type panicked struct{ value any }
+
+// Error is the text of the value of the panic.
+func (p *panicked) Error() string { return fmt.Sprint(p.value) }
+
+// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
+// index, the kind and the message of an error that the member recognizes (U-3). A panic of the callback is recovered
+// here, because a panic that unwinds through the frames of the static library skips the destructors of the core, its
+// guards and its locks: it is the error of the call, whose value the member panics with again (GN-15b).
+func (c *Call) run(callback uint64, member uint32, args []byte) (status int32, out []byte) {
+	defer func() {
+		if value := recover(); value != nil {
+			status, out = c.raise(&panicked{value: value})
+		}
+	}()
 	if callback == 0 || callback > uint64(len(c.callbacks)) {
 		return c.raise(Malformed())
 	}
@@ -1748,11 +1790,15 @@ func (c *Call) raise(err error) (int32, []byte) {${model.callbacks.some((cb) => 
 // callOf is the call of a handle that the static library gave back.
 func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*Call) }
 
-// raisedError is the error that a callback of the call returned (U-3).
+// raisedError is the error that a callback of the call returned (U-3). A panic of the callback (GN-15b) is not returned:
+// the member panics with its value again, now that the call of the C ABI returned.
 func raisedError(call, index uint64) error {
 	c := callOf(call)
 	if index >= uint64(len(c.raised)) {
 		return Malformed()
+	}
+	if p, ok := c.raised[index].(*panicked); ok {
+		panic(p.value)
 	}
 	return c.raised[index]
 }
@@ -1764,7 +1810,7 @@ func give(bytes []byte, result *${buffer}) {
 		copy(unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), len(bytes)), bytes)
 	}
 }
-${model.callbacks.length === 0 ? '' : `
+${!runsGo(model) ? '' : `
 // ${p}__go_callback runs a member of a callback of a call for the static library (U-3).
 //
 //export ${p}__go_callback
@@ -1801,6 +1847,81 @@ func ${p}__go_native(handle C.uint64_t) C.uint64_t {
 	return C.uint64_t(cgo.NewHandle(cgo.Handle(uintptr(handle)).Value()))
 }
 `}`;
+}
+
+// GN-6ae, B-3: the table of the values that the funcs of Go code returned, the dispatch of a func, and the export
+// through which the static library removes the value of a Passthrough that the core dropped.
+function goPassed(model: Model): string {
+  const p = prefix(model);
+  return `
+// passedTable holds the values that the funcs of Go code returned (GN-6ae, B-3), each under its handle until its
+// Passthrough of the static library ends, so the garbage collector keeps a value that only the core holds. A handle
+// is a count that is never given again, so the handle of a value that left names no value and never another one.
+type passedTable struct {
+	mutex  sync.Mutex
+	values map[uint64]any
+	next   uint64
+}
+
+var passed = passedTable{values: map[uint64]any{}}
+
+// pass holds a value in the table and gives its handle.
+func pass(value any) uint64 {
+	passed.mutex.Lock()
+	defer passed.mutex.Unlock()
+	passed.next++
+	passed.values[passed.next] = value
+	return passed.next
+}
+
+// takePassed takes the value of a handle out of the table, and says whether the handle named a value.
+func takePassed(handle uint64) (any, bool) {
+	passed.mutex.Lock()
+	defer passed.mutex.Unlock()
+	value, ok := passed.values[handle]
+	delete(passed.values, handle)
+	return value, ok
+}
+
+// ${p}__go_release_passed removes the value of a Passthrough that the core dropped (GN-6ae). A Go value is bound to
+// no thread, so the static library may call it on any thread.
+//
+//export ${p}__go_release_passed
+func ${p}__go_release_passed(handle C.uint64_t) {
+	takePassed(uint64(handle))
+}
+
+// Passed decodes a result passthrough (GN-6ae): the value under its handle, which leaves the table. A handle that
+// names no value fails Finish with kind internal.
+func (r *Reader) Passed() any {
+	handle := r.Uint()
+	if r.failed {
+		return nil
+	}
+	value, ok := takePassed(handle)
+	if !ok {
+		r.failed = true
+		if r.problem == "" {
+			r.problem = "GN-6ae: the value of the passthrough is gone"
+		}
+	}
+	return value
+}
+
+// Function is the dispatch of a func of Go code (GN-6ae): run decodes the arguments and calls the func, on the
+// goroutine of the member. What the func returned is held in the table and leaves as its handle, and its error is the
+// error of the call. A panic of the func is recovered by the call that runs it (GN-15b).
+func Function(run func(dec *Reader) (any, error)) Callback {
+	return func(_ *Call, _ uint32, dec *Reader, enc *Writer) error {
+		value, err := run(dec)
+		if err != nil {
+			return err
+		}
+		enc.Uint(pass(value))
+		return nil
+	}
+}
+`;
 }
 
 // GN-6x: the Go name of the type of a class of the owner of a value class of another repository, in the package of its
@@ -2366,8 +2487,9 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records, ...model.variants.map((v) => v.unit)].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
     if (typeof type === 'string') return false;
-    // GN-6z: generate() refuses a function type for Go by its own name.
-    if ('function' in type) return true;
+    // GN-6z: generate() refuses a function type for Go by its own name, except the function parameter of a member
+    // with machine (GN-6ae), which is generated.
+    if ('function' in type) return !machineFunction(type);
     if ('unit' in type) return type.library === undefined && aliasOf(model, type) === undefined && !held.has(type.unit);
     return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(refusedBefore);
   };
@@ -2432,6 +2554,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
+  if (passes(model)) files.set(`${BINDING}/zz_generated_passed_test.go`, goPassedTest(internalType(model)));
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
   const echo = echoes(model);

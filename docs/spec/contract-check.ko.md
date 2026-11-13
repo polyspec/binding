@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 305790de8d83b1104c80ec4c0dbcf54ff35a17b0a62012689a5cab2974d462fe -->
+<!-- source-sha256: 508e99c12ce160a1a98360294c181d6afd3fee46efeae8f54851daf361face89 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -167,6 +167,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-69** state machine이 있는 method의 receiver(generator GN-6ae): `core`에 `"machine": true`를 적은 method는
+  receiver `&self`를 적는다. 생성 코드는 코어에 인스턴스 값의 clone을 주는데, 그것은 `&mut self`처럼 인스턴스에 다시
+  쓰지도, `self`처럼 인스턴스를 소비하지도 않기 때문이다.
 - **CK-72** variant의 tag(T-9, generator GN-6v): variant case의 어떤 field도 그 variant의 `tag`와 이름이 같지 않다. 이름은
   단어로 비교한다. Node, WASM, case 파일에서 case의 값은 tag member가 case 값을 담는 객체이므로, 그 이름의 field는 tag의
   자리를 차지하기 때문이다. finding은 그 field와 해결 방법을 적는다: field나 tag의 이름을 바꾼다.
@@ -225,8 +228,23 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
-  fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고, 그 행의 키는 `args`, `result`, `once`뿐이며
-  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다.
+  fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고(generator GN-6z), 그 행의 키는 `args`, `result`, `once`뿐이며
+  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다. 반환이 `passthrough`인 함수 타입,
+  곧 state machine을 가진 member의 함수의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
+  <값>}}`이거나 `"result"` 자리에 `"raise"`를 둔 것이다. fixture의 키는 `function`뿐이고, 그 객체는 list `calls`와
+  `result`, `raise` 중 하나를 가지며 `awaits` 말고 다른 키는 없다. `"awaits": true`는 함수가 그 언어의 awaitable을
+  돌려주고 그 awaitable의 결과가 fixture의 `result`나 `raise`임을 적는다(generator GN-6ae). `async_allowed: true`인 함수
+  타입의 fixture만 그것을 적고, 그 값은 `true`이며, step의 인자의 fixture는 그 step의 fixture가 그것을 적을 때만 적는다.
+  기다리지 않는 함수는 자기 step의 호출을 기다릴 수 없기 때문이다. step은 `{"on": "<위치>", "call": "<member id>", "args": {...}}`이고
+  `result` 말고 다른 키는 없다. `on`은 함수의 parameter의 위치 `"0"`, `"1"` 등이다. 함수 타입의 parameter에는 이름이 없기 때문이다. 그
+  parameter의 타입은 이 계약의 class unit이다. `call`은 그 class의 method이고, `args`는 정확히 그 method의 parameter이며,
+  step의 함수 타입 인자는 다시 함수 fixture다. step은 그 호출이 돌려주는 값인 `"result": <값>`도 적을 수 있다. 생성된
+  함수는 다음 step 전에 그 값을 요구하므로, case는 함수가 도는 동안 class 인자가 쥔 것을 검증한다. `raise`는 언어의 예외인 텍스트 `"exception"`이거나 함수가 인식하는(U-3) error
+  unit의 `{"error": <unit>, "kind": <kind>}`다. case의 `raises`는 텍스트 `"callback"`일 수 있다. 그 case는 인자의 함수
+  fixture가 `"raise": "exception"`으로 던지는 예외를 기대하며, step의 어느 깊이에도 그런 fixture가 없는 case는 거부된다.
+  method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
+  다른 키는 없다. 각 `call`은 receiver의 class의 method이고 `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
+  뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

@@ -14,22 +14,22 @@ import { type Member, type Unit, variantPattern } from '../contract.ts';
 function builtin(alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
-      return 'out_null(env)';
+      return 'null_out(env)';
     case 'bool':
-      return 'out_bool(env, value)';
+      return 'bool_out(env, value)';
     case 'int':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      return kind === 'int64' ? 'out_int(env, value)' : 'out_int(env, value.value())';
+      return kind === 'int64' ? 'int_out(env, value)' : 'int_out(env, value.value())';
     case 'bigint':
       if (kind === 'number') return 'js_literal_bigint(env, &value)';
       return kind === 'int64' ? 'js_bigint(env, value)' : 'js_bigint(env, value.value())';
     case 'float':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      if (kind === 'float') return 'out_float(env, value.value())';
+      if (kind === 'float') return 'float_out(env, value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `js_literal_number(env, &${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'out_text(env, value)';
+      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'text_out(env, value)';
     case 'bytes':
       return kind === 'text' ? 'js_bytes(env, value.as_bytes())' : 'js_bytes(env, value.value())';
     case 'list': {
@@ -475,29 +475,29 @@ impl HostValues for JsHost<'_> {
             _ => return Err(raised_binding("B-1: no such list")),
         };
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
-        let item: Unknown<'_> = array.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-        self.describe(item).map_err(|error| raised(Thrown::Js(error)))
+        let item: Unknown<'_> = array.get_element(index).map_err(js_raised)?;
+        self.describe(item).map_err(js_raised)
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
         let (key, value) = match self.held.get(handle_position(map.raw())) {
             Some(Held::Pairs(pairs)) => {
-                let pair: Object<'_> = pairs.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-                let key: Unknown<'_> = pair.get_element(0).map_err(|error| raised(Thrown::Js(error)))?;
-                let value: Unknown<'_> = pair.get_element(1).map_err(|error| raised(Thrown::Js(error)))?;
+                let pair: Object<'_> = pairs.get_element(index).map_err(js_raised)?;
+                let key: Unknown<'_> = pair.get_element(0).map_err(js_raised)?;
+                let value: Unknown<'_> = pair.get_element(1).map_err(js_raised)?;
                 (key, value)
             }
             Some(Held::Properties(object, keys)) => {
-                let key: Unknown<'_> = keys.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
+                let key: Unknown<'_> = keys.get_element(index).map_err(js_raised)?;
                 // A getter runs here; its exception goes back to the caller unchanged (U-3).
-                let value: Unknown<'_> = object.get_property(key).map_err(|error| raised(Thrown::Js(error)))?;
+                let value: Unknown<'_> = object.get_property(key).map_err(js_raised)?;
                 (key, value)
             }
             _ => return Err(raised_binding("B-1: no such map")),
         };
-        let key = self.describe(key).map_err(|error| raised(Thrown::Js(error)))?;
-        let value = self.describe(value).map_err(|error| raised(Thrown::Js(error)))?;
+        let key = self.describe(key).map_err(js_raised)?;
+        let value = self.describe(value).map_err(js_raised)?;
         Ok((key, value))
     }
 
@@ -553,14 +553,14 @@ fn js_bigint(env: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
 
 /// U-7: the literal token of a number (F-1 (a)) as a bigint, without loss.
 fn js_literal_bigint<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
-    let text = out_text(env, literal)?;
+    let text = text_out(env, literal)?;
     js_global_call(env, "BigInt", text).map_err(internal)
 }
 
 /// U-7: the literal token of a number as a JavaScript number, the nearest double.
 fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
     match literal.parse::<f64>() {
-        Ok(number) => out_float(env, number),
+        Ok(number) => float_out(env, number),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -568,7 +568,7 @@ fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env
 /// U-7: bytes that are UTF-8 as a string.
 fn js_utf8<'env>(env: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(env, text),
+        Ok(text) => text_out(env, text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }
@@ -593,14 +593,14 @@ fn handle_position(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
 }
 
-/// U-3: an exception of JavaScript code, or a failure of the binding, while the core walks a value, as the Raised that
-/// the caller throws again.
-fn raised(error: Thrown) -> binding_core::Raised {
-    let error = match error {
-        Thrown::Js(error) if error.status != napi::Status::PendingException => Thrown::Binding(internal(error)),
-        other => other,
-    };
-    keep_thrown(error)
+/// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again; an
+/// error of napi with no exception pending is a failure of the binding.
+fn js_raised(error: napi::Error) -> binding_core::Raised {
+    if error.status == napi::Status::PendingException {
+        raised(Thrown::Js(error))
+    } else {
+        raised(Thrown::Binding(internal(error)))
+    }
 }
 
 fn raised_binding(detail: &str) -> binding_core::Raised {
@@ -628,16 +628,16 @@ export function foreignFailureNode(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(error: ${error.path}) -> Fail {
+fn error_of_${library}(error: ${error.path}) -> Fail {
     let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 
-fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Kind(error) => error_of_${library}(error),
         binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
         binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
     }
@@ -656,7 +656,7 @@ export function nodeHost(model: Model): string {
   const foreign = model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Object<'env>, Option<(&'static str, bool, ReadAs)>)," : '';
   const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(|error| raised(Thrown::Js(error)))';
+  const foreignRead = 'self.read_value(value).map_err(js_raised)';
   const foreignHost = foreign ? valueClassesNodeHost(model) : '';
   if (reads.length === 0) {
     return NODE_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
@@ -685,8 +685,8 @@ export function nodeHost(model: Model): string {
     if (r.kept !== undefined) {
       return `
             ${index} => {
-                let kept: Unknown<'_> = object.get_named_property(${rustString(langName('node', r.kept.field.name, 'variable'))}).map_err(|error| raised(Thrown::Js(error)))?;
-                self.describe(kept).map_err(|error| raised(Thrown::Js(error)))
+                let kept: Unknown<'_> = object.get_named_property(${rustString(langName('node', r.kept.field.name, 'variable'))}).map_err(js_raised)?;
+                self.describe(kept).map_err(js_raised)
             }`;
     }
     const o = r.object;
@@ -696,7 +696,7 @@ export function nodeHost(model: Model): string {
     return `
             ${index} => {
                 // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-                let instance = unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), object.raw()) }.map_err(|error| raised(Thrown::Js(error)))?;
+                let instance = unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), object.raw()) }.map_err(js_raised)?;
                 ${o.unit.lock === undefined ? `let value = ${o.property.corePath}(&instance.inner);` : `let held = instance.inner.read(${rustString(struct)}, &[]).map_err(|error| raised(Thrown::Binding(binding_error(error))))?;
                 let value = ${o.property.corePath}(&held);`}
                 Ok(${readValue(o.property.returns as string)})
@@ -804,7 +804,7 @@ function keptMakeNode(model: Model, kept: KeptClass, field: KeptField, holds: 'e
                 return Ok(*made);
             }
             let mut instance = value_instance(env, ${position})?;
-            value_define(&mut instance, ${name}, out_null(env)?, true)?;
+            value_define(&mut instance, ${name}, null_out(env)?, true)?;
             made.insert(handle.raw(), instance.to_unknown());
             let content = make(env, *value, source, made)?;
             value_define(&mut instance, ${name}, content, true)?;
@@ -841,7 +841,7 @@ export function keptCheckNode(kept: KeptClass): string {
     if (typeof type === 'object' && 'keyed_map' in type) {
       const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
       return `{
-                let given = in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, Ok)?;
+                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, Ok)?;
                 let mut described = binding_core::KeyedMap::new();
                 for (key, item) in given {
                     described.insert(key, host.describe(item).map_err(js_fail)?);
@@ -851,7 +851,7 @@ export function keptCheckNode(kept: KeptClass): string {
     }
     if (typeof type === 'object' && 'list' in type) {
       return `{
-                let given = in_list(${value}, ${subject}, Ok)?;
+                let given = list_in(${value}, ${subject}, Ok)?;
                 let mut described = Vec::new();
                 for item in given {
                     described.push(host.describe(item).map_err(js_fail)?);
@@ -865,7 +865,7 @@ export function keptCheckNode(kept: KeptClass): string {
     const v = variable(f);
     return f.default === undefined
       ? `        let ${v} = ${describe(f, v)}?;`
-      : `        let ${v} = in_default(${v}, |value| ${describe(f, 'value')})?;`;
+      : `        let ${v} = default_in(${v}, |value| ${describe(f, 'value')})?;`;
   });
   return `
 /// GN-6af: judges the arguments of the constructor of ${js}, which the class of the entry keeps.
@@ -955,7 +955,7 @@ fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
         }
         env.add_env_cleanup_hook((), |()| clean_up_native())?;
         NATIVE_ENV.set(env.raw());
-        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+        OWNED.with_borrow_mut(|owned| *owned = Some(OwnerTable { owner, generation, next: 0, values: BTreeMap::new() }));
     }
     // SAFETY: the value is a live value of this env; from_napi_value creates a reference to it.
     let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }?;
@@ -977,7 +977,7 @@ fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>,
 }
 
 /// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
-fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
+fn kept_function_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
     }

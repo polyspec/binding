@@ -667,7 +667,23 @@ describe('CK-68 the state machine of a member that reaches language code', () =>
   test('machine on a member that does not wait with async_driver', () =>
     fails('CK-68', `${at('session')}/members/2/core/machine`, (c) => { member(c, 'session.load').core.machine = true; }));
   test('a member with async_driver that reaches language code and names machine is accepted', () => {
-    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; }), []);
+    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; m.core.receiver = '&self'; }), []);
+  });
+});
+
+describe('CK-69 the receiver of a method with a state machine', () => {
+  const machine = (c: any, receiver: string): void => {
+    const m = member(c, 'session.load');
+    m.wait = 'async_driver';
+    m.core.machine = true;
+    m.core.receiver = receiver;
+  };
+  test('a method with machine that names &mut self', () =>
+    fails('CK-69', `${at('session')}/members/2/core/receiver`, (c) => { machine(c, '&mut self'); }));
+  test('a method with machine that names self', () =>
+    fails('CK-69', `${at('session')}/members/2/core/receiver`, (c) => { machine(c, 'self'); }));
+  test('a method with machine that names &self is accepted', () => {
+    assert.deepEqual(findings((c) => { machine(c, '&self'); }), []);
   });
 });
 
@@ -1153,23 +1169,88 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.deepEqual(withParam(stores, 'stores', [{ new: 'memory_store.new' }], constructible).filter((f) => f.check === 'CK-22' && f.path === parseCases()), []);
     assert.match(withParam(stores, 'stores', [{ new: 'session.new', args: {} }]).map((f) => f.message).join('\n'), /stores\[0\] is an instance value of session, which does not implement store/);
   });
-  test('a case gives a function as its rows, whose args are the positions of its parameters (G-5, GN-13)', () => {
-    const takes = (parameters: unknown[]): object => ({ name: ['convert'], type: { function: { parameters, returns: 'text', async_allowed: false } } });
-    assert.deepEqual(withParam(takes(['text']), 'convert', { function: [{ args: { 0: 'a' }, result: 'b', once: true }] }), []);
-    // A function that takes an object of the language has no row, which no case can give, but may have none.
-    const native = takes(['text', { unit: 'session' }]);
-    assert.deepEqual(withParam(native, 'convert', { function: [] }), []);
+  test('a case gives a function as a function fixture: its steps, and a result or a raise (G-5, GN-6ae)', () => {
+    const takes = (parameters: unknown[], extra: object = {}): object => ({ name: ['convert'], type: { function: { parameters, returns: { passthrough: 'T' }, async_allowed: false, ...extra } } });
+    const scoped = takes([{ unit: 'session' }, 'text'], { errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' } });
+    const step = { on: '0', call: 'session.load', args: { file: 'a' } };
+    assert.deepEqual(withParam(takes(['text']), 'convert', { function: { calls: [], result: 'b' } }), []);
+    assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [step, step], result: null } }), []);
+    // A fixture of a function with async_allowed may name awaits: the function returns an awaitable.
+    const awaiting = takes([{ unit: 'session' }], { async_allowed: true });
+    assert.deepEqual(withParam(awaiting, 'convert', { function: { calls: [step], result: 'b', awaits: true } }), []);
+    // A step may name the value that its call returns.
+    assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [{ ...step, result: null }, step], result: null } }), []);
+    assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [], raise: 'exception' } }), []);
+    assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [], raise: { error: 'too_large', kind: 'too_large' } } }), []);
     const refused: [object, unknown, RegExp][] = [
-      [takes(['text']), 'a', /convert is not \{"function": \[<row>\]\}/],
-      [takes(['text']), { function: [{ args: { a: 'a' }, result: 'b' }] }, /the args of row 0 of convert are not the positions 0/],
-      [takes(['text']), { function: [{ args: { 0: 'a' }, result: 'b', raise: {} }] }, /row 0 of convert has no key raise/],
-      [native, { function: [{ args: { 0: 'a', 1: null }, result: 'b' }] }, /row 0 of convert: the function takes an object of the language, which a row cannot give/],
+      [takes(['text']), 'a', /convert is not a function fixture \{"function": \{"calls": \[<step>\], "result" \| "raise": <value>\}\}/],
+      // The form of rows, which no generator took, is no function fixture.
+      [takes(['text']), { function: [{ args: { 0: 'a' }, result: 'b' }] }, /convert is not a function fixture/],
+      [takes(['text']), { function: { calls: [], result: 'b' }, calls: [] }, /convert is not a function fixture/],
+      [takes(['text']), { function: { result: 'b' } }, /the calls of convert are not a list of steps/],
+      [takes(['text']), { function: { calls: [], result: 'b', once: true } }, /the function fixture convert has no key once/],
+      [takes(['text']), { function: { calls: [] } }, /the function fixture convert has a result or a raise, one of them/],
+      [takes(['text']), { function: { calls: [], result: 'b', raise: 'exception' } }, /the function fixture convert has a result or a raise, one of them/],
+      [scoped, { function: { calls: [{ ...step, raises: {} }], result: 'b' } }, /step 0 of convert has no key raises/],
+      [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is no parameter of the function whose type is a class of this contract/],
+      [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is no parameter/],
+      [scoped, { function: { calls: [{ ...step, call: 'forms.parse' }], result: 'b' } }, /step 0 of convert calls forms\.parse, which is no method of session/],
+      [scoped, { function: { calls: [{ ...step, args: { path: 'a' } }], result: 'b' } }, /the args of step 0 of convert are not the parameters file of session\.load/],
+      [scoped, { function: { calls: [], raise: { error: 'store_error', kind: 'store' } } }, /the function fixture convert raises store_error, which the function does not recognize \(U-3\)/],
+      [scoped, { function: { calls: [], raise: 'error' } }, /the function fixture convert raises "error", which is neither "exception" nor \{"error", "kind"\}/],
+      [scoped, { function: { calls: [], result: 'b', awaits: true } }, /the function fixture convert names awaits, and its function type has no async_allowed: true/],
+      [awaiting, { function: { calls: [], result: 'b', awaits: false } }, /the awaits of the function fixture convert is false, not true/],
     ];
     for (const [parameter, value, message] of refused) {
       const found = withParam(parameter, 'convert', value);
       assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], String(message));
       assert.match(found[0]?.message ?? '', message);
     }
+    // An argument of a function type of a step is again a function fixture.
+    const nested = (c: any): void => {
+      unit(c, 'session').members.push({ id: 'session.within', name: ['within'], kind: 'method', visibility: 'public', wait: 'none', parameters: [{ name: ['work'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } }, required: true }], returns: { passthrough: 'T' }, raises: [], core: { path: 'sample::Session::within', receiver: '&self' } });
+    };
+    const inner = (work: unknown): unknown => ({ function: { calls: [{ on: '0', call: 'session.within', args: { work } }], result: 'b' } });
+    const cases = (found: Finding[]): Finding[] => found.filter((f) => f.check === 'CK-22' && f.path === parseCases());
+    assert.deepEqual(cases(withParam(scoped, 'convert', inner({ function: { calls: [], result: 'c' } }), nested)), []);
+    assert.match(cases(withParam(scoped, 'convert', inner('c'), nested))[0]?.message ?? '', /work of step 0 of convert is not a function fixture/);
+    // A fixture of an argument of a step names awaits only when the fixture of that step names it.
+    const waits = (c: any): void => {
+      nested(c);
+      member(c, 'session.within').parameters[0].type.function.async_allowed = true;
+    };
+    const outer = (awaits: object, work: unknown): unknown => ({ function: { calls: [{ on: '0', call: 'session.within', args: { work } }], result: 'b', ...awaits } });
+    const both = takes([{ unit: 'session' }], { async_allowed: true });
+    assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c', awaits: true } }), waits)), []);
+    assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c' } }), waits)), []);
+    assert.match(cases(withParam(both, 'convert', outer({}, { function: { calls: [], result: 'c', awaits: true } }), waits))[0]?.message ?? '', /the function fixture work of step 0 of convert names awaits, and the fixture of its step does not/);
+  });
+  test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
+    const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
+    const kase = (extra: object, convert: unknown): Finding[] => {
+      const c = contract();
+      const load = member(c, 'session.load');
+      load.parameters.push({ ...scoped, required: true });
+      const files = new Map<string, Record<string, unknown[]>>();
+      for (const row of c.cases) {
+        const document = files.get(row.file) ?? {};
+        document[row.group] = row.member === 'session.load' ? [...(document[row.group] ?? []), { id: 'scoped', receiver: { new: 'session.new', args: { store: { callback: {} }, options: {} } }, file: 'a', convert, ...extra }] : (document[row.group] ?? []);
+        files.set(row.file, document);
+      }
+      return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files }).filter((f) => f.check === 'CK-22' && /the case scoped/.test(f.message));
+    };
+    const raising = { function: { calls: [], raise: 'exception' } };
+    const returning = { function: { calls: [], result: 'b' } };
+    assert.deepEqual(kase({ raises: 'callback' }, raising), []);
+    assert.match(kase({ raises: 'callback' }, returning)[0]?.message ?? '', /raises "callback", and no function fixture of its arguments raises "exception"/);
+    assert.match(kase({ raises: 'other' }, raising)[0]?.message ?? '', /raises "other", which is neither \{"kind": <kind>, \.\.\.\} nor "callback"/);
+    const after = { call: 'session.load', args: { file: 'a', convert: returning }, result: null };
+    assert.deepEqual(kase({ after: [after] }, returning), []);
+    assert.match(kase({ after: after }, returning)[0]?.message ?? '', /after is not a list of calls/);
+    assert.match(kase({ after: [{ ...after, raises: {} }] }, returning)[0]?.message ?? '', /after 0 has no key raises/);
+    assert.match(kase({ after: [{ ...after, call: 'forms.parse' }] }, returning)[0]?.message ?? '', /after 0 calls forms\.parse, which is no method of session/);
+    assert.match(kase({ after: [{ ...after, args: {} }] }, returning)[0]?.message ?? '', /the args of after 0 are not the parameters file, convert of session\.load/);
+    assert.match(kase({ after: [{ call: 'session.load', args: after.args }] }, returning)[0]?.message ?? '', /after 0 names no result/);
   });
   test('a group that is not in its file', () => {
     const c = contract();

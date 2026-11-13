@@ -1,5 +1,5 @@
 <!-- doc-id: plan-execution -->
-<!-- source-sha256: c304b754ba7fceb583f2be321f742ec987fd632b8a4559ac9c51c44827c2a504 -->
+<!-- source-sha256: 4f95dc9db91c26e93f80253cd4df1152727fd16853a83ffe560238e8af45f79f -->
 # 실행 계획
 
 [English](plan.md)
@@ -27,3 +27,11 @@ polyspec 저장소는 모두 같은 문서 구조를 가진다: `config/document
 생성기의 결함은 명세가 생성 방법을 정하는데도 생성기가 거절하거나 잘못 생성하는 입력 계약, 또는 명세에 빠진 문장이다.
 결함마다 발견할 때 정한 번호가 있고 그 행은 `B2.<번호>`다. 그래서 여러 갈래가 동시에 더한 행의 ID가 겹치지 않는다. 행은
 입력, 동작, 기대 동작을 적고, 그 unit test와 행이 적은 저장소의 end-to-end 검사가 통과하면 끝난다.
+
+`machine`이 있는 member는 method일 수 있고, 함수 타입의 parameter를 받고 `passthrough`를 돌려줄 수 있다(GN-6ae). transaction의
+범위에 그것이 필요하며, 다섯 target이 각각 그것을 생성한다. 그런 member의 진입은 계약에서 이름이 오는 생성된 crate의
+함수이므로, 이 wave는 GN-4c의 이름도 다룬다.
+생성된 crate에는 계약에서 이름이 오는 함수가 생성기의 helper 옆에 있고, 계약은 unit, 함수, library를 어떤 단어로도 이름할
+수 있다. GN-4c는 계약의 이름을 가진 함수마다 어떤 helper도 시작하지 않는 계열의 접두를 준다. 이 wave는 아직 그 규칙 밖에
+있는 이름을 규칙 아래로 가져온다: 다른 library의 오류의 helper, 그리고 다른 레포의 unit의 변환이다. 그 변환의 이름
+`<library>_<name>`은 자기 unit도 가질 수 있다.
