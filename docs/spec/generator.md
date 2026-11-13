@@ -191,7 +191,9 @@ the design ids are those of the binding design.
   `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
-  declarations, and the entry defines `<name>` over it with the checks of G-7. napi-rs keeps the classes it parsed in
+  declarations, and the entry defines `<name>` over it with the checks of G-7. The entry writes that function as a
+  method with the computed key `<name>`, not as a function expression named `<name>`: a member may take a name that
+  JavaScript reserves (`null`, `delete`), which names no function, and the method keeps `<name>` as its `name`. napi-rs keeps the classes it parsed in
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
   Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
   arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an

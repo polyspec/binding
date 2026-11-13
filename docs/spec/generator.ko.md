@@ -165,6 +165,8 @@
   날 값을 받기 때문이다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
   그런 클래스로 생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
+  진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다. member는 JavaScript가
+  예약한 이름(`null`, `delete`)을 가질 수 있는데 그 이름은 함수 이름이 될 수 없고, 메서드는 `<name>`을 `name`으로 지닌다.
 - **GN-6h** class unit의 잠금(U-2 busy, B-5c). class의 자리는 호출이 그 인스턴스를 받는 곳이다: member의 receiver, 또는 타입이
   그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`다. 그 밖의 자리는 모두 읽기 쪽 자리이며, parameter는
   계약이 그 빌림을 적기 전까지 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
