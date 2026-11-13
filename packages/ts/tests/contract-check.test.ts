@@ -898,6 +898,12 @@ describe('CK-22 instance values (GN-13f)', () => {
     assert.match(messages((c) => { c.gate_enter[1].receiver.pick = [{ tuple: 0 }]; }), /takes part 0 of \{"list":\{"unit":"gate"\}\}, which is no tuple/);
     assert.match(messages((c) => { c.gate_enter[2].receiver.then = [{ call: 'tag.name' }]; }), /then 0 of the receiver calls tag\.name, which is no method of gate/);
   });
+  test('a then that fails with a kind of its member, and one that names another kind', () => {
+    const twice = (raises: unknown) => (c: any) => { c.gate_enter[2].receiver.then.push({ call: 'gate.close', raises }); };
+    assert.deepEqual(run(twice({ kind: 'closed' })), []);
+    assert.match(messages(twice({ kind: 'missing' })), /then 1 of the receiver expects gate\.close to fail with missing, which is no kind of its raises/);
+    assert.match(messages(twice('closed')), /then 1 of the receiver expects gate\.close to fail by \{"kind": <kind>\}/);
+  });
   test('a receiver of a member that has none', () => {
     assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
   });
