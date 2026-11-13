@@ -162,6 +162,14 @@ the design ids are those of the binding design.
   field. The manifest of a host package (GN-3b) is hand-written and is not compared. Why: a binding package is the
   core in another language, so it has the licence of the core, and a licence that binding wrote by itself would state
   terms that the repository did not choose.
+- **GN-3g** The generated PHP extension registers under the name `php-ext.extension-name` of its `composer.json`
+  (GN-3c), `polyspec_<library>`: its module names itself with `ModuleBuilder::name`, because `#[php_module]` of
+  ext-php-rs 0.16.4 names a module after the crate, `polyspec-<library>-php-ext`. PHP registers the classes and
+  functions of an extension whatever the module is named, so the tests of a binding pass under either name; the
+  end-to-end check therefore asks, in each PHP process that runs tests, whether `extension_loaded` is true for the
+  `extension-name` of each `composer.json` of the run, and the process fails with the name before a test runs when it
+  is not. Why: PIE and a release tool load the binary and ask PHP for the extension by `extension-name`, so an
+  extension under another name is installed and reported as not loaded.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3

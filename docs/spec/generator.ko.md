@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2859b0b87aae431089448ceb026c75d2fb55c68d3bdbfb87da27727d98cf127b -->
+<!-- source-sha256: 361798484fea3cf4ca87bfcd7190c403c3f0e855c58cade211403027b68653db -->
 # 생성기
 
 [English](generator.md)
@@ -127,6 +127,13 @@
   finding이며(CK-71), 그때 `scaffold`는 그 항목 없이 manifest를 쓴다. host 패키지(GN-3b)의 manifest는 손으로 쓰므로 비교하지
   않는다. 이유: 바인딩 package는 다른 언어로 된 코어이므로 코어의 licence를 갖고, binding이 스스로 적은 licence는 레포가
   고르지 않은 조건을 말하게 된다.
+- **GN-3g** 생성된 PHP 확장은 그 `composer.json`의 `php-ext.extension-name`(GN-3c), 곧 `polyspec_<library>`라는 이름으로
+  등록된다. 그 module은 `ModuleBuilder::name`으로 자기 이름을 적는다. ext-php-rs 0.16.4의 `#[php_module]`은 module을 crate
+  이름 `polyspec-<library>-php-ext`로 이름하기 때문이다. PHP는 module의 이름이 무엇이든 확장의 class와 function을
+  등록하므로 바인딩의 시험은 어느 이름에서도 통과한다. 그래서 end-to-end 확인은 시험을 실행하는 PHP 프로세스마다 실행의
+  각 `composer.json`의 `extension-name`에 대해 `extension_loaded`가 참인지 묻고, 참이 아니면 그 프로세스는 시험이 실행되기
+  전에 그 이름과 함께 실패한다. 이유: PIE와 release 도구는 binary를 로드하고 PHP에 `extension-name`으로 확장을 묻는다.
+  그래서 다른 이름의 확장은 설치되고도 로드되지 않았다고 보고된다.
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
