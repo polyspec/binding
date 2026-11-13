@@ -1580,6 +1580,8 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // Each core call is armed for its own member, and none twice.
     assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
+  // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
+  assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            out_list(&mut buffer, left, out_text);\n'));
   // GN-8a: the call that is refused as busy leaves the arming, which the next call of the member takes.
   assert.match(text(out, pythonTests), /held = pkg\.Counter\(0\)\n {8}armed = _native\._arm_faults\("counter\.draw", "\[\{\\"point\\":\\"sample\.draw\\",\\"kind\\":\\"broken\\"\}\]"\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.draw\(held\)\n(?:[^\n]*\n)+? {8}with self\.assertRaises\(pkg\.SampleInternalError\) as caught:\n {12}held\.draw\(pkg\.Counter\(0\)\)\n(?:[^\n]*\n){2} {8}self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
   assert.match(text(out, nodeTests), /const armed = addon\(\)\.__armFaults\('counter\.draw', [^\n]*\n {2}assert\.throws\(\(\) => held\.draw\(held\), [^\n]*'busy'\);\n(?:[^\n]*\n)+? {2}assert\.throws\(\(\) => held\.draw\(new pkg\.Counter\(0\)\), [^\n]*'internal'\);\n {2}assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);

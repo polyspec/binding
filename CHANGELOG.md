@@ -33,6 +33,14 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The Go C ABI of a contract with fault injection points gave the points left through the closure
+  `|output, item| out_text(output, item)`, so `cargo clippy -D warnings` of `polyspec-sample-go` failed with
+  `redundant_closure` and the Go target of `tests/e2e/sample` ran no test. The entry now passes `out_text` itself.
+  Verified by `npm test` in `packages/ts` and `cargo clippy` of the Go crate of the sample with its test features.
+- The Go refusal of a record of another repository named no row that states how Go would generate it. GN-15f now
+  states the design, in which `binding scaffold` writes the Go module of that repository in `go.mod` by the dependency
+  line of the core, and marks it as not implemented; the refusal names GN-15f. Verified by `npm test` in
+  `packages/ts`.
 - The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
   class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
   through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first
