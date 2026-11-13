@@ -33,6 +33,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
+import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -712,21 +713,12 @@ if (targets.includes('go')) {
     stepOf(['go'], what, () => {
       process.stdout.write(`$ ${goTool} test -json -count=1 ./...\n`);
       const goTest = spawnSync(goTool, ['test', '-json', '-count=1', './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
-      const counts = { pass: [] as string[], fail: [] as string[], skip: [] as string[] };
-      const packageFailures: string[] = [];
-      for (const line of goTest.stdout.split('\n')) {
-        if (!line.startsWith('{')) {
-          if (line !== '') process.stdout.write(`${line}\n`);
-          continue;
-        }
-        const event = JSON.parse(line) as { Action: string; Package?: string; Test?: string; Output?: string };
-        if (event.Action === 'output' && event.Output !== undefined) process.stdout.write(event.Output);
-        const name = `${event.Package ?? ''}.${event.Test ?? ''}`;
-        if (event.Test !== undefined && (event.Action === 'pass' || event.Action === 'fail' || event.Action === 'skip')) counts[event.Action].push(name);
-        if (event.Test === undefined && event.Action === 'fail') packageFailures.push(event.Package ?? '');
-      }
+      const read = readGoTestEvents(goTest.stdout);
+      process.stdout.write(read.printed);
       process.stdout.write(goTest.stderr);
-      if (packageFailures.length > 0 && counts.fail.length === 0) throw new Error(`go test failed the packages ${packageFailures.join(', ')} (status ${String(goTest.status)})`);
+      const failure = goPackageFailure(read, goTest.status);
+      if (failure !== undefined) throw new Error(failure);
+      const { counts, packageFailures } = read;
       counted('go', what, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
     });
   }
