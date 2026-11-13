@@ -1690,17 +1690,31 @@ test('a contract without fault injection points has no item of them (G-5)', () =
   assert.throws(() => sampleWith((c) => { delete c.faults; }), /arms faults, but the contract names no fault injection point/);
 });
 
-test('the errno of a case is the value of its symbol in Python and Node, and PHP is refused by name (G-5)', () => {
+test('the errno of a case is the value of its symbol in Python, Node and PHP, which reads it from the binding (G-5, GN-8a)', () => {
   const withErrno = (c: any, cases: any): void => {
     cases.measure[0].faults[0].errno = 'ENOSPC';
     cases.measure[0].raises.errno = 'ENOSPC';
   };
-  const out = sampleWith(withErrno, ['python', 'node']);
+  const out = sampleWith(withErrno, ['python', 'node', 'php']);
   assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
-  assert.throws(() => sampleWith(withErrno), /a_read_that_fails_is_unreadable of sample\.measure: the errno symbol ENOSPC is not compared in PHP yet/);
+  // GN-8a: PHP has no table of the errno symbols of its machine, so the extension gives the value of a symbol from the
+  // table that arms the faults, with the other entry points of the feature fault-test.
+  assert.match(text(out, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
+  const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(phpLib, /#\[cfg\(feature = "fault-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| \{\n {8}binding_core::fault::errno\(&symbol\)/);
+  assert.match(phpLib, /\.function\(wrap_function!\(fault_left\)\)\.function\(wrap_function!\(errno_of\)\);/);
+  // A contract without fault injection points has no feature fault-test, so its PHP test cannot read the value.
+  const withoutPoints = (c: any, cases: any): void => {
+    delete c.faults;
+    cases.measure = [];
+    cases.counter_tally = cases.counter_tally.filter((kase: any) => kase.faults === undefined);
+    cases.counter_settle = cases.counter_settle.filter((kase: any) => kase.receiver === undefined);
+    cases.resolve[0].raises.errno = 'ENOSPC';
+  };
+  assert.throws(() => sampleWith(withoutPoints, ['php']), /a_key_without_a_value_is_missing of sample\.resolve: the errno symbol ENOSPC is read through Internal\\errnoOf of the feature fault-test, which a contract without fault injection points does not have \(GN-8a\)/);
 });
 
 test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
