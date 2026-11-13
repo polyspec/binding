@@ -1615,6 +1615,20 @@ test('a member named by a word that JavaScript reserves is defined by its key, a
   }
 });
 
+test('the result null of an optional of a class is compared with the null of each target (GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.find', name: ['find'], kind: 'function', visibility: 'public', parameters: [{ name: ['key'], type: 'text', required: true }], returns: { optional: { unit: 'token' } }, raises: [], wait: 'none', core: 'polyspec_classes::find' });
+  contract.cases.push({ member: 'classes.find', file: 'contracts/cases.json', group: 'find' });
+  (caseFiles.get('contracts/cases.json') as any).find = [{ id: 'absent', key: 'a', result: null }, { id: 'present', key: 'b', result: { kind: 'text', value: 'b' } }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find absent', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n[^\n]*pkg\.find\("a"\)[^\n]*None/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13efindAbsent\(\): void\n\s+\{\n\s+self::assertSame\(self::same\(null\), self::same\([^\n]*find\("a"\)\)\);/);
+  // A result that is a class still has no case form, so its test fails with the reason.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
