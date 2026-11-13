@@ -1767,7 +1767,7 @@ test('the members of a value class without core_type and a primitive run their c
     { id: 'bytes_that_are_no_text_are_not_boxed', value: { kind: 'bytes', value: { hex: 'ff' } }, raises: { kind: 'unsupported', status: null, category: 'value' } },
   ];
   cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }];
-  cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }];
+  cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }, { id: 'no_tag_weighs_minus_zero', name: '', result: -0 }];
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm'] });
   // Each case of the constructor and of the property runs: the raising one as B-4, the others as GN-13e; the
   // constructor counts and names its arguments (G-7).
@@ -1788,7 +1788,9 @@ test('the members of a value class without core_type and a primitive run their c
     // The default of the constructor is the null of the language, so null is no refused value there (GN-13d).
     assert.doesNotMatch(tests, /U-2: Boxed\.constructor takes null/, path);
     // A primitive runs its case through the number form of the instance.
-    assert.match(tests, /test\('N-4: Tag\.weight a_tag_weighs_its_length', \(\) => \{\n {2}assert\.equal\(Number\(new pkg\.Tag\('ab'\)\), 2\);/, path);
+    // assert.strictEqual compares by Object.is, and a negative zero is written as one.
+    assert.match(tests, /test\('N-4: Tag\.weight a_tag_weighs_its_length', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\('ab'\)\), 2\);/, path);
+    assert.match(tests, /test\('N-4: Tag\.weight no_tag_weighs_minus_zero', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\(''\)\), -0\);/, path);
   }
   // PHP holds nothing of the class.
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\bBoxed\b/);
