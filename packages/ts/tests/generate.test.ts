@@ -1352,12 +1352,14 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
 
 test('a list parameter whose items narrow is a Vec of the core type, whose slice the core borrows (T-1, GN-6ad)', () => {
   const out = shaped();
-  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
     const rust = text(out, path);
-    assert.match(rust, /let widths = IntoCore::into_core\(widths, "widths"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::width_sum\(&widths\[\.\.\]\);/, path);
-    assert.match(rust, /let values = IntoCore::into_core\(values, "values"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::largest\(&values\[\.\.\]\);/, path);
+    // The crate of Go judges the end of the encoded arguments after the last parameter (B-8).
+    const end = '(?:finish_input\\(input\\)\\?;\\n\\s*)?';
+    assert.match(rust, new RegExp(`let widths = IntoCore::into_core\\(widths, "widths"\\)\\.map_err\\([^\\n]*\\)\\?;\\n\\s*${end}let result = polyspec_shapes::width_sum\\(&widths\\[\\.\\.\\]\\);`), path);
+    assert.match(rust, new RegExp(`let values = IntoCore::into_core\\(values, "values"\\)\\.map_err\\([^\\n]*\\)\\?;\\n\\s*${end}let result = polyspec_shapes::largest\\(&values\\[\\.\\.\\]\\);`), path);
     // A list of tuples narrows its parts the same way.
-    assert.match(rust, /let spans = IntoCore::into_core\(spans, "spans"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::spans_total\(&spans\[\.\.\]\);/, path);
+    assert.match(rust, new RegExp(`let spans = IntoCore::into_core\\(spans, "spans"\\)\\.map_err\\([^\\n]*\\)\\?;\\n\\s*${end}let result = polyspec_shapes::spans_total\\(&spans\\[\\.\\.\\]\\);`), path);
     // A list of items that do not narrow is passed as it is (GN-6).
     assert.doesNotMatch(rust, /&[a-z_]+\[\.\.\]\)[^\n]*\n[^\n]*polyspec_shapes::(?!width_sum|largest|spans_total)/, path);
   }

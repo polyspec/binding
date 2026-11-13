@@ -166,15 +166,15 @@
   읽으며, 이것은 Rust tuple, 배열, 그 둘의 참조에서 각 부분의 참조를 준다. `usize`나 `isize`인 정수 결과는 assertion
   `const _: () = assert!(usize::BITS <= 64);`(`isize`도 같다) 뒤에 `as`로 넓힌다. assertion은 그보다 넓은 target에서 빌드를
   실패시키고, 표준 라이브러리는 둘 어느 것에도 `From`을 구현하지 않기 때문이다. 넓힌 값은 각 언어에서 u64나 i64처럼 그 계약
-  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go는 아직
-  바꾸지 않는다(구현되지 않음): Go 바인딩은 표의 타입을 넘기므로 더 좁은 타입의 코어는 거기서 컴파일되지 않는다.
+  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go C ABI의 crate도 인코딩된 인자에서 각 parameter를
+  읽은 뒤 같은 방식으로 바꾼다.
   이유: 코어는 index나 길이의 `usize`처럼 자기 코드가 필요로 하는 정수 타입을 유지하고, 계약은 값의 범위만 적는다. 코어의
   signature가 대상을 정하는 trait는 계약에 코어 타입 없이 바꾸므로, 값을 가진 어떤 코어에도 계약은 같다.
 - **GN-6ad** 항목이 좁혀지는(GN-6ac) list parameter, 곧 정수나 정수를 가진 tuple의 list는 표의 타입으로 된 지역 `Vec`으로
   바뀌고, `IntoCore`가 그것을 코어 항목 타입의 `Vec`으로 바꾸며, 코어 호출은 `&values[..]`를 받는다. 그래서 `&[usize]`,
   `&[u32]`, `&[[usize; 2]]`처럼 더 좁은 항목의 slice를 빌리는 코어가 그것을 받는다. 코어 타입의 범위 밖의 항목은
-  parameter의 이름을 subject로 하는 kind `invalid_number`다(B-2). 다른 항목의 list는 GN-6대로 `&values`로 넘긴다. Go는 아직
-  바꾸지 않는다(구현되지 않음).
+  parameter의 이름을 subject로 하는 kind `invalid_number`다(B-2). 다른 항목의 list는 GN-6대로 `&values`로 넘긴다. Go도
+  같은 방식으로 바꾼다.
   이유: 코어는 list를 slice로 빌리고, `&values[..]`는 그 slice를 자기 타입 `&[T]`로 주며, 그 항목 타입은 호출 자리의 deref
   coercion 없이 코어의 parameter가 정한다. 단위 시험은 그런 호출 자리와 GN-6ac의 helper를 더 좁은 타입의 코어에 대해 host와
   wasm32로 컴파일하므로, 추론은 가정하지 않고 컴파일러가 확인한다.
