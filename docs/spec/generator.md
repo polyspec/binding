@@ -662,7 +662,10 @@ the design ids are those of the binding design.
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
   `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
-  name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
+  name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). In Python a
+  function or method without parameters is a function of no arguments, which CPython reports as `takes no arguments`
+  and `takes no keyword arguments`, while a constructor without parameters is the `__new__` of PyO3, which reports
+  `takes 0 positional arguments` and `unexpected keyword argument`, and each test expects the words of its form. The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
   value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. A
   number of the type `float` is a float literal in Python and PHP, which refuse an integer there (B-2), also when JSON
