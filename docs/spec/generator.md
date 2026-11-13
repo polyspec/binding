@@ -307,7 +307,13 @@ the design ids are those of the binding design.
   `None`; the generated crate asserts at compile time that the constant equals the declared value (a text by its
   bytes, a float by its bits), and the declarations show the value. A `{computed}` or `{empty}` default has no
   constant; the declarations show `...` in Python, `null` or `[]` in PHP, and an optional parameter in TypeScript,
-  with the rule id of a `{computed}` default in the comment. What "left out" is in each language: Python, an argument
+  with the rule id of a `{computed}` default in the comment. A default of an `optional` type is `{literal: null}`
+  or `{computed}`: its core parameter or field is the `Option<T>` of the optional type itself, with no second
+  `Option`, and the binding passes `None` for a value that was left out as for a null, because both mean that no
+  value was given. A `{literal}` default of an enum names in `default_core` a constant of the core enum, and the
+  crate asserts at compile time with `matches!` that the constant is the variant of the declared value. A
+  `{literal: null}` default of a value type passes `None` and names no constant, so the crate asserts nothing: the
+  core decides what no value means. What "left out" is in each language: Python, an argument
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
@@ -316,8 +322,10 @@ the design ids are those of the binding design.
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
   and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
-  field without a default, any other default of a record parameter, a default of an `optional` type, a default of a type that is no
-  number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
+  field without a default, any other default of a record parameter, a default of an `optional` type other than
+  `{literal: null}` and `{computed}`, a default of a type that is no number, bool, text, latin1, bytes, source, list,
+  map, enum, value type or `optional`, a `{literal}` or `{const}` default without `default_core` other than
+  `{literal: null}` of an `optional` or a value type,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
   also has the result form.
 - **GN-6j** A parameter of type `source` (T-1), also inside `optional`, takes a text or bytes and reaches the core as
@@ -586,7 +594,8 @@ the design ids are those of the binding design.
   the C ABI read from the core error. A kind whose row names the unit is created as that struct.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
-  it out, and the core decides its value.
+  it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
+  already means no value (GN-6i).
 - **GN-15f** Go records of another repository (T-3, GN-6c), not implemented yet: the generator refuses such a record
   by name and names this row (G-4). A record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, and the C ABI writes and
@@ -795,7 +804,8 @@ the design ids are those of the binding design.
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
   compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
-  explicit `None` or `null` for such a parameter is tested as a value that is refused. T-1: a `source` parameter gives
+  explicit `None` or `null` for such a parameter is tested as a value that is refused, except for an `optional` or a
+  value type, which takes it as a value (GN-6i). T-1: a `source` parameter gives
   the same for a text and for the bytes of its UTF-8 (Python, Node), a text with an unpaired surrogate is kind
   `invalid_text`, and a value that is neither is kind `invalid_argument_type`. T-7: a `bytes` parameter refuses a
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is

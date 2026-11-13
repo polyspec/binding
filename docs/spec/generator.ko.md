@@ -249,15 +249,21 @@
   bool은 값 그대로다. `{literal}`·`{const}` 기본값은 코어가 `None`에 쓰는 코어 상수를 `default_core`에 적는다. 생성된
   crate는 그 상수가 선언된 값과 같음을 컴파일할 때 단언하고(text는 바이트로, float는 비트로), 선언은 그 값을 보인다.
   `{computed}`·`{empty}` 기본값에는 상수가 없다. 선언은 Python에서 `...`, PHP에서 `null`이나 `[]`, TypeScript에서 선택
-  parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
+  parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. `optional` 타입의 기본값은 `{literal: null}`이나
+  `{computed}`다. 그 코어 parameter나 field는 두 번째 `Option` 없이 optional 타입 자신의 `Option<T>`이고, 바인딩은
+  생략된 값에도 null처럼 `None`을 넘긴다. 둘 다 값이 주어지지 않았다는 뜻이기 때문이다. enum의 `{literal}` 기본값은
+  `default_core`에 코어 enum의 상수를 적고, crate는 그 상수가 선언된 값의 variant임을 컴파일할 때 `matches!`로
+  단언한다. 값 타입의 `{literal: null}` 기본값은 `None`을 넘기고 상수를 적지 않으므로 crate는 아무것도 단언하지
+  않는다. 값이 없다는 것이 무엇인지는 코어가 정한다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
   parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
   빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
-  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
-  기본값, `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
+  수·bool·text·latin1·bytes·source·list·map·enum·값 타입·`optional`이 아닌 타입의 기본값, `optional`이나 값 타입의
+  `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
   판정은 코어가 한다. Python은 `str`을 그 UTF-8로, 또는 PyO3가 바이트로 읽는 값을 받는다. Node는 string을 그 UTF-8로,
@@ -489,7 +495,8 @@
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
   그 struct로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
-  간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
+  간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
+  `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i).
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c), 아직 구현하지 않음: 생성기는 그런 record를 이름으로 거부하고 이 행을
   적는다(G-4). 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
   `<Record>`이며, C ABI는 이 레포의 record처럼 field마다 쓰고 읽는다. `binding scaffold`는 `binding generate`처럼
@@ -650,7 +657,8 @@
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
   member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. Python과 Node에서 그런
-  parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
+  parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. 다만 `optional`과 값 타입은 그것을 값으로 받으므로
+  제외한다(GN-6i). T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
   내고(Python, Node), 짝 없는 surrogate가 든 text는 kind `invalid_text`, 둘 다 아닌 값은 kind `invalid_argument_type`이다.
   T-7: `bytes` parameter는 바이트가 아닌 값을 거부하며 Node에서는 string도 거부한다. B-4: kind가 `class`를 적은 case는 그
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
