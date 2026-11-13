@@ -265,7 +265,8 @@ python-source = "generated/python"
       type: 'php-ext',
       license: 'MIT',
       require: { php: '>=8.4' },
-      'php-ext': { 'extension-name': extensionName(contract) },
+      // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
+      'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
   }
   if (contract.targets.includes('go')) {
@@ -329,6 +330,8 @@ function npmManifest(contract: Contract, version: string): string {
     version,
     description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
     license: 'MIT',
+    // GN-3c: the only .js files of the package are the glue of wasm-bindgen --target web, an ES module.
+    type: 'module',
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
     exports,
     files: [
@@ -336,6 +339,9 @@ function npmManifest(contract: Contract, version: string): string {
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
     ...(node ? { optionalDependencies: Object.fromEntries(NODE_PLATFORMS.map((p) => [platformPackage(npm.package, p.name), version])) } : {}),
+    // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
+    // loads, and builds it for the Rust triples of the platforms.
+    ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
   }, null, 2)}\n`;
 }
 
@@ -343,9 +349,9 @@ function npmManifest(contract: Contract, version: string): string {
 // npm package of a library (or its host package, L-2a) holds no addon; it names these packages in
 // optionalDependencies at its own version, and npm installs the one of the machine's platform.
 export const NODE_PLATFORMS = [
-  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc' },
-  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc' },
-  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
+  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc', triple: 'x86_64-unknown-linux-gnu' },
+  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc', triple: 'aarch64-unknown-linux-gnu' },
+  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64', triple: 'aarch64-apple-darwin' },
 ] as const;
 
 export const platformPackage = (npm: string, platform: string): string => `${npm}-${platform}`;
