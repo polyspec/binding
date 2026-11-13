@@ -3321,6 +3321,54 @@ test('a generated interface is declared in each language, and a parameter of it 
   assert.throws(() => generate(inputs((c) => { labelOf(c).parameters[0].core = '&'; })), /classes\.label_of\.named: a parameter of the generated interface named names no core borrow, because the core takes the value \(GN-6ap\)/);
 });
 
+test('a class with cleanup implements a generated interface, and one member takes the interface with a variant (GN-6ap, GN-6p, GN-6v, GN-3g)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  // The classes with cleanup, lease by the receiver self and stall by &mut self, implement the interface named.
+  for (const id of ['lease', 'stall']) unitOf(contract, id).implements = [{ unit: 'named' }];
+  // One member takes a value of the interface and a variant.
+  contract.units.push({ id: 'mark', name: ['mark'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::Mark', tag: ['type'],
+    cases: [{ value: 'plain', fields: [] }, { value: 'led', fields: [{ name: ['by'], type: 'text', required: true }] }] });
+  unitOf(contract, 'classes').members.push({ id: 'classes.marked', name: ['marked'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['named'], type: { unit: 'named' }, required: true }, { name: ['mark'], type: { unit: 'mark' }, required: true }], returns: 'text', raises: [], wait: 'none', core: 'polyspec_classes::marked' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const from = (fn: string, given: string, core: string): string => `in_${fn}(${given}).map(|held| <polyspec_classes::Named as From<&polyspec_classes::${core}>>::from(&held))`;
+  // GN-6ap with GN-6p: the conversion of the interface takes an instance of a class with cleanup, and the destructor of
+  // that class still asks whether its cleanup call was made.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  const goLib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  for (const [name, lib, given] of [['python', python, 'py, value, subject'], ['node', node, 'env, value, subject'], ['php', php, 'value, subject'], ['wasm', wasm, 'value, subject']] as const) {
+    assert.ok(lib.includes(`return ${from('lease', given, 'Lease')};`), `${name}: lease`);
+    assert.ok(lib.includes(`return ${from('stall', given, 'Stall')};`), `${name}: stall`);
+    assert.match(lib, /\.taken\(\)/, name);
+    assert.match(lib, /\.cleaned\(\)/, name);
+  }
+  assert.match(python, /if value\.cast::<PyLease>\(\)\.is_ok\(\) \{/);
+  assert.match(php, /#\[php\(implements\(ce = interface_named, stub = "\\\\Polyspec\\\\Classes\\\\Named"\)\)\]\n(#\[[^\n]*\n)*pub struct PhpStall /);
+  assert.match(php, /if !self\.inner\.cleaned\(\) \{/);
+  assert.match(wasm, /TABLE_STALL\.with\(\|table\| table\.borrow_mut\(\)\.remove\(this\)\)\.is_some_and\(\|held\| !held\.cleaned\(\)\)/);
+  // Go: the position of a class with cleanup among the classes of the interface, and the release that answers whether
+  // the cleanup call was made.
+  assert.ok(goLib.includes(`        3 => ${from('lease', 'input, subject', 'Lease')},\n        4 => ${from('stall', 'input, subject', 'Stall')},\n`));
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_lease\(handle: u64\) -> i32 \{\n[^\n]*\n {4}i32::from\(released\.is_some_and\(\|held\| !held\.taken\(\)\)\)/);
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_stall\(handle: u64\) -> i32 \{\n[^\n]*\n {4}i32::from\(released\.is_some_and\(\|held\| !held\.cleaned\(\)\)\)/);
+  const go = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(go, /^func \(this \*Lease\) implementsNamed\(\) \(uint64, uint64\) \{ return 3, this\.handle\(\) \}$/m);
+  assert.match(go, /^func \(this \*Stall\) implementsNamed\(\) \(uint64, uint64\) \{ return 4, this\.handle\(\) \}$/m);
+  // GN-6ap with GN-6v: one member encodes the interface by its function and the variant by its own, and Node converts
+  // both with the env.
+  assert.match(go, /^func Marked\(named Named, mark Mark\) \(string, error\) \{\n[\s\S]*?\n\tencodeNamed\(enc, named\)\n\tencodeMark\(enc, mark\)\n/m);
+  assert.match(node, /let named: polyspec_classes::Named = in_named\(env, named, "named"\)\?;\n\s*let mark: polyspec_classes::Mark = in_mark\(env, mark, "mark"\)\?;/);
+  assert.match(wasm, /let named: polyspec_classes::Named = in_named\(&named, "named"\)\?;\n\s*let mark: polyspec_classes::Mark = in_mark\(&mark, "mark"\)\?;/);
+  for (const [name, lib] of [['python', python], ['node', node], ['php', php], ['wasm', wasm], ['go', goLib]] as const) assert.match(lib, /polyspec_classes::marked\(named, &mark\)/, name);
+  // GN-3g with GN-6ap: the module that registers the interface names the extension.
+  assert.match(php, /\.name\("polyspec_classes"\)/);
+  assert.match(php, /ClassBuilder::new\("Polyspec\\\\Classes\\\\Named"\)\n {8}\.flags\(ClassFlags::Interface\)/);
+});
+
 // U-1: the classes repository with a class of origin value, token, whose out rows make each kind by a static member, and
 // a function that takes it, with a case of each kind.
 function tokenClasses(): { contract: any; caseFiles: Map<string, unknown> } {
