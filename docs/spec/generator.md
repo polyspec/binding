@@ -159,7 +159,9 @@ the design ids are those of the binding design.
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
   its name, and `binding check` compares the manifests with them (CK-19). A point (`fault::point!`) is live only in a
   crate whose own feature `fault-test` is on, because Cargo unifies the feature of binding_core across the build;
-  so the feature that this list leaves out keeps the points of that library off, and its cases fail. The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
+  so the feature that this list leaves out keeps the points of that library off, and its cases fail. A core with
+  points has itself as a dev-dependency, `<core crate> = { path = ".", features = ["fault-test"] }`, so that
+  `cargo test` of the core without flags arms them, in every repository in the same form (CK-65). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. Go has neither of
   the two yet: a contract with `in_raises` or with `faults` and Go is refused by name (G-4).
 

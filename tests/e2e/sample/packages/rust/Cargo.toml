@@ -16,5 +16,9 @@ fault-test = ["polyspec-binding-core/fault-test"]
 [dependencies]
 polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }
 
+# GN-5: cargo test without flags arms the fault injection points of the core's own tests and cases (CK-65).
+[dev-dependencies]
+polyspec-sample = { path = ".", features = ["fault-test"] }
+
 [lints]
 workspace = true

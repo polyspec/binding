@@ -132,7 +132,8 @@
   읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
   비교한다(CK-19). 지점(`fault::point!`)은 자기 feature `fault-test`가 켜진 crate에서만 살아 있다. Cargo가 build 전체에서
   binding_core의 feature를 합치기 때문이다. 그래서 이 목록이 빠뜨린 feature는 그 라이브러리의 지점을 꺼 둔 채로 두고, 그
-  case는 실패한다. WASM crate의 시험은
+  case는 실패한다. 지점을 가진 코어는 자기 자신을 dev-dependency `<core crate> = { path = ".", features = ["fault-test"] }`로
+  두어, flag 없는 코어의 `cargo test`가 그 지점을 장전하게 한다. 모든 저장소가 같은 꼴을 쓴다(CK-65). WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go에는 둘 다
   아직 없다. `in_raises`나 `faults`를 가진 계약에 Go가 있으면 이름을 대고 거부한다(G-4).
 

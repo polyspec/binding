@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
+  dev-dependency of its own, and repositories did it in two forms. The core now has itself as a dev-dependency with
+  `fault-test`, so `cargo test` without flags arms its points, and `binding check` reports a core manifest without it
+  (CK-65, GN-5). The sample core of tests/e2e has that dev-dependency.
 - A case that gave an instance value as an item of a list of a class, or as an argument of a class type of the call
   under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
   now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
