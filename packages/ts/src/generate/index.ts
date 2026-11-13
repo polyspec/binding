@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, refuseConsumers, refusePassing, Refusals } from './model.ts';
+import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -98,9 +98,6 @@ export function generate(inputs: Inputs): Files {
     // GN-6o, GN-6p: WASM has no method with the receiver self and no finalizer of a class unit with cleanup yet.
     refuseConsumers(forWasm, 'WASM', refusals);
   }
-  // GN-6ae: the targets that do not generate a parameter of a function type and a result passthrough yet.
-  const names = { node: 'Node', wasm: 'WASM' } as const;
-  for (const target of targets) if (target === 'node' || target === 'wasm') refusePassing(membersFor(model, target), names[target], refusals);
   refusals.fail();
   const files: Files = new Map();
   if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));

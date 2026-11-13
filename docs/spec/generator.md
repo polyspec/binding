@@ -160,9 +160,11 @@ the design ids are those of the binding design.
   where the attribute already gives the name of the language, while a module would change every path from an entry
   to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
   crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
-  family is `polyspec_`, with which no helper starts. Not applied yet (G-4): the crates of Node and WASM name
-  their helpers `in_<word>` and `out_<word>`, and their entries of functions are not checked against this rule;
-  the crates of PHP, Python and Go apply the rule.
+  family is `polyspec_`, with which no helper starts. The helper of a function parameter of Node and WASM is `function_in`.
+  The entry point of a function member of the Node and WASM crates is the Rust function `entry_<member>`, exported
+  under the name of the member (`js_name`), and no helper of those crates has a name that starts with `entry_`: a
+  member takes any name, also `guard`, `pass`, `called` or `throw`, and an entry point of that name is a second
+  definition of the helper in the Node crate and hides the helper in the module of the exports of the WASM crate. The five crates apply the rule of the helpers.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -724,22 +726,30 @@ the design ids are those of the binding design.
     GIL on the thread that drives the machine, which GN-6q allows, because a Python reference is bound to the GIL and
     not to a thread.
   - Node: the entry makes the machine on the JavaScript thread and returns a `Driven` object of the addon, and the
-    JavaScript entry, an async function, calls its `advance()` until the machine ends. Each `advance()` gives the output
-    of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
-    future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
-    on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
+    JavaScript entry, an async function, calls its `advance(settled)` until the machine ends. Each advance gives the
+    output of the last wait to the machine, makes its calls on the JavaScript thread and returns `[step, value]`:
+    `[0, promise]` for an Io future, which runs on the tokio runtime of napi and which the entry awaits, `[1, value]`
+    for a value that the machine awaits (GN-6ae), or `[2, result]` at the end, converted on the JavaScript thread. A
+    failure of the member throws from the advance and rejects the promise of the entry.
     The machine outlives the call that made it, so a callback that it owns is the generated struct
     `Owned<Callback>`, which holds a reference of napi (`napi_ref`) to the object and the environment of the
     JavaScript thread, makes the borrowed callback struct from them at each call, and deletes the reference when it
     is dropped, which happens on the JavaScript thread, where the `Driven` object ends.
+    An exception of a callback that the machine owns is taken out of the environment
+    (`napi_get_and_clear_last_exception`) and held as an `Owned` (GN-6ae) under the handle of its `Raised`, because
+    the machine goes on after the call and an exception that stays pending fails each later call of Node-API in the
+    advance, such as the promise of the next Io future; `failure_error` throws the held value again, so the caller
+    gets the same object. An exception that the callback recognizes as an error unit (U-3) is the core error of its
+    kind and is not held.
   - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
     goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6
     6.4). A member with `async_driver` that does not reach language code is still refused for Go (GN-6n).
   - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
-    module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
-    `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
-    returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
+    module, and the ES entry, an async function, calls its `advance(settled)` until the machine ends and then frees it.
+    Each advance gives the output of the last wait to the machine, makes its calls on the thread of the module and
+    returns `[0, promise]` for an Io future, the promise of GN-6n, `[1, value]` for a value that the machine awaits
+    (GN-6ae), or `[2, result]` at the end. A browser and
     Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
     both and no tokio runtime is used.
   A method with `machine` takes a clone of its receiver, a parameter of a function type and a result `passthrough`
@@ -772,6 +782,15 @@ the design ids are those of the binding design.
     nothing there and stay in the table. A handle of the table is a
     count that is never given again, so the handle of a released value names no value and never another value; a
     result whose handle names no value is kind `internal`.
+  - `Raised`: a `Raised` is released by the call that made it. The core may answer a `Raised` and drop it, as a
+    scope does that rolls back and then returns another failure, and a `Raised` has no release function, so what was
+    thrown would stay in the table of the binding under its handle. Node and WASM: each entry point records the
+    handles of the `Raised` values that are made on its thread while it runs, and a call that language code makes
+    inside it records its own; when the entry point returns, it removes from the table what was thrown under each
+    handle that `failure_error` did not take, and drops it after the table is released. A machine keeps the handles
+    of its advances and releases them at the advance that gives its result or fails, or, when it is not advanced to
+    its end, where its `Driven` object ends. Not applied yet (G-4): the crates of PHP, Python and Go do not apply the
+    rule.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
@@ -812,10 +831,47 @@ the design ids are those of the binding design.
     unwinds through the frames of the C ABI skips the destructors of the core, its guards and its machine: the call
     keeps the value of the panic as the `Raised`, the core ends as for an error, and the member panics with the same
     value after the call of the C ABI returned.
+  - Node: the parameter takes a function (a value whose `typeof` is `function`; any other value is kind
+    `invalid_callback`), and the declarations name each `passthrough` as a type parameter of the member,
+    `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`: the entry is an async function, so its promise
+    takes the state of a result that is a thenable. The machine owns the function as an `Owned` (GN-6ab), whose
+    reference of napi is deleted on the JavaScript thread, where the `Driven` object ends, and the closure calls it
+    with `napi_call_function` and the receiver `undefined`. An `Owned` of a value of the table and of an exception
+    holds its value as the one element of an array, because Node-API version 8 makes a reference only to an object, a
+    function or a symbol, while a function returns and throws any value. An exception of the
+    function is taken out of the environment (`napi_get_and_clear_last_exception`) and held as such an `Owned` under
+    the handle of its `Raised`, because the machine goes on after the call and no promise of an Io future can be made
+    while an exception is pending; `failure_error` throws the held value again (`napi_throw`), so the caller gets the
+    same object. The table of the values is a thread-local map from a handle to an `Owned`; the release function
+    removes the entry, and its drop deletes the reference.
+    Await: `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table. The function `drive`
+    of the JavaScript entry awaits it, a value that is no thenable included, and gives the outcome to the next advance
+    as `settled`, `[true, <value>]` or `[false, <rejection>]`: that advance stores the value in the table again, or
+    holds the rejection as a `Raised`, and calls `Driving::settle` before the machine resumes. `settled` is
+    `undefined` at the start and after a wait, and an advance that gets an outcome while its machine awaits no value,
+    or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from an awaited value
+    by the step of the advance that returned it and never by the value: a rejection of the promise of step `0` is a
+    failure of the binding (a panic of a poll, kind `internal`), which `drive` does not catch, so it rejects the
+    promise of the entry and the machine is not advanced again; a rejection of the value of step `1` is the outcome
+    of the function, which goes to the machine, and the core decides what it means.
+  - WASM: the parameter takes a function (any other value is kind `invalid_callback`), and the declarations are those
+    of Node. The machine owns the function as a `js_sys::Function`, a value of the module that lives until the ES
+    entry frees the `Driven` object, and the closure calls it with `apply` and the receiver `undefined`, on the thread
+    of the module. An exception of the function is the value that the call gives back to the module (the import
+    catches it, GN-18b), kept under the handle of its `Raised`, so the caller gets the same value. The table of the
+    values is a thread-local map from a handle to a `JsValue`; the release function removes the entry. Await: as for
+    Node, `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table; the function `drive` of
+    the ES module awaits it, a value that is no thenable included, and gives `[true, <value>]` or `[false,
+    <rejection>]` to the next advance, which stores the value in the table again, or keeps the rejection as a
+    `Raised`, and calls `Driving::settle` before the machine resumes; an advance that gets an outcome while its machine
+    awaits no value, or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from
+    an awaited value by the step of the advance, as for Node: a rejection of the promise of step `0` rejects the
+    promise of the entry and the machine is freed without another advance. Each advance runs through `state.mjs`
+    (GN-18), also the advance in which the function calls a member of the module again.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
-    the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
-    value that is no thenable included, and gives its value or its rejection to the next `advance()`. Python: `a<name>`
+    the next `resume`. Node and WASM await the value in their JavaScript entry, as their items below state. Python:
+    `a<name>`
     awaits a coroutine or another awaitable on the event loop of the caller with `asyncio.run_coroutine_threadsafe`
     from its worker thread, and `<name>` gives an awaitable result kind `invalid_callback` with the message that names
     `a<name>`, because no event loop of the caller runs. PHP and Go have no awaitable: the driver settles the value at
@@ -835,9 +891,7 @@ the design ids are those of the binding design.
     loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
     settles at once: a case with the marker runs on the five targets and requires the same result, exception and
     `after` on each.
-  Not generated yet (G-4): Node and WASM refuse a member with a parameter of a function type or a result
-  `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP, Python and Go generate the member. The PHP and Python tests write the function fixture, the test of a
+  The five targets generate the member. The PHP and Python tests write the function fixture, the test of a
   case with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a
   value that is no callable is kind `invalid_callback`. A Python function fixture
   is a function of the test module, because a lambda holds no statement, and the Python test also requires that
@@ -849,7 +903,11 @@ the design ids are those of the binding design.
   `func` is kind `invalid_callback`, a test that the member returns the error value that the `func` returned, and a
   test that the member panics with the value of a panic of the `func`; package `binding` tests that a handle of its
   table is not given again and that a result whose handle names no value is kind `internal`. A function fixture that
-  raises an error unit fails its Go test by name, because no function recognizes an error yet. The test of Node and WASM does not write them yet. The contract of the end-to-end sample
+  raises an error unit fails its Go test by name, because no function recognizes an error yet. The Node test and the WASM test write the same tests as the PHP test, with a value that is no function for the value that is no callable. The function of a Node or WASM fixture is an arrow function, whose step that
+  names a result requires it with `assert.deepStrictEqual` inside the function, an async one when the fixture names
+  `awaits` or a step of it calls a member that waits,
+  so the nested case of the sample runs the awaited step with a promise and its other cases with a value that is no
+  thenable. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns

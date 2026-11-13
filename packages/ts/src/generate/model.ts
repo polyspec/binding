@@ -1238,15 +1238,6 @@ export function refuseConsumers(model: Model, target: string, refusals: Refusals
   }
 }
 
-// GN-6ae: a target that does not generate a parameter of a function type and a result passthrough yet refuses the
-// member by name (G-4).
-export function refusePassing(model: Model, target: string, refusals: Refusals): void {
-  const passing = (fn: Fn): boolean => fn.params.some((p) => typeof p.type === 'object' && 'function' in p.type) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
-  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)].filter(passing)) {
-    refusals.refuse(`${fn.member.id}: a parameter of a function type and a result passthrough are not generated for ${target} yet (GN-6ae)`);
-  }
-}
-
 // GN-6p: the message of the warning of an object destroyed without its cleanup call (B-10).
 export const cleanupWarning = (className: string, cleanupName: string): string =>
   `${className} was destroyed without ${cleanupName}(), so its destructor released it (B-10)`;
@@ -1317,7 +1308,9 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+    // class that a function type names does not come in by it.
+    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));

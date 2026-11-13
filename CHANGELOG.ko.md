@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: cc88788605d42a7cadc309841e94d1f32e45224191c25ebbd6cfaaf98855e9c7 -->
+<!-- source-sha256: 2857458fa79aa5ad3bd1b2f3e0cfb2933026f2654e8d3882855331bde307b0a3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -75,6 +75,71 @@
   `tests/e2e/sample`의 `make e2e`로 검증했다: Go는 `go test`에서 생성된 시험 61개를 통과하고(`store.transaction`의
   case 다섯 개 포함) clippy, `gofmt -l`, `go vet`이 깨끗하며, PHP는 88개를 통과한다. Python, Node, WASM은 거기서 그
   거부로 실패한다.
+- 코어가 반환하지 않고 drop한 `Raised`는 던져진 것을 Node와 WASM crate의 table `THROWN`에 스레드가 끝날 때까지 남겼다.
+  `Raised`에 해제 함수가 없기 때문이다. 이제 규칙은 `Raised`를 만든 호출이 그것을 해제한다는 것이다. 각 진입점은 자기가
+  도는 동안 만들어진 handle을 기록하고, 반환할 때 `failure_error`가 가져가지 않은 각 handle 아래의 던져진 것을 제거한다.
+  machine은 자기 advance들의 handle을, 결과를 주거나 실패하는 advance까지, 또는 그 `Driven` 객체가 끝날 때까지
+  보관한다(U-3, GN-6ae). PHP, Python, Go의 crate는 아직 이 규칙을 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다.
+  그 시험은 변경 전에 sample의 crate에서 table `RAISING`을 찾지 못했다. 생성된 시험은 그 table을 관찰하지 않으므로,
+  end-to-end 실행은 crate가 컴파일되고 clippy를 통과하며 결과를 유지한다는 것만 보인다.
+- Node crate의 machine이 소유하는 callback(`Owned<Callback>`)은 machine이 계속 진행하는 동안 예외를 환경에 pending으로
+  남겼고, 같은 advance에서 뒤따르는 Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출이 실패할 수 있었다.
+  이제 소유된 callback은 machine의 함수와 같이 예외를 환경에서 꺼내어 그 `Raised`의 handle 아래에 보관하고,
+  `failure_error`가 같은 객체를 다시 던진다(GN-6ab). machine이 callback을 소유하고 함수를 받지 않는 crate도 이제 variant
+  `Thrown::Held`, `Owned::boxed`, `thrown_again`을 가진다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에
+  sample의 소유된 callback에서 `kept`를 찾지 못했다.
+- 함수 parameter의 argument로만 쓰이는 class(`store.transaction`의 `scope`)가 있는 계약의 Node crate는 그 class의 들어오는
+  변환 `in_<class>`를 썼고 아무도 그것을 호출하지 않는다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 함수
+  parameter의 argument는 언어 코드로 나가고 들어오지 않으므로, 들어오는 class를 찾는 검사는 이제 함수 타입을 읽지
+  않는다(T-5, GN-6ae). sample의 생성 crate를 처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은
+  변경 전에 sample의 Node crate에서 `fn in_scope`를 찾았다.
+- value alias와 함수 parameter를 받는 member가 함께 있는 계약의 Node 생성 crate는 함수 `raised`를 두 번 정의했다. 하나는
+  값의 walk를 위한 것이고 하나는 함수의 예외를 위한 것이며, 이는 컴파일되지 않는다(E0428). 이제 값의 walk는 napi의
+  error를 `js_raised`로 보관한다. `js_raised`는 pending 예외를 그대로 보관하고 다른 error는 binding의 실패로 보관하며,
+  crate에는 `raised`가 하나만 있다. WASM crate는 advance의 boxed closure를 `Driven`의 field 타입으로 직접 썼고 clippy가
+  이를 거부한다(`type_complexity`). 이제 그 타입의 이름은 `Advance`이다(GN-6ae). sample의 `make e2e`에서 생성 crate를
+  처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에 sample의 Node crate에서 `raised`를
+  두 번 찾았다.
+- callback unit도 value alias도 없이 함수 parameter만 언어 코드인 계약의 Node crate는 crate 안에서 아무도 만들지 않는
+  variant `Thrown::Js`를 가졌다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 이제 그 variant와 그 arm은
+  callback unit이나 value alias가 있는 계약에만 쓴다(GN-6ae). `packages/ts`의 `npm test`로 검증했다. 그 시험은 callback
+  unit과 alias를 뺀 sample을 생성하고 crate가 이름하는 모든 variant를 crate가 만들 것을 요구하며, 변경 전에는 `Js`를
+  찾았다. `tests/e2e`의 어떤 계약도 이 형태가 아니므로 end-to-end 실행은 그것을 컴파일하지 않는다.
+- `default`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 Node와 WASM 생성 crate는 함수
+  `in_<word>`나 `out_<word>`를 두 번 정의했고, `guard`, `pass`, `called`, `throw`, `internal`이라는 이름의 function
+  member는 crate의 helper 이름을 가졌다. Node crate에서는 두 번째 정의이고, WASM crate에서는 export의 모듈 안에서
+  helper를 가리는 export다. 이제 Node와 WASM crate의 helper는 방향을 끝에 적고(`text_in`, `list_out`, `default_in`,
+  `function_in`, `passed_out`), function member의 진입점은 `entry_<member>`이며 member의 이름으로 내보낸다(GN-4c).
+  `packages/ts`의 `npm test`로 검증했다. enum `default`, `callable`, `text`가 있는 sample의 시험은 변경 전에 Node
+  crate에서 `in_default`의 정의 둘을 찾았고, 함수 `guard`, `pass`, `called`, `throw`, `internal`의 시험은 `guard`의 정의
+  둘을 찾았다. 둘 다 통과하고, 생성된 WASM 진입점을 `rustc`로 컴파일하는 두 시험도 새 이름으로 통과한다. Python이나
+  Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
+- Node와 WASM 시험은 함수 fixture의 step의 결과와 표시 `awaits`를 쓰지 않았다. 이제 결과를 이름하는 step은 함수 안에서
+  그 호출의 `assert.deepStrictEqual`이고, `awaits`가 있는 fixture는 async 함수다. 그래서 sample의 기다리는 두 case는
+  machine의 기다리는 step을 이행된 promise와 거부된 promise로 돌린다(GN-6ae, CK-22). `packages/ts`의 `npm test`로
+  검증했다. Node와 WASM fixture의 시험이 통과한다. Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의
+  거부로 여전히 실패한다.
+- WASM binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 Node처럼 그
+  member를 생성한다(GN-6ae). machine은 함수를 `js_sys::Function`으로 소유하고, 모듈의 스레드에서 각 class 인자의
+  class의 새 인스턴스와 함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 `JsValue`의 thread-local
+  table에 쥔다. 함수가 던진 값은 그 `Raised`의 handle 아래에 두었다가 다시 던지므로 호출자는 같은 객체를 받는다.
+  `Driven` 객체의 `advance(settled)`와 ES 모듈의 `drive`는 Node의 step `[0, promise]`, `[1, value]`, `[2, result]`를
+  쓰고, 각 advance는 `state.mjs`를 거치며, machine은 거부된 기다림 뒤에도 끝에서 해제된다. 선언과 생성된 시험은 Node의
+  것과 같다. `packages/ts`의 `npm test`로 검증했다. WASM closure의 시험, 시험이 연기하는 machine에 대고 돌린 `drive`의
+  시험, WASM 시험의 시험 세 개가 통과하고, WASM에 대해 sample을 생성하는 WASM value alias의 시험이 다시 통과한다.
+  Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
+- Node binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그 member를
+  생성한다(GN-6ae). machine은 함수를 napi 참조로 소유하고, JavaScript 스레드에서 각 class 인자의 class의 새 인스턴스와
+  함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐었다가 결과로 그대로
+  내보낸다. 함수의 예외는 환경에서 꺼내 쥐었다가 member의 끝에서 다시 던지므로 호출자는 같은 객체를 받는다. `Driven`
+  객체의 `advance(settled)`는 기다림에 `[0, promise]`, machine이 기다리는 값에 `[1, value]`, 끝에 `[2, result]`를
+  돌려주고, JavaScript 진입의 `drive`는 step `1`의 값을 promise든 다른 값이든 기다려 `[true, value]`나
+  `[false, rejection]`을 다음 advance에 준다. 기다림의 promise의 거부는 호출을 reject하고 machine에 주지 않는다. 선언은
+  각 `passthrough`를 타입 parameter로 이름한다. `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`다.
+  Node 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case, `after`의 호출, 함수가 아닌 값이 kind
+  `invalid_callback`이라는 시험을 쓴다. `packages/ts`의 `npm test`로 검증했다. Node closure의 시험, 시험이 연기하는
+  machine에 대고 돌린 `drive`의 시험(값, promise, thenable, 거부된 기다리는 값, 거부된 기다림), Node 시험의 시험 세
+  개가 통과한다. Python, Go, WASM에 대해 sample을 생성하는 21개 시험은 그 target의 거부로 여전히 실패한다.
 - `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
   않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
   정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:

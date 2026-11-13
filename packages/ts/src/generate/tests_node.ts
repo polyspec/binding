@@ -5,7 +5,7 @@ import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind,
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { refuseScopedCases, type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type After, FIXTURE_RAISED, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -88,7 +88,6 @@ export const awaitedTest = (block: string): string => {
 };
 
 export function nodeTests(model: Model): string {
-  refuseScopedCases(model, 'Node');
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them, as host code does; the package's own
   // entry is the host's.
@@ -160,6 +159,34 @@ export function nodeTests(model: Model): string {
   ctx.instanceNew = made;
   let usesOutcome = false;
   let usesOrdered = false;
+  // GN-6ae: the function of a function fixture: each step calls a method on one of its arguments; it then returns its
+  // result, throws the instance of an error unit, or throws the exception that the test of the case holds. A function
+  // whose step calls a member that waits is async, so it returns a promise, which the member awaits.
+  ctx.functionNew = (fixture) => {
+    const steps = fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, `args[${step.on}]`);
+      // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
+      if (step.expected === undefined) return `${call}; `;
+      if ('refused' in step.expected) return `assert.fail(${jsString(step.expected.refused)}); `;
+      usesOrdered = true;
+      return `assert.deepStrictEqual(ordered(${call}), ordered(${step.expected.text})); `;
+    }).join('');
+    const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
+    // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
+    // awaits the call of a member that waits.
+    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+  };
+  // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
+  const afterChecks = (after: After[] | undefined, receiver: string): string =>
+    (after ?? []).map((call) => {
+      const expected = expectedText(model, ctx, call.fn, call.result);
+      if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
+      usesOrdered = true;
+      return `\n  assert.deepStrictEqual(ordered(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}), ordered(${expected.text}));`;
+    }).join('');
+  // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+  const heldReceiver = (receiverMade: { lines: string; expr: string }, after: After[] | undefined): { lines: string; expr: string } =>
+    after === undefined || receiverMade.expr === '' ? receiverMade : { lines: `${receiverMade.lines}\n  const receiver = ${receiverMade.expr};`, expr: 'receiver' };
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('node', fn.member.name, 'callable') : `${langName('node', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('node', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -231,6 +258,13 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
 });`);
       }
     }
+    // GN-6ae: a parameter of a function type takes a function, and any other value is kind invalid_callback.
+    for (const arg of reachable ? fn.args.filter((a) => typeof a.type === 'object' && 'function' in a.type) : []) {
+      out.push(`
+test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that is no function', () => {
+  assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
+});`);
+    }
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('node', pair.arg.name, 'variable');
@@ -255,7 +289,7 @@ test('B-4: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       };
-      const receiverMade = receiverOfCase(kase.receiver);
+      const receiverMade = kase.faults === undefined ? heldReceiver(receiverOfCase(kase.receiver), kase.after) : receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
@@ -278,7 +312,25 @@ test('B-4: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${arming}
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}
+    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
+});`);
+    }
+    // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
+    for (const kase of callbackCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('GN-6ae: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
+});`);
+        continue;
+      }
+      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
+      const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
+      out.push(`
+test('GN-6ae: ${name} ${kase.id}', () => {${receiverMade.lines}
+  const raised = new Error(${jsString(FIXTURE_RAISED)});
+  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -308,13 +360,13 @@ test('GN-13e: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       });
-      const receiverMade = receiverOfCase(kase.receiver);
+      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after);
       const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);

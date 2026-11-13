@@ -11,22 +11,22 @@ import { container, outArms } from './alias_shared.ts';
 function builtin(alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
-      return 'out_null(env)';
+      return 'null_out(env)';
     case 'bool':
-      return 'out_bool(env, value)';
+      return 'bool_out(env, value)';
     case 'int':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      return kind === 'int64' ? 'out_int(env, value)' : 'out_int(env, value.value())';
+      return kind === 'int64' ? 'int_out(env, value)' : 'int_out(env, value.value())';
     case 'bigint':
       if (kind === 'number') return 'js_literal_bigint(env, &value)';
       return kind === 'int64' ? 'js_bigint(env, value)' : 'js_bigint(env, value.value())';
     case 'float':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      if (kind === 'float') return 'out_float(env, value.value())';
+      if (kind === 'float') return 'float_out(env, value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `js_literal_number(env, &${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'out_text(env, value)';
+      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'text_out(env, value)';
     case 'bytes':
       return kind === 'text' ? 'js_bytes(env, value.as_bytes())' : 'js_bytes(env, value.value())';
     case 'list': {
@@ -209,29 +209,29 @@ impl HostValues for JsHost<'_> {
             _ => return Err(raised_binding("B-1: no such list")),
         };
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
-        let item: Unknown<'_> = array.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-        self.describe(item).map_err(|error| raised(Thrown::Js(error)))
+        let item: Unknown<'_> = array.get_element(index).map_err(js_raised)?;
+        self.describe(item).map_err(js_raised)
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
         let (key, value) = match self.held.get(handle_position(map.raw())) {
             Some(Held::Pairs(pairs)) => {
-                let pair: Object<'_> = pairs.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-                let key: Unknown<'_> = pair.get_element(0).map_err(|error| raised(Thrown::Js(error)))?;
-                let value: Unknown<'_> = pair.get_element(1).map_err(|error| raised(Thrown::Js(error)))?;
+                let pair: Object<'_> = pairs.get_element(index).map_err(js_raised)?;
+                let key: Unknown<'_> = pair.get_element(0).map_err(js_raised)?;
+                let value: Unknown<'_> = pair.get_element(1).map_err(js_raised)?;
                 (key, value)
             }
             Some(Held::Properties(object, keys)) => {
-                let key: Unknown<'_> = keys.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
+                let key: Unknown<'_> = keys.get_element(index).map_err(js_raised)?;
                 // A getter runs here; its exception goes back to the caller unchanged (U-3).
-                let value: Unknown<'_> = object.get_property(key).map_err(|error| raised(Thrown::Js(error)))?;
+                let value: Unknown<'_> = object.get_property(key).map_err(js_raised)?;
                 (key, value)
             }
             _ => return Err(raised_binding("B-1: no such map")),
         };
-        let key = self.describe(key).map_err(|error| raised(Thrown::Js(error)))?;
-        let value = self.describe(value).map_err(|error| raised(Thrown::Js(error)))?;
+        let key = self.describe(key).map_err(js_raised)?;
+        let value = self.describe(value).map_err(js_raised)?;
         Ok((key, value))
     }
 
@@ -287,14 +287,14 @@ fn js_bigint(env: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
 
 /// U-7: the literal token of a number (F-1 (a)) as a bigint, without loss.
 fn js_literal_bigint<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
-    let text = out_text(env, literal)?;
+    let text = text_out(env, literal)?;
     js_global_call(env, "BigInt", text).map_err(internal)
 }
 
 /// U-7: the literal token of a number as a JavaScript number, the nearest double.
 fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
     match literal.parse::<f64>() {
-        Ok(number) => out_float(env, number),
+        Ok(number) => float_out(env, number),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -302,7 +302,7 @@ fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env
 /// U-7: bytes that are UTF-8 as a string.
 fn js_utf8<'env>(env: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(env, text),
+        Ok(text) => text_out(env, text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }
@@ -357,16 +357,14 @@ fn handle_position(value: u64) -> usize {
     }
 }
 
-/// U-3: an exception of JavaScript code, or a failure of the binding, while the core walks a value, as the Raised that
-/// the caller throws again.
-fn raised(error: Thrown) -> binding_core::Raised {
-    let error = match error {
-        Thrown::Js(error) if error.status != napi::Status::PendingException => Thrown::Binding(internal(error)),
-        other => other,
-    };
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+/// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again; an
+/// error of napi with no exception pending is a failure of the binding.
+fn js_raised(error: napi::Error) -> binding_core::Raised {
+    if error.status == napi::Status::PendingException {
+        raised(Thrown::Js(error))
+    } else {
+        raised(Thrown::Binding(internal(error)))
+    }
 }
 
 fn raised_binding(detail: &str) -> binding_core::Raised {

@@ -86,6 +86,84 @@
   every target still fail with the refusal of Python, Node and WASM. Verified by `make e2e` of `tests/e2e/sample`,
   where Go passes 61 generated tests on `go test`, the five cases of `store.transaction` among them, with clippy,
   `gofmt -l` and `go vet` clean, and PHP passes 88; Python, Node and WASM fail there by their refusal.
+- A `Raised` that the core dropped and did not return left what was thrown in the table `THROWN` of the Node and
+  WASM crates for the life of the thread, because a `Raised` has no release function. The rule is now that the call
+  that made a `Raised` releases it: each entry point records the handles that are made while it runs and, when it
+  returns, removes what was thrown under each handle that `failure_error` did not take; a machine keeps the handles
+  of its advances until the advance that gives its result or fails, or until its `Driven` object ends (U-3, GN-6ae).
+  The crates of PHP, Python and Go do not apply the rule yet. Verified by `npm test` in `packages/ts`, whose test
+  found no table `RAISING` in the crates of the sample before the change. No generated test observes the table, so
+  the end-to-end run shows only that the crates compile, pass clippy and keep their results.
+- A callback that a machine of the Node crate owns (`Owned<Callback>`) left its exception pending in the environment
+  while the machine went on, so a later call of Node-API in the same advance, such as the promise of the next Io
+  future, would fail. The owned callback now takes the exception out of the environment and holds it under the handle
+  of its `Raised`, as the function of a machine does, and `failure_error` throws the same object again (GN-6ab). A
+  crate whose machine owns a callback and takes no function now has the variant `Thrown::Held`, `Owned::boxed` and
+  `thrown_again`. Verified by `npm test` in `packages/ts`, whose test found no `kept` in the owned callback of the
+  sample before the change.
+- The Node crate of a contract with a class that is only the argument of a function parameter (the `scope` of
+  `store.transaction`) wrote the conversion in of that class, `in_<class>`, which nothing calls: dead code that fails
+  the build with `-D warnings`. The argument of a function parameter leaves to language code and never comes in, so
+  the check of the classes that come in no longer reads a function type (T-5, GN-6ae). Found by the first compile of
+  the generated crates of the sample. Verified by `npm test` in `packages/ts`, whose test found `fn in_scope` in the
+  Node crate of the sample before the change.
+- The generated Node crate of a contract with a value alias and a member that takes a function parameter defined the
+  function `raised` twice, once for the walk of a value and once for the exception of a function, which does not
+  compile (E0428). The walk of a value now keeps an error of napi through `js_raised`, which holds a pending
+  exception as it is and any other error as a failure of the binding, and the crate has the one `raised`. The WASM
+  crate wrote the boxed closure of an advance as the type of a field of `Driven`, which clippy refuses
+  (`type_complexity`); the type now has the name `Advance` (GN-6ae). Found by the first compile of the generated
+  crates in `make e2e` of the sample. Verified by `npm test` in `packages/ts`, whose test found `raised` twice in the
+  Node crate of the sample before the change.
+- The Node crate of a contract whose only language code is a function parameter, with no callback unit and no value
+  alias, held the variant `Thrown::Js` that nothing in the crate makes, which is dead code and fails the build with
+  `-D warnings`. The variant and its arm are now written only for a contract with a callback unit or a value alias
+  (GN-6ae). Verified by `npm test` in `packages/ts`, whose test generates the sample without its callback units and
+  its alias and requires that the crate makes every variant that it names; before the change it found `Js`. No
+  contract of `tests/e2e` has this form, so no end-to-end run compiles it.
+- The generated Node and WASM crates of a contract with a unit named `default`, `text`, `list` or another word of a
+  helper defined the function `in_<word>` or `out_<word>` twice, and a function member named `guard`, `pass`,
+  `called`, `throw` or `internal` took the name of a helper of the crate: a second definition in the Node crate, and
+  in the WASM crate an export that hides the helper in the module of the exports. The helpers of the Node and WASM
+  crates now state their direction last (`text_in`, `list_out`, `default_in`, `function_in`, `passed_out`), and the
+  entry point of a function member is `entry_<member>`, exported under the name of the member (GN-4c). Verified by
+  `npm test` in `packages/ts`: the test of the sample with the enums `default`, `callable` and `text` found two
+  definitions of `in_default` in the Node crate before the change, and the test of the functions `guard`, `pass`,
+  `called`, `throw` and `internal` found two definitions of `guard`; both pass, and the two tests that compile
+  generated WASM entry points with `rustc` pass with the new names. The 20 tests that generate the sample for Python
+  or Go still fail with the refusal of those targets.
+- The Node and WASM tests did not write the result of a step of a function fixture nor the marker `awaits`. A step
+  that names a result is now `assert.deepStrictEqual` of its call inside the function, and a fixture with `awaits` is
+  an async function, so the two cases of the sample that await run the awaited step of the machine with a promise
+  that is fulfilled and with one that is rejected (GN-6ae, CK-22). Verified by `npm test` in `packages/ts`, whose
+  tests of the Node and WASM fixtures pass; the 20 tests that generate the sample for Python or Go still fail with the
+  refusal of those targets.
+- The WASM binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member as Node does (GN-6ae): the machine owns the function as a `js_sys::Function` and calls it on
+  the thread of the module with a new instance of the class of each class argument; the value that the function
+  returned is held in a thread-local table of `JsValue` under a handle that is never given again; the value that the
+  function threw is kept under the handle of its `Raised` and thrown again, so the caller gets the same object.
+  `advance(settled)` of the `Driven` object and `drive` of the ES module take the steps of Node, `[0, promise]`,
+  `[1, value]` and `[2, result]`, each advance through `state.mjs`, and the machine is freed at its end, also after
+  a rejected wait. The declarations and the generated test are those of Node. Verified by `npm test` in
+  `packages/ts`: the three tests of the WASM closure, of `drive` run against a played machine and of the WASM test
+  pass, and the test of the WASM value alias, which generates the sample for WASM, passes again; the 20 tests that
+  generate the sample for Python or Go still fail with the refusal of those targets.
+- The Node binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member (GN-6ae): the machine owns the function as a reference of napi and calls it on the JavaScript
+  thread with a new instance of the class of each class argument; the value that the function returned is held in a
+  thread-local table under a handle that is never given again and leaves it unchanged as the result; an exception of
+  the function is taken out of the environment, held, and thrown again at the end of the member, so the caller gets
+  the same object. `advance(settled)` of the `Driven` object returns `[0, promise]` for a wait, `[1, value]` for a
+  value that the machine awaits and `[2, result]` at the end, and `drive` of the JavaScript entry awaits the value of
+  step `1`, a promise or any other value, and gives `[true, value]` or `[false, rejection]` to the next advance; a
+  rejection of the promise of a wait rejects the call and is not given to the machine. The declarations name each
+  `passthrough` as a type parameter, `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`. The Node test
+  writes the function fixture, the case of `raises: "callback"` with the same exception object, the calls of `after`,
+  and a test that a value that is no function is kind `invalid_callback`. Verified by `npm test` in `packages/ts`: the
+  three tests of the Node closure, of `drive` run against a played machine (a value, a promise, a thenable, a
+  rejected awaited value and a rejected wait) and of the Node test pass; the 21 tests that generate the sample for
+  Python, Go or WASM still fail with the refusal of those targets.
 - The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
   helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
   `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to

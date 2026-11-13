@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8c99bcf9c64d2563bbb5d244ac46e410e47d55190811253c047be56d984a091e -->
+<!-- source-sha256: a97ce5968ac73911e32128776b373bc8e24fb80b6713b88faa64989b03709b5b -->
 # 생성기
 
 [English](generator.md)
@@ -128,9 +128,11 @@
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
   이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
   바꾸기 때문이다. Go crate의 함수나 member의 진입은 C symbol `polyspec_<library>_<module>_<member>`(B-8)이고,
-  Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. 아직 적용하지
-  않은 것(G-4): Node, WASM의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름하고, 그 함수 진입은 이 규칙으로 검사하지
-  않았다. PHP, Python, Go의 crate는 이 규칙을 적용한다.
+  Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는
+  `function_in`이다. Node와 WASM crate에서 function member의 진입점은 Rust 함수 `entry_<member>`이고 member의
+  이름으로 내보내며(`js_name`), 그 crate의 어떤 helper도 `entry_`로 시작하는 이름을 갖지 않는다. member는 어떤 이름이든
+  가질 수 있고 `guard`, `pass`, `called`, `throw`도 그렇다. 그 이름의 진입점은 Node crate에서는 helper의 두 번째 정의이고,
+  WASM crate에서는 export의 모듈 안에서 helper를 가린다. 다섯 crate가 helper의 규칙을 적용한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -600,21 +602,27 @@
     스레드가 돈다. `a<name>`은 GN-6m처럼 `<name>`을 `asyncio.to_thread`에서 돌린다. callback은 machine을 돌리는
     스레드에서 GIL을 쥐고 불린다. Python 참조는 스레드가 아니라 GIL에 묶이므로 GN-6q가 이를 허용한다.
   - Node: 진입은 JavaScript 스레드에서 machine을 만들고 addon의 `Driven` 객체를 돌려주며, async 함수인 JavaScript
-    진입은 machine이 끝날 때까지 그 `advance()`를 부른다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
-    JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
-    tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
-    돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
+    진입은 machine이 끝날 때까지 그 `advance(settled)`를 부른다. 각 advance는 마지막 기다림의 출력을 machine에 주고,
+    JavaScript 스레드에서 machine의 call을 하며, `[step, value]`를 돌려준다. Io future에 대해서는 `[0, promise]`이고,
+    그 future는 napi의 tokio runtime에서 돌며 진입이 그 promise를 기다린다. machine이 기다리는 값에 대해서는
+    `[1, value]`이고(GN-6ae), 끝에서는 JavaScript 스레드에서 변환한 `[2, result]`다. member의 실패는 advance에서
+    던져지고 진입의 promise를 reject한다.
     machine은 그것을 만든 호출보다 오래 살므로, machine이 소유하는 callback은 생성된 struct `Owned<Callback>`이다. 그것은
     객체에 대한 napi 참조(`napi_ref`)와 JavaScript 스레드의 환경을 지니고, 각 호출에서 그 둘로 빌린 callback struct를
     만들며, drop될 때 참조를 지운다. drop은 `Driven` 객체가 끝나는 JavaScript 스레드에서 일어난다.
+    machine이 소유하는 callback의 예외는 환경에서 꺼내어(`napi_get_and_clear_last_exception`) 그 `Raised`의 handle 아래에
+    `Owned`(GN-6ae)로 보관한다. machine은 그 호출 뒤에도 계속 진행하고, pending으로 남은 예외는 그 advance에서 뒤따르는
+    Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출을 실패시키기 때문이다. `failure_error`가 보관한 값을
+    다시 던지므로 호출자는 같은 객체를 받는다. callback이 error unit으로 인식하는 예외(U-3)는 그 kind의 core error이며
+    보관하지 않는다.
   - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
     호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
     각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 언어 코드에 닿지 않는 `async_driver` member는 Go에서
     여전히 거부한다(GN-6n).
   - WASM: Node처럼 진입은 모듈의 스레드에서 machine을 만들고 모듈의 `Driven` 객체를 돌려주며, async 함수인 ES 진입은
-    machine이 끝날 때까지 그 `advance()`를 부른 뒤 그것을 해제한다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
-    모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[false, promise]`를, 끝에서는
-    `[true, result]`를 돌려준다. 두 곳 모두 JavaScript의 event loop가 모듈의 스레드에서 각 Io future를 poll하고 tokio
+    machine이 끝날 때까지 그 `advance(settled)`를 부른 뒤 그것을 해제한다. 각 advance는 마지막 기다림의 출력을 machine에
+    주고, 모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[0, promise]`를, machine이
+    기다리는 값에 대해서는 `[1, value]`를(GN-6ae), 끝에서는 `[2, result]`를 돌려준다. 두 곳 모두 JavaScript의 event loop가 모듈의 스레드에서 각 Io future를 poll하고 tokio
     runtime은 쓰지 않으므로, 브라우저와 Node는 같은 단계를 밟는다.
   `machine`이 있는 method는 receiver의 clone을 받고, 함수 타입의 parameter와 결과 `passthrough`를 생성하며,
   `async_allowed: true`인 함수는 기다린다. GN-6ae가 적는 대로다. `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기
@@ -641,6 +649,13 @@
     `Passthrough`는 그 값을 놓는다. `Passthrough`는 `Send`가 아니다. table은 언어 코드의 스레드에 묶여 있어서, 다른
     스레드에서 끝난 값은 거기서 아무것도 놓지 못하고 table에 남기 때문이다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
     가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  - `Raised`: `Raised`는 그것을 만든 호출이 해제한다. 코어는 `Raised`에 응답하고 그것을 drop할 수 있다. rollback한 뒤
+    다른 실패를 반환하는 scope가 그렇다. `Raised`에는 해제 함수가 없으므로, 던져진 것이 그 handle 아래 binding의 table에
+    남게 된다. Node와 WASM: 각 진입점은 자기가 도는 동안 자기 스레드에서 만들어진 `Raised`의 handle을 기록하고, 그 안에서
+    언어 코드가 하는 호출은 자기 것을 따로 기록한다. 진입점이 반환할 때, `failure_error`가 가져가지 않은 각 handle 아래의
+    던져진 것을 table에서 제거하고, table을 놓은 뒤에 drop한다. machine은 자기 advance들의 handle을 보관하고, 결과를
+    주거나 실패하는 advance에서 해제하며, 끝까지 advance되지 않으면 그 `Driven` 객체가 끝나는 곳에서 해제한다. 아직
+    적용하지 않음(G-4): PHP, Python, Go의 crate는 이 규칙을 적용하지 않는다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
@@ -674,10 +689,39 @@
     member는 같은 error 값을 돌려준다. 함수의 panic은 callback의 method의 panic처럼(GN-15b) 호출이 recover한다. C ABI의 frame을 지나 unwind하는
     panic은 코어의 destructor, 곧 그 guard와 machine의 것을 건너뛰기 때문이다: 호출은 panic의 값을 `Raised`로 쥐고,
     코어는 error일 때처럼 끝나며, member는 C ABI 호출이 돌아온 뒤 같은 값으로 panic한다.
+  - Node: parameter는 함수를 받고(`typeof`가 `function`인 값. 다른 값은 kind `invalid_callback`이다), 선언은 각
+    `passthrough`를 member의 타입 parameter로 이름한다. `transaction<T>(work: (arg0: Scope) => T):
+    Promise<Awaited<T>>`다. 진입이 async 함수여서 그 promise는 thenable인 결과의 상태를 따르기 때문이다. machine은 그
+    함수를 `Owned`(GN-6ab)로 소유하고, 그 napi 참조는 `Driven` 객체가 끝나는 JavaScript 스레드에서 지워지며, closure는
+    `napi_call_function`으로 receiver `undefined`와 함께 함수를 부른다. table의 값과 예외의 `Owned`는
+    그 값을 배열의 한 원소로 쥔다. Node-API 버전 8은 객체, 함수, symbol에만 참조를 만드는데 함수는 어떤 값이든
+    돌려주고 던지기 때문이다. 함수의 예외는 환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 handle
+    아래에 그런 `Owned`로 쥔다. machine은 call 뒤에도 계속되고, 예외가 걸려 있는 동안에는 Io future의 promise를 만들
+    수 없기 때문이다. `failure_error`가 쥔 값을 다시 던지므로(`napi_throw`) 호출자는 같은 객체를 받는다. 값의 table은
+    handle에서 `Owned`로 가는 thread-local map이다. release 함수는 그 항목을 지우고, 항목의 drop이 참조를 지운다.
+    Await: advance의 `[1, value]`는 `Step::Await`의 값이고, 그 값은 table을 떠난다. JavaScript 진입의 함수 `drive`는
+    thenable이 아닌 값까지 그것을 기다리고, 그 결과를 다음 advance에 `settled`로 준다. `[true, <값>]`이거나
+    `[false, <거부>]`다. 그 advance는 값을 다시 table에 넣거나 거부를 `Raised`로 쥐고, machine이 resume하기 전에
+    `Driving::settle`을 부른다. `settled`는 시작할 때와 기다림 뒤에는 `undefined`이고, machine이 값을 기다리지 않는데
+    결과를 받거나 값을 기다리는데 결과를 받지 못한 advance는 kind `internal`이다. `drive`는 Io future의 promise와
+    기다리는 값을 값이 아니라 그것을 돌려준 advance의 step으로 가른다. step `0`의 promise의 거부는 binding의
+    실패(poll의 panic, kind `internal`)이고 `drive`가 잡지 않으므로, 진입의 promise를 reject하고 machine은 다시
+    advance되지 않는다. step `1`의 값의 거부는 함수의 결과이고 machine으로 가며, 그 뜻은 코어가 정한다.
+  - WASM: parameter는 함수를 받고(다른 값은 kind `invalid_callback`이다), 선언은 Node의 것과 같다. machine은 그 함수를
+    `js_sys::Function`으로 소유한다. 그것은 ES 진입이 `Driven` 객체를 해제할 때까지 사는 모듈의 값이다. closure는 모듈의
+    스레드에서 `apply`로 receiver `undefined`와 함께 함수를 부른다. 함수의 예외는 그 호출이 모듈에 돌려주는 값이고(import가
+    그것을 잡는다, GN-18b), 그 `Raised`의 handle 아래에 두므로 호출자는 같은 값을 받는다. 값의 table은 handle에서
+    `JsValue`로 가는 thread-local map이고, release 함수는 그 항목을 지운다. Await: Node처럼 advance의 `[1, value]`는
+    `Step::Await`의 값이고 그 값은 table을 떠난다. ES 모듈의 함수 `drive`는 thenable이 아닌 값까지 그것을 기다리고
+    `[true, <값>]`이나 `[false, <거부>]`를 다음 advance에 준다. 그 advance는 값을 다시 table에 넣거나 거부를 `Raised`로
+    두고, machine이 resume하기 전에 `Driving::settle`을 부른다. machine이 값을 기다리지 않는데 결과를 받거나 값을
+    기다리는데 결과를 받지 못한 advance는 kind `internal`이다. `drive`는 Node처럼 Io future의 promise와 기다리는 값을
+    advance의 step으로 가른다. step `0`의 promise의 거부는 진입의 promise를 reject하고, machine은 다시 advance되지 않고
+    해제된다. 각 advance는 `state.mjs`를 거친다(GN-18). 함수가 모듈의 member를 다시 부르는 advance도 그렇다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
     driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
-    WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
-    다음 `advance()`에 준다. Python: `a<name>`은 worker 스레드에서 `asyncio.run_coroutine_threadsafe`로 호출자의 event
+    WASM은 아래 각 항목이 적는 대로 JavaScript 진입에서 그 값을 기다린다. Python: `a<name>`은
+    worker 스레드에서 `asyncio.run_coroutine_threadsafe`로 호출자의 event
     loop에서 coroutine이나 다른 awaitable을 기다리고, `<name>`은 호출자의 event loop가 돌지 않으므로 awaitable 결과를
     `a<name>`을 이름하는 message의 kind `invalid_callback`으로 한다. PHP와 Go에는 awaitable이 없다: driver는 값을 곧바로
     settle하므로 PHP나 Go 함수는 그 결과를 돌려준다.
@@ -692,9 +736,7 @@
     step은 기다리는 member의 호출을 기다리고(Python은 `await <인자>.a<name>(...)`), 그 case의 Python 시험은 event
     loop에서 `a<name>`을 부른다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은 fixture가 보통 함수이고 driver가 그 값을
     곧바로 settle한다. 표시가 있는 case는 다섯 target에서 돌고 각 target에서 같은 결과, 예외, `after`를 요구한다.
-  아직 생성하지 않는 것(G-4): Node, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
-  "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
-  PHP, Python, Go는 그 member를 생성한다. PHP와 Python 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"`
+  다섯 target이 그 member를 생성한다. PHP와 Python 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"`
   case의 시험, `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다.
   Python의 함수 fixture는 시험 module의 함수다. lambda는 문장을 갖지 못하기 때문이다. Python 시험은 또
   awaitable을 돌려주는 함수를 받은 `<name>`이 `a<name>`을 이름하는 message의 kind `invalid_callback`일 것을 요구한다.
@@ -705,7 +747,9 @@
   member가 `func`가 돌려준 error 값을 돌려준다는 시험, member가 `func`의 panic 값으로 panic한다는 시험을 쓴다.
   package `binding`은 그 table의 handle을 다시 주지 않는다는 것과 handle이 값을 가리키지 않는 결과가 kind
   `internal`이라는 것을 시험한다. 오류 unit을 던지는 함수 fixture는 그 Go 시험을 이름을 대고 실패시킨다. 아직 어떤
-  함수도 오류를 인식하지 않기 때문이다. Node, WASM의 시험은 아직 그것을 쓰지 않는다.
+  함수도 오류를 인식하지 않기 때문이다. Node 시험과 WASM 시험은 PHP 시험과 같은 시험을 쓰며, callable이 아닌 값 자리에는 함수가 아닌 값을 쓴다. Node와 WASM fixture의 함수는 arrow 함수이고, 결과를 이름하는 단계는 함수 안에서
+  `assert.deepStrictEqual`로 그 결과를 요구하며, fixture가 `awaits`를 이름하거나 그 단계가 기다리는 member를 부르면 async
+  함수다. 그래서 sample의 중첩 case는 기다리는 단계를 promise로, 다른 case는 thenable이 아닌 값으로 돌린다.
   end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class

@@ -14,22 +14,22 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'null':
       return 'Ok(JsValue::NULL)';
     case 'bool':
-      return 'out_bool(value)';
+      return 'bool_out(value)';
     case 'int':
       if (kind === 'number') return 'js_literal_number(&value)';
-      return kind === 'int64' ? 'out_int(value)' : 'out_int(value.value())';
+      return kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())';
     case 'bigint':
       if (kind === 'number') return 'js_literal_bigint(&value)';
       return kind === 'int64' ? 'js_bigint(value)' : 'js_bigint(value.value())';
     case 'float':
       if (kind === 'number') return 'js_literal_number(&value)';
-      if (kind === 'float') return 'out_float(value.value())';
+      if (kind === 'float') return 'float_out(value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `js_literal_number(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'js_utf8(value.value())' : 'out_text(value)';
+      return kind === 'bytes' ? 'js_utf8(value.value())' : 'text_out(value)';
     case 'bytes':
-      return kind === 'text' ? 'out_bytes(value.as_bytes())' : 'out_bytes(value.value())';
+      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
     case 'list': {
       const parts = container(alias, kind, form);
       return `{
@@ -290,7 +290,7 @@ fn js_literal_bigint(literal: &str) -> Result<JsValue, Fail> {
 /// U-7: the literal token of a number as a JavaScript number, the nearest double.
 fn js_literal_number(literal: &str) -> Result<JsValue, Fail> {
     match literal.parse::<f64>() {
-        Ok(number) => out_float(number),
+        Ok(number) => float_out(number),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -298,7 +298,7 @@ fn js_literal_number(literal: &str) -> Result<JsValue, Fail> {
 /// U-7: bytes that are UTF-8 as a string.
 fn js_utf8(bytes: &[u8]) -> Result<JsValue, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(text),
+        Ok(text) => text_out(text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }
