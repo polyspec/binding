@@ -4,8 +4,9 @@
 // (U-7 (d)). What a Python type is as a HostValue is binding's rule, the same for every alias; which kinds an alias
 // takes is its core's.
 
-import { type Model, type ValueAlias, langName, rustField } from './model.ts';
+import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { rustString } from './text.ts';
 
 // The Python value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -77,21 +78,21 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
             None => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: the native object is gone") })),
         }`;
     default:
-      throw new Error(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
+      throw new Unsupported(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
   }
 }
 
 export function aliasPython(model: Model, alias: ValueAlias): string {
-  const name = rustField(alias.unit.name);
+  const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   const arms = outArms(alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
     let mut host = PyHost { py, held: Vec::new() };
     let described = host.describe(value)?;
-    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| failure_error(py, failure))
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py, failure))
 }
 
 /// U-7: a core value of ${langName('python', alias.unit.name, 'class')} leaves as the Python values of its out rows.
@@ -266,3 +267,32 @@ fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
     binding_core::Raised::from_generated(binding_core::Handle::new(handle))
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
+
+// U-7 (a'): the failure of the `in` of a value alias of another repository. Its kind, status and errno are the owner's;
+// its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
+// wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
+export function foreignFailurePython(model: Model): string {
+  return foreignAliasLibraries(model).map((alias) => {
+    const library = (alias.library ?? '').replaceAll('-', '_');
+    const error = alias.error ?? { path: '', kinds: [] };
+    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(model.classes.find((c) => c.category === k.category)?.name ?? '')},`).join('\n');
+    return `
+/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+fn ${library}_error(py: Python<'_>, error: ${error.path}) -> PyErr {
+    let class = match error {
+${arms}
+    };
+    library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+
+fn ${library}_failure_error(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
+    match failure {
+        binding_core::Failure::Kind(error) => ${library}_error(py, error),
+        binding_core::Failure::Raised(raised) => failure_error(py, binding_core::Failure::Raised(raised)),
+        binding_core::Failure::Callback(error) => failure_error(py, binding_core::Failure::Callback(error)),
+    }
+}
+`;
+  }).join('');
+}

@@ -3,7 +3,7 @@
 
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -139,11 +139,11 @@ test('K-2: ${name} refuses a callback without its members', () => {
 test('K-2: ${name} lets the exception of a callback through', () => {
   const raised = new Error('raised by the callback');
   assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
-});
+});${judgesCallbackResult(model, cbUnit) ? `
 
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
-});`);
+});` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`

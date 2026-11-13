@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { NODE_HOST, aliasNode } from './alias_node.ts';
+import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -32,7 +32,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
+  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
@@ -57,7 +57,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
-  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -470,7 +470,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         if std::thread::current().id() != self.owner {
             return Err(thrown(Thrown::Binding(binding_error(BindingError::WrongThread { subject: String::from(${rustString(`${jsName}.${method}()`)}) }))));
         }` : ''}
-        let call = || -> Result<${result}, Thrown> {
+        let call = || -> Result<${result}, Thrown> {${/\benv\b/.test(returned) && m.returns !== 'none' ? '\n            let env = self.env;' : ''}
             let function: Function<'env, ${argsType}, Unknown<'env>> =
                 self.object.get_named_property(${rustString(method)}).map_err(|error| Thrown::Binding(internal(error)))?;
             let args: ${argsType} = FnArgs::from((${outs.map((o) => `${o.replace(/\?$/, '')}.map_err(Thrown::Binding)?`).join(', ')}${outs.length === 1 ? ',' : ''}));
@@ -615,7 +615,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -627,7 +627,8 @@ function libRust(model: Model): string {
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
-    .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
+    // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
+    .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   return `${header('//')}

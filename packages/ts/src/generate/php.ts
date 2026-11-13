@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
-import { PHP_HOST, aliasPhp } from './alias_php.ts';
+import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -41,7 +41,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
@@ -65,7 +65,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
-  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -702,6 +702,7 @@ fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
 ` : '',
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
+    foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? PHP_HOST : '',
   ].join('\n');

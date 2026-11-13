@@ -500,6 +500,65 @@ test('a value alias converts through its core functions in every language (U-7)'
   }
 });
 
+// The consumer sample of the end-to-end check, which names the value alias of the sample (tests/e2e/consumer).
+const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  return {
+    contract: read('consumer/packages/rust/interface.json'),
+    caseFiles: new Map([['contracts/cases.json', read('consumer/contracts/cases.json')]]),
+    foreign: new Map([['sample', read('sample/packages/rust/interface.json')]]),
+  };
+};
+
+test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6h)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The owner's two core functions are the conversion, under names that carry the library.
+    assert.match(lib, /\nfn in_sample_data[(<]/, path);
+    assert.match(lib, /let \(root, mut source\) = polyspec_sample::data_to_out\(value\.borrow\(\)\);/, path);
+    assert.doesNotMatch(lib, /\bfn (in|out)_data\b/, path);
+    // A failure of the owner's in is of the owner's enum; its class is this library's class of the owner's category.
+    assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| sample_failure_error\(/, path);
+    assert.match(lib, /fn sample_error\([^)]*error: polyspec_sample::Error\)[^{]*\{\n    let class(: usize)? = match error \{\n        polyspec_sample::Error::Missing \{ \.\. \} => [^\n]*\n        polyspec_sample::Error::Unsupported \{ \.\. \} => [^\n]*\n    \};/, path);
+    // The callback gives the alias through the same conversions.
+    assert.match(lib, /in_optional\([^\n]*in_sample_data\(/, path);
+    assert.match(lib, /out_sample_data\((py|self\.env), value\)|out_sample_data\(value\)/, path);
+  }
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_sample::Error::Unsupported \{ \.\. \} => "ConsumerValueError",/);
+});
+
+test('a value alias of another repository is refused by name where it is not generated (G-4, GN-6h)', () => {
+  const generated = (change: (parts: ReturnType<typeof consumerSample>) => void): (() => unknown) => () => {
+    const parts = consumerSample();
+    change(parts);
+    return generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign });
+  };
+  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go'], ['wasm', undefined, 'WASM']] as const) {
+    assert.throws(generated(({ contract }) => {
+      contract.targets.push(target);
+      if (entry !== undefined) contract.packages.go = entry;
+      for (const row of Object.values(contract.errors.classes) as any[]) row.wasm = row.node;
+      // A callback is refused first for these targets; the functions alone name the alias.
+      contract.units = contract.units.filter((u: any) => u.id !== 'holder');
+      contract.units[0].members = contract.units[0].members.filter((m: any) => !['consumer.fetch', 'consumer.copy'].includes(m.id));
+      contract.cases = contract.cases.filter((c: any) => !['consumer.fetch', 'consumer.copy'].includes(c.member));
+    }), new RegExp(`sample\\.data: a value alias of another repository is not generated for ${name} yet`));
+  }
+  // E-1b (a): an owner that forwards the kinds of a third library.
+  assert.throws(generated(({ foreign }) => {
+    foreign.get('sample').errors.kinds.push({ variant: 'polyspec_sample::Error::Other', library: 'third' });
+  }), /sample\.data: a value alias whose owner forwards the kind polyspec_sample::Error::Other of another library is not generated yet/);
+  assert.throws(generated(({ foreign }) => {
+    foreign.get('sample').errors.kinds.push({ variant: 'polyspec_sample::Second::Other', category: 'value' });
+  }), /sample\.data: the kinds of sample name 2 error enums/);
+  // GN-6e: an out row by a member is refused through the same error, not as a crash.
+  assert.throws(generated(({ foreign }) => {
+    foreign.get('sample').units.find((u: any) => u.id === 'data').out[0].make.python = 'tag.new';
+  }), (error: Error) => error.constructor.name === 'Unsupported' && /data: a python make by a member \(tag\.new\) is not generated yet/.test(error.message));
+});
+
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const caseFiles = sampleCases();

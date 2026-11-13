@@ -1446,6 +1446,8 @@ export function go(model: Model, files: Files): void {
   // G-4: a class unit (T-5) and a record of another repository (T-3) are not generated for Go yet.
   const [object] = model.objects;
   if (object !== undefined) throw new Unsupported(`${object.unit.id}: a class unit is not generated for Go yet`);
+  const foreignAlias = model.aliases.find((a) => a.library !== undefined);
+  if (foreignAlias !== undefined) throw new Unsupported(`${foreignAlias.library ?? ''}.${foreignAlias.unit.id}: a value alias of another repository is not generated for Go yet`);
   const [foreign] = model.foreignRecords;
   if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
   const [callback] = model.callbacks;

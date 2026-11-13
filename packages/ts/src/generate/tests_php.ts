@@ -4,7 +4,7 @@
 import type { Unit } from '../contract.ts';
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -180,7 +180,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } catch (\\LogicException $error) {
             self::assertSame($raised, $error);
         }
-    }
+    }${judgesCallbackResult(model, cbUnit) ? `
 
     public function testK2${name}RefusesACallbackResultOfAnotherType(): void
     {
@@ -190,7 +190,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } catch (\\Throwable $error) {
             self::assertContains($error->kind(), ['invalid_argument_type', 'invalid_number', 'invalid_text']);
         }
-    }`);
+    }` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       // GN-6g: PHP gives Stringable to a class that has __toString.

@@ -4,7 +4,7 @@
 // object (U-7 (d)). What a JavaScript value is as a HostValue is binding's rule, the same for every alias; which kinds
 // an alias takes is its core's.
 
-import { type Model, type ValueAlias, langName, rustField } from './model.ts';
+import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
@@ -68,22 +68,22 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'native':
       return 'native_object(env, handle)';
     default:
-      throw new Error(`${alias.unit.id}: the Node form ${form} of the kind ${kind} is not generated yet`);
+      throw new Unsupported(`${alias.unit.id}: the Node form ${form} of the kind ${kind} is not generated yet`);
   }
 }
 
 export function aliasNode(model: Model, alias: ValueAlias): string {
-  const name = rustField(alias.unit.name);
+  const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('node', alias.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   const arms = outArms(alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
     let mut host = JsHost { env, held: Vec::new() };
     let described = host.describe(value).map_err(js_fail)?;
-    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| failure_error(failure))
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
 
 /// U-7: a core value of ${label} leaves as the JavaScript values of its out rows.
@@ -382,3 +382,32 @@ fn js_fail(error: napi::Error) -> Fail {
     Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) }
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
+
+// U-7 (a'): the failure of the `in` of a value alias of another repository. Its kind, status and errno are the owner's;
+// its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
+// wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
+export function foreignFailureNode(model: Model): string {
+  return foreignAliasLibraries(model).map((alias) => {
+    const library = (alias.library ?? '').replaceAll('-', '_');
+    const error = alias.error ?? { path: '', kinds: [] };
+    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
+    return `
+/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+fn ${library}_error(error: ${error.path}) -> Fail {
+    let class: usize = match error {
+${arms}
+    };
+    library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+
+fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+    match failure {
+        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
+        binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
+    }
+}
+`;
+  }).join('');
+}

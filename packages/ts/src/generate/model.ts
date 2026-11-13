@@ -35,6 +35,10 @@ export interface ValueAlias {
   unit: Unit;
   coreIn: string;
   coreOut: string;
+  // T-3, U-7 (a'): the library that owns the alias, when it is another repository's, with the error enum of its `in`
+  // function and the category that the owner's E-1 gives each variant.
+  library?: string;
+  error?: { path: string; kinds: { variant: string; category: Category }[] };
 }
 
 export interface Fn {
@@ -159,6 +163,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
+    // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
+    if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
     if (unit === undefined) throw new Unsupported(`${where}: ${type.library} has no unit ${type.unit} (T-3)`);
   }
   throw new Unsupported(`${where}: the type ${JSON.stringify(type)} is not generated yet`);
@@ -372,6 +378,35 @@ export function buildModel(
     for (const field of fn.record?.unit.fields ?? []) visit(field.type);
   }
   const resultRecords = records.filter((r) => result.has(r.id));
+  // T-3, U-7 (a'): the value aliases of other repositories that a type of this contract names, in the order they are
+  // first named. A failure of the owner's `in` is of the owner's error enum, whose categories the owner's E-1 gives.
+  const eachType = (type: Type, found: (unit: Unit, library: string) => void): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return eachType(type.list, found);
+    if ('map' in type) return eachType(type.map, found);
+    if ('keyed_map' in type) return eachType(type.keyed_map, found);
+    if ('optional' in type) return eachType(type.optional, found);
+    if ('tuple' in type) return type.tuple.forEach((part) => eachType(part, found));
+    if ('unit' in type && type.library !== undefined) {
+      const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
+      if (unit !== undefined) found(unit, type.library);
+    }
+  };
+  const foreignAlias = (unit: Unit, library: string): void => {
+    if (unit.kind !== 'alias' || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
+    const rows = foreign.get(library)?.errors.kinds ?? [];
+    const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);
+    if (dependent !== undefined) throw new Unsupported(`${library}.${unit.id}: a value alias whose owner forwards the kind ${dependent.variant} of another library is not generated yet`);
+    const paths = new Set(rows.map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
+    const [path] = [...paths];
+    if (path === undefined || paths.size > 1) throw new Unsupported(`${library}.${unit.id}: the kinds of ${library} name ${paths.size} error enums; a value alias is generated for one`);
+    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, library, error: { path, kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
+  };
+  for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
+    for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
+  }
+  for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
+  for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
     objects, callbacks, aliases, classes, coreError, kinds, cases,
@@ -446,7 +481,7 @@ export const libraryOf = (type: Type): string | undefined => (typeof type === 'o
 
 // The Rust name of the conversion helpers of a record: in_<name> and out_<name>; a record of another repository is
 // prefixed with its library, so that two libraries' records of one name do not meet.
-export const recordFn = (unit: Unit, library?: string): string =>
+export const recordFn = (unit: { name: Name }, library?: string): string =>
   library === undefined ? rustField(unit.name) : `${library.replaceAll('-', '_')}_${rustField(unit.name)}`;
 
 const RUST_KEYWORDS = new Set([
@@ -584,5 +619,17 @@ export function resolveNamedTypes(contract: Contract): Contract {
 // U-7: the value alias of a type, when the type is one.
 export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
   const unit = unitOf(model, type);
-  return libraryOf(type) === undefined ? model.aliases.find((a) => a.unit === unit) : undefined;
+  return unit === undefined ? undefined : model.aliases.find((a) => a.unit === unit && a.library === libraryOf(type));
 };
+
+// The Rust name of the conversions of a value alias, in_<name> and out_<name>: another repository's is prefixed with its
+// library, as its records are (recordFn).
+export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit, alias.library);
+
+// U-7 (a'): the Rust name of the function that turns a failure of the `in` of a library's alias into the language error.
+export const aliasFailureFn = (alias: ValueAlias): string =>
+  alias.library === undefined ? 'failure_error' : `${alias.library.replaceAll('-', '_')}_failure_error`;
+
+// The value aliases of other repositories, one per library: the first of each names the library's error enum.
+export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
+  model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);

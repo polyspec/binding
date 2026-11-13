@@ -3,7 +3,7 @@
 
 import type { OutRow } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import type { ValueAlias } from './model.ts';
+import { Unsupported, type ValueAlias } from './model.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -38,7 +38,7 @@ export function container(alias: ValueAlias, kind: string, form: string): Contai
     default:
       break;
   }
-  throw new Error(`${alias.unit.id}: the form ${form} of the kind ${kind} is not generated yet`);
+  throw new Unsupported(`${alias.unit.id}: the form ${form} of the kind ${kind} is not generated yet`);
 }
 
 // The match arms of the make function of one language: a row per kind, or a row per `when` of the kind.
@@ -51,8 +51,8 @@ export function outArms(alias: ValueAlias, lang: Lang, builtin: (form: string, k
     const ofKind = rows.filter((row) => row.kind === kind);
     const form = (row: OutRow): string => {
       const make = row.make[lang];
-      if (typeof make !== 'string') throw new Error(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) throw new Error(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
+      if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
+      if (make.includes('.')) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;

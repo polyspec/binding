@@ -2,7 +2,7 @@
 
 import type { Model } from './model.ts';
 import { hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -150,12 +150,12 @@ export function pythonTests(model: Model, module: string): string {
         raised = LookupError("raised by the callback")
         with self.assertRaises(LookupError) as caught:
             ${with_({ raise: 'raised' })}
-        self.assertIs(caught.exception, raised)
+        self.assertIs(caught.exception, raised)${judgesCallbackResult(model, cbUnit) ? `
 
     def test_k2_${name}_refuses_a_callback_result_of_another_type(self) -> None:
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
             ${with_({ returns: 'wrong' })}
-        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
+        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
