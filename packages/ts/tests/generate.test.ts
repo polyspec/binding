@@ -1999,6 +1999,25 @@ test('an entry point runs its core call with the faults that a case armed, and t
   assert.match(text(out, phpTests), /self::assertSame\(\[\], \\Polyspec\\Sample\\Internal\\faultLeft\(\$armed\)\);/);
 });
 
+test('Go compares the errno of a symbol as int, and WASM, a target without errno, arms without it and requires none (G-5)', () => {
+  // The sample arms sample.tally with the errno EIO in a case of counter.tally and in a call of then of counter.settle.
+  const out = sampleWith(() => undefined, ['go', 'wasm']);
+  const goFault = text(out, 'packages/go/zz_generated_fault_test.go');
+  // Errno() gives (int, bool), so the value of the symbol is converted to int.
+  assert.match(goFault, /if errno, ok := failure\.Errno\(\); !ok \|\| errno != int\(syscall\.EIO\) \{/);
+  assert.doesNotMatch(goFault, /int64\(syscall\./);
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  const armed = `'[{"point":"sample.tally","kind":"io"}]'`;
+  assert.ok(wasm.includes(`  const armed = glue.__armFaults('counter.tally', ${armed});\n`), wasm);
+  assert.ok(wasm.includes(`= stepGlue.__armFaults('counter.tally', ${armed});\n`), wasm);
+  assert.doesNotMatch(wasm, /"errno":/);
+  assert.match(wasm, /test\('B-4: Counter\.tally a_tally_that_fails_is_unreadable'[^]*?error\.kind === 'unreadable' &&\n    error\.status === null &&\n    error\.errno === null\);/);
+  assert.doesNotMatch(wasm, /errnoOf|node:os/);
+  // A number is compared as it is.
+  const numbered = text(sampleWith((c, cases) => { cases.counter_tally[1].raises.errno = 5; }, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(numbered, /error\.errno === 5\);/);
+});
+
 test('a contract without fault injection points has no item of them (G-5)', () => {
   const out = sampleWith((c, cases) => {
     delete c.faults;
