@@ -511,7 +511,10 @@
   `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. origin value class가 나타내는
   값 타입(U-1)의 값은 그 kind의 `out` 행이 언어에 대해 적은 static member나 constructor의 호출이다. `value`가 없는 kind는
   parameter 없는 member로, 그 밖의 kind는 parameter 하나인 member로 만들며, 그 member는 case의 `value`를 그 parameter 타입의
-  case 값으로 받는다. 그래서 `list`는 그 class의 값들을 담는다. 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
+  case 값으로 받는다. 그래서 `list`는 그 class의 값들을 담는다. 그 parameter 하나가 계약의 다른 class면 kind `map`의 `[key, value]` 쌍이
+  그것을 채운다: parameter 없는 생성자가 만들고, receiver `&mut self`와 parameter 둘을 가진 하나뿐인 member가 각 쌍을 순서대로
+  받으며, 그 parameter가 origin value class면 text key는 kind `text`의 값이다(`OrderedMap.insert`가 채운 `OrderedMap`의
+  `Value.object`). 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
   내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지

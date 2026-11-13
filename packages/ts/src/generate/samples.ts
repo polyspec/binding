@@ -6,7 +6,7 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -202,7 +202,29 @@ function valueClassFromJson(model: Model, ctx: Context, unit: Unit, value: unkno
   const [arg, ...rest] = factory.args;
   if (arg === undefined || rest.length > 0 || arg.field) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which takes more than one value, so a case value of it is not written (U-1, G-5)`);
   if (!given) throw new Unsupported(`a case value of the kind ${kind} of ${unit.id} holds the value that ${make} takes (U-1, G-5)`);
+  const filled = objectUnit(model, arg.type);
+  if (kind === 'map' && filled !== undefined && filled.unit !== unit) return ctx.objectNew(factory, callArgs(model, ctx, factory, () => pairsInto(model, ctx, filled, held)));
   return ctx.objectNew(factory, callArgs(model, ctx, factory, () => fromJson(model, ctx, arg.type, held)));
+}
+
+// U-1, GN-13: the pairs of a case value of kind map, given to a make member that takes another class (Value.object of
+// json takes an OrderedMap): the constructor of that class without parameters makes it, and its one member with the
+// receiver &mut self and two parameters takes each pair, the key as a case value of its parameter (a key of text for a
+// class of origin value) and the value as the case value of the pair.
+function pairsInto(model: Model, ctx: Context, filled: ObjectClass, held: unknown): string {
+  const id = filled.unit.id;
+  const constructor = filled.members.find((fn) => fn.kind === 'constructor' && fn.args.length === 0);
+  if (constructor === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${id}, which has no constructor without parameters (U-1, G-5)`);
+  const inserts = filled.members.filter((fn) => fn.receiver === '&mut self' && fn.args.length === 2 && fn.args.every((a) => !a.field));
+  const insert = inserts[0];
+  if (inserts.length !== 1 || insert === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${id}, which has ${inserts.length === 0 ? 'no member' : 'more than one member'} with the receiver &mut self and two parameters (U-1, G-5)`);
+  if (!Array.isArray(held) || !held.every((pair) => Array.isArray(pair) && pair.length === 2)) throw new Unsupported(`a case value of kind map that fills ${id} is a list of [key, value] pairs, not ${shown(held)} (G-5)`);
+  if (ctx.instanceNew === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${id}, which this target does not make in a case yet (G-5)`);
+  const [keyArg, valueArg] = insert.args as [Arg, Arg];
+  const keyUnit = unitOf(model, keyArg.type);
+  const keyOf = (key: unknown): unknown => (typeof key === 'string' && keyUnit?.kind === 'class' && keyUnit.origin === 'value' ? { kind: 'text', value: key } : key);
+  const then = (held as [unknown, unknown][]).map(([key, value]) => ({ fn: insert, args: new Map<Arg, unknown>([[keyArg, keyOf(key)], [valueArg, value]]) }));
+  return ctx.instanceNew({ factory: constructor, args: new Map(), then });
 }
 
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
