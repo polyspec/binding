@@ -79,6 +79,7 @@ export function wasmTests(model: Model): string {
     const built = madeLines(model, form, receiver);
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
+  ctx.instanceNew = made;
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;

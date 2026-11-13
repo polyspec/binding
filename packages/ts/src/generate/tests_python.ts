@@ -107,6 +107,7 @@ export function pythonTests(model: Model, module: string): string {
     helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
     return `${helper}()`;
   };
+  ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
   const madeForm: MadeForm = {
     ctx,

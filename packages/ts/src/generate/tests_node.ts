@@ -127,6 +127,7 @@ export function nodeTests(model: Model): string {
     const built = madeLines(model, form, receiver);
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
+  ctx.instanceNew = made;
   let usesOutcome = false;
   let usesOrdered = false;
   for (const fn of callables(model)) {

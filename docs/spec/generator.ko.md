@@ -534,8 +534,8 @@
   또는 `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<단계>], "then": [...]}`. `new`는 그 class를
   돌려주는 member다: 생성자, static member, 함수, 어느 class의 메서드. `from`은 결과가 그 class를 담는 member이고,
   `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
-  member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, class 타입
-  parameter는 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
+  member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
+  자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
   그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case that gave an instance value as an item of a list of a class, or as an argument of a class type of the call
+  under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
+  now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
+  `classes.join` and `tag.same`. Verified by `npm test` in `packages/ts`.
 - `binding scaffold` wrote an allow attribute wider than 70 columns with each argument on a line of its own, the form of
   the defaults of rustfmt, so `cargo fmt --check` of a repository with `use_small_heuristics = "Max"` and `max_width =
   120` failed on the `src/lib.rs` of each binding crate, which those settings join into one line. An allow attribute
