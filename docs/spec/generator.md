@@ -522,7 +522,7 @@ the design ids are those of the binding design.
     napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
   - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
-  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
+  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated, defect 82 (G-4).
   A member with `async_driver` is refused by name where GN-6m refuses a member that waits. A member with
   `async_driver` that reaches language code is generated as GN-6ab states, because a future that a runtime polls on
   its own threads would call the language code there.
@@ -586,7 +586,9 @@ the design ids are those of the binding design.
 - **GN-6ab** A member with `wait: async_driver` that reaches language code (GN-6q: the type of a parameter or the class
   of its receiver carries language code) names `"machine": true` in its `core` (CK-68), and its core path returns a
   state machine without I/O in place of a future (c6 6.2): a value of `binding_core::machine::Machine`, which owns the
-  arguments. `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
+  arguments, so the core path takes each argument by value: a callback as the generated struct (`impl <Trait> +
+  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h); a parameter with a
+  default is refused by name (G-4). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
   and gives one step:
   - `Step::Io(future)`: a future of the core that touches no language code, which the driver polls on a tokio runtime
     and whose output it gives to the next `resume`;
@@ -606,10 +608,11 @@ the design ids are those of the binding design.
     of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
     future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
     on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
-  - Go refuses such a member by name, as it refuses every member with `async_driver` (GN-6n): the completion channel of
-    GN-6m, which would wait for an Io future, is not generated, and Go needs no owner thread for a callback, because a
-    cgo call from any thread may call Go (c6 6.4). WASM refuses it by name with every member with `async_driver`
-    (GN-6n).
+  - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
+    goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
+    `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6
+    6.4). A member with `async_driver` that does not reach language code is still refused for Go (GN-6n).
+  - WASM refuses it by name with every member with `async_driver` (GN-6n) until defect 82 is done.
   A method with `machine` is refused by name: a machine that borrowed its receiver across its steps would borrow from
   the guard that the driver holds, a type that the core cannot name; a function and a static member are generated. A
   callback with `async_allowed: true`, whose call would give an awaitable to the machine, and `core.reaches` (c6 6.3)

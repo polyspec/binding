@@ -429,7 +429,7 @@
     `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
     JavaScript 진입은 GN-6m처럼 async 함수다.
   - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
-  - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다. 결함 82다(G-4).
   GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다. 언어 코드에 닿는
   `async_driver` member는 GN-6ab대로 생성한다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
   부르게 되기 때문이다.
@@ -486,7 +486,9 @@
   `asyncio.to_thread`의 worker 스레드에서 부르는 callback이 그 스레드에서 실행됨을 본다.
 - **GN-6ab** 언어 코드에 닿는(GN-6q: parameter의 타입이나 receiver의 class가 언어 코드를 지닌다) `wait: async_driver`
   member는 `core`에 `"machine": true`를 적고(CK-68), 그 코어 경로는 future 대신 I/O 없는 state machine을 돌려준다(c6
-  6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이다. `resume(io)`는 마지막 기다림의 출력(처음과
+  6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이므로 코어 경로는 각 인자를 값으로 받는다. callback은
+  생성된 struct(`impl <Trait> + 'static`)로, text는 `String`으로 받고, class parameter는 빌림 `value`일 때만 받는다(GN-6h).
+  기본값이 있는 parameter는 이름을 대고 거부한다(G-4). `resume(io)`는 마지막 기다림의 출력(처음과
   call 뒤에는 `None`)으로 machine을 진행시키고 한 단계를 준다:
   - `Step::Io(future)`: 언어 코드에 닿지 않는 코어의 future. driver는 그것을 tokio runtime에서 poll하고 그 출력을 다음
     `resume`에 준다;
@@ -504,9 +506,11 @@
     JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
     tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
     돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
-  - Go는 `async_driver`인 모든 member처럼(GN-6n) 그런 member를 이름을 대고 거부한다. Io future를 기다릴 GN-6m의 완료
-    channel을 생성하지 않으며, 어느 스레드의 cgo 호출도 Go를 부를 수 있으므로 Go의 callback에는 owner 스레드가 필요
-    없다(c6 6.4). WASM은 `async_driver`인 모든 member와 함께 이를 이름을 대고 거부한다(GN-6n).
+  - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
+    호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
+    각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 언어 코드에 닿지 않는 `async_driver` member는 Go에서
+    여전히 거부한다(GN-6n).
+  - WASM은 결함 82가 끝날 때까지 `async_driver`인 모든 member와 함께 이를 이름을 대고 거부한다(GN-6n).
   `machine`이 있는 method는 이름을 대고 거부한다. 단계들에 걸쳐 receiver를 빌리는 machine은 driver가 쥔 guard에서
   빌리게 되는데, 코어는 그런 타입을 적을 수 없기 때문이다. 함수와 static member는 생성한다. 호출이 machine에 awaitable을
   줄 `async_allowed: true`인 callback과 `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기
