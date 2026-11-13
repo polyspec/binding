@@ -1208,7 +1208,7 @@ test('a scaffold whose cargo metadata fails names the Go module alone and writes
     const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
     const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')], { encoding: 'utf8', env });
     assert.equal(scaffold.status, 1);
-    assert.match(scaffold.stderr, new RegExp(`\\nbinding: packages/go: not written: points: the contract of the library is not found, so binding scaffold cannot tell whether go\\.mod requires its Go module \\(GN-15f\\): ${advice}\\n$`));
+    assert.match(scaffold.stderr, new RegExp(`\\nbinding: packages/go: not written: points: the contract of the library is not found, so binding scaffold cannot tell whether go\\.mod requires its Go module \\(GN-15f\\): ${advice}\\nbinding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names \\(GN-3e\\): ${advice}\\n$`));
     assert.doesNotMatch(scaffold.stderr, /\n {4}at /);
     assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
     for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
@@ -1284,6 +1284,95 @@ test('a tracked package that scaffold cannot write is named, and the other packa
     assert.equal(checked.status, 1);
     assert.match(checked.stderr, /plot\/packages\/go: CK-19 binding scaffold does not write it: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\) \(L-2\)\n/);
     assert.doesNotMatch(checked.stderr, /CK-19 (is missing|differs)|\n {4}at /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Three libraries: consumer takes the callback unit lookup of sample, whose member gives the record point of points, a
+// library that the contract of consumer does not name. cargo names the cores of sample and of points, as it does for
+// every package of the resolution of a workspace.
+const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-three-'));
+  for (const repository of ['consumer', 'sample', 'points']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  const edit = (path: string, change: (json: any) => void): void => {
+    const json = JSON.parse(readFileSync(join(root, path), 'utf8'));
+    change(json);
+    writeFileSync(join(root, path), JSON.stringify(json));
+  };
+  edit('consumer/packages/rust/interface.json', (contract) => {
+    const unit = contract.units.find((u: any) => (u.members ?? []).some((m: any) => m.id === 'consumer.fetch'));
+    const fetch = unit.members.find((m: any) => m.id === 'consumer.fetch');
+    unit.members.push({ ...fetch, id: 'consumer.ask', name: ['ask'], parameters: [{ name: ['lookup'], type: { unit: 'lookup', library: 'sample' }, required: true }, { name: ['key'], type: 'text', required: true }], returns: 'text', raises: [], core: 'polyspec_consumer::ask' });
+    contract.cases.push({ member: 'consumer.ask', file: 'contracts/cases.json', group: 'consumer_ask' });
+  });
+  edit('consumer/contracts/cases.json', (cases) => { cases.consumer_ask = []; });
+  edit('sample/packages/rust/interface.json', (contract) => {
+    contract.units.find((u: any) => u.id === 'lookup').members[0].returns = { optional: { unit: 'point', library: 'points' } };
+  });
+  const manifest = join(root, 'consumer/packages/rust/Cargo.toml');
+  const sample = 'polyspec-sample = { path = "../../../sample/packages/rust" }';
+  assert.ok(readFileSync(manifest, 'utf8').includes(sample));
+  writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(sample, `${sample}\npolyspec-points = { path = "../../../points/packages/rust" }`));
+  const sampleManifest = join(root, 'sample/packages/rust/Cargo.toml');
+  writeFileSync(sampleManifest, readFileSync(sampleManifest, 'utf8').replace('\n[dependencies]\n', '\n[dependencies]\npolyspec-points = { path = "../../../points/packages/rust" }\n'));
+  assert.ok(readFileSync(sampleManifest, 'utf8').includes('polyspec-points'));
+  execFileSync('mkdir', ['-p', join(root, 'bin')]);
+  const metadata = JSON.stringify({ packages: ['sample', 'points'].map((name) => ({ name: `polyspec-${name}`, manifest_path: join(root, `${name}/packages/rust/Cargo.toml`) })) });
+  writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
+};
+
+test('the contract of a library that only a unit of another library names is read, and the manifests name that library (T-3, CK-9, GN-3e, GN-15f)', () => {
+  const { root, env } = threeLibraries();
+  try {
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    // The contract check takes the unit of the third library, which is a record of its contract.
+    const checked = run('check', join(root, 'consumer/packages/rust/interface.json'));
+    assert.doesNotMatch(checked.stderr, /CK-9|has no unit|\n {4}at /);
+    // The targets that take a callback unit of another library generate, and their crates name the core of points.
+    const generated = run('generate', '--root', join(root, 'consumer'), '--out', join(root, 'out'));
+    assert.doesNotMatch(generated.stderr, /points has no unit point|\n {4}at /);
+    assert.match(generated.stderr, /\ngenerated: php, python, node\n$/);
+    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs']) {
+      assert.match(readFileSync(join(root, 'out/packages', lib), 'utf8'), /polyspec_points::Point\b/, lib);
+    }
+    // The manifests name the library whose types the generated code names: the Cargo manifest of each binding crate
+    // by the dependency line of the core, pyproject.toml, and go.mod for a record. scaffold reads the contracts by the
+    // path of each dependency line, of the core and then of the core of sample.
+    const scaffold = run('scaffold', '--root', join(root, 'consumer'));
+    assert.equal(scaffold.status, 0, scaffold.stderr);
+    const tracked = (path: string): string => readFileSync(join(root, 'consumer/packages', path), 'utf8');
+    for (const manifest of ['python/Cargo.toml', 'ts/Cargo.toml', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml']) {
+      assert.match(tracked(manifest), /\npolyspec-points = \{ path = "(\.\.\/)+points\/packages\/rust" \}\n/, manifest);
+    }
+    assert.match(tracked('python/pyproject.toml'), /\ndependencies = \["polyspec-points", "polyspec-sample"\]\n/);
+    assert.match(tracked('go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+    // A unit that the third library does not have is a finding of the check, with the libraries on the way.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.units = points.units.filter((u: any) => u.id !== 'point');
+    writeFileSync(pointsPath, JSON.stringify(points));
+    assert.match(run('check', join(root, 'consumer/packages/rust/interface.json')).stderr, /: CK-9 points has no unit point\n/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('libraries whose contracts name each other in a cycle are refused by name (T-3)', () => {
+  const { root, env } = threeLibraries();
+  try {
+    // points names a unit of sample, which names the record of points.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.units.find((u: any) => u.id === 'point').fields[0].type = { unit: 'data', library: 'sample' };
+    writeFileSync(pointsPath, JSON.stringify(points));
+    for (const args of [['check', join(root, 'consumer/packages/rust/interface.json')], ['generate', '--root', join(root, 'consumer'), '--out', join(root, 'out')], ['scaffold', '--root', join(root, 'consumer')]]) {
+      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      assert.equal(run.status, 1, args[0]);
+      assert.match(run.stderr, /^binding: the contracts of the libraries sample -> points -> sample name each other in a cycle, which is not generated \(T-3\)\n/m, args[0]);
+      assert.doesNotMatch(run.stderr, /\n {4}at /, args[0]);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

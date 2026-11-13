@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: c462da0d3f06766d8db702897ed1bb2ba89de14fc4b46dd1e2054f6bbf1bbab0 -->
+<!-- source-sha256: a917f50c0505140f0f34cc0d9e3f169239807136dcd205e8d6896b30ea6fbd8f -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -81,8 +81,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼
     수 있는 kind이며, 그 alias를 받는 모든 member에 붙고 `raises`에는 적지 않는다(U-7, E-5).
 - **CK-9** 다른 레포의 unit(T-3): 타입에 쓴 다른 라이브러리의 unit은 그 계약의 `value`, `callback`, `enum`, `record`,
-  `variant` unit이다. 다른 라이브러리의 callback·record·variant는 자기 라이브러리의 unit만 쓰며 재귀적으로 확인한다.
-  `types`의 값 타입은 소유자의 `value` unit을 가리킨다.
+  `variant` unit이다. 다른 라이브러리의 callback·record·variant가 쓰는 unit은 자기 라이브러리의 것이든 제3 라이브러리의
+  것이든, 타입으로 적었든 그 계약의 이름 있는 타입(`types`)으로 적었든, 그것을 가진 라이브러리의 계약에 대해 같은 규칙으로
+  재귀적으로 확인한다. `types`의 값 타입은 소유자의 `value` unit을 가리킨다. `binding`은 계약을 닫힘까지 읽는다. 곧 계약이
+  이름하는 라이브러리의 계약과 그 계약들이 이름하는 라이브러리의 계약을, Cargo가 코어에 대해 해석한 package에서 읽는다. 그
+  라이브러리에 없는 unit과 계약을 찾지 못한 라이브러리는 finding이다. 계약이 서로를 순환으로 이름하는 라이브러리는 그
+  이름과 함께 거부한다. Cargo가 crate의 순환을 해석하지 않기 때문이다.
 - **CK-10** 오류(E-1, E-1a, E-2, U-1): 오류 unit은 category를 갖고, category와 parent는 오류 unit만 갖는다. parent는 같은
   category의 오류 unit이고 `final`이 아니다. `errors.classes`는 Go를 뺀 모든 target에서 모든 category의 클래스를 갖는다(Go의
   category 타입은 E-7이 정한다). category 클래스 이름은 `<Library><Category>Error`이며 `<Library>`는 각 언어의 클래스

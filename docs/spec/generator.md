@@ -141,7 +141,17 @@ the design ids are those of the binding design.
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
-  the core on `polyspec-<library>`. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
+  the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
+  code names: each library that the contract names, and each library that the members of a callback unit of another
+  library name when the contract takes that unit, because the binding wraps the callback and converts the values of
+  its members (GN-6s). The Cargo manifest of each binding crate has the dependency line of each of them, which the
+  core names too, and `pyproject.toml` has the Python package of each; `go.mod` requires those of them that own a
+  record or a value class among those types (GN-15f); `package.json` and `composer.json` name no other library. A
+  library that only the contract of another library names in another place, such as the type of a member of a class
+  that this contract does not take, is in no manifest. `scaffold` reads the contract of a library by the `path` of its
+  dependency line, from the core of the library that names it, and the others through `cargo metadata`; when Cargo
+  fails, it writes the packages with the libraries that the contract itself names and fails with status 1 and the
+  instruction of GN-15f, because the libraries that only a callback unit names are then not known. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
   is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
   dependency `polyspec-<library>==X.Y.Z`). Every other line (a path, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
@@ -1117,7 +1127,8 @@ the design ids are those of the binding design.
   target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
   again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
   them for every target, so they fail with the same instruction. For
-  each library whose records or value classes (GN-6x) the contract names it writes a line `require <module> <version>`
+  each library whose records or value classes (GN-6x) the contract names, or the members of a callback unit of
+  another library that the contract takes name (GN-3e), it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this

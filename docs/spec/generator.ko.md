@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f7887fbb178ddf2870e714229378c959b199ec8bf5dbddff4985d8f492856718 -->
+<!-- source-sha256: 01ae2e5ab9919914b796923a55c87d8426887b310c2b1c07e7f2738a7a511c92 -->
 # 생성기
 
 [English](generator.md)
@@ -111,6 +111,15 @@
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
+  manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 이름하는 라이브러리와, 계약이 다른
+  라이브러리의 callback unit을 받을 때 그 unit의 member가 이름하는 라이브러리다. 바인딩이 그 callback을 감싸고 member의 값을
+  변환하기 때문이다(GN-6s). 바인딩 crate의 Cargo manifest는 그 각각의 의존 줄을 가지며 코어도 그 줄을 적는다.
+  `pyproject.toml`은 그 각각의 Python package를 가진다. `go.mod`는 그 가운데 그 타입들에 record나 값 class가 있는 라이브러리를
+  require한다(GN-15f). `package.json`과 `composer.json`은 다른 라이브러리를 적지 않는다. 다른 라이브러리의 계약이 다른
+  자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도
+  없다. `scaffold`는 라이브러리의 계약을 그것을 이름하는 라이브러리의 코어에서 의존 줄의 `path`로 읽고, 나머지는
+  `cargo metadata`로 읽는다. Cargo가 실패하면 계약 자신이 이름하는 라이브러리로 package를 쓰고 상태 1과 GN-15f의 안내로
+  실패한다. 그때는 callback unit만이 이름하는 라이브러리를 알 수 없기 때문이다.
   버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
   `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
   레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만), 개발
@@ -916,7 +925,7 @@
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
-  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record나 값 class(GN-6x)를 이름하는 라이브러리마다
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record나 값 class(GN-6x)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이

@@ -90,8 +90,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
     the kinds that its `in` function can give, which join every member that takes the alias and are not written in
     `raises` (U-7, E-5).
 - **CK-9** Units of other repositories (T-3): a unit of another library in a type is a `value`, `callback`, `enum`,
-  `record` or `variant` unit of that library's contract; a callback, record or variant of another library uses only
-  units of its own library, checked recursively; a value type in `types` names a `value` unit of its owner.
+  `record` or `variant` unit of that library's contract; each unit that a callback, a record or a variant of another
+  library uses, of its own library or of a third one, by a type or by a named type of its contract (`types`), is
+  checked by the same rule against the contract of the library that owns it, recursively; a value type in `types`
+  names a `value` unit of its owner. `binding` reads the contracts to the closure: the contract of each library that
+  the contract names, and of each library that one of those contracts names, among the packages that Cargo resolved
+  for the core. A unit that its library does not have, and a library whose contract is not found, are findings.
+  Libraries whose contracts name each other in a cycle are refused with their names, because Cargo resolves no cycle
+  of crates.
 - **CK-10** Errors (E-1, E-1a, E-2, U-1): an error unit has a category and only an error unit has a category or a
   parent; a parent is an error unit of the same category and not `final`; `errors.classes` has a class for every
   category in every target but Go, whose category types E-7 fixes; a category class is named `<Library><Category>Error`,
