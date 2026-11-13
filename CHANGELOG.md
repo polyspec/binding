@@ -5,14 +5,20 @@
 
 ## Unreleased
 
+- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
+  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
+  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
+  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
+  `shapes.largest` over `&[u32]`, and a unit test compiles the helpers with such call sites with rustc for the host
+  and for wasm32. Verified by `npm test` in `packages/ts`.
 - PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
   only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
   An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
   target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
   `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
   array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
-  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter keeps the element type of the table,
-  so a core that takes `&[usize]` does not compile yet (defect 78), and Go does not convert yet. `tests/e2e/shapes` has
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
+  not convert yet. `tests/e2e/shapes` has
   `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
   by `npm test` in `packages/ts`.
 - A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not

@@ -961,6 +961,8 @@ export function coreArg(model: Model, type: Type, variable: string): string {
     if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;
     throw new Unsupported(`an optional parameter of ${JSON.stringify(inner)} is not generated yet`);
   }
+  // GN-6ad: a list whose items narrow is a Vec of the core's item type, whose slice the core borrows.
+  if (typeof type === 'object' && 'list' in type && narrows(type)) return `&${variable}[..]`;
   return `&${variable}`;
 }
 
@@ -1461,17 +1463,15 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
 export const leftOut = (field: { type: Type; default?: Default }): boolean =>
   typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;
 
-// GN-6ac: whether a value of the type enters the core through IntoCore, which takes the core's own integer and tuple
-// forms: a type of numbers, bools, texts, lists, optionals and tuples that holds an integer or a tuple.
+// GN-6ac, GN-6ad: whether a value of the type, an argument too, enters the core through IntoCore, which takes the
+// core's own integer and tuple forms: a type of numbers, bools, texts, lists, optionals and tuples that holds an
+// integer or a tuple.
 export function narrows(type: Type): boolean {
   const plain = (t: Type): boolean => (typeof t === 'string' ? ['uint', 'int', 'int64', 'float', 'bool', 'text'].includes(t) : 'list' in t ? plain(t.list) : 'optional' in t ? plain(t.optional) : 'tuple' in t ? t.tuple.every(plain) : false);
   const holds = (t: Type): boolean => (typeof t === 'string' ? ['uint', 'int', 'int64'].includes(t) : 'list' in t ? holds(t.list) : 'optional' in t ? holds(t.optional) : 'tuple' in t);
   return plain(type) && holds(type);
 }
 
-// GN-6ac: an argument enters through IntoCore when its type narrows and holds no list, because the core borrows a list
-// as a slice, whose element type a reference does not infer (defect 78: a narrower element of a list parameter).
-export const narrowsArg = (type: Type): boolean => narrows(type) && !JSON.stringify(type).includes('"list"');
 
 // GN-6ac: the let that gives a converted value the core's own type, which the place that takes it infers.
 export const narrowed = (variable: string, subject: string, failed: string): string =>
