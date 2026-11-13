@@ -94,11 +94,46 @@
       {
         "variant": "polyspec_sample::Error::Unsupported",
         "category": "value"
+      },
+      {
+        "variant": "polyspec_sample::Error::Unreadable",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_sample::Error::Internal",
+        "category": "internal"
       }
     ],
     "binding": [],
     "wrapped": []
   },
+  "faults": [
+    {
+      "id": "read",
+      "core": "polyspec_sample::fault::READ",
+      "inject": [
+        "io",
+        "short"
+      ],
+      "fills": [
+        "unreadable"
+      ],
+      "reason": "G-5",
+      "place": "polyspec_sample::measure"
+    },
+    {
+      "id": "internal",
+      "core": "polyspec_sample::fault::INTERNAL",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "X-1",
+      "place": "polyspec_sample::measure"
+    }
+  ],
   "units": [
     {
       "id": "lookup",
@@ -311,6 +346,75 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::size"
+        },
+        {
+          "id": "sample.measure",
+          "name": [
+            "measure"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Unreadable",
+            "polyspec_sample::Error::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::measure"
+        },
+        {
+          "id": "sample.checked",
+          "name": [
+            "checked"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::checked",
+            "result": true
+          }
+        },
+        {
+          "id": "sample.touch",
+          "name": [
+            "touch"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::touch"
         }
       ]
     },
@@ -441,6 +545,9 @@
         "in": "polyspec_sample::data_from_host",
         "out": "polyspec_sample::data_to_out"
       },
+      "in_raises": [
+        "polyspec_sample::Error::Unsupported"
+      ],
       "out": [
         {
           "kind": "null",
@@ -978,6 +1085,26 @@
       "member": "ledger.known",
       "file": "contracts/cases.json",
       "group": "ledger_known"
+    },
+    {
+      "member": "sample.measure",
+      "file": "contracts/cases.json",
+      "group": "measure"
+    },
+    {
+      "member": "sample.checked",
+      "file": "contracts/cases.json",
+      "group": "checked"
+    },
+    {
+      "member": "sample.touch",
+      "file": "contracts/cases.json",
+      "group": "touch"
+    },
+    {
+      "alias": "data",
+      "file": "contracts/cases.json",
+      "group": "data_in"
     }
   ]
 }

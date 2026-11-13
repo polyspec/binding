@@ -140,5 +140,57 @@
       "result": 1
     }
   ],
-  "ledger_known": []
+  "ledger_known": [],
+  "measure": [
+    {
+      "id": "a_read_that_fails_is_unreadable",
+      "text": "abc",
+      "faults": [
+        {
+          "point": "sample.read",
+          "kind": "io"
+        }
+      ],
+      "raises": {
+        "kind": "unreadable",
+        "status": null,
+        "category": "io",
+        "message": "the text could not be read"
+      }
+    },
+    {
+      "id": "a_broken_invariant_is_internal",
+      "text": "abc",
+      "faults": [
+        {
+          "point": "sample.internal",
+          "kind": "broken"
+        }
+      ],
+      "raises": {
+        "kind": "internal",
+        "status": null,
+        "category": "internal",
+        "message": "the sample is broken: the length of a text is unknown"
+      }
+    }
+  ],
+  "checked": [],
+  "touch": [],
+  "data_in": [
+    {
+      "id": "bytes_that_are_no_text_are_not_data",
+      "value": {
+        "kind": "bytes",
+        "value": {
+          "hex": "ff"
+        }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ]
 }

@@ -65,7 +65,8 @@ export interface Member {
   yields?: Type | { key: Type; value: Type };
   raises?: string[];
   wait?: Wait;
-  core?: { path: string; receiver?: string } | string;
+  // result (E-1c): whether the core path returns a Result; absent, the default of coreResult below.
+  core?: { path: string; receiver?: string; result?: boolean } | string;
   type?: Type;
   value?: unknown;
   writable?: boolean;
@@ -105,6 +106,8 @@ export interface Unit {
   parent?: string;
   core_type?: string;
   core?: string | { in: string; out: string };
+  // U-7: the E-1 variants that the in function of a value alias can give.
+  in_raises?: string[];
   thread?: 'any' | 'owner';
   cleanup?: string;
   constructible?: boolean;
@@ -135,10 +138,29 @@ export interface NamingException {
 export interface Errors {
   classes: Partial<Record<Category, Partial<Record<Lang, string>>>>;
   fixed: { lang: Lang; class: string }[];
-  kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string }[];
+  kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; kinds?: string[] }[];
   binding: { kind: string; class: string }[];
   wrapped: { library: string; unit: string; property: Name; forward?: string; drop?: { reason: string } }[];
 }
+
+// G-5: a fault injection point of the core, which a case names as <library>.<id>.
+export type Injection = 'io' | 'short' | 'broken';
+export interface FaultPoint {
+  id: string;
+  core: string;
+  inject: Injection[];
+  fills: string[];
+  reason: string;
+  place: string;
+}
+
+// K-1: the group of a case file that runs a member, or that holds the cases of a value alias's in function (U-7).
+export type CaseRow = { member: string; alias?: undefined; file: string; group: string } | { alias: string; member?: undefined; file: string; group: string };
+
+// E-3: the kind of a variant whose row names no kinds is its name in snake_case.
+export const variantKind = (variant: string): string =>
+  variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+export const kindsOf = (row: { variant: string; kinds?: string[] }): string[] => row.kinds ?? [variantKind(row.variant)];
 
 export interface Contract {
   schema: string;
@@ -149,7 +171,8 @@ export interface Contract {
   naming: { exceptions: NamingException[] };
   types: Partial<Record<'json_value' | 'template_value' | 'php_value', { library: string; unit: string }>>;
   errors: Errors;
+  faults?: FaultPoint[];
   units: Unit[];
   changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | Partial<Record<Lang, string>> | null }[];
-  cases: { member: string; file: string; group: string }[];
+  cases: CaseRow[];
 }

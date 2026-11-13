@@ -303,7 +303,8 @@ function conformCases(contract: Contract, copy: string): string[] {
     files.add(file);
     const document = JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>[]>;
     const before = JSON.stringify(document);
-    const found = memberById.get(row.member);
+    // U-7: a case of an alias has no parameter of a member; its keys are already in snake_case.
+    const found = row.member === undefined ? undefined : memberById.get(row.member);
     const parameters = found?.member.parameters ?? [];
     const params = new Map<string, Type>(parameters.map((p) => [p.name.join('_'), p.type]));
     const group = document[row.group];
@@ -331,6 +332,11 @@ function conformCases(contract: Contract, copy: string): string[] {
   return [...files];
 }
 
+// GN-5: the test features of the Python, Node and PHP binding crates of a contract: panic-test, fault-test when the
+// contract names fault injection points (G-5), codec-test when an alias has in_raises (U-7).
+const testFeatures = (contract: Contract): string =>
+  ['panic-test', ...((contract.faults ?? []).length > 0 ? ['fault-test'] : []), ...(contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? ['codec-test'] : [])].join(',');
+
 const extensionOf = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
 const dependencies = deps.map((dep) => prepare(dep));
@@ -340,7 +346,7 @@ const library = contract.library;
 const crate = contract.core.crate;
 
 step('lint the generated crates');
-run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', 'panic-test', '--', '-D', 'warnings']);
+run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', testFeatures(contract), '--', '-D', 'warnings']);
 
 const [cases] = main.caseFiles;
 const e2e = join(binding, 'tests/e2e', library);
@@ -355,7 +361,7 @@ run(python, ['-m', 'venv', '--clear', venv]);
 run(join(venv, 'bin/pip'), ['install', '-q', 'maturin==1.16.0']);
 for (const prepared of [...dependencies, main]) {
   const wheels = join(work, 'wheels');
-  run(join(venv, 'bin/maturin'), ['build', '--features', 'panic-test', '--out', wheels, ...cargoFlags], { cwd: join(prepared.copy, 'packages/python') });
+  run(join(venv, 'bin/maturin'), ['build', '--features', testFeatures(prepared.contract), '--out', wheels, ...cargoFlags], { cwd: join(prepared.copy, 'packages/python') });
   const python = prepared.contract.packages['python'] as { package: string };
   const prefix = `${python.package.replaceAll('-', '_')}-`;
   const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
@@ -389,7 +395,7 @@ if (contract.targets.includes('wasm')) {
 }
 
 step('Node: build the addon, pack and install the package, run the generated tests and the cases');
-run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', 'panic-test']);
+run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', testFeatures(contract)]);
 const npm = (contract.packages['node'] as { package: string }).package;
 const nodeDir = join(work, 'node');
 rmSync(nodeDir, { recursive: true, force: true });
@@ -425,7 +431,7 @@ if (wasmBuilt) {
 step('PHP: build the extensions, run the generated tests and the cases with them loaded');
 const extensions: string[] = [];
 for (const prepared of [...dependencies, main]) {
-  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', 'panic-test']);
+  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', testFeatures(prepared.contract)]);
   extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
 }
 run('php', ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);

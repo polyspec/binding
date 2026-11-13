@@ -16,6 +16,26 @@ pub enum Error {
         /// What the value is.
         what: String,
     },
+    /// The text could not be read (category io; a fault injection point gives it, G-5).
+    Unreadable {
+        /// The errno of the read that failed.
+        errno: Option<i32>,
+    },
+    /// An invariant of the sample does not hold (X-1).
+    Internal {
+        /// What does not hold.
+        detail: String,
+    },
+}
+
+/// The fault injection points of the sample (G-5), which the contract names in `faults`.
+pub mod fault {
+    /// The read of the text of `measure`.
+    #[doc(hidden)]
+    pub const READ: &str = "sample.read";
+    /// The invariant of `measure`.
+    #[doc(hidden)]
+    pub const INTERNAL: &str = "sample.internal";
 }
 
 impl Error {
@@ -25,6 +45,8 @@ impl Error {
         match self {
             Self::Missing { .. } => "missing",
             Self::Unsupported { .. } => "unsupported",
+            Self::Unreadable { .. } => "unreadable",
+            Self::Internal { .. } => "internal",
         }
     }
 }
@@ -34,6 +56,8 @@ impl fmt::Display for Error {
         match self {
             Self::Missing { key } => write!(f, "no value for {key}"),
             Self::Unsupported { what } => write!(f, "not data: {what}"),
+            Self::Unreadable { .. } => f.write_str("the text could not be read"),
+            Self::Internal { detail } => write!(f, "the sample is broken: {detail}"),
         }
     }
 }
@@ -50,7 +74,10 @@ impl Kinds for Error {
     }
 
     fn errno(&self) -> Option<i32> {
-        None
+        match self {
+            Self::Unreadable { errno } => *errno,
+            Self::Missing { .. } | Self::Unsupported { .. } | Self::Internal { .. } => None,
+        }
     }
 }
 
@@ -378,3 +405,32 @@ impl Ledger {
         count(lookup, &self.keys)
     }
 }
+
+/// The number of the bytes of a text that a read gives (G-5: the read is a fault injection point).
+///
+/// # Errors
+///
+/// Kind `unreadable` when the read fails, and kind `internal` when the invariant of the sample is broken.
+pub fn measure(text: &str) -> Result<u64, Error> {
+    if binding_core::fault::point(fault::INTERNAL).is_some() {
+        return Err(Error::Internal { detail: String::from("the length of a text is unknown") });
+    }
+    let length = text.len() as u64;
+    match binding_core::fault::point(fault::READ) {
+        Some(binding_core::fault::Injected::Io { errno }) => Err(Error::Unreadable { errno }),
+        Some(binding_core::fault::Injected::Short { bytes }) => Ok(length.min(bytes)),
+        Some(binding_core::fault::Injected::Broken) | None => Ok(length),
+    }
+}
+
+/// The number of the bytes of a text, from a core that returns a `Result` and gives no kind (E-1c `core.result`).
+///
+/// # Errors
+///
+/// None.
+pub fn checked(text: &str) -> Result<u64, Error> {
+    Ok(text.len() as u64)
+}
+
+/// Takes a text and gives nothing (E-1c: a core that returns no `Result` and no value).
+pub fn touch(_text: &str) {}

@@ -27,7 +27,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-3** References: unit and member ids are unique; `parent`, `implements` (an `interface` unit), `cleanup` (a member
   of the same unit), unit types, `{const}` defaults (a constant), `cases[].member`, `changes[].to` resolve; `only`,
   `native` and `changes[].from` name targets; every target has its `packages` entry (P-1; `wasm` uses `node`); a value
-  type that a type names (`json_value`, `template_value`, `php_value`) has its owner in `types` (T-3).
+  type that a type names (`json_value`, `template_value`, `php_value`) has its owner in `types` (T-3). The ids of
+  `faults` are unique and each kind of their `fills` is a kind of `errors.kinds` (G-5, E-1): a row of `errors.kinds`
+  gives the kinds of its `kinds`, or the one kind of its variant's name in snake_case. A row of `cases` names a
+  `member` or an `alias`, a value alias with `core: {in, out}` of the contract (U-7).
 - **CK-4** Naming exceptions (N-3): the exception names a target, an existing unit, member of that unit, parameter of
   that member or field of that record; one exception per symbol and language; and the exception differs from the
   converted name (N-2), since an exception that changes nothing has no ground.
@@ -37,7 +40,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-8** Value units (U-1, U-7):
   - a value alias names in `core: {in, out}` the core functions that judge a language value described as `HostValue`
     (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`) and give a core value as `OutValue`
-    (`fn(&T) -> (OutValue, impl OutValues)`); a value class has no such `core`, because its `in` rows read its members;
+    (a function from `&T` to `(OutValue, V)` where `V: OutValues` may borrow the value); a value class has no such `core`, because its `in` rows read its members;
   - the unit that represents a value type holds `out` and `in`: a `value` class that no alias gathers, or an `alias`
     (whose origin is `value`); a class that an alias gathers (an `in` row of the alias names it) holds neither; the
     members of an alias are the language types of its `in` rows (U-7 (a));
@@ -61,7 +64,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
     whose `when` holds is the case, and a predicate that the table does not give is a finding. For a class with `by`,
     whose `is` is known only at run time, the row's kind names exactly one case. A check that passes when any case
     matches is not used, because it passes a wrong classification; the generated round-trip test of G-5 remains;
-  - only a property of a `value` unit is `writable` (U-2).
+  - only a property of a `value` unit is `writable` (U-2);
+  - `in_raises` is on a value alias with `core: {in, out}` only and names variants of `errors.kinds` of the contract:
+    the kinds that its `in` function can give, which join every member that takes the alias and are not written in
+    `raises` (U-7, E-5).
 - **CK-9** Units of other repositories (T-3): a unit of another library in a type is a `value`, `callback`, `enum`,
   `record` or `variant` unit of that library's contract; a callback, record or variant of another library uses only
   units of its own library, checked recursively; a value type in `types` names a `value` unit of its owner.
@@ -108,15 +114,32 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
   (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding. For
   a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module needs.
-- **CK-21** The build of the core and exclusive members (I-1, U-6): `core.features` names targets only; `exclusive` is
-  on a member with the receiver `&self` of a generated class only. A function type (T-2) states `async_allowed` and
+- **CK-21** The build of the core, exclusive members and the result of a core path (I-1, U-6, E-1c): `core.features`
+  names targets only; `exclusive` is on a member with the receiver `&self` of a generated class only. A member whose
+  `core.result` is `false` has no `raises` and no parameter that holds a callback or a function, because a core that
+  returns no `Result` has no variant to return and no place for the failure of a callback; without `core.result`, a
+  core path returns a `Result` when `raises` names a variant of the contract's own core error or a parameter is a
+  callback or a function. Whether `core.result` is true of the core is judged by the compiler on the generated crate
+  (I-2), not here. A function type (T-2) states `async_allowed` and
   its `recognize` names error units, as a callback member does (CK-17).
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
   reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
-  in its `raises`. A kind of the category `internal` or `io`, which no input reaches, is reported as waiting for the
-  case form of a fault injection point that a test feature of the core gives (G-5), not left out. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
+  that the rows of its `raises` give. A case may arm fault injection points (G-5) in
+  `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<symbol>", "bytes": <n>,
+  "nth": <n>}]`: `<library>` is the library name in snake_case, of this contract or of a library that the check was
+  given, and `<id>` a point of that contract's `faults`; `kind` is one of the point's `inject`; `bytes` is given with
+  `short` and only with it; `errno`, the symbol of an errno (`ENOSPC`), only with `io`; `nth` counts from 1; a fault has
+  no other key. A case with `faults` fills only the kinds that its points have in `fills`, and one that expects another
+  kind is refused, so the case of an input rule is an input. The `errno` of a case's `raises`, when it is a text, is
+  such a symbol. A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
+  core error is one for every member: each error enum that has such a kind, the contract's own and that of each
+  library whose kinds it passes on (E-1b (a)), has one case of any member that arms `<library>.internal` as `broken`
+  and raises a kind of the category `internal`. The kinds of `in_raises` of a value alias have their cases in the
+  group of a `cases` row that names the alias (U-7), a group that no row of a member names: such a case is
+  `{"id", "value", "raises"}` (and `note`, `rule`) whose `raises.kind` is a kind of `in_raises`, and every kind of
+  `in_raises` has one. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
   `{"callback": {<member id>: [<row>]}}` whose member ids are members of that interface, whose rows and `calls` give
   in `args` exactly the parameters of their member, and whose rows have no key but `args`, `result`, `raise`, `once`
   and `async`; a row with a `result` and a `raise`, a `raise` of an error unit that the member does not recognize

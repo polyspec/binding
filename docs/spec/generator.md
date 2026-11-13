@@ -84,9 +84,22 @@ the design ids are those of the binding design.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
-  B-7 test and, for a contract with a class that has a write place (GN-6h), the poison entry point of the B-5c test,
-  which takes an instance, takes its write guard and panics: Python `_panic_test_held`, Node `__panicTestHeld`, PHP
-  `<namespace>\Internal\panicTestHeld`.
+  B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
+  of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
+  one (G-5). `<Alias>` and `<alias>` are the name of the alias in the class form of the language and in snake_case.
+
+  | Feature | Use | Python | Node | PHP | Go C symbol |
+  |---|---|---|---|---|---|
+  | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>` |
+  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet |
+
+  For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
+  B-5c test, which takes an instance, takes its write guard and panics.
+  A Python, Node or PHP crate has `codec-test` when an alias of the contract has `in_raises`, and
+  `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
+  `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. Go and WASM have neither of the two yet: a
+  contract with `faults` or `in_raises` and one of these targets is refused by name (G-4).
 
 ## The core boundary (T-1, I-2 (1))
 
@@ -96,8 +109,8 @@ the design ids are those of the binding design.
   record) by reference. A record is built from its expanded fields, which are owned. A return has the form that is usual for its Rust function
   (an accessor borrows, a computed value is owned), so the generated code binds it without a type and reads either
   form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field), except a return of `none`, which
-  it binds as `let (): () = …`: a core that returns anything else does not compile, and the unit pattern leaves no
-  variable unused, which the lints deny. An integer return (uint, int,
+  it binds as the unit (`let (): () = …`): a core that returns anything else there, a `Result` too, does not compile, so
+  its `Err` is not dropped (E-1c), and the unit pattern leaves no variable unused, which the lints deny. An integer return (uint, int,
   int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
   for the integer and a reference to it); a parameter is the type of the table. A contract name that is a Rust keyword
   is a raw identifier (`r#type`).
@@ -220,7 +233,11 @@ the design ids are those of the binding design.
   `invalid_argument_type`. A `source` in any other place (a result, a field, an element) is refused by name (G-4).
   In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
   value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
-- **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
+- **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
+  does when `raises` names a variant of the contract's own core error or the member takes a callback. The generated
+  code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
+  `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose
+  `errors.kinds` names no core error is refused by name. The error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
@@ -237,6 +254,17 @@ the design ids are those of the binding design.
   returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
   the same assertion in the Python, Node and PHP crates, the path of a variant that holds the error of a dependency
   (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
+- **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
+  `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
+  every entry point of a member, a hook and an iterate too, runs its work in `with_faults("<member id>", …)`. With
+  the feature `fault-test` that function takes the arming that a test made for the member on this thread
+  (`binding_core::fault::take`), or an empty one, and installs it while the work runs; without the feature it only
+  runs the work. So the call that makes a receiver or an argument does not take the arming of the member under test,
+  and an entry point that a callback enters does not see the arming around it. `_arm_faults(member, faults)` takes
+  the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
+  as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
+  gives the names of the points whose fault did not fire. A member that waits is not generated yet (GN-1), so the
+  arming is installed for synchronous work only.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
 
@@ -403,11 +431,32 @@ the design ids are those of the binding design.
   parameter, a test passes the instance as that argument and requires kind `busy` of the busy class, and then calls a member on
   the instance, which works because the refused call holds no lock. The instance of these tests is made by the first
   constructor or static member of the class that returns it, with placeholder arguments.
+  A case that raises and has `faults` (CK-22) is run with them armed: the test makes the receiver and every argument
+  as local values first, arms the faults for the member (`_arm_faults`), calls the member at once, and requires
+  `_fault_left` to be empty after the expected failure, so a fault that the call never reached fails the test. The
+  `errno` of a case's `raises` is compared with the failure's errno: a number as it is, a symbol as the value that
+  the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`), and no errno when
+  the case names none. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
+  `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the class of the
+  kind's category and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
+  one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
+  with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
+  of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
+  safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
+  the built-in form of the kind makes.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
-  and a callback inside another type, each refused by name when a case gives it (G-4).
+  and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
+  kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
+  test, because PHP has no table of the errno symbols of its machine; a value of the language by its kind
+  (`{"host": ...}`), whose kinds have no closed table; and a value of a value type of another kind than those of
+  GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because no test
+  compares the result of a case yet; the test of a member that takes an alias inside a map, a record field or the
+  return of a callback; and the check that no release build has a test feature (the resolved features of
+  `cargo tree`, and the export list of each installed package), of which the end-to-end check has the part of Go
+  (GN-13b).
 - **GN-13d** Python, Node and PHP also check, for the shapes of GN-6i, GN-6j and GN-7a: U-2, for every parameter or
   field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
@@ -419,6 +468,7 @@ the design ids are those of the binding design.
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is
   caught as the class of its category. A case may leave out the key of a parameter with a default, which is then left
   out of the call.
+
 - **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
   contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
@@ -452,7 +502,7 @@ the design ids are those of the binding design.
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
-  builds and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
+  builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test` through the subpath `./wasm`. `--add-targets` adds those targets to the copy
   with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the

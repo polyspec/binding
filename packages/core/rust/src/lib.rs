@@ -3,7 +3,7 @@
 //! Every item carries the id of the design rule that defines it. The crate holds no rule of a library: it holds the
 //! types through which a generated binding and a core agree on waiting (I-2 (4)), cancellation (T-1 `cancel`),
 //! resource cleanup (U-1 `cleanup`), the map of the contract type `map<T>` (T-2), the language exceptions
-//! that callbacks raise (U-3), the errors that generated code raises itself (E-1a) and the failure of a core that calls back (E-1c), the name
+//! that callbacks raise (U-3), the fault injection points of a core (G-5), the errors that generated code raises itself (E-1a) and the failure of a core that calls back (E-1c), the name
 //! conversion (N-2), the description of
 //! language values in both directions (T-3, B-1), and the lock of a class unit (B-5c, feature `lock`).
 
@@ -11,6 +11,7 @@ mod cancel;
 mod cleanup;
 mod error;
 mod failure;
+pub mod fault;
 mod host;
 mod keyed;
 #[cfg(feature = "lock")]

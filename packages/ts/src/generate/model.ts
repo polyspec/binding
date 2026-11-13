@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
 import { convert } from '../names.ts';
 
 export class Unsupported extends Error {}
@@ -39,6 +39,8 @@ export interface ValueAlias {
   unit: Unit;
   coreIn: string;
   coreOut: string;
+  // U-7: the E-1 variants that the in function can give (in_raises).
+  inRaises: string[];
 }
 
 export interface Fn {
@@ -155,8 +157,12 @@ export interface Model {
   classes: ErrorClass[];
   coreError: string | undefined;
   kinds: CoreKind[];
+  // G-5: the fault injection points of the core that the contract names.
+  faults: FaultPoint[];
   // The contract cases of each member, from the case files that `cases` names (K-1).
   cases: Map<string, unknown[]>;
+  // The cases of the in function of each value alias, from the groups that `cases` names by `alias` (U-7).
+  aliasCases: Map<string, unknown[]>;
 }
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
@@ -201,6 +207,7 @@ export function buildModel(
   coreLib: string,
   cases: Map<string, unknown[]>,
   foreign: ReadonlyMap<string, Contract> = new Map(),
+  aliasCases: Map<string, unknown[]> = new Map(),
 ): Model {
   assertNoExceptions(contract);
   contract = resolveNamedTypes(contract);
@@ -213,6 +220,7 @@ export function buildModel(
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: Unit[] = [];
+  const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -275,7 +283,9 @@ export function buildModel(
       args,
       returns,
       ...(yields === undefined ? {} : { yields }),
-      fallible: (member.raises ?? []).length > 0 || takesCallback,
+      // E-1c: core.result says whether the core path returns a Result; without it, a path does when raises names a
+      // variant of the core error of this contract or the member takes a callback.
+      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback),
       failure: takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
@@ -326,7 +336,7 @@ export function buildModel(
     if (unit.kind === 'alias' && unit.origin === 'value') {
       if (typeof unit.core !== 'object') throw new Unsupported(`${unit.id}: a value alias without core: {in, out} is not generated`);
       if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a value alias names its core type in core_type`);
-      aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out });
+      aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: unit.in_raises ?? [] });
       continue;
     }
     if (unit.kind === 'interface' && unit.origin === 'callback') {
@@ -402,6 +412,13 @@ export function buildModel(
   const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
   if (enumPaths.size > 1) throw new Unsupported(`the kinds name ${enumPaths.size} error enums; one is generated`);
   const [coreError] = [...enumPaths];
+  // E-1c: the error of a Result is the core error of E-1, which a contract without kinds does not name.
+  const unnamed = coreError === undefined ? [...functions, ...objects.flatMap((o) => o.members)].find((fn) => fn.fallible && !fn.failure) : undefined;
+  if (unnamed !== undefined) throw new Unsupported(`${unnamed.member.id}: its core returns a Result (core.result), but errors.kinds names no core error`);
+  for (const alias of aliases) {
+    const foreignVariant = alias.inRaises.find((variant) => variant.slice(0, variant.lastIndexOf('::')) !== coreError);
+    if (foreignVariant !== undefined) throw new Unsupported(`${alias.unit.id}: in_raises names ${foreignVariant}, which is no variant of the core error ${String(coreError)}`);
+  }
   const result = new Set<string>();
   const foreignRecords: ForeignRecord[] = [];
   const visit = (type: Type): void => {
@@ -438,7 +455,7 @@ export function buildModel(
   }
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, coreError, kinds, cases,
+    objects, callbacks, aliases, classes, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -918,3 +935,66 @@ export const argType = (model: Model, arg: Arg): string => (arg.default === unde
 
 // K-1, B-4: the kind text of a variant of the core error, its name in snake_case (CK-22 reads the cases the same way).
 export const kindText = (variant: string): string => variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+
+// G-5: the name that a case gives a fault injection point of this contract, <library>.<id> with the library in
+// snake_case.
+export const pointName = (model: Model, point: FaultPoint): string => `${model.contract.library.replaceAll('-', '_')}.${point.id}`;
+
+// G-5: the Rust items of a binding crate for the fault injection points. Each constant that the contract names exists
+// in the core (I-2); with_faults runs the work of an entry point with the faults that a test armed for its member.
+export function faultRust(model: Model): string {
+  if (model.faults.length === 0) return '';
+  return `
+/// G-5: the fault injection points that the contract names are constants of the core (I-2).
+${model.faults.map((point) => `const _: &str = ${point.core};`).join('\n')}
+
+/// G-5: the work of an entry point runs with the faults that a test armed for its member on this thread, or with none,
+/// so an entry point that a callback enters does not see the faults of the call around it.
+#[cfg(feature = "fault-test")]
+fn with_faults<T>(member: &str, work: impl FnOnce() -> T) -> T {
+    binding_core::fault::take(member).run(work)
+}
+
+#[cfg(not(feature = "fault-test"))]
+fn with_faults<T>(_member: &str, work: impl FnOnce() -> T) -> T {
+    work()
+}
+`;
+}
+
+// G-5: the entry point of a member, whose work is the closure of its guard call, runs that work in with_faults. A
+// member with two entry points (the keys and the pairs of an iterate) has two guard calls.
+export function withFaults(model: Model, fn: Fn, text: string): string {
+  if (model.faults.length === 0) return text;
+  const guard = /guard\((py, )?\|\| /;
+  const open = `$&with_faults(${JSON.stringify(fn.member.id)}, || `;
+  const lines = text.split('\n');
+  let found = 0;
+  for (const [at, line] of lines.entries()) {
+    if (!guard.test(line)) continue;
+    found += 1;
+    if (!line.endsWith('{')) {
+      // The work is one expression on the line of the guard call.
+      lines[at] = line.replace(guard, open).replace(/\)$/, '))');
+      continue;
+    }
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    const end = lines.findIndex((l, i) => i > at && l === `${indent}})`);
+    if (end < 0) throw new Error(`${fn.member.id}: the guard call of the entry point does not end (G-5)`);
+    lines[at] = line.replace(guard, open);
+    lines[end] = `${indent}}))`;
+  }
+  if (found === 0) throw new Error(`${fn.member.id}: the entry point has no guard call (G-5)`);
+  return lines.join('\n');
+}
+
+// U-7: the aliases whose in function gives kinds (in_raises), which have the entry point of the feature codec-test.
+export const aliasesWithKinds = (model: Model): ValueAlias[] => model.aliases.filter((alias) => alias.inRaises.length > 0);
+
+// E-5, I-2: each variant of in_raises is a variant of the error that the in function of the alias returns, the E of
+// its Failure<E>: a variant that the error does not have does not compile.
+export function aliasKindsRust(model: Model): string {
+  const asserts = aliasesWithKinds(model).flatMap((alias) =>
+    alias.inRaises.map((variant) => `#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&${model.coreError ?? '()'}) -> bool = |error| matches!(error, ${variant} { .. });`));
+  return asserts.length === 0 ? '' : `\n/// U-7, I-2: the kinds of in_raises are variants of the error of the alias's in function.\n${asserts.join('\n')}\n`;
+}

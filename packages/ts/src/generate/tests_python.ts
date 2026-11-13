@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -66,6 +66,7 @@ export function pythonTests(model: Model, module: string): string {
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
   let usesFixture = false;
+  let usesErrno = false;
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
@@ -133,6 +134,16 @@ export function pythonTests(model: Model, module: string): string {
             ${call(new Map([[arg, '"\\ud800"']]))}
         self.assertEqual(caught.exception.kind, "invalid_text")`);
       }
+      // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
+      const refusedValue = aliasRepresentative(model, ctx, arg.type);
+      if (refusedValue !== undefined) {
+        out.push(`
+    def test_u7_${name}_${argName}_gives_the_kind_of_${langName('python', refusedValue.kase.alias.unit.name, 'variable')}(self) -> None:
+        with self.assertRaises(pkg.${cls(refusedValue.kase.category)}) as caught:
+            ${call(new Map([[arg, refusedValue.value]]))}
+        self.assertIs(type(caught.exception), pkg.${cls(refusedValue.kase.category)})
+        self.assertEqual(caught.exception.kind, ${pyString(refusedValue.kase.kind)})`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? pyString('Ā') : '"\\ud800"';
@@ -168,16 +179,23 @@ export function pythonTests(model: Model, module: string): string {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
       };
+      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
+      // between the arming and that call, and requires every armed fault to have fired.
+      const locals = kase.faults === undefined ? [] : [...(receiver === '' ? [] : [['receiver', receiver]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg_${i}`, value]]; })];
+      const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value}`).join('')}\n        armed = _native._arm_faults(${pyString(fn.member.id)}, ${pyString(kase.faults)})`;
+      const armedCall = invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `arg_${fn.args.indexOf(arg)}`)), receiver === '' ? '' : 'receiver');
+      const errno = expectedErrno(kase);
+      usesErrno ||= errno !== null && 'symbol' in errno;
       out.push(`
-    def test_b4_${name}_${kase.id}(self) -> None:${before}
+    def test_b4_${name}_${kase.id}(self) -> None:${before}${arming}
         with self.assertRaises(pkg.${raised.category}) as caught:
-            ${invoke(fn, callArgs(model, ctx, fn, caseArg), receiver)}
+            ${kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), receiver) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
         self.assertIs(type(error), pkg.${raised.exact})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
-        self.assertIsNone(error.errno)${after}`);
+        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -235,10 +253,19 @@ export function pythonTests(model: Model, module: string): string {
     def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
         held = ${test.instance}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}`);
   }
+  // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
+  for (const kase of aliasCases(model)) {
+    out.push(`
+    def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${kase.id}(self) -> None:
+        with self.assertRaises(pkg.${cls(kase.category)}) as caught:
+            _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
+        self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
+        self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
+  }
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-import unittest
+${usesErrno ? 'import errno\n' : ''}import unittest
 
 import ${module} as pkg
 from ${module} import _native

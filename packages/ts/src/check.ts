@@ -18,6 +18,7 @@ import {
   type Parameter,
   type Type,
   type Unit,
+  kindsOf,
 } from './contract.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
@@ -58,6 +59,11 @@ export const BINDING_KINDS: Readonly<Record<string, Category>> = {
   wrong_thread: 'busy',
   internal: 'internal',
 };
+
+// G-5: the symbol of an errno, which each target gives its value.
+const ERRNO_SYMBOL = /^E[A-Z0-9]+$/;
+// G-5: a point is named <library>.<id> with the library in snake_case, as its crate's library name is.
+export const pointLibrary = (library: string): string => library.replaceAll('-', '_');
 
 const escape = (segment: string | number): string => String(segment).replaceAll('~', '~0').replaceAll('/', '~1');
 const pointer = (...segments: (string | number)[]): string => segments.map((s) => `/${escape(s)}`).join('');
@@ -167,6 +173,7 @@ class Checker {
     this.optionalReturns();
     this.cycles();
     this.valueUnits();
+    this.aliasRaises();
     this.otherRepositories();
     this.errors();
     this.wrappedErrors();
@@ -203,6 +210,24 @@ class Checker {
 
   unit(id: string): Unit | undefined {
     return this.units.get(id)?.value;
+  }
+
+  // E-1, E-1b: the contract of a library that the check was given, read without a finding; the checks that own a
+  // reference to it report a missing one.
+  given(library: string): Contract | undefined {
+    const raw = this.dependencies.get(library);
+    return raw !== undefined && validate(raw) === true ? (raw as Contract) : undefined;
+  }
+
+  // E-1, E-3: every kind that the core error gives, with its category. A row gives the kinds of its `kinds`, or the
+  // one kind of its variant's name; a kind of a dependency (E-1b (a)) takes both from that library's row.
+  kindCategories(): Map<string, Category | undefined> {
+    const kinds = new Map<string, Category | undefined>();
+    for (const row of this.contract.errors.kinds) {
+      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant);
+      for (const kind of kindsOf(owner ?? row)) kinds.set(kind, owner?.category);
+    }
+    return kinds;
   }
 
   dependency(library: string, path: string, check: string): Contract | null {
@@ -341,7 +366,22 @@ class Checker {
       }
     }
     for (const [i, kase] of this.contract.cases.entries()) {
-      if (!this.members.has(kase.member)) this.report('CK-3', `/cases/${i}/member`, `${kase.member} is not a member`);
+      if (kase.member !== undefined) {
+        if (!this.members.has(kase.member)) this.report('CK-3', `/cases/${i}/member`, `${kase.member} is not a member`);
+      } else {
+        const unit = this.unit(kase.alias);
+        if (unit?.kind !== 'alias' || typeof unit.core !== 'object') this.report('CK-3', `/cases/${i}/alias`, `${kase.alias} is not a value alias with core: {in, out} (U-7)`);
+      }
+    }
+    // G-5: a fault injection point is named by its id, and what it fills is a kind of the core error (E-1).
+    const points = new Set<string>();
+    const kinds = this.kindCategories();
+    for (const [i, point] of (this.contract.faults ?? []).entries()) {
+      if (points.has(point.id)) this.report('CK-3', `/faults/${i}/id`, `the fault injection point ${point.id} is declared twice`);
+      points.add(point.id);
+      for (const [f, kind] of point.fills.entries()) {
+        if (!kinds.has(kind)) this.report('CK-3', `/faults/${i}/fills/${f}`, `${kind} is not a kind of errors.kinds (E-1)`);
+      }
     }
     for (const [i, change] of this.contract.changes.entries()) {
       for (const lang of Object.keys(change.from)) langOk(lang, `/changes/${i}/from/${lang}`, 'a change');
@@ -1144,13 +1184,20 @@ class Checker {
     if (this.caseFiles !== undefined) this.caseKinds(this.caseFiles);
   }
 
-  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that it raises. A kind
-  // of the category internal or io, which no input reaches, is reported as waiting for the case form of a fault
-  // injection point of the core's test feature (G-5); it is not left out. A case cannot give a callback or a function yet, so a member that takes one and raises is reported
-  // as such until G-5 has the case form of a callback fixture (GN-13a); it is not left out, which would drop its tests
-  // without a word.
+  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that its raises
+  // gives. A case that arms fault injection points (G-5) fills only the kinds that its points fill, so an input rule
+  // keeps its input case. A kind of the category internal needs no case of each member (X-1): the match that maps the
+  // error enum is one for every member, so one case that arms <library>.internal checks it for the enum. The kinds
+  // of a value alias's in function have their cases in the group of the alias (U-7). A case cannot give a function,
+  // or a callback inside another type, yet, so a member that takes one and raises is reported as such until G-5 has
+  // that case form (GN-13a); it is not left out, which would drop its tests without a word.
   caseKinds(files: ReadonlyMap<string, unknown>): void {
     const raised = new Map<string, Set<string>>();
+    const aliasRaised = new Map<string, Set<string>>();
+    const categories = this.kindCategories();
+    // X-1: the libraries whose point internal a case arms as broken and that raises a kind of the category internal.
+    const mapped = new Set<string>();
+    const groups = new Map<string, 'member' | 'alias'>();
     for (const [i, row] of this.contract.cases.entries()) {
       const document = files.get(row.file);
       const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
@@ -1158,33 +1205,148 @@ class Checker {
         this.report('CK-22', `/cases/${i}`, document === undefined ? `the file ${row.file} is not found` : `the file ${row.file} has no group ${row.group}`);
         continue;
       }
+      // U-7: the cases of an alias are in a group of their own, because a case of a member has other keys.
+      const key = `${row.file}\0${row.group}`;
+      const what = row.member === undefined ? 'alias' : 'member';
+      if ((groups.get(key) ?? what) !== what) this.report('CK-22', `/cases/${i}`, `the group ${row.group} of ${row.file} holds the cases of a member and of an alias (U-7)`);
+      groups.set(key, what);
+      if (row.member === undefined) {
+        const kinds = aliasRaised.get(row.alias) ?? new Set<string>();
+        this.aliasCases(row.alias, group, `/cases/${i}`, kinds);
+        aliasRaised.set(row.alias, kinds);
+        continue;
+      }
       const kinds = raised.get(row.member) ?? new Set<string>();
       this.caseFixtures(row.member, group, `/cases/${i}`);
       for (const kase of group) {
-        const raises = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['raises'] : undefined;
-        const kind = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>)['kind'] : undefined;
-        if (typeof kind === 'string') kinds.add(kind);
+        const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
+        const raises = record['raises'];
+        const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
+        const kind = expected['kind'];
+        const where = `the case ${String(record['id'])} of ${row.member}`;
+        if (typeof expected['errno'] === 'string' && !ERRNO_SYMBOL.test(expected['errno'])) {
+          this.report('CK-22', `/cases/${i}`, `${where}: the errno ${expected['errno']} of raises is not the symbol of an errno, such as ENOSPC (G-5)`);
+        }
+        if (record['faults'] === undefined) {
+          if (typeof kind === 'string') kinds.add(kind);
+          continue;
+        }
+        const armed = this.caseFaults(record['faults'], where, `/cases/${i}`);
+        if (typeof kind !== 'string') continue;
+        if (!armed.fills.has(kind)) {
+          this.report('CK-22', `/cases/${i}`, `${where}: no point that the case arms fills the kind ${kind}, so only a case without faults gives it (G-5)`);
+          continue;
+        }
+        kinds.add(kind);
+        if (categories.get(kind) === 'internal') for (const library of armed.broken) mapped.add(library);
       }
       raised.set(row.member, kinds);
     }
-    const categories = new Map(this.contract.errors.kinds.map((row) => [row.variant, row.category]));
-    const snake = (name: string): string => name.replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+    const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
     for (const { member, unit, path } of this.members.values()) {
       const kinds = raised.get(member.id);
       if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
       // A callback that is a parameter itself is the fixture of a case (G-5); any other place of language code waits.
       const code = (member.parameters ?? []).some((p) => this.takesCode(p.type) && this.callbackOf(p.type) === undefined);
       for (const [r, variant] of (member.raises ?? []).entries()) {
-        const category = categories.get(variant);
-        if (category === undefined) continue;
-        const kind = snake(variant.slice(variant.lastIndexOf('::') + 2));
-        if (code) {
-          this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but a case cannot give the function, or the callback inside another type, that ${member.id} takes yet (G-5, GN-13a)`);
-        } else if (!kinds.has(kind) && (category === 'io' || category === 'internal')) {
-          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}, which no input reaches, and the case form of a fault injection point is not decided (K-1, G-5)`);
-        } else if (!kinds.has(kind)) {
-          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind} (K-1, B-4)`);
+        const row = rows.get(variant);
+        // X-1: a kind of the category internal has the one case of its enum, below.
+        if (row?.category === undefined || row.category === 'internal') continue;
+        for (const kind of kindsOf(row)) {
+          if (code) {
+            this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but a case cannot give the function, or the callback inside another type, that ${member.id} takes yet (G-5, GN-13a)`);
+          } else if (!kinds.has(kind)) {
+            this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}${row.category === 'io' ? ', by an input or by a fault injection point of faults that fills it' : ''} (K-1, B-4)`);
+          }
         }
+      }
+    }
+    // X-1: one case for each error enum whose kinds the contract gives: its own, and that of each library whose kinds
+    // it passes on (E-1b (a)).
+    const reported = new Set<string>();
+    for (const [i, row] of this.contract.errors.kinds.entries()) {
+      const library = row.library ?? this.contract.library;
+      const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant)?.category;
+      if (category !== 'internal' || mapped.has(library) || reported.has(library)) continue;
+      reported.add(library);
+      this.report('CK-22', `/errors/kinds/${i}`, `no case arms the point ${pointLibrary(library)}.internal as broken and raises a kind of the category internal, the one case that checks the class, kind and status of the error enum of ${library} (X-1, G-5)`);
+    }
+    // U-7: every kind of an alias's in function has a case of the alias.
+    for (const { value: unit, path } of this.units.values()) {
+      for (const [r, variant] of (unit.in_raises ?? []).entries()) {
+        const row = rows.get(variant);
+        if (row === undefined) continue;
+        for (const kind of kindsOf(row)) {
+          if (aliasRaised.get(unit.id)?.has(kind) !== true) this.report('CK-22', `${path}/in_raises/${r}`, `no case of the alias ${unit.id} raises the kind ${kind} (K-1, U-7)`);
+        }
+      }
+    }
+  }
+
+  // G-5: the faults of a case, [{point: "<library>.<id>", kind, errno?, bytes?, nth?}]. A point is one of the faults
+  // of this contract or of the library that the name gives, and takes the injection of its kind. Gives the kinds that
+  // the armed points fill and the libraries whose point internal is armed as broken (X-1).
+  caseFaults(given: unknown, where: string, path: string): { fills: Set<string>; broken: Set<string> } {
+    const fills = new Set<string>();
+    const broken = new Set<string>();
+    const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
+    if (!Array.isArray(given) || given.length === 0) {
+      report('faults is not a list of {point, kind}');
+      return { fills, broken };
+    }
+    const libraries = new Map<string, string>([this.contract.library, ...this.dependencies.keys()].map((library) => [pointLibrary(library), library]));
+    for (const [f, item] of given.entries()) {
+      const fault = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      const what = `fault ${f}`;
+      for (const key of Object.keys(fault)) if (!['point', 'kind', 'errno', 'bytes', 'nth'].includes(key)) report(`${what} has no key ${key}`);
+      const [, prefix, id] = /^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/.exec(typeof fault['point'] === 'string' ? fault['point'] : '') ?? [];
+      const library = prefix === undefined ? undefined : libraries.get(prefix);
+      if (library === undefined || id === undefined) {
+        report(`the point ${String(fault['point'])} of ${what} is not <library>.<id> of this contract or of a library that the check was given`);
+        continue;
+      }
+      const owner = library === this.contract.library ? this.contract : this.given(library);
+      const point = (owner?.faults ?? []).find((p) => p.id === id);
+      if (point === undefined) {
+        report(`${String(fault['point'])} is not a point of faults of ${library}`);
+        continue;
+      }
+      const kind = fault['kind'];
+      if (kind !== 'io' && kind !== 'short' && kind !== 'broken') {
+        report(`the kind of ${what} is not io, short or broken`);
+        continue;
+      }
+      if (!point.inject.includes(kind)) report(`the point ${String(fault['point'])} takes ${point.inject.join(', ')}, not ${kind}`);
+      const natural = (value: unknown, least: number): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= least;
+      if (kind === 'short' ? !natural(fault['bytes'], 0) : fault['bytes'] !== undefined) report(`${what}: bytes, a count of bytes, is given with the kind short and only with it`);
+      if (fault['errno'] !== undefined && (kind !== 'io' || typeof fault['errno'] !== 'string' || !ERRNO_SYMBOL.test(fault['errno']))) {
+        report(`${what}: errno is the symbol of an errno, such as ENOSPC, and is given with the kind io only`);
+      }
+      if (fault['nth'] !== undefined && !natural(fault['nth'], 1)) report(`${what}: nth counts from 1`);
+      for (const filled of point.fills) fills.add(filled);
+      if (id === 'internal' && kind === 'broken') broken.add(library);
+    }
+    return { fills, broken };
+  }
+
+  // U-7: a case of an alias is {id, value, raises}: the value that the in function refuses and the kind it gives,
+  // one of in_raises of the alias.
+  aliasCases(aliasId: string, group: unknown[], path: string, kinds: Set<string>): void {
+    const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
+    const declared = new Set((this.unit(aliasId)?.in_raises ?? []).flatMap((variant) => kindsOf(rows.get(variant) ?? { variant })));
+    for (const kase of group) {
+      const record = typeof kase === 'object' && kase !== null && !Array.isArray(kase) ? (kase as Record<string, unknown>) : {};
+      const report = (message: string): void => this.report('CK-22', path, `the case ${String(record['id'])} of the alias ${aliasId}: ${message} (U-7)`);
+      for (const key of Object.keys(record)) if (!['id', 'note', 'rule', 'value', 'raises'].includes(key)) report(`a case of an alias has no key ${key}`);
+      if (!Object.hasOwn(record, 'value')) report('a case of an alias gives its value');
+      const raises = record['raises'];
+      const kind = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>)['kind'] : undefined;
+      if (typeof kind !== 'string') {
+        report('a case of an alias raises a kind');
+      } else if (!declared.has(kind)) {
+        report(`the kind ${kind} is not of in_raises of ${aliasId}`);
+      } else {
+        kinds.add(kind);
       }
     }
   }
@@ -1284,9 +1446,33 @@ class Checker {
     return false;
   }
 
+  // ---- CK-8: the kinds of a value alias's in function (U-7, E-5) ----
+
+  aliasRaises(): void {
+    const own = new Set(this.contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.in_raises === undefined) continue;
+      if (unit.kind !== 'alias' || typeof unit.core !== 'object') {
+        this.report('CK-8', `${path}/in_raises`, `only a value alias with core: {in, out} has in_raises (U-7)`);
+        continue;
+      }
+      for (const [r, variant] of unit.in_raises.entries()) {
+        if (!own.has(variant)) this.report('CK-8', `${path}/in_raises/${r}`, `${variant} is not a variant of errors.kinds of this contract (U-7, E-1)`);
+      }
+    }
+  }
+
   // ---- CK-21: the build of the core and exclusive members (I-1, U-6) ----
 
   coreBuild(): void {
+    // E-1c: a core that returns no Result has no variant to return and no place for the failure of a callback.
+    for (const { member, path } of this.members.values()) {
+      if (typeof member.core !== 'object' || member.core.result !== false) continue;
+      if ((member.raises ?? []).length > 0) this.report('CK-21', `${path}/core/result`, `${member.id} has raises, so its core returns a Result (E-1c)`);
+      if ((member.parameters ?? []).some((p) => this.takesCode(p.type))) {
+        this.report('CK-21', `${path}/core/result`, `${member.id} takes a callback or a function, so its core returns a Result (E-1c)`);
+      }
+    }
     for (const lang of Object.keys(this.contract.core.features ?? {}) as Lang[]) {
       if (!this.contract.targets.includes(lang)) this.report('CK-21', `/core/features/${lang}`, `${lang} is not a target (I-1)`);
     }

@@ -69,6 +69,16 @@ function coreFeatures(contract: Contract, suffix: string): string {
   return features === undefined ? '' : `, default-features = false, features = [${features.map((f) => JSON.stringify(f)).join(', ')}]`;
 }
 
+// GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature of the core whose
+// fault injection points the contract names (G-5); codec-test adds the entry points that run the in function of a
+// value alias with in_raises alone (U-7). Go and WASM have neither yet.
+function testFeatures(contract: Contract, suffix: string): string {
+  if (suffix === 'go' || suffix === 'wasm') return '';
+  const faults = (contract.faults ?? []).length > 0 ? `fault-test = ["${contract.core.crate}/fault-test"]\n` : '';
+  const codec = contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
+  return `${faults}${codec}`;
+}
+
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
 // staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm).
 function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }): string {
@@ -87,7 +97,7 @@ crate-type = ["${crate?.type ?? 'cdylib'}"]
 
 [features]
 panic-test = []
-
+${testFeatures(contract, suffix)}
 [dependencies]
 ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
 ${bindingCore(suffix)}

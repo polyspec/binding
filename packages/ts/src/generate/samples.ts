@@ -6,7 +6,8 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, Unsupported, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
 export type Lang3 = 'python' | 'node' | 'php';
@@ -125,6 +126,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
   }
   const unit = unitOf(model, type);
+  if (aliasOf(model, type) !== undefined) return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
     if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`a case value of the record ${unit.id} is not an object of its fields`);
@@ -139,6 +141,44 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
     );
   }
   throw new Error(`no case value of the type ${JSON.stringify(type)}`);
+}
+
+// GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
+// makes in the language: null, bool, int (a number, or its decimal text outside the safe integers), float, text,
+// bytes, list and map. The other kinds are refused by name until a case needs them (G-4).
+function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const kind = record?.['kind'];
+  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(value)}`);
+  const held = record['value'];
+  const lang = ctx.lang;
+  if (kind === 'null') return lang === 'python' ? 'None' : 'null';
+  if (kind === 'bool') return fromJson(model, ctx, 'bool', held);
+  if (kind === 'text') return fromJson(model, ctx, 'text', held);
+  if (kind === 'bytes') return fromJson(model, ctx, 'bytes', held);
+  if (kind === 'float') {
+    const float = fromJson(model, ctx, 'float', held);
+    return lang === 'python' ? `float(${float})` : lang === 'php' ? `(float) ${float}` : float;
+  }
+  if (kind === 'int') {
+    const token = typeof held === 'number' && Number.isSafeInteger(held) ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
+    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
+    if (typeof held === 'number' || lang === 'python') return token;
+    if (lang === 'node') return `${token}n`;
+    const wide = BigInt(token);
+    if (wide < -(2n ** 63n) || wide >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int ${token} is outside the int of PHP (G-5)`);
+    return token;
+  }
+  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueFromJson(model, ctx, item, where)).join(', ')}]`;
+  if (kind === 'map' && Array.isArray(held)) {
+    const entries = (held as [unknown, unknown][]).map(([key, item]) => {
+      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? String(raw) : fromJson(model, ctx, keyKind, raw)));
+      const v = valueFromJson(model, ctx, item, where);
+      return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+    });
+    return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[lang];
+  }
+  throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated yet (GN-13)`);
 }
 
 // The arguments of a call in the form of each language: positional parameters, then the record's fields as Python
@@ -254,7 +294,9 @@ export const bytesKind = (type: Type): 'bytes' | 'source' | undefined => {
 export interface RaisingCase {
   id: string;
   args: Map<Arg, unknown>;
-  raises: { kind: string; status: number | null; category: string };
+  raises: { kind: string; status: number | null; category: string; errno?: unknown };
+  // G-5: the faults that the case arms before its call, as the JSON text that the arming entry point takes.
+  faults?: string;
   // The instance that a method or property is called on, made by a static member or the constructor (T-5).
   receiver?: Receiver;
 }
@@ -350,7 +392,12 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     if (fn.receiver !== undefined && receiver === undefined) {
       throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)`);
     }
-    out.push({ id: String(record['id']), args, raises, ...(receiver === undefined ? {} : { receiver }) });
+    const faults = record['faults'];
+    if (faults !== undefined && model.faults.length === 0) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
+    const own = `${model.contract.library.replaceAll('-', '_')}.`;
+    const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
+    if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: JSON.stringify(faults) }), ...(receiver === undefined ? {} : { receiver }) });
   }
   return out;
 }
@@ -478,4 +525,63 @@ export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', 
   if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
   if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
   throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${JSON.stringify(key)}`);
+}
+
+// G-5: the errno that a raising case expects: none, a number, or the symbol of an errno, whose value each language
+// gives on the target.
+export function expectedErrno(kase: RaisingCase): { symbol: string } | { value: number } | null {
+  const errno = kase.raises.errno;
+  if (errno === undefined || errno === null) return null;
+  if (typeof errno === 'string') return { symbol: errno };
+  if (typeof errno === 'number') return { value: errno };
+  throw new Error(`the errno of the case ${kase.id} is neither a symbol nor a number (G-5)`);
+}
+
+// U-7: a case of the in function of a value alias: the value that the alias refuses and the kind it gives, with the
+// category of the kind (E-1).
+export interface AliasCase {
+  alias: ValueAlias;
+  id: string;
+  value: unknown;
+  kind: string;
+  category: string;
+}
+
+export function aliasCases(model: Model): AliasCase[] {
+  const out: AliasCase[] = [];
+  for (const alias of model.aliases) {
+    for (const kase of model.aliasCases.get(alias.unit.id) ?? []) {
+      const record = kase as Record<string, unknown>;
+      const where = `the case ${String(record['id'])} of the alias ${alias.unit.id}`;
+      const kind = (record['raises'] as Record<string, unknown> | undefined)?.['kind'];
+      const row = model.contract.errors.kinds.find((k) => typeof kind === 'string' && k.library === undefined && kindsOf(k).includes(kind));
+      if (typeof kind !== 'string' || row?.category === undefined) throw new Error(`${where} raises no kind of errors.kinds (U-7)`);
+      const value = record['value'];
+      // G-5: a value of the language by its kind, {"host": ...}, waits for the closed table of those kinds.
+      if (typeof value === 'object' && value !== null && 'host' in value) throw new Unsupported(`${where}: a value {"host": ...} is not generated yet (G-5)`);
+      out.push({ alias, id: String(record['id']), value, kind, category: row.category });
+    }
+  }
+  return out;
+}
+
+// U-7: the value that shows a kind of an alias coming up through a member: the value of the first case of the alias,
+// at the place of the alias in the parameter type. The place is the parameter itself, an optional of it, or the first
+// item of a list of it; any other place is an open item (GN-13a).
+export function aliasRepresentative(model: Model, ctx: Context, type: Type): { kase: AliasCase; value: string } | undefined {
+  const wrap = (inner: Type): ((value: string) => string) | undefined => {
+    if (typeof inner !== 'object') return undefined;
+    if ('optional' in inner) return wrap(inner.optional);
+    if ('list' in inner) {
+      const item = wrap(inner.list);
+      return item === undefined ? undefined : (value) => `[${item(value)}]`;
+    }
+    return aliasOf(model, inner) === undefined ? undefined : (value) => value;
+  };
+  const inner = (found: Type): Type => (typeof found === 'object' && 'optional' in found ? inner(found.optional) : typeof found === 'object' && 'list' in found ? inner(found.list) : found);
+  const place = wrap(type);
+  const alias = aliasOf(model, inner(type));
+  const kase = alias === undefined ? undefined : aliasCases(model).find((c) => c.alias === alias);
+  if (place === undefined || kase === undefined) return undefined;
+  return { kase, value: place(fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)) };
 }
