@@ -1412,6 +1412,23 @@ test('a parameter of a class gives the core the value in the form that the core 
   }
 });
 
+test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name takes a trailing _ (GN-6c, N-2)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.id === 'token_kind').variants.push({ name: ['object'], value: 'object' }, { name: ['string'], value: 'string' });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // PHP takes every one of these names as an enum case; the macro php_enum of ext-php-rs refuses a PHP keyword and a
+  // type name, case-insensitively, also as the name of #[php(name)].
+  assert.match(lib, /#\[php\(name = "List_", value = "list"\)\]\n\s+List,/);
+  assert.match(lib, /#\[php\(name = "Object_", value = "object"\)\]\n\s+Object,/);
+  assert.match(lib, /#\[php\(name = "String_", value = "string"\)\]\n\s+String,/);
+  assert.match(lib, /#\[php\(name = "Word", value = "word"\)\]\n\s+Word,/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_classes.stub.php');
+  assert.match(stub, /case List_ = 'list';/);
+  assert.match(stub, /case Object_ = 'object';/);
+  assert.match(stub, /case Word = 'word';/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
