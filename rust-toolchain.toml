@@ -1,4 +1,7 @@
 [toolchain]
 channel = "1.99.0"
 profile = "minimal"
-components = ["rustfmt", "clippy"]
+# llvm-tools holds llvm-nm, which reads the symbols of the Go static library of the end-to-end check (GN-14).
+components = ["rustfmt", "clippy", "llvm-tools"]
+# The WASM binding is built for wasm32-unknown-unknown (GN-18).
+targets = ["wasm32-unknown-unknown"]

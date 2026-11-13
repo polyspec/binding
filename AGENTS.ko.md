@@ -16,6 +16,15 @@
   deny이고, `clippy.toml`은 `Option`의 `unwrap_or`·`map_or` 계열과 `Result::ok`를 금한다. 남는 사용은
   `#[allow(..., reason = "<규칙 id>")]`를 단다.
   Enforced by: `packages/core/rust`의 `cargo clippy --all-targets -- -D warnings`
+- Own: 릴리스에 따라 검사 결과가 달라지는 모든 도구는 추적 파일에 고정하고 checkout 안에 설치한다. Node.js, npm, Go, Python,
+  Composer, wasm-bindgen CLI는 `mise.toml`에, 그 digest는 `mise.lock`에 있고(npm은 `package.json`의 `devEngines`에도),
+  Rust는 component(기호를 읽는 `llvm-nm`의 `llvm-tools` 포함)와 target `wasm32-unknown-unknown`과 함께 `rust-toolchain.toml`에, PHP는 minor로 `.php-version`에,
+  PHPUnit은 `config/phpunit`에, mise는 배포 대상 플랫폼마다의 sha256과 함께 `config/toolchain.json`에 있다. `make install`은
+  `@polyspec/kit`의 도구로 이것들을 `var/tools`에 설치하고(기계의 유일한 도구인 rustup이 Rust toolchain을 가지며, 기계의
+  PHP는 그대로 감싼다), 고정한 digest로만 내려받으며, 어떤 도구도 처음 쓰일 때 다른 도구를 설치하지 않는다. wasm-bindgen
+  CLI는 생성 manifest의 `wasm-bindgen` crate와 같은 릴리스다(GN-18). CLI는 자기 릴리스의 모듈만 읽기 때문이다. 이유:
+  저장소가 고정하지 않은 도구로 얻은 결과는 되풀이할 수 없으므로 진단이지 증거가 아니다.
+  Enforced by: `make install`, 그 `mise install --locked`가 `mise.lock`이 고정하지 않은 도구를 실패시킨다.
 - Own: 계약 검사의 모든 검사는 자기 이유로 실패하는 시험을 가진다(PRINCIPLES P19).
   Enforced by: `packages/ts`의 `npm test`
 - Own: 생성기를 바꾸는 변경은 커밋 전에 `docs/spec/generator.md`의 끝에서 끝까지 확인(GN-14)을 실행한다.

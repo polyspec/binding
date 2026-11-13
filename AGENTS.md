@@ -18,6 +18,17 @@ rules of this repository.
   `let_underscore_untyped` deny, and `clippy.toml` disallows the `unwrap_or` and `map_or` families of `Option` and
   `Result::ok`; a remaining use carries `#[allow(..., reason = "<rule id>")]`.
   Enforced by: `cargo clippy --all-targets -- -D warnings` in `packages/core/rust`
+- Own: Every tool whose release changes a result of a check is pinned in a tracked file and installed into the
+  checkout: Node.js, npm, Go, Python, Composer and the wasm-bindgen CLI in `mise.toml` with their digests in `mise.lock`
+  (npm also in `devEngines` of `package.json`), Rust with its components (`llvm-tools`, whose `llvm-nm` reads symbols) and the target
+  `wasm32-unknown-unknown` in `rust-toolchain.toml`, PHP by its minor in `.php-version`, PHPUnit in `config/phpunit` and mise in `config/toolchain.json`
+  with the sha256 of each platform of the deployment targets. `make install` installs them with the utilities of
+  `@polyspec/kit` into `var/tools` (rustup, the one tool of the machine, keeps the Rust toolchain, and the PHP of the
+  machine is wrapped as it is), downloads only at the pinned digests, and no tool installs another tool on first use. The
+  wasm-bindgen CLI is the release of the `wasm-bindgen` crate of the generated manifests (GN-18), because the CLI reads only
+  a module of its own release. Why: a result of a tool that the repository does not pin cannot be repeated, so it is a
+  diagnosis and not evidence.
+  Enforced by: `make install`, whose `mise install --locked` fails a tool that `mise.lock` does not pin.
 - Own: Every check of the contract check has a test that fails for its own reason (PRINCIPLES P19).
   Enforced by: `npm test` in `packages/ts`
 - Own: A change of the generator runs the end-to-end check of `docs/spec/generator.md` (GN-14) before its commit.

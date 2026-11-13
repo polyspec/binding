@@ -1,0 +1,17 @@
+{
+    "name": "polyspec/binding-phpunit",
+    "description": "The PHPUnit of the end-to-end check of binding; make install-tools installs it into var/tools/phpunit.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4",
+        "phpunit/phpunit": "13.4.6"
+    },
+    "config": {
+        "sort-packages": true,
+        "bin-compat": "full",
+        "platform": {
+            "php": "8.4.1"
+        }
+    }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@polyspec/binding-tools",
+  "private": true,
+  "description": "The tools of the checkout: the shared tools of polyspec (@polyspec/kit), which install the toolchains of mise.toml into var/tools",
+  "license": "MIT",
+  "type": "module",
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "12.2.0",
+      "onFail": "error"
+    }
+  },
+  "devDependencies": {
+    "@polyspec/kit": "https://github.com/polyspec/kit/releases/download/v0.0.109/polyspec-kit-0.0.109.tgz"
+  }
+}

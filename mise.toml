@@ -1,0 +1,20 @@
+# The tools that mise installs into var/tools/mise: `make toolchain-lock` writes their digests into mise.lock and
+# `make install-tools` installs them with `mise install --locked`.
+[tools]
+node = "26.12.0"
+# devEngines of package.json names the same npm.
+"npm:npm" = "12.2.0"
+# The release of the go directive of the generated go.mod (GN-15).
+go = "1.27.3"
+# The Python of the wheels (abi3-py314, GN-1) and of the generated tests on unittest.
+python = "3.14.8"
+"http:composer" = { version = "2.10.3", url = "https://getcomposer.org/download/{{ version }}/composer.phar", checksum = "sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6", bin = "composer" }
+# The wasm-bindgen CLI writes the glue of the WASM crate and must be the release of its wasm-bindgen crate (GN-18,
+# WASM_BINDGEN of packages/ts/src/generate/packages.ts).
+"github:wasm-bindgen/wasm-bindgen" = "0.2.130"
+
+# The settings of mise of this checkout, which mise reads from this file (MISE_GLOBAL_CONFIG_FILE of the Makefile): mise
+# installs and runs only what mise.lock pins and installs nothing on first use.
+[settings]
+locked = true
+auto_install = false
