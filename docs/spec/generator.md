@@ -754,10 +754,10 @@ the design ids are those of the binding design.
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
-  `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
-  default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
+  `panic-test`, `codec-test` and `native-count-test` are for tests only: the manifest that `binding scaffold` writes
+  turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`). With the build tag
+  `__fault_left`, `__alias_in_`, `__native_count`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to

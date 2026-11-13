@@ -617,10 +617,10 @@
   `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
-  latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`와 `codec-test`는 시험
-  전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
+  latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`, `codec-test`,
+  `native-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
   끝에서 끝까지 확인은 feature 없이 정적 라이브러리를 빌드해 시험용 진입점(`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
+  `__fault_left`, `__alias_in_`, `__native_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
   crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
   `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 이 레포 alias의
