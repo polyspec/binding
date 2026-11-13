@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Four texts of the generator that the relay of the end-to-end check shows, which takes and gives the value class of
+  another repository and names no kind. Every crate but the Go one wrote `failure_error` with a call of `core_error`,
+  a function that a contract without kinds does not have, so the crate did not compile; the kind of
+  `binding_core::Failure<()>` is the unit, which no member gives, and that arm is now kind `internal` (E-1c, GN-6x).
+  PHP wrote the class name of the owner with its namespace into two Rust strings without escaping the backslash
+  ("unknown character escape"); the strings are now written as Rust strings. PHP named the bit of a handle that the
+  host owns `OWNED`, the name of the table of GN-6u in the same module; the bit is now `HOST_OWNED`. Go wrote the
+  numbers of a value class and of its out row as bare literals, which are `i32` for `out_uint(…, impl WideUint)`;
+  they are now `u64` literals (GN-15c). Found by the end-to-end run of relay with the contract of json. Verified by
+  `make test-ts`: each of the three new tests failed for its text, and 412 of 412 pass with the change.
 - A helper of a generated crate that is an `async fn` was kept in every crate: `usedHelpers` read the name of a
   helper after `fn` or `trait` at the start of its item only, so `async fn caught` of the WASM crate had no name and
   counted as used, and a WASM crate without a member with `wait: async_driver` (variants, sample) had dead code,

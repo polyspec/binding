@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: cfcd1ae5f568cae9d4a2c29c51e3970e893b1aecca0dccab8c02319a59f00e80 -->
+<!-- source-sha256: f27bb3d457938b275620466e34b6e02f87a02c0f56cc440f1301b192db236f7a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 검사의 relay가 드러낸 생성기의 네 텍스트. relay는 다른 저장소의 value class를 받고 돌려주며 kind를 가리키지
+  않는다. Go를 뺀 모든 crate가 `failure_error`에 `core_error` 호출을 썼는데, kind가 없는 계약에는 그 함수가 없어서 crate가
+  컴파일되지 않았다. `binding_core::Failure<()>`의 kind는 어떤 member도 주지 않는 unit이고, 이제 그 갈래는 kind
+  `internal`이다(E-1c, GN-6x). PHP는 소유자의 클래스 이름을 namespace와 함께 두 Rust 문자열에 backslash를 escape하지
+  않고 썼다("unknown character escape"). 이제 그 문자열을 Rust 문자열로 쓴다. PHP는 host가 소유한 handle의 bit를
+  `OWNED`라고 불렀는데, 같은 module에 있는 GN-6u 표의 이름이다. 이제 그 bit는 `HOST_OWNED`다. Go는 value class와 그 out
+  row의 번호를 접미사 없는 literal로 썼고, 그것은 `out_uint(…, impl WideUint)`에서 `i32`다. 이제 `u64` literal이다
+  (GN-15c). json의 계약으로 돌린 relay의 end-to-end 실행이 찾았다. `make test-ts`로 검증했다: 새 테스트 셋이 각각 자기
+  텍스트 때문에 실패했고, 변경 후 412개 중 412개가 통과한다.
 - 생성 crate의 helper가 `async fn`이면 모든 crate에 남았다. `usedHelpers`는 항목의 처음에서 `fn`이나 `trait` 뒤의
   이름만 읽었고, 그래서 WASM crate의 `async fn caught`는 이름이 없어 쓰인 것으로 세어졌다. `wait: async_driver`
   member가 없는 WASM crate(variants, sample)에 죽은 코드가 있었고 lint가 이를 deny한다. 이제 `usedHelpers`는

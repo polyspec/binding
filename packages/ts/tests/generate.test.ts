@@ -1243,8 +1243,8 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(lib, /fn read\(&mut self, value: Handle\) -> Result<HostValue, Raised> \{\n\s*let mut values = self\.ask\(2, value, 0, 1\)\?;/);
   assert.doesNotMatch(lib, /Go gives no value of a value class/);
   // A core value leaves as node 11 with the number of the class and of its Go out row, then the content of the row.
-  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 0\);\n\s*\}/);
-  assert.match(lib, /OutValue::Text\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 3\);\n\s*out_text\(output, value\);/);
+  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0_u64\);\n\s*out_uint\(output, 0_u64\);\n\s*\}/);
+  assert.match(lib, /OutValue::Text\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0_u64\);\n\s*out_uint\(output, 3_u64\);\n\s*out_text\(output, value\);/);
   // Package binding imports the owner's package, describes its instances by the in row and makes them by the out rows.
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
   assert.match(binding, /"github\.com\/polyspec\/owner\/packages\/go"/);
@@ -1269,7 +1269,7 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(lib, /\[6\] => ValueKind::Text,/);
   assert.match(lib, /\[13\] => \{\n(?:\s*\/\/[^\n]*\n)*\s*let len = in_uint\(input\)\?;/);
   assert.match(lib, /HostValue::Text\(HostText::Utf16\(units\)\)/);
-  assert.match(lib, /OutValue::Text16\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 4\);\n\s*out_list\(output, value, \|output, unit\| out_uint\(output, u64::from\(unit\)\)\);/);
+  assert.match(lib, /OutValue::Text16\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0_u64\);\n\s*out_uint\(output, 4_u64\);\n\s*out_list\(output, value, \|output, unit\| out_uint\(output, u64::from\(unit\)\)\);/);
 });
 
 // B2.87: the relay of the end-to-end check, whose one function takes and gives the value class of json; the owner
@@ -1303,6 +1303,50 @@ test('the relay of the value class of json is generated for every target, Go inc
   // GN-15f: go.mod requires the Go module of json, whose package the binding imports, beside it by the path dependency.
   const goMod = String(trackedPackages(contract, '0.0.0', new Map([['polyspec-json', { path: '../../../json/packages/rust' }]]), [], foreign).get('packages/go/go.mod'));
   assert.match(goMod, /\nrequire github\.com\/polyspec\/json\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/json\/packages\/go => \.\.\/\.\.\/\.\.\/json\/packages\/go\n$/);
+});
+
+test('a library without kinds that takes a value class of another repository calls no conversion of a core error that it does not have (E-1c, GN-6x)', () => {
+  const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The contract of relay names no kind, so no crate of it has the function core_error.
+    assert.doesNotMatch(lib, /\nfn core_error\(/, path);
+    assert.doesNotMatch(lib, /\bcore_error\(/, path);
+    // The failure of the owner of the value class gives its Raised and its Callback to failure_error of this library,
+    // whose kind is the unit that no member gives.
+    if (!path.includes('/go/')) assert.match(lib, /binding_core::Failure::Kind\(\(\)\) => binding_error\((?:py, )?BindingError::Internal \{ detail: String::from\("E-1c: this library names no kind, so no member gives one"\) \}\),/, path);
+  }
+});
+
+test('a generated crate holds no string with an escape that Rust does not know, and defines no name of a module twice (GN-6x, GN-6u)', () => {
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    plot: () => generate({ ...plotSample(), version: '0.0.0', coreLib: 'polyspec_plot' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  let crates = 0;
+  for (const [name, make] of Object.entries(inputs)) {
+    const out = make();
+    for (const path of [...out.keys()].filter((p) => p.endsWith('/lib.rs'))) {
+      crates += 1;
+      const lib = text(out, path);
+      // A string of Rust escapes a backslash, as the one of a PHP class name with its namespace.
+      const code = lib.replace(/^\s*\/\/.*$/gm, '');
+      const unknown = [...code.matchAll(/(?<!r)"(?:[^"\\\n]|\\.)*"/g)].map(([literal]) => literal).filter((literal) => /\\(?![nrt\\0"'xu{\n])/.test(literal.replaceAll('\\\\', '')));
+      assert.deepEqual(unknown, [], `${name} ${path}`);
+      // A const, a static and a static of thread_local! share the value namespace of the module.
+      const names = [...code.matchAll(/^(?: {4})?(?:pub )?(?:const|static) ([A-Z][A-Z0-9_]*):/gm)].map(([, constant]) => String(constant));
+      assert.deepEqual(names.filter((constant, i) => names.indexOf(constant) !== i), [], `${name} ${path}`);
+    }
+  }
+  assert.ok(crates >= 14, String(crates));
+});
+
+test('the Go crate writes the numbers of a value class and of its out row as u64, which a bare literal is not (GN-6x, GN-15c)', () => {
+  const lib = text(generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }), 'packages/go/internal/ffi/generated/lib.rs');
+  // out_uint takes impl WideUint, for which a literal without a suffix is an i32, which is no unsigned integer.
+  assert.deepEqual(lib.match(/out_uint\(output, \d+\);/g), null);
+  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0_u64\);\n\s*out_uint\(output, 0_u64\);/);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b87c505beb3f3d1e61f5956dbefcb3a9d7c8290cad7a341187c7b7586aab80d9 -->
+<!-- source-sha256: f383b3a1f01691e5f9c03b55b4124108e147c48e37a90b52c1ed48a1a7b713f2 -->
 # 생성기
 
 [English](generator.md)
@@ -503,7 +503,10 @@
   오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6z). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는
   `core.result`는 컴파일되지 않는다(I-2). `errors.kinds`가 코어 오류를 가리키지 않는 계약의 `core.result: true`는 이름을
-  대고 거부한다. 그 오류는 wildcard 없는 match로 kind의 category
+  대고 거부한다. kind를 가리키지 않으면서 다른 저장소의 value alias나 value class를 받는 계약은
+  `binding_core::Failure<()>`를 받는 함수 `failure_error`를 가진다. 소유자의 실패 함수가 언어 코드가 던진 것과 callback의
+  실패를 이 함수에 넘기고, 이 함수의 kind는 어떤 member도 주지 않는 unit이므로 그 갈래는 kind `internal`이며, 그런
+  crate에 없는 코어 오류 변환을 부르지 않는다(E-1c, GN-6x). 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `binding_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. binding은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
 - **GN-7a** 오류 unit(E-2)은 Python, Node, PHP의 클래스이며 `parent`의 클래스를, parent가 없으면 그 category의 라이브러리

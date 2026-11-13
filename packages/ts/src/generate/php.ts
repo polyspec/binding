@@ -949,7 +949,7 @@ fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(error),
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
 ${!keepsPhp ? '' : `            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
                 Ok(object) => PhpException::from_message(String::new()).with_object(object),

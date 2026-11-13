@@ -842,7 +842,7 @@ function callBackRust(model: Model): string {
 /// E-1c: the failure of a core that calls back.
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(error),
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => ${callsBack(model) ? 'raised_fail(&raised)' : 'binding_error(BindingError::Internal { detail: raised.to_string() })'},
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
@@ -1190,7 +1190,7 @@ ${arms.join('\n')}
 // out row and the content of the row, from which package binding makes the instance by the owner's function.
 function valueClassRust(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
   const number = valueClasses(model).indexOf(alias);
-  const head = (row: number): string => `            output.push(11);\n            out_uint(output, ${number});\n            out_uint(output, ${row});`;
+  const head = (row: number): string => `            output.push(11);\n            out_uint(output, ${number}_u64);\n            out_uint(output, ${row}_u64);`;
   const arms = classMakes(alias, 'go').map((make, row) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => {\n${head(row)}\n        }`;

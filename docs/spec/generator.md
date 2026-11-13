@@ -619,7 +619,11 @@ the design ids are those of the binding design.
   that takes a callback (GN-6d, GN-6z). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
   `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose
-  `errors.kinds` names no core error is refused by name. The error is matched without a wildcard into the
+  `errors.kinds` names no core error is refused by name. A contract that names no kind and takes a value alias or a
+  value class of another repository has the function `failure_error` for `binding_core::Failure<()>`: the failure
+  function of the owner gives it what language code raised and the failure of a callback, and its kind is the unit,
+  which no member gives, so that arm is kind `internal` and calls no conversion of a core error, which such a crate
+  does not have (E-1c, GN-6x). The error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
