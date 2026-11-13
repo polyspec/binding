@@ -1237,16 +1237,34 @@ function classSample(targets: string[]): any {
   return sample;
 }
 
-test('WASM: a class unit is a class of the ES module over the handle of its value (T-5, GN-18a)', () => {
+test('WASM: a value alias, its in_raises and a callback unit are generated as for Node (U-7, U-3, GN-18b, GN-18c)', () => {
   const full = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  full.targets.push('wasm');
-  for (const row of Object.values(full.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
-  // The refusals of fault injection points and of in_raises come first (G-5, U-7).
-  delete full.faults;
-  for (const unit of full.units) delete unit.in_raises;
-  full.cases = full.cases.filter((row: any) => row.alias === undefined && row.member !== 'sample.measure');
-  for (const unit of full.units) if (unit.members !== undefined) unit.members = unit.members.filter((m: any) => m.id !== 'sample.measure');
-  assert.throws(() => generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /data: a value alias is not generated for WASM yet/);
+  const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
+  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost \{ held: Vec::new\(\) \};/);
+  assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_error\(failure\)\)/);
+  assert.match(lib, /OutValue::Map\(value\) => \{\n {12}let handle = value\.handle\(\);\n {12}let len = value\.len\(\);\n {12}if let Some\(made\)/);
+  // B-1: an operation that may run code of the value is imported with catch.
+  assert.match(lib, /#\[wasm_bindgen\(catch, js_namespace = Object, js_name = keys\)\]/);
+  // U-7: the in function of the alias alone, under codec-test.
+  assert.match(lib, /#\[cfg\(feature = "codec-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__aliasInData"\)\]\n {4}pub fn alias_in_data\(value: JsValue\) -> Result<\(\), JsValue> \{/);
+  // U-3: the callback holds the object, and its exception is the Raised that the caller throws again.
+  assert.match(lib, /\nstruct CbLookup \{\n {4}object: JsValue,\n\}/);
+  assert.match(lib, /let returned = function\.apply\(&self\.object, &args\)\.map_err\(Thrown::Js\)\?;/);
+  assert.match(lib, /Err\(error\) => return Err\(failure_error\(error\)\),/);
+  assert.match(lib, /fn throw\(fail: Fail\) -> JsValue \{\n {4}if let Some\(thrown\) = fail\.thrown \{\n {8}return thrown;/);
+  assert.doesNotMatch(lib, /WrongThread/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export interface Lookup \{\n {2}find\(key: string\): string \| null;\n\}/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function same\(value: unknown\): unknown;/);
+  const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(tests, /test\('U-7: data in [^']+', async \(\) => \{\n {2}const glue = await glueModule\(\);\n {2}assert\.throws\(\(\) => glue\.__aliasInData\(/);
+  assert.match(tests, /test\('K-2: resolve lets the exception of a callback through'/);
+  assert.match(tests, /const fixture0 = fixture\(\['find'\], /);
+  assert.match(String(trackedPackages(full, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n/);
+});
+
+test('WASM: a class unit is a class of the ES module over the handle of its value (T-5, GN-18a)', () => {
   const sample = classSample(['wasm']);
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
@@ -1402,7 +1420,7 @@ test('fault injection points, the kinds of an alias and the point of another lib
   assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__armFaults"\)\]/);
   assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length);
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\n\n/);
+  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
   assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'callable' }; }), /of the alias data: a value \{"host": \.\.\.\} is not generated yet/);
@@ -1498,8 +1516,8 @@ test('the refusals of each target are named together, and a target generates alo
   }
   assert.deepEqual([...parts.keys()].sort(), [...whole.keys()]);
   for (const [path, text] of whole) assert.ok(String(parts.get(path)) === String(text), path);
-  // Go and WASM refuse the classes, the callback interface and the value alias, each by name, and Python alone is
-  // generated from the same contract.
+  // Go refuses the classes, the callback interface and the value alias, each by name, WASM generates them, and Python
+  // alone is generated from the same contract.
   const five = sample;
   assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
@@ -1508,11 +1526,7 @@ test('the refusals of each target are named together, and a target generates alo
     assert.doesNotMatch(error.message, /WASM/);
     return true;
   });
-  assert.throws(() => generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }), (error: Error) => {
-    for (const message of [/data: a value alias is not generated for WASM yet/, /lookup: a callback unit is not generated for WASM yet/]) assert.match(error.message, message);
-    assert.doesNotMatch(error.message, /for Go/);
-    return true;
-  });
+  assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }).has('packages/ts/wasm/generated/lib.rs'));
 });
 
 test('generate --target writes the directories of those targets alone, the files that a whole generation writes (GN-1b, GN-14c)', () => {

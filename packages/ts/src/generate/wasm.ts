@@ -4,9 +4,11 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
+import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
+import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
@@ -36,6 +38,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  // U-3, U-7: a callback object and a value of an alias are judged by their own conversions.
+  if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  const alias = aliasOf(model, type);
+  if (unit !== undefined && alias !== undefined) return `in_${recordFn(unit, alias.library)}(${value}, ${subject})`;
   throw new Unsupported(`no WASM input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -61,6 +67,8 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${rustField(unit.name)}(${value})`;
+  const alias = aliasOf(model, type);
+  if (unit !== undefined && alias !== undefined) return `out_${recordFn(unit, alias.library)}(${value})`;
   throw new Unsupported(`no WASM output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -443,11 +451,13 @@ function functionRust(model: Model, fn: Fn): string {
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
   // G-5: the core call runs with the faults that a test armed for the member (GN-8a).
   const call = armedCall(model, fn, `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`);
+  // E-1c: a member that takes a callback fails with a Failure: a kind, or the exception that the callback threw.
+  const failed = fn.failure ? 'failure_error' : 'core_error';
   if (fn.fallible && fn.returns === 'none') {
     // A fallible member that returns nothing gives its error alone (E-1c).
-    lines.push(`        if let Err(error) = ${call} {\n            return Err(core_error(error));\n        }`);
+    lines.push(`        if let Err(error) = ${call} {\n            return Err(${failed}(error));\n        }`);
   } else if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${failed}(error)),\n        };`);
   } else if (fn.returns === 'none') {
     lines.push(`        ${call};`);
   } else {
@@ -612,6 +622,116 @@ const kindClass = (model: Model, k: Model['kinds'][number]): number =>
 // I-3: whether an error unit of the contract has a property, which the failure then carries.
 const hasProperties = (model: Model): boolean => model.errorUnits.some((u) => errorProperties(u).length > 0);
 
+// U-3, U-7: whether a failure may carry an exception of JavaScript code (of a callback, or of a value that the core
+// walks), which the call throws again unchanged.
+const carriesThrown = (model: Model): boolean => model.callbacks.length > 0 || model.aliases.length > 0;
+
+// The fields of a Fail that a library error sets to nothing: the exception (U-3) and the properties (I-3).
+const failRest = (model: Model): string => `${carriesThrown(model) ? ', thrown: None' : ''}${hasProperties(model) ? ', properties: Vec::new()' : ''}`;
+
+// U-3: a callback is a struct that holds the JavaScript object and implements the core trait, as for Node (GN-6d); an
+// exception of the JavaScript code, or a failure of the module in the callback, goes to the core as a Raised that the
+// generated caller throws again unchanged. A WebAssembly instance runs on the thread that loaded it, so a callback is
+// always called on that thread, and thread owner needs no check.
+function callbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const jsName = langName('wasm', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const method = langName('wasm', m.member.name, 'callable');
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name))}.map_err(Thrown::Binding)?`);
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const returned = m.returns === 'none'
+      ? `function.apply(&self.object, &args).map_err(Thrown::Js)?;
+            Ok(())`
+      : `let returned = function.apply(&self.object, &args).map_err(Thrown::Js)?;
+            ${convertIn(model, m.returns, '&returned', rustString(`${jsName}.${method}() returns`))}.map_err(Thrown::Binding)`;
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        let call = || -> Result<${result}, Thrown> {
+            let function: Function = Reflect::get(&self.object, &JsValue::from_str(${rustString(method)}))
+                .and_then(|found| found.dyn_into::<Function>())
+                .map_err(|error| Thrown::Binding(internal(&error)))?;
+            let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};
+            ${returned}
+        };
+        call().map_err(thrown)
+    }`;
+  }).join('\n');
+  const checks = cb.members.map((m) => {
+    const method = langName('wasm', m.member.name, 'callable');
+    return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
+    if !found.is_function() {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+    }`;
+  }).join('\n');
+  return `
+/// U-3: ${jsName}, a callback that JavaScript code implements; the core calls it through ${cb.unit.core ?? ''}.
+struct ${struct} {
+    object: JsValue,
+}
+
+/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
+fn in_${name}(value: &JsValue, subject: &str) -> Result<${struct}, Fail> {
+    if !value.is_object() {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+${checks}
+    Ok(${struct} { object: value.clone() })
+}
+
+impl ${cb.unit.core ?? ''} for ${struct} {${methods}
+}
+`;
+}
+
+// E-1c, U-3: what a callback, or a value that the core walks, threw, kept under the handle of its Raised until the
+// generated caller throws it again; and the failure of a core that calls back, as the error of its kind or that
+// exception.
+function failureRust(model: Model): string {
+  if (!carriesThrown(model)) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return `
+/// U-3: an exception of the JavaScript code, or a failure of the module, in a callback or while the core walks a value.
+enum Thrown {
+    Js(JsValue),
+    Binding(Fail),
+}
+
+thread_local! {
+    /// U-3: what was thrown, under the handle of its Raised.
+    static THROWN: RefCell<BTreeMap<u64, Thrown>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
+
+/// U-3: keeps what was thrown, as the Raised that the core gives back.
+fn raised(error: Thrown) -> binding_core::Raised {
+    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    THROWN.with_borrow_mut(|map| map.insert(handle, error));
+    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+${model.callbacks.length === 0 ? '' : `
+fn thrown(error: Thrown) -> ${failure} {
+    binding_core::Failure::Raised(raised(error))
+}
+`}
+fn failure_error(failure: ${failure}) -> Fail {
+    match failure {
+        binding_core::Failure::Kind(error) => core_error(error),
+        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
+            Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
+            Some(Thrown::Binding(fail)) => fail,
+            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+        },
+        binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+    }
+}
+`;
+}
+
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n');
@@ -625,7 +745,7 @@ fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
 ${arms}
     };
-    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error) }
+    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${failRest(model)} }
 }
 `;
   }
@@ -652,7 +772,7 @@ ${propertyArms}
             Err(fail) => return fail,
         }
     }
-    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error), properties }
+    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${carriesThrown(model) ? ', thrown: None' : ''}, properties }
 }
 `;
 }
@@ -660,14 +780,21 @@ ${propertyArms}
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
-  const functions = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
+  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
+  // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
+  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
-  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits].join('\n');
+  // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
+  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
+  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
-  const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
+  // A name after :: (OutValue::Object) is not a use of the type.
+  const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
+  const cast = /\.(dyn_ref|dyn_into|unchecked_into)::|\.dyn_into\(\)/.test(`${used}${functions}`) || hasProperties(model);
   const registered = model.objects.length === 0 ? '' : `
         MAKERS.with(|registered| registered.replace(makers));
         READERS.with(|registered| registered.replace(readers));`;
@@ -677,11 +804,11 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
-${model.objects.length === 0 ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
-${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::${/\.dyn_ref::/.test(used) || hasProperties(model) ? '{JsCast, JsValue}' : 'JsValue'};
+${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
+${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::${cast ? '{JsCast, JsValue}' : 'JsValue'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -693,7 +820,9 @@ struct Fail {
     message: String,
     kind: &'static str,
     status: Option<u16>,
-    errno: Option<i32>,${hasProperties(model) ? `
+    errno: Option<i32>,${carriesThrown(model) ? `
+    // U-3: the exception that JavaScript code threw, which the call throws again unchanged.
+    thrown: Option<JsValue>,` : ''}${hasProperties(model) ? `
     // I-3: the properties of an error unit, which its instance takes as read-only own properties.
     properties: Vec<(&'static str, JsValue)>,` : ''}
 }
@@ -705,7 +834,10 @@ thread_local! {
 }
 
 /// The instance of the library class of a failure, as the value that the call throws (B-4).
-fn throw(fail: Fail) -> JsValue {
+fn throw(fail: Fail) -> JsValue {${carriesThrown(model) ? `
+    if let Some(thrown) = fail.thrown {
+        return thrown;
+    }` : ''}
     let status = match fail.status {
         Some(status) => JsValue::from(u32::from(status)),
         None => JsValue::NULL,
@@ -746,7 +878,7 @@ fn binding_error(error: BindingError) -> Fail {
         Category::Busy => ${classIndex('busy')},
         Category::Internal => ${classIndex('internal')},
     };
-    Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno()${hasProperties(model) ? ', properties: Vec::new()' : ''} }
+    Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno()${failRest(model)} }
 }
 ${coreErrorRust(model)}${raisesAssertions(model)}
 /// B-7: a panic of the call reaches the caller as kind internal where the module unwinds; a module built with
@@ -764,7 +896,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${state}${used}${faultRust(model)}
+${state}${used}${callbacks}${faultRust(model)}${aliasKindsRust(model)}
 /// The exports of the module. The expansion of wasm_bindgen calls Option::unwrap_or_default, so they are in one module
 /// that holds that one allow (GN-18).
 #[allow(clippy::disallowed_methods, reason = "GN-18: the wasm_bindgen expansion")]
@@ -780,8 +912,19 @@ mod exports {
         CLASSES.with(|registered| registered.replace(classes));${registered}
         Ok(())
     }
-${functions.replace(/\n(?=.)/g, '\n    ')}
-${model.faults.length === 0 ? '' : `    /// G-5: arms the faults of a case for the next call of the member, and gives the id of the arming.
+${exported.replace(/\n(?=.)/g, '\n    ')}
+${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
+    #[cfg(feature = "codec-test")]
+    #[wasm_bindgen(js_name = ${rustString(`__aliasIn${langName('wasm', alias.unit.name, 'class')}`)})]
+    pub fn alias_in_${rustField(alias.unit.name)}(value: JsValue) -> Result<(), JsValue> {
+        guard(|| {
+            let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(&value, "value")?;
+            Ok(())
+        })
+        .map_err(throw)
+    }
+
+`).join('')}${model.faults.length === 0 ? '' : `    /// G-5: arms the faults of a case for the next call of the member, and gives the id of the arming.
     #[cfg(feature = "fault-test")]
     #[wasm_bindgen(js_name = "__armFaults")]
     pub fn arm_faults(member: String, faults: String) -> Result<u32, JsValue> {
@@ -837,7 +980,9 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
   }
-  return unit === undefined ? 'unknown' : langName('wasm', unit.name, 'class');
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
+  return langName('wasm', unit.name, 'class');
 }
 
 function indexMjs(model: Model): string {
@@ -1092,10 +1237,15 @@ export declare class ${langName('wasm', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
+  const callbacks = model.callbacks.map((cb) => `
+/** U-3: a callback that JavaScript code implements. */
+export interface ${langName('wasm', cb.unit.name, 'class')} {
+${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
+}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}${objects === '' ? '' : `\n${objects}`}
+${records}${objects === '' ? '' : `\n${objects}`}${callbacks === '' ? '' : `\n${callbacks}`}
 
 ${fns}
 
@@ -1103,15 +1253,7 @@ ${constants}
 `;
 }
 
-// G-4: a value alias (U-7) and a callback unit (U-3) are not generated for WASM yet; each is refused by name.
-export function refuseForWasm(model: Model, refusals: Refusals): void {
-  for (const alias of model.aliases) {
-    refusals.refuse(alias.library !== undefined ? `${alias.library}.${alias.unit.id}: a value alias of another repository is not generated for WASM yet` : `${alias.unit.id}: a value alias is not generated for WASM yet`);
-  }
-  for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
-}
-
-// The WASM generated files of a model that refuseForWasm refused nothing of.
+// The WASM generated files of a model.
 export function wasm(model: Model, files: Files): void {
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));

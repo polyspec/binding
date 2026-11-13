@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The generator refused the WASM binding of a contract with a value alias (U-7), with a value alias of another
+  repository, with an alias that has `in_raises`, or with a callback unit (U-3), so `tests/e2e/sample` and
+  `tests/e2e/consumer` failed on WASM before anything was built. The WASM module now describes a JavaScript value as the
+  `HostValue` of the rule of Node and makes a core value by the alias's `out` rows (GN-18b), calls every JavaScript
+  operation of the description that may run code of the value with `catch`, so its exception is thrown again unchanged
+  and never unwinds through the module, runs the `in` function of an alias alone through `__aliasIn<Alias>` of the
+  feature `codec-test`, which the WASM crate now has, and generates a callback as a struct over the JavaScript object
+  whose exception reaches the caller as the same object (GN-18c). The generated WASM tests have the tests of K-2, the
+  callback fixtures of a case and the U-7 tests of an alias (GN-13c). Verified by `npm test` in `packages/ts`.
 - The cores of `tests/e2e/shapes` and `tests/e2e/sample` converted lengths and indexes with `as`, which the lints of
   R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
   function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data

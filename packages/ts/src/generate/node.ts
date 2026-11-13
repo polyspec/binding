@@ -565,7 +565,7 @@ impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
 
 // T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
+export function traitParam(model: Model, type: Type): string {
   if (typeof type === 'string') {
     const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
     return borrowed[type] ?? rustType(model, type);
