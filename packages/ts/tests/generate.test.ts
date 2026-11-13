@@ -1012,10 +1012,10 @@ test('a class with a write place holds its value in a tried lock, which each cal
     assert.match(lib, /sync::<polyspec_sample::Tag>\(\);/, lang);
     assert.doesNotMatch(lib, /sync::<polyspec_sample::Counter>/, lang);
     // The receiver &mut self writes and &self reads; a parameter of the class reads, and the core borrows the guards.
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(&mut receiver, amount\)\);/, lang);
-    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(&receiver\)\);/, lang);
-    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(&mut receiver, &other\)\);/, lang);
-    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(&tag\)\);/, lang);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &mut \*receiver;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(receiver, amount\)\);/, lang);
+    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &\*receiver;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(receiver\)\);/, lang);
+    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(receiver, other\)\);/, lang);
+    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let tag = &\*tag;\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(tag\)\);/, lang);
     // A value inside another type is read, cloned and released by the conversion in.
     assert.match(lib, /fn in_tag[^\n]*\n(?:[^\n]*\n){1,4}?[^\n]*inner\.read\("Tag", &\[\]\) \{\n\s+Ok\(held\) => Ok\(\(\*held\)\.clone\(\)\),/, lang);
     assert.doesNotMatch(lib, /fn in_counter/, lang);
@@ -1102,9 +1102,9 @@ test('a member that writes its receiver takes a source and a default in one call
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
   const lines: Record<string, RegExp> = {
-    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
-    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
-    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
+    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
   };
   for (const [path, line] of Object.entries(lines)) {
     assert.match(text(out, path), line, path);
@@ -1457,7 +1457,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn class_tag_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
   // GN-6h: a value of the class comes in from the language, so the class holds it in a lock that each call reads.
-  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let result = polyspec_sample::Tag::name\(&receiver\);/);
+  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let receiver = &\*receiver;\n {12}let result = polyspec_sample::Tag::name\(receiver\);/);
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_free"\)\]/);
   assert.match(lib, /\nfn in_tag\(value: &JsValue, subject: &str\) -> Result<polyspec_sample::Tag, Fail> \{\n {4}let handle = handle_of\(0, value\)\?/);
   assert.match(lib, /pub fn register\(classes: Vec<Function>, makers: Vec<Function>, readers: Vec<Function>\)/);
@@ -1548,9 +1548,9 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
     // taken, so a call that fails before the core leaves it.
     assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(&mut receiver, &other\)\) \{/, path);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(receiver, other\)\) \{/, path);
     // The core call of an iterate is the whole iteration.
-    assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(&receiver\)\)\)/, path);
+    assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(receiver\)\)\)/, path);
     // Each core call is armed for its own member, and none twice.
     assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }

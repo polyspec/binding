@@ -834,6 +834,12 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     lines.push(`        let ${name} = ${cell}.read(${text}, &[${beside.map((b) => `Some(&${b})`).join(', ')}]).map_err(${fail})?;`);
     reads.set(place.object.unit, [...beside, name]);
   }
+  // The core gets the value that each guard holds, which a path of a trait (ToString::to_string) does not find
+  // through a borrow of the guard. The guards stay alive under the names that the borrows shadow.
+  for (const place of places(model, fn)) {
+    const name = place.param === undefined ? RECEIVER_GUARD : variable(place.param);
+    lines.push(`        let ${name} = ${place.write ? '&mut ' : '&'}*${name};`);
+  }
   return lines;
 }
 
@@ -938,14 +944,13 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   const held = places(model, fn);
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
-    // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
-    const place = held.find((h) => h.param === p);
-    if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place.
+    if (held.some((h) => h.param === p)) return variable(p);
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
-  if (held.some((h) => h.param === undefined)) return [`${mut ? '&mut ' : '&'}${RECEIVER_GUARD}`, ...args];
+  if (held.some((h) => h.param === undefined)) return [RECEIVER_GUARD, ...args];
   return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
 

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A member of a locked class whose core path is a trait function, such as `value.to_string` with the path
+  `std::string::ToString::to_string`, did not compile, because the call gave it a borrow of the guard, which a generic
+  path does not deref (E0277). The generated code now binds `&*guard` or `&mut *guard` under the name of each place
+  once every lock is taken, and the core call takes those names (GN-6h). Verified by `npm test` in `packages/ts`.
 - A class result that the core gives by reference, such as `&OrderedMap` of `Value::members` or the `&Value` items of
   `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
   conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
