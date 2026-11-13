@@ -4,10 +4,10 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, usesNative, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
-import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
+import { WASM_HOST, WASM_NATIVE, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
@@ -33,6 +33,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
@@ -47,6 +48,29 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // A scalar of T-1 that a conversion takes by value, so a place of it is passed as it is: a borrow of a Copy value
 // that the conversion takes as impl Borrow or a widening trait is needless (the lints deny it).
 const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
+
+// GN-6m, GN-6o: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
+// call converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
+// binding in the call, goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+  const returned = type.returns === 'none'
+    ? 'function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    Ok(())'
+    : `let returned = function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    ${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
+  return `in_function(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                let call = || -> Result<${result}, Thrown> {
+                    let function: Function = native_object(&native).map_err(Thrown::Binding)?.dyn_into::<Function>().map_err(|error| Thrown::Binding(internal(&error)))?;
+                    let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};
+                    ${returned}
+                };
+                call().map_err(thrown)
+            })
+        })`;
+}
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
@@ -812,7 +836,7 @@ function libRust(model: Model): string {
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
-  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
+  const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST]), ...(usesNative(model) ? [WASM_NATIVE] : [])];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -830,7 +854,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
@@ -1001,6 +1025,8 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
+  // GN-6m: a function takes the arguments that the core gives and returns a value that the binding judges.
+  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {

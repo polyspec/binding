@@ -1243,6 +1243,7 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
   const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
   assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
+  assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {

@@ -815,7 +815,7 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
   const none = ctx.lang === 'python' ? 'None' : 'null';
   const flag = (on: boolean): string => (ctx.lang === 'python' ? (on ? 'True' : 'False') : String(on));
   const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
-  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'node' ? jsString(name) : phpText(name));
+  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   const rows = (value as { function?: unknown } | null)?.function;
   if (!Array.isArray(rows)) throw new Error(`${what} gives no {"function": [...]} (G-5)`);
   return (rows as Record<string, unknown>[]).map((row) => {
@@ -831,7 +831,7 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
 
 // GN-6m: the function value of a case for each parameter of a function type, as a fixture whose record the test reads.
 export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: string, args: Map<Arg, unknown>, call: string): { arg: Arg; members: string[]; rows: string[][] }[] {
-  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'node' ? jsString(name) : phpText(name));
+  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   return fn.args.flatMap((arg) => {
     const type = arg.type;
     if (typeof type !== 'object' || !('function' in type)) return [];

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6o)로 갖고
+  parameter를 TypeScript 함수 타입으로 선언한다. 함수가 아닌 값은 kind `invalid_argument_type`이다. WASM의 생성된 테스트는
+  함수 fixture의 member 이름을 PHP 문자열로 썼는데, 이제 JavaScript 문자열로 쓴다.
 - PHP는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 Closure를 owner 표의 `Native`(GN-6o)로 갖고 `\Closure`로
   선언한다. 다른 스레드의 호출은 kind `wrong_thread`이며 feature `thread-test`의 `Internal\threadTest`가 그것을 보이고,
   Closure가 아닌 값은 kind `invalid_argument_type`이다. Node와 PHP에서 다른 스레드의 호출 중 바인딩의 실패는 모든 스레드가

@@ -315,49 +315,6 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
-/// GN-6o: the JavaScript values that a core may keep, under the keys of their Natives.
-struct NativeTable {
-    next: u64,
-    values: BTreeMap<u64, JsValue>,
-}
-
-thread_local! {
-    /// GN-6o: the table of the one thread of the module.
-    static NATIVE: RefCell<NativeTable> = const { RefCell::new(NativeTable { next: 0, values: BTreeMap::new() }) };
-}
-
-/// GN-6o: what a Native of WebAssembly holds: the key of the table, which holds the value.
-#[derive(Debug)]
-struct WasmNative {
-    key: u64,
-}
-
-impl NativeObject for WasmNative {}
-
-impl Drop for WasmNative {
-    fn drop(&mut self) {
-        let released = NATIVE.try_with(|native| native.try_borrow_mut().ok().and_then(|mut native| native.values.remove(&self.key)));
-        // The value is released after the table is no longer borrowed.
-        drop(released);
-    }
-}
-
-/// GN-6o: a JavaScript value that a core may keep, as a Native.
-fn wasm_native(value: &JsValue) -> Native {
-    let key = NATIVE.with_borrow_mut(|native| {
-        native.next = native.next.saturating_add(1);
-        native.values.insert(native.next, value.clone());
-        native.next
-    });
-    Native::new(WasmNative { key })
-}
-
-/// GN-6o: the JavaScript value that entered as the Native.
-fn native_object(native: &Native) -> Result<JsValue, Fail> {
-    let found = native.downcast::<WasmNative>().and_then(|native| NATIVE.with_borrow(|table| table.values.get(&native.key).cloned()));
-    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") }))
-}
-
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on wasm32).
 #[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_count(value: usize) -> u64 {
@@ -419,3 +376,59 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 `;
   }).join('');
 }
+
+// GN-6o, GN-6m: the Natives of WebAssembly, which a value alias and a function type hold: the table of the one thread
+// of the module.
+// usedHelpers splits helpers at blank lines, so a block keeps none inside it.
+export const WASM_NATIVE = (`
+/// GN-6o: the JavaScript values that a core may keep, under the keys of their Natives.
+struct NativeTable {
+    next: u64,
+    values: BTreeMap<u64, JsValue>,
+}
+
+thread_local! {
+    /// GN-6o: the table of the one thread of the module.
+    static NATIVE: RefCell<NativeTable> = const { RefCell::new(NativeTable { next: 0, values: BTreeMap::new() }) };
+}
+
+/// GN-6o: what a Native of WebAssembly holds: the key of the table, which holds the value.
+#[derive(Debug)]
+struct WasmNative {
+    key: u64,
+}
+
+impl NativeObject for WasmNative {}
+
+impl Drop for WasmNative {
+    fn drop(&mut self) {
+        let released = NATIVE.try_with(|native| native.try_borrow_mut().ok().and_then(|mut native| native.values.remove(&self.key)));
+        // The value is released after the table is no longer borrowed.
+        drop(released);
+    }
+}
+
+/// GN-6o: a JavaScript value that a core may keep, as a Native.
+fn wasm_native(value: &JsValue) -> Native {
+    let key = NATIVE.with_borrow_mut(|native| {
+        native.next = native.next.saturating_add(1);
+        native.values.insert(native.next, value.clone());
+        native.next
+    });
+    Native::new(WasmNative { key })
+}
+
+/// GN-6o: the JavaScript value that entered as the Native.
+fn native_object(native: &Native) -> Result<JsValue, Fail> {
+    let found = native.downcast::<WasmNative>().and_then(|native| NATIVE.with_borrow(|table| table.values.get(&native.key).cloned()));
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") }))
+}
+
+/// GN-6m: a value of a function type is a function (kind invalid_argument_type), held as a Native.
+fn in_function(value: &JsValue, subject: &str) -> Result<Native, Fail> {
+    if !value.is_function() {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+    }
+    Ok(wasm_native(value))
+}
+`).replace(/\n\n(?=[ }])/g, '\n');

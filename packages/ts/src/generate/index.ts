@@ -91,7 +91,7 @@ export function generate(inputs: Inputs): Files {
   }
   // GN-6m: Node, PHP and WASM hold a function on the native lifetime, which binding_core does not have yet; Go does not
   // generate a function type.
-  for (const target of targets.filter((t) => t !== 'python' && t !== 'node' && t !== 'php')) {
+  for (const target of targets.filter((t) => t === 'go')) {
     for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
       for (const arg of fn.args.filter((a) => holdsFunction(a.type))) {
         refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} ${target === 'go' ? '(GN-6m)' : 'yet: it is held on the native lifetime, which binding_core does not have yet (GN-6m)'}`);

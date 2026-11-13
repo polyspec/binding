@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- WASM refused a member that takes a function type (GN-6m). It now holds the function as a `Native` of the table of
+  the one thread of the module (GN-6o) and declares the parameter as a TypeScript function type; a value that is not a
+  function is kind `invalid_argument_type`. The generated tests of WASM wrote the names of the members of a function
+  fixture as PHP strings; they write them as JavaScript strings.
 - PHP refused a member that takes a function type (GN-6m). It now holds the Closure as a `Native` of its owner table
   (GN-6o), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
   feature `thread-test` shows, and a value that is not a Closure is kind `invalid_argument_type`. In Node and PHP a
