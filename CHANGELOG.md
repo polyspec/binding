@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A record that a member gives only as the value of a `map<T>` or a `keyed_map<T>` got no result form: the walk
+  that collects the records with a result form did not enter a map, so the Python, Node, PHP and WASM crates called a
+  conversion `out_<record>` that they did not hold. The walk now enters a map and a keyed map (T-2, T-4, GN-6a).
+  Verified by `make test-ts`: the new test failed with the missing `out_text_measure` of the Python crate, and 397 of
+  397 pass.
 - The generated Python and PHP tests of a contract that names a record of another repository named the record in
   the package of the contract itself (`pkg.Point`, `\Polyspec\Plot\Point`), where no such class exists, so the tests
   of `tests/e2e/plot` failed in Python with `module 'polyspec.plot' has no attribute 'Point'`. The rule of GN-6c now

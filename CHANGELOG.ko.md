@@ -1,11 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 397579f46819353c3c9cb814af411b1d747dd890944345bb7f09337c901e0ac3 -->
+<!-- source-sha256: bb2377a287841155a639b92b02397426abebc79534c70a2a0ab32da4f8a490b1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- member가 `map<T>`나 `keyed_map<T>`의 값으로만 돌려주는 record는 result form을 얻지 못했다. result form이 있는 record를
+  모으는 순회가 map 안으로 들어가지 않았으므로, Python·Node·PHP·WASM crate는 갖고 있지 않은 변환 `out_<record>`를 불렀다.
+  이제 그 순회는 map과 keyed map 안으로 들어간다(T-2, T-4, GN-6a). `make test-ts`로 확인: 새 테스트는 Python crate에
+  `out_text_measure`가 없어서 실패했고, 397개 중 397개가 통과한다.
 - 다른 레포의 record를 부르는 계약에서, 생성된 Python·PHP 테스트는 그 record를 계약 자신의 패키지 안의 이름으로
   불렀다(`pkg.Point`, `\Polyspec\Plot\Point`). 그런 클래스는 없으므로 `tests/e2e/plot`의 Python 테스트는
   `module 'polyspec.plot' has no attribute 'Point'`로 실패했다. 이제 GN-6c의 규칙은 모든 target에 대해, 다른 레포의 unit은

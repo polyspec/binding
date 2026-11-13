@@ -1808,6 +1808,20 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+test('a record that a member gives only inside a map has its result form in every target (T-2, T-4, GN-6a)', () => {
+  // shapes.measure gives the record text_measure; here it gives it only as the value of a map and of a keyed map.
+  for (const returns of [{ map: { unit: 'text_measure' } }, { list: { keyed_map: { unit: 'text_measure' }, key: ['int', 'text'] } }]) {
+    const out = shaped((c) => {
+      member(c, 'shapes.measure').returns = returns;
+      c.cases = c.cases.filter((k: { member: string }) => k.member !== 'shapes.measure');
+    });
+    for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+      assert.match(text(out, path), /\nfn out_text_measure[<(]/, `${path}: ${JSON.stringify(returns)}`);
+    }
+    assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_types.py'), /\nclass TextMeasure:/);
+  }
+});
+
 // GN-6z: a member of shapes that takes a function type, which the core keeps or calls during the call.
 const withFunction = (contract: any): void => {
   unitOf(contract, 'shapes').members.push({
