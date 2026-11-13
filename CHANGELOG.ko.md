@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+- 어떤 실행도 json 값을 json 소비자로 변환하지 않았으므로 json의 `value_in`과 `value_out`은 어느 언어에서도 실행되지
+  않았고, `go.mod`는 다른 레포의 Go module을 그 record에 대해서만 require했으므로 json의 값 class를 이름하는 계약의 Go
+  바인딩은 자기 module이 require하지 않는 json 패키지를 import했다. `tests/e2e/relay`가 그 소비자다. 그 함수 `carry`는
+  옆의 path 의존인 json의 값 class를 받고 주며, Node, WASM, Python, PHP, Go의 case runner는 짝 없는 surrogate, 짝지은 쌍,
+  섞인 text, 짝 없는 surrogate를 가진 key, 큰 정수 token, 모든 kind의 문서, 깊이 한계 256의 값에 대해 돌아온 값의 text를
+  들어간 값의 text와 비교한다. 이제 `go.mod`는 계약이 record나 값 class를 이름하는 라이브러리마다 그 Go module을 require한다.
+  실행은 `tests/e2e/<library>`의 `bench.mjs`, `bench.py`, `bench.php`로 json의 `parse(stringify(value))`에 대한 carry의
+  21회 실행 중앙값을 load average와 함께 `var/report/bench/`에 경고로만 측정한다. Red: `make test-ts`가 319개 중 1개
+  실패했다(relay의 go.mod). Green: 319개 모두 통과한다(B2.87).
 - 다른 레포 값 class의 문자열은 정수 list로 코어에 들어왔다. json의 in case가 모든 문자열을 `value.string_units`로
   읽었으므로 문자열마다 UTF-16 code unit이 언어의 경계를 건넜고, WASM은 내장 문자열을 unit 하나씩, Python은 UTF-32
   인코딩으로 읽었다. 이제 kind `text`의 case는 `uint`의 list를 주는 member인 `units`를 적을 수 있다. 그 `read`는

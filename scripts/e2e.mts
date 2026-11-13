@@ -551,6 +551,7 @@ if (targets.includes('python')) {
     stepOf(['python'], what, () => unittest('python', what, [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython]));
   }
   if (caseRunners) stepOf(['python'], 'the contract cases on unittest', () => unittest('python', 'the contract cases on unittest', [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { CASES: cases }));
+  if (existsSync(join(e2e, 'bench.py'))) stepOf(['python'], 'the measurement of bench.py', () => run(join(venv, 'bin/python'), [join(e2e, 'bench.py')], { env: { BENCH_REPORT: join(checkout, 'var/report/bench', `${library}-python.json`) } }));
 }
 
 const lib = (c: Contract, suffix: string): string => `${c.core.crate}-${suffix}`.replaceAll('-', '_');
@@ -626,6 +627,15 @@ if (targets.includes('node') && installed) {
     nodeTest('node', `the generated tests${caseRunners ? ' and the contract cases' : ''} on node --test`, [], [...files, ...(caseRunners ? ['cases.test.mjs'] : [])], nodeDir, { CASES: cases ?? '' });
   });
 }
+// B2.87: the measurement of a library whose tests/e2e/<library> holds bench.mjs, bench.py or bench.php, after its cases;
+// it writes the medians with the load average into BENCH_REPORT and warns above its limit, and never fails the run.
+const benchReport = (language: string): string => join(checkout, 'var/report/bench', `${library}-${language}.json`);
+if (targets.includes('node') && installed && existsSync(join(e2e, 'bench.mjs'))) {
+  stepOf(['node'], 'the measurement of bench.mjs', () => {
+    copyFileSync(join(e2e, 'bench.mjs'), join(nodeDir, 'bench.mjs'));
+    run(process.execPath, [join(nodeDir, 'bench.mjs')], { cwd: nodeDir, env: { BENCH_REPORT: benchReport('node') } });
+  });
+}
 if (targets.includes('wasm') && installed) {
   // P-5: the WASM binding passes the same tests and cases through the subpath ./wasm of the same package.
   stepOf(['wasm'], 'the generated tests and the cases through the subpath ./wasm', () => {
@@ -664,6 +674,7 @@ if (targets.includes('php')) {
     stepOf(['php'], `the ${name} on PHPUnit`, () => phpunitRun(name, at(p, 'packages/php-ext/generated/tests')));
   }
   if (caseRunners) stepOf(['php'], 'the contract cases on PHPUnit', () => phpunitRun('contract cases', join(e2e, 'CasesTest.php'), { CASES: cases ?? '' }));
+  if (existsSync(join(e2e, 'bench.php'))) stepOf(['php'], 'the measurement of bench.php', () => run(phpTool, [...extensions, join(e2e, 'bench.php')], { env: { BENCH_REPORT: benchReport('php') } }));
 }
 
 if (targets.includes('go')) {

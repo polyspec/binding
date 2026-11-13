@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- No run converted a json value through a consumer of json, so `value_in` and `value_out` of json ran in no language,
+  and `go.mod` required the Go module of another repository only for its records, so the Go binding of a contract that
+  names the value class of json imported the package of json, which its module did not require. `tests/e2e/relay` is
+  that consumer: its function `carry` takes and gives the value class of json, which is a path dependency beside it,
+  and its case runners of Node, WASM, Python, PHP and Go compare the text of the value that comes back with the text of
+  the value that went in, for unpaired surrogates, a paired pair, a mixed text, a key with an unpaired surrogate, a big
+  integer token, a document of every kind and a value at the depth limit 256. `go.mod` now requires the Go module of
+  each library whose records or value classes the contract names. The run measures with `bench.mjs`, `bench.py` and
+  `bench.php` of `tests/e2e/<library>`, the median of 21 runs of carry against `parse(stringify(value))` of json with the
+  load average, into `var/report/bench/`, as a warning only. Red: `make test-ts` failed 1 of 319 (the go.mod of the
+  relay); Green: 319 of 319 pass (B2.87).
 - A string of a value class of another repository entered a core as a list of integers: the in case of json read every
   string by `value.string_units`, so each string crossed the boundary of the language as its UTF-16 code units, and
   WASM read a built-in string unit by unit and Python by an encoding to UTF-32. A case of the kind `text` may now name

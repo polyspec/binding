@@ -1142,7 +1142,12 @@ the design ids are those of the binding design.
   tarballs without the optional packages of other platforms (T-2), and the runners get the settings that the
   generated tests need: the test features of each crate (GN-5, GN-13b), `CGO_LDFLAGS` with the directory of the
   static library, `GOFLAGS` with the tags of those features and `GOTOOLCHAIN=local` for Go, `--expose-gc` for WASM
-  (GN-18a), and `CASES` with the case file. The repositories of `tests/e2e` have the binding crates as members of
+  (GN-18a), and `CASES` with the case file. Where `tests/e2e/<library>` holds `bench.mjs`, `bench.py` or `bench.php`,
+  the run measures with each after the cases of Node, Python or PHP and gives it `BENCH_REPORT`, the file
+  `var/report/bench/<library>-<language>.json` of the checkout (ignored), where it writes the median of a fixed number of
+  runs of each measurement with the load average when it was taken; a measurement prints a `WARNING` above its limit
+  and never fails, and its builds are the debug builds of the tests, so a ratio of two paths of the same build is what
+  it reports (B2.87). The repositories of `tests/e2e` have the binding crates as members of
   their workspace, as every repository has, and track no binding package, which the scaffold of the run writes. Why: a
   change of the copy that the repository has not made would verify a repository that no commit holds, and a repaired
   defect then passes in the run and stays in the repository.
