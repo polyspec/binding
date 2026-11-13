@@ -7,10 +7,10 @@
 
 - A value at the depth limit of a contract ended the process in Node and trapped in WASM: the function that makes
   the value of the language from the value of the core, `make_<name>`, called itself once for each level, so a
-  value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node function now walks
-  the value in a loop with a work stack on the heap: it holds one level for each container whose children are not
-  all made, and names no make function (GN-6as). Not generated in this form yet: the make functions of Python, PHP,
-  WASM and Go. Verified by `make test-ts`: the new test failed before the change.
+  value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node and the WASM
+  function now walk the value in a loop with a work stack on the heap: it holds one level for each container whose
+  children are not all made, and names no make function (GN-6as). Not generated in this form yet: the make functions
+  of Python, PHP and Go. Verified by `make test-ts`: the new test failed before the change.
 - The receiver of a case of a method was made from a key that holds an argument of the method. A case of `get_units`
   with the keys `members` and `units` beside the factories `from_units(units)`, `null()` and `object(members)` got its
   receiver from `from_units` with the `units` of the call: the Go test failed at making the receiver, and the tests

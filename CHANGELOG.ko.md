@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 789d32b5775e890054e68a5ebddfe693365679af948c2543eefd714db6af5aa2 -->
+<!-- source-sha256: eb0ec3bd2d7353ba3f4d38bf45afbe4172a749c94c913382540894ebce8c6ceb -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -8,8 +8,8 @@
 
 - 계약의 깊이 한계에 있는 값이 Node에서 process를 끝내고 WASM에서 trap을 냈다. core의 값에서 언어의 값을 만드는 함수
   `make_<name>`이 level마다 자기 자신을 한 번 불러서, 256단계로 중첩된 `tests/e2e/relay`의 값이 host가 주는 것보다 많은
-  native stack을 썼다. 이제 Node의 함수는 heap의 작업 stack을 가진 loop로 값을 걷는다. 자식이 다 만들어지지 않은
-  container마다 level 하나를 담고, make 함수를 이름하지 않는다(GN-6as). 아직 이 꼴로 생성되지 않는 것: Python, PHP, WASM,
+  native stack을 썼다. 이제 Node와 WASM의 함수는 heap의 작업 stack을 가진 loop로 값을 걷는다. 자식이 다 만들어지지 않은
+  container마다 level 하나를 담고, make 함수를 이름하지 않는다(GN-6as). 아직 이 꼴로 생성되지 않는 것: Python, PHP,
   Go의 make 함수. `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다.
 - 메서드의 case의 receiver를 그 메서드의 인자를 담은 키로 만들었다. factory `from_units(units)`, `null()`,
   `object(members)` 곁에서 키 `members`와 `units`를 가진 `get_units`의 case가, 호출의 `units`를 받은 `from_units`로

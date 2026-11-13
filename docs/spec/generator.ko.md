@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a4ef2890aa6d9c0d4507ba6f8c3a8e421379e2c5528681283a6302243878a21d -->
+<!-- source-sha256: c3edd95fdabeef9592902de9c56e8eac013d7530d79897bbe27a797e539011ec -->
 # 생성기
 
 [English](generator.md)
@@ -636,7 +636,7 @@
   binding은 언어의 값을 한 level씩 기술하므로(B-1), 들어오는 값을 걷는 것은 core의 `in` 함수의 loop이고, binding은
   거기에 자기 level을 더하지 않는다. 이유: 계약이 말하는 깊이 한계 안의 값은 다섯 대상에서 같은 결과를 가진다. binding은
   Node의 main thread나 WASM module의 stack 같은 host의 stack을 키울 수 없다. 더 큰 stack은 process가 끝나는 깊이를
-  옮길 뿐이다. Node에 생성된다. 아직 생성되지 않는 것: Python, PHP, WASM, Go의 make 함수. 이들은 아직 level마다 자기
+  옮길 뿐이다. Node와 WASM에 생성된다. 아직 생성되지 않는 것: Python, PHP, Go의 make 함수. 이들은 아직 level마다 자기
   자신을 한 번 부른다.
 - **GN-6x** 다른 레포의 값 class(T-3, U-1)는 다른 레포의 값 alias(GN-6k)와 같은 방식으로 주고받는다.
   이때 owner가 그 class에 `core: {in, out}`으로 적은 두 함수와 `core_type`에 적은 코어 타입을

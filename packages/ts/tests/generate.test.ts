@@ -940,7 +940,7 @@ test('an out row of a value alias makes an instance by a factory of a class of t
     ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
     // GN-6as: the instance is a value without children, which the walk of Node puts next.
     ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
-    ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
   ] as const) {
     assert.ok(text(out, path).includes(`    OutValue::Text(value) => ${made},\n`), path);
     assert.match(text(out, path), /\nfn out_tag\(/, path);
@@ -990,7 +990,7 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
   assert.match(wasm, /impl Drop for WasmNative \{\n    fn drop\(&mut self\) \{\n        let released = NATIVE\.try_with\(/);
   assert.match(wasm, /return Ok\(HostValue::Date\(self\.mark\(\)\)\);/);
-  assert.match(wasm, /OutValue::Native\(native\) => native_object\(&native\),/);
+  assert.match(wasm, /OutValue::Native\(native\) => native_object\(&native\)\.map\(OutStep::Put\),/);
   // Node and PHP hold the owner, its generation and the key; a drop queues the key for the owner, which releases it on
   // its own thread at the start of every entry point, and a drop of an older generation touches nothing.
   for (const [path, reference] of [['packages/ts/generated/lib.rs', 'napi::UnknownRef<false>'], ['packages/php-ext/generated/lib.rs', 'Zval']] as const) {
@@ -1927,11 +1927,12 @@ test('the make function of a value alias walks the value with a work stack and c
     kept: own('kept'),
   };
   // The targets whose make function is the walk; the other targets are not generated in this form yet (GN-6as).
-  const libs = ['packages/ts/generated/lib.rs'];
+  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
   for (const [sample, inputs] of Object.entries(samples)) {
     const out = generate(inputs);
     const found = libs.filter((path) => out.has(path));
-    assert.deepEqual(found, libs, sample);
+    // The contracts of sample and consumer are not generated for WASM (BD-27).
+    assert.deepEqual(found, sample === 'sample' || sample === 'consumer' ? libs.slice(0, 1) : libs, sample);
     for (const path of found) {
       const fns = makeFns(text(out, path));
       assert.ok(fns.length > 0, `${sample} ${path}: a make function`);
@@ -4233,7 +4234,7 @@ test('WASM: a value alias, its in_raises and a callback unit are generated as fo
   // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
   assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost::new\(\);/);
   assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_error\(failure\)\)/);
-  assert.match(lib, /OutValue::Map\(value\) => \{\n {12}let handle = value\.handle\(\);\n {12}let len = value\.len\(\);\n {12}if let Some\(made\)/);
+  assert.match(lib, /OutValue::Map\(value\) => \{\n {16}let handle = value\.handle\(\);\n {16}let len = value\.len\(\);\n {16}if let Some\(made\)/);
   // B-1: an operation that may run code of the value is imported with catch.
   assert.match(lib, /#\[wasm_bindgen\(catch, js_namespace = Object, js_name = keys\)\]/);
   // U-7: the in function of the alias alone, under codec-test.

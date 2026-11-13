@@ -5,59 +5,13 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type ForeignMake, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
-// GN-6as: a make function walks the OutValue of the core in a loop with a work stack, and never calls itself. The items
-// of the walk are items of the make function, so they share no name with an item of the crate: OutLevel, a container
-// whose children are made next; OutFill, the JavaScript container that takes them; and OutStep, what the walk does next.
-// An arm of the match of an OutValue gives an OutStep: Put for a value without children, and Enter for a container.
-interface LevelParts {
-  // Whether the children are read from the source by the handle of the container, one for each index below its length.
-  walks: boolean;
-  // The OutValue that is made first: the one value of a reference.
-  waiting?: string;
-  fill: string;
-  // The JavaScript value that the container is, where it is made before its children.
-  made?: string;
-}
-
-interface Walk {
-  // What an arm gives for a made value, and for the Result of a made value.
-  put: (value: string) => string;
-  leaf: (made: string) => string;
-  level: (parts: LevelParts) => string;
-}
-
-// A container of JavaScript that takes made children: its variant of OutFill, how a made child is put, and the next
-// child that the walk makes, which is None for a container that takes the one value of a reference.
-interface Fill {
-  name: string;
-  doc: string;
-  type: string;
-  pattern: string;
-  put: string;
-  next?: string;
-}
-
 const PUT_INDEXED = (array: string): string => `${array}.set(js_index(level.index)?, value).map_err(internal)?;
 level.index = level.index.saturating_add(1);`;
-
-const PUT_ENTRY = (set: string): string => `match key.take() {
-    Some(key) => {
-        ${set}
-        level.index = level.index.saturating_add(1);
-    }
-    None => *key = Some(value),
-}`;
-
-const NEXT_ENTRY = `{
-    let (key, value) = source.entry(level.handle, level.index);
-    level.waiting = Some(value);
-    Some(key)
-}`;
 
 // U-7: the containers that the walk of a value alias fills.
 const ALIAS_FILLS: Fill[] = [
@@ -68,131 +22,12 @@ const ALIAS_FILLS: Fill[] = [
   { name: 'Property', doc: 'GN-6ar: an instance of a class of another repository, whose writable property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Property(object, name)', put: 'object.set_named_property(*name, value).map_err(js_fail)?;' },
 ];
 
-const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
-
-// One statement for each variant of OutFill: a match, or a let where OutFill has one variant, whose match clippy
-// refuses as a match of one arm that cannot fail.
-const perFill = (fills: Fill[], on: string, body: (fill: Fill) => string, pattern: (fill: Fill) => string = (fill) => fill.pattern): string => {
-  const [only, ...more] = fills;
-  if (only !== undefined && more.length === 0) return `let ${pattern(only)} = ${on};\n${body(only)}`;
-  return `match ${on} {\n${fills.map((fill) => `    ${pattern(fill)} => {\n${indent(body(fill), 8)}\n    }`).join('\n')}\n}`;
+// GN-6as: the make function of Node.
+const NODE_WALK: WalkShape = {
+  generics: "<'env>", life: "<'env>", anon: "<'_>", env: { params: "env: &'env Env, ", args: 'env, ' }, value: "Unknown<'env>",
+  result: (type) => `Result<${type}, Fail>`, internal: (detail) => `Err(binding_error(BindingError::Internal { detail: ${detail} }))`, language: 'JavaScript',
 };
-
-// GN-6as: the make function of a value alias: the items of the walk, the function that opens one OutValue by the arms of
-// the alias, and the loop. `arms` writes the arms with the Walk that they give their steps through; `kept` names the
-// extra parameter of the function, the made containers by their handles, and `close` writes the JavaScript value of a
-// container that a member makes from its made children, for each variant.
-function walkNode(name: string, fills: Fill[], arms: (walk: Walk) => string, tail: string, opened: string, kept: boolean, close?: { head: string; of: (fill: Fill) => string }): string {
-  const madeType = "&mut BTreeMap<u64, Unknown<'env>>";
-  const plain: Walk = { put: (value) => `Ok(${value})`, leaf: (made) => made, level: () => '' };
-  const probe = arms({ put: (value) => `Ok(OutStep::Put(${value}))`, leaf: (made) => `${made}.map(OutStep::Put)`, level: (parts) => `OutStep::Enter(${parts.fill})` });
-  const used = fills.filter((fill) => probe.includes(`OutFill::${fill.name}(`));
-  if (used.length === 0) {
-    // No row makes a container, so the value has no children and the function has no walk.
-    return `
-fn make_${name}<'env>(env: &'env Env, out: OutValue, _source: &mut dyn OutValues${kept ? `, _made: ${madeType}` : ''}) -> Result<Unknown<'env>, Fail> {
-${opened === '' ? '' : `    ${opened}\n`}    match out${kept ? '.clone()' : ''} {
-${arms(plain)}
-        ${tail}
-    }
-}
-`;
-  }
-  const walked = used.some((fill) => fill.next !== undefined);
-  const made = close === undefined;
-  const walk: Walk = {
-    put: (value) => `Ok(OutStep::Put(${value}))`,
-    leaf: (result) => `${result}.map(OutStep::Put)`,
-    level: (parts) => `Ok(OutStep::Enter(OutLevel { ${walked ? `handle, ${parts.walks ? 'len' : 'len: 0'}, index: 0, ` : ''}waiting: ${parts.waiting ?? 'None'}, fill: ${parts.fill}${made ? `, made: ${parts.made ?? ''}` : ''} }))`,
-  };
-  const body = arms(walk);
-  const next = walked
-    ? `if level.index >= level.len {
-    return None;
-}
-${used.length === 1
-    ? (used[0]?.next ?? 'None')
-    : `match level.fill {\n${used.map((fill) => `    OutFill::${fill.name}(..) => ${indent(fill.next ?? 'None', 4).trimStart()}${(fill.next ?? '').startsWith('{') ? '' : ','}`).join('\n')}\n}`}`
-    : '';
-  const closed = close === undefined ? '' : `
-    // GN-6as: the JavaScript value of a level whose children are all made, which a member of the owner makes from them.
-    fn close_level<'env>(env: &'env Env, level: OutLevel<'env>) -> Result<Unknown<'env>, Fail> {
-${close.head === '' ? '' : `        ${close.head}\n`}${indent(perFill(used, 'level.fill', close.of, (fill) => fill.pattern.replace(', key)', ', _key)')), 8)}
-    }`;
-  return `
-fn make_${name}<'env>(env: &'env Env, out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept ? `, made: ${madeType}` : ''}) -> Result<Unknown<'env>, Fail> {
-    // GN-6as: a container whose children are made next: an entry of the work stack of the walk.${walked ? ' The children are\n    // read from the source by the handle, one for each index below the length.' : ''} waiting is the value that
-    // is made first: the value of the entry whose key was made, or the one value of a reference.
-    struct OutLevel<'env> {${walked ? `
-        handle: Handle,
-        len: u64,
-        index: u64,` : ''}
-        waiting: Option<OutValue>,
-        fill: OutFill<'env>,${made ? `
-        made: Unknown<'env>,` : ''}
-    }
-    // GN-6as: the JavaScript container that takes the made children of a level.
-    enum OutFill<'env> {
-${used.map((fill) => `        // ${fill.doc}\n        ${fill.name}(${fill.type}),`).join('\n')}
-    }
-    // GN-6as: what the walk does next: it opens a value, enters a container, puts a made value into the level that
-    // waits for it, or asks the innermost level for its next child.
-    enum OutStep<'env> {
-        Open(OutValue),
-        Enter(OutLevel<'env>),
-        Put(Unknown<'env>),
-        Next,
-    }
-    // GN-6as: one value: a value without children is made, and a container is entered before its children are made.
-    fn open_level<'env>(env: &'env Env, out: OutValue${kept ? `, made: ${madeType}` : ''}) -> Result<OutStep<'env>, Fail> {
-${opened === '' ? '' : `        ${opened}\n`}        match out${kept ? '.clone()' : ''} {
-${indent(body, 4)}
-            ${tail}
-        }
-    }
-    // GN-6as: the next child of a level that the walk makes, or None when every child is made.
-    fn next_child(level: &mut OutLevel<'_>${walked ? ', source: &mut dyn OutValues' : ''}) -> Option<OutValue> {
-${walked ? `        if let Some(waiting) = level.waiting.take() {
-            return Some(waiting);
-        }
-${indent(next, 8)}` : '        level.waiting.take()'}
-    }
-    // GN-6as: a made child goes into the container of the level that waits for it.
-    fn put_child<'env>(level: &mut OutLevel<'env>, value: Unknown<'env>) -> Result<(), Fail> {
-${indent(perFill(used, '&mut level.fill', (fill) => fill.put), 8)}
-        Ok(())
-    }${closed}
-    let mut levels: Vec<OutLevel<'env>> = Vec::new();
-    let mut step = OutStep::Open(out);
-    loop {
-        step = match step {
-            OutStep::Open(out) => open_level(env, out${kept ? ', made' : ''})?,
-            OutStep::Enter(level) => {
-                levels.push(level);
-                OutStep::Next
-            }
-            OutStep::Put(value) => match levels.last_mut() {
-                Some(level) => {
-                    put_child(level, value)?;
-                    OutStep::Next
-                }
-                None => return Ok(value),
-            },
-            OutStep::Next => match levels.pop() {
-                Some(mut level) => match next_child(&mut level${walked ? ', source' : ''}) {
-                    Some(child) => {
-                        levels.push(level);
-                        OutStep::Open(child)
-                    }
-                    None => OutStep::Put(${made ? 'level.made' : 'close_level(env, level)?'}),
-                },
-                None => return Err(binding_error(BindingError::Internal { detail: String::from("GN-6as: the walk has no level to fill") })),
-            },
-        };
-    }
-}
-`;
-}
+const NODE_MADE = { name: 'made', type: "&mut BTreeMap<u64, Unknown<'env>>" };
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }: Walk): string {
@@ -379,7 +214,7 @@ fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unkn
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     make_${name}(env, root, &mut source)
 }
-${walkNode(name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, false, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
+${walkRust(NODE_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -620,7 +455,7 @@ fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unkn
     let mut made = BTreeMap::new();
     make_${name}(env, root, &mut source, &mut made)
 }
-${walkNode(name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', true)}`;
+${walkRust(NODE_WALK, name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', NODE_MADE)}`;
 }
 
 // B-1: what a JavaScript value is as a HostValue, one level at a time; the children of a container are asked for
