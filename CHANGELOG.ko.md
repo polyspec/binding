@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- case 규약(G-5)이 객체에 동일성을, 참조에 자기 값 안의 자리를, JSON reader가 받는 것보다 깊이 중첩된 객체에 형식을
+  준다. `reference`는 그 id의 첫 자리에서 `{"id": n, "value": ...}`를, 뒤의 모든 자리에서 `{"id": n}`을 담는다.
+  `"id": n`을 가진 `object`는 뒤의 자리에서 `{"kind": "object", "id": n}`으로 부른다.
+  `{"kind": "object", "repeat": n, "key": <key>, "value": <값>}`은 n개의 객체이며, 각 객체는 그것을 감싸는 객체의 유일한
+  property `key`다. 전에는 두 번 담긴 stdClass, 참조의 순환, PHP가 읽는 가장 깊은 객체의 case에 값이 없었다. 생성된 case
+  값은 id마다 하나를 내용 없이 만든 뒤 채우며, 이것을 PHP closure, Python의 대입식 tuple, Node와 WASM의 화살표 함수 안에서
+  한다. 그래서 첫 자리 안의 뒤 자리가 순환을 만든다. 되풀이되는 객체는 바깥부터 만들므로 어떤 생성자도 그 안의 객체를
+  다시 판정하지 않고, PHP는 `(object)`로 가장 안쪽부터 만든다. case-test 진입점은 id를 가진 객체의 handle을 값보다 먼저
+  잡고, 참조의 뒤 자리를 그 동일성으로 기술한다. id의 값을 되풀이하는 뒤 자리는 이름을 대고 거부한다. `make test-ts`(시험
+  273개)로 확인했다.
 - Python, Node, WASM의 case 값은 reference의 자리마다 reference class(GN-6m)의 새 인스턴스를 만들었다. 그래서 같은 id의
   두 자리가 reference 둘을 가졌고, case가 공유된 reference 하나를 적는 곳에서 `serialize`는 값 둘을 썼다(G-5: 같은 id는
   같은 reference다). 이제 값은 id마다 인스턴스 하나를, 그것을 담는 값보다 먼저, 각 인스턴스에 이름을 붙이는 식 안에서

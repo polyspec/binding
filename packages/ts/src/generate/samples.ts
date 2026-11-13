@@ -206,30 +206,45 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
 // makes in the language: null, bool, int (a number, or its decimal text outside the safe integers), float, text,
-// bytes, list and map. The other kinds are refused by name until a case needs them (G-4).
-// GN-13: a PHP reference is a place of an array or of a property, so a case value with references is made in a closure
-// that sets a variable for each reference id and returns the value whose places take the variables by reference.
-// GN-13: Python, Node and WASM make one instance of the class of a reference per id, before the value that holds it, in
-// an expression that names each instance, so every place of an id holds the same instance.
+// bytes, list, map, object and reference. The other kinds are refused by name until a case needs them (G-4).
+// G-5: a reference, and an object with an id, is named by its id after its first place. Each id is made once without
+// content, then filled, in an expression that names it: a closure in PHP, whose references are variables that the
+// places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
+// every place of an id holds the same instance and a later place inside the first makes a cycle.
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
-  const refs = new Map<number, string>();
-  const made = valueOf(model, ctx, value, where, refs, false);
-  if (refs.size === 0) return made;
-  if (ctx.lang === 'python') return `(${[...refs].map(([id, instance]) => `r${id} := ${instance}`).join(', ')}, ${made})[-1]`;
-  if (ctx.lang === 'node') return `(() => { ${[...refs].map(([id, instance]) => `const r${id} = ${instance};`).join(' ')} return ${made}; })()`;
-  const sets = [...refs].map(([id, inner]) => `$r${id} = ${inner};`).join(' ');
-  return `(static function () { ${sets} return ${made}; })()`;
+  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
+  const value_ = valueOf(model, ctx, value, where, making, false);
+  if (making.made.length === 0 && making.fills.length === 0) return value_;
+  if (ctx.lang === 'python') return `(${[...making.made, ...making.fills, value_].join(', ')})[-1]`;
+  if (ctx.lang === 'node') return `(() => { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
+  return `(static function () { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
 }
 
-// GN-13: a value of valueFromJson; refs holds the PHP value of each reference id, or the instance that Python, Node and
-// WASM make for it, and slot says whether the value is the value of a place of an array or of a property, the one place
-// where PHP holds a reference.
-function valueOf(model: Model, ctx: Context, value: unknown, where: string, refs: Map<number, string>, slot: boolean): string {
+// GN-13: what a case value makes before it is returned: the instances of its ids, in the order of their first places,
+// the statements that fill them, in the order in which their first places end, and the ids that a place named.
+interface Making {
+  made: string[];
+  fills: string[];
+  references: Set<number>;
+  objects: Set<number>;
+}
+
+// The id of a reference or of an object of a case value (G-5).
+function idOf(raw: unknown, where: string): number {
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) throw new Error(`an id of ${where} is a number of at least 0, not ${shown(raw)}`);
+  return raw;
+}
+
+// GN-13: a value of valueFromJson, and slot says whether the value is the value of a place of an array or of a
+// property, the one place where PHP holds a reference.
+function valueOf(model: Model, ctx: Context, value: unknown, where: string, making: Making, slot: boolean): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
   const held = record['value'];
   const lang = ctx.lang;
+  const keyOf = (key: unknown): string => caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
+  const fieldOf = (cls: KeptClass): string => langName(lang === 'python' ? 'python' : 'node', cls.fields[0]?.name ?? [], 'variable');
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
   if (kind === 'bool') return fromJson(model, ctx, 'bool', held);
   if (kind === 'text') return fromJson(model, ctx, 'text', held);
@@ -252,47 +267,85 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, refs
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
     if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
-    const inner = valueOf(model, ctx, held, where, refs, false);
+    const inner = valueOf(model, ctx, held, where, making, false);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
     return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => [$inner], ${inner})`;
   }
-  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueOf(model, ctx, item, where, refs, true)).join(', ')}]`;
+  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueOf(model, ctx, item, where, making, true)).join(', ')}]`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
-      const v = valueOf(model, ctx, item, where, refs, true);
+      const k = keyOf(key);
+      const v = valueOf(model, ctx, item, where, making, true);
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[lang];
   }
   // GN-6m: an object is an instance of the value class that keeps a keyed map, and a reference one of the class that
   // keeps one value; PHP takes its own stdClass and its own references, the places that take a variable by reference.
-  if (kind === 'object' && Array.isArray(held)) {
+  if (kind === 'object') {
+    const cls = lang === 'php' ? undefined : keptOf(model, 'entries', where);
+    const empty = cls === undefined ? 'new \\stdClass()' : lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map())`;
+    const field = cls === undefined ? '' : fieldOf(cls);
+    // G-5: n objects, each the one property key of the one around it; Python, Node and WASM make them from the
+    // outermost in and fill each after it is made, so no constructor judges the objects inside it again.
+    if (record['repeat'] !== undefined) {
+      const repeat = record['repeat'];
+      if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${shown(value)}`);
+      const k = keyOf(record['key']);
+      const inner = valueOf(model, ctx, held, where, making, true);
+      if (lang === 'python') return `(lambda top: (lambda at: ([at.__setitem__(0, at[0].${field}.setdefault(${k}, ${empty})) for _ in range(${repeat - 1})], at[0].${field}.__setitem__(${k}, ${inner}), top)[-1])([top]))(${empty})`;
+      if (lang === 'node') return `(() => { const top = ${empty}; let at = top; for (let i = 1; i < ${repeat}; i += 1) { const next = ${empty}; at.${field}.set(${k}, next); at = next; } at.${field}.set(${k}, ${inner}); return top; })()`;
+      return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => (object) [${k} => $inner], ${inner})`;
+    }
+    const name = (id: number): string => (lang === 'php' ? `$o${id}` : `o${id}`);
+    if (record['id'] !== undefined) {
+      const id = idOf(record['id'], where);
+      if (!('value' in record)) {
+        if (!making.objects.has(id)) throw new Error(`a case value of ${where} names the object ${id} before its first place (G-5)`);
+        return name(id);
+      }
+      if (making.objects.has(id)) throw new Error(`a case value of ${where} gives the value of the object ${id} at two places (G-5)`);
+      making.objects.add(id);
+      making.made.push(lang === 'python' ? `o${id} := ${empty}` : lang === 'node' ? `const o${id} = ${empty};` : `$o${id} = ${empty};`);
+      if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${shown(held)}`);
+      for (const [key, item] of held as [unknown, unknown][]) {
+        const k = keyOf(key);
+        const v = valueOf(model, ctx, item, where, making, true);
+        making.fills.push(lang === 'python' ? `o${id}.${field}.__setitem__(${k}, ${v})` : lang === 'node' ? `o${id}.${field}.set(${k}, ${v});` : `$o${id}->{${k}} = ${v};`);
+      }
+      return name(id);
+    }
+    if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${shown(held)}`);
     const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
-      const v = valueOf(model, ctx, item, where, refs, true);
+      const k = keyOf(key);
+      const v = valueOf(model, ctx, item, where, making, true);
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
-    if (lang === 'php') return `(object) [${entries.join(', ')}]`;
-    const cls = keptOf(model, 'entries', where);
+    if (cls === undefined) return `(object) [${entries.join(', ')}]`;
     return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({${entries.join(', ')}})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map([${entries.join(', ')}]))`;
   }
   if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
     const ref = held as Record<string, unknown>;
-    const id = ref['id'];
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) throw new Error(`a reference of ${where} is {"id": <n>, "value": <value>}, not ${shown(held)}`);
+    const id = idOf(ref['id'], where);
+    if (lang === 'php' && !slot) throw new CaseRefused(`a case value of ${where} holds a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place (GN-13)`);
+    const name = lang === 'php' ? `&$r${id}` : `r${id}`;
+    if (!('value' in ref)) {
+      if (!making.references.has(id)) throw new Error(`a case value of ${where} names the reference ${id} before its first place (G-5)`);
+      return name;
+    }
+    if (making.references.has(id)) throw new Error(`a case value of ${where} gives the value of the reference ${id} at two places (G-5)`);
+    making.references.add(id);
     if (lang === 'php') {
-      if (!slot) throw new CaseRefused(`a case value of ${where} holds a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place (GN-13)`);
-      if (!refs.has(id)) refs.set(id, valueOf(model, ctx, ref['value'], where, refs, false));
-      return `&$r${id}`;
+      making.fills.push(`$r${id} = ${valueOf(model, ctx, ref['value'], where, making, false)};`);
+      return name;
     }
-    if (!refs.has(id)) {
-      const cls = keptOf(model, 'value', where);
-      const inner = valueOf(model, ctx, ref['value'], where, refs, false);
-      refs.set(id, lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}(${inner})` : `new pkg.${langName('node', cls.unit.name, 'class')}(${inner})`);
-    }
-    return `r${id}`;
+    const cls = keptOf(model, 'value', where);
+    const field = fieldOf(cls);
+    making.made.push(lang === 'python' ? `r${id} := pkg.${langName('python', cls.unit.name, 'class')}()` : `const r${id} = new pkg.${langName('node', cls.unit.name, 'class')}();`);
+    const inner = valueOf(model, ctx, ref['value'], where, making, false);
+    making.fills.push(lang === 'python' ? `setattr(r${id}, ${pyString(field)}, ${inner})` : `r${id}.${field} = ${inner};`);
+    return name;
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated yet (GN-13)`);
 }
@@ -970,6 +1023,7 @@ export function phpFormless(value: unknown, slot = false): string | undefined {
       return Array.isArray(held) ? held.map((item) => phpFormless(item, true)).find((reason) => reason !== undefined) : undefined;
     case 'map':
     case 'object':
+      if (record?.['repeat'] !== undefined) return phpFormless(held, true);
       return Array.isArray(held) ? (held as unknown[][]).map((pair) => phpFormless(pair[1], true)).find((reason) => reason !== undefined) : undefined;
     case 'reference':
       if (!slot) return 'a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place';

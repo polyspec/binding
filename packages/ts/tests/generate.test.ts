@@ -1883,7 +1883,7 @@ test('a case value names a reference or an object by its id after its first plac
   ), 'php');
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(lib, /let object_0 = host\.reserve\(\);\n\s*let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(/);
-  assert.match(lib, /host\.fill\(object_0, vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\]\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
+  assert.match(lib, /let entries = vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\];\n\s*host\.fill\(object_0, entries\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
   assert.match(lib, /\(HostValue::Int\(1\), HostValue::StdClass \{ handle: object_0, len: 1 \}\)/);
 });
 
@@ -1895,7 +1895,7 @@ test('PHP makes a stdClass and a reference with their identity, and a case value
   const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
   const one = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
   file['echo']?.push(
-    { id: 'a_shared_reference', value: { kind: 'list', value: [one, one] } },
+    { id: 'a_shared_reference', value: { kind: 'list', value: [one, { kind: 'reference', value: { id: 0 } }] } },
     { id: 'a_top_reference', value: one },
   );
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php'] });

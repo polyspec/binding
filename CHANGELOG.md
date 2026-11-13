@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The case convention (G-5) gives an object an identity, a reference a place inside its own value and an object nested
+  deeper than a JSON reader takes a form: a `reference` holds `{"id": n, "value": ...}` at the first place of its id
+  and `{"id": n}` at every later place; an `object` with `"id": n` is named at a later place by
+  `{"kind": "object", "id": n}`; `{"kind": "object", "repeat": n, "key": <key>, "value": <value>}` is n objects,
+  each the one property `key` of the one around it. Before, a case of a stdClass held twice, of a reference cycle or
+  of the deepest objects that PHP reads had no value. A generated case value makes each id once without content and
+  fills it after, in a PHP closure, a Python tuple of assignment expressions or a Node and WASM arrow function, so a
+  later place inside the first makes a cycle; a repeated object is made from the outermost in, so no constructor
+  judges the objects inside it again, and from the innermost out with `(object)` in PHP. A case-test entry point
+  reserves the handle of an object with an id before the value and describes a later place of a reference by its
+  identity. A later place that repeats the value of its id is refused by name. Verified by `make test-ts` (273 tests).
 - A case value of Python, Node and WASM made a new instance of the class of a reference (GN-6m) at each place of a
   reference, so two places of the same id held two references, and `serialize` wrote two values where the case names
   one shared reference (G-5: the same id is the same reference). The value now makes one instance per id, before the

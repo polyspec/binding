@@ -472,7 +472,8 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
   const hex = (raw: unknown): Uint8Array => Buffer.from(String((raw as { hex?: unknown } | null)?.['hex' as never] ?? (raw as { hex: string }).hex), 'hex');
   const key = (raw: unknown): string => caseKey(raw, (kind, held) => (kind === 'int' ? `HostValue::Int(${String(held)}_i64)` : kind === 'text' ? bytes(Buffer.from(String(held), 'utf8')) : bytes(hex(held))));
   const hold = (pairs: string[], variant: (len: number) => string): string => `{
-            let handle = host.hold(vec![${pairs.join(', ')}]);
+            let entries = vec![${pairs.join(', ')}];
+            let handle = host.hold(entries);
             ${variant(pairs.length)}
         }`;
   const value = (v: unknown): string => {
@@ -506,18 +507,58 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
         return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::PhpArray { handle, len: ${len}, is_list: ${String(list)} }`);
       }
       case 'object': {
+        // G-5: n objects, each the one property of the one around it, each held as its own object.
+        if (record['repeat'] !== undefined) return `{
+            let mut value = ${value(held)};
+            for _ in 0..${String(record['repeat'])}_u32 {
+                let handle = host.hold(vec![(${key(record['key'])}, value)]);
+                value = HostValue::StdClass { handle, len: 1 };
+            }
+            value
+        }`;
+        // G-5: an object with an id is reserved before the value is made, filled at its first place and named by its
+        // handle at every later one.
+        if (record['id'] !== undefined) {
+          const id = String(record['id']);
+          const len = objects.get(id) ?? 0;
+          if (!('value' in record)) return `HostValue::StdClass { handle: object_${id}, len: ${len} }`;
+          const pairs = held as unknown[][];
+          return `{
+            let entries = vec![${pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`).join(', ')}];
+            host.fill(object_${id}, entries);
+            HostValue::StdClass { handle: object_${id}, len: ${len} }
+        }`;
+        }
         const pairs = held as unknown[][];
         return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::StdClass { handle, len: ${len} }`);
       }
       case 'reference': {
+        // G-5: a later place of a reference names its identity alone; the core does not read the target of an
+        // identity that it has seen.
         const ref = held as Record<string, unknown>;
-        return `HostValue::PhpReference { identity: Handle::new(${String(ref['id'])}), target: Box::new(${value(ref['value'])}) }`;
+        const target = 'value' in ref ? value(ref['value']) : 'HostValue::Null';
+        return `HostValue::PhpReference { identity: Handle::new(${String(ref['id'])}), target: Box::new(${target}) }`;
       }
       default:
         throw new Unsupported(`a case value of the kind ${String(record['kind'])} is not made as host values yet (GN-13)`);
     }
   };
+  // The objects with an id of a value and the number of their properties, which every place of the id gives.
+  let objects = new Map<string, number>();
+  const scan = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const item of v) scan(item);
+      return;
+    }
+    if (typeof v !== 'object' || v === null) return;
+    const record = v as Record<string, unknown>;
+    if (record['kind'] === 'object' && record['id'] !== undefined && Array.isArray(record['value'])) objects.set(String(record['id']), record['value'].length);
+    for (const inner of Object.values(record)) scan(inner);
+  };
   const entries = tests.map((t, i) => {
+    objects = new Map();
+    scan(t.value);
+    const reserved = [...objects.keys()].map((id) => `let object_${id} = host.reserve();\n            `).join('');
     const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
     return `
     /// GN-13: the case ${t.id} of ${t.fn.member.id}, as the host values that PHP would describe, given to the in
@@ -528,7 +569,7 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
     pub fn case_test_${i}() -> Result<(), PhpException> {
         guard(|| {
             let mut host = CaseHost::default();
-            let value = ${value(t.value).replaceAll('\n', '\n    ')};
+            ${reserved}let value = ${value(t.value).replaceAll('\n', '\n    ')};
             let _value: ${t.alias.unit.core_type ?? ''} = ${t.alias.coreIn}(&mut host, value).map_err(|failure: ${failure}| ${aliasFailureFn(t.alias)}(failure))?;
             Ok(())
         })
@@ -554,6 +595,17 @@ const CASE_HOST = `
         fn hold(&mut self, entries: Vec<(HostValue, HostValue)>) -> Handle {
             self.held.push(entries);
             Handle::new(handle_count(self.held.len() - 1))
+        }
+
+        /// G-5: the handle of an object with an id, before its properties are made.
+        fn reserve(&mut self) -> Handle {
+            self.hold(Vec::new())
+        }
+
+        fn fill(&mut self, handle: Handle, entries: Vec<(HostValue, HostValue)>) {
+            if let Some(held) = self.held.get_mut(handle_position(handle.raw())) {
+                *held = entries;
+            }
         }
 
         fn entry(&self, handle: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
