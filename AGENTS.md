@@ -46,8 +46,10 @@ rules of this repository.
   verified while the run would look passed, and a defect that the copy repairs passes the run and stays in the
   repository.
   Enforced by: `make e2e`, which fails before its first step when a tool is missing and at its end when a target ran no test.
-- Own: Every contract of `tests/e2e` names the five targets (BD-27). A target that the generator or the contract check
-  refuses stays a named failure of the end-to-end check until the generator takes it; no target is left out of a
+- Own: Every contract of `tests/e2e` and the contract of the fixture repository of the unit tests
+  (`packages/ts/tests/fixtures/repo`) name the five targets (BD-27). A target that the generator or the contract check
+  refuses stays a named failure of the end-to-end check, and a refusal of the fixture is asserted by its unit test,
+  until the generator takes it; no target is left out of a
   contract, skipped or listed as an expected failure. Why: a target left out of a contract hides that the generator
   does not take its form, and a run that passes then verifies less than the rule asks.
   Enforced by: none, which targets a contract names is read in review; the end-to-end check names each refused target.

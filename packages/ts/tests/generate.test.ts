@@ -14,19 +14,23 @@ import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
-// The contracts of tests/e2e name the five targets (BD-27), and the generator refuses some of them for each contract by
-// name, which the end-to-end check reports as the failures of those targets (GN-14c). A test generates the targets
-// that the generator takes for its contract (GN-1b), with each target that the test adds after the five; a test that
-// names its targets, or gives the contract other targets, generates those.
+// The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
+// some of them for each contract by name, which the end-to-end check reports as the failures of those targets
+// (GN-14c) and the test of the fixture asserts. A test generates the targets that the generator takes for its contract
+// (GN-1b), with each target that the test adds after the five; a test that names its targets, or gives the contract
+// other targets, generates those. The fixture repository and tests/e2e/sample are both the library sample; the fixture
+// is the one whose first unit is words.
 const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
 const TAKEN: Record<string, string[]> = {
+  // Go refuses the tuple of two types in the list that words.split returns (a Go array has one element type).
+  fixture: ['php', 'python', 'node', 'wasm'],
   sample: ['php', 'python', 'node'],
   shapes: ['php', 'python', 'node'],
   consumer: ['php', 'python', 'node'],
   classes: ['php', 'python', 'node', 'wasm'],
 };
 const generate = (inputs: Inputs): ReturnType<typeof generateTargets> => {
-  const taken = TAKEN[inputs.contract.library];
+  const taken = TAKEN[inputs.contract.library === 'sample' && inputs.contract.units[0]?.id === 'words' ? 'fixture' : inputs.contract.library];
   const declared: string[] = inputs.contract.targets;
   if (inputs.targets !== undefined || taken === undefined || !FIVE.every((t, i) => declared[i] === t)) return generateTargets(inputs);
   return generateTargets({ ...inputs, targets: [...new Set([...taken, ...declared.slice(FIVE.length)])] as Inputs['targets'] & string[] });
@@ -35,6 +39,8 @@ const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 const lock = (core: string): string => `version = 4\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "${core}"\n`;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
+// The targets of the fixture that the generator takes, for a generation of the command line (GN-1b).
+const FIXTURE_TAKEN = TAKEN['fixture']?.join(',') ?? '';
 
 function files(dir: string): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
@@ -53,8 +59,8 @@ test('two generations in two directories give the same bytes and name neither di
   const first = mkdtempSync(join(tmpdir(), 'binding-a-'));
   const second = mkdtempSync(join(tmpdir(), 'binding-b-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', first]);
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', second]);
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', first, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', second, '--target', FIXTURE_TAKEN]);
     const a = files(first);
     const b = files(second);
     assert.ok(a.size > 10, `only ${a.size} files were generated`);
@@ -71,13 +77,32 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
+test('the fixture names the five targets, and the generator refuses its go target by name and writes nothing (BD-27, G-4, GN-1b)', () => {
+  const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
+  assert.deepEqual(declared, FIVE);
+  const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
+  try {
+    for (const targets of [[], ['--target', 'go']]) {
+      const refused = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, ...targets], { encoding: 'utf8' });
+      assert.equal(refused.status, 2, refused.stderr);
+      assert.match(refused.stderr, /not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/);
+      assert.equal(files(out).size, 0, 'a refused generation wrote files');
+    }
+    // Every other target generates.
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
+    assert.ok(files(out).has('packages/ts/wasm/generated/lib.rs'));
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
 test('a generation leaves no file of an earlier one', () => {
   const out = mkdtempSync(join(tmpdir(), 'binding-c-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out]);
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
     const stale = join(out, 'packages/python/generated/stale.py');
     execFileSync('touch', [stale]);
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out]);
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
     assert.ok(!files(out).has('packages/python/generated/stale.py'));
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -220,7 +245,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
   contract.core.path = 'packages/server/rust';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const dirs = new Set([...out.keys()].map((path) => path.split('/').slice(0, 4).join('/')));
-  assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated']);
+  assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
   const root = mkdtempSync(join(tmpdir(), 'binding-h-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
@@ -233,7 +258,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
     execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
     assert.ok(files(root).has('packages/server/ts/build.rs'));
     assert.ok(files(root).has('packages/server/python/Cargo.toml'));
-    execFileSync(process.execPath, [cli, 'generate', '--contract', path]);
+    execFileSync(process.execPath, [cli, 'generate', '--contract', path, '--target', FIXTURE_TAKEN]);
     assert.ok(files(root).has('packages/server/php-ext/generated/lib.rs'));
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -246,9 +271,6 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
-    contract.targets.push('go');
-    contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
-    writeFileSync(path, JSON.stringify(contract));
     // T-2: a Go array has one element type, so a tuple of two types inside a list is refused by name (G-4).
     assert.throws(() => execFileSync(process.execPath, [cli, 'generate', '--root', root], { stdio: 'pipe' }), /a tuple of \["text","uint"\] inside another type is not generated for Go/);
     contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
@@ -358,7 +380,7 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
   // GN-12: the JavaScript entry turns a Map into its entries, so Node takes a keyed map only as a whole.
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a map<T> or keyed_map<T> inside another type is not generated for node yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a map<T> or keyed_map<T> inside another type is not generated for node, wasm yet/);
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
   const all = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn out_keyed_map<T>/);
@@ -506,7 +528,11 @@ test('a host package holds its native module in one form per language (L-2a)', (
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
-    execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out]);
+    // L-2a: the WASM binding of a host Node package is refused by name; the other targets generate.
+    const wasm = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'wasm'], { encoding: 'utf8' });
+    assert.equal(wasm.status, 2, wasm.stderr);
+    assert.match(wasm.stderr, /the WASM binding of a host Node package is not generated yet \(L-2a\)/);
+    execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'php,python,node']);
     const generated = files(out);
     assert.ok(generated.has('packages/python/native/generated/lib.rs'));
     assert.ok(generated.has('packages/python/src/polyspec/sample/_binding/__init__.py'));
@@ -1435,8 +1461,8 @@ test('generate --target writes the directories of those targets alone, the files
   const whole = mkdtempSync(join(tmpdir(), 'binding-t-'));
   const parts = mkdtempSync(join(tmpdir(), 'binding-u-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', whole]);
-    const targets = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', whole, '--target', FIXTURE_TAKEN]);
+    const targets = FIXTURE_TAKEN.split(',');
     const [first, ...others] = targets;
     execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', first ?? '']);
     const alone = files(parts);

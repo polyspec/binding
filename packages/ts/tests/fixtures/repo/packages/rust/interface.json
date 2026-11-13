@@ -8,7 +8,9 @@
   "targets": [
     "php",
     "python",
-    "node"
+    "node",
+    "go",
+    "wasm"
   ],
   "packages": {
     "php": {
@@ -26,9 +28,16 @@
           "formats": [
             "import",
             "require"
-          ]
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
         }
       }
+    },
+    "go": {
+      "module": "github.com/polyspec/sample/packages/go"
     }
   },
   "naming": {
@@ -40,32 +49,38 @@
       "value": {
         "php": "Polyspec\\Sample\\SampleValueError",
         "python": "SampleValueError",
-        "node": "SampleValueError"
+        "node": "SampleValueError",
+        "wasm": "SampleValueError"
       },
       "type": {
         "php": "Polyspec\\Sample\\SampleTypeError",
         "python": "SampleTypeError",
-        "node": "SampleTypeError"
+        "node": "SampleTypeError",
+        "wasm": "SampleTypeError"
       },
       "io": {
         "php": "Polyspec\\Sample\\SampleIoError",
         "python": "SampleIoError",
-        "node": "SampleIoError"
+        "node": "SampleIoError",
+        "wasm": "SampleIoError"
       },
       "store": {
         "php": "Polyspec\\Sample\\SampleStoreError",
         "python": "SampleStoreError",
-        "node": "SampleStoreError"
+        "node": "SampleStoreError",
+        "wasm": "SampleStoreError"
       },
       "busy": {
         "php": "Polyspec\\Sample\\SampleBusyError",
         "python": "SampleBusyError",
-        "node": "SampleBusyError"
+        "node": "SampleBusyError",
+        "wasm": "SampleBusyError"
       },
       "internal": {
         "php": "Polyspec\\Sample\\SampleInternalError",
         "python": "SampleInternalError",
-        "node": "SampleInternalError"
+        "node": "SampleInternalError",
+        "wasm": "SampleInternalError"
       }
     },
     "fixed": [
