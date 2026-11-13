@@ -11,12 +11,13 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
-  functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
+  functions units, class units (constructor, static members, methods and properties with the receiver `&self`, and
+  the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
-  `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
-  `source`) is refused by name
+  `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a dependency kind, the
+  type `source`) is refused by name
   before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
   repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
@@ -56,14 +57,23 @@ the design ids are those of the binding design.
     imports the API from `<module>._binding`. The host's `pyproject.toml` has `build-system.build-backend`
     `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source` `src` and
     `tool.maturin.module-name` `<module>._binding._native`.
-  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry,
-    declarations and addon are `native/generated/`. The host's `package.json` has its `name` and, in `files`,
-    `native/generated/index.cjs`, `native/generated/index.mjs`, `native/generated/index.d.ts` and
-    `native/generated/*.node`; host code imports `native/generated/index.mjs` (or `index.cjs`) by its relative path.
+  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry and
+    declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
+    `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
+    packages of GN-3c in `optionalDependencies` at its own `version`; host code imports `native/generated/index.mjs`
+    (or `index.cjs`) by its relative path.
   - PHP: an extension is a Composer package of its own (type `php-ext`), named `<host package>-native`, at
     `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
     is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
     the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
+- **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
+  napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
+  <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
+  (L-2a), holds no addon and names every platform package in `optionalDependencies` at its own version, so npm
+  installs the one of the machine; release tooling builds and publishes the platform packages (K-3). The generated
+  entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
+  entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
+  release does and installs both tarballs.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
@@ -94,7 +104,13 @@ the design ids are those of the binding design.
   the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
-  declarations, and the entry defines `<name>` over it with the checks of G-7.
+  declarations, and the entry defines `<name>` over it with the checks of G-7. napi-rs keeps the classes it parsed in
+  the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
+  Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
+  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
+  instance of it (another value is kind `invalid_argument_type`) and the core gets a copy of the value it holds, so a
+  class that a member takes is `Clone`. A class of origin `value` whose `in` rows name only the class itself (U-1) is
+  generated as such a class, and a value type named in `types` is that unit.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
@@ -107,6 +123,40 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
+  at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
+  exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
+  What a language value is as a `HostValue` is binding's rule: Python takes the exact built-in types (a subclass of
+  `int`, `float`, `str` or `bytes` is `Other`); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
+  token outside `i64`), a string as its UTF-16 units, an Array, a Map, a plain object (prototype `Object.prototype` or
+  `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
+  element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
+  Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
+  built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
+  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
+  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound.
+- **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
+  borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
+  iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
+  Python gives the items by `__iter__`, or the keys by `__iter__` and the pairs by `items()`, as a dict does; Node makes
+  the class iterable by `Symbol.iterator` over the items or `[key, value]`; PHP makes it an `IteratorAggregate` whose
+  `getIterator` gives the items under their positions, or the values under their keys, through the extension's
+  iterator `<namespace>\Internal\Pairs`, because a key may be an object. An iterate that raises, or a second
+  iterate of a class, is refused by name (G-4).
+- **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
+  of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
+  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node and `jsonSerialize` in PHP, whose class
+  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. The PHP extension names no
+  `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
+  and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
+  addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
+  with the arguments of its protocol (`JSON.stringify` passes the key to `toJSON`), which the method does not read. A
+  second stringify or to_json of a class, one with a parameter, and a stringify that does not return text are refused
+  by name (G-4). A member that returns `never` (T-1) calls a core that returns `Result<Infallible, E>`: the generated
+  code returns the failure and matches the value, which has no variant, without an arm; the declarations say `never`
+  in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
+  with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
+  the tests of every other target.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
@@ -245,7 +295,10 @@ the design ids are those of the binding design.
   and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
   No B-4 test is generated for a member that takes a callback: B-4 runs a contract case, and a case is JSON, which
   cannot give the object that implements the callback, so the case's failure cannot be reached from its keys. K-2 is
-  another requirement and does not stand in for it.
+  another requirement and does not stand in for it. A stringify and a to_json are run as the language runs the hook
+  (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
+  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
+  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
   of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
   closed set that each language's generated test implements.

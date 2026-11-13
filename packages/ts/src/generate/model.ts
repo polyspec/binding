@@ -30,11 +30,18 @@ export interface CallbackMember {
   receiver: '&self' | '&mut self';
 }
 
+// U-7: a value alias that the core judges and gives through core: {in, out}, with its value table.
+export interface ValueAlias {
+  unit: Unit;
+  coreIn: string;
+  coreOut: string;
+}
+
 export interface Fn {
   unit: Unit;
   member: Member;
   // function (a member of a functions unit), or a member of a class unit: constructor, static, method, property (U-2).
-  kind: 'function' | 'constructor' | 'static' | 'method' | 'property';
+  kind: 'function' | 'constructor' | 'static' | 'method' | 'property' | 'iterate';
   // The receiver of a method or property in the core (U-2 core.receiver).
   receiver?: '&self' | '&mut self';
   module: string;
@@ -42,6 +49,10 @@ export interface Fn {
   record?: { unit: Unit; param: Parameter };
   args: Arg[];
   returns: Type;
+  // N-4: a method that is the language's string form (stringify) or JSON hook (to_json), named by each language.
+  special?: 'stringify' | 'to_json';
+  // N-4 iterate: what the core's iterator gives, an item or the key and the value of an entry, each borrowed.
+  yields?: { key?: Type; value: Type };
   fallible: boolean;
   // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
   failure: boolean;
@@ -111,6 +122,7 @@ export interface Model {
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
   callbacks: CallbackUnit[];
+  aliases: ValueAlias[];
   classes: ErrorClass[];
   coreError: string | undefined;
   kinds: CoreKind[];
@@ -140,7 +152,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
-    if (unit?.kind === 'class' && unit.origin === 'generated') return;
+    if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
+    if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
     if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
   }
   if ('unit' in type && type.library !== undefined) {
@@ -159,6 +172,7 @@ export function buildModel(
   foreign: ReadonlyMap<string, Contract> = new Map(),
 ): Model {
   assertNoExceptions(contract);
+  contract = resolveNamedTypes(contract);
   const units = new Map(contract.units.map((u) => [u.id, u]));
   const functions: Fn[] = [];
   const constants: Constant[] = [];
@@ -166,14 +180,15 @@ export function buildModel(
   const records: Unit[] = [];
   const objects: ObjectClass[] = [];
   const callbacks: CallbackUnit[] = [];
+  const aliases: ValueAlias[] = [];
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
-    if (member.only !== undefined || member.native !== undefined) throw new Unsupported(`${member.id}: only and native are not generated yet`);
+    if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
     const corePath = typeof core === 'string' ? core : core.path;
     const receiver = typeof core === 'object' ? core.receiver : undefined;
-    const wantsReceiver = kind === 'method' || kind === 'property';
+    const wantsReceiver = kind === 'method' || kind === 'property' || kind === 'iterate';
     if (receiver === 'self') throw new Unsupported(`${member.id}: a receiver self is not generated yet`);
     if (receiver === '&mut self') throw new Unsupported(`${member.id}: a receiver &mut self (B-5c busy) is not generated yet`);
     if (wantsReceiver !== (receiver !== undefined)) throw new Unsupported(`${member.id}: a ${kind} ${wantsReceiver ? 'needs' : 'takes no'} receiver`);
@@ -192,14 +207,23 @@ export function buildModel(
       }
       const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
       supportedType(type, units, `${member.id}.${parameter.name.join('_')}${direct ? '#parameter' : ''}`, foreign);
-      if (JSON.stringify(type).includes('"unit"') && [...JSON.stringify(type).matchAll(/"unit":"([^"]+)"/g)].some((m) => units.get(m[1] ?? '')?.kind === 'class')) {
-        throw new Unsupported(`${member.id}.${parameter.name.join('_')}: a parameter of a class is not generated yet`);
-      }
       args.push({ name: parameter.name, type, field: false });
     }
     const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
-    supportedType(returns, units, `${member.id} returns`, foreign);
+    // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
+    if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
+    if (returns !== 'never') supportedType(returns, units, `${member.id} returns`, foreign);
+    let yields: Fn['yields'];
+    if (kind === 'iterate') {
+      const given = member.yields;
+      if (given === undefined) throw new Unsupported(`${member.id}: an iterate without yields`);
+      if (receiver !== '&self') throw new Unsupported(`${member.id}: an iterate takes &self`);
+      if (params.length > 0) throw new Unsupported(`${member.id}: an iterate takes no parameter`);
+      if ((member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: an iterate that raises is not generated yet`);
+      yields = typeof given === 'object' && 'key' in given && 'value' in given ? { key: given.key, value: given.value } : { value: given as Type };
+      for (const type of [yields.key, yields.value]) if (type !== undefined) supportedType(type, units, `${member.id} yields`, foreign);
+    }
     return {
       unit,
       member,
@@ -209,6 +233,7 @@ export function buildModel(
       params,
       args,
       returns,
+      ...(yields === undefined ? {} : { yields }),
       fallible: (member.raises ?? []).length > 0 || takesCallback,
       failure: takesCallback,
       corePath,
@@ -230,13 +255,23 @@ export function buildModel(
       records.push(unit);
       continue;
     }
-    if (unit.kind === 'class' && unit.origin === 'generated') {
+    // T-5, U-1: a class of origin value is a class like a generated one; its in rows name only the class itself, so a
+    // value of the value type is an instance of it (a value alias with core in/out is generated by its conversions).
+    if (unit.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) {
       if (unit.cleanup !== undefined) throw new Unsupported(`${unit.id}: cleanup is not generated yet`);
       if (unit.implements !== undefined || unit.abstract === true) throw new Unsupported(`${unit.id}: implements and abstract are not generated yet`);
       if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a class without core_type`);
       const members: Fn[] = [];
       for (const member of unit.members ?? []) {
-        if (!['constructor', 'static', 'method', 'property'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (!['constructor', 'static', 'method', 'property', 'iterate', 'stringify', 'to_json'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (member.kind === 'stringify' || member.kind === 'to_json') {
+          if ((unit.members ?? []).filter((m) => m.kind === member.kind).length > 1) throw new Unsupported(`${unit.id}: a class has one ${member.kind} (N-4)`);
+          if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
+          if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
+          members.push({ ...toFn(unit, member, 'method'), special: member.kind });
+          continue;
+        }
+        if (member.kind === 'iterate' && (unit.members ?? []).filter((m) => m.kind === 'iterate').length > 1) throw new Unsupported(`${unit.id}: a class iterates once (N-4)`);
         if (member.kind === 'property' && member.writable === true) throw new Unsupported(`${member.id}: a writable property is not generated yet`);
         members.push(toFn(unit, member, member.kind as Fn['kind']));
       }
@@ -245,6 +280,12 @@ export function buildModel(
         throw new Unsupported(`${unit.id}: a constructible class has one constructor and another none (U-1 constructible)`);
       }
       objects.push({ unit, members, constructible });
+      continue;
+    }
+    if (unit.kind === 'alias' && unit.origin === 'value') {
+      if (typeof unit.core !== 'object') throw new Unsupported(`${unit.id}: a value alias without core: {in, out} is not generated`);
+      if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a value alias names its core type in core_type`);
+      aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out });
       continue;
     }
     if (unit.kind === 'interface' && unit.origin === 'callback') {
@@ -271,7 +312,7 @@ export function buildModel(
       throw new Unsupported(`${unit.id}: a ${unit.origin} ${unit.kind} unit is not generated yet`);
     }
     for (const member of unit.members ?? []) {
-      if (member.only !== undefined || member.native !== undefined) throw new Unsupported(`${member.id}: only and native are not generated yet`);
+      if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
       if (member.kind === 'constant') {
         if (member.type !== 'uint' && member.type !== 'int' && member.type !== 'text' && member.type !== 'bool') {
           throw new Unsupported(`${member.id}: a constant of type ${JSON.stringify(member.type)} is not generated yet`);
@@ -333,7 +374,7 @@ export function buildModel(
   const resultRecords = records.filter((r) => result.has(r.id));
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, classes, coreError, kinds, cases,
+    objects, callbacks, aliases, classes, coreError, kinds, cases,
   };
 }
 
@@ -383,6 +424,15 @@ export function byValue(model: Model, type: Type): boolean {
   if ('optional' in type) return byValue(model, type.optional);
   if ('unit' in type) return unitOf(model, type)?.kind === 'enum';
   return false;
+}
+
+// N-4 iterate: an item of the core's iterator is borrowed from the class; a conversion out takes a value type by value
+// and a class by a copy of its core value.
+export function borrowedItem(model: Model, type: Type, value: string): string {
+  if (byValue(model, type)) return `*${value}`;
+  const unit = unitOf(model, type);
+  if (unit !== undefined && libraryOf(type) === undefined && model.objects.some((o) => o.unit === unit)) return `${value}.clone()`;
+  return value;
 }
 
 export const unitOf = (model: Model, type: Type): Unit | undefined => {
@@ -436,9 +486,103 @@ export const objectUnit = (model: Model, type: Type): ObjectClass | undefined =>
   return libraryOf(type) === undefined ? model.objects.find((o) => o.unit === unit) : undefined;
 };
 
-// The model as one language's emitter reads it: each error class and kind has the class name of that language (E-2).
+// T-5: whether a value of the class comes in from the language: a type of a parameter, of a callback's return or of a
+// field of a record in them names it. Only then does an emitter write the conversion in, which copies the value the
+// class holds, so a class that never comes in needs neither the conversion nor Clone.
+export function takesObject(model: Model, object: ObjectClass): boolean {
+  const seen = new Set<string>();
+  const names = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(names);
+    if (typeof value !== 'object' || value === null) return false;
+    const record = value as Record<string, unknown>;
+    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
+      if (record['unit'] === object.unit.id) return true;
+      const unit = model.contract.units.find((u) => u.id === record['unit']);
+      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+      seen.add(unit.id);
+      return names(unit.fields ?? []);
+    }
+    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+  };
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
+  return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
+}
+
+// N-4: the name of a member in a language. A stringify and a to_json have the name of the language's hook, any other
+// member the converted name of the contract (N-2).
+export function memberName(lang: Lang, fn: Fn): string {
+  if (fn.special === 'stringify') return lang === 'python' ? '__str__' : lang === 'php' ? '__toString' : 'toString';
+  if (fn.special === 'to_json') return lang === 'php' ? 'jsonSerialize' : 'toJSON';
+  return langName(lang, fn.member.name, 'callable');
+}
+
+// N-4: how a language runs the hook of a stringify or a to_json on an instance, which is how a generated test calls
+// it: a hook is called by the language, with the arguments of the language's protocol.
+export function hookCall(lang: 'python' | 'node' | 'php', fn: Fn, receiver: string): string | undefined {
+  if (fn.special === 'stringify') return { python: `str(${receiver})`, node: `String(${receiver})`, php: `(string) ${receiver}` }[lang];
+  if (fn.special === 'to_json') return { python: undefined, node: `JSON.stringify(${receiver})`, php: `\\json_encode(${receiver})` }[lang];
+  return undefined;
+}
+
+// Q-4 only: the members that a language has; a member whose only names other targets is not generated there. N-4:
+// Python has no JSON hook, so a to_json is no member of Python.
+export function membersFor(model: Model, lang: Lang): Model {
+  const has = (fn: Fn): boolean =>
+    (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json');
+  return {
+    ...model,
+    functions: model.functions.filter(has),
+    objects: model.objects.map((o) => ({ ...o, members: o.members.filter(has) })),
+  };
+}
+
+// The model as one language's emitter reads it: each error class and kind has the class name of that language (E-2),
+// and the members are those of the language (Q-4 only).
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
   const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
-  return { ...model, classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
+  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
 }
+
+// T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
+// repository's own is a unit of this contract, another repository's names its library.
+export function resolveNamedTypes(contract: Contract): Contract {
+  const named = contract.types as Record<string, { library: string; unit: string } | undefined>;
+  const resolve = (type: Type): Type => {
+    if (typeof type === 'string') {
+      const owner = named[type];
+      if (owner === undefined) return type;
+      return owner.library === contract.library ? { unit: owner.unit } : { unit: owner.unit, library: owner.library };
+    }
+    if ('list' in type) return { ...type, list: resolve(type.list) };
+    if ('optional' in type) return { ...type, optional: resolve(type.optional) };
+    if ('map' in type) return { ...type, map: resolve(type.map) };
+    if ('keyed_map' in type) return { ...type, keyed_map: resolve(type.keyed_map) };
+    if ('tuple' in type) return { ...type, tuple: type.tuple.map(resolve) };
+    if ('function' in type) return { ...type, function: { ...type.function, parameters: type.function.parameters.map(resolve), returns: resolve(type.function.returns) } };
+    return type;
+  };
+  const member = (m: Member): Member => ({
+    ...m,
+    ...(m.parameters === undefined ? {} : { parameters: m.parameters.map((p) => ({ ...p, type: resolve(p.type) })) }),
+    ...(m.returns === undefined ? {} : { returns: resolve(m.returns) }),
+    ...(m.type === undefined ? {} : { type: resolve(m.type) }),
+    ...(m.yields === undefined
+      ? {}
+      : { yields: typeof m.yields === 'object' && 'key' in m.yields && 'value' in m.yields ? { key: resolve(m.yields.key), value: resolve(m.yields.value) } : resolve(m.yields as Type) }),
+  });
+  return {
+    ...contract,
+    units: contract.units.map((u) => ({
+      ...u,
+      ...(u.members === undefined ? {} : { members: u.members.map(member) }),
+      ...(u.fields === undefined ? {} : { fields: u.fields.map((f) => ({ ...f, type: resolve(f.type) })) }),
+    })),
+  };
+}
+
+// U-7: the value alias of a type, when the type is one.
+export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
+  const unit = unitOf(model, type);
+  return libraryOf(type) === undefined ? model.aliases.find((a) => a.unit === unit) : undefined;
+};

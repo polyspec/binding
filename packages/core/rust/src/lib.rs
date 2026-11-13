@@ -23,7 +23,7 @@ pub use cancel::{cancel_pair, Cancel, CancelGuard, CancelTrigger};
 pub use cleanup::Cleanup;
 pub use error::{BindingError, Category, Kinds, NumberType, TextCause};
 pub use failure::Failure;
-pub use host::HostValues;
+pub use host::{HostValues, OutValues};
 pub use keyed::{Key, KeyedMap};
 pub use map::OrderedMap;
 pub use raised::Raised;

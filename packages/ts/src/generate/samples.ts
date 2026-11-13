@@ -19,6 +19,8 @@ export interface Context {
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
+  // How the generated test calls a factory of a class (a static member or the constructor) with its arguments (T-5).
+  objectNew?: (factory: Fn, args: string) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -41,6 +43,25 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
   if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
+  // U-7: a value of a value alias is the value that its first out row of a built-in form makes for this language.
+  if (unit?.kind === 'alias') {
+    const forms: Record<Lang3, Record<string, string>> = {
+      python: { null: 'None', bool: 'False', int: '0', bigint: '0', float: '0.0', text: '"a"', bytes: 'b""', list: '[]', map: '{}' },
+      node: { null: 'null', bool: 'false', int: '0', bigint: '0n', float: '0', text: "'a'", bytes: 'new Uint8Array()', list: '[]', map: 'new Map()' },
+      php: { null: 'null', bool: 'false', int: '0', float: '0.0', text: '"a"', bytes: '""', list: '[]', map: '[]' },
+    };
+    for (const row of unit.out ?? []) {
+      const make = row.make[ctx.lang];
+      const value = typeof make === 'string' ? forms[ctx.lang][make] : undefined;
+      if (value !== undefined) return value;
+    }
+  }
+  // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
+  const object = model.objects.find((o) => o.unit === unit);
+  const factory = object?.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === unit));
+  if (factory !== undefined && ctx.objectNew !== undefined) {
+    return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
+  }
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 
@@ -144,7 +165,9 @@ export interface RaisingCase {
 }
 
 // The callables whose tests are generated: the functions, then the members of each class unit.
-export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members)];
+// An iterate has no arguments to test; it is iterated in the round trip of GN-13a. A stringify and a to_json are
+// called by the name of the language's hook (N-4, memberName).
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate'))];
 
 export interface Receiver {
   factory: Fn;
@@ -192,6 +215,24 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
     }
   }
   return undefined;
+}
+
+// N-4: the cases of a stringify that do not raise, each with the instance of its factory arguments and the text that
+// the language's string form gives.
+export function stringCases(model: Model, fn: Fn): { id: string; receiver: Receiver; result: string }[] {
+  if (fn.special !== 'stringify') return [];
+  const out: { id: string; receiver: Receiver; result: string }[] = [];
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    const receiver = receiverOf(model, fn, record);
+    const result = record['result'];
+    if (receiver === undefined || typeof result !== 'string') {
+      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
+    }
+    out.push({ id: String(record['id']), receiver, result });
+  }
+  return out;
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {

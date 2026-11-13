@@ -34,6 +34,9 @@ export interface CheckOptions {
   // The contracts of the libraries that this contract names, by library name (T-3, E-1b). binding reads them from the
   // packages that Cargo resolved; the check takes them as values.
   dependencies?: ReadonlyMap<string, unknown>;
+  // The case files that `cases` names, parsed, by their path from the repository root (K-1). Given, CK-22 also reads
+  // the groups; binding check reads them from the repository.
+  caseFiles?: ReadonlyMap<string, unknown>;
 }
 
 const schema: unknown = JSON.parse(
@@ -86,6 +89,40 @@ function schemaFindings(errors: readonly ErrorObject[], todos: readonly string[]
     }));
 }
 
+// CK-23: where each language reserves words for the names that a binding writes (N-2). PHP reserves its keywords and
+// the names of its built-in types for a class and a function, case-insensitively, and allows them for a method, a
+// property and a variable ($name); Python reserves its keywords everywhere; JavaScript reserves its reserved words, and
+// in strict code eval and arguments, for a function, a class and a parameter, and allows them as a property name. Go
+// writes every name with a capital, which no keyword has. The Rust names of the generated code escape a keyword (r#).
+type Position = 'class' | 'function' | 'method' | 'field' | 'parameter' | 'constant';
+const PHP_RESERVED = [
+  '__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const',
+  'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor', 'endforeach',
+  'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit', 'extends', 'final', 'finally', 'fn', 'for', 'foreach',
+  'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof', 'insteadof', 'interface',
+  'isset', 'list', 'match', 'namespace', 'new', 'or', 'print', 'private', 'protected', 'public', 'readonly', 'require',
+  'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
+  'bool', 'false', 'float', 'int', 'iterable', 'mixed', 'never', 'null', 'object', 'parent', 'resource', 'self',
+  'string', 'true', 'void', 'numeric',
+];
+const PYTHON_RESERVED = [
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif',
+  'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or',
+  'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
+];
+const JS_RESERVED = [
+  'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum',
+  'export', 'extends', 'false', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof',
+  'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+  'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'eval', 'arguments',
+];
+const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boolean; positions: readonly Position[] }>> = {
+  php: { words: new Set(PHP_RESERVED), caseless: true, positions: ['class', 'function'] },
+  python: { words: new Set(PYTHON_RESERVED), caseless: false, positions: ['class', 'function', 'method', 'field', 'parameter', 'constant'] },
+  node: { words: new Set(JS_RESERVED), caseless: false, positions: ['class', 'function', 'parameter'] },
+  wasm: { words: new Set(JS_RESERVED), caseless: false, positions: ['class', 'function', 'parameter'] },
+};
+
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];
   findTodos(raw, '', todos);
@@ -111,10 +148,12 @@ class Checker {
   readonly units = new Map<string, Located<Unit>>();
   readonly members = new Map<string, { member: Member; unit: Unit; path: string }>();
   readonly dependencyContracts = new Map<string, Contract | null>();
+  readonly caseFiles: ReadonlyMap<string, unknown> | undefined;
 
   constructor(contract: Contract, options: CheckOptions) {
     this.contract = contract;
     this.dependencies = options.dependencies ?? new Map();
+    this.caseFiles = options.caseFiles;
   }
 
   report(check: string, path: string, message: string): void {
@@ -136,9 +175,11 @@ class Checker {
     this.modules();
     this.wasmOnly();
     this.awaitableNames();
+    this.reservedNames();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
+    this.caseLinks();
     return this.findings;
   }
 
@@ -522,6 +563,11 @@ class Checker {
 
   valueUnit(unit: Unit, path: string, gathered: ReadonlyMap<string, string>): void {
     const targets = this.contract.targets;
+    // U-7: a value alias is made and judged by the core functions that core names; a class judges its own values.
+    if (unit.kind === 'alias' && (typeof unit.core !== 'object' || unit.core === null)) {
+      this.report('CK-8', path, `the value alias ${unit.id} names the core functions that judge and give its values in core: {in, out} (U-7)`);
+    }
+    if (unit.kind !== 'alias' && typeof unit.core === 'object') this.report('CK-8', `${path}/core`, 'only a value alias has core: {in, out} (U-7)');
     // The unit types this representative may name: itself when it is a class, its gathered classes when it is an alias.
     const ownTypes = new Set(unit.kind === 'alias' ? [...gathered].filter(([, by]) => by === unit.id).map(([id]) => id) : [unit.id]);
     const rows = new Map<string, InRow>();
@@ -1017,6 +1063,43 @@ class Checker {
     }
   }
 
+  // ---- CK-23: reserved words of the target languages (N-2) ----
+
+  // N-2: a name that a language reserves where the binding writes it fails the generated code only when it is
+  // compiled or linted, so the check names it first; a naming exception (N-3) gives the language another name.
+  reservedNames(): void {
+    const report = (lang: Lang, path: string, name: string, what: string): void => {
+      this.report('CK-23', path, `${name}, the ${lang} name of ${what}, is a reserved word of ${lang}; give it a naming exception (N-2, N-3)`);
+    };
+    for (const lang of this.contract.targets) {
+      const reserved = RESERVED[lang];
+      if (reserved === undefined) continue;
+      const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
+      for (const { value: unit, path } of this.units.values()) {
+        if (unit.origin === 'host' || unit.visibility !== 'public') continue;
+        const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
+        const className = this.langName(lang, unit, unit.name, 'class');
+        if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
+        for (const [f, field] of (unit.fields ?? []).entries()) {
+          const name = this.langName(lang, unit, field.name, 'variable', undefined, { field: field.name });
+          if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
+        }
+        for (const [m, member] of (unit.members ?? []).entries()) {
+          if (member.visibility !== 'public') continue;
+          const memberPath = `${path}${pointer('members', m)}`;
+          const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
+          const name = this.langName(lang, unit, member.name, role, member);
+          const position: Position = member.kind === 'constant' ? 'constant' : unit.kind === 'functions' ? 'function' : unit.kind === 'record' ? 'field' : 'method';
+          if (taken(name, position)) report(lang, memberPath, name, member.id);
+          for (const [p, parameter] of (member.parameters ?? []).entries()) {
+            const param = this.langName(lang, unit, parameter.name, 'variable', member, { parameter: parameter.name });
+            if (taken(param, 'parameter')) report(lang, `${memberPath}${pointer('parameters', p)}`, param, `a parameter of ${member.id}`);
+          }
+        }
+      }
+    }
+  }
+
   // ---- CK-18: package names (P-1) ----
 
   packageNames(): void {
@@ -1047,6 +1130,73 @@ class Checker {
     }
   }
 
+  // ---- CK-22: every member runs contract cases (K-1) ----
+
+  // K-1: a member that a binding generates names the case file and group that run it, because the tests of G-5 that
+  // run cases (B-3 on a case's values, B-4) would otherwise be left out without a word. A constant has no cases.
+  caseLinks(): void {
+    const linked = new Set(this.contract.cases.map((kase) => kase.member));
+    for (const { member, unit, path } of this.members.values()) {
+      if (member.kind === 'constant' || unit.kind === 'error' || unit.origin === 'callback' || unit.origin === 'host') continue;
+      if (member.visibility !== 'public' || unit.visibility !== 'public') continue;
+      if (!linked.has(member.id)) this.report('CK-22', path, `${member.id} names no case file and group in cases (K-1)`);
+    }
+    if (this.caseFiles !== undefined) this.caseKinds(this.caseFiles);
+  }
+
+  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that it raises. A kind
+  // of the category internal or io, which no input reaches, is reported as waiting for the case form of a fault
+  // injection point of the core's test feature (G-5); it is not left out. A case cannot give a callback or a function yet, so a member that takes one and raises is reported
+  // as such until G-5 has the case form of a callback fixture (GN-13a); it is not left out, which would drop its tests
+  // without a word.
+  caseKinds(files: ReadonlyMap<string, unknown>): void {
+    const raised = new Map<string, Set<string>>();
+    for (const [i, row] of this.contract.cases.entries()) {
+      const document = files.get(row.file);
+      const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
+      if (!Array.isArray(group)) {
+        this.report('CK-22', `/cases/${i}`, document === undefined ? `the file ${row.file} is not found` : `the file ${row.file} has no group ${row.group}`);
+        continue;
+      }
+      const kinds = raised.get(row.member) ?? new Set<string>();
+      for (const kase of group) {
+        const raises = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['raises'] : undefined;
+        const kind = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>)['kind'] : undefined;
+        if (typeof kind === 'string') kinds.add(kind);
+      }
+      raised.set(row.member, kinds);
+    }
+    const categories = new Map(this.contract.errors.kinds.map((row) => [row.variant, row.category]));
+    const snake = (name: string): string => name.replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+    for (const { member, unit, path } of this.members.values()) {
+      const kinds = raised.get(member.id);
+      if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
+      const code = (member.parameters ?? []).some((p) => this.takesCode(p.type));
+      for (const [r, variant] of (member.raises ?? []).entries()) {
+        const category = categories.get(variant);
+        if (category === undefined) continue;
+        const kind = snake(variant.slice(variant.lastIndexOf('::') + 2));
+        if (code) {
+          this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but the case form of a callback is not decided: a case cannot give the callback that ${member.id} takes (G-5, GN-13a)`);
+        } else if (!kinds.has(kind) && (category === 'io' || category === 'internal')) {
+          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}, which no input reaches, and the case form of a fault injection point is not decided (K-1, G-5)`);
+        } else if (!kinds.has(kind)) {
+          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind} (K-1, B-4)`);
+        }
+      }
+    }
+  }
+
+  // Whether a type holds a callback interface or a function, which a JSON case cannot give (U-3, T-2).
+  takesCode(type: Type): boolean {
+    if (typeof type === 'string') return false;
+    if ('function' in type) return true;
+    if ('optional' in type) return this.takesCode(type.optional);
+    if ('list' in type) return this.takesCode(type.list);
+    if ('unit' in type && type.library === undefined) return this.units.get(type.unit)?.value.origin === 'callback';
+    return false;
+  }
+
   // ---- CK-21: the build of the core and exclusive members (I-1, U-6) ----
 
   coreBuild(): void {
@@ -1067,6 +1217,7 @@ class Checker {
   callbacks(): void {
     for (const { member, unit, path } of this.members.values()) {
       const callback = unit.origin === 'callback';
+      if (callback && typeof unit.core !== 'string') this.report('CK-17', path, `the callback ${unit.id} names its core trait in core (U-3)`);
       if (!callback && member.async_allowed !== undefined) this.report('CK-17', `${path}/async_allowed`, 'only a callback member has async_allowed (U-3)');
       if (!callback && member.errors !== undefined) this.report('CK-17', `${path}/errors`, 'only a callback member has errors (U-3)');
       if (callback && member.async_allowed === undefined) this.report('CK-17', path, `the callback member ${member.id} does not state async_allowed (U-3)`);

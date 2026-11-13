@@ -2,7 +2,8 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { NODE_HOST, aliasNode } from './alias_node.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -31,13 +32,15 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
+  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(env, ${value})`;
@@ -54,7 +57,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
-  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -358,8 +361,33 @@ ${writes.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: the addon's __iterate gives the items, or [key, value] for the entries, as an array converted when the
+// iteration starts (a snapshot of the class's value); the JavaScript entry makes it the class's Symbol.iterator.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const body = yields.key === undefined
+    ? `                items.push(${item(yields.value, 'item')});`
+    : `                let (key, value) = item;
+                items.push(out_tuple(env, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
+  return `
+    #[napi(js_name = "__iterate", enumerable = false)]
+    pub fn iterate<'env>(&self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let mut items = Vec::new();
+            for item in ${fn.corePath}(&self.inner) {
+${body}
+            }
+            out_tuple(env, items)
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+`;
+}
+
 function functionRust(model: Model, fn: Fn): string {
-  const jsName = langName('node', fn.member.name, 'callable');
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
+  const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
   for (const parameter of fn.params) {
@@ -383,18 +411,11 @@ function functionRust(model: Model, fn: Fn): string {
   } else {
     lines.push(`        let result = ${call};`);
   }
-  if (fn.kind === 'constructor') {
-    lines.push('        Ok(Self { inner: result })');
-    return `
-    #[napi(constructor)]
-    pub fn new<'env>(env: &'env Env${params}) -> napi::Result<Self> {
-        guard(|| {
-${lines.map((l) => `    ${l}`).join('\n')}
-        })
-        .map_err(|fail| throw(env, fail))
-    }
-`;
-  }
+  // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
+  // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the
+  // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
+  // in a Proxy whose construct calls it.
+  const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
@@ -410,11 +431,17 @@ ${lines.join('\n')}
   // G-7: napi-rs defines a class's methods as not configurable, so a method that takes arguments is the addon's
   // __<name>, not enumerable and not declared, and the JavaScript entry defines <name>, which checks the arguments and
   // calls it.
-  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsName}`)}, enumerable = false)]`;
+  // N-4: a stringify or a to_json is the addon's method under the name of the hook: the language calls it with the
+  // arguments of its protocol (JSON.stringify passes the key to toJSON), which the method does not read, so the entry
+  // does not count them.
+  const attribute =
+    fn.kind === 'property'
+      ? `#[napi(getter, js_name = ${rustString(jsName)})]`
+      : `#[napi(js_name = ${rustString(fn.special === undefined ? `__${jsMember}` : jsName)}, enumerable = false)]`;
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
-    pub fn ${rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+    pub fn ${fn.kind === 'constructor' ? 'construct' : rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
         guard(|| {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
@@ -497,7 +524,7 @@ function traitParam(model: Model, type: Type): string {
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
@@ -556,7 +583,16 @@ pub mod class_${rustField(object.unit.name)} {
 fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
     ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: value }, env).map_err(internal)
 }
-`;
+
+${takesObject(model, object) ? `/// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+    // SAFETY: napi unwraps the native object of an instance of the class and refuses any other value.
+    match unsafe { <&class_${rustField(object.unit.name)}::${struct} as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+        Ok(instance) => Ok(instance.inner.clone()),
+        Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
+    }
+}
+` : ''}`;
 }
 
 function coreErrorRust(model: Model): string {
@@ -584,19 +620,23 @@ function libRust(model: Model): string {
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
+    // them.
+    ...model.aliases.map((a) => aliasNode(model, a)),
+    model.aliases.length > 0 ? NODE_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
-  const napiTypes = ['Array', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
+  const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
-  if (/\.(is_array|to_unknown)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
+  if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
@@ -692,7 +732,7 @@ pub fn panic_test(env: &Env) -> napi::Result<()> {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
@@ -705,7 +745,9 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
   }
-  return unit === undefined ? 'unknown' : langName('node', unit.name, 'class');
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
+  return langName('node', unit.name, 'class');
 }
 
 const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
@@ -757,8 +799,8 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
   // addon's __<name>, checking the arguments first (G-7), so an instance that the addon makes has them too.
   const objects = model.objects.map((o) => {
     const cls = langName('node', o.unit.name, 'class');
-    const wraps = o.members.filter((fn) => fn.kind === 'static' || fn.kind === 'method').map((fn) => {
-      const name = langName('node', fn.member.name, 'callable');
+    const wraps = o.members.filter((fn) => (fn.kind === 'static' || fn.kind === 'method') && fn.special === undefined).map((fn) => {
+      const name = memberName('node', fn);
       const target = fn.kind === 'static' ? cls : `${cls}.prototype`;
       return `{
   const original = ${target}.__${name};
@@ -771,8 +813,24 @@ ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${
   });
 }`;
     });
+    // N-4 iterate: the class is iterable over the snapshot that the addon's __iterate gives.
+    if (o.members.some((fn) => fn.kind === 'iterate')) {
+      wraps.push(`Object.defineProperty(${cls}.prototype, Symbol.iterator, {
+  value: function iterator() {
+    return this.__iterate()[Symbol.iterator]();
+  },
+  writable: true,
+  configurable: true,
+});`);
+    }
+    const constructor = o.members.find((fn) => fn.kind === 'constructor');
+    const construct = constructor === undefined ? `addon.${cls}` : `new Proxy(addon.${cls}, {
+  construct(target, args) {
+${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).split('\n').map((l) => `  ${l}`).join('\n')}
+  },
+})`;
     return `
-const ${cls} = addon.${cls};
+const ${cls} = ${construct};
 ${wraps.join('\n')}`;
   }).join('\n');
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
@@ -785,7 +843,18 @@ ${wraps.join('\n')}`;
   return `${header('//')}
 'use strict';
 
-const addon = require(\`./${base}.\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}.node\`);
+// T-2: the addon is in the npm package of the machine's platform, which the package names in optionalDependencies; a
+// build in a checkout puts the file beside this entry instead.
+const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+function loadAddon() {
+  try {
+    return require(\`${(model.contract.packages['node'] as { package: string }).package}-\${platform}\`);
+  } catch (error) {
+    if (error === null || typeof error !== 'object' || error.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+  return require(\`./${base}.\${platform}.node\`);
+}
+const addon = loadAddon();
 ${classes}
 
 
@@ -872,10 +941,15 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')
   const params = (fn: Fn): string => fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
-      const name = langName('node', fn.member.name, 'callable');
+      const name = memberName('node', fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
       if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
+      if (fn.kind === 'iterate') {
+        const yields = fn.yields ?? { value: 'none' };
+        const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
+        return `  [Symbol.iterator](): IterableIterator<${item}>;`;
+      }
       return `  ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
     });
     if (!o.constructible) lines.unshift('  private constructor();');

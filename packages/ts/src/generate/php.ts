@@ -1,7 +1,8 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -41,13 +42,15 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(Zval::new())';
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(${value})`;
@@ -64,7 +67,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
-  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -416,8 +419,96 @@ ${args.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: the class is an IteratorAggregate whose getIterator gives the items under their positions, or the
+// entries under their keys, converted when the iteration starts (a snapshot of the class's value), through the
+// extension's Pairs iterator, because a key of an entry may be an object, which no array key is.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const body = yields.key === undefined
+    ? `                let position = i64::try_from(position).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+                pairs.push((out_int(position)?, ${item(yields.value, 'item')}));`
+    : `                let (key, value) = item;
+                pairs.push((${item(yields.key, 'key')}, ${item(yields.value, 'value')}));`;
+  return `
+    #[php(name = "getIterator")]
+    pub fn get_iterator(&self) -> Result<Zval, PhpException> {
+        guard(|| {
+            let mut pairs = Vec::new();
+            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${fn.corePath}(&self.inner)${yields.key === undefined ? '.enumerate()' : ''} {
+${body}
+            }
+            pairs_iterator(pairs)
+        })
+    }
+`;
+}
+
+// N-4: the interfaces of the language that the special members of a class implement.
+function phpImplements(object: ObjectClass): string {
+  const names = [
+    ...(object.members.some((fn) => fn.kind === 'iterate') ? ['\\IteratorAggregate'] : []),
+    ...(object.members.some((fn) => fn.special === 'stringify') ? ['\\Stringable'] : []),
+    ...(object.members.some((fn) => fn.special === 'to_json') ? ['\\JsonSerializable'] : []),
+  ];
+  return names.length === 0 ? '' : ` implements ${names.join(', ')}`;
+}
+
+// N-4 iterate: the iterator of the extension over converted pairs, which getIterator gives.
+const PAIRS = (layout: PhpLayout): string => `
+/// N-4: an iterator over the pairs that a getIterator converted.
+#[php_class]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\Pairs`)})]
+#[php(flags = ClassFlags::Final)]
+#[php(implements(ce = ext_php_rs::zend::ce::iterator, stub = "\\\\Iterator"))]
+pub struct PhpPairs {
+    pub(crate) pairs: Vec<(Zval, Zval)>,
+    pub(crate) position: usize,
+}
+
+#[php_impl]
+impl PhpPairs {
+    pub fn current(&self) -> Zval {
+        match self.pairs.get(self.position) {
+            Some((_key, value)) => value.shallow_clone(),
+            None => Zval::new(),
+        }
+    }
+
+    pub fn key(&self) -> Zval {
+        match self.pairs.get(self.position) {
+            Some((key, _value)) => key.shallow_clone(),
+            None => Zval::new(),
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.position = self.position.saturating_add(1);
+    }
+
+    pub fn rewind(&mut self) {
+        self.position = 0;
+    }
+
+    pub fn valid(&self) -> bool {
+        self.position < self.pairs.len()
+    }
+}
+`;
+
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
-  const callable = langName('php', fn.member.name, 'callable');
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
+  if (fn.special === 'stringify') {
+    // N-4: __toString returns a string. The class names no Stringable: PHP adds it to a class that has __toString,
+    // and refuses the interface a second time when the class is registered (GN-6g).
+    return `
+    #[php(name = "__toString")]
+    pub fn to_string_form(&self) -> Result<String, PhpException> {
+        guard(|| Ok(${fn.corePath}(&self.inner)))
+    }
+`;
+  }
+  const callable = memberName('php', fn);
   const phpName = `${phpNamespace(layout, fn.module)}\\${callable}`;
   const variables = fn.args.map((a) => langName('php', a.name, 'variable'));
   const lines: string[] = [];
@@ -547,7 +638,7 @@ function traitParam(model: Model, type: Type): string {
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
@@ -602,7 +693,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]
+#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${object.unit.core_type ?? ''},
 }
@@ -612,9 +703,18 @@ impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).jo
 `;
 }
 
-function objectOut(object: ObjectClass): string {
+function objectOut(model: Model, object: ObjectClass): string {
   const struct = `entry::Php${langName('php', object.unit.name, 'class')}`;
+  const label = langName('php', object.unit.name, 'class');
   return `
+${takesObject(model, object) ? `/// T-5: a value of the class ${label} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${object.unit.core_type ?? ''}, Fail> {
+    match <&${struct} as FromZval>::from_zval(value) {
+        Some(object) => Ok(object.inner.clone()),
+        None => Err(type_error(subject, ${rustString(label)})),
+    }
+}
+` : ''}
 fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
     ZendClassObject::new(${struct} { inner: value })
         .into_zval(false)
@@ -625,14 +725,25 @@ fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> 
 
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('');
+  const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
+  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '');
   const enums = [
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
-    ...model.objects.map(objectOut),
+    ...model.objects.map((object) => objectOut(model, object)),
+    iterates ? `
+/// N-4: the iterator over the converted pairs of a getIterator.
+fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
+    ZendClassObject::new(entry::PhpPairs { pairs, position: 0 })
+        .into_zval(false)
+        .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+}
+` : '',
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
+    ...model.aliases.map((a) => aliasPhp(model, a)),
+    model.aliases.length > 0 ? PHP_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
@@ -708,6 +819,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
+    ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
@@ -720,14 +832,14 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
-use ext_php_rs::convert::IntoZval;${model.enums.length > 0 ? '\nuse ext_php_rs::convert::FromZval;' : ''}
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(used) ? 'use ext_php_rs::boxed::ZBox;\nuse std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.
@@ -782,7 +894,12 @@ fn builtin_class(name: &str) -> &'static ClassEntry {
     }
 }
 
-${baseFns}
+${baseFns}${model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json')) ? `
+/// N-4: the interface of a class with a JSON hook.
+fn json_serializable() -> &'static ClassEntry {
+    builtin_class("JsonSerializable")
+}
+` : ''}
 fn private_property(name: &str) -> ClassProperty {
     ClassProperty {
         name: name.into(),
@@ -932,14 +1049,16 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
-      return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void' } as Record<string, string>)[type] ?? 'mixed';
+      return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
     const unit = unitOf(model, type);
     const library = libraryOf(type);
     const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
-    return unit === undefined ? 'mixed' : `\\${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
+    // U-7: a value alias is any value that its core judges.
+    if (unit === undefined || aliasOf(model, type) !== undefined) return 'mixed';
+    return `\\${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
   };
   const docType = (type: Type): string => {
     if (typeof type === 'object' && 'list' in type) return `list<${docType(type.list)}>`;
@@ -968,7 +1087,17 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
   const method = (fn: Fn, indent: string): string => {
     const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}`);
     const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}`);
-    const name = fn.kind === 'constructor' ? '__construct' : langName('php', fn.member.name, 'callable');
+    if (fn.kind === 'iterate') {
+      const yields = fn.yields ?? { value: 'none' };
+      return `${indent}/**
+${indent} * N-4: the items${yields.key === undefined ? ' under their positions' : ' under their keys'}, a snapshot of the value.
+${indent} *
+${indent} * @return \\Iterator<${yields.key === undefined ? 'int' : docType(yields.key)}, ${docType(yields.value)}>
+${indent} */
+${indent}public function getIterator(): \\Iterator {}
+`;
+    }
+    const name = fn.kind === 'constructor' ? '__construct' : memberName('php', fn);
     const prefix = fn.kind === 'function' ? 'function' : fn.kind === 'static' ? 'public static function' : 'public function';
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
     return `${indent}/**
@@ -1011,7 +1140,7 @@ ${lines.join('\n')}    }
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
       items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}
+    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
     {
 ${members.join('\n')}    }
 `);
@@ -1029,6 +1158,24 @@ ${(unit.variants ?? []).map((v) => `        case ${langName('php', v.name, 'clas
     for (const fn of model.functions.filter((f) => f.module === module)) items.push(method(fn, '    '));
     blocks.push(`namespace ${phpNamespace(layout, module)} {
 ${items.join('\n')}}`);
+  }
+  if (model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'))) {
+    blocks.push(`namespace ${layout.namespace}\\Internal {
+    /**
+     * N-4: the iterator over the pairs that a getIterator converted; only the extension makes it.
+     *
+     * @implements \\Iterator<mixed, mixed>
+     */
+    final class Pairs implements \\Iterator
+    {
+        private function __construct() {}
+        public function current(): mixed {}
+        public function key(): mixed {}
+        public function next(): void {}
+        public function rewind(): void {}
+        public function valid(): bool {}
+    }
+}`);
   }
   return `<?php
 

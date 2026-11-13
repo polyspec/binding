@@ -15,8 +15,21 @@ const classes = (base: string): Record<string, string> => ({
 const STRING: Record<string, string> = { php: 'string', python: 'str', node: 'string', wasm: 'string', go: 'string' };
 const INT: Record<string, string> = { php: 'int', python: 'int', node: 'number', wasm: 'number', go: 'int64' };
 
+// K-1: a case group for every member that runs cases, named by its id.
+function linked(contract: any): any {
+  const named = new Set(contract.cases.map((kase: any) => kase.member));
+  for (const unit of contract.units) {
+    if (unit.origin === 'callback' || unit.origin === 'host' || unit.kind === 'error') continue;
+    for (const member of unit.members ?? []) {
+      if (member.kind === 'constant' || named.has(member.id)) continue;
+      contract.cases.push({ member: member.id, file: 'contracts/cases.json', group: member.id });
+    }
+  }
+  return contract;
+}
+
 export function dependency(): any {
-  return {
+  return linked({
     schema: 'polyspec/interface@1',
     library: 'forms-dep',
     core: { crate: 'polyspec-forms-dep', path: 'packages/rust' },
@@ -63,11 +76,11 @@ export function dependency(): any {
     ],
     changes: [],
     cases: [],
-  };
+  });
 }
 
 export function contract(): any {
-  return {
+  return linked({
     schema: 'polyspec/interface@1',
     library: 'sample',
     core: { crate: 'polyspec-sample', path: 'packages/rust' },
@@ -207,7 +220,7 @@ export function contract(): any {
     ],
     changes: [{ id: 'c1', rule: 'P-5', reason: 'T-4: options are a record', symbol: 'Session::open', from: { php: 'Session::open(array $options)' }, to: 'session.new' }],
     cases: [{ member: 'forms.parse', file: 'contracts/forms.json', group: 'parse' }],
-  };
+  });
 }
 
 export const unit = (c: any, id: string): any => c.units.find((u: any) => u.id === id);

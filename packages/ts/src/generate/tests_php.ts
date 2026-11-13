@@ -2,9 +2,9 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, langName, unitOf } from './model.ts';
+import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -33,6 +33,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   const methods: string[] = [];
   const invoke = (fn: Fn, args: string, receiver: string): string => {
+    const hook = hookCall('php', fn, receiver);
+    if (hook !== undefined) return hook;
     const member = langName('php', fn.member.name, 'callable');
     const ns = phpNamespace(layout, fn.module);
     const cls = `\\${ns}\\${langName('php', fn.unit.name, 'class')}`;
@@ -42,6 +44,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // U-2: a property is a method in PHP.
     return `${receiver}->${member}(${args})`;
   };
+  ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
     invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
   for (const fn of callables(model)) {
@@ -152,7 +155,17 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         }
     }`);
     }
-    if (fn.kind === 'property' || !reachable) continue;
+    for (const kase of stringCases(model, fn)) {
+      // GN-6g: PHP gives Stringable to a class that has __toString.
+      methods.push(`
+    public function testN4${name}${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    {
+        self::assertInstanceOf(\\Stringable::class, ${made(kase.receiver)});
+        self::assertSame(${phpText(kase.result)}, ${invoke(fn, '', made(kase.receiver))});
+    }`);
+    }
+    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
+    if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     methods.push(`
     public function testG7${name}CountsAndNamesItsArguments(): void
     {${fn.args.length === 0 ? '' : `

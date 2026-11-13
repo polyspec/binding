@@ -148,7 +148,9 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
     files.set('packages/python/Cargo.toml', manifest(contract, version, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
-    files.set('packages/python/src/lib.rs', entry(`The native module ${python.module}._native.`, [MANY]));
+    // L-2a: the native module of a host package is in the generated subpackage of its module.
+    const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
+    files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
     languageManifest('python', 'packages/python/pyproject.toml', `${header('#')}
 [build-system]
 requires = ["maturin>=1.16,<2"]
@@ -247,11 +249,23 @@ function npmManifest(contract: Contract, version: string): string {
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
     exports,
     files: [
-      ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts', 'generated/*.node'] : []),
+      ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
+    ...(node ? { optionalDependencies: Object.fromEntries(NODE_PLATFORMS.map((p) => [platformPackage(npm.package, p.name), version])) } : {}),
   }, null, 2)}\n`;
 }
+
+// T-2: the platforms of a release, as napi-rs names them, and the npm package of each that holds the Node addon. The
+// npm package of a library (or its host package, L-2a) holds no addon; it names these packages in
+// optionalDependencies at its own version, and npm installs the one of the machine's platform.
+export const NODE_PLATFORMS = [
+  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc' },
+  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc' },
+  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
+] as const;
+
+export const platformPackage = (npm: string, platform: string): string => `${npm}-${platform}`;
 
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
@@ -285,7 +299,14 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
     // The generated entry, its declarations and the addon (<name>.<platform>-<arch>[-gnu].node) are in the package.
-    for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node']) {
+    for (const platform of NODE_PLATFORMS) {
+      const dependency = platformPackage(npm, platform.name);
+      out.push({
+        path, item: `optionalDependencies.${dependency}`, want: 'the version of the package',
+        found: (t) => (json(t)['optionalDependencies']?.[dependency] === json(t)['version'] ? 'the version of the package' : json(t)['optionalDependencies']?.[dependency]),
+      });
+    }
+    for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts']) {
       out.push({ path, item: `files (${file})`, want: file, found: (t) => ((json(t)['files'] ?? []) as string[]).find((f) => f === file) });
     }
   }

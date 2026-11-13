@@ -90,6 +90,10 @@
       {
         "variant": "polyspec_sample::Error::Missing",
         "category": "value"
+      },
+      {
+        "variant": "polyspec_sample::Error::Unsupported",
+        "category": "value"
       }
     ],
     "binding": [],
@@ -209,10 +213,531 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::count"
+        },
+        {
+          "id": "sample.join",
+          "name": [
+            "join"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tags"
+              ],
+              "type": {
+                "list": {
+                  "unit": "tag"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::join"
+        },
+        {
+          "id": "sample.shout",
+          "name": [
+            "shout"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tag"
+              ],
+              "type": {
+                "unit": "tag"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tag"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::shout"
+        },
+        {
+          "id": "sample.echo",
+          "name": [
+            "same"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "data"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::echo"
+        },
+        {
+          "id": "sample.size",
+          "name": [
+            "size"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::size"
+        }
+      ]
+    },
+    {
+      "id": "tag",
+      "name": [
+        "tag"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Tag",
+      "final": true,
+      "members": [
+        {
+          "id": "tag.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Tag::new"
+        },
+        {
+          "id": "tag.name",
+          "name": [
+            "name"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::name",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "iterate",
+          "visibility": "public",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::entries",
+            "receiver": "&self"
+          },
+          "yields": {
+            "key": "text",
+            "value": {
+              "unit": "tag"
+            }
+          }
+        },
+        {
+          "id": "tag.to_string",
+          "name": [
+            "to",
+            "string"
+          ],
+          "kind": "stringify",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::label",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.to_json",
+          "name": [
+            "to",
+            "json"
+          ],
+          "kind": "to_json",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "never",
+          "raises": [
+            "polyspec_sample::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::host_json",
+            "receiver": "&self"
+          },
+          "only": {
+            "targets": [
+              "php",
+              "node"
+            ],
+            "reason": "N-4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "name": [
+        "data"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Data",
+      "core": {
+        "in": "polyspec_sample::data_from_host",
+        "out": "polyspec_sample::data_to_out"
+      },
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "bool",
+            "python": "bool",
+            "node": "bool"
+          }
+        },
+        {
+          "kind": "float",
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "text",
+            "python": "text",
+            "node": "text"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": false
+          },
+          "make": {
+            "php": "map",
+            "python": "map",
+            "node": "map"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": true
+          },
+          "make": {
+            "php": "php_object",
+            "python": "map",
+            "node": "map"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": true
+              },
+              "kind": "list",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": false
+              },
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "dict",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
         }
       ]
     }
   ],
   "changes": [],
-  "cases": []
+  "cases": [
+    {
+      "member": "sample.join",
+      "file": "contracts/cases.json",
+      "group": "join"
+    },
+    {
+      "member": "sample.resolve",
+      "file": "contracts/cases.json",
+      "group": "resolve"
+    },
+    {
+      "member": "sample.count",
+      "file": "contracts/cases.json",
+      "group": "count"
+    },
+    {
+      "member": "sample.shout",
+      "file": "contracts/cases.json",
+      "group": "shout"
+    },
+    {
+      "member": "tag.new",
+      "file": "contracts/cases.json",
+      "group": "tag_new"
+    },
+    {
+      "member": "tag.name",
+      "file": "contracts/cases.json",
+      "group": "tag_name"
+    },
+    {
+      "member": "sample.echo",
+      "file": "contracts/cases.json",
+      "group": "echo"
+    },
+    {
+      "member": "sample.size",
+      "file": "contracts/cases.json",
+      "group": "size"
+    },
+    {
+      "member": "tag.entries",
+      "file": "contracts/cases.json",
+      "group": "tag_entries"
+    },
+    {
+      "member": "tag.to_string",
+      "file": "contracts/cases.json",
+      "group": "tag_to_string"
+    },
+    {
+      "member": "tag.to_json",
+      "file": "contracts/cases.json",
+      "group": "tag_to_json"
+    }
+  ]
 }

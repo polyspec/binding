@@ -3,8 +3,9 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
+import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -266,7 +267,9 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) {
+    return `in_${rustField(unit?.name ?? [])}(py, ${value}, ${subject})`;
+  }
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
@@ -274,6 +277,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
   }
   if ('list' in type) return `out_list(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
@@ -288,7 +293,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(py, ${value})`;
-  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(py, ${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(py, ${value})`;
   throw new Error(`no Python output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -356,8 +361,41 @@ ${writes.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: __iter__ gives the items, or the keys of the entries with items() for the pairs, as a dict does; the
+// items are converted when the iteration starts, a snapshot of the class's value.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const call = `${fn.corePath}(&self.inner)`;
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const iter = (body: string): string => `
+        guard(py, || {
+            let items = PyList::empty(py);
+            for item in ${call} {
+${body}
+            }
+            Ok(items.try_iter()?.into_any())
+        })`;
+  if (yields.key === undefined) {
+    return `
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                items.append(${item(yields.value, 'item')})?;`)}
+    }
+`;
+  }
+  return `
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                let (key, _value) = item;
+                items.append(${item(yields.key, 'key')})?;`)}
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                let (key, value) = item;
+                items.append(PyTuple::new(py, [${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?)?;`)}
+    }
+`;
+}
+
 function functionRust(model: Model, fn: Fn): string {
-  const name = langName('python', fn.member.name, 'callable');
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
+  // N-4: the string form is __str__.
+  const name = memberName('python', fn);
   const positional = fn.args.filter((a) => !a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
@@ -403,7 +441,7 @@ ${lines.join('\n')}
 }
 `;
   }
-  const attributes = { static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind];
+  const attributes = fn.special === 'stringify' ? [] : ({ static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind] ?? []);
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
 ${attributes.map((a) => `    ${a}`).join('\n')}
@@ -434,7 +472,15 @@ impl ${struct} {${members}}
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
     Ok(Bound::new(py, ${struct} { inner: value })?.into_any())
 }
-`;
+
+${takesObject(model, object) ? `/// T-5: a value of the class ${pyClass} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    match value.cast::<${struct}>() {
+        Ok(object) => Ok(object.get().inner.clone()),
+        Err(_other) => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
+    }
+}
+` : ''}`;
 }
 
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
@@ -502,7 +548,7 @@ function traitParam(model: Model, type: Type): string {
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   return `
 static THROWN: Mutex<BTreeMap<u64, Py<PyAny>>> = Mutex::new(BTreeMap::new());
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
@@ -559,6 +605,8 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.enums.map((u) => enumRust(model, u)),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    ...model.aliases.map((a) => aliasPython(model, a)),
+    model.aliases.length > 0 ? PYTHON_HOST : '',
   ].join('\n');
   const objects = model.objects.map((o) => objectRust(model, layout, o)).join('') + model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
   const typesFn = `
@@ -583,10 +631,10 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
 // The native module ${layout.module}._native of ${model.contract.library}.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use pyo3::prelude::*;
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bTHROWN\b/.test(objects) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
+${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -658,7 +706,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -667,7 +715,9 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
-  return unit === undefined ? 'object' : langName('python', unit.name, 'class');
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'object';
+  return langName('python', unit.name, 'class');
 }
 
 function errorsPy(model: Model): string {
@@ -782,13 +832,20 @@ function nativePyi(model: Model): string {
       if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
       if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
       if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
+      if (fn.special === 'stringify') return '    def __str__(self) -> str: ...';
+      if (fn.kind === 'iterate') {
+        const yields = fn.yields ?? { value: 'none' };
+        if (yields.key === undefined) return `    def __iter__(self) -> Iterator[${pyType(model, yields.value, false)}]: ...`;
+        const key = pyType(model, yields.key, false);
+        return `    def __iter__(self) -> Iterator[${key}]: ...\n    def items(self) -> Iterator[tuple[${key}, ${pyType(model, yields.value, false)}]]: ...`;
+      }
       return `    def ${name}(${['self', ...params(fn)].join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
     });
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
   return `${pyHeader()}
-from collections.abc import Sequence
-from typing import final
+from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
+from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
 ${classes.join('')}`;

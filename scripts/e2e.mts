@@ -223,7 +223,16 @@ impl binding_core::Kinds for Error {
 
   step(`${library}: the core builds without the generator`);
   run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
-  // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20).
+  // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20). A git dependency moves to the
+  // commit of this binding, as the repository does when it takes this binding.
+  const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
+  if (/name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+/.test(lockText)) {
+    // --precise: Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed
+    // commit, not the one of this checkout.
+    const head = execFileSync('git', ['-C', binding, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--precise', head, '--quiet']);
+    if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
+  }
   run(process.execPath, [cli, 'check', join(copy, 'packages/rust/interface.json')]);
 
   step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
@@ -315,7 +324,9 @@ run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml
 
 const [cases] = main.caseFiles;
 const e2e = join(binding, 'tests/e2e', library);
-const caseRunners = existsSync(e2e) && cases !== undefined;
+// The case runners of a library are its cases.test.mjs, test_cases.py and CasesTest.php (tests/e2e/sample is a
+// repository, not runners).
+const caseRunners = existsSync(join(e2e, 'cases.test.mjs')) && cases !== undefined;
 if (!caseRunners) process.stdout.write(`note: tests/e2e/${library} holds no case runners; the generated tests run alone\n`);
 
 step('Python: build the wheels, install them, run the generated tests and the cases');
@@ -336,6 +347,8 @@ run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', generatedPyth
 if (caseRunners) run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
 
 const lib = (suffix: string): string => `${crate}-${suffix}`.replaceAll('-', '_');
+// Cargo names a cdylib lib<name>.so on Linux and lib<name>.dylib on macOS.
+const dylib = process.platform === 'darwin' ? 'dylib' : 'so';
 let wasmBuilt = false;
 if (contract.targets.includes('wasm')) {
   step('WASM: build the module and its glue with wasm-bindgen');
@@ -358,16 +371,26 @@ if (contract.targets.includes('wasm')) {
 step('Node: build the addon, pack and install the package, run the generated tests and the cases');
 run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', 'panic-test']);
 const npm = (contract.packages['node'] as { package: string }).package;
-const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}.node`;
-copyFileSync(join(target, `debug/lib${`${crate}-node`.replaceAll('-', '_')}.so`), join(copy, 'packages/ts/generated', addonName));
 const nodeDir = join(work, 'node');
 rmSync(nodeDir, { recursive: true, force: true });
 mkdirSync(nodeDir, { recursive: true });
+// T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies; the
+// run packs it as a release does and installs it from the tarball.
+const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+const platformDir = join(work, 'node-platform');
+rmSync(platformDir, { recursive: true, force: true });
+mkdirSync(platformDir, { recursive: true });
+const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
+copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
+const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
+writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
+run('npm', ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
 run('npm', ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
 writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
-const tarball = readdirSync(nodeDir).find((name) => name.endsWith('.tgz'));
-if (tarball === undefined) throw new Error('npm pack wrote no package');
-run('npm', ['install', '--no-audit', '--no-fund', join(nodeDir, tarball)], { cwd: nodeDir });
+const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
+if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
+// The other platforms' packages are optional and absent, as on a machine of this platform.
+run('npm', ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
 copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
 if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
 run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
@@ -383,7 +406,7 @@ step('PHP: build the extensions, run the generated tests and the cases with them
 const extensions: string[] = [];
 for (const prepared of [...dependencies, main]) {
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', 'panic-test']);
-  extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.so`)}`);
+  extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
 }
 run('php', ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);
 run('php', [...extensions, phpunit, join(copy, 'packages/php-ext/generated/tests')]);
@@ -397,7 +420,7 @@ if (contract.targets.includes('go')) {
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
   process.stdout.write('$ nm --defined-only (test entry points)\n');
   const symbols = execFileSync('nm', ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-  const leaked = symbols.split('\n').filter((line) => / [A-Z] polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
+  const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
   if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points:\n${leaked.join('\n')}`);
   rmSync(release, { recursive: true, force: true });
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);

@@ -104,7 +104,7 @@ export interface Unit {
   category?: Category;
   parent?: string;
   core_type?: string;
-  core?: string;
+  core?: string | { in: string; out: string };
   thread?: 'any' | 'owner';
   cleanup?: string;
   constructible?: boolean;

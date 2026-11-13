@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
 import { fromJson } from '../src/generate/samples.ts';
@@ -110,6 +110,9 @@ const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
   caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]),
 });
 const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
+// The case files of the sample of the end-to-end check (tests/e2e/sample).
+const sampleCases = (): Map<string, unknown> =>
+  new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
   const { contract, caseFiles } = load();
@@ -147,7 +150,7 @@ test('a closure that only calls a function is the function (clippy redundant_clo
   assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
 });
 
-test('check refuses a binding_core of another version than the CLI (CK-20)', () => {
+test('check refuses a binding_core of another version or commit than the CLI (CK-20)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-g-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
@@ -156,6 +159,14 @@ test('check refuses a binding_core of another version than the CLI (CK-20)', () 
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
     writeFileSync(join(root, 'Cargo.lock'), lock('0.0.0-other'));
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-binding-core 0\.0\.0-other/);
+    // A git dependency is compared by its commit with the checkout of this binding.
+    const head = execFileSync('git', ['-C', dirname(cli), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const git = (commit: string): string => `${lock(version).trimEnd()}\nsource = "git+https://github.com/polyspec/binding.git?branch=main#${commit}"\n`;
+    writeFileSync(join(root, 'Cargo.lock'), git('0'.repeat(40)));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), new RegExp(`CK-20 Cargo\\.lock pins polyspec-binding-core at the commit ${'0'.repeat(40)}, not ${head}`));
+    writeFileSync(join(root, 'Cargo.lock'), git(head));
+    const run = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.doesNotMatch(run.stderr, /CK-20/, run.stderr);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -226,6 +237,11 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     execFileSync('mkdir', ['-p', join(root, 'packages/rust'), join(root, 'dep'), join(root, 'bin')]);
     writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
     writeFileSync(join(root, 'dep/interface.json'), JSON.stringify(dependency()));
+    // K-1: the case files, with a case of the kind that forms.parse raises (CK-22).
+    const groups = new Map<string, Record<string, unknown[]>>();
+    for (const row of contract.cases) groups.set(row.file, { ...groups.get(row.file), [row.group]: row.member === 'forms.parse' ? [{ id: 'large', raises: { kind: 'too_large' } }] : [] });
+    execFileSync('mkdir', ['-p', join(root, 'contracts')]);
+    for (const [file, document] of groups) writeFileSync(join(root, file), JSON.stringify(document));
     writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n');
     // A cargo that answers metadata with 4 MB of packages before the one the check needs.
     const filler = Array.from({ length: 20000 }, (_, i) => ({ name: `filler-${i}`, manifest_path: `/nowhere/${'x'.repeat(160)}/${i}/Cargo.toml` }));
@@ -375,17 +391,25 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.equal(JSON.parse(readFileSync(join(root, 'packages/php/native/composer.json'), 'utf8')).name, 'polyspec/sample-native');
     assert.match(readFileSync(join(root, 'packages/php/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    assert.match(readFileSync(join(root, 'packages/python/native/src/lib.rs'), 'utf8'), /The native module polyspec\.sample\._binding\._native\./);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
-    assert.match(missing.stderr, /ts\/package\.json: CK-19 files \(native\/generated\/\*\.node\) is missing/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 optionalDependencies\.@polyspec\/sample-linux-x64-gnu is missing/);
     const pyproject = (module: string): string =>
       `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
+    // T-2: the addon is in the package of each platform, which the host names at its own version.
     writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
       name: '@polyspec/sample',
-      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node'],
+      version: '1.2.3',
+      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts'],
+      optionalDependencies: {
+        '@polyspec/sample-linux-x64-gnu': '1.2.3',
+        '@polyspec/sample-linux-arm64-gnu': '1.2.3',
+        '@polyspec/sample-darwin-arm64': '1.2.3',
+      },
     }));
     writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
@@ -463,6 +487,76 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.equal(fromJson(model, ctx('php'), 'float', 1.5), '1.5');
   assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);
   assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
+});
+
+test('a value alias converts through its core functions in every language (U-7)', () => {
+  // The sample has the value alias data, which its core judges and gives (tests/e2e/sample).
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  for (const [path, host] of [['packages/python/generated/lib.rs', 'PyHost'], ['packages/ts/generated/lib.rs', 'JsHost'], ['packages/php-ext/generated/lib.rs', 'PhpHost']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)/, path);
+    assert.match(lib, /let \(root, mut source\) = polyspec_sample::data_to_out\(value\.borrow\(\)\);/, path);
+    assert.match(lib, new RegExp(`impl HostValues for ${host}`), path);
+  }
+});
+
+test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = sampleCases();
+  const paths = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs'];
+  const taken = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const path of paths) assert.match(text(taken, path), /\nfn in_tag[(<]/, path);
+  const owner = sample.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => !['sample.join', 'sample.shout'].includes(m.id));
+  sample.cases = [];
+  const kept = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const path of paths) assert.doesNotMatch(text(kept, path), /\nfn in_tag[(<]/, path);
+});
+
+test('a stringify and a to_json are the hooks of each language, and never and only are generated (N-4, GN-6g)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /#\[php\(name = "__toString"\)\]/);
+  assert.match(php, /#\[php\(name = "jsonSerialize"\)\]/);
+  // PHP gives Stringable to a class that has __toString and refuses the interface a second time.
+  assert.doesNotMatch(php, /stringable/i);
+  assert.match(php, /#\[php\(implements\(ce = json_serializable, stub = "\\\\JsonSerializable"\)\)\]/);
+  // T-1 never: the core's Infallible has no value.
+  assert.match(php, /match result \{\}/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_sample.stub.php');
+  assert.match(stub, /final class Tag implements \\IteratorAggregate, \\Stringable, \\JsonSerializable/);
+  assert.match(stub, /public function jsonSerialize\(\): never \{\}/);
+  const phpTests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(phpTests, /assertInstanceOf\(\\Stringable::class, new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.match(phpTests, /assertSame\("#a", \(string\) new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.match(phpTests, /\\json_encode\(new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.doesNotMatch(phpTests, /testG7TagTo(String|Json)/);
+  // Q-4 only: to_json names php and node, and Python has no JSON hook.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn __str__</);
+  assert.doesNotMatch(python, /host_json/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /assertEqual\(str\(pkg\.Tag\("a"\)\), "#a"\)/);
+  // A Node hook is the addon's method under its own name: JSON.stringify passes the key to toJSON.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /#\[napi\(js_name = "toString", enumerable = false\)\]/);
+  assert.match(node, /#\[napi\(js_name = "toJSON", enumerable = false\)\]/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|toString\(\.\.\.args\)/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /toString\(\): string;\n {2}toJSON\(\): never;/);
+  const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
+  assert.match(nodeTests, /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  // G-4: what N-4 does not allow is refused by name.
+  const refused = (change: (members: any[]) => void, message: RegExp): void => {
+    const contract = structuredClone(sample);
+    change(contract.units.find((u: any) => u.id === 'tag').members);
+    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), message);
+  };
+  const special = (members: any[], kind: string): any => members.find((m: any) => m.kind === kind);
+  refused((members) => members.push({ ...special(members, 'stringify'), id: 'tag.again' }), /tag: a class has one stringify \(N-4\)/);
+  refused((members) => { special(members, 'stringify').returns = 'uint'; }, /a stringify returns text \(N-4\)/);
+  refused((members) => { special(members, 'to_json').raises = []; }, /a never return without raises/);
 });
 
 test('WASM: map<T> is a Map of string keys, through the entries of the ES module (T-2, GN-18)', () => {

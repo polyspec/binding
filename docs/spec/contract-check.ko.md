@@ -30,6 +30,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   갖는다. 타입이 `optional<T>`인 record field는 `reason`을 갖고, 그런 field만 갖는다.
 - **CK-6** 순환(P-4): `implements`와 오류 `parent`는 순환하지 않는다.
 - **CK-8** value unit(U-1, U-7):
+  - value alias는 `HostValue`로 설명한 언어 값을 판정하는 코어 함수(`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`)와
+    코어 값을 `OutValue`로 주는 코어 함수(`fn(&T) -> (OutValue, impl OutValues)`)를 `core: {in, out}`에 적는다. value class는 `in`
+    행이 그 member를 읽으므로 그런 `core`를 갖지 않는다.
   - 값 타입을 대표하는 unit이 `out`과 `in`을 갖는다. alias가 모으지 않는 `value` class이거나 `alias`(origin `value`)다.
     alias가 모으는 class(alias의 `in` 행이 그것을 가리킨다)는 둘 다 갖지 않는다. alias의 구성원은 그 `in` 행의 언어
     타입이다(U-7 (a)).
@@ -90,9 +93,23 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-21** 코어의 빌드와 exclusive member(I-1, U-6): `core.features`는 target만 가리킨다. `exclusive`는 generated class의
   receiver `&self` member에만 둔다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).
+- **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
+  constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
+  e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
+  kind마다 그 kind를 내는 case를 가진다. 어떤 입력도 닿지 않는 category `internal`과 `io`의 kind는 빠지지 않고, 코어의
+  시험 feature가 두는 실패 주입점의 case 형식(G-5)을 기다린다고 지적된다.
+  callback interface나 함수 타입을 받으면서 raises가 있는 member는 JSON case가 callback을 줄 수 없으므로 callback
+  fixture의 case 형식(G-5, GN-13a)을 기다린다고 지적되며, 빠지지 않는다.
+- **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
+  그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
+  변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
+  parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는
+  키워드를 escape한다. naming exception(N-3)이 그 언어에 다른 이름을 준다.
 - **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
   릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
-  `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다.
+  `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다. git 의존이면 실행 중인 binding의 커밋으로도 고정한다.
+  그 커밋은 binding checkout의 HEAD이거나, binding을 git에서 설치한 프로젝트의 npm lock이 정한 커밋이다. 다른 커밋이거나
+  커밋을 알 수 없으면 finding이다.
 
 ## binding의 표
 

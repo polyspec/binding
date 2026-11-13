@@ -1,7 +1,7 @@
 //! The questions of a core about the children of a language value (design B-1, U-7 (f)).
 
 use crate::raised::Raised;
-use crate::value::{Handle, HostValue};
+use crate::value::{Handle, HostValue, OutValue};
 
 /// The side of the binding in the walk of a language value (B-1). The binding describes a value one level at a time as
 /// a [`HostValue`]; a container gives only its handle and length, and the core asks for each child through this trait,
@@ -34,11 +34,24 @@ pub trait HostValues {
     fn read(&mut self, value: Handle) -> Result<HostValue, Raised>;
 }
 
+/// The side of the core in the making of a language value (B-1, U-7 (d)): the core gives a value one level at a time as
+/// an [`OutValue`], whose containers give only a handle and a length, and the generated code asks for each child
+/// through this trait. The same handle is the same language object, and a container is made before its children, so
+/// sharing and cycles come out as they are. The core already holds the whole value, so a question cannot fail.
+pub trait OutValues {
+    /// The item at `index` of a list (`OutValue::List`).
+    fn item(&mut self, list: Handle, index: u64) -> OutValue;
+
+    /// The key and the value of the entry at `index` of a map or an object (`OutValue::Map`, `OutValue::Object`), in
+    /// order; a key is a text, or an integer or bytes for a map with mixed keys (U-7 (c)).
+    fn entry(&mut self, map: Handle, index: u64) -> (OutValue, OutValue);
+}
+
 #[cfg(test)]
 mod tests {
-    use super::HostValues;
+    use super::{HostValues, OutValues};
     use crate::raised::Raised;
-    use crate::value::{Handle, HostValue};
+    use crate::value::{Handle, HostValue, OutValue};
 
     /// A list `[1, [2]]` of a language with one number type, as a binding would describe it.
     struct Lists;
@@ -90,5 +103,53 @@ mod tests {
             },
         );
         assert!(matches!(total, Ok(value) if value == 3.0), "the walk gave {total:?}");
+    }
+
+    /// The list `[true, [false]]` as a core gives it.
+    struct Nested;
+
+    impl OutValues for Nested {
+        fn item(&mut self, list: Handle, index: u64) -> OutValue {
+            match (list.raw(), index) {
+                (1, 0) => OutValue::Bool(true),
+                (1, _) => OutValue::List {
+                    handle: Handle::new(2),
+                    len: 1,
+                },
+                _ => OutValue::Bool(false),
+            }
+        }
+
+        fn entry(&mut self, _map: Handle, _index: u64) -> (OutValue, OutValue) {
+            (OutValue::Null, OutValue::Null)
+        }
+    }
+
+    /// A binding's making of a value: it asks for each child.
+    fn count_true(core: &mut dyn OutValues, value: OutValue) -> u64 {
+        match value {
+            OutValue::Bool(true) => 1,
+            OutValue::List { handle, len } => (0..len)
+                .map(|index| {
+                    let child = core.item(handle, index);
+                    count_true(core, child)
+                })
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn the_binding_makes_the_children_through_the_handles() {
+        assert_eq!(
+            count_true(
+                &mut Nested,
+                OutValue::List {
+                    handle: Handle::new(1),
+                    len: 2
+                }
+            ),
+            1
+        );
     }
 }
