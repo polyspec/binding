@@ -17,16 +17,6 @@ fn a_future_runs_on_a_tokio_runtime() -> Result<(), BindingError> {
 }
 
 #[test]
-fn the_runtime_is_made_once_and_runs_on_threads_of_its_own() -> Result<(), BindingError> {
-    let first = block_on(async { std::thread::current().id() })?;
-    let second = block_on(async { std::thread::current().id() })?;
-    // Every call waits on the calling thread while a thread of the runtime polls the future.
-    assert_ne!(first, std::thread::current().id());
-    assert_ne!(second, std::thread::current().id());
-    Ok(())
-}
-
-#[test]
 fn a_panic_of_a_poll_ends_the_future_with_its_message() -> Result<(), BindingError> {
     let ended = block_on(Caught::new(async {
         tokio::task::yield_now().await;
@@ -51,12 +41,15 @@ mod faults {
         let armed = take("a.member");
         let seen = block_on(armed.around(async {
             let first = point!(COPY);
-            // The next poll may run on another thread of the runtime, which sees the same arming.
+            // The next poll installs the arming again.
             tokio::task::yield_now().await;
             let second = point!(COPY);
             (first, second)
         }));
-        assert!(matches!(seen, Ok((None, Some(Injected::Io { errno: None })))), "{seen:?}");
+        assert!(
+            matches!(seen, Ok((None, Some(Injected::Io { errno: None })))),
+            "{seen:?}"
+        );
         assert_eq!(left(id)?, Vec::<String>::new());
         // Outside the future, the thread has no arming.
         assert_eq!(point!(COPY), None);

@@ -318,12 +318,14 @@ export function collectModel(
   const carrying = carriers(contract.units);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
-    // GN-6m: a member with wait blocking_io is generated in the form of each language; another wait is not yet.
-    if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
-    if (member.wait === 'blocking_io') {
-      if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait blocking_io is not generated (GN-6m)`);
+    // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
+    // wait is not yet.
+    if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io' && member.wait !== 'async_driver') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    if (member.wait === 'blocking_io' || member.wait === 'async_driver') {
+      const rule = WAIT_RULE[member.wait];
+      if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait ${member.wait} is not generated (${rule})`);
       const reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
-      if (reachesCode) throw new Unsupported(`${member.id}: a member with wait blocking_io that reaches language code is not generated (GN-6m)`);
+      if (reachesCode) throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
     }
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
@@ -439,8 +441,8 @@ export function collectModel(
           if ((unit.members ?? []).filter((m) => m.kind === member.kind).length > 1) throw new Unsupported(`${unit.id}: a class has one ${member.kind} (N-4)`);
           if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
           if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
-          // GN-6m: the language calls a hook in its own protocol, which awaits nothing.
-          if (member.wait === 'blocking_io') throw new Unsupported(`${member.id}: a ${member.kind} with wait blocking_io is not generated (GN-6m)`);
+          // GN-6m, GN-6n: the language calls a hook in its own protocol, which awaits nothing.
+          if (member.wait === 'blocking_io' || member.wait === 'async_driver') throw new Unsupported(`${member.id}: a ${member.kind} with wait ${member.wait} is not generated (${WAIT_RULE[member.wait]})`);
           members.push({ ...toFn(unit, member, 'method'), special: member.kind });
           return true;
         }
@@ -970,6 +972,36 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
 export const waitsIo = (fn: Fn): boolean => fn.member.wait === 'blocking_io';
 export const IO_TOKEN = 'binding_core::Io::for_generated_call()';
 
+// GN-6m, GN-6n: the rule of each wait that the generator takes.
+const WAIT_RULE = { blocking_io: 'GN-6m', async_driver: 'GN-6n' } as const;
+
+// GN-6n: whether a member awaits an async fn of the core, and whether a contract has such a member.
+export const waitsAsync = (fn: Fn): boolean => fn.member.wait === 'async_driver';
+// GN-6m, GN-6n: whether a member waits, so that it has the awaited form of each language.
+export const awaits = (fn: Fn): boolean => waitsIo(fn) || waitsAsync(fn);
+export const drivesAsync = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(waitsAsync);
+
+// GN-6n: the future of the core call of a member with wait async_driver, which owns the converted arguments and the
+// guards, with the arming of its faults installed around each poll.
+export function futureOf(model: Model, fn: Fn, body: string): string {
+  const future = `async move { ${body} }`;
+  return model.faults.length === 0 ? future : `armed_future(${JSON.stringify(fn.member.id)}, ${future})`;
+}
+
+// GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
+// gives the form of the wait around block_on, and failed the conversion of a BindingError.
+export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string): string =>
+  `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
+
+// GN-6n: the end of the future of a member with wait async_driver on the calling thread: a runtime that cannot be made,
+// or a panic of a poll, is a failure of kind internal (B-7).
+export const DRIVEN = `
+/// GN-6n: the end of the future of a member with wait async_driver; a panic of a poll is kind internal (B-7).
+fn driven<T>(ended: Result<Result<T, String>, BindingError>) -> Result<T, BindingError> {
+    ended.and_then(|result| result.map_err(|detail| BindingError::Internal { detail }))
+}
+`;
+
 // The class units of the contract with the members of each kind, for the emitters.
 export const objectUnit = (model: Model, type: Type): ObjectClass | undefined => {
   const unit = unitOf(model, type);
@@ -1146,7 +1178,19 @@ fn with_faults<T>(_member: &str, call: impl FnOnce() -> T) -> T {
     call()
 }
 
-/// G-5: the work of an entry point runs with no fault, so an entry point that a callback enters does not see the
+${drivesAsync(model) ? `/// G-5, GN-6n: the future of a member with wait async_driver, with the arming that a test armed for its member on this
+/// thread installed around each poll.
+#[cfg(feature = "fault-test")]
+fn armed_future<F: std::future::Future>(member: &str, future: F) -> binding_core::fault::Around<F> {
+    binding_core::fault::take(member).around(future)
+}
+
+#[cfg(not(feature = "fault-test"))]
+fn armed_future<F: std::future::Future>(_member: &str, future: F) -> F {
+    future
+}
+
+` : ''}/// G-5: the work of an entry point runs with no fault, so an entry point that a callback enters does not see the
 /// faults of the call around it.
 #[cfg(feature = "fault-test")]
 fn shielded<T>(work: impl FnOnce() -> T) -> T {

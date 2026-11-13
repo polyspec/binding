@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, Refusals } from './model.ts';
+import { collectModel, forLanguage, membersFor, Refusals, waitsAsync } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -90,6 +90,11 @@ export function generate(inputs: Inputs): Files {
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
   if (targets.includes('go')) refuseForGo(membersFor(model, 'go'), refusals);
+  // GN-6n: WASM has no Promise form of a member with wait async_driver yet.
+  if (targets.includes('wasm')) {
+    const forWasm = membersFor(model, 'wasm');
+    for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)].filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for WASM yet (GN-6n)`);
+  }
   refusals.fail();
   const files: Files = new Map();
   if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));

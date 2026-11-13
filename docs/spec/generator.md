@@ -515,8 +515,12 @@ the design ids are those of the binding design.
   `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the
   error of its category, for an alias of another repository by the E-1 of its owner. A core value leaves as the Go
   value of the first `out` row of a built-in form: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`,
-  `map[string]any`, or `*KeyedMap[any]`. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in`
-  function of an alias of this repository alone.
+  `map[string]any`, or `*KeyedMap[any]`. A row that makes the value by a member (GN-6e) gives the instance of the
+  class: the C ABI writes the number of the class in the contract and the handle of the value, and the package of the
+  module of the class makes the instance by that number, because `internal/binding` does not import that package. A
+  member of another module that gives such a value is refused by name, because only the package of the class makes
+  its instance. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in` function of an alias of
+  this repository alone.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that

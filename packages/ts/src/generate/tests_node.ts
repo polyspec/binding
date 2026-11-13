@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf, waitsIo } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf, awaits } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
@@ -112,7 +112,7 @@ export function nodeTests(model: Model): string {
   let usesErrno = false;
   let usesAddon = false;
   // GN-6m: a call of a member that waits is awaited where it is made.
-  const invoke = (fn: Fn, args: string, receiver: string): string => (waitsIo(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
+  const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
   const called = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;

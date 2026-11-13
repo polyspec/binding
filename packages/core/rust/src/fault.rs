@@ -67,7 +67,7 @@ pub fn reach(name: &'static str) -> Option<Injected> {
 }
 
 #[cfg(feature = "fault-test")]
-pub use armed::{arm, left, take, ArmError, Armed};
+pub use armed::{arm, left, take, ArmError, Armed, Around};
 
 #[cfg(feature = "fault-test")]
 mod armed {
@@ -75,8 +75,11 @@ mod armed {
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::fmt;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
     use std::thread::{self, ThreadId};
 
     /// One fault of an arming: it fires at the `nth` visit of its point, once.
@@ -93,6 +96,22 @@ mod armed {
     #[derive(Debug, Clone)]
     pub struct Armed {
         slots: Arc<[Slot]>,
+    }
+
+    /// The future of [`Armed::around`].
+    pub struct Around<F> {
+        armed: Armed,
+        future: Pin<Box<F>>,
+    }
+
+    impl<F: Future> Future for Around<F> {
+        type Output = F::Output;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
+            let this = self.get_mut();
+            let future = this.future.as_mut();
+            this.armed.run(|| future.poll(cx))
+        }
     }
 
     thread_local! {
@@ -125,6 +144,15 @@ mod armed {
             let earlier = INSTALLED.with(|installed| installed.borrow_mut().replace(self.clone()));
             let _restore = Restore(earlier);
             work()
+        }
+
+        /// A future that installs this arming around each poll of `future` (GN-6n), so that the points of an
+        /// `async fn` see the arming of their call on whichever thread polls it.
+        pub fn around<F: Future>(self, future: F) -> Around<F> {
+            Around {
+                armed: self,
+                future: Box::pin(future),
+            }
         }
 
         /// The names of the faults that did not fire, in the order of the arming.

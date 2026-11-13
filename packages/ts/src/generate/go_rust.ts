@@ -494,6 +494,14 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 fn out_${plain}(output: &mut Vec<u8>, value: impl CoreForm<${core}>) {
     out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
 }
+
+/// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
+/// the handle of a new instance, which the package of the class makes.
+fn alias_out_${plain}(output: &mut Vec<u8>, value: ${core}) {
+    output.push(10);
+    out_uint(output, ${model.objects.indexOf(object)}u64);
+    out_${plain}(output, value);
+}
 ${nested}`;
 }
 
@@ -931,15 +939,18 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
   throw new Unsupported(`${alias.unit.id}: the Go form ${form} of the kind ${kind} is not generated yet`);
 }
 
+// U-7, GN-15c: the classes whose instances the Go out rows of a value alias make by a member.
+export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
+  const makes = new Set((alias.unit.out ?? []).map((row) => row.make['go']).filter((make): make is string => typeof make === 'string' && make.includes('.')));
+  return model.objects.filter((o) => o.members.some((fn) => makes.has(fn.member.id)));
+}
+
 function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  // U-7: a Go value leaves the core as a value of a built-in form; a make by a member would give a class instance
-  // through the C ABI, whose handle the alias conversion does not write.
-  const byMember = (alias.unit.out ?? []).find((row) => typeof row.make['go'] === 'string' && row.make['go'].includes('.'));
-  if (byMember !== undefined) throw new Unsupported(`${alias.unit.id}: a Go make by a member (${String(byMember.make['go'])}) is not generated yet (U-7)`);
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
+  // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
