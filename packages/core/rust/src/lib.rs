@@ -20,6 +20,7 @@ mod host;
 mod keyed;
 #[cfg(feature = "lock")]
 mod lock;
+pub mod machine;
 mod map;
 pub mod naming;
 mod native;

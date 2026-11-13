@@ -4,12 +4,12 @@
 // object, so a handle that comes again is made again; a handle inside its own making is a cycle that only a reference
 // can hold, which the out rows give as the kind reference.
 
-import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
+import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
 import { container, outArms, ownedNatives } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
-import type { Member, Unit } from '../contract.ts';
+import { type Member, type Unit, variantPattern } from '../contract.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -711,12 +711,12 @@ export function foreignFailurePhp(model: Model): string {
   return foreignAliasLibraries(model).map((alias) => {
     const library = (alias.library ?? '').replaceAll('-', '_');
     const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
+    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn ${library}_error(error: ${error.path}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))

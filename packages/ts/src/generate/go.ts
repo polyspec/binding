@@ -624,10 +624,14 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
     }
     lines.push('\t\t\tif err := dec.Finish(); err != nil {', '\t\t\t\treturn err', '\t\t\t}');
     const args = m.params.map((p) => goParam(p.name, scope.model)).join(', ');
-    if (m.returns === 'none') {
+    // U-3, GN-6d: an error of a unit that the member recognizes goes to the core with its kind and its message.
+    const failed = (m.recognized?.units ?? []).reduce((err, u) => `binding.Recognize${goName(u.unit.name)}(${err})`, 'err');
+    if (m.returns === 'none' && m.recognized === undefined) {
       lines.push(`\t\t\treturn object.${method}(${args})`);
+    } else if (m.returns === 'none') {
+      lines.push(`\t\t\tif err := object.${method}(${args}); err != nil {`, `\t\t\t\treturn ${failed}`, '\t\t\t}', '\t\t\treturn nil');
     } else {
-      lines.push(`\t\t\treturned, err := object.${method}(${args})`, '\t\t\tif err != nil {', '\t\t\t\treturn err', '\t\t\t}');
+      lines.push(`\t\t\treturned, err := object.${method}(${args})`, '\t\t\tif err != nil {', `\t\t\t\treturn ${failed}`, '\t\t\t}');
       lines.push(...goEncode(scope, m.returns, 'returned', 3, 0), '\t\t\treturn nil');
     }
     return lines.join('\n');
@@ -879,7 +883,44 @@ func (e *${name}) Status() (int, bool) { return e.status, e.hasStatus }
 // Errno is the OS error number of an I/O failure, when there is one (B-4).
 func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
 `).join('');
-  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('');
+  const recognizedUnits = [...new Set(model.callbacks.flatMap((c) => c.members.flatMap((m) => m.recognized?.units ?? [])))];
+  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 ? '' : `
+// recognized is an error of an error unit that a callback member recognizes (U-3, GN-6d): the core takes its kind and
+// its message, and the call keeps the error itself.
+type recognized struct {
+	err     error
+	kind    string
+	message string
+}
+
+// Error is the message of the error.
+func (r *recognized) Error() string { return r.err.Error() }
+
+// Unwrap is the error itself.
+func (r *recognized) Unwrap() error { return r.err }
+${recognizedUnits.map((u) => {
+    // GN-13: the unit as Go code makes one, with no property value, through its parents to its category type.
+    const made = (unit: ErrorUnit): string => {
+      const parent = unit.parent === undefined ? `&${categoryType(model, unit.category)}{failure{message: message, kind: kind}}` : made(unit.parent);
+      const field = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
+      return `&${goName(unit.unit.name)}{${field}: ${parent}}`;
+    };
+    return `
+// Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: it has no property value (G-5).
+func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
+\treturn ${made(u)}
+}
+`;
+  }).join('')}${recognizedUnits.map((u) => `
+// Recognize${goName(u.unit.name)} is err as an error that the core recognizes when it is a ${goName(u.unit.name)}, and err otherwise (U-3).
+func Recognize${goName(u.unit.name)}(err error) error {
+	var unit *${goName(u.unit.name)}
+	if errors.As(err, &unit) {
+		return &recognized{err: err, kind: unit.Kind(), message: unit.Error()}
+	}
+	return err
+}
+`).join('')}`);
   const classCases = model.errorUnits.map((u, i) => `\tcase ${i + 1}:\n\t\tif category != ${CATEGORIES.indexOf(u.category)} {\n\t\t\treturn Malformed()\n\t\t}\n\t\treturn finished(make${goName(u.unit.name)}(&${categoryType(model, u.category)}{f}, properties), properties)`).join('\n');
   const back = callsBack(model);
   const others = [
@@ -887,7 +928,7 @@ func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
     ...model.objects.map((o) => `void ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1497,7 +1538,8 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}// run runs a callback of the call: 0 and the encoded result, or 1 and the index of the error that it returned.
+${goValueClassCall(model)}// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
+// index, the kind and the message of an error that the member recognizes (U-3).
 func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
 	if callback == 0 || callback > uint64(len(c.callbacks)) {
 		return c.raise(Malformed())
@@ -1509,7 +1551,16 @@ func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) 
 	return 0, enc.Done()
 }
 
-func (c *Call) raise(err error) (int32, []byte) {
+func (c *Call) raise(err error) (int32, []byte) {${model.callbacks.some((cb) => cb.members.some((m) => m.recognized !== undefined)) ? `
+	if r, ok := err.(*recognized); ok {
+		// U-3, GN-6d: 2, the index of the error, its kind and its message, which the core takes as its kind.
+		c.raised = append(c.raised, r.err)
+		enc := NewWriter()
+		enc.Uint(uint64(len(c.raised) - 1))
+		enc.Text(r.kind)
+		enc.Text(r.message)
+		return 2, enc.Done()
+	}` : ''}
 	c.raised = append(c.raised, err)
 	enc := NewWriter()
 	enc.Uint(uint64(len(c.raised) - 1))

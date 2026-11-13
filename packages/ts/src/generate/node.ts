@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -599,7 +599,31 @@ function entryRust(model: Model, fn: Fn): string {
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
-  if (waitsAsync(fn)) {
+  if (fn.machine === true) {
+    // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
+    // calls on the JavaScript thread and gives the promise of its next wait, whose future runs on the tokio runtime of
+    // napi, or its converted result.
+    const done = fn.fallible ? `let result = result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));
+        Driven::new(env, advancing(move |env| {
+            let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
+            if let Some(output) = output {
+                machine.give(output);
+            }
+            match machine.advance() {
+                binding_core::machine::Next::Wait(io) => {
+                    let given = std::sync::Arc::clone(&given);
+                    let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
+                    Ok((false, promise))
+                }
+                binding_core::machine::Next::Done(result) => {
+                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                }
+            }
+        }))`);
+  } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
     const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
@@ -625,7 +649,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!waitsAsync(fn) && !pooled(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn) && fn.machine !== true) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -689,6 +713,46 @@ where
     }
     fn resolve(&mut self, env: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
         output.and_then(|value| (self.give)(env, value)).map_err(|fail| throw(env, fail))
+    }
+}
+`;
+
+// GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
+// advances.
+const MACHINE = `
+/// GN-6ab: one advance of the state machine of a call: whether it ended, and its result or the promise of its wait.
+type Advance = Box<dyn for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail>>;
+
+/// GN-6ab: gives a closure the type of an advance, so that its result borrows the environment of its call.
+fn advancing<F>(advance: F) -> F
+where
+    F: for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail> + 'static,
+{
+    advance
+}
+
+/// GN-6ab: the state machine of a call, which the JavaScript entry advances until it ends. Each advance makes the calls
+/// of the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+#[napi]
+pub struct Driven {
+    advance: Advance,
+}
+
+impl Driven {
+    fn new<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+    }
+}
+
+#[napi]
+impl Driven {
+    #[napi]
+    pub fn advance<'env>(&mut self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let (ended, value) = (self.advance)(env)?;
+            out_tuple(env, vec![out_bool(env, ended)?, value])
+        })
+        .map_err(|fail| throw(env, fail))
     }
 }
 `;
@@ -777,9 +841,37 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+/// is.
+fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
+    let Thrown::Js(js) = &error else {
+        return thrown(error);
+    };
+    if js.status != napi::Status::PendingException {
+        return thrown(error);
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return thrown(error);
+    }
+    let core = recognized_kind(env, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    if let Some(core) = core {
+        return binding_core::Failure::Kind(core);
+    }
+    // SAFETY: the exception that this took is thrown again on the same thread, so the caller throws the same object.
+    if unsafe { napi::sys::napi_throw(env.raw(), exception) } != napi::sys::Status::napi_ok {
+        return thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback could not be thrown again") })));
+    }
+    thrown(error)
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
@@ -806,8 +898,29 @@ ${checks}
 
 impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+    // SAFETY: the value is the exception that a callback threw, a value of env.
+    let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
+    let registered = CLASSES.get()?;
+    for index in classes {
+        let class = registered.get(*index)?.borrow_back(env).ok()?;
+        if value.instanceof(class).ok()? {
+            let object: Object<'_> = value.coerce_to_object().ok()?;
+            let kind: String = object.get_named_property("kind").ok()?;
+            let message: String = object.get_named_property("message").ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
@@ -956,7 +1069,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -968,15 +1081,16 @@ ${arms}
   // The closure outlives the core error, so a text or bytes that the error lends is copied.
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    if (typeof type === 'object' && 'list' in type) return `${call}.into_iter().map(|item| String::from(AsRef::<str>::as_ref(&item))).collect::<Vec<String>>()`;
     const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
     if (from === undefined) return call;
     return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;
   };
   const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
 /// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
-fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Properties {
-${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, `${property.corePath}(error)`)};`).join('\n')}
-    Box::new(move |env, object| {
+fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Result<Properties, Fail> {
+${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`))};`).join('\n')}
+    Ok(Box::new(move |env, object| {
 ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         let property = match ${convertOut(model, property.returns, 'value')} {
             Ok(property) => property,
@@ -984,17 +1098,20 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         };
         read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
         Ok(())
-    })
+    }))
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `match ${rustField(k.unit.unit.name)}_properties(&error) {
+            Ok(properties) => Some(Box::new(properties)),
+            Err(fail) => return fail,
+        }`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
-    let properties = match error {
+    let properties = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     Fail { properties, ..library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) }
@@ -1009,7 +1126,8 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -1307,7 +1425,9 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
+    const called = fn.machine === true ? `drive(${call(passed.join(', '))})` : call(passed.join(', '));
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${called});` : `  return ${called};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
@@ -1389,7 +1509,17 @@ ${classes}${units === '' ? '' : `\n${units}`}
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
 ${foreignRegistration(model)}
-// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
+// promise of each of its waits, which this function awaits.
+async function drive(driven) {
+  for (;;) {
+    const [ended, value] = driven.advance();
+    if (ended) return value;
+    await value;
+  }
+}
+
+` : ''}// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
     return Array.from(value);

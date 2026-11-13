@@ -209,6 +209,76 @@
   and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6z). Node, PHP and WASM
   refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
   function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
+- WASM refused every member with `wait: async_driver` ("wait async_driver is not generated for WASM yet"), a member
+  with `machine` (GN-6ab) with them, so such a contract generated no WASM module. WASM now returns a promise of
+  `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the future on the thread of the module,
+  in a browser as in Node, and no tokio runtime is used; the WASM crate depends on `wasm-bindgen-futures` 0.4.80, the
+  release of its `wasm-bindgen` 0.2.130 and `js-sys` 0.3.107, and not on the driver of binding_core (GN-6n). A member
+  with `machine` returns a `Driven` object whose `advance()` makes the calls of the machine on that thread and gives
+  `[false, promise]` for a wait or `[true, result]`, which the ES entry `drive` awaits and then frees (GN-6ab). The
+  ES entry of such a member is an async function, its declaration a `Promise`, and its generated tests await it.
+  `tests/e2e/classes` has `classes.settle`, whose future is pending once and needs no tokio runtime, and a unit test
+  compiles its generated WASM entry with its core with rustc for the host and for wasm32. Verified by `npm test` in
+  `packages/ts`.
+- A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
+  with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
+  polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
+  `core`, and its core path returns a state machine without I/O, `binding_core::machine::Machine`, whose steps are an
+  I/O future that touches no language code, a call of language code and the result. PHP drives the machine on the
+  calling thread, Python `<name>` drives it with each wait outside the GIL and `a<name>` runs `<name>` in
+  `asyncio.to_thread`, and Node returns a `Driven` object that the JavaScript entry advances, each call on the
+  JavaScript thread and each wait on the tokio runtime of napi. `binding check` reports such a member without
+  `machine` and `machine` on any other member (CK-68); the generator refuses a method with `machine`, whose machine
+  would borrow its receiver, and Go and WASM refuse it with every member with `async_driver` (GN-6ab). Verified by
+  `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
+- A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
+  `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
+  property of an error unit that raises is not generated yet" and "a property of an error unit of type
+  {\"list\":\"text\"} is not generated yet", so no target of such a contract was generated. Every target now
+  generates both: the generated code reads every property when it makes the error, so the `Err` of a property that
+  raises is raised as the error of its own kind in place of the error that the core returned, and a `list<text>`
+  property is a list of strings. A variant of the `raises` of a property that is no kind, or whose class has a property
+  that raises, is refused by name (GN-7a). Verified by `npm test` and `npm run typecheck` in `packages/ts`.
+- No constructor of the generated PHP error classes took a kind, so PHP code could make an error with its kind only
+  by writing the private property `kind` in the scope of the category class, which is no public API, and the fixture
+  of a raise row did so. Each category class now has the public constructor `__construct(string $message, string
+  $kind, ?int $status = null, ?int $errno = null)`, which every error unit inherits, and the fixture of a raise row
+  makes its error by it, as Python, Node and WASM do (GN-10, GN-13). Verified by `npm test` and `npm run typecheck` in
+  `packages/ts`.
+- A case whose callback fixture has a raise row, such as a loader that reports a missing file, was refused with "a
+  raise row of a callback fixture is not generated yet". The fixture of every target now throws, for such a row, an
+  instance of the error unit of the row with its kind and the message `G-5: <kind>`, as language code makes one; Go
+  makes it with `Raised<Unit>` of `internal/binding` (GN-13). Verified by `npm test` in `packages/ts`.
+- A callback member with `errors.recognize`, such as `file_loader.load` of a loader that reports a missing file, was
+  refused with "recognized callback errors are not generated yet", so no target of such a contract was generated. An
+  exception of the member that is an instance of a recognized error unit, with a kind of a row of that unit, now
+  reaches the core as that kind: `errors.recognized` names the core function that makes the core error from the value
+  of the kind and the message, and Python, Node, PHP, WASM and Go read the kind and the message of the instance; any
+  other exception goes back to the caller as the same object. `binding check` reports a contract whose callback
+  recognizes its own error unit without `errors.recognized` (CK-17), and the generator refuses a recognized unit of
+  another library by name (GN-6d). Verified by `npm test` in `packages/ts`.
+- A class parameter always gave the core a shared borrow (`&guard`), so a core that takes `&mut Form` did not
+  compile, and a core that takes the class by value got no value. A parameter now names the borrow of the core in
+  `core` (`&`, `&mut` or `value`), which every parameter of a generated class or an optional of one names: `&mut` is a
+  write place, `value` gives a clone under the read guard, and every crate asserts the borrows of such a member as the
+  fn pointer type of its core path. `binding check` reports a class parameter without `core` and a `core` of a
+  parameter that is no class (CK-67), and the generator refuses both and the borrow of an optional class by name
+  (GN-6h); the contracts of `tests/e2e/classes` and `tests/e2e/sample` name the borrow `&` of their class parameters. Verified by `npm test` in `packages/ts`.
+- A contract whose core error is a struct that holds a code enum, such as `FormError { code: FormErrorCode, .. }`,
+  named the variants of the code in `errors.kinds`, and the generator refused it with "the kinds name 2 error enums"
+  when a variant of the code held a code of a dependency, or wrote `match error` against the code variants, which does
+  not compile. `errors.code` now names the type of the error and its projection to the code, and every crate matches
+  and asserts the code (`match <projection>(&error)`); a variant that holds a value of another enum is written
+  `<outer>/<inner>` and matched as `Outer(Inner { .. })` (GN-7b). Verified by `npm test` in `packages/ts`.
+- A WASM member with
+  `wait: async_driver` whose receiver or parameter is a class bound the borrows of its guards outside its future, which
+  does not own them; the future now owns the guards and binds the borrows inside it, as the Node future does (GN-6h,
+  GN-6n). A row of a function value of a case had four values and a row of a callback fixture five, so the fixture
+  object read a missing value as an error to throw; a function row now holds the fifth value, which is no error
+  (GN-13, GN-6z). A parameter whose `core` is `value` gives the core `(*<place>).clone()` and every other class
+  parameter `CoreForm::core_form` of its borrow (GN-6h). A nested variant `<outer>/<inner>` is the row of a dependency
+  with its `library` (GN-7c) also under `errors.code`, whose projection its match and its assertion read (GN-7b); a
+  nested variant without `library` stays refused by name. Verified by `make test-ts`.
 - The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
   class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
   was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static

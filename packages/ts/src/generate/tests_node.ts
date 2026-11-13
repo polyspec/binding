@@ -33,8 +33,9 @@ function fixture(members, rows) {
         unexpected.push([name, args]);
         throw new UnexpectedCall(\`\${name}(\${args.map(String).join(', ')})\`);
       }
-      const [, , result, once] = left[at];
+      const [, , result, once, raised] = left[at];
       if (once) left.splice(at, 1);
+      if (raised !== null) throw raised;
       return result;
     };
   }
@@ -66,7 +67,7 @@ function outcome(call) {
 `;
 
 // GN-6m: what a call that may wait gives: its result, or the class and the kind of its failure.
-const NODE_SETTLED = `
+export const NODE_SETTLED = `
 async function settled(call) {
   try {
     return { result: await call() };
@@ -78,7 +79,7 @@ async function settled(call) {
 
 // GN-6m: a test that calls a member that waits awaits it: each test of the block is an async function, a failure is a
 // rejection and an outcome is settled.
-const awaitedTest = (block: string): string => {
+export const awaitedTest = (block: string): string => {
   if (!/\bawait /.test(block)) return block;
   return block
     .replaceAll(/(\ntest\('[^\n]*?'), \(\) => \{/g, '$1, async () => {')
@@ -115,6 +116,7 @@ export function nodeTests(model: Model): string {
       foreignModules.add(library);
       return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}.${langName('node', member.name, 'callable')}()`;
     },
+    errorNew: (unit, kind, message) => `new pkg.${langName('node', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';

@@ -20,8 +20,8 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
-  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
+  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
+  callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, an abstract class, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
@@ -303,7 +303,7 @@ the design ids are those of the binding design.
   generated as such a class, and a value type named in `types` is that unit.
 - **GN-6h** The lock of a class unit (U-2 busy, B-5c). A place of a class is where a call takes an instance of it: the
   receiver of a member, or a parameter whose type is the class itself. A write place is a receiver `&mut self` or
-  `self`; every other place is a read place, and a parameter is a read place until the contract names its borrow. A
+  `self`, or a parameter whose `core` is `&mut`; every other place is a read place. A
   class unit holds its core value in a lock that is only tried when (1) a member of it has a write place, (2) a value
   of the class comes in from the language (a parameter, a field of a record or an element of a list in one, or the
   return of a callback), or (3) a member of it reaches language code. A type carries language code when it is a
@@ -327,11 +327,23 @@ the design ids are those of the binding design.
   gets `&*guard` for a read place and `&mut *guard` for a write place, which the generated code binds under the name of
   the place once every lock is taken, so a core path of a trait (`std::string::ToString::to_string`), which takes `&T`
   of any `T` and therefore does not deref a borrow of the guard, gets the value as well. Where the core call runs in a future or a
-  closure that the call moves to another thread (Node: `driving` of GN-6n and the pool of GN-6m), the guards move into
+  closure that the call moves to another thread (Node: `driving` of GN-6n and the pool of GN-6m; WASM: the future of GN-6n), the guards move into
   it and the borrows are bound inside it, because a borrow of a local of the call lives no longer than the call. A parameter of a class gives
   the core `CoreForm::core_form` of that borrow (GN-6b): the type of the core parameter selects the borrow where the
-  core takes `&T` and a copy where it takes `T` (`OrderedMap::insert(&mut self, key: Value, value: Value)`), as the
-  contract does not name the form. A value of the class inside another type (an
+  core takes `&T` and a copy where it takes `T` (`OrderedMap::insert(&mut self, key: Value, value: Value)`); so
+  a parameter of a value class, whose form the contract does not name (CK-67), gets the form that its core takes. A
+  parameter whose type is a generated class or an
+  `optional` of one names in `core` the borrow that the core takes (`&`, `&mut` or `value`), and a parameter without it is
+  refused by name (G-4): a default would claim a borrow that nobody wrote, and the call alone does not find a wrong
+  one. A parameter whose `core` is `value` gets a clone of the value under its read guard, `(*<place>).clone()`, so
+  that class is `Clone`. Every binding crate holds, for each
+  member with a parameter that names its borrow, the assertion `const _: () = { let _: fn(<receiver>, <param>, ...) ->
+  _ = <core path>; };`, in which the receiver is `&T`, `&mut T` or `T` of the core type of its class, a parameter that
+  names its borrow is `&T`, `&mut T` or `T` of the core type of its class and every other parameter is `_`, so a
+  borrow that differs from the core does not compile (I-2). Why: binding reads no Rust source, so the contract names
+  the borrow, and the call alone does not find a contract `&mut` over a core that takes `&`, because `&mut` coerces to
+  `&`. A `core` of a parameter whose type is an `optional` of a class is refused by name (G-4). A value of the class
+  inside another type (an
   element of a list, a field of a record, the return of a callback) is read, cloned and released at once, so such a
   class is `Clone`. The lock of a class with a write place holds a flag `poisoned`: a panic while the guard of a write
   place is held sets it before the guard is released, and every later call that takes the object at any place fails
@@ -385,6 +397,19 @@ the design ids are those of the binding design.
   class implements with a receiver other than `&self`, and an abstract class (U-1).
   Why: a class whose core type implements the trait is a callback already, so a caller passes its instance where the
   callback is taken instead of an object of its own that forwards each call.
+  A member whose `errors.recognize` names error units (U-3) reads an exception of its language code that is an
+  instance of one of them (Python `isinstance`, PHP `instanceof`, the prototype chain in Node and WASM, `errors.As` in
+  Go): its `kind` and its message. When the kind is that of a row of `errors.kinds` whose `class` is that unit or a
+  unit that extends it, the core gets `Failure::Kind(<recognized>(<kind value>, &message))`: `errors.recognized`
+  names the core function `fn(<kind value>, &str) -> E`, and the kind value is the variant path of the row as an
+  expression, `<path>` or `<outer>(<inner>)` for a nested path (GN-7b), which is a value of the code enum when
+  `errors.code` names one. Any other exception, and an instance whose kind is no kind of those rows, goes to the core
+  as a `Raised`, and the caller throws the same object. Node takes the pending exception to read it and throws it
+  again when it is not recognized; Go passes the kind and the message of a recognized error to the C ABI in place of
+  the index of the error. Why: the core decides what a recognized failure means (U-3), and binding reads no Rust
+  source, so the contract names the function that makes the core error; the properties of the instance do not reach
+  the core, because an instance that language code makes has none (GN-7a). A recognized error unit of another
+  library is refused by name (G-4).
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -593,7 +618,13 @@ the design ids are those of the binding design.
   without a wildcard. The property is a `@property` over a private attribute in Python, a read-only own property of the
   instance in Node, as `kind`, `status` and `errno` are, and a method over a private property of the declaring class in
   PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The type of a
-  property is bool, int, int64, uint, float, text or bytes, or an optional of one. The Node addon keeps the class
+  property is bool, int, int64, uint, float, text or bytes, an optional of one, or `list<text>`, whose function returns
+  any iterable of text items, as the output of a list does (T-2). A property with `raises` names a function that
+  returns `Result<T, E>` of the core error `E`. The generated code reads every property when it makes the error, so an
+  `Err` of that function is raised, as the error of its own kind, in place of the error that the core returned, as a
+  property value that fails its conversion is. Each variant of the `raises` of a property is a kind of `errors.kinds`
+  whose class is no error unit with a property that raises, so that making one error makes at most one other; another
+  variant is refused by name. The Node addon keeps the class
   after the six classes of the categories, and the PHP extension reads and writes `kind`, `status` and `errno` in the
   scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
@@ -606,16 +637,24 @@ the design ids are those of the binding design.
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
-  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
-  core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
-  returns the one core error enum of E-1, so a variant that several members raise is asserted once. The variant of a
-  dependency that the core passes on is asserted by the pattern of GN-7c. Not generated yet: the projection function of
-  an error struct that holds a code enum.
+  `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);` against the core error that the
+  member's core path returns (the `E` of `Failure<E>`), so a path that is no variant of that type does not compile
+  (E-5, I-2). Every member of a contract returns the one core error of E-1, so a variant that several members raise is
+  asserted once. The scrutinee is `error`, or `<projection>(error)` when `errors.code` names one. The pattern of a
+  path is `<path> { .. }`; the nested path `<outer>/<inner>` names the variant of a dependency that the core passes on
+  (E-1b (a)), which GN-7c states with its pattern `<outer>(<inner> { .. })`; its kind is the snake_case of the last
+  segment of `<inner>`. The `core_error` match of every target, its second match for the properties of an error unit
+  (GN-7a) and the assertions of `in_raises` (U-7) use the same scrutinee and the same pattern. `errors.code` is
+  `{error, path}` for a core error that is a struct holding a code enum whose variants `errors.kinds` names: `error` is
+  the type that the core paths return, and `path` is the projection `fn(&E) -> &Code` (or `-> Code`) that the
+  generated code calls with the error. The error enum of a kind is then the enum of its code, of the outer path when it
+  is nested, and one is generated. Why: binding reads no Rust source, so the contract names the type of the error and
+  the function that gives its code.
 - **GN-7c** A kind of a dependency that the core passes on as it is (E-1b (a)): the row of `errors.kinds` names the
   library and the path `<outer>/<inner>`, where `<outer>` is the variant of the core error of this repository that
   holds the error of the library and `<inner>` the variant of that error as the row of the library's contract names
   it; a member names the same path in `raises`. Every match of the core error (the class, the properties) and the
-  assertion of GN-7b take the pattern `<outer>(<inner> { .. })`, so a path whose outer variant does not hold that
+  assertion of GN-7b take the pattern `<outer>(<inner> { .. })`, on the scrutinee of GN-7b, so a path whose outer variant does not hold that
   inner variant does not compile (I-2). The category is that of the row of `<inner>` in the library's contract, the
   class is the class of that category in this repository's table of E-2, or the error unit that the row names in
   `class`, and the kind, status and errno are those that the core error gives (`Kinds`), as for its own rows. The
@@ -662,7 +701,11 @@ the design ids are those of the binding design.
   the file, line and trace of its call. Startup finds every class of PHP that a library class extends or implements
   before it registers anything, and a class that the engine lacks fails the start of the module (startup returns
   failure), as does a library class whose registration fails; so every class that a registration or a call reads is
-  there, and the extension has no panic for a missing one; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
+  there, and the extension has no panic for a missing one; `kind()`, `status()` and `errno()` read private properties. Each category
+  class has the public constructor `__construct(string $message, string $kind, ?int $status = null, ?int $errno =
+  null)`, which every error unit inherits, so that PHP code makes an error with its kind as Python, Node and WASM code
+  does (GN-7a); without it a kind could be set only in the scope of the class that declares it, which is no public
+  API. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
   enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
   refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
   (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
@@ -737,7 +780,8 @@ the design ids are those of the binding design.
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
   hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
 - **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
-  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs.
+  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs;
+  WASM, which has no tokio runtime, runs it on the event loop of JavaScript.
   The entry point converts the arguments and takes the locks and the arming of its faults on the calling thread, as
   GN-6m states, and the future owns them: it is `async move` over the converted values and the owned guards, so it is
   `Send + 'static`. Its faults are installed around each poll (`fault::Armed::around`), and a panic of a poll is a
@@ -750,10 +794,16 @@ the design ids are those of the binding design.
     napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
   - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
-  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
-  A member with `async_driver` is refused by name where GN-6m refuses a member that waits, and also when it reaches
-  language code, because a future that a runtime polls on its own threads would call the language code there; such a
-  member needs a core that gives a state machine without I/O, which is not generated yet (G-4).
+  - WASM returns a `Promise` of `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the
+    future on the thread of the module, in a browser as in Node, and its result or error is converted when it ends,
+    so a failure rejects the promise. The WASM crate depends on `wasm-bindgen-futures` of the release that pins its
+    `wasm-bindgen` and `js-sys`, and not on the driver of binding_core: no tokio runtime runs in a WebAssembly
+    module, so a core whose future needs one fails there with the error that its core gives, and such a member names
+    the targets that it supports in `only`. A panic of a poll is kind `internal` where the module unwinds, and it traps
+    the instance where the module aborts (GN-18). The ES entry is an async function, as for Node.
+  A member with `async_driver` is refused by name where GN-6m refuses a member that waits. A member with
+  `async_driver` that reaches language code is generated as GN-6ab states, because a future that a runtime polls on
+  its own threads would call the language code there.
   Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
   thread of a runtime, while the caller of each language waits in the form that its language has.
 - **GN-6o** A method whose core receiver is `self` consumes the core value of its object (E-1a, B-5c). Its receiver is a
@@ -880,6 +930,45 @@ the design ids are those of the binding design.
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
   native object of another binding lives in another module, so the binding of this repository can reach it only
   through the methods that the language gives every object (T-3).
+- **GN-6ab** A member with `wait: async_driver` that reaches language code (GN-6q: the type of a parameter or the class
+  of its receiver carries language code) names `"machine": true` in its `core` (CK-68), and its core path returns a
+  state machine without I/O in place of a future (c6 6.2): a value of `binding_core::machine::Machine`, which owns the
+  arguments. `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
+  and gives one step:
+  - `Step::Io(future)`: a future of the core that touches no language code, which the driver polls on a tokio runtime
+    and whose output it gives to the next `resume`;
+  - `Step::Call`: the driver calls `call()` of the machine on the thread that owns the language code, and the machine
+    calls its callbacks (U-3) or touches its `Native` values there;
+  - `Step::Done(result)`: the result of the member, a `Result<T, Failure<E>>` when the member is fallible (E-1c).
+  The faults of the member are installed around each poll of an Io future, as GN-6n states. Each language drives the
+  machine in its own form:
+  - PHP drives the machine on the calling thread with `binding_core::machine::drive`, which waits for each Io future in
+    `binding_core::driver::block_on`, so a callback runs on the thread of its objects.
+  - Python: `<name>` drives the machine as PHP does and waits for each Io future in `py.detach`, so other Python threads
+    run while it waits; `a<name>` runs `<name>` in `asyncio.to_thread`, as GN-6m states. A callback is called with the
+    GIL on the thread that drives the machine, which GN-6q allows, because a Python reference is bound to the GIL and
+    not to a thread.
+  - Node: the entry makes the machine on the JavaScript thread and returns a `Driven` object of the addon, and the
+    JavaScript entry, an async function, calls its `advance()` until the machine ends. Each `advance()` gives the output
+    of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
+    future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
+    on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
+  - Go refuses such a member by name, as it refuses every member with `async_driver` (GN-6n): the completion channel of
+    GN-6m, which would wait for an Io future, is not generated, and Go needs no owner thread for a callback, because a
+    cgo call from any thread may call Go (c6 6.4).
+  - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
+    module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
+    `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
+    returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
+    Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
+    both and no tokio runtime is used.
+  A method with `machine` is refused by name: a machine that borrowed its receiver across its steps would borrow from
+  the guard that the driver holds, a type that the core cannot name; a function and a static member are generated. A
+  callback with `async_allowed: true`, whose call would give an awaitable to the machine, and `core.reaches` (c6 6.3)
+  are not generated yet (G-4). Why: a future that a runtime polls on its own threads would call language code there,
+  against the owner of a Node or PHP reference, and a callback that calls another member with `async_driver` would run
+  `block_on` inside the runtime, which tokio refuses; a machine without I/O lets the runtime of each language decide
+  where each step runs, and the core keeps its I/O on tokio.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
@@ -1127,7 +1216,12 @@ the design ids are those of the binding design.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
-  none) and `"once": true` for a row that answers one call. The generated test of each language makes the fixture
+  none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
+  <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
+  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
+  message and the kind (GN-10); Go by
+  `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
+  value. The generated test of each language makes the fixture
   from one implementation that binding writes into the test module, so a repository writes no fixture code: a call
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
@@ -1200,7 +1294,7 @@ the design ids are those of the binding design.
   with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
-  of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
+  of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
   kinds of an alias, each refused by name when a case gives it: a point of another library; and a value of a value type of another kind
   than those of GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of

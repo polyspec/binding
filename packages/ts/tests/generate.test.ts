@@ -1403,8 +1403,9 @@ test('a callback unit of another repository carries language code, so a member t
   const entry = node.slice(node.indexOf('pub fn look<'), node.indexOf('\n}\n', node.indexOf('pub fn look<')));
   assert.match(entry, /polyspec_consumer::look\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
   assert.doesNotMatch(entry, /waiting\(env/);
-  // GN-6n: a member with async_driver that takes it is refused by name.
-  assert.throws(() => waiting('async_driver'), /consumer\.look: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
+  // GN-6ab: a member with async_driver that takes it reaches language code, so it names machine: true in its core and
+  // is refused by name without it.
+  assert.throws(() => waiting('async_driver'), /consumer\.look: a member with wait async_driver that reaches language code names machine: true in its core \(GN-6ab, CK-68\)/);
 });
 
 test('a method call of the name of a helper does not use the helper, in every target (GN-4)', () => {
@@ -1433,6 +1434,35 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
   assert.doesNotMatch(ffi, /fn insert(_held)?</);
 });
 
+test('a property of an error unit that raises raises in place of the error, and a property is a list of text (GN-7a, I-3)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Internal', category: 'internal' });
+  const unit = contract.units.find((u: any) => u.id === 'absent_error');
+  unit.members[0].raises = ['polyspec_consumer::Error::Internal'];
+  unit.members.push({ id: 'absent_error.trace', name: ['trace'], kind: 'property', visibility: 'public', returns: { list: 'text' }, wait: 'none', raises: [], core: { path: 'polyspec_consumer::Error::trace', receiver: '&self' } });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(py, failure\)\) \};/);
+  assert.match(python, /let value = polyspec_consumer::Error::trace\(error\);\n    object\.setattr\("_trace", out_list\(py, value, /);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py'), /    def trace\(self\) -> list\[str\] \| None:\n/);
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /fn absent_error_properties\(error: &polyspec_consumer::Error\) -> Result<Properties, Fail> \{/);
+  assert.match(node, /let value0 = String::from\(match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(failure\)\) \}\);/);
+  assert.match(node, /let value2 = polyspec_consumer::Error::trace\(error\)\.into_iter\(\)\.map\(\|item\| String::from\(AsRef::<str>::as_ref\(&item\)\)\)\.collect::<Vec<String>>\(\);/);
+  assert.match(node, /polyspec_consumer::Error::Absent \{ \.\. \} => match absent_error_properties\(&error\) \{\n            Ok\(properties\) => Some\(Box::new\(properties\)\),\n            Err\(fail\) => return fail,\n        \},/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /  readonly trace: readonly \(string\)\[\];\n\}/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(failure\)\) \};/);
+  assert.match(php, /\.method\(FunctionBuilder::new\("trace", absent_error_trace_method\)\.returns\(DataType::Array, false, true\), MethodFlags::Public\)/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /        \/\*\* @return list<string>\|null \*\/\n        public function trace\(\): array\|null \{\}/);
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /out_text\(match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\)/);
+  assert.match(wasm, /\("trace", out_list\(polyspec_consumer::Error::trace\(&error\), /);
+  const goRust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goRust, /out_text\(output, match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\);/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func \(e \*AbsentError\) Trace\(\) \[\]string \{ return e\.pTrace \}/);
+});
+
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
   const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
@@ -1457,7 +1487,10 @@ test('an error unit extends its parent, and what is not generated is refused by 
   const refused = (change: (contract: any) => void, message: RegExp): void =>
     assert.throws(() => generated(change), (error: Error) => error.constructor.name === 'Unsupported' && message.test(error.message), String(message));
   refused((contract) => { unit(contract).members[0].kind = 'method'; }, /absent_error\.key: a method of an error unit is not generated yet/);
-  refused((contract) => { unit(contract).members[0].returns = { list: 'text' }; }, /absent_error\.key: a property of an error unit of type \{"list":"text"\} is not generated yet/);
+  refused((contract) => { unit(contract).members[0].returns = { list: 'int' }; }, /absent_error\.key: a property of an error unit of type \{"list":"int"\} is not generated yet/);
+  // GN-7a: a variant of the raises of a property is a kind whose class is no unit with a property that raises.
+  refused((contract) => { unit(contract).members[0].raises = ['polyspec_consumer::Error::Other']; }, /absent_error\.key: the variant polyspec_consumer::Error::Other of its raises is no kind of errors\.kinds \(GN-7a\)/);
+  refused((contract) => { unit(contract).members[0].raises = ['polyspec_consumer::Error::Absent']; }, /absent_error\.key: the kind polyspec_consumer::Error::Absent of its raises has the class absent_error, which has a property that raises \(GN-7a\)/);
   refused((contract) => { unit(contract).members[0].core = 'polyspec_consumer::Error::key'; }, /absent_error\.key: a property of an error unit names a function of the core error with the receiver &self/);
   refused((contract) => { unit(contract).members[1].name = ['kind']; }, /absent_error: the property kind is declared twice/);
   refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
@@ -1542,14 +1575,14 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /\ndef _fixture\(members, rows\):/);
-  assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
+  assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False, None\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, /\nfunction fixture\(members, rows\) \{/);
-  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
+  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false\]\]\) \{/);
+  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false, null\]\]\) \{/);
   assert.match(php, /public function find\(mixed \.\.\.\$args\): mixed \{ return \$this->answer\("find", \$args\); \}/);
   assert.match(php, /self::assertSame\(\[\], \$fixture0->unexpected\);\n {8}self::assertSame\(\[\["find", \["a"\]\]\], \$fixture0->calls\);/);
   assert.match(php, /\nfinal class UnexpectedCall extends \\LogicException\n/);
@@ -1566,7 +1599,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
     document['resolve'] = [{ ...document['resolve']?.[0], lookup: row }];
     return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases });
   };
-  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'x', kind: 'y' } }] } }), /a raise row of a callback fixture is not generated yet/);
+  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'x', kind: 'y' } }] } }), /the raise row names x, which is no error unit that is generated \(GN-13\)/);
   assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, result: null, async: true }] } }), /an async row of a callback fixture is not generated yet/);
   assert.throws(withRow('a'), /the case a_key_without_a_value_is_missing of sample\.resolve gives no \{"callback": \.\.\.\} for lookup/);
 });
@@ -1707,7 +1740,7 @@ test('a Python test gives a function value of a case as a fixture of the call an
     { id: 'the_function_converts_the_value', convert: { function: [{ args: { 0: 'a', 1: [1] }, result: 'A' }, { args: { 0: 'b', 1: [] }, result: 'B', once: true }] }, value: 'a', result: 'A' },
   ];
   const tests = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] }), 'packages/python/generated/tests/test_generated.py');
-  assert.ok(tests.includes(`function_0, function_0_unexpected, function_0_calls = _fixture(("__call__",), [("__call__", ("a", [1],), "A", False), ("__call__", ("b", [],), "B", True)])`), tests);
+  assert.ok(tests.includes(`function_0, function_0_unexpected, function_0_calls = _fixture(("__call__",), [("__call__", ("a", [1],), "A", False, None), ("__call__", ("b", [],), "B", True, None)])`), tests);
   assert.match(tests, /result = pkg\.apply\(function_0, "a"\)\n[^\n]+\n[^\n]+\n        self\.assertEqual\(function_0_unexpected, \[\]\)/);
   assert.match(tests, /def test_gn6z_apply_refuses_a_convert_that_is_not_callable\(self\) -> None:\n        with self\.assertRaises\(pkg\.ShapesTypeError\) as caught:\n            pkg\.apply\(0, "a"\)\n        self\.assertEqual\(caught\.exception\.kind, "invalid_argument_type"\)/);
 });
@@ -1754,7 +1787,7 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/ts/Cargo.toml')), /\nthread-test = \[\]\n/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
+  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false, null]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
   assert.match(tests, /assert\.equal\(addon\(\)\.__threadTest\(\(\) => null\), 'wrong_thread'\);/);
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
@@ -1780,7 +1813,7 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/php-ext/Cargo.toml')), /\nthread-test = \[\]\n/);
   assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /\* @param \\Closure \$convert\n/);
   const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false\]\]\)/);
+  assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false, null\]\]\)/);
   assert.ok(tests.includes('apply($function0->call(...), '), tests);
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });
@@ -1800,7 +1833,7 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
   assert.match(lib, /struct WasmNative \{\n    key: u64,\n\}/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
   const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
-  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
+  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false, null]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
@@ -2525,6 +2558,42 @@ test('each variant that a member raises is asserted against the core error in ev
   }
 });
 
+test('a struct error is matched by the code of its projection, also for a kind that the core passes on (GN-7b, GN-7c, E-1b)', () => {
+  // errors.code names the type that the core paths return and the function that gives its code; the kinds are the
+  // variants of the code enum.
+  const out = shaped((c) => {
+    c.errors.code = { error: 'polyspec_shapes::Failure', path: 'polyspec_shapes::Failure::code' };
+    const renamed = (variant: string): string => variant.replace('::Error::', '::Code::');
+    for (const row of c.errors.kinds) row.variant = renamed(row.variant);
+    for (const unit of c.units) for (const m of unit.members ?? []) if (m.raises !== undefined) m.raises = m.raises.map(renamed);
+  });
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
+    const lib = text(out, crate);
+    assert.match(lib, /fn core_error\([^)]*error: polyspec_shapes::Failure\)/, crate);
+    assert.ok(lib.includes('match polyspec_shapes::Failure::code(&error) {'), `${crate} matches the code of the error`);
+    assert.doesNotMatch(lib, /match error \{/, `${crate} matches no error without its code`);
+    assert.ok(lib.includes('polyspec_shapes::Code::TooMany { .. } =>'), `${crate} matches a variant of the code`);
+    assert.ok(lib.includes('const _: fn(&polyspec_shapes::Failure) -> bool = |error| matches!(polyspec_shapes::Failure::code(error), polyspec_shapes::Code::Empty { .. });'), `${crate} asserts a variant of the code`);
+  }
+  // GN-7c: a variant of the code that holds the error of a dependency is the row <outer>/<inner> with its library, and
+  // its pattern is matched and asserted through the same projection. The generator refuses the WASM target of consumer
+  // for other items, so the four others are read.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const nested = 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable';
+  contract.errors.code = { error: 'polyspec_consumer::Failure', path: 'polyspec_consumer::Failure::code' };
+  contract.errors.kinds.push({ variant: nested, library: 'sample' });
+  contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.pair').raises.push(nested);
+  const passed = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  const pattern = 'polyspec_consumer::Error::Sample(polyspec_sample::Error::Unreadable { .. })';
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', ...LIBS]) {
+    const lib = text(passed, crate);
+    assert.ok(lib.includes('match polyspec_consumer::Failure::code(&error) {'), `${crate} matches the code of the error`);
+    assert.ok(lib.includes(`${pattern} =>`), `${crate} matches the nested variant by its pattern`);
+    assert.ok(lib.includes(`const _: fn(&polyspec_consumer::Failure) -> bool = |error| matches!(polyspec_consumer::Failure::code(error), ${pattern});`), `${crate} asserts the nested variant through the projection`);
+    assert.ok(!lib.includes(nested), `${crate} writes no nested path as it is`);
+  }
+});
+
 test('Python: a crate whose only raising member is a to_json holds no core_error (GN-6g)', () => {
   // Python generates no to_json (GN-6g), so nothing calls the conversion of the core error there: a function that
   // nothing calls fails the build of the crate as dead code.
@@ -2620,7 +2689,7 @@ test('a case value that the generator does not write fails the test of its case 
   assert.match(node, /assert\.fail\('the case no_kind of classes\.show: a case value of token is \{"kind": <value kind>, "value": \.\.\.\}, not "a" \(G-5\)'\);/);
   // G-4: a value that no test can make, the placeholder of a class without a factory, refuses the target by name.
   const gate = tokenClasses();
-  gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0].type = { unit: 'gate' };
+  gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0] = { ...gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0], type: { unit: 'gate' }, core: '&' };
   assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
 });
 
@@ -2680,7 +2749,7 @@ test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name 
 function tokenMapClasses(): { contract: any; caseFiles: Map<string, unknown> } {
   const { contract, caseFiles } = tokenClasses();
   const token = contract.units.find((u: any) => u.id === 'token');
-  token.members.push({ id: 'token.of_map', name: ['of', 'map'], kind: 'static', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::of_map' } });
+  token.members.push({ id: 'token.of_map', name: ['of', 'map'], kind: 'static', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true, core: '&' }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::of_map' } });
   for (const row of token.out) if (row.kind === 'map') row.make = Object.fromEntries(FIVE.map((t) => [t, 'token.of_map']));
   contract.units.push({
     id: 'token_map', name: ['token', 'map'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::TokenMap', final: true,
@@ -2710,7 +2779,7 @@ test('the pairs of a case value of kind map fill the class that the make member 
 
 test('a case value of a class that is no value class is the pairs that fill it (U-1, GN-13)', () => {
   const { contract, caseFiles } = tokenMapClasses();
-  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true, core: '&' }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
   contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
   (caseFiles.get('contracts/cases.json') as any).count = [{ id: 'one', members: [['k', { kind: 'null' }]], result: 1 }];
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] });
@@ -2721,7 +2790,7 @@ test('a Go case value of a class is made as in the other targets, and a case tha
   // A class of origin value is made by the make member of the kind, and another class by its constructor and the
   // inserts of its pairs, each a local of the test.
   const { contract, caseFiles } = tokenMapClasses();
-  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true, core: '&' }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
   contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
   const cases = caseFiles.get('contracts/cases.json') as any;
   cases.show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
@@ -3478,9 +3547,9 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   }
   // A test gives a callback value inside another value as the object of a fixture.
   const py = text(out, 'packages/python/generated/tests/test_generated.py');
-  assert.ok(py.includes(`pkg.first([_fixture(("find",), [("find", ("a",), None, False)])[0], _fixture(("find",), [("find", ("a",), "b", False)])[0]], "a")`), 'python list');
+  assert.ok(py.includes(`pkg.first([_fixture(("find",), [("find", ("a",), None, False, None)])[0], _fixture(("find",), [("find", ("a",), "b", False, None)])[0]], "a")`), 'python list');
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false]]).object`), 'node');
+  assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false, null]]).object`), 'node');
 });
 
 test('a member with core.failure converts the error of its core as the failure of language code (E-1c, GN-7)', () => {
@@ -3511,6 +3580,82 @@ test('a contract with a function type and no callback unit keeps what its functi
   assert.match(php, /return Err\(Thrown::Php\(exception\)\);/);
   assert.match(php, /enum Thrown \{\n    Php\(ZBox<ZendObject>\),\n    Binding\(Fail\),\n\}/);
   assert.match(php, /Some\(Thrown::Php\(exception\)\) => match exception\.into_zval\(false\) \{/);
+});
+
+test('a class parameter gives the core the borrow that its core names, which every crate asserts (GN-6h, I-2)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const param = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).parameters[0];
+  param('classes.shout').core = 'value';
+  param('tag.same').core = '&mut';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
+    const lib = text(out, crate);
+    // value: a clone of the value under the read guard; &mut: the write borrow of the guard.
+    assert.ok(lib.includes('let result = polyspec_classes::shout((*tag).clone());'), `${crate} gives the core a clone`);
+    assert.match(lib, /let other = &mut \*other;\n\s+let result = polyspec_classes::Tag::same\(receiver, CoreForm::core_form\(other\)\);/, `${crate} gives the core the write borrow`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(polyspec_classes::Tag) -> _ = polyspec_classes::shout;\n};'), `${crate} asserts the borrow of shout`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(&polyspec_classes::Tag, &mut polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the borrows of same`);
+  }
+  // G-4: a class parameter that names no borrow is refused by name, as the contract check reports it (CK-67).
+  delete param('tag.same').core;
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /tag\.same\.other: a class parameter names the borrow that the core takes in core \(GN-6h\)/);
+  param('tag.same').core = '&mut';
+  // G-4: the borrow of an optional of a class is refused by name.
+  param('classes.shout').type = { optional: { unit: 'tag' } };
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /classes\.shout\.tag: the borrow of an optional class is not generated yet/);
+});
+
+test('a callback member gives the core the kind of an error unit that it recognizes, and passes any other exception (U-3, GN-6d)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  const get = contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get');
+  get.errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  const targets = ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets });
+  for (const crate of [...LIBS, 'packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, crate);
+    // The kind of a row whose class is the unit makes the core error with the message of the exception.
+    assert.ok(lib.includes('"absent" => Some(polyspec_consumer::Error::recognized(polyspec_consumer::Error::Absent, &message)),'), `${crate} makes the core error of the recognized kind`);
+    assert.match(lib, /fn recognized_holder_get\(/, crate);
+    // A member that recognizes nothing keeps the exception as it is.
+    assert.equal(lib.match(/\brecognized_holder_get\b/g)?.length, 2, `${crate} calls the recognition of holder.get alone`);
+    assert.doesNotMatch(lib, /recognized_holder_set/, crate);
+  }
+  // Go reads the error that the method returned with errors.As, and the C ABI takes its kind and its message.
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RecognizeAbsentError\(err error\) error \{\n\tvar unit \*AbsentError\n\tif errors\.As\(err, &unit\) \{/);
+  assert.match(text(out, 'packages/go/zz_generated_consumer.go'), /return binding\.RecognizeAbsentError\(err\)/);
+  // G-4: an error unit of another library is refused by name.
+  get.errors.recognize = [{ unit: 'data', library: 'sample' }];
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), /holder\.get: a recognized error unit of another library is not generated yet/);
+});
+
+test('a raise row of a callback fixture throws an instance of its error unit with its kind in every target (GN-13, U-3)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get').errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.fetch.push({
+    id: 'a_holder_that_raises_absent_is_absent',
+    holder: { callback: { 'holder.get': [{ args: { key: 'b' }, raise: { error: 'absent_error', kind: 'absent' } }] } },
+    key: 'b',
+    raises: { kind: 'absent', status: null, category: 'value' },
+  });
+  const targets = ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets });
+  assert.match(text(out, pythonTests), /pkg\.AbsentError\("G-5: absent", "absent"\)/);
+  assert.match(text(out, nodeTests), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
+  // PHP code makes it by the public constructor of the category class, which takes the kind (GN-10).
+  assert.match(text(out, phpTests), /new \\Polyspec\\Consumer\\AbsentError\("G-5: absent", "absent"\)/);
+  assert.doesNotMatch(text(out, phpTests), /bindTo/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php');
+  assert.match(stub, /class ConsumerValueError extends \\InvalidArgumentException\n    \{\n        public function __construct\(string \$message, string \$kind, \?int \$status = null, \?int \$errno = null\) \{\}\n/);
+  const ext = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(ext, /\.method\(\s*FunctionBuilder::new\("__construct", error_construct\)\s*\.arg\(Arg::new\("message", DataType::String\)\)\s*\.arg\(Arg::new\("kind", DataType::String\)\)\s*\.not_required\(\)\s*\.arg\(Arg::new\("status", DataType::Long\)\.allow_null\(\)\.default\("null"\)\)\s*\.arg\(Arg::new\("errno", DataType::Long\)\.allow_null\(\)\.default\("null"\)\),\s*MethodFlags::Public,\s*\)/);
+  assert.match(ext, /extern fn error_construct\(ex: &mut ExecuteData, _retval: &mut Zval\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /binding\.RaisedAbsentError\("absent", "G-5: absent"\)/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \*AbsentError \{/);
 });
 
 test('a receiver self takes the value of its object, and a class with cleanup warns when it is destroyed without it (GN-6o, GN-6p, B-10)', () => {
@@ -3602,13 +3747,124 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   }
   assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
   assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
-  // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
+  // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
+  // of binding_core and without a tokio runtime.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-13e: settle a_name_is_settled', async \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(\(await pkg\.settle\('a'\)\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
+  assert.match(String(crates.get('packages/ts/wasm/Cargo.toml')), /\nwasm-bindgen-futures = "=0\.4\.80"\n/);
+  assert.doesNotMatch(String(crates.get('packages/ts/wasm/Cargo.toml')), /"driver"/);
+  // Go names such a member as not generated yet; a WASM method's future owns the guard of its receiver, and a
+  // constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
   };
   assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
-  assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
+  const wasmEverywhere = classes(everywhere, ['wasm']);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
+});
+
+test('the generated WASM future of a member with wait async_driver compiles against the core of tests/e2e/classes for the host and for wasm32 (GN-6n)', () => {
+  // The entry point of classes.settle and the helpers that it uses, as the generator writes them, with the core
+  // function of the fixture's own source. The stand-ins are the items of wasm-bindgen, of binding_core and of the
+  // module that they name, each with the signature of the item it stands for: future_to_promise of
+  // wasm-bindgen-futures takes a future of Result<JsValue, JsValue> that is 'static.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const wasm = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  const entry = /pub fn settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
+  assert.ok(entry !== null, 'no WASM entry point settle');
+  const params: string[] = [];
+  const body: string[] = [];
+  for (const line of (entry[1] ?? '').split('\n')) {
+    const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+    if (input === null) body.push(line);
+    else params.push(`${input[1]}: ${input[2]}`);
+  }
+  const helper = (name: string): string => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    assert.ok(found !== null, `no helper ${name}`);
+    return found[0];
+  };
+  const core = readFileSync(new URL('../../../tests/e2e/classes/packages/rust/src/lib.rs', import.meta.url), 'utf8');
+  const settle = /(?:\/\/\/[^\n]*\n)*pub async fn settle\([\s\S]*?\n\}\n/.exec(core);
+  const pending = /(?:\/\/\/[^\n]*\n)*#\[derive\(Default\)\]\nstruct Pending \{[\s\S]*?\nimpl std::future::Future for Pending \{[\s\S]*?\n\}\n/.exec(core);
+  assert.ok(settle !== null && pending !== null, 'no core function settle with its future Pending');
+  const source = `use std::panic::{catch_unwind, AssertUnwindSafe};
+
+pub struct JsValue;
+
+pub struct Promise;
+
+impl From<Promise> for JsValue {
+    fn from(_promise: Promise) -> Self {
+        Self
+    }
+}
+
+pub mod wasm_bindgen_futures {
+    pub fn future_to_promise<F>(future: F) -> super::Promise
+    where
+        F: std::future::Future<Output = Result<super::JsValue, super::JsValue>> + 'static,
+    {
+        drop(future);
+        super::Promise
+    }
+}
+
+pub enum BindingError {
+    Internal { detail: String },
+}
+
+pub struct Fail;
+
+fn throw(_fail: Fail) -> JsValue {
+    JsValue
+}
+
+fn binding_error(_error: BindingError) -> Fail {
+    Fail
+}
+
+fn core_error(_error: polyspec_classes::Error) -> Fail {
+    Fail
+}
+
+fn out_text(value: impl AsRef<str>) -> Result<JsValue, Fail> {
+    let _text: &str = value.as_ref();
+    Ok(JsValue)
+}
+
+pub mod polyspec_classes {
+    pub enum Error {
+        Missing { key: String },
+    }
+
+${settle[0]}
+${pending[0]}}
+
+${helper('awaited')}
+${helper('caught')}
+pub fn settle(${params.join(', ')}) -> Result<JsValue, Fail> {
+${body.join('\n')}
+}
+`;
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-future-'));
+  try {
+    for (const target of [[], ['--target', 'wasm32-unknown-unknown']]) {
+      const run = spawnSync('rustc', ['--edition', '2021', '--crate-type', 'lib', '--crate-name', 'awaiting', '--emit', 'metadata', '-D', 'warnings', '--out-dir', where, ...target, '-'], { input: source, encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+      assert.equal(run.status, 0, `rustc ${target.join(' ')}: ${run.stderr}`);
+    }
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
 });
 
 test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
@@ -3648,7 +3904,58 @@ test('a member with wait blocking_io that reaches language code runs where its l
   };
   assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
   const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
-  assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
+  assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code names machine: true in its core \(GN-6ab, CK-68\)/);
+});
+
+test('a member with wait async_driver that reaches language code drives the state machine of its core (GN-6ab)', () => {
+  const sample = (change: (contract: any) => void, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const machine = (contract: any): void => {
+    const m = member(contract, 'sample.resolve_slowly');
+    m.wait = 'async_driver';
+    m.core = { path: 'polyspec_sample::resolve_slowly', machine: true };
+  };
+  const out = sample(machine);
+  // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let mut machine = polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\);/);
+  assert.match(php, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\.map_err\(binding_error\)\?/);
+  assert.doesNotMatch(php, /binding_core::Io::for_generated_call\(\), &mut \{ lookup \}/);
+  // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?/);
+  assert.match(python, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);/);
+  assert.match(node, /Driven::new\(env, advancing\(move \|env\| \{/);
+  assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
+  assert.match(node, /pub struct Driven \{/);
+  assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env\) -> napi::Result<Unknown<'env>> \{/);
+  const cjs = text(out, 'packages/ts/generated/index.cjs');
+  assert.match(cjs, /async function drive\(driven\) \{\n  for \(;;\) \{\n    const \[ended, value\] = driven\.advance\(\);\n    if \(ended\) return value;\n    await value;\n  \}\n\}/);
+  assert.match(cjs, /return drive\(addon\.resolveSlowly\(args\[0\], args\[1\]\)\);/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
+  // wait is a promise of the event loop of JavaScript.
+  const wasmOut = sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; }, ['wasm']);
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|\| \{/);
+  assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
+  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(true, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
+  assert.match(wasm, /pub fn advance\(&mut self\) -> Result<JsValue, JsValue> \{/);
+  const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}for \(;;\) \{\n {6}const \[ended, value\] = enter\(Internal, \(\) => driven\.advance\(\)\);\n {6}if \(ended\) return value;\n {6}await value;\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
+  assert.match(mjs, /export async function resolveSlowly\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveSlowly\(args\[0\], args\[1\]\)\)\);/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{/);
+  // Go refuses it with every member with async_driver; a method with machine is refused by name.
+  assert.throws(() => sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), /sample\.resolve_slowly: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);
 });
 
 test('a Go helper that only the entry points of a test feature use is compiled under that feature (GN-4)', () => {

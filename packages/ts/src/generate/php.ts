@@ -3,7 +3,7 @@
 import type { Name, Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -859,9 +859,24 @@ ${outs.join('\n')}
             }
             ${m.returns === 'none' ? 'let _returned: Zval = returned;\n            Ok(())' : returned}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
+    let Thrown::Php(exception) = &error else {
+        return thrown(error);
+    };
+    let core = recognized_kind(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(error),
+    }
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('php', m.member.name, 'callable');
     return `    if !has_method(object, ${rustString(method)}) {
@@ -885,8 +900,26 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
+    for index in classes {
+        let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
+        if exception.instance_of(class) {
+            let scope = category_scope(class);
+            let kind = in_scope(scope, || exception.get_property::<String>("kind")).ok()?;
+            let message = in_scope(scope, || exception.get_property::<String>("message")).ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
@@ -1047,6 +1080,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     }),
     ...model.objects.map((object) => objectOut(model, object)),
     ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
+    model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
@@ -1073,7 +1107,7 @@ function libRust(model: Model, layout: PhpLayout): string {
 fn ${rustField(u.unit.name)}_properties(object: &mut ZendObject, error: &${model.coreError ?? '()'}) -> Result<(), Fail> {
 ${errorProperties(u).map(({ owner, property }) => {
     const name = langName('php', property.member.name, 'variable');
-    return `    let value = ${property.corePath}(error);
+    return `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`)};
     let property = ${convertOut(model, property.returns, 'value')}?;
     if let Err(error) = in_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
         return Err(PhpException::from_message(format!("B-4: the property ${name} could not be written: {error}")));
@@ -1125,6 +1159,7 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
 }
 `;
   const propertyType = (type: Type): string => {
+    if (typeof type === 'object' && 'list' in type) return 'Array';
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
     return ({ bool: 'Bool', int: 'Long', int64: 'Long', uint: 'Long', float: 'Double' } as Record<string, string>)[String(base)] ?? 'String';
   };
@@ -1147,14 +1182,14 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
     };
 ${!withProperties ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
         Ok(object) => object,
         Err(fail) => return fail,
     };
-    let written = match error {
+    let written = match ${errorMatched(model, 'error')} {
 ${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
     };
     match written {
@@ -1169,6 +1204,15 @@ ${unitProperties}`;
         .property(private_property("kind"))
         .property(private_property("status"))
         .property(private_property("errno"))
+        .method(
+            FunctionBuilder::new("__construct", error_construct)
+                .arg(Arg::new("message", DataType::String))
+                .arg(Arg::new("kind", DataType::String))
+                .not_required()
+                .arg(Arg::new("status", DataType::Long).allow_null().default("null"))
+                .arg(Arg::new("errno", DataType::Long).allow_null().default("null")),
+            MethodFlags::Public,
+        )
         .method(FunctionBuilder::new("kind", kind_method).returns(DataType::String, false, false), MethodFlags::Public)
         .method(FunctionBuilder::new("status", status_method).returns(DataType::Long, false, true), MethodFlags::Public)
         .method(FunctionBuilder::new("errno", errno_method).returns(DataType::Long, false, true), MethodFlags::Public)
@@ -1264,7 +1308,8 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use ext_php_rs::args::Arg;
+use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
@@ -1401,6 +1446,39 @@ fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     match in_scope(class, || this.get_property::<Option<i64>>(name)) {
         Ok(Some(number)) => retval.set_long(number),
         Ok(None) | Err(_) => retval.set_null(),
+    }
+}
+
+/// GN-10: the constructor of a category class, which an error unit inherits, so that PHP code makes an error with its
+/// kind. An error that the extension raises is made without it (B-4).
+fn construct_error(ex: &mut ExecuteData) {
+    let mut message = Arg::new("message", DataType::String);
+    let mut kind = Arg::new("kind", DataType::String);
+    let mut status = Arg::new("status", DataType::Long).allow_null();
+    let mut errno = Arg::new("errno", DataType::Long).allow_null();
+    if ex.parser().arg(&mut message).arg(&mut kind).not_required().arg(&mut status).arg(&mut errno).parse().is_err() {
+        return;
+    }
+    let (Some(message), Some(kind)) = (message.val::<String>(), kind.val::<String>()) else { return };
+    let status = status.val::<i64>();
+    let errno = errno.val::<i64>();
+    let Some(this) = ex.get_self() else { return };
+    let class = ${scopeOf('this.get_class_entry()')};
+    let written = in_scope(class, || -> ext_php_rs::error::Result<()> {
+        this.set_property("message", message)?;
+        this.set_property("kind", kind)?;
+        this.set_property("status", status)?;
+        this.set_property("errno", errno)?;
+        Ok(())
+    });
+    if let Err(error) = written {
+        PhpException::from_message(format!("B-4: the error could not be made: {error}")).throw();
+    }
+}
+
+ext_php_rs::zend_fastcall! {
+    extern fn error_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| construct_error(ex)));
     }
 }
 
@@ -1593,6 +1671,8 @@ function stub(model: Model, layout: PhpLayout): string {
 ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). */
     class ${c.name} extends \\${phpBase(c.category)}
     {
+        public function __construct(string $message, string $kind, ?int $status = null, ?int $errno = null) {}
+
         public function kind(): string {}
 
         public function status(): ?int {}
@@ -1608,7 +1688,8 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
     blocks.push(`namespace ${phpNamespace(layout, u.unit.module)} {
     /** The errors of the unit ${u.unit.id} (E-2). */
     ${u.unit.final === true ? 'final ' : ''}class ${langName('php', u.unit.name, 'class')} extends ${parent}
-    {${u.properties.map((p) => `
+    {${u.properties.map((p) => `${typeof p.returns === 'object' && 'list' in p.returns ? `
+        /** @return ${docType(p.returns)}|null */` : ''}
         public function ${langName('php', p.member.name, 'callable')}(): ${phpType(typeof p.returns === 'object' && 'optional' in p.returns ? p.returns.optional : p.returns).replace(/^\?/, '')}|null {}`).join('\n')}
     }
 }`);

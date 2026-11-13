@@ -10,9 +10,12 @@ import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
-  aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
+  aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
   takesObject, unitOf,
+  errorMatched,
+  recognizedFn,
+  recognizedMatch,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -730,7 +733,10 @@ function callbackRust(model: Model, cb: CallbackUnit, index: number): string {
             let output = &mut args;
 ${writes.join('\n')}
         }`}
-        let (status, bytes) = go_callback(self.call, self.callback, ${memberIndex}, &args);
+        let (status, bytes) = go_callback(self.call, self.callback, ${memberIndex}, &args);${m.recognized === undefined ? '' : `
+        if status == 2 {
+            return Err(${recognizedFn(cb, m)}(self.call, &bytes));
+        }`}
         if status != 0 {
             return Err(raised_by_go(self.call, &bytes).into());
         }
@@ -741,6 +747,29 @@ ${decode}
     }`;
   }).join('\n');
   void index;
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an error of ${m.member.id} that it recognizes, which Go gave with its index, its kind and its message: a kind of
+/// the unit is the core error of the kind (GN-6d); any other goes back to the caller as the same error.
+fn ${recognizedFn(cb, m)}(call: u64, bytes: &[u8]) -> ${failure} {
+    let mut input = bytes;
+    let mut read = || -> Result<(u64, String, String), Fail> {
+        let index = in_uint(&mut input)?;
+        let kind = in_text(&mut input, "U-3: the kind of a recognized error")?;
+        let message = in_text(&mut input, "U-3: the message of a recognized error")?;
+        finish_input(input)?;
+        Ok((index, kind, message))
+    };
+    let (index, kind, message) = match read() {
+        Ok(read) => read,
+        Err(fail) => return thrown(Thrown::Binding(fail)).into(),
+    };
+    let core = ${recognizedMatch(m, '    ')};
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(Thrown::Go { call, index }).into(),
+    }
+}
+`).join('');
   return `
 /// U-3: ${goType}, a callback that Go code implements; the core calls it through ${cb.unit.core ?? ''}.
 struct ${struct} {
@@ -760,7 +789,7 @@ fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${struct}, Fail> {
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
 
 // U-3, U-7: the calls into Go, the errors that Go code returned in a callback and the walk of a Go value.
@@ -1189,7 +1218,7 @@ function foreignFailureRust(model: Model): string {
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the category that its E-1 gives it.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn ${library}_error(error: ${error.path}) -> Fail {
-    let category: Category = match error {
+    let category: Category = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     Fail { category, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error), class: 0, properties: Vec::new(), raised: None }
@@ -1223,12 +1252,12 @@ function coreErrorRust(model: Model): string {
     if (properties.length === 0) return `        ${variantPattern(k.variant)} => ${index},`;
     return `        ${variantPattern(k.variant)} => {
             let output = &mut properties;
-${properties.map(({ property }) => `            ${convertOut(model, property.returns, `${property.corePath}(&error)`)};`).join('\n')}
+${properties.map(({ property }) => `            ${convertOut(model, property.returns, propertyValue(property, '&error', (failure) => `core_error(${failure})`))};`).join('\n')}
             ${index}
         }`;
   }).join('\n');
   const classLines = !hasUnits ? '    let class: u8 = 0;\n    let properties = Vec::new();' : `    ${hasProperties ? 'let mut properties = Vec::new();' : 'let properties = Vec::new();'}
-    let class: u8 = match error {
+    let class: u8 = match ${errorMatched(model, 'error')} {
 ${classArms}
     };`;
   return `
@@ -1237,7 +1266,7 @@ ${classArms}
 /// source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
-    let category: Category = match error {
+    let category: Category = match ${errorMatched(model, 'error')} {
 ${arms}
     };
 ${classLines}

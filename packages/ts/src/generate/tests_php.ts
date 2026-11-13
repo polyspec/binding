@@ -33,6 +33,9 @@ ${values.members.map((member) => `            public function ${member.slice(1, 
                         if ($row[3]) {
                             unset($this->rows[$at]);
                         }
+                        if ($row[4] !== null) {
+                            throw $row[4];
+                        }
                         return $row[2];
                     }
                 }
@@ -90,7 +93,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const namespace = (model.foreign.get(library)?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
     return `\\${namespace}${unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}\\${langName('php', unit.name, 'class')}::${langName('php', member.name, 'callable')}()`;
   };
-  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, foreignValue, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
+  // GN-13: an instance of an error unit with a kind, by the constructor of its category class (GN-10).
+  const errorNew = (unit: Unit, kind: string, message: string): string =>
+    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${phpText(message)}, ${phpText(kind)})`;
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignValue, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.

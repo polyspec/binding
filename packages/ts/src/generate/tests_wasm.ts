@@ -1,12 +1,12 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip } from './model.ts';
+import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip } from './model.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_FIXTURE, NODE_ORDERED } from './tests_node.ts';
+import { NODE_FIXTURE, NODE_ORDERED, NODE_SETTLED, awaitedTest } from './tests_node.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '-1', '2 ** 53'],
@@ -32,6 +32,7 @@ export function wasmTests(model: Model): string {
       foreignModules.add(library);
       return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}.${langName('wasm', member.name, 'callable')}()`;
     },
+    errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.
     variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
@@ -55,8 +56,10 @@ export function wasmTests(model: Model): string {
   let usesOrdered = false;
   let usesTokens = false;
   let usesFixture = false;
+  // GN-6n: a call of a member that waits is awaited where it is made, as for Node.
+  const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
-  const invoke = (fn: Fn, args: string, receiver: string): string => {
+  const called = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('wasm', fn.member.name, 'callable');
@@ -380,6 +383,12 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
+  // GN-6n: a test that calls a member that waits is an async function, as for Node.
+  // Only a call of such a member is written `(await ...)`; the import of the glue of a case is awaited in any test.
+  // A block may hold several tests, each of which is judged alone.
+  const blocks = out.map((block) => block.split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
+  usesOutcome = blocks.some((block) => block.includes('outcome('));
+  const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
@@ -403,7 +412,7 @@ let stepGlue;
 before(async () => {
   stepGlue = await glueModule();
 });
-` : ''}${out.join('\n')}
+` : ''}${usesSettled ? NODE_SETTLED : ''}${blocks.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.
 test('B-7: a panic is kind internal, and a trap breaks the instance for every later call', async () => {

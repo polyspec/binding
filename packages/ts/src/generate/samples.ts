@@ -26,6 +26,8 @@ export interface Context {
   // How the generated test makes a value of a case of a variant (T-9) from its fields in contract order: the result
   // form of the case as a record, when the language gives none of its own.
   variantNew?: (variant: Variant, kase: VariantCase, fields: string[]) => string;
+  // GN-13: how the generated test makes an instance of an error unit with a kind and a message, as language code does.
+  errorNew?: (unit: Unit, kind: string, message: string) => string;
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
@@ -287,7 +289,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
   // value at a place of a callback is an instance of a class that implements it (GN-13f).
   if (unit?.origin === 'callback' && ctx.fixtureNew !== undefined && typeof value === 'object' && value !== null && 'callback' in value) {
-    return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(unit, value, 'a case value')));
+    return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(model, unit, value, 'a case value')));
   }
   if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     const made = memberById(model, String((value as Record<string, unknown>)['new']))?.returns;
@@ -1383,7 +1385,7 @@ export interface Fixture {
   unit: Unit;
   // The rows of each member of the callback unit, by its position in the unit: the arguments in parameter order, the
   // result and whether the row is used once, each a case value.
-  rows: { member: number; args: unknown[]; result: unknown; once: boolean }[];
+  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string } }[];
   // The calls that the core makes in order, when the case names them.
   calls?: { member: number; args: unknown[] }[];
 }
@@ -1402,13 +1404,13 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     if (typeof value !== 'object' || value === null || typeof value.callback !== 'object' || value.callback === null) {
       throw new Unsupported(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
     }
-    out.push({ arg, ...fixtureOf(unit, value, where) });
+    out.push({ arg, ...fixtureOf(model, unit, value, where) });
   }
   return out;
 }
 
 // G-5: the rows and the calls of a callback value {"callback": {...}, "calls": [...]} of the unit.
-export function fixtureOf(unit: Unit, given: unknown, where: string): Omit<Fixture, 'arg'> {
+export function fixtureOf(model: Model, unit: Unit, given: unknown, where: string): Omit<Fixture, 'arg'> {
   const value = given as { callback: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] };
   const members = unit.members ?? [];
   const position = (memberId: string): number => {
@@ -1426,9 +1428,12 @@ export function fixtureOf(unit: Unit, given: unknown, where: string): Omit<Fixtu
   for (const [memberId, list] of Object.entries(value.callback)) {
     const member = position(memberId);
     for (const row of list as Record<string, unknown>[]) {
-      if (row['raise'] !== undefined) throw new Unsupported(`${where}: a raise row of a callback fixture is not generated yet`);
       if (row['async'] === true) throw new Unsupported(`${where}: an async row of a callback fixture is not generated yet`);
-      rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true });
+      // GN-13: a raise row throws an instance of its error unit with its kind, which the member recognizes (U-3).
+      const raise = row['raise'] as { error: string; kind: string } | undefined;
+      const raised = raise === undefined ? undefined : model.errorUnits.find((u) => u.unit.id === raise.error)?.unit;
+      if (raise !== undefined && raised === undefined) throw new Unsupported(`${where}: the raise row names ${raise.error}, which is no error unit that is generated (GN-13)`);
+      rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true, ...(raise === undefined || raised === undefined ? {} : { raise: { unit: raised, kind: raise.kind } }) });
     }
   }
   const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
@@ -1450,7 +1455,10 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
     rows: fixture.rows.map((row) => {
       const returns = members[row.member]?.returns ?? 'none';
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, returns, row.result);
-      return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once)];
+      const raise = row.raise;
+      if (raise !== undefined && ctx.errorNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} is not generated for ${ctx.target ?? ctx.lang} yet`);
+      const raised = raise === undefined || ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`);
+      return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once), raised];
     }),
     calls: fixture.calls?.map((call) => [text(name(call.member)), list(argsOf(call.member, call.args))]),
   };
@@ -1473,7 +1481,8 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
       return fromJson(model, ctx, p, given[String(i)]);
     });
     const result = row['result'] === undefined || row['result'] === null || type.returns === 'none' ? none : fromJson(model, ctx, type.returns, row['result']);
-    return [text(call), list(values), result, flag(row['once'] === true)];
+    // A row of a function raises nothing: its last value is that of a fixture row without `raise` (GN-13).
+    return [text(call), list(values), result, flag(row['once'] === true), none];
   });
 }
 
