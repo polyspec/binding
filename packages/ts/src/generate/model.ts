@@ -82,6 +82,9 @@ export interface ValueAlias {
   // function and the category that the owner's E-1 gives each variant.
   library?: string;
   error?: { path: string; kinds: { variant: string; category: Category }[] };
+  // GN-6x: the contract of the owner of a value class of another repository, whose in rows describe an instance of
+  // the class and whose out rows make one through the members of that contract.
+  owner?: Contract;
 }
 
 export interface Fn {
@@ -275,6 +278,11 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
     // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
+    // T-3, U-1, GN-6x: a value class of another repository, whose core functions this binding calls.
+    if (unit?.kind === 'class' && unit.origin === 'value') {
+      if (typeof unit.core === 'object' && unit.core !== null && unit.core_type !== undefined) return;
+      throw new Unsupported(`${type.library}.${type.unit}: a value class of another repository without core: {in, out} and core_type is not generated (GN-6x)`);
+    }
     if (unit === undefined) throw new Unsupported(`${where}: ${type.library} has no unit ${type.unit} (T-3)`);
   }
   throw new Unsupported(`${where}: the type ${JSON.stringify(type)} is not generated yet`);
@@ -652,7 +660,8 @@ export function collectModel(
     }
   };
   const foreignAlias = (unit: Unit, library: string): void => {
-    if (unit.kind !== 'alias' || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
+    const valueClass = unit.kind === 'class' && unit.origin === 'value';
+    if ((unit.kind !== 'alias' && !valueClass) || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
     const rows = foreign.get(library)?.errors.kinds ?? [];
     const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);
     if (dependent !== undefined) throw new Unsupported(`${library}.${unit.id}: a value alias whose owner forwards the kind ${dependent.variant} of another library is not generated yet`);
@@ -660,7 +669,10 @@ export function collectModel(
     const [path] = [...paths];
     if (path === undefined || paths.size > 1) throw new Unsupported(`${library}.${unit.id}: the kinds of ${library} name ${paths.size} error enums; a value alias is generated for one`);
     // U-7: the cases of in_raises and the entry point of codec-test belong to the binding of the owner (GN-5).
-    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error: { path, kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
+    const error = { path, kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) };
+    // GN-6x: a value class is described by its in rows and made by its out rows, members of the owner's contract.
+    const owner = valueClass ? foreign.get(library) : undefined;
+    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error, ...(owner === undefined ? {} : { owner }) });
   };
   for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);

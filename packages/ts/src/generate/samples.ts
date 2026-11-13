@@ -4,7 +4,8 @@
 // U+00FF).
 
 import type { Type } from '../contract.ts';
-import type { Unit } from '../contract.ts';
+import type { Member, Unit } from '../contract.ts';
+import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { type Arg, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
@@ -31,6 +32,8 @@ export interface Context {
   target?: 'wasm';
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
+  // GN-6x: the call of a static member of a value class of another repository, through the owner's package.
+  foreignValue?: (library: string, unit: Unit, member: Member) => string;
   // GN-13e: the steps that make a deep case value in local variables (Python), at the depth of the values in making.
   steps?: Steps | undefined;
 }
@@ -76,6 +79,12 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
       const value = typeof make === 'string' ? forms[ctx.lang][make] : undefined;
       if (value !== undefined) return value;
     }
+  }
+  // GN-6x: a value of a value class of another repository is the value that its out row of the kind null makes.
+  if (unit?.kind === 'class' && unit.origin === 'value' && typeof type === 'object' && 'unit' in type && type.library !== undefined && ctx.foreignValue !== undefined) {
+    const alias = model.aliases.find((a) => a.unit === unit && a.library === type.library);
+    const empty = alias === undefined ? undefined : classMakes(alias, ctx.target ?? ctx.lang).find((m) => m.form === 'content' && m.params === 0);
+    if (empty !== undefined) return ctx.foreignValue(type.library, unit, empty.member);
   }
   // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
   const object = model.objects.find((o) => o.unit === unit);

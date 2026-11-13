@@ -76,6 +76,7 @@ def _outcome(call):
 
 export function pythonTests(model: Model, module: string): string {
   checkCaseNames(model, caseSnake, false);
+  const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
@@ -84,6 +85,11 @@ export function pythonTests(model: Model, module: string): string {
     },
     recordNew: (unit, fields) =>
       `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
+    // GN-6x: a static member of a value class of another repository, through the module of the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('python', unit.name, 'class')}.${langName('python', member.name, 'callable')}()`;
+    },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
@@ -474,7 +480,7 @@ export function pythonTests(model: Model, module: string): string {
 ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
 ${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
-from ${module} import _native
+${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
