@@ -12,6 +12,9 @@ python = "3.14.8"
 # The wasm-bindgen CLI writes the glue of the WASM crate and must be the release of its wasm-bindgen crate (GN-18,
 # WASM_BINDGEN of packages/ts/src/generate/packages.ts).
 "github:wasm-bindgen/wasm-bindgen" = "0.2.130"
+# maturin builds the Python wheels of the end-to-end check (GN-14a): the binary of its GitHub release, whose digest
+# mise.lock pins as it pins wasm-bindgen.
+"github:PyO3/maturin" = "1.16.0"
 
 # The settings of mise of this checkout, which mise reads from this file (MISE_GLOBAL_CONFIG_FILE of the Makefile): mise
 # installs and runs only what mise.lock pins and installs nothing on first use.

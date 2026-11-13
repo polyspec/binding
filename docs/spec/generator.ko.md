@@ -463,11 +463,14 @@
   커밋을 적고, 사본에 lock이 없으면 그 항목만 가진 lock을 쓴다. Cargo는 먼저 GitHub에 브랜치의 head를 묻는데 그것은 push된
   커밋이고, `binding scaffold`가 쓰는 manifest는 checkout에만 있는 `binding_core`의 feature를 필요로 할 수 있기 때문이다.
 - **GN-14a** 끝에서 끝까지 확인은 계약의 모든 target을 실행한다. 어떤 단계보다 먼저 각 target의 도구를 checkout이 고정하고
-  `make install`이 설치한 도구 가운데서 찾는다(AGENTS.md): python은 `mise.toml`의 Python 3.14, node는 `mise.toml`의 npm과
+  `make install`이 설치한 도구 가운데서 찾는다(AGENTS.md): python은 `mise.toml`의 Python 3.14와 maturin(maturin은 그
+  Python의 venv의 Python에 맞춰 wheel을 빌드하고, wheel은 그 지역 디렉터리에서만 venv에 설치한다), node는 `mise.toml`의 npm과
   Node addon의 패키지, wasm은 crate와 같은 릴리스인 `mise.toml`의 wasm-bindgen CLI와 `rust-toolchain.toml`의 Rust target
   `wasm32-unknown-unknown`, php는 `.php-version`의 PHP(기계의 PHP를 그대로 감싸므로 minor를 비교한다)와 `config/phpunit`의
   PHPUnit, go는 `mise.toml`의 Go와 component `llvm-tools`의 `llvm-nm`(BD-10 (d))이다. 확인 자체는 `mise.toml`의 Node.js로
-  돈다. 도구가 없으면 확인은 아무것도 복사하기 전에 실패하고 target, 도구, 그것을 고정하는 파일, `make install`을 적는다.
+  돌고, 실행의 모든 명령은 checkout의 `rust-toolchain.toml`의 Rust toolchain을 쓴다(`RUSTUP_TOOLCHAIN`). 그렇지 않으면
+  rustup은 명령의 디렉터리에서 toolchain 파일을 읽으므로, 사본 안에서 도는 명령은 사본의 toolchain이나 기계의 기본값으로
+  빌드한다. 도구가 없으면 확인은 아무것도 복사하기 전에 실패하고 target, 도구, 그것을 고정하는 파일, `make install`을 적는다.
   target을 빼거나 다른 도구로 돌리는 스위치, 옵션, 환경 변수는 없고, target의 생성 시험과 case 시험은 건너뛰지 않는다.
   runner의 설정이 필요한 시험(GN-18a의 collector 등)은 확인이 그 설정을 주며 설정이 없으면 실패한다. 이유: 돌지 않은 target은
   검증되지 않았는데 결과는 통과로 보이고, checkout이 고정하지 않은 도구의 결과는 되풀이할 수 없다. 실행은 target마다 한 일을

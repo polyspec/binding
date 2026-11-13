@@ -123,6 +123,13 @@ for (const [name, value] of Object.entries(process.env)) {
 }
 process.stdout.write(diagnosis.length === 0 ? `this run is evidence of the commit ${commit} of binding\n` : `this run of the commit ${commit} is a diagnosis:\n${diagnosis.map((d) => `  ${d}\n`).join('')}`);
 
+// GN-14a: every command of the run uses the Rust toolchain of rust-toolchain.toml of the checkout, which make install
+// installed. rustup reads that file from the directory of a command, and a command that runs in a copy (maturin in
+// packages/python) would otherwise use the toolchain of the copy or the default of the machine.
+const channel = /^channel = "([^"]+)"$/m.exec(readFileSync(join(checkout, 'rust-toolchain.toml'), 'utf8'))?.[1];
+if (channel === undefined) throw new Error(`${join(checkout, 'rust-toolchain.toml')} names no channel`);
+process.env['RUSTUP_TOOLCHAIN'] = channel;
+
 // The Git dependencies on polyspec repositories resolve to the checkouts beside this one: Git, which Cargo runs for the
 // fetch, reads https://github.com/polyspec/<name> as <parent of the checkout>/<name> (url.<base>.insteadOf, set for
 // these commands only), so the Git dependency on binding is the commits of the checkout, of which the run pins one.
@@ -429,6 +436,7 @@ if (process.env['MISE_GLOBAL_CONFIG_FILE'] !== join(checkout, 'mise.toml')) {
 const tsc = need('node', 'the TypeScript compiler', 'packages/ts/package-lock.json', file(join(binding, 'packages/ts/node_modules/.bin/tsc')));
 const npmTool = targets.includes('node') || targets.includes('wasm') ? need('node', 'npm', 'mise.toml', file(join(tools, 'bin/npm'))) : '';
 const pythonTool = targets.includes('python') ? need('python', 'python3', 'mise.toml', miseWhich('python3')) : '';
+const maturin = targets.includes('python') ? need('python', 'maturin', 'mise.toml', miseWhich('maturin')) : '';
 const phpTool = targets.includes('php') ? need('php', 'php', '.php-version', file(join(tools, 'bin/php'))) : '';
 // The PHP entry of the PHPUnit of config/phpunit, which php runs with the extensions loaded (var/tools/bin/phpunit is a
 // shell wrapper that php would print as text).
@@ -505,10 +513,10 @@ if (targets.includes('python')) {
 step('Python: build the wheels, install them, run the generated tests and the cases');
 const venv = join(work, 'venv');
 run(pythonTool, ['-m', 'venv', '--clear', venv]);
-run(join(venv, 'bin/pip'), ['install', '-q', 'maturin==1.16.0']);
 for (const prepared of [...dependencies, main]) {
   const wheels = join(work, 'wheels');
-  run(join(venv, 'bin/maturin'), ['build', '--features', testFeatures(prepared.contract), '--out', wheels], { cwd: join(prepared.copy, 'packages/python') });
+  // The wheel is built for the Python of the venv, the one of mise.toml, and installed from the local directory alone.
+  run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(prepared.contract), '--out', wheels], { cwd: join(prepared.copy, 'packages/python') });
   const python = prepared.contract.packages['python'] as { package: string };
   const prefix = `${python.package.replaceAll('-', '_')}-`;
   const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));

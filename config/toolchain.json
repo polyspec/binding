@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer and the wasm-bindgen CLI of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs.",
+  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer, the wasm-bindgen CLI and maturin of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs.",
   "phpunit": {
     "version": "13.4.6"
   },

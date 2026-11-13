@@ -17,7 +17,7 @@
   `#[allow(..., reason = "<규칙 id>")]`를 단다.
   Enforced by: `packages/core/rust`의 `cargo clippy --all-targets -- -D warnings`
 - Own: 릴리스에 따라 검사 결과가 달라지는 모든 도구는 추적 파일에 고정하고 checkout 안에 설치한다. Node.js, npm, Go, Python,
-  Composer, wasm-bindgen CLI는 `mise.toml`에, 그 digest는 `mise.lock`에 있고(npm은 `package.json`의 `devEngines`에도),
+  Composer, wasm-bindgen CLI, maturin은 `mise.toml`에, 그 digest는 `mise.lock`에 있고(npm은 `package.json`의 `devEngines`에도),
   Rust는 component(기호를 읽는 `llvm-nm`의 `llvm-tools` 포함)와 target `wasm32-unknown-unknown`과 함께 `rust-toolchain.toml`에, PHP는 minor로 `.php-version`에,
   PHPUnit은 `config/phpunit`에, mise는 배포 대상 플랫폼마다의 sha256과 함께 `config/toolchain.json`에 있다. `make install`은
   `@polyspec/kit`의 도구로 이것들을 `var/tools`에 설치하고(기계의 유일한 도구인 rustup이 Rust toolchain을 가지며, 기계의
