@@ -193,10 +193,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   value of a function type is a function fixture (generator GN-6ae), `{"function": {"calls": [<step>], "result":
   <value>}}` or with `"raise"` in place of `"result"`: the fixture has no key but `function`, whose object has the
   list `calls`, one of `result` and `raise`, and no other key. A step is `{"on": "<position>", "call": "<member id>",
-  "args": {...}}` with no other key: `on` is the position of a parameter of the function, `"0"`, `"1"` and so on,
+  "args": {...}}` with no other key but `result`: `on` is the position of a parameter of the function, `"0"`, `"1"` and so on,
   because a parameter of a function type has no name, and the type of that parameter is a class unit of this
   contract; `call` is a method of that class; `args` are exactly the parameters of that method, and an argument of
-  a function type of a step is again a function fixture. `raise` is the text `"exception"`, an exception of the
+  a function type of a step is again a function fixture. A step may also name `"result": <value>`, the value that
+  its call returns: the generated function requires it before its next step, so a case verifies what a class
+  argument holds while the function runs. `raise` is the text `"exception"`, an exception of the
   language, or `{"error": <unit>, "kind": <kind>}` of an error unit that the function recognizes (U-3). The `raises`
   of a case may be the text `"callback"`: the case expects the exception that a function fixture of its arguments
   raises by `"raise": "exception"`, and a case without such a fixture, at any depth of its steps, is refused. A case

@@ -1605,7 +1605,7 @@ class Checker {
   // G-5 (GN-6ae): a function fixture, {"function": {"calls": [<step>], "result": <value>}} or with "raise" in place
   // of "result". A step is {"on": "<position>", "call": "<member id>", "args": {...}}: a method of the class of the
   // parameter at that position, with exactly its parameters, where an argument of a function type is again a function
-  // fixture. "raise" is "exception" or {"error", "kind"} of an error unit that the function recognizes (U-3).
+  // fixture; a step may name "result", the value that its call returns. "raise" is "exception" or {"error", "kind"} of an error unit that the function recognizes (U-3).
   functionValue(fn: Extract<Type, { function: unknown }>['function'], value: unknown, what: string, report: (message: string) => void): void {
     const record = (given: unknown): Record<string, unknown> | undefined => (typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined);
     const form = record(value);
@@ -1624,7 +1624,7 @@ class Checker {
     for (const [i, item] of calls.entries()) {
       const step = record(item) ?? {};
       const at = `step ${i} of ${what}`;
-      for (const key of Object.keys(step)) if (!['on', 'call', 'args'].includes(key)) report(`${at} has no key ${key}`);
+      for (const key of Object.keys(step)) if (!['on', 'call', 'args', 'result'].includes(key)) report(`${at} has no key ${key}`);
       const on = step['on'];
       const type = typeof on === 'string' && /^(0|[1-9][0-9]*)$/.test(on) ? fn.parameters[Number(on)] : undefined;
       const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.units.get(type.unit)?.value : undefined;

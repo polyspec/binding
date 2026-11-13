@@ -767,7 +767,9 @@ the design ids are those of the binding design.
   - Case: an argument of a function type is a function fixture, `{"function": {"calls": [<step>], "result": <case
     value>}}` or with `"raise"` in place of `"result"`: the generated function makes each step on its arguments in
     order, `{"on": "<position>", "call": "<member id>", "args": {...}}`, where `on` is the position of the parameter
-    (`"0"`, `"1"`, ...; CK-22) and an argument of a function type of a step is again a function fixture, and then returns `result`, raises the error unit of `raise` (GN-13) or, with
+    (`"0"`, `"1"`, ...; CK-22) and an argument of a function type of a step is again a function fixture; a step that names `result` requires
+    that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
+    function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope.

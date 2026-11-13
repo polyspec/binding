@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A step of a function fixture could not state what its call returns, so the cases of `store.transaction` called
+  `scope.get` inside the function without verifying its value, and a scope that held nothing would have passed. A
+  step may now name `result`, which the contract check accepts and the generated function requires before its next
+  step; the PHP test writes it as an assertion inside the function. The three cases of the sample now require what
+  the scope holds: the pending entry before the commit and before the raise, the entry of the outer scope inside the
+  nested scope, and the entry of the nested scope in the outer one (CK-22, GN-6ae). Verified by `npm test` in
+  `packages/ts`, whose tests of the function fixture pass.
 - The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
   word once their target generates a function parameter, because only the PHP test writes them. Each of those test
   generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>

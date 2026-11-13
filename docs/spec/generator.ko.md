@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 16e9f90ef80a44b22927aa6c16166c19c6cf9dbee2e00d0be00379c07fa90ca4 -->
+<!-- source-sha256: 2c96afd99ca1e5d595157c516045c5198794609dad5a428549699d2a9583bf19 -->
 # 생성기
 
 [English](generator.md)
@@ -637,7 +637,8 @@
     settle하므로 PHP나 Go 함수는 그 결과를 돌려준다.
   - Case: 함수 타입의 인자는 함수 fixture `{"function": {"calls": [<step>], "result": <case value>}}`이거나 `"result"`
     대신 `"raise"`를 가진다. 생성된 함수는 인자에 각 단계 `{"on": "<위치>", "call": "<member id>", "args":
-    {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
+    {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다). `result`를 적은 단계는 그 호출이 그 값을 돌려줄 것을 시험의 단언으로
+    요구하고(CK-22), 그 단언의 실패는 함수의 예외다. 함수는 그 뒤 `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
   아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를

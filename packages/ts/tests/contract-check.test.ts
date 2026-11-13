@@ -849,6 +849,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const step = { on: '0', call: 'session.load', args: { file: 'a' } };
     assert.deepEqual(withParam(takes(['text']), 'convert', { function: { calls: [], result: 'b' } }), []);
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [step, step], result: null } }), []);
+    // A step may name the value that its call returns.
+    assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [{ ...step, result: null }, step], result: null } }), []);
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [], raise: 'exception' } }), []);
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [], raise: { error: 'too_large', kind: 'too_large' } } }), []);
     const refused: [object, unknown, RegExp][] = [
@@ -860,7 +862,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
       [takes(['text']), { function: { calls: [], result: 'b', once: true } }, /the function fixture convert has no key once/],
       [takes(['text']), { function: { calls: [] } }, /the function fixture convert has a result or a raise, one of them/],
       [takes(['text']), { function: { calls: [], result: 'b', raise: 'exception' } }, /the function fixture convert has a result or a raise, one of them/],
-      [scoped, { function: { calls: [{ ...step, result: 1 }], result: 'b' } }, /step 0 of convert has no key result/],
+      [scoped, { function: { calls: [{ ...step, raises: {} }], result: 'b' } }, /step 0 of convert has no key raises/],
       [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is no parameter of the function whose type is a class of this contract/],
       [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is no parameter/],
       [scoped, { function: { calls: [{ ...step, call: 'forms.parse' }], result: 'b' } }, /step 0 of convert calls forms\.parse, which is no method of session/],

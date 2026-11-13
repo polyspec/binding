@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2a0879c37d10cd0010de3281bfe4474a3fe5e2c70f4458b84b5656fb3ad156c9 -->
+<!-- source-sha256: 73a582ed8f6bad4bf89db80014dd61b5a1231c5b9dd8a9505e325755c6da6446 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 함수 fixture의 step은 그 호출이 돌려주는 값을 적을 수 없었다. 그래서 `store.transaction`의 case는 함수 안에서
+  `scope.get`을 부르면서 그 값을 검증하지 않았고, 아무것도 쥐지 않은 scope도 통과했을 것이다. step은 이제 `result`를
+  적을 수 있다. 계약 검사는 그것을 받아들이고, 생성된 함수는 다음 step 전에 그 값을 요구한다. PHP 시험은 그것을 함수
+  안의 단언으로 쓴다. sample의 세 case는 이제 scope가 쥔 것을 요구한다: commit 전과 예외 전의 대기 중인 항목, 중첩된
+  scope 안에서 본 바깥 scope의 항목, 바깥 scope에서 본 중첩된 scope의 항목이다(CK-22, GN-6ae). `packages/ts`의
+  `npm test`로 검증했고 함수 fixture의 시험은 통과한다.
 - Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
   case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
   때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,

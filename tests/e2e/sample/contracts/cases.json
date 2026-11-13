@@ -372,7 +372,8 @@
               "call": "scope.get",
               "args": {
                 "key": "a"
-              }
+              },
+              "result": "1"
             }
           ],
           "result": {
@@ -407,6 +408,14 @@
                 "key": "a",
                 "value": "1"
               }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
             }
           ],
           "raise": "exception"
@@ -445,11 +454,27 @@
                     "calls": [
                       {
                         "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "a"
+                        },
+                        "result": "1"
+                      },
+                      {
+                        "on": "0",
                         "call": "scope.put",
                         "args": {
                           "key": "b",
                           "value": "2"
                         }
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "b"
+                        },
+                        "result": "2"
                       }
                     ],
                     "result": {
@@ -458,6 +483,14 @@
                   }
                 }
               }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
             }
           ],
           "result": {
