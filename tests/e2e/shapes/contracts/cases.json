@@ -347,5 +347,53 @@
         "message": "values is not a value of the type uint"
       }
     }
+  ],
+  "stride_count": [
+    {
+      "id": "two_steps_of_five",
+      "stride": {
+        "ends": [
+          2,
+          12
+        ],
+        "step": 5
+      },
+      "result": 2
+    },
+    {
+      "id": "a_step_beyond_32_bits",
+      "stride": {
+        "ends": [
+          2,
+          12
+        ],
+        "step": 4294967296
+      },
+      "raises": {
+        "kind": "invalid_number",
+        "status": null,
+        "category": "value",
+        "message": "step is not a value of the type uint"
+      }
+    }
+  ],
+  "offset": [
+    {
+      "id": "back_by_four",
+      "start": 7,
+      "end": 3,
+      "result": -4
+    },
+    {
+      "id": "a_start_beyond_8_bits",
+      "start": 256,
+      "end": 3,
+      "raises": {
+        "kind": "invalid_number",
+        "status": null,
+        "category": "value",
+        "message": "start is not a value of the type uint"
+      }
+    }
   ]
 }

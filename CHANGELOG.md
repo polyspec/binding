@@ -161,8 +161,8 @@
   or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
   the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
   `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
-  `shapes.largest` over `&[u32]`, and a unit test compiles the helpers with such call sites with rustc for the host
-  and for wasm32. Verified by `npm test` in `packages/ts`.
+  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
+  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
 - PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
   only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
   An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
@@ -171,8 +171,11 @@
   array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
   after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
   not convert yet. `tests/e2e/shapes` has
-  `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
-  by `npm test` in `packages/ts`.
+  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
+  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
+  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
+  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
+  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
 - A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
   generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
   a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM

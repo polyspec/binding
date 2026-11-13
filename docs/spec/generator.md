@@ -207,7 +207,10 @@ the design ids are those of the binding design.
   `const _: () = assert!(usize::BITS <= 64);` (and the same for `isize`), which fails the build for a target where it
   is wider, because the standard library implements `From` for neither; the widened value then leaves by the rules of a
   result of its contract type in each language, as a u64 or i64 does. A list parameter is passed as GN-6ad states.
-  The crate of the Go C ABI converts in the same way, after it reads each parameter from the encoded arguments.
+  The crate of the Go C ABI converts in the same way, after it reads each parameter from the encoded arguments. The
+  compile test of GN-6ad covers these forms: a tuple parameter as `[usize; 2]`, `u32` and `u8` parameters, a tuple
+  result of `[u32; 2]`, a record parameter whose struct literal takes `[usize; 2]` and `u32` fields, and `usize` and
+  `isize` results.
   Why: the core keeps the integer type that its own code needs, such as `usize` for an index or a length, and the
   contract states only the range of the value. A trait whose target the core's signature chooses converts without a
   core type in the contract, so the contract stays the same for every core that holds the value.
@@ -218,9 +221,9 @@ the design ids are those of the binding design.
   of the parameter as its subject. A list of other items is passed as `&values`, as GN-6 states. Go converts in the
   same way.
   Why: the core borrows a list as a slice, and `&values[..]` is that slice by its own type, `&[T]`, whose item type
-  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the helpers of GN-6ac
-  with such call sites against a core of narrower types for the host and for wasm32, so the inference is checked by
-  the compiler and not assumed.
+  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the bodies of the WASM
+  entry points that the generator writes for `tests/e2e/shapes`, with the helpers of GN-6ac and the core functions of
+  that fixture, for the host and for wasm32, so the compiler checks the generated calls and the inference.
 - **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
   that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
   contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a
