@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -466,7 +466,11 @@ function entryRust(model: Model, fn: Fn): string {
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
-  const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`);
+  const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`;
+  const armed = armedCall(model, fn, core);
+  // GN-6m, GN-6n: the core call of a member that waits runs without the GIL, so other Python threads run while it
+  // waits; the future of an async member runs on the runtime of binding_core.
+  const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => `py.detach(|| ${wait})`, '|error| binding_error(py, error)') : waitsIo(fn) ? `py.detach(|| ${armed})` : armed;
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
   } else {
@@ -495,7 +499,7 @@ fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
 ${lines.join('\n')}
     })
 }
-`;
+${awaits(fn) ? awaitedFunction(name) : ''}`;
   }
   // GN-6: the Rust name of a method is member_<name> and its Python name an attribute, so that no name of a member meets
   // a naming convention of the lints for methods (from_*, to_*, into_*, is_*, the names of std traits); a hook keeps
@@ -511,8 +515,50 @@ ${attributes.map((a) => `    ${a}`).join('\n')}
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
     }
+${awaits(fn) ? awaitedMethod(fn, name) : ''}`;
+}
+
+// GN-6m: the Python name of the awaitable of a member that waits; CK-16 keeps it apart from every other name.
+export const awaitedName = (fn: Fn): string => `a${memberName('python', fn)}`;
+
+// GN-6m: a<name> of a function runs <name> in asyncio.to_thread; the arguments are judged when <name> runs.
+const awaitedFunction = (name: string): string => `
+#[pyfunction(name = ${rustString(`a${name}`)}, signature = (*args, **kwargs))]
+fn a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+    awaited(py, wrap_pyfunction!(${name}, py)?.into_any(), args, kwargs)
+}
+`;
+
+// GN-6m: a<name> of a method or a static method runs the bound <name> in asyncio.to_thread.
+function awaitedMethod(fn: Fn, name: string): string {
+  const attribute = `#[pyo3(name = ${rustString(`a${name}`)}, signature = (*args, **kwargs))]`;
+  if (fn.receiver === undefined) {
+    return `
+    #[staticmethod]
+    ${attribute}
+    fn member_a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+        awaited(py, py.get_type::<Self>().getattr(${rustString(name)})?, args, kwargs)
+    }
+`;
+  }
+  return `
+    ${attribute}
+    fn member_a${name}<'py>(slf: &Bound<'py, Self>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+        awaited(slf.py(), slf.getattr(${rustString(name)})?, args, kwargs)
+    }
 `;
 }
+
+// GN-6m: asyncio.to_thread(member, *args, **kwargs), the awaitable that runs a member that waits in a thread.
+const AWAITED = `
+/// GN-6m: an awaitable that runs a member that waits in a thread of asyncio, so that the event loop does not block.
+fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+    let mut all = vec![member];
+    all.extend(args.iter());
+    let all = PyTuple::new(py, all)?;
+    py.import("asyncio")?.getattr("to_thread")?.call(all, kwargs)
+}
+`;
 
 // T-5: a class unit is a class of the native module that holds the core value; its members call the core (U-2).
 function objectRust(model: Model, layout: PythonLayout, object: ObjectClass, givesOut: boolean): string {
@@ -794,10 +840,11 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
+    ...model.functions.filter(awaits).map((fn) => `    module.add_function(wrap_pyfunction!(${awaitedName(fn)}, module)?)?;`),
     ...model.objects.map((o) => `    module.add_class::<Py${langName('python', o.unit.name, 'class')}>()?;`),
   ].join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
@@ -1022,7 +1069,7 @@ __all__ = [${names.join(', ')}]${enums}${records}${callbacks}
 
 function modulePy(model: Model, module: string): string {
   const fns = [
-    ...model.functions.filter((f) => f.module === module).map((f) => langName('python', f.member.name, 'callable')),
+    ...model.functions.filter((f) => f.module === module).flatMap((f) => [langName('python', f.member.name, 'callable'), ...(awaits(f) ? [awaitedName(f)] : [])]),
     ...model.objects.filter((o) => o.unit.module === module).map((o) => langName('python', o.unit.name, 'class')),
   ];
   const enums = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
@@ -1061,7 +1108,9 @@ function nativePyi(model: Model): string {
     const positional = fn.args.filter((a) => !a.field).map(declared);
     const keyword = fn.args.filter((a) => a.field).map(declared);
     const params = keyword.length === 0 ? positional : [...positional, '*', ...keyword];
-    return `def ${langName('python', fn.member.name, 'callable')}(${params.join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+    const declaration = `def ${langName('python', fn.member.name, 'callable')}(${params.join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+    // GN-6m: the awaitable of a member that waits takes the same parameters.
+    return awaits(fn) ? `${declaration}\nasync ${declaration.replace(/^def /, `def a`)}` : declaration;
   });
   const params = (fn: Fn): string[] => {
     const positional = fn.args.filter((a) => !a.field).map(declared);
@@ -1072,7 +1121,7 @@ function nativePyi(model: Model): string {
     const lines = o.members.map((fn) => {
       const name = langName('python', fn.member.name, 'callable');
       if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
-      if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+      if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...${awaits(fn) ? `\n    @staticmethod\n    async def a${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...` : ''}`;
       if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
       if (fn.special === 'stringify') return '    def __str__(self) -> str: ...';
       if (fn.kind === 'iterate') {
@@ -1081,7 +1130,9 @@ function nativePyi(model: Model): string {
         const key = pyType(model, yields.key, false);
         return `    def __iter__(self) -> Iterator[${key}]: ...\n    def items(self) -> Iterator[tuple[${key}, ${pyType(model, yields.value, false)}]]: ...`;
       }
-      return `    def ${name}(${['self', ...params(fn)].join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+      const declaration = `def ${name}(${['self', ...params(fn)].join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+      // GN-6m: the awaitable of a method that waits takes the same parameters.
+      return awaits(fn) ? `    ${declaration}\n    async def a${declaration.slice('def '.length)}` : `    ${declaration}`;
     });
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });

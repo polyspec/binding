@@ -1038,6 +1038,9 @@ class Checker {
       declare(unit.module, typeName, path);
       const constructor = (unit.members ?? []).some((m) => m.kind === 'constructor');
       if (unit.kind === 'class' && unit.constructible !== false && constructor) declare(unit.module, `New${typeName}`, path);
+      // GN-15a: the functions through which another module reaches a class or a callback.
+      if (unit.kind === 'class') for (const name of [`${typeName}Handle`, `${typeName}FromHandle`]) declare(unit.module, name, path);
+      if (unit.kind === 'interface' && unit.origin === 'callback') declare(unit.module, `Dispatch${typeName}`, path);
       // T-5: a static member is the function <Class><Member> of the package.
       for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
         if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
@@ -1107,6 +1110,10 @@ class Checker {
         const other = names.get(name);
         if (other !== undefined) {
           this.report('CK-16', `${path}${pointer('members', m)}`, `the Python awaitable ${name} of ${member.id} is the name of ${other} (N-5)`);
+        }
+        // GN-6m: the generator writes the awaitable under this name, which a reserved word cannot be.
+        if (PYTHON_RESERVED.includes(name)) {
+          this.report('CK-16', `${path}${pointer('members', m)}`, `the Python awaitable ${name} of ${member.id} is a reserved word of Python (N-5, GN-6m)`);
         }
       }
     }

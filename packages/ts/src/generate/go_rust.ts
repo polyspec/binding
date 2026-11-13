@@ -66,6 +66,10 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     return `${name}(${input})`;
   }
   if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
+  if ('tuple' in type) {
+    // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
+    return `in_tuple${type.tuple.length}(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
+  }
   if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
@@ -494,6 +498,14 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
     out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
 }
+
+/// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
+/// the handle of a new instance, which the package of the class makes.
+fn alias_out_${plain}(output: &mut Vec<u8>, value: ${core}) {
+    output.push(10);
+    out_uint(output, ${model.objects.indexOf(object)}u64);
+    out_${plain}(output, value);
+}
 ${nested}`;
 }
 
@@ -627,6 +639,9 @@ function functionRust(model: Model, fn: Fn): string {
   }
   if (fn.returns === 'none') {
     lines.push('        Ok(Vec::new())');
+  } else if (fn.returns === 'never') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    lines.push('        match result {}');
   } else {
     lines.push('        let mut buffer = Vec::new();', '        let output = &mut buffer;', `        ${convertOut(model, fn.returns, 'result')};`, '        Ok(buffer)');
   }
@@ -954,15 +969,18 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
   throw new Unsupported(`${alias.unit.id}: the Go form ${form} of the kind ${kind} is not generated yet`);
 }
 
+// U-7, GN-15c: the classes whose instances the Go out rows of a value alias make by a member.
+export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
+  const makes = new Set((alias.unit.out ?? []).map((row) => row.make['go']).filter((make): make is string => typeof make === 'string' && make.includes('.')));
+  return model.objects.filter((o) => o.members.some((fn) => makes.has(fn.member.id)));
+}
+
 function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  // U-7: a Go value leaves the core as a value of a built-in form; a make by a member would give a class instance
-  // through the C ABI, whose handle the alias conversion does not write.
-  const byMember = (alias.unit.out ?? []).find((row) => typeof row.make['go'] === 'string' && row.make['go'].includes('.'));
-  if (byMember !== undefined) throw new Unsupported(`${alias.unit.id}: a Go make by a member (${String(byMember.make['go'])}) is not generated yet (U-7)`);
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
+  // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1157,7 +1175,35 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+}
+
+// T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
+// names are left out.
+function tupleReaders(model: Model): string {
+  const arities = new Set<number>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('tuple' in type) {
+      arities.add(type.tuple.length);
+      type.tuple.forEach(visit);
+      return;
+    }
+    for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
+  };
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
+  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
+  return [...arities].sort((a, b) => a - b).map((n) => {
+    const names = Array.from({ length: n }, (_, i) => `T${i}`);
+    return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
+fn in_tuple${n}<'a, ${names.join(', ')}>(
+    input: &mut &'a [u8],
+${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, Fail>,`).join('\n')}
+) -> Result<(${names.join(', ')}${n === 1 ? ',' : ''}), Fail> {
+    Ok((${names.map((_, i) => `part${i}(input)?`).join(', ')}${n === 1 ? ',' : ''}))
+}`;
+  }).join('\n\n');
 }
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.

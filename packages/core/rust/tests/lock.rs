@@ -111,3 +111,31 @@ fn a_guard_goes_to_another_thread_with_its_work() -> Result<(), BindingError> {
     assert_eq!(*cell.read("Counter", &[])?, 2);
     Ok(())
 }
+
+#[test]
+fn a_taken_value_leaves_the_object_consumed() -> Result<(), BindingError> {
+    // GN-6o: the place of the receiver self takes the value; every later place of the object is kind consumed.
+    let exclusive = Exclusive::new(String::from("a"));
+    let shared = Shared::new(String::from("b"));
+    assert!(!exclusive.taken() && !shared.taken());
+    assert_eq!(exclusive.take("Lease")?, "a");
+    assert_eq!(shared.clone().take("Lease")?, "b");
+    assert!(exclusive.taken() && shared.taken());
+    for result in [kind(&exclusive.read("Lease", &[])), kind(&exclusive.write("Lease")), kind(&exclusive.take("Lease"))] {
+        assert_eq!(result, "consumed");
+    }
+    for result in [kind(&shared.read("Lease", &[])), kind(&shared.write("Lease")), kind(&shared.take("Lease"))] {
+        assert_eq!(result, "consumed");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_value_is_not_taken_while_a_place_holds_it() -> Result<(), BindingError> {
+    let shared = Shared::new(1_u8);
+    let reading = shared.read("Lease", &[])?;
+    assert_eq!(kind(&shared.take("Lease")), "busy");
+    drop(reading);
+    assert_eq!(shared.take("Lease")?, 1);
+    Ok(())
+}
