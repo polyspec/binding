@@ -625,9 +625,9 @@ function argumentLines(model: Model, fn: Fn): string[] {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
     } else {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', subject)}?;`);
-      // GN-6ac: the core call chooses the core's own type, which IntoCore narrows to; a list parameter keeps the type
-      // of the table in Go until GN-6ad (defect 78).
-      if (narrows(parameter.type) && !JSON.stringify(parameter.type).includes('"list"')) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
+      // GN-6ac, GN-6ad: the core call chooses the core's own type, which IntoCore narrows to; a list is then a Vec of
+      // the core's items, whose slice the core borrows.
+      if (narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
   lines.push('        finish_input(input)?;');

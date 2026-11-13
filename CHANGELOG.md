@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The crate of the Go C ABI gave a list parameter to the core as a `Vec` of the table's type, u64 or a tuple of u64,
+  while the core call took `&values[..]`, so the Go binding of `tests/e2e/shapes`, whose core borrows `&[usize]` in
+  `width_sum` and `&[u32]` in `largest`, did not compile. The crate now turns such a list through `IntoCore` into a
+  `Vec` of the core's item type, as the other crates do (GN-6ad); an item outside the core's type is kind
+  `invalid_number`. Verified by `npm test` in `packages/ts`.
 - The crate of the Go C ABI gave a parameter to the core in the type of the table, u64 or a tuple of u64, and read a
   tuple result by its fields `.0` and `.1`, so the Go binding of `tests/e2e/shapes`, whose core takes `[usize; 2]` in
   `span_width` and u32 in `span_at` and gives `[u32; 2]`, did not compile. The crate now gives each integer parameter

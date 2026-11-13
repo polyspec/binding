@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Go C ABI crate는 list parameter를 표의 타입(u64나 u64의 tuple)으로 된 `Vec`으로 코어에 주면서 코어 호출은
+  `&values[..]`를 받았다. 그래서 코어가 `width_sum`에서 `&[usize]`를, `largest`에서 `&[u32]`를 빌리는 `tests/e2e/shapes`의
+  Go binding이 컴파일되지 않았다. 이제 crate는 다른 crate처럼 그런 list를 `IntoCore`로 코어 항목 타입의 `Vec`으로
+  바꾼다(GN-6ad). 코어 타입 밖의 항목은 kind `invalid_number`다. `packages/ts`의 `npm test`로 확인했다.
 - Go C ABI crate는 parameter를 표의 타입(u64나 u64의 tuple)으로 코어에 주고 tuple 결과를 field `.0`과 `.1`로 읽었다.
   그래서 코어가 `span_width`에서 `[usize; 2]`를, `span_at`에서 u32를 받고 `[u32; 2]`를 주는 `tests/e2e/shapes`의 Go
   binding이 컴파일되지 않았다. 이제 crate는 다른 crate처럼 정수 parameter와 record의 정수 field를 `IntoCore`로
