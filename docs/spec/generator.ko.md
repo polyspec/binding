@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 35e40a9cc6ac445661749e88ead97e964f457d2c186817c0a4bf1bd379113031 -->
+<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
 # 생성기
 
 [English](generator.md)
@@ -148,6 +148,9 @@
   인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
   `#[allow(clippy::panic)]`를 갖는다. `clippy::panic`을 deny하는 레포는 다른 모든 항목에 그 deny를 유지하며, 다른 생성
   항목은 panic하지 않는다.
+  시험 feature의 진입점만 쓰는 import, helper, 타입은 그 feature 아래에서 생성된다(`use` 줄이나 그 항목의
+  `#[cfg(feature = "<feature>")]`). feature 없는 빌드는 그 진입점을 컴파일하지 않으므로, 그 항목은 거기서 쓰이지
+  않고, lint가 쓰이지 않는 import와 죽은 코드를 deny하기 때문이다(GN-4).
   진입점은 target이 생성자나 그 class를 돌려주는 static member로 만드는 class의
   인스턴스를 받는다. target이 만들 수 없는 class의 시험에는 줄 인스턴스가 없고, Go 진입점이 그런 class의 인스턴스 표를
   `panic-test`에서만 읽으면 그 feature가 없을 때 읽는 함수가 쓰이지 않기 때문이다.

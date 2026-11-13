@@ -181,6 +181,10 @@ the design ids are those of the binding design.
   B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
   carries `#[allow(clippy::panic)]` with a reason that names B-7; a repository that denies `clippy::panic` keeps the
   deny for every other item, and no other generated item panics.
+  An import, a helper and a type that only the entry points of a test feature use is generated under that feature
+  (`#[cfg(feature = "<feature>")]` on the `use` line or on the item), because a build without the feature does not
+  compile those entry points, so the item would be unused there and the lints deny an unused import and dead code
+  (GN-4).
   It takes the instances of the classes that the
   target makes, by a constructor or a static member that returns the class, because the test of a class that the target
   cannot make has no instance to give it, and the Go entry point would read the instance table of such a class only
