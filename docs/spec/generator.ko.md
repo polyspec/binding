@@ -310,4 +310,6 @@
   패키지를 빌드해 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test`로 실행한다.
   `--add-targets`는 그 target을 P-1과 P-5의 package 항목, E-2의 WASM 클래스와 함께 사본에 더하고 그 사실을 출력한다. binding의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
-  (`url.<base>.insteadOf`).
+  (`url.<base>.insteadOf`). Cargo가 사본을 처음 해석하기 전에, 검사는 `Cargo.lock`의 `polyspec-binding-core` 항목에 checkout의
+  커밋을 적고, 사본에 lock이 없으면 그 항목만 가진 lock을 쓴다. Cargo는 먼저 GitHub에 브랜치의 head를 묻는데 그것은 push된
+  커밋이고, `binding scaffold`가 쓰는 manifest는 checkout에만 있는 `binding_core`의 feature를 필요로 할 수 있기 때문이다.

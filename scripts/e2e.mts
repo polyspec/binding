@@ -222,14 +222,31 @@ impl binding_core::Kinds for Error {
   process.stdout.write('change: the tracked binding packages that binding scaffold writes (L-2)\n');
 
   step(`${library}: the core builds without the generator`);
+  // Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed commit, not the
+  // one of this checkout, and a scaffolded manifest may need a feature of binding_core that only this checkout has.
+  // So the lock names the commit of this binding before Cargo first resolves: the entry of a tracked lock moves to
+  // it, and a copy without a lock gets a lock of that entry alone, which Cargo completes.
+  const head = execFileSync('git', ['-C', binding, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const lockPath = join(copy, 'Cargo.lock');
+  const pinned = /(name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+[^#"]*#)[0-9a-f]+"/;
+  if (!existsSync(lockPath)) {
+    const coreVersion = /^version = "([^"]*)"/m.exec(readFileSync(join(binding, 'packages/core/rust/Cargo.toml'), 'utf8'))?.[1] ?? '';
+    writeFileSync(lockPath, `version = 4\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "${coreVersion}"\nsource = "git+https://github.com/polyspec/binding.git?branch=v1%2Frust-core#${head}"\n`);
+    process.stdout.write('change: a Cargo.lock that pins polyspec-binding-core at the commit of this binding (CK-20)\n');
+  } else if (pinned.test(readFileSync(lockPath, 'utf8'))) {
+    const before = readFileSync(lockPath, 'utf8');
+    const after = before.replace(pinned, `$1${head}"`);
+    if (after !== before) {
+      writeFileSync(lockPath, after);
+      process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
+    }
+  }
   run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
   // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20). A git dependency moves to the
   // commit of this binding, as the repository does when it takes this binding.
   const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
   if (/name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+/.test(lockText)) {
-    // --precise: Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed
-    // commit, not the one of this checkout.
-    const head = execFileSync('git', ['-C', binding, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    // --precise: a lock that named another source of binding_core (a path, an older form) is resolved to this commit.
     run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--precise', head, '--quiet']);
     if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
   }

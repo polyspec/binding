@@ -380,4 +380,7 @@ the design ids are those of the binding design.
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test` through the subpath `./wasm`. `--add-targets` adds those targets to the copy
   with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
-  run's commands).
+  run's commands). Before Cargo first resolves the copy, the check writes the commit of the checkout into the entry of
+  `polyspec-binding-core` in `Cargo.lock`, or writes a lock of that entry alone when the copy has none: Cargo asks
+  GitHub for the head of the branch first, which is the pushed commit, and a manifest that `binding scaffold` writes may
+  need a feature of `binding_core` that only the checkout has.
