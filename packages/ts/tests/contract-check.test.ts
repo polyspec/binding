@@ -759,12 +759,43 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const sync = withStore({ callback: { 'store.read': [{ ...row, async: true }] } }, (c) => { c.units.find((u: any) => u.id === 'store').members[0].async_allowed = false; });
     assert.match(sync.find((f) => f.check === 'CK-22')?.message ?? '', /is async, which store\.read does not allow/);
   });
-  test('a raising member that takes a callback inside another type waits for its case form (G-5, GN-13a)', () => {
+  // forms.parse with one more parameter, and one case of it that gives the parameter the value.
+  const withParam = (parameter: object, key: string, value: unknown): Finding[] => {
     const c = contract();
-    member(c, 'forms.parse').parameters.push({ name: ['stores'], type: { list: { unit: 'store' } }, required: true });
-    const found = withFiles(c, true);
-    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
-    assert.match(found[0]?.message ?? '', /a case cannot give the function, or the callback inside another type/);
+    member(c, 'forms.parse').parameters.push({ ...parameter, required: true });
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const kase of c.cases) {
+      const document = files.get(kase.file) ?? {};
+      document[kase.group] = kase.member === 'forms.parse' ? [{ id: 'too_large', body: { hex: '00' }, [key]: value, raises: { kind: 'too_large' } }] : [];
+      files.set(kase.file, document);
+    }
+    return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
+  };
+  const stores = { name: ['stores'], type: { list: { unit: 'store' } } };
+  test('a case gives a callback inside another type as its fixture (G-5, GN-13)', () => {
+    assert.deepEqual(withParam(stores, 'stores', [{ callback: { 'store.read': [row] } }]), []);
+    const found = withParam(stores, 'stores', [{ callback: { 'store.write': [row] } }]);
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
+    assert.match(found[0]?.message ?? '', /store\.write is no member of store/);
+    assert.match(withParam(stores, 'stores', ['a']).map((f) => f.message).join('\n'), /stores\[0\] is not \{"callback"/);
+  });
+  test('a case gives a function as its rows, whose args are the positions of its parameters (G-5, GN-13)', () => {
+    const takes = (parameters: unknown[]): object => ({ name: ['convert'], type: { function: { parameters, returns: 'text', async_allowed: false } } });
+    assert.deepEqual(withParam(takes(['text']), 'convert', { function: [{ args: { 0: 'a' }, result: 'b', once: true }] }), []);
+    // A function that takes an object of the language has no row, which no case can give, but may have none.
+    const native = takes(['text', { unit: 'session' }]);
+    assert.deepEqual(withParam(native, 'convert', { function: [] }), []);
+    const refused: [object, unknown, RegExp][] = [
+      [takes(['text']), 'a', /convert is not \{"function": \[<row>\]\}/],
+      [takes(['text']), { function: [{ args: { a: 'a' }, result: 'b' }] }, /the args of row 0 of convert are not the positions 0/],
+      [takes(['text']), { function: [{ args: { 0: 'a' }, result: 'b', raise: {} }] }, /row 0 of convert has no key raise/],
+      [native, { function: [{ args: { 0: 'a', 1: null }, result: 'b' }] }, /row 0 of convert: the function takes an object of the language, which a row cannot give/],
+    ];
+    for (const [parameter, value, message] of refused) {
+      const found = withParam(parameter, 'convert', value);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], String(message));
+      assert.match(found[0]?.message ?? '', message);
+    }
   });
   test('a group that is not in its file', () => {
     const c = contract();
