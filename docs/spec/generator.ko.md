@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: be3abf083ad82063b89b6f2b1f611e36c1d77de34739430b6e7b80e2f64b9e5d -->
+<!-- source-sha256: ef92b4d4812775079c344f6dc6807377840b458eccb4fa48e6a9766d6320f17d -->
 # 생성기
 
 [English](generator.md)
@@ -652,11 +652,17 @@
     가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
   - `Raised`: `Raised`는 그것을 만든 호출이 해제한다. 코어는 `Raised`에 응답하고 그것을 drop할 수 있다. rollback한 뒤
     다른 실패를 반환하는 scope가 그렇다. `Raised`에는 해제 함수가 없으므로, 던져진 것이 그 handle 아래 binding의 table에
-    남게 된다. Node와 WASM: 각 진입점은 자기가 도는 동안 자기 스레드에서 만들어진 `Raised`의 handle을 기록하고, 그 안에서
-    언어 코드가 하는 호출은 자기 것을 따로 기록한다. 진입점이 반환할 때, `failure_error`가 가져가지 않은 각 handle 아래의
-    던져진 것을 table에서 제거하고, table을 놓은 뒤에 drop한다. machine은 자기 advance들의 handle을 보관하고, 결과를
-    주거나 실패하는 advance에서 해제하며, 끝까지 advance되지 않으면 그 `Driven` 객체가 끝나는 곳에서 해제한다. 아직
-    적용하지 않음(G-4): PHP, Python, Go의 crate는 이 규칙을 적용하지 않는다.
+    남게 된다. 다섯 crate의 각 진입점은 자기 `guard`에서 자기 스레드의 scope를 연다. `Raised`를 만드는 함수는 그 handle을
+    가장 안쪽 scope에 기록하므로, 진입점 안에서 언어 코드가 하는 호출은 자기 것을 따로 기록한다. 진입점이 반환할 때,
+    `failure_error`가 가져가지 않은 각 handle 아래의 던져진 것을 table에서 제거하고, table을 놓은 뒤에 drop한다. Node와
+    WASM: machine은 여러 진입점이 advance하므로 자기 advance들의 handle을 보관하고, 결과를 주거나 실패하는 advance에서
+    해제하며, 끝까지 advance되지 않으면 그 `Driven` 객체가 끝나는 곳에서 해제한다. PHP, Python, Go: 멤버의 machine은 한
+    진입점 안에서 돌고(`machine::drive`), 그 진입점의 scope가 handle을 쥔다. PHP callback이 던진 것은 table을 놓은 뒤에
+    drop한다. PHP 객체의 destructor가 binding으로 다시 들어올 수 있기 때문이다. Python callback이 raise한 것은 GIL과
+    함께 끝나며, 진입점은 자기 `guard`가 반환하는 곳에서 GIL을 쥐고 있다. Go table의 항목은 package `binding`의 call이
+    보관하는 error를 가리키고, 그 error는 멤버와 함께 끝난다(GN-15b). 아직 적용하지 않음(G-4): 진입점의 스레드가 아닌
+    스레드에서 만들어진 `Raised`는 어느 scope에도 기록되지 않으므로, 코어가 그것을 drop하면 table에 남는다. 진입점이
+    기다리는 동안 코어가 자기 스레드에서 Python이나 Go의 callback을 부르는 경우가 그렇다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를

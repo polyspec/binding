@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A `Raised` that the core dropped and did not return left what was thrown in the table of the PHP, Python and Go
+  crates, because only the Node and WASM crates released it. The `guard` of every entry point of the three crates now
+  opens a scope of its thread, the function that makes a `Raised` records its handle in the innermost scope, and the
+  entry point removes from the table what nothing took when it returns (GN-6ae): PHP drops it after the table is
+  released, and Python with the GIL. Their machine runs inside one entry point, so no object keeps handles between
+  two entry points. A `Raised` that is made on another thread than that of its entry point is recorded in no scope
+  and is not released yet (G-4). Verified by `npm test` in `packages/ts`, whose test requires the scope, the record
+  and the release in the three crates and none of them in a crate without a table. The generated crates were not
+  compiled for this change.
 - The entry of a function of a functions unit had two names: `function_<name>` in the PHP and Python crates and
   `entry_<member>` in the Node and WASM crates, whose helper of a function parameter, `function_in`, started with the
   prefix of the first. The Node and WASM crates now name the entry `function_<name>` and the helper `callable_in`, so

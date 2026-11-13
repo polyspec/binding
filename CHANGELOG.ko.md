@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a3f37fbce4d8b0d605cd0b9815e1952f842ebaca527c0feb9756ff0df4c577b3 -->
+<!-- source-sha256: 44c31b871683fd75b92fb3f1bd9e88d5684e77913954cb78dbe8cc0625afd18d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 코어가 drop하고 반환하지 않은 `Raised`는 PHP, Python, Go crate의 table에 던져진 것을 남겼다. Node와 WASM crate만 그것을
+  해제했기 때문이다. 이제 세 crate의 모든 진입점의 `guard`가 자기 스레드의 scope를 열고, `Raised`를 만드는 함수가 그
+  handle을 가장 안쪽 scope에 기록하며, 진입점은 반환할 때 아무도 가져가지 않은 것을 table에서 제거한다(GN-6ae). PHP는
+  table을 놓은 뒤에, Python은 GIL과 함께 drop한다. 세 crate의 machine은 한 진입점 안에서 돌므로, 두 진입점 사이에
+  handle을 보관하는 객체는 없다. 진입점의 스레드가 아닌 스레드에서 만들어진 `Raised`는 어느 scope에도 기록되지 않아
+  아직 해제되지 않는다(G-4). `packages/ts`의 `npm test`로 검증했다. 그 테스트는 세 crate에 scope, 기록, 해제가 있고
+  table이 없는 crate에는 그 어느 것도 없기를 요구한다. 이 변경에 대해 생성된 crate는 컴파일하지 않았다.
 - functions unit의 함수의 진입에는 이름이 둘 있었다. PHP와 Python crate에서는 `function_<name>`, Node와 WASM crate에서는
   `entry_<member>`였고, Node와 WASM의 함수 parameter의 helper `function_in`은 앞의 접두로 시작했다. Node와 WASM crate는 이제
   진입을 `function_<name>`, helper를 `callable_in`으로 이름하므로 GN-4c는 다섯 crate에 한 규칙을 적는다. Node와 WASM lane을

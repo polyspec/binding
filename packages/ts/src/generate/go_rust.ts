@@ -972,7 +972,31 @@ static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 fn thrown(error: Thrown) -> Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     lock(&THROWN).insert(handle, error);
+    RAISING.with_borrow_mut(|open| {
+        if let Some(made) = open.last_mut() {
+            made.push(handle);
+        }
+    });
     Raised::from_generated(Handle::new(handle))
+}
+
+thread_local! {
+    /// U-3: the handles of the Raised values that each call in progress made on this thread, the innermost call last.
+    static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// U-3: a Raised is released by the call that made it: what went wrong under each handle that nothing took, because
+/// the core dropped its Raised and did not return it, leaves the table when the call ends. The error of a Go method
+/// itself is kept by the call of package binding, which ends with the member (GN-15b).
+fn raised_released(made: &[u64]) {
+    if made.is_empty() {
+        return;
+    }
+    let gone = {
+        let mut map = lock(&THROWN);
+        made.iter().filter_map(|handle| map.remove(handle)).collect::<Vec<Thrown>>()
+    };
+    drop(gone);
 }
 
 /// U-3: the failure of a Raised: the Go error, which the caller gets back unchanged, or the failure of the binding.
@@ -1375,8 +1399,10 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}${raisesAssertions(model)}${aliasKindsRust(model)}
 /// B-7, B-8: a panic of the call reaches Go as kind internal and never crosses the C ABI.
-fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {
-    match catch_unwind(AssertUnwindSafe(body)) {
+fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {${callsBack(model) ? `
+    // U-3: the call releases each Raised that it made and nothing took.
+    RAISING.with_borrow_mut(|open| open.push(Vec::new()));` : ''}
+    let result = match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
             let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
@@ -1386,7 +1412,11 @@ fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> 
             };
             Err(binding_error(BindingError::Internal { detail }))
         }
-    }
+    };${callsBack(model) ? `
+    if let Some(made) = RAISING.with_borrow_mut(Vec::pop) {
+        raised_released(&made);
+    }` : ''}
+    result
 }
 
 /// The argument buffer of Go.

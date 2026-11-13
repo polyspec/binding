@@ -948,6 +948,8 @@ enum Thrown {
 
 thread_local! {
     static THROWN: RefCell<BTreeMap<u64, Thrown>> = const { RefCell::new(BTreeMap::new()) };
+    /// U-3: the handles of the Raised values that each call in progress made, the innermost call last.
+    static RAISING: RefCell<Vec<Vec<u64>>> = const { RefCell::new(Vec::new()) };
 }
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
@@ -955,7 +957,24 @@ static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 fn thrown(error: Thrown) -> ${failure} {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
+    RAISING.with_borrow_mut(|open| {
+        if let Some(made) = open.last_mut() {
+            made.push(handle);
+        }
+    });
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+}
+
+/// U-3: a Raised is released by the call that made it: what was thrown under each handle that nothing took, because
+/// the core dropped its Raised and did not return it, leaves the table when the call ends, and is dropped after the
+/// table is released, because the destructor of a PHP object may run PHP code that enters the binding again; a thread
+/// that ends holds no table.
+fn raised_released(made: &[u64]) {
+    let gone = THROWN.try_with(|map| {
+        let mut map = map.borrow_mut();
+        made.iter().filter_map(|handle| map.remove(handle)).collect::<Vec<Thrown>>()
+    });
+    drop(gone);
 }
 
 fn failure_error(failure: ${failure}) -> Fail {
@@ -1099,7 +1118,8 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
+  // U-3: guard, which is no part of the code that the helpers are read from, releases the Raised values of its call.
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}${failureRust(model) === '' ? '' : '\nraised_released'}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
@@ -1527,8 +1547,10 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
-    match catch_unwind(AssertUnwindSafe(body)) {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${failureRust(model) !== '' ? `
+    // U-3: the call releases each Raised that it made and nothing took.
+    RAISING.with_borrow_mut(|open| open.push(Vec::new()));` : ''}
+    let result = match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
             let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
@@ -1538,7 +1560,11 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
             };
             Err(binding_error(BindingError::Internal { detail }))
         }
-    }
+    };${failureRust(model) !== '' ? `
+    if let Some(made) = RAISING.with_borrow_mut(Vec::pop) {
+        raised_released(&made);
+    }` : ''}
+    result
 }
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.

@@ -990,7 +990,31 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
 fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     thrown_map().insert(handle, error.into_value(py).into_any());
+    RAISING.with_borrow_mut(|open| {
+        if let Some(made) = open.last_mut() {
+            made.push(handle);
+        }
+    });
     binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+
+thread_local! {
+    /// U-3: the handles of the Raised values that each call in progress made on this thread, the innermost call last.
+    static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// U-3: a Raised is released by the call that made it: what was thrown under each handle that nothing took, because
+/// the core dropped its Raised and did not return it, leaves the table when the call ends, and ends with the GIL,
+/// which the entry point holds where its guard returns, after the table is released.
+fn raised_released(_py: Python<'_>, made: &[u64]) {
+    if made.is_empty() {
+        return;
+    }
+    let gone = {
+        let mut map = thrown_map();
+        made.iter().filter_map(|handle| map.remove(handle)).collect::<Vec<Py<PyAny>>>()
+    };
+    drop(gone);
 }
 
 fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
@@ -1166,8 +1190,10 @@ fn binding_error(py: Python<'_>, error: BindingError) -> PyErr {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
-    match catch_unwind(AssertUnwindSafe(body)) {
+fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResult<T> {${failureRust(model) !== '' ? `
+    // U-3: the call releases each Raised that it made and nothing took.
+    RAISING.with_borrow_mut(|open| open.push(Vec::new()));` : ''}
+    let result = match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
             let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
@@ -1177,7 +1203,11 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
             };
             Err(binding_error(py, BindingError::Internal { detail }))
         }
-    }
+    };${failureRust(model) !== '' ? `
+    if let Some(made) = RAISING.with_borrow_mut(Vec::pop) {
+        raised_released(py, &made);
+    }` : ''}
+    result
 }
 
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}

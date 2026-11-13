@@ -3870,3 +3870,38 @@ test('a Raised of the Node and WASM crates is released by the call that made it 
     assert.match(text(plain, path), /fn raised_released\(/, path);
   }
 });
+
+test('a Raised of the PHP, Python and Go crates is released by the call that made it (U-3, GN-6ae)', () => {
+  // The core may drop a Raised and not return it, so what was thrown under its handle would stay in the table. Each
+  // entry point opens a scope of its thread in guard, the function that makes a Raised records its handle in the
+  // innermost scope, and guard releases what nothing took when the entry point returns. The machine of these three
+  // crates runs inside one entry point, so no object keeps handles between two entry points.
+  const out = scopedSample(['php', 'python', 'go']);
+  const record = String.raw`RAISING\.with_borrow_mut\(\|open\| \{\n {8}if let Some\(made\) = open\.last_mut\(\) \{\n {12}made\.push\(handle\);\n {8}\}\n {4}\}\);\n`;
+  const scope = (first: string): RegExp => new RegExp(String.raw`${first} \{\n[^\n]*\n {4}RAISING\.with_borrow_mut\(\|open\| open\.push\(Vec::new\(\)\)\);\n {4}let result = match catch_unwind\(AssertUnwindSafe\(body\)\) \{[\s\S]*?\n {4}\};\n {4}if let Some\(made\) = RAISING\.with_borrow_mut\(Vec::pop\) \{\n {8}raised_released\(${first.includes('py:') ? 'py, ' : ''}&made\);\n {4}\}\n {4}result\n\}`);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /static RAISING: RefCell<Vec<Vec<u64>>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(php, new RegExp(String.raw`THROWN\.with_borrow_mut\(\|map\| map\.insert\(handle, error\)\);\n {4}${record} {4}binding_core::Failure::Raised\(`));
+  // What was thrown is dropped after the table is released: the destructor of a PHP object may enter the binding.
+  assert.match(php, /fn raised_released\(made: &\[u64\]\) \{\n {4}let gone = THROWN\.try_with\(\|map\| \{\n {8}let mut map = map\.borrow_mut\(\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Thrown>>\(\)\n {4}\}\);\n {4}drop\(gone\);\n\}/);
+  assert.match(php, scope(String.raw`fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail>`));
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const \{ std::cell::RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(python, new RegExp(String.raw`thrown_map\(\)\.insert\(handle, error\.into_value\(py\)\.into_any\(\)\);\n {4}${record} {4}binding_core::Raised::from_generated\(`));
+  // The values end with the GIL, which the entry point holds where guard returns, and after the table is released.
+  assert.match(python, /fn raised_released\(_py: Python<'_>, made: &\[u64\]\) \{\n {4}if made\.is_empty\(\) \{\n {8}return;\n {4}\}\n {4}let gone = \{\n {8}let mut map = thrown_map\(\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Py<PyAny>>>\(\)\n {4}\};\n {4}drop\(gone\);\n\}/);
+  assert.match(python, scope(String.raw`fn guard<'py, T>\(py: Python<'py>, body: impl FnOnce\(\) -> PyResult<T>\) -> PyResult<T>`));
+  const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const \{ std::cell::RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(go, new RegExp(String.raw`lock\(&THROWN\)\.insert\(handle, error\);\n {4}${record} {4}Raised::from_generated\(`));
+  assert.match(go, /fn raised_released\(made: &\[u64\]\) \{\n {4}if made\.is_empty\(\) \{\n {8}return;\n {4}\}\n {4}let gone = \{\n {8}let mut map = lock\(&THROWN\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Thrown>>\(\)\n {4}\};\n {4}drop\(gone\);\n\}/);
+  assert.match(go, scope(String.raw`fn guard\(body: impl FnOnce\(\) -> Result<Vec<u8>, Fail>\) -> Result<Vec<u8>, Fail>`));
+  // A crate that makes no Raised has no table, so its guard opens no scope.
+  const { contract, caseFiles } = load();
+  const plain = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'go'] });
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(plain, path);
+    assert.equal(/\bRAISING\b/.test(lib), /\bstatic THROWN\b/.test(lib), path);
+    assert.equal(/fn raised_released\(/.test(lib), /\bstatic THROWN\b/.test(lib), path);
+  }
+});

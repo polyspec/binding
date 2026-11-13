@@ -785,13 +785,20 @@ the design ids are those of the binding design.
     result whose handle names no value is kind `internal`.
   - `Raised`: a `Raised` is released by the call that made it. The core may answer a `Raised` and drop it, as a
     scope does that rolls back and then returns another failure, and a `Raised` has no release function, so what was
-    thrown would stay in the table of the binding under its handle. Node and WASM: each entry point records the
-    handles of the `Raised` values that are made on its thread while it runs, and a call that language code makes
-    inside it records its own; when the entry point returns, it removes from the table what was thrown under each
-    handle that `failure_error` did not take, and drops it after the table is released. A machine keeps the handles
-    of its advances and releases them at the advance that gives its result or fails, or, when it is not advanced to
-    its end, where its `Driven` object ends. Not applied yet (G-4): the crates of PHP, Python and Go do not apply the
-    rule.
+    thrown would stay in the table of the binding under its handle. Each entry point of the five crates opens a
+    scope of its thread in its `guard`: the function that makes a `Raised` records its handle in the innermost
+    scope, so a call that language code makes inside an entry point records its own; when the entry point returns,
+    it removes from the table what was thrown under each handle that `failure_error` did not take, and drops it
+    after the table is released. Node and WASM: a machine is advanced by several entry points, so it keeps the
+    handles of its advances and releases them at the advance that gives its result or fails, or, when it is not
+    advanced to its end, where its `Driven` object ends. PHP, Python and Go: the machine of a member runs inside one
+    entry point (`machine::drive`), whose scope holds its handles. What a PHP callback threw is dropped after the
+    table is released, because the destructor of a PHP object may enter the binding again; what a Python callback
+    raised ends with the GIL, which the entry point holds where its `guard` returns; the entry of the Go table names
+    the error that the call of package `binding` keeps, which ends with the member (GN-15b). Not applied yet (G-4):
+    a `Raised` that is made on another thread than that of its entry point, where the core calls a callback of
+    Python or Go from a thread of its own while the entry point waits, is recorded in no scope, so it stays in the
+    table when the core drops it.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
