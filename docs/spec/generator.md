@@ -144,7 +144,7 @@ the design ids are those of the binding design.
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`; WASM `__aliasIn<Alias>` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7), and its `in` function and then its `out` function (GN-13e) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`; WASM `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet; WASM `__armFaults`, `__faultLeft` |
   | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
 
@@ -687,7 +687,7 @@ the design ids are those of the binding design.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
-  of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
+  of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
   kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
   test, because PHP has no table of the errno symbols of its machine; and a value of a value type of another kind
@@ -730,7 +730,12 @@ the design ids are those of the binding design.
   that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
   `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
-  `<form> again k` at a later place, so the identity of each place and each cycle is compared. A case whose result
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. The result of an
+  alias with the entry points of `codec-test` (`in_raises`, GN-5) also goes through the round trip of the rows of the
+  alias (U-1): the test gives the result to `_alias_round_<alias>` (Python), `__aliasRound<Alias>` (Node, WASM) or
+  `Internal\aliasRound<Alias>` (PHP), which takes it by the `in` function of the alias and gives the core value back
+  by its `out` function, and requires the same texts, so each form that the `out` rows make enters again as the same
+  value. A case whose result
   has no case form (a class, a result of `none`), whose value alias has no out row that makes the built-in form of
   its kind in the language or a form of the texts, or that gives no argument of a parameter or of the factory of its
   receiver fails its test with that reason, so the case is never left out.

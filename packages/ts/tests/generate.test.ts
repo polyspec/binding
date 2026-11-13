@@ -1981,6 +1981,26 @@ test('a result of a value alias is compared by the texts of its places in pre-or
   assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
 });
 
+test('the result of an alias with the entry points of codec-test goes back through its in and out functions to the same texts (GN-13e, U-1)', () => {
+  const out = sampleWith(() => {}, ['python', 'node', 'php']);
+  const wasm = sampleWith(() => {}, ['wasm']);
+  const expected = JSON.stringify(['text 78']);
+  const python = text(out, pythonTests);
+  assert.ok(python.includes(`        result = pkg.same("x")\n        expected = json.loads(${JSON.stringify(expected)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_data(result)), expected)`), python);
+  assert.ok(text(out, nodeTests).includes(`  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRoundData(result)), expected);`), 'node');
+  const js = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(js.includes(`test('GN-13e: same a_text_comes_back', async () => {\n  const glue = await glueModule();\n  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRoundData(result)), expected);`), js);
+  assert.ok(text(out, phpTests).includes(`        $result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(expected)}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\Polyspec\\Sample\\Internal\\aliasRoundData($result)));`), 'php');
+  // Each entry point takes the value by the in function of the alias and gives it back by its out function.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[cfg\(feature = "codec-test"\)\]\n#\[pyfunction\]\nfn _alias_round_data<'py>\(py: Python<'py>, value: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n    guard\(py, \|\| \{\n        let value: polyspec_sample::Data = in_data\(py, value, "value"\)\?;\n        out_data\(py, &value\)/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /module\.add_function\(wrap_pyfunction!\(_alias_round_data, module\)\?\)\?;/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[napi\(js_name = "__aliasRoundData"\)\]\npub fn alias_round_data<'env>\(env: &'env Env, value: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(env, value, "value"\)\?;\n        out_data\(env, &value\)/);
+  assert.match(text(wasm, 'packages/ts/wasm/generated/lib.rs'), /#\[wasm_bindgen\(js_name = "__aliasRoundData"\)\]\n {4}pub fn alias_round_data\(value: JsValue\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let value: polyspec_sample::Data = in_data\(&value, "value"\)\?;\n {12}out_data\(&value\)/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\aliasRoundData"\)\]\npub fn alias_round_data\(value: &Zval\) -> Result<Zval, PhpException> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(value, "value"\)\?;\n        out_data\(&value\)/);
+  assert.match(php, /let module = module\.function\(wrap_function!\(alias_round_data\)\);/);
+});
+
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const data = sample.units.find((u: any) => u.id === 'data');

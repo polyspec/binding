@@ -117,7 +117,7 @@
   | feature | 용도 | Python | Node | PHP | Go C 기호 |
   |---|---|---|---|---|---|
   | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
-  | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`. WASM은 `__aliasIn<Alias>` |
+  | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7), 그 `in` 함수 다음에 `out` 함수 실행(GN-13e) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`. WASM은 `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | 아직 없음. WASM은 `__armFaults`, `__faultLeft` |
   | `case-test` | 인자가 그 언어에서 꼴을 갖지 않는 case(GN-13) | 아직 없음 | 아직 없음 | `<namespace>\Internal\caseTest<n>` | 아직 없음. WASM도 아직 없음 |
 
@@ -567,7 +567,7 @@
   `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
   거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
-  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, `codec-test` 진입점이 없는 value unit 행의 왕복(진입점이 있는 alias는 GN-13e가 실행한다), 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
   errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
@@ -601,7 +601,10 @@
   map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
   인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
-  자리의 동일성과 각 순환을 비교한다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  자리의 동일성과 각 순환을 비교한다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
+  거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
+  준다. 이것은 결과를 alias의 `in` 함수로 받아 그 코어 값을 `out` 함수로 돌려주며, 시험은 같은 텍스트를 요구한다. 그래서
+  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
   내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
   시험이 실패하므로, case는 빠지지 않는다.
 - **GN-13f** 메서드의 case는 receiver를 자기 키 가운데 그 class의 factory 인자로 주거나, 키 `receiver` 아래에 앞선
