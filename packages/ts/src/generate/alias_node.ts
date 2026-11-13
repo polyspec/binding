@@ -11,22 +11,22 @@ import { container, outArms } from './alias_shared.ts';
 function builtin(alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
-      return 'out_null(env)';
+      return 'null_out(env)';
     case 'bool':
-      return 'out_bool(env, value)';
+      return 'bool_out(env, value)';
     case 'int':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      return kind === 'int64' ? 'out_int(env, value)' : 'out_int(env, value.value())';
+      return kind === 'int64' ? 'int_out(env, value)' : 'int_out(env, value.value())';
     case 'bigint':
       if (kind === 'number') return 'js_literal_bigint(env, &value)';
       return kind === 'int64' ? 'js_bigint(env, value)' : 'js_bigint(env, value.value())';
     case 'float':
       if (kind === 'number') return 'js_literal_number(env, &value)';
-      if (kind === 'float') return 'out_float(env, value.value())';
+      if (kind === 'float') return 'float_out(env, value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `js_literal_number(env, &${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'out_text(env, value)';
+      return kind === 'bytes' ? 'js_utf8(env, value.value())' : 'text_out(env, value)';
     case 'bytes':
       return kind === 'text' ? 'js_bytes(env, value.as_bytes())' : 'js_bytes(env, value.value())';
     case 'list': {
@@ -287,14 +287,14 @@ fn js_bigint(env: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
 
 /// U-7: the literal token of a number (F-1 (a)) as a bigint, without loss.
 fn js_literal_bigint<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
-    let text = out_text(env, literal)?;
+    let text = text_out(env, literal)?;
     js_global_call(env, "BigInt", text).map_err(internal)
 }
 
 /// U-7: the literal token of a number as a JavaScript number, the nearest double.
 fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
     match literal.parse::<f64>() {
-        Ok(number) => out_float(env, number),
+        Ok(number) => float_out(env, number),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -302,7 +302,7 @@ fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env
 /// U-7: bytes that are UTF-8 as a string.
 fn js_utf8<'env>(env: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(env, text),
+        Ok(text) => text_out(env, text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }

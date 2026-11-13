@@ -148,8 +148,13 @@ the design ids are those of the binding design.
   `list_out`), and the helpers of a default, of a callable and of a passthrough are `default_in`, `callable_in` and
   `passed_out`. A new helper follows the same rule. Why: a unit takes any name, also `default`, `callable`, `text`,
   `list` or `scope`, and a helper named `in_<word>` is defined a second time in the crate of a contract that has a
-  unit of that name, which does not compile. Not applied yet (G-4): the crates of Node, WASM and Go name their
-  helpers `in_<word>` and `out_<word>`; the crates of PHP and Python apply the rule.
+  unit of that name, which does not compile. The helper of a function parameter of Node and WASM is `function_in`.
+  The entry point of a function member of the Node and WASM crates is the Rust function `entry_<member>`, exported
+  under the name of the member (`js_name`), and no helper of those crates has a name that starts with `entry_`: a
+  member takes any name, also `guard`, `pass`, `called` or `throw`, and an entry point of that name is a second
+  definition of the helper in the Node crate and hides the helper in the module of the exports of the WASM crate. Not
+  applied yet (G-4): the crate of Go names its helpers `in_<word>` and `out_<word>`; the crates of PHP, Python, Node
+  and WASM apply the rule.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

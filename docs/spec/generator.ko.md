@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 96bdc036e48e76621ae5f71abe03001e10f48209cc991b47607d6696d33a423d -->
+<!-- source-sha256: 4db4c50072ea3a32f3c5f02bbf117b2190147bee6b3e26425f8a7468c3dad28b -->
 # 생성기
 
 [English](generator.md)
@@ -118,8 +118,12 @@
   않는다. helper는 방향을 끝에 적는다: 내장 타입의 변환은 `<type>_in`과 `<type>_out`이고(`text_in`, `list_out`),
   default, callable, passthrough의 helper는 `default_in`, `callable_in`, `passed_out`이다. 새 helper도 같은 규칙을
   따른다. 이유: unit은 어떤 이름이든 가질 수 있고 `default`, `callable`, `text`, `list`, `scope`도 그렇다. `in_<word>`라는
-  이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 아직 적용하지 않은 것(G-4):
-  Node, WASM, Go의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름한다. PHP와 Python의 crate는 이 규칙을 적용한다.
+  이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. Node와 WASM의 함수 parameter의 helper는
+  `function_in`이다. Node와 WASM crate에서 function member의 진입점은 Rust 함수 `entry_<member>`이고 member의
+  이름으로 내보내며(`js_name`), 그 crate의 어떤 helper도 `entry_`로 시작하는 이름을 갖지 않는다. member는 어떤 이름이든
+  가질 수 있고 `guard`, `pass`, `called`, `throw`도 그렇다. 그 이름의 진입점은 Node crate에서는 helper의 두 번째 정의이고,
+  WASM crate에서는 export의 모듈 안에서 helper를 가린다. 아직 적용하지 않은 것(G-4): Go의 crate는 helper를
+  `in_<word>`와 `out_<word>`로 이름한다. PHP, Python, Node, WASM의 crate는 이 규칙을 적용한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

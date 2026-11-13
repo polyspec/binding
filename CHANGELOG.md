@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The generated Node and WASM crates of a contract with a unit named `default`, `text`, `list` or another word of a
+  helper defined the function `in_<word>` or `out_<word>` twice, and a function member named `guard`, `pass`,
+  `called`, `throw` or `internal` took the name of a helper of the crate: a second definition in the Node crate, and
+  in the WASM crate an export that hides the helper in the module of the exports. The helpers of the Node and WASM
+  crates now state their direction last (`text_in`, `list_out`, `default_in`, `function_in`, `passed_out`), and the
+  entry point of a function member is `entry_<member>`, exported under the name of the member (GN-4c). Verified by
+  `npm test` in `packages/ts`: the test of the sample with the enums `default`, `callable` and `text` found two
+  definitions of `in_default` in the Node crate before the change, and the test of the functions `guard`, `pass`,
+  `called`, `throw` and `internal` found two definitions of `guard`; both pass, and the two tests that compile
+  generated WASM entry points with `rustc` pass with the new names. The 20 tests that generate the sample for Python
+  or Go still fail with the refusal of those targets.
 - The Node and WASM tests did not write the result of a step of a function fixture nor the marker `awaits`. A step
   that names a result is now `assert.deepStrictEqual` of its call inside the function, and a fixture with `awaits` is
   an async function, so the two cases of the sample that await run the awaited step of the machine with a promise

@@ -180,8 +180,8 @@ const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
 });
 const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
 // GN-4c: the name of a helper of the generated crate at a path, given as `in_<word>` or `out_<word>`: the crates of
-// Python and PHP name it `<word>_in` and `<word>_out`, and the crates of Node, WASM and Go do not apply the rule yet.
-const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
+// Python, PHP, Node and WASM name it `<word>_in` and `<word>_out`, and the crate of Go does not apply the rule yet.
+const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext|ts)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
 // The case files of the sample of the end-to-end check (tests/e2e/sample).
 const sampleCases = (): Map<string, unknown> =>
   new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
@@ -1007,8 +1007,8 @@ test('a property of an error unit that raises raises in place of the error, and 
   assert.match(php, /\.method\(FunctionBuilder::new\("trace", absent_error_trace_method\)\.returns\(DataType::Array, false, true\), MethodFlags::Public\)/);
   assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /        \/\*\* @return list<string>\|null \*\/\n        public function trace\(\): array\|null \{\}/);
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /out_text\(match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\)/);
-  assert.match(wasm, /\("trace", out_list\(polyspec_consumer::Error::trace\(&error\), /);
+  assert.match(wasm, /text_out\(match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\)/);
+  assert.match(wasm, /\("trace", list_out\(polyspec_consumer::Error::trace\(&error\), /);
   const goRust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(goRust, /out_text\(output, match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\);/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func \(e \*AbsentError\) Trace\(\) \[\]string \{ return e\.pTrace \}/);
@@ -1165,7 +1165,7 @@ test('WASM: map<T> is a Map of string keys, through the entries of the ES module
   contract.errors.fixed = contract.errors.fixed.filter((f: { lang: string }) => f.lang === 'node');
   contract.units[0].members[0].returns = { map: 'text' };
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
-  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /fn out_map<T>\(value: impl Borrow<binding_core::OrderedMap<T>>/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /fn map_out<T>\(value: impl Borrow<binding_core::OrderedMap<T>>/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
 });
@@ -1284,8 +1284,8 @@ test('a tuple enters as the sequence of exactly its parts in each language (T-1,
     assert.match(rust, new RegExp(`${tuple}\\([a-z_]+, "span"\\)\\.and_then\\(\\|\\[part_0, part_1\\]\\| Ok\\(\\(${uint}\\(part_0, "span"\\)\\?, ${uint}\\(part_1, "span"\\)\\?\\)\\)\\)`), path);
   }
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /fn in_tuple<const N: usize>\(value: &JsValue, subject: &str\) -> Result<\[JsValue; N\], Fail>/);
-  assert.match(wasm, /in_tuple\(&?[a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(&part_0, "span"\)\?, in_uint\(&part_1, "span"\)\?\)\)\)/);
+  assert.match(wasm, /fn tuple_in<const N: usize>\(value: &JsValue, subject: &str\) -> Result<\[JsValue; N\], Fail>/);
+  assert.match(wasm, /tuple_in\(&?[a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(uint_in\(&part_0, "span"\)\?, uint_in\(&part_1, "span"\)\?\)\)\)/);
   // G-5: the case value of a tuple is the sequence of its parts in each language.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_length\(\(2, 5,\)\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.spanLength\(\[2, 5\]\)/);
@@ -1342,12 +1342,12 @@ test('the generated calls of the core compile against the core of tests/e2e/shap
   const wasm = text(shaped(), 'packages/ts/wasm/generated/lib.rs');
   const entries = [...wasm.matchAll(/pub fn (\w+)\([^)]*\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| \{\n([\s\S]*?)\n\s*\}\)\n\s*\.map_err\(throw\)/g)];
   const calls = members.map((name) => {
-    const entry = entries.find((e) => e[1] === name);
+    const entry = entries.find((e) => e[1] === `entry_${name}`);
     assert.ok(entry !== undefined, `no WASM entry point ${name}`);
     const params: string[] = [];
     const body: string[] = [];
     for (const line of (entry[2] ?? '').split('\n')) {
-      const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+      const input = /^\s*let (\w+): (.+?) = \w+_in\(.*\?;$/.exec(line);
       if (input === null) body.push(line);
       else params.push(`${input[1]}: ${input[2]}`);
     }
@@ -1379,15 +1379,15 @@ fn binding_error(error: BindingError) -> BindingError {
     error
 }
 
-fn out_uint(value: impl WideUint) -> Result<Out, BindingError> {
+fn uint_out(value: impl WideUint) -> Result<Out, BindingError> {
     Ok(value.widen_uint())
 }
 
-fn out_int(value: impl WideInt) -> Result<Out, BindingError> {
+fn int_out(value: impl WideInt) -> Result<Out, BindingError> {
     Ok(value.widen_int().unsigned_abs())
 }
 
-fn out_tuple(items: &[Out]) -> Result<Out, BindingError> {
+fn tuple_out(items: &[Out]) -> Result<Out, BindingError> {
     Ok(items.iter().sum())
 }
 
@@ -1461,8 +1461,8 @@ test('an optional field of a case whose default is {literal: null} may be left o
   const out = variants();
   assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_types.py'), /class FigureLabel:\n[^\n]*\n\n    text: str\n    at: int \| None = None\n/);
   for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly at\?: number \| null;/, path);
-  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let field_at: Option<u64> = in_default\(member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
-  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /let field_at: Option<u64> = in_default\(&member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let field_at: Option<u64> = default_in\(member\(value, "at", subject\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /let field_at: Option<u64> = default_in\(&member\(value, "at", subject\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
   // G-5: a case value of an input may leave the field out; PHP gives null at its place, and a result holds null.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureLabel\(text="ok"\)\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'label', text: 'ok' \}\)\), ordered\(\{ type: 'label', text: 'OK', at: null \}\)/);
@@ -1502,9 +1502,9 @@ test('an integer key of a keyed_map outside the safe integers is kind invalid_nu
   contract.cases = [];
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
   const safe = /9_007_199_254_740_991/;
-  const node = rustFn(text(out, 'packages/ts/generated/lib.rs'), 'in_keyed_map');
+  const node = rustFn(text(out, 'packages/ts/generated/lib.rs'), 'keyed_map_in');
   assert.match(node, /ValueType::Number if kinds\.contains\(&0\) => \(0, binding_core::Key::Int\(safe_integer\(key, subject, NumberType::Int\)\?\)\)/, 'Node: a number key of a listed int is invalid_number when it is no safe integer');
-  const wasm = rustFn(text(out, 'packages/ts/wasm/generated/lib.rs'), 'in_keyed_map');
+  const wasm = rustFn(text(out, 'packages/ts/wasm/generated/lib.rs'), 'keyed_map_in');
   assert.match(wasm, /key\.as_f64\(\)\.is_some\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(safe_integer\(&key, subject, NumberType::Int\)\?\)\)/, 'WASM: as Node');
   const python = rustFn(text(out, 'packages/python/generated/lib.rs'), 'keyed_map_in');
   assert.match(python, /key\.is_exact_instance_of::<PyInt>\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(int_in\(py, &key, subject\)\?\)\)/, 'Python: int_in, the safe integers');
@@ -1562,7 +1562,7 @@ test('a member that writes its receiver takes a source and a default in one call
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
   const lines: Record<string, RegExp> = {
     'packages/python/generated/lib.rs': /let source: Vec<u8> = source_in\(py, source, "source"\)\?;\n\s+let times: Option<u64> = default_in\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
-    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/ts/generated/lib.rs': /let source: Vec<u8> = source_in\(source, "source"\)\?;\n\s+let times: Option<u64> = default_in\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
     'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = latin1_in\(source, "source"\)\?;\n\s+let times: Option<u64> = default_in\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
   };
   for (const [path, line] of Object.entries(lines)) {
@@ -1582,7 +1582,7 @@ test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array 
   assert.match(python, /let source: Vec<u8> = source_in\(py, source, "source"\)\?;/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def length\(source: str \| bytes \| bytearray \| memoryview\) -> int: \.\.\./);
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /in_bytes\(value, subject\)\.map_err\(\|_other\| type_error\(subject, "string or Uint8Array"\)\)/);
+  assert.match(node, /bytes_in\(value, subject\)\.map_err\(\|_other\| type_error\(subject, "string or Uint8Array"\)\)/);
   assert.match(node, /match unsafe \{ value\.cast::<Uint8Array>\(\) \}/);
   assert.match(node, /Uint8Array::new\(value\.as_ref\(\)\.to_vec\(\)\)/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function reversed\(data: Uint8Array\): Uint8Array;/);
@@ -1648,7 +1648,7 @@ test('a parameter or field with a default is None for the core when it is left o
   // WASM: a parameter or field that may be left out is undefined when it is, and the ES module counts it.
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasmLib, /let times: Option<u64> = in_default\(&times, \|value\| in_uint\(value, "times"\)\)\?;/);
+  assert.match(wasmLib, /let times: Option<u64> = default_in\(&times, \|value\| uint_in\(value, "times"\)\)\?;/);
   assert.match(wasmLib, /const _: \(\) = assert!\(same_text\(polyspec_shapes::DEFAULT_SEPARATOR, ","\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 3\) \{\n {4}throw new TypeError\(`repeat\(\) takes 1 to 3 arguments/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
@@ -1665,7 +1665,7 @@ test('a record parameter whose every field has a default may be left out as a wh
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
     assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
-    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = in_default\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
+    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = default_in\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
     assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
     assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
@@ -2746,7 +2746,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
   // of binding_core and without a tokio runtime.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, text_out\)/);
   assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
@@ -2761,7 +2761,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   };
   assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
-  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, text_out\)/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
@@ -2774,12 +2774,12 @@ test('the generated WASM future of a member with wait async_driver compiles agai
   // wasm-bindgen-futures takes a future of Result<JsValue, JsValue> that is 'static.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const wasm = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  const entry = /pub fn settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
+  const entry = /pub fn entry_settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
   assert.ok(entry !== null, 'no WASM entry point settle');
   const params: string[] = [];
   const body: string[] = [];
   for (const line of (entry[1] ?? '').split('\n')) {
-    const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+    const input = /^\s*let (\w+): (.+?) = \w+_in\(.*\?;$/.exec(line);
     if (input === null) body.push(line);
     else params.push(`${input[1]}: ${input[2]}`);
   }
@@ -2832,7 +2832,7 @@ fn core_error(_error: polyspec_classes::Error) -> Fail {
     Fail
 }
 
-fn out_text(value: impl AsRef<str>) -> Result<JsValue, Fail> {
+fn text_out(value: impl AsRef<str>) -> Result<JsValue, Fail> {
     let _text: &str = value.as_ref();
     Ok(JsValue)
 }
@@ -2941,7 +2941,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{/);
   // An advance gives the step of what it stops at: a wait (0) or the end (2).
   assert.match(node, /Ok\(\(0, promise\)\)/);
-  assert.match(node, /Ok\(\(2, out_text\(env, result\)\?\)\)/);
+  assert.match(node, /Ok\(\(2, text_out\(env, result\)\?\)\)/);
   const cjs = text(out, 'packages/ts/generated/index.cjs');
   assert.match(cjs, /async function drive\(driven\) \{\n  let settled;\n  for \(;;\) \{\n    const \[step, value\] = driven\.advance\(settled\);\n    settled = undefined;\n    if \(step === 2\) return value;\n    if \(step === 0\) \{\n      await value;\n      continue;\n    \}\n    try \{\n      settled = \[true, await value\];\n    \} catch \(reason\) \{\n      settled = \[false, reason\];\n    \}\n  \}\n\}/);
   assert.match(cjs, /return drive\(addon\.resolveDriven\(args\[0\], args\[1\]\)\);/);
@@ -2960,7 +2960,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
   assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
-  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(2, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(2, text_out\(result\)\?\)\)/);
   assert.match(wasm, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
   assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
   // GN-6n: the catch of a panic of a poll is an async function (clippy manual_async_fn).
@@ -3157,8 +3157,8 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['node']);
   const lib = text(out, 'packages/ts/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns a reference of napi to it.
-  assert.match(lib, /let work = in_function\(env, work, "work"\)\?;/);
-  assert.match(lib, /fn in_function\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env, value\)\n\}/);
+  assert.match(lib, /let work = function_in\(env, work, "work"\)\?;/);
+  assert.match(lib, /fn function_in\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env, value\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function on the JavaScript thread
   // of its reference and stores what it returned in the table; an exception of the function is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let env = &Env::from_raw\(work\.env\);\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0 = out_scope\(env, arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+let returned = called\(env, &work, &\[arg0\]\)\?;\n\s+pass\(env, returned\)\.map_err\(Thrown::Binding\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -3169,8 +3169,8 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
   assert.match(lib, /fn thrown_again\(exception: &Owned\) -> Fail \{[\s\S]*?napi::sys::napi_throw\(env\.raw\(\), value\.raw\(\)\)[\s\S]*?Fail \{ thrown: Some\(napi::Error::new\(napi::Status::PendingException, String::new\(\)\)\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \}\n\}/);
   // A value of any type is held as the one element of an array, which a reference of Node-API version 8 takes.
-  assert.match(lib, /fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{\n {8}Self::new\(env, out_tuple\(env, vec!\[value\]\)\?\)\n {4}\}/);
-  assert.match(lib, /fn unboxed<'env>\(&self, env: &'env Env\) -> Result<Unknown<'env>, Fail> \{\n {8}let \[value\] = in_tuple\(self\.value\(env\)\?, "a held value"\)\?;\n {8}Ok\(value\)\n {4}\}/);
+  assert.match(lib, /fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{\n {8}Self::new\(env, tuple_out\(env, vec!\[value\]\)\?\)\n {4}\}/);
+  assert.match(lib, /fn unboxed<'env>\(&self, env: &'env Env\) -> Result<Unknown<'env>, Fail> \{\n {8}let \[value\] = tuple_in\(self\.value\(env\)\?, "a held value"\)\?;\n {8}Ok\(value\)\n {4}\}/);
   // A contract without a callback that a machine owns has no dead method of Owned, and one with it has the method.
   const owned = (crate: string): string => crate.slice(crate.indexOf('struct Owned {'), crate.indexOf('impl Drop for Owned'));
   assert.match(owned(lib), /fn object</);
@@ -3184,14 +3184,14 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /fn pass\(env: &Env, value: Unknown<'_>\) -> Result<binding_core::Passthrough, Fail> \{\n {4}let held = Owned::boxed\(env, value\)\?;\n {4}let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);\n {4}PASSED\.with_borrow_mut\(\|map\| map\.insert\(handle, held\)\);\n {4}Ok\(binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\)\n\}/);
   assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{\n {4}let gone = PASSED\.try_with\(\|map\| map\.borrow_mut\(\)\.remove\(&handle\.raw\(\)\)\);\n {4}drop\(gone\);\n\}/);
   // A result whose handle names no value is kind internal.
-  assert.match(lib, /fn out_passed<'env>\(env: &'env Env, value: binding_core::Passthrough\) -> Result<Unknown<'env>, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}let held = PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\?;\n {4}held\.unboxed\(env\)\n\}/);
+  assert.match(lib, /fn passed_out<'env>\(env: &'env Env, value: binding_core::Passthrough\) -> Result<Unknown<'env>, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}let held = PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\?;\n {4}held\.unboxed\(env\)\n\}/);
   // Await: an advance takes the outcome of the value that the machine awaited, only after that value, gives it to the
   // machine before it resumes, and returns the step of what it stops at: a wait (0), an awaited value (1), the end (2).
   assert.match(lib, /let mut awaiting = false;\n\s+Driven::start\(env, advancing\(move \|env, settled\| \{\n\s+match \(awaiting, outcome_of\(env, settled\)\?\) \{\n\s+\(true, Some\(outcome\)\) => machine\.settle\(outcome\),\n\s+\(false, None\) => \{\}\n\s+\(true, None\) \| \(false, Some\(_\)\) => \{\n\s+return Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: store\.transaction takes the outcome of an awaited value after that value, and at no other advance"\) \}\)\);\n\s+\}\n\s+\}\n\s+awaiting = false;/);
-  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, out_passed\(env, value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, out_passed\(env, result\)\?\)\)/);
+  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, passed_out\(env, value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, passed_out\(env, result\)\?\)\)/);
   // A fulfilled value enters the table again, and a rejection is held as the exception of the function.
-  assert.match(lib, /fn outcome_of\(env: &Env, settled: Unknown<'_>\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.get_type\(\)\.map_err\(internal\)\? == ValueType::Undefined \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = in_tuple\(settled, "settled"\)\?;\n {4}if in_bool\(fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(env, value\)\?\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Held\(Owned::boxed\(env, value\)\?\)\)\)\)\)\n\}/);
-  assert.match(lib, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(env, settled\)\?;\n\s+out_tuple\(env, vec!\[out_uint\(env, step\)\?, value\]\)/);
+  assert.match(lib, /fn outcome_of\(env: &Env, settled: Unknown<'_>\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.get_type\(\)\.map_err\(internal\)\? == ValueType::Undefined \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = tuple_in\(settled, "settled"\)\?;\n {4}if bool_in\(fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(env, value\)\?\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Held\(Owned::boxed\(env, value\)\?\)\)\)\)\)\n\}/);
+  assert.match(lib, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(env, settled\)\?;\n\s+tuple_out\(env, vec!\[uint_out\(env, step\)\?, value\]\)/);
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
@@ -3301,8 +3301,8 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['wasm']);
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns it as a value of the module.
-  assert.match(lib, /let work = in_function\(&work, "work"\)\?;/);
-  assert.match(lib, /fn in_function\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
+  assert.match(lib, /let work = function_in\(&work, "work"\)\?;/);
+  assert.match(lib, /fn function_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function with the receiver
   // undefined and stores what it returned in the table; the value that the function threw is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let args: Array = \[out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?\]\.iter\(\)\.collect\(\);\n\s+let returned = work\.apply\(&JsValue::UNDEFINED, &args\)\.map_err\(Thrown::Js\)\?;\n\s+Ok\(pass\(returned\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -3314,14 +3314,14 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /fn pass\(value: JsValue\) -> binding_core::Passthrough \{\n {4}let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);\n {4}PASSED\.with_borrow_mut\(\|map\| map\.insert\(handle, value\)\);\n {4}binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);
   assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{\n {4}let gone = PASSED\.try_with\(\|map\| map\.borrow_mut\(\)\.remove\(&handle\.raw\(\)\)\);\n {4}drop\(gone\);\n\}/);
   // A result whose handle names no value is kind internal.
-  assert.match(lib, /fn out_passed\(value: binding_core::Passthrough\) -> Result<JsValue, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\n\}/);
+  assert.match(lib, /fn passed_out\(value: binding_core::Passthrough\) -> Result<JsValue, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\n\}/);
   // Await: an advance takes the outcome of the value that the machine awaited, only after that value, gives it to the
   // machine before it resumes, and returns the step of what it stops at: a wait (0), an awaited value (1), the end (2).
   assert.match(lib, /let mut awaiting = false;\n\s+Ok\(JsValue::from\(Driven::new\(move \|settled\| \{\n\s+match \(awaiting, outcome_of\(&settled\)\?\) \{\n\s+\(true, Some\(outcome\)\) => machine\.settle\(outcome\),\n\s+\(false, None\) => \{\}\n\s+\(true, None\) \| \(false, Some\(_\)\) => \{\n\s+return Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: store\.transaction takes the outcome of an awaited value after that value, and at no other advance"\) \}\)\);\n\s+\}\n\s+\}\n\s+awaiting = false;/);
-  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, out_passed\(value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, out_passed\(result\)\?\)\)/);
+  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, passed_out\(value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, passed_out\(result\)\?\)\)/);
   // A fulfilled value enters the table again, and a rejection is kept as the exception of the function.
-  assert.match(lib, /fn outcome_of\(settled: &JsValue\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.is_undefined\(\) \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = in_tuple\(settled, "settled"\)\?;\n {4}if in_bool\(&fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(value\)\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Js\(value\)\)\)\)\)\n\}/);
-  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(settled\)\?;\n\s+out_tuple\(&\[JsValue::from\(step\), value\]\)/);
+  assert.match(lib, /fn outcome_of\(settled: &JsValue\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.is_undefined\(\) \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = tuple_in\(settled, "settled"\)\?;\n {4}if bool_in\(&fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(value\)\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Js\(value\)\)\)\)\)\n\}/);
+  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(settled\)\?;\n\s+tuple_out\(&\[JsValue::from\(step\), value\]\)/);
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
   assert.match(mjs, /return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.__Store_transaction\(this\.#handle, args\[0\]\)\)\);/);
@@ -3330,7 +3330,7 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  assert.doesNotMatch(plain, /PASSED|outcome_of|fn in_function/);
+  assert.doesNotMatch(plain, /PASSED|outcome_of|fn function_in/);
 });
 
 test('the WASM entry awaits what the function returned, tells a rejected wait from a rejected awaited value and frees the machine (GN-6ae)', async () => {
@@ -3457,4 +3457,50 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
+});
+
+test('no helper of a generated Node or WASM crate has a name of the conversions of a unit, in_<unit> and out_<unit> (GN-4c)', () => {
+  const out = scopedSample(['node', 'wasm'], helperNamed);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    const names = functionNames(lib);
+    // The conversions of the units named default, callable and text are defined once each, beside the helpers of a
+    // default and of a text.
+    for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, `${path}: ${name}`);
+    assert.match(lib, /\nfn in_default(?:<'env>)?\([^\n]*\) -> Result<polyspec_sample::Default, Fail> \{/, path);
+    assert.match(lib, /\nfn default_in<[^\n]*\) -> Result<Option<T>, Fail> \{/, path);
+    assert.match(lib, /\nfn text_in\([^\n]*\) -> Result<String, Fail> \{/, path);
+    assert.match(lib, /\nfn function_in\(/, path);
+    assert.match(lib, /\nfn passed_out(?:<'env>)?\(/, path);
+    // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
+    const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
+    assert.deepEqual(others, [], path);
+  }
+});
+
+test('the entry point of a function member of a Node or WASM crate does not take the name of a helper of the crate (GN-4c)', () => {
+  // Functions named as helpers of the crates: guard, pass, called, throw and internal.
+  const named = (contract: any): void => {
+    const functions = contract.units.find((u: any) => u.id === 'sample');
+    for (const name of ['guard', 'pass', 'called', 'throw', 'internal']) {
+      functions.members.push({ id: `sample.${name}`, name: [name], kind: 'function', visibility: 'public', wait: 'none', raises: [], returns: 'uint', core: `polyspec_sample::${name}_of`, parameters: [{ name: ['count'], type: 'uint', required: true }] });
+      contract.cases.push({ member: `sample.${name}`, file: 'contracts/cases.json', group: 'store_new' });
+    }
+  };
+  const out = scopedSample(['node', 'wasm'], named);
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  const names = functionNames(node);
+  for (const name of ['guard', 'pass', 'called', 'throw', 'internal']) {
+    // Node: the helper is defined once, and the entry point is entry_<member>, exported under the name of the member.
+    assert.equal(names.get(name), 1, name);
+    assert.match(node, new RegExp(`\\n#\\[napi\\(js_name = "${name}"\\)\\]\\npub fn entry_${name}<'env>\\(env: &'env Env, count: Unknown<'env>\\)`), name);
+    // WASM: an export named as a helper would hide the helper in the module of the exports.
+    const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+    assert.match(wasm, new RegExp(`\\n {4}#\\[wasm_bindgen\\(js_name = "${name}"\\)\\]\\n {4}pub fn entry_${name}\\(count: JsValue\\)`), name);
+    assert.doesNotMatch(wasm, new RegExp(`\\n {4}pub fn ${name}\\(`), name);
+  }
+  // No helper of either crate has a name that starts with entry_.
+  assert.doesNotMatch(text(scopedSample(['node', 'wasm']), 'packages/ts/generated/lib.rs').replaceAll(/\npub fn entry_[a-z0-9_]+</g, ''), /\bfn entry_/);
 });

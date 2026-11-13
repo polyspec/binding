@@ -20,19 +20,19 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
-  if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+    return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
-  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
+  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
@@ -44,21 +44,21 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
-    if (type === 'none') return 'out_none(env)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
+    if (type === 'none') return 'none_out(env)';
+    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
   }
   // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `out_passed(env, ${value})`;
-  if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
+  if ('passthrough' in type) return `passed_out(env, ${value})`;
+  if ('list' in type) return `list_out(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `out_map(env, ${value}, |env, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `out_keyed_map(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `out_optional(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('map' in type) return `map_out(env, ${value}, |env, item| ${convertOut(model, type.map, 'item')})`;
+  if ('keyed_map' in type) return `keyed_map_out(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('optional' in type) return `optional_out(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(env, vec![${parts.join(', ')}])`);
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(env, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
@@ -91,13 +91,13 @@ fn units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
 }
 
 /// B-3: text is a string without an unpaired surrogate.
-fn in_text(value: Unknown<'_>, subject: &str) -> Result<String, Fail> {
+fn text_in(value: Unknown<'_>, subject: &str) -> Result<String, Fail> {
     String::from_utf16(&units(value, subject)?)
         .map_err(|_unpaired| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::UnpairedSurrogate }))
 }
 
 /// B-3, T-1 latin1: a string whose code units are U+0000 to U+00FF, one byte each.
-fn in_latin1(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
+fn latin1_in(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
     units(value, subject)?
         .into_iter()
         .map(|unit| u8::try_from(unit).map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 })))
@@ -105,7 +105,7 @@ fn in_latin1(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
 }
 
 /// T-7: bytes are a Uint8Array; a typed array of another element type, or any other value, is refused.
-fn in_bytes(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
+fn bytes_in(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
     if !value.is_typedarray().map_err(internal)? {
         return Err(type_error(subject, "Uint8Array"));
     }
@@ -116,15 +116,15 @@ fn in_bytes(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
 }
 
 /// T-1 source: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array.
-fn in_source(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
+fn source_in(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
     if value.get_type().map_err(internal)? == ValueType::String {
-        return in_text(value, subject).map(String::into_bytes);
+        return text_in(value, subject).map(String::into_bytes);
     }
-    in_bytes(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
+    bytes_in(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
 }
 
 /// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
-fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn default_in<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.get_type().map_err(internal)? == ValueType::Undefined {
         return Ok(None);
     }
@@ -132,11 +132,11 @@ fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) ->
 }
 
 /// T-7: bytes leave as a Uint8Array of their copy.
-fn out_bytes<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+fn bytes_out<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
     ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env).map_err(internal)
 }
 
-fn in_bool(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
+fn bool_in(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Boolean {
         return Err(type_error(subject, "boolean"));
     }
@@ -156,17 +156,17 @@ fn safe_integer(value: Unknown<'_>, subject: &str, expected: NumberType) -> Resu
     unsafe { value.cast::<i64>() }.map_err(internal)
 }
 
-fn in_uint(value: Unknown<'_>, subject: &str) -> Result<u64, Fail> {
+fn uint_in(value: Unknown<'_>, subject: &str) -> Result<u64, Fail> {
     let integer = safe_integer(value, subject, NumberType::Uint)?;
     u64::try_from(integer).map_err(|_negative| binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint }))
 }
 
-fn in_int(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
+fn int_in(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     safe_integer(value, subject, NumberType::Int)
 }
 
 /// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2).
-fn in_int64(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
+fn int64_in(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     if value.get_type().map_err(internal)? != ValueType::BigInt {
         return safe_integer(value, subject, NumberType::Int);
     }
@@ -177,7 +177,7 @@ fn in_int64(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     }
 }
 
-fn in_float(value: Unknown<'_>, subject: &str) -> Result<f64, Fail> {
+fn float_in(value: Unknown<'_>, subject: &str) -> Result<f64, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Number {
         return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float }));
     }
@@ -185,7 +185,7 @@ fn in_float(value: Unknown<'_>, subject: &str) -> Result<f64, Fail> {
 }
 
 /// T-7: an array; the JavaScript entry turns any other iterable but a string into one.
-fn in_list<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
+fn list_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     if !value.is_array().map_err(internal)? {
         return Err(type_error(subject, "Iterable"));
     }
@@ -201,13 +201,13 @@ fn in_list<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'
 }
 
 /// GN-6t: a tuple is an array of exactly its parts.
-fn in_tuple<'env, const N: usize>(value: Unknown<'env>, subject: &str) -> Result<[Unknown<'env>; N], Fail> {
-    let parts = in_list(value, subject, Ok)?;
+fn tuple_in<'env, const N: usize>(value: Unknown<'env>, subject: &str) -> Result<[Unknown<'env>; N], Fail> {
+    let parts = list_in(value, subject, Ok)?;
     <[Unknown<'env>; N]>::try_from(parts).map_err(|_other| type_error(subject, &format!("an array of {N} items")))
 }
 
 /// T-7: null is the absence; any other value is converted.
-fn in_optional<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn optional_in<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.get_type().map_err(internal)? == ValueType::Null {
         return Ok(None);
     }
@@ -232,22 +232,22 @@ fn member_or_undefined<'env>(record: Unknown<'env>, name: &str, subject: &str) -
     member(record, name, subject)
 }
 
-fn out_text<'env>(env: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
+fn text_out<'env>(env: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
     Ok(env.create_string(value.as_ref()).map_err(internal)?.to_unknown())
 }
 
 /// T-1 latin1: each byte is one character.
-fn out_latin1<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+fn latin1_out<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
     let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
-    out_text(env, text)
+    text_out(env, text)
 }
 
-fn out_bool<'env>(env: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
+fn bool_out<'env>(env: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
     ToNapiValue::into_unknown(*value.borrow(), env).map_err(internal)
 }
 
 /// B-2: a number leaves only as a safe integer; a larger one is kind internal.
-fn out_int<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+fn int_out<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
     let value = value.widen_int();
     if value.abs() > 9_007_199_254_740_991 {
         return Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") }));
@@ -256,39 +256,39 @@ fn out_int<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, F
 }
 
 /// T-1 int64: a bigint, so that the whole range of i64 leaves.
-fn out_int64<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+fn int64_out<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
     ToNapiValue::into_unknown(BigInt::from(value.widen_int()), env).map_err(internal)
 }
 
-fn out_uint<'env>(env: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
+fn uint_out<'env>(env: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
     let value = value.widen_uint();
     match i64::try_from(value) {
-        Ok(value) => out_int(env, value),
+        Ok(value) => int_out(env, value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") })),
     }
 }
 
-fn out_float<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'env>, Fail> {
+fn float_out<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'env>, Fail> {
     Ok(env.create_double(*value.borrow()).map_err(internal)?.to_unknown())
 }
 
-fn out_none(env: &Env) -> Result<Unknown<'_>, Fail> {
+fn none_out(env: &Env) -> Result<Unknown<'_>, Fail> {
     ToNapiValue::into_unknown((), env).map_err(internal)
 }
 
-fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
+fn null_out(env: &Env) -> Result<Unknown<'_>, Fail> {
     ToNapiValue::into_unknown(Null, env).map_err(internal)
 }
 
-fn out_list<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
+fn list_out<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
     let items = value.into_iter().map(|value| item(env, value)).collect::<Result<Vec<_>, Fail>>()?;
-    out_tuple(env, items)
+    tuple_out(env, items)
 }
 
 /// T-2: the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a map is a whole
 /// parameter, GN-12): each key a string; any other key is kind invalid_argument_type.
-fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
-    let entries = in_list(value, subject, |entry| in_list(entry, subject, Ok))
+fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+    let entries = list_in(value, subject, |entry| list_in(entry, subject, Ok))
         .map_err(|_not_entries| type_error(subject, "a Map whose keys are strings"))?;
     let mut map = binding_core::OrderedMap::new();
     for entry in entries {
@@ -296,7 +296,7 @@ fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'e
         if key.get_type().map_err(internal)? != ValueType::String {
             return Err(type_error(subject, "a Map whose keys are strings"));
         }
-        if map.insert(in_text(key, subject)?, item(value)?).is_some() {
+        if map.insert(text_in(key, subject)?, item(value)?).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
@@ -304,29 +304,29 @@ fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'e
 }
 
 /// T-2: a map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map.
-fn out_map<'env, T>(
+fn map_out<'env, T>(
     env: &'env Env,
     value: impl Borrow<binding_core::OrderedMap<T>>,
     item: impl Fn(&'env Env, &T) -> Result<Unknown<'env>, Fail>,
 ) -> Result<Unknown<'env>, Fail> {
     let mut entries = Vec::new();
     for (key, value) in value.borrow().iter() {
-        entries.push(out_tuple(env, vec![out_text(env, key)?, item(env, value)?])?);
+        entries.push(tuple_out(env, vec![text_out(env, key)?, item(env, value)?])?);
     }
-    out_tuple(env, entries)
+    tuple_out(env, entries)
 }
 
 /// T-2, U-7 (c): the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a keyed map is
 /// a whole parameter, GN-12): a key that is a safe integer or a string of a kind that the contract lists; any other key
 /// is kind invalid_argument_type.
-fn in_keyed_map<'env, T>(
+fn keyed_map_in<'env, T>(
     value: Unknown<'env>,
     subject: &str,
     kinds: &[u8],
     expected: &str,
     item: impl Fn(Unknown<'env>) -> Result<T, Fail>,
 ) -> Result<binding_core::KeyedMap<T>, Fail> {
-    let entries = in_list(value, subject, |entry| in_list(entry, subject, Ok))
+    let entries = list_in(value, subject, |entry| list_in(entry, subject, Ok))
         .map_err(|_not_entries| type_error(subject, expected))?;
     let mut map = binding_core::KeyedMap::new();
     for entry in entries {
@@ -334,7 +334,7 @@ fn in_keyed_map<'env, T>(
         let (tag, key) = match key.get_type().map_err(internal)? {
             // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
             ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
-            ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
+            ValueType::String => (2, binding_core::Key::Text(text_in(key, subject)?)),
             _ => return Err(type_error(subject, expected)),
         };
         if !kinds.contains(&tag) {
@@ -350,7 +350,7 @@ fn in_keyed_map<'env, T>(
 /// T-2: a keyed map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map; an
 /// integer key leaves as a number (a safe integer, B-2) and a byte string key, which no Node contract lists, is kind
 /// internal.
-fn out_keyed_map<'env, T>(
+fn keyed_map_out<'env, T>(
     env: &'env Env,
     value: impl Borrow<binding_core::KeyedMap<T>>,
     item: impl Fn(&'env Env, &T) -> Result<Unknown<'env>, Fail>,
@@ -358,23 +358,23 @@ fn out_keyed_map<'env, T>(
     let mut entries = Vec::new();
     for (key, value) in value.borrow().iter() {
         let key = match key {
-            binding_core::Key::Int(integer) => out_int(env, integer)?,
-            binding_core::Key::Text(text) => out_text(env, text)?,
+            binding_core::Key::Int(integer) => int_out(env, integer)?,
+            binding_core::Key::Text(text) => text_out(env, text)?,
             binding_core::Key::Bytes(_bytes) => return Err(binding_error(BindingError::Internal { detail: String::from("a byte string key of a keyed map") })),
         };
-        entries.push(out_tuple(env, vec![key, item(env, value)?])?);
+        entries.push(tuple_out(env, vec![key, item(env, value)?])?);
     }
-    out_tuple(env, entries)
+    tuple_out(env, entries)
 }
 
-fn out_tuple<'env>(env: &'env Env, items: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
+fn tuple_out<'env>(env: &'env Env, items: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
     Ok(Array::from_vec(env, items).map_err(internal)?.to_unknown())
 }
 
-fn out_optional<'env, T>(env: &'env Env, value: Option<T>, item: impl FnOnce(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
+fn optional_out<'env, T>(env: &'env Env, value: Option<T>, item: impl FnOnce(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
     match value {
         Some(value) => item(env, value),
-        None => out_null(env),
+        None => null_out(env),
     }
 }
 `;
@@ -388,7 +388,7 @@ function enumRust(unit: Unit): string {
   return `
 /// T-6: a value of ${jsName} is one of its strings.
 fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-    let text = in_text(value, subject)?;
+    let text = text_in(value, subject)?;
     match text.as_str() {
 ${arms}
         _ => Err(type_error(subject, ${rustString(jsName)})),
@@ -399,7 +399,7 @@ fn out_${name}(env: &Env, value: impl Borrow<${core}>) -> Result<Unknown<'_>, Fa
     let text = match value.borrow() {
 ${outArms}
     };
-    out_text(env, String::from(text))
+    text_out(env, String::from(text))
 }
 `;
 }
@@ -442,7 +442,7 @@ function variantRust(model: Model, variant: Variant): string {
     const reads = fields.map((f) => {
       const memberName = langName('node', f.field.name, 'variable');
       // GN-6v: a field that may be left out is null when its member is missing or undefined.
-      const read = leftOut(f.field) ? `in_default(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
+      const read = leftOut(f.field) ? `default_in(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
       return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(memberName), 'binding_error')}` : ''}`;
     });
     const built = `Ok(${caseStruct(variant, kase, fields)})`;
@@ -451,7 +451,7 @@ function variantRust(model: Model, variant: Variant): string {
   const arms = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
     const writes = [
-      `            object.set_named_property(${rustString(tag)}, out_text(env, ${rustString(kase.value)})?).map_err(internal)?;`,
+      `            object.set_named_property(${rustString(tag)}, text_out(env, ${rustString(kase.value)})?).map_err(internal)?;`,
       ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
     ];
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
@@ -459,7 +459,7 @@ function variantRust(model: Model, variant: Variant): string {
   return `
 /// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
 fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-    let tag = in_text(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
+    let tag = text_in(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
     match tag.as_str() {
 ${ins.join('\n')}
         _ => Err(type_error(subject, ${rustString(jsName)})),
@@ -487,7 +487,7 @@ function iterateRust(model: Model, fn: Fn): string {
   const body = yields.key === undefined
     ? `                items.push(${item(yields.value, 'item')});`
     : `                let (key, value) = item;
-                items.push(out_tuple(env, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
+                items.push(tuple_out(env, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
   return `
     #[napi(js_name = "__iterate", enumerable = false)]
     pub fn iterate<'env>(&self, env: &'env Env) -> napi::Result<Unknown<'env>> {
@@ -496,7 +496,7 @@ function iterateRust(model: Model, fn: Fn): string {
             for item in ${armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`)} {
 ${body}
             }
-            out_tuple(env, items)
+            tuple_out(env, items)
         })
         .map_err(|fail| throw(env, fail))
     }
@@ -522,7 +522,7 @@ function entryRust(model: Model, fn: Fn): string {
   const lines: string[] = [];
   // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
   const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string): string =>
-    arg?.default === undefined ? convertIn(model, type, raw, subject) : `in_default(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`;
+    arg?.default === undefined ? convertIn(model, type, raw, subject) : `default_in(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`;
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
@@ -577,7 +577,7 @@ function entryRust(model: Model, fn: Fn): string {
             awaiting = false;` : '';
     const awaited = passes(fn) ? `binding_core::machine::Next::Await(value) => {
                     awaiting = true;
-                    Ok((1, out_passed(env, value)?))
+                    Ok((1, passed_out(env, value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
         let given = std::sync::Arc::new(std::sync::Mutex::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
@@ -589,7 +589,7 @@ function entryRust(model: Model, fn: Fn): string {
             match machine.advance() {
                 binding_core::machine::Next::Wait(io) => {
                     let given = std::sync::Arc::clone(&given);
-                    let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
+                    let promise = driving(env, ${wait}, |env, ()| none_out(env))?;
                     Ok((0, promise))
                 }
                 ${awaited}
@@ -628,7 +628,7 @@ function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
-pub fn ${rustField(fn.member.name)}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+pub fn entry_${rustField(fn.member.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
     guard(|| {
 ${lines.join('\n')}
     })
@@ -727,7 +727,7 @@ impl Driven {
     pub fn advance<'env>(&mut self, env: &'env Env, settled: Unknown<'env>) -> napi::Result<Unknown<'env>> {
         guard(|| {
             let (step, value) = (self.advance)(env, settled)?;
-            out_tuple(env, vec![out_uint(env, step)?, value])
+            tuple_out(env, vec![uint_out(env, step)?, value])
         })
         .map_err(|fail| throw(env, fail))
     }
@@ -809,7 +809,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name)).replace(/^(out_[a-z0-9_]+)\(env, /, '$1(self.env, ')}?`);
+    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name)).replace(/^([a-z0-9_]+)\(env, /, '$1(self.env, ')}?`);
     const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
     const returned = m.returns === 'none' ? 'Ok(())' : convertIn(model, m.returns, 'returned', rustString(`${jsName}.${method}() returns`));
     const argsType = `FnArgs<(${m.params.map(() => "Unknown<'env>").join(', ')}${m.params.length === 1 ? ',' : ''})>`;
@@ -897,7 +897,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = in_function(env, ${name}, ${subject})?;`,
+    `        let ${name} = function_in(env, ${name}, ${subject})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     `            let env = &Env::from_raw(${name}.env);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
@@ -939,7 +939,7 @@ fn release_passed(handle: binding_core::Handle) {
 }
 
 /// GN-6ae: the value of a result passthrough, or of a value that the machine awaits, which leaves the table unchanged.
-fn out_passed<'env>(env: &'env Env, value: binding_core::Passthrough) -> Result<Unknown<'env>, Fail> {
+fn passed_out<'env>(env: &'env Env, value: binding_core::Passthrough) -> Result<Unknown<'env>, Fail> {
     let handle = value.into_handle();
     let held = PASSED
         .with_borrow_mut(|map| map.remove(&handle.raw()))
@@ -948,7 +948,7 @@ fn out_passed<'env>(env: &'env Env, value: binding_core::Passthrough) -> Result<
 }
 
 /// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
+fn function_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }
@@ -959,7 +959,7 @@ fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fa
 /// environment and held, because the machine goes on after the call and the caller gets the same object at its end.
 fn called<'env>(env: &'env Env, function: &Owned, args: &[Unknown<'env>]) -> Result<Unknown<'env>, Thrown> {
     let function = function.value(env).map_err(Thrown::Binding)?;
-    let receiver = out_none(env).map_err(Thrown::Binding)?;
+    let receiver = none_out(env).map_err(Thrown::Binding)?;
     let mut raw = Vec::with_capacity(args.len());
     for arg in args {
         raw.push(arg.raw());
@@ -990,8 +990,8 @@ fn outcome_of(env: &Env, settled: Unknown<'_>) -> Result<Option<Result<binding_c
     if settled.get_type().map_err(internal)? == ValueType::Undefined {
         return Ok(None);
     }
-    let [fulfilled, value] = in_tuple(settled, "settled")?;
-    if in_bool(fulfilled, "settled")? {
+    let [fulfilled, value] = tuple_in(settled, "settled")?;
+    if bool_in(fulfilled, "settled")? {
         return Ok(Some(Ok(pass(env, value)?)));
     }
     Ok(Some(Err(raised(Thrown::Held(Owned::boxed(env, value)?)))))
@@ -1096,12 +1096,12 @@ ${callbacks ? `
     /// GN-6ae: holds any value, as the one element of an array: Node-API version 8 makes a reference only to an object, a
     /// function or a symbol, and a function of JavaScript code returns and throws any value.
     fn boxed(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
-        Self::new(env, out_tuple(env, vec![value])?)
+        Self::new(env, tuple_out(env, vec![value])?)
     }
 
     /// GN-6ae: the value that boxed holds.
     fn unboxed<'env>(&self, env: &'env Env) -> Result<Unknown<'env>, Fail> {
-        let [value] = in_tuple(self.value(env)?, "a held value")?;
+        let [value] = tuple_in(self.value(env)?, "a held value")?;
         Ok(value)
     }
 ` : ''}}

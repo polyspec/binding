@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c2eb64670a360b3f287ea4199ecaae7ed3d1cd999e89d13d6fd1db65088c9ed6 -->
+<!-- source-sha256: bae0e33cddd3d8b16f59b54efedc526dc0fbc755b12a111aa601856376159ca4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `default`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 Node와 WASM 생성 crate는 함수
+  `in_<word>`나 `out_<word>`를 두 번 정의했고, `guard`, `pass`, `called`, `throw`, `internal`이라는 이름의 function
+  member는 crate의 helper 이름을 가졌다. Node crate에서는 두 번째 정의이고, WASM crate에서는 export의 모듈 안에서
+  helper를 가리는 export다. 이제 Node와 WASM crate의 helper는 방향을 끝에 적고(`text_in`, `list_out`, `default_in`,
+  `function_in`, `passed_out`), function member의 진입점은 `entry_<member>`이며 member의 이름으로 내보낸다(GN-4c).
+  `packages/ts`의 `npm test`로 검증했다. enum `default`, `callable`, `text`가 있는 sample의 시험은 변경 전에 Node
+  crate에서 `in_default`의 정의 둘을 찾았고, 함수 `guard`, `pass`, `called`, `throw`, `internal`의 시험은 `guard`의 정의
+  둘을 찾았다. 둘 다 통과하고, 생성된 WASM 진입점을 `rustc`로 컴파일하는 두 시험도 새 이름으로 통과한다. Python이나
+  Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
 - Node와 WASM 시험은 함수 fixture의 step의 결과와 표시 `awaits`를 쓰지 않았다. 이제 결과를 이름하는 step은 함수 안에서
   그 호출의 `assert.deepStrictEqual`이고, `awaits`가 있는 fixture는 async 함수다. 그래서 sample의 기다리는 두 case는
   machine의 기다리는 step을 이행된 promise와 거부된 promise로 돌린다(GN-6ae, CK-22). `packages/ts`의 `npm test`로
