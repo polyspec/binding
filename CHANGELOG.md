@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- binding had no CI and no release. `.github/workflows/ci.yml` runs every target of `make check` and `make
+  release-coverage` on `ubuntu-26.04-arm` for the push of `main` and a manual run, in the jobs `ts` and `rust`, and its
+  last job `ci-passed` passes only when both passed. `.github/workflows/release.yml` tags the commit of such a run with
+  the version of the top section of `CHANGELOG.md` and creates its GitHub Release with the npm archive of `packages/ts`;
+  the tag also releases `binding_core` as a Git tag (`config/release.json`). The Makefile adds `ci-targets`,
+  `ci-summary`, `ci-passed`, `release-tag`, `release-checkout`, `release-prepare`, `release-tools`, `release-tools-path`,
+  `release-assets`, `release-publish`, `release-undraft` and `release-coverage`.
 - A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
   dev-dependency of its own, and repositories did it in two forms. The core now has itself as a dev-dependency with
   `fault-test`, so `cargo test` without flags arms its points, and `binding check` reports a core manifest without it
