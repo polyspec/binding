@@ -732,7 +732,8 @@ the design ids are those of the binding design.
   one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
   of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
-  each library whose records the contract names it writes a line `require <module> <version>` in `go.mod`: the version
+  each library whose records or value classes (GN-6x) the contract names it writes a line `require <module> <version>`
+  in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
   repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
