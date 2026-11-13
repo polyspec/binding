@@ -14,6 +14,14 @@ reports it.
 The schema and the todo checks run first; the other checks run only on a contract that passes both, because they read
 its shape.
 
+`binding check` then runs the checks of the repository files, CK-19 and CK-20, whatever the checks of the contract
+found, and reports every finding before it fails. A check stops only where it reads what a failed check would give:
+CK-20 reads `core.path` and the `Cargo.lock` of the repository, so it runs on a contract that passes the schema (CK-1);
+CK-19 compares with what `binding scaffold` writes, which reads the package and name items alone, so it runs on a
+contract that passes the schema and the package names (CK-1, CK-18). A check that does not run is named with the check
+that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
+another binding behind a finding of the contract.
+
 ## Checks
 
 The schema is part of the npm package `@polyspec/binding` and is exported as `./schema/interface.schema.json` (S15).

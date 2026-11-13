@@ -141,8 +141,14 @@ const caseFiles = new Map<string, unknown>();
   }
 }
 const findings = checkContract(contract, { dependencies: foreign, caseFiles }).filter((f) => command !== 'scaffold' || f.check === 'CK-1' || f.check === 'CK-18');
-if (findings.length > 0) {
-  for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
+for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
+// check runs CK-19 and CK-20 past the findings of the contract and stops each only where it reads what a failed check
+// gives (contract-check.md): CK-20 reads core.path (CK-1), CK-19 what scaffold writes from the packages and names (CK-1,
+// CK-18). generate and scaffold read the contract, so a finding stops them.
+const failedChecks = new Set(findings.map((f) => f.check));
+if (findings.length > 0 && command !== 'check') process.exit(1);
+if (failedChecks.has('CK-1')) {
+  process.stderr.write(`${contractPath}: CK-19 and CK-20 did not run: they read the contract, which fails CK-1\n`);
   process.exit(1);
 }
 const checked = contract as Contract;
@@ -188,7 +194,9 @@ if (command === 'check') {
       process.stderr.write(`${lockPath}: CK-20 Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine ?? 'the commit of this binding, which is unknown'} (L-2)\n`);
     }
   }
-  for (const [path, text] of tracked) {
+  const names = failedChecks.has('CK-18');
+  if (names) process.stderr.write(`${contractPath}: CK-19 did not run: it compares with what binding scaffold writes, which needs the package names of CK-18\n`);
+  for (const [path, text] of names ? [] : tracked) {
     const full = join(root, path);
     const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;
     if (found !== text) {
@@ -197,7 +205,7 @@ if (command === 'check') {
     }
   }
   // L-2a: a host package's manifest holds what its native module needs.
-  for (const requirement of hostRequirements(checked, parse)) {
+  for (const requirement of names ? [] : hostRequirements(checked, parse)) {
     const full = join(root, requirement.path);
     let found: unknown;
     try {
@@ -210,7 +218,7 @@ if (command === 'check') {
       process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module needs (L-2a)\n`);
     }
   }
-  process.exit(differs ? 1 : 0);
+  process.exit(differs || findings.length > 0 ? 1 : 0);
 }
 
 if (command === 'scaffold') {

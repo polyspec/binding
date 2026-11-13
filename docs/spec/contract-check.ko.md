@@ -11,6 +11,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 스키마와 todo 검사가 먼저 실행되고, 나머지 검사는 둘을 통과한 계약에서만 실행된다. 계약의 형태를 읽기 때문이다.
 
+그 뒤 `binding check`는 계약 검사가 무엇을 찾았든 저장소 파일의 검사 CK-19와 CK-20을 실행하고, 실패하기 전에 모든 finding을
+보고한다. 검사는 실패한 검사가 줄 것을 읽는 자리에서만 멈춘다. CK-20은 `core.path`와 저장소의 `Cargo.lock`을 읽으므로 스키마
+(CK-1)를 통과한 계약에서 실행된다. CK-19는 `binding scaffold`가 쓰는 것과 비교하며 그것은 package와 이름 항목만 읽으므로
+스키마와 package 이름(CK-1, CK-18)을 통과한 계약에서 실행된다. 실행되지 않은 검사는 그것을 멈춘 검사와 함께 이름을 적는다.
+이유: 처음 실패한 검사에서 멈추는 실행은 다른 검사의 finding을 가린다. 예를 들어 계약의 finding 뒤에 다른 binding의 pin이
+숨는다.
+
 ## 검사
 
 스키마는 npm 패키지 `@polyspec/binding`에 들어 있고 `./schema/interface.schema.json`으로 내보낸다(S15).

@@ -151,6 +151,30 @@ test('a closure that only calls a function is the function (clippy redundant_clo
   assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
 });
 
+test('check runs CK-19 and CK-20 past the findings of the contract and names a check that cannot run', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-k-'));
+  try {
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    const contractPath = join(root, 'packages/rust/interface.json');
+    const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
+    // CK-22: no member names its cases; the repository has no scaffolded package and no Cargo.lock.
+    writeFileSync(contractPath, JSON.stringify({ ...contract, cases: [] }));
+    const run = spawnSync(process.execPath, [cli, 'check', contractPath], { encoding: 'utf8' });
+    assert.equal(run.status, 1, run.stderr);
+    assert.match(run.stderr, /CK-22/);
+    assert.match(run.stderr, /CK-19 is missing/);
+    assert.match(run.stderr, /CK-20 there is no Cargo\.lock/);
+    // CK-1: the schema fails, so neither reads the contract.
+    writeFileSync(contractPath, JSON.stringify({ ...contract, library: 5 }));
+    const broken = spawnSync(process.execPath, [cli, 'check', contractPath], { encoding: 'utf8' });
+    assert.equal(broken.status, 1, broken.stderr);
+    assert.match(broken.stderr, /CK-1 /);
+    assert.match(broken.stderr, /CK-19 and CK-20 did not run: they read the contract, which fails CK-1/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('check refuses a binding_core of another version or commit than the CLI (CK-20)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-g-'));
   try {
