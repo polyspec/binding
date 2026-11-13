@@ -242,7 +242,8 @@ the design ids are those of the binding design.
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner`, kind `wrong_thread`), goes to the core
-  as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
+  as a `Raised` whose `Native` names it in the binding's table, and the generated caller throws the same object again.
+  The last drop of a `Raised` that no caller threw again removes its entry, as GN-6o states.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
 - **GN-6m** A function type (T-2) is taken by the core as
@@ -256,7 +257,7 @@ the design ids are those of the binding design.
   one environment, so the function holds it as a `Native` (GN-6o) and declares the parameter as a function type
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
-  either goes to the core as a `Raised`, kept as its `BindingError` in a table that every thread reaches, because the
+  either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
   error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
 - **GN-6n** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
@@ -299,6 +300,13 @@ the design ids are those of the binding design.
     discards its key and touches nothing of the language, whose environment is gone, and the `out` of such a `Native`
     is kind `internal`.
   - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
+  - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
+    so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.
+    Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread
+    removes the entry at once, and a drop on another thread queues the key for that thread while it lives, which
+    removes the queued keys when it next keeps or throws again an exception and discards its queue when it ends. The
+    `Native` of a failure of the binding on another thread (GN-6m) holds the `BindingError` itself, which the drop
+    discards.
   - The round trip and the release are tested where a value alias has a `native` row in the target and a function
     takes that alias as its one parameter and returns it: after one warm-up call, the test counts what the binding
     holds, gives that function a new instance of a class of the test, checks that the result is the same object,

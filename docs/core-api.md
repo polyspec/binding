@@ -14,7 +14,7 @@ types of the design rules named below and no rule of any library.
   (the entries of `OrderedMap`).
 - Feature `lock`: adds `Exclusive`, `Shared`, `Reading` and `Writing` and the dependency `tokio` 1.54.1 with `sync`
   only. The binding crates of Python, Node and PHP enable it; a core crate does not (B-5c).
-- Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
+- Feature `construct`: makes the wait tokens and `Raised` constructible, and the `Native` of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Feature `fault-test`: compiles the arming of fault injection points (`fault::Armed`, `arm`, `take`, `left`) with the
   optional dependencies `serde_json` 1.0.154 (the list of faults of a case) and, on Unix, `libc` 0.2.191 (the value of
@@ -40,7 +40,7 @@ types of the design rules named below and no rule of any library.
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | Insertion-ordered map whose keys are `Key::Int(i64)`, `Key::Bytes(Vec<u8>)` or `Key::Text(String)`; the same API and rules as `OrderedMap`. |
-| `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
+| `Raised` | U-3, E-7 | A language exception raised in a callback, held as a `Native` that the core does not open, whose last drop releases the exception by the rule of the binding; `Raised::from_generated(Native)` and `native()` only with `construct`; `Clone`, `PartialEq` by the object; `Display`, `std::error::Error`; no kind. |
 | `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)` or `Callback(Box<dyn std::error::Error + Send + Sync>)`: the error type of a core function that calls a callback; the last arm returns a Rust callback's error to its Rust caller unchanged, is built without `construct` and never reaches generated code. `From<Raised>`, `Display`, `std::error::Error` (its source is the Rust callback's error); `Debug` only. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`; `ALL`, `as_str()`. |
 | `naming::{convert, Word, Lang, Role}` | N-2 | The name conversion, public for generators outside binding; `naming::Lang` is `Php`, `Python`, `Js`, `Go`, `Rust`; `naming::Role` is `Class`, `Callable`, `Variable`, `Constant`. Its vectors are shared with binding's TypeScript conversion. |

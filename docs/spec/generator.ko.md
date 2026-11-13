@@ -198,8 +198,9 @@
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
-  바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
-  `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
+  바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 그것을 가리키는
+  `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은 `Raised`의
+  마지막 drop은 GN-6o대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
 - **GN-6m** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
@@ -210,7 +211,7 @@
   `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수가 그것을
   `Native`(GN-6o)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
-  `Raised`로 코어에 간다. 그 실패는 모든 스레드가 닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만
+  `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
   만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
 - **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
@@ -246,6 +247,11 @@
     shutdown은 표가 가진 것을 해제하고 generation을 올린다. 이전 generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤
     것도 건드리지 않으며, 그런 `Native`의 `out`은 kind `internal`이다.
   - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
+  - `Raised`(GN-6d)의 `Native`는 던져진 객체 표의 key를 갖고, 마지막 drop이 그 항목을 지운다. 그래서 코어가 돌려주지 않고
+    버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
+    둔다. 그 스레드의 drop은 항목을 곧바로 지우고, 다른 스레드의 drop은 그 스레드가 살아 있는 동안 key를 그 스레드의
+    대기열에 넣는다. 그 스레드는 다음에 예외를 보관하거나 다시 던질 때 대기열의 key를 지우고, 끝날 때 대기열을 버린다. 다른
+    스레드에서 난 바인딩의 실패(GN-6m)의 `Native`는 `BindingError` 자체를 갖고, drop이 그것을 버린다.
   - 값 alias가 그 target의 `native` 행을 갖고, 함수가 그 alias를 하나뿐인 parameter로 받아 그것을 돌려주면 왕복과 해제를
     시험한다. 시험은 준비 호출 한 번 뒤 바인딩이 가진 것을 세고, 시험의 class의 새 인스턴스를 그 함수에 주어 결과가 같은
     객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고(Node는 먼저 event loop를 한 번 돌린다), 다시
