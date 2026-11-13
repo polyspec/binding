@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- A unit with `only` and a class of origin `value` without `core_type` were refused ("only and native are not
+  generated yet"), so a contract whose value alias makes such classes, as php-serialization's `StdClass` and
+  `Reference`, generated no target. A unit with `only` is now generated for the targets that it lists only. Python,
+  Node and WASM generate the class as a class of the language that keeps the values it was given: its constructor
+  calls the core's check function on the described arguments, a writable property sets its value, the in row of the
+  alias describes an instance with an identity per walk and `read` gives its kept value, and the out row makes the
+  instance before its content. The primitive hook of a class is `valueOf` in Node and WASM (GN-6g). The PHP binding
+  now makes the form `php_reference` as a reference, makes `php_object` from property names of any bytes, makes a
+  bytes array key, and gives an object and a reference one value at every position of its handle, cycles included.
+  A PHP case value with references is made in a closure, and a case whose reference has no PHP place fails its test
+  with the reason instead of refusing the target (GN-6m, GN-13). A property of a class without a lock is read without
+  one, a large integer is made as a BigInt of napi 3, and the generated Node and PHP code holds no `thrown` function
+  and no `Thrown::Php` variant when the contract has no callback, which `-D warnings` refused as dead code. Verified
+  by `npm test` in `packages/ts` and by clippy of the four binding crates of php-serialization.
 - The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module

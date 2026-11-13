@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- `only`가 있는 unit과 `core_type`이 없는 origin `value`의 class는 거부되었다("only and native are not generated yet").
+  그래서 php-serialization의 `StdClass`와 `Reference`처럼 value alias가 그런 class를 만드는 계약은 어떤 target도
+  생성되지 않았다. 이제 `only`가 있는 unit은 그것이 적은 target에만 생성한다. Python, Node, WASM은 그 class를 받은 값을
+  보관하는 언어의 class로 생성한다. constructor는 기술한 인자로 코어의 검사 함수를 부르고, 쓰기 가능한 property는 그
+  값을 바꾸며, alias의 in 행은 walk마다 identity가 있는 instance를 기술하고 `read`는 보관한 값을 주며, out 행은 내용보다
+  먼저 instance를 만든다. class의 primitive hook은 Node와 WASM에서 `valueOf`다(GN-6g). PHP binding은 이제 형식
+  `php_reference`를 reference로 만들고, `php_object`를 어떤 바이트든 담은 property 이름으로 만들며, bytes 배열 key를
+  만들고, 객체와 reference를 그 handle의 모든 위치에서 한 값으로, 순환까지 만든다. reference가 있는 PHP case 값은
+  closure 안에서 만들며, reference에 PHP 자리가 없는 case는 target을 거부하는 대신 그 이유로 시험이 실패한다(GN-6m,
+  GN-13). lock이 없는 class의 property는 lock 없이 읽고, 큰 정수는 napi 3의 BigInt로 만들며, 생성한 Node와 PHP 코드는
+  계약에 callback이 없으면 `thrown` 함수와 `Thrown::Php` variant를 두지 않는다. `-D warnings`가 그것들을 dead code로
+  거부했기 때문이다. `packages/ts`의 `npm test`와 php-serialization의 네 binding crate의 clippy로 확인했다.
 - 생성기는 루트가 아닌 module의 오류 unit을 모든 target에서 거부했다. 이제 그것을 생성한다. PHP는 그 module의 namespace에
   클래스를 등록하고, Python은 `<root>.<module>`과 `<root>`에서 주며, Node와 WASM은 그 이름으로 내보낸다(GN-7a, GN-11).
   tests/e2e/shapes의 오류 unit `utf8_error`는 module `errors`에 있으므로, 종단 검사는 각 target에서 그 오류를 낸다.

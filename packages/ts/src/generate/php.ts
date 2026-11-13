@@ -3,7 +3,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
-import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
+import { PHP_HOST, aliasPhp, foreignFailurePhp, phpMaking } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -696,8 +696,8 @@ function failureRust(model: Model): string {
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
-enum Thrown {
-    Php(ZBox<ZendObject>),
+enum Thrown {${model.callbacks.length === 0 ? '' : `
+    Php(ZBox<ZendObject>),`}
     Binding(Fail),
 }
 
@@ -717,11 +717,11 @@ fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
         binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
-            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
+${model.callbacks.length === 0 ? '' : `            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
                 Ok(object) => PhpException::from_message(String::new()).with_object(object),
                 Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
             },
-            Some(Thrown::Binding(fail)) => fail,
+`}            Some(Thrown::Binding(fail)) => fail,
             None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
@@ -832,7 +832,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
-    model.aliases.length > 0 ? PHP_HOST : '',
+    model.aliases.length > 0 ? `${PHP_HOST}${phpMaking(model)}` : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');

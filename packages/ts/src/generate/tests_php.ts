@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, CaseRefused, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -208,24 +208,34 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         .join('');
       return { fixtures, before, after };
     };
+    // GN-13: a case whose value PHP has no form of is a test that fails with the reason.
+    const refusedCase = (method: string, error: unknown): void => {
+      if (!(error instanceof CaseRefused)) throw error;
+      methods.push(`
+    public function ${method}(): void
+    {
+        self::fail(${phpText(error.message)});
+    }`);
+    };
     for (const kase of raisingCases(model, fn)) {
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
-      const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
-      const caseArg = (arg: Fn['args'][number]): string | undefined => {
-        const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
-      };
-      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
-      // between the arming and that call, and requires every armed fault to have fired.
-      const receiverMade = receiverOfCase(kase.receiver);
-      const made_ = receiverMade.expr;
-      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];
-      const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
-      const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
-      const errno = expectedErrno(kase);
-      // PHP has no table of the errno symbols of its machine, and where a test reads their values is not decided.
-      if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
-      methods.push(`
+      try {
+        const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
+        const caseArg = (arg: Fn['args'][number]): string | undefined => {
+          const found = fixtures.find((f) => f.fixture.arg === arg);
+          return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        };
+        // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
+        // between the arming and that call, and requires every armed fault to have fired.
+        const receiverMade = receiverOfCase(kase.receiver);
+        const made_ = receiverMade.expr;
+        const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];
+        const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
+        const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
+        const errno = expectedErrno(kase);
+        // PHP has no table of the errno symbols of its machine, and where a test reads their values is not decided.
+        if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
+        methods.push(`
     public function testB4${name}${id}(): void
     {${receiverMade.lines}${before}${arming}
         try {
@@ -239,6 +249,9 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
             ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${String(errno.value)}, $error->errno());`}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}
     }`);
+      } catch (error) {
+        refusedCase(`testB4${name}${id}`, error);
+      }
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
@@ -251,21 +264,25 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     }`);
         continue;
       }
-      const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
-      const receiverMade = receiverOfCase(kase.receiver);
-      const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
-        const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
-      }), receiverMade.expr);
-      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
-      usesSame ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined
-        ? `\n        ${call};\n        self::addToAssertionCount(1);`
-        : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
-      methods.push(`
+      try {
+        const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
+        const receiverMade = receiverOfCase(kase.receiver);
+        const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
+          const found = fixtures.find((f) => f.fixture.arg === arg);
+          return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        }), receiverMade.expr);
+        const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+        usesSame ||= expected !== undefined && 'text' in expected;
+        const check = expected === undefined
+          ? `\n        ${call};\n        self::addToAssertionCount(1);`
+          : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
+        methods.push(`
     public function testGn13e${name}${id}(): void
     {${receiverMade.lines}${before}${check}${after}
     }`);
+      } catch (error) {
+        refusedCase(`testGn13e${name}${id}`, error);
+      }
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);

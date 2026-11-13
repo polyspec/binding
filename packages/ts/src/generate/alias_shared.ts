@@ -3,7 +3,7 @@
 
 import type { OutRow } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { type Model, Unsupported, type ValueAlias, rustField } from './model.ts';
+import { type Fn, type KeptClass, type KeptField, type Model, type ObjectClass, Unsupported, type ValueAlias, rustField } from './model.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -51,8 +51,19 @@ const CONTENT: Record<string, { type: string; arg: string }> = {
 // U-7, T-5: an out row that names a member makes an instance of a class of this contract: the content of the kind is the
 // one argument of the core path of the class's constructor or static factory, which cannot fail, and the value it gives
 // leaves as the class's instance (out_<class>, whose first arguments are `env`).
-function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string): string {
+function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, keptMake?: KeptMake): string {
   if (alias.library !== undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
+  // GN-6m: the constructor of a value class without core_type makes an instance from the content, without the core.
+  const kept = model.kept.find((k) => k.constructor.member.id === make);
+  if (kept !== undefined) {
+    const [field, ...more] = kept.fields;
+    const holds = field === undefined || more.length > 0 ? undefined
+      : (kind === 'object' || kind === 'map') && typeof field.type === 'object' && 'keyed_map' in field.type ? 'entries'
+        : kind === 'reference' && typeof field.type === 'object' && 'unit' in field.type ? 'value'
+          : undefined;
+    if (holds === undefined || keptMake === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} is not generated: a value class without core_type is made from an object or a map into its one keyed map, or from a reference into its one value (GN-6m)`);
+    return keptMake(kept, field as KeptField, holds, kind === 'map' ? container(alias, kind, 'map').head : '');
+  }
   const object = model.objects.find((o) => o.members.some((fn) => fn.member.id === make));
   const factory = object?.members.find((fn) => fn.member.id === make);
   const returns = factory?.returns;
@@ -71,7 +82,7 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
 
 // The match arms of the make function of one language: a row per kind, or a row per `when` of the kind. `env` is the
 // first arguments of the out function of a class in the language, for a row that makes an instance by a member.
-export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string): string[] {
+export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake): string[] {
   const rows = (alias.unit.out ?? []).filter((row) => row.make[lang] !== undefined);
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
@@ -83,7 +94,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
       if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env);
+      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, keptMake);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;
@@ -99,3 +110,52 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
     return `        ${variant} => ${body},`;
   });
 }
+
+// GN-6m: how a language makes an instance of a value class without core_type from the content of an out row: the
+// entries of an object or a map into its keyed map, or the value of a reference; head binds the handle and the length
+// of a map, which the arm of an object binds itself.
+export type KeptMake = (kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string) => string;
+
+// GN-6m, U-1: an in row of a value alias that names a class of the contract: an instance of the class is
+// HostValue::Value with the kind of the row, and read gives the property that the row names.
+export interface ValueRead {
+  kind: string;
+  // The Rust variant of ValueKind.
+  variant: string;
+  kept?: { unit: KeptClass; field: KeptField };
+  object?: { unit: ObjectClass; property: Fn };
+}
+
+export function valueReads(model: Model, lang: Lang): ValueRead[] {
+  const reads: ValueRead[] = [];
+  for (const alias of model.aliases.filter((a) => a.library === undefined)) {
+    for (const row of alias.unit.in ?? []) {
+      const named = row[lang];
+      if (typeof named !== 'string') continue;
+      const kept = model.kept.find((k) => k.unit.id === named);
+      const object = model.objects.find((o) => o.unit.id === named);
+      if (kept === undefined && object === undefined) continue;
+      const cases = row.cases ?? [];
+      const [only] = cases;
+      if (only === undefined || cases.length > 1 || only.when !== undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} in row of the class ${named} has one case without when (GN-6m)`);
+      const kind = only.kind;
+      const variant = `ValueKind::${kind.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`;
+      if (reads.some((r) => (r.kept?.unit ?? r.object?.unit) === (kept ?? object))) continue;
+      if (kept !== undefined) {
+        const field = kept.fields.find((f) => f.property?.id === only.read);
+        if (field === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} in row of the class ${named} reads ${String(only.read)}, which is no property of the class (GN-6m)`);
+        reads.push({ kind, variant, kept: { unit: kept, field } });
+      } else if (object !== undefined) {
+        const property = object.members.find((fn) => fn.member.id === only.read && fn.kind === 'property' && fn.receiver === '&self');
+        if (property === undefined || typeof property.returns !== 'string' || !['bool', 'int', 'int64', 'float'].includes(property.returns)) {
+          throw new Unsupported(`${alias.unit.id}: the ${lang} in row of the class ${named} reads ${String(only.read)}, which is no property of the class with &self that gives a bool, an integer or a float (GN-6m)`);
+        }
+        reads.push({ kind, variant, object: { unit: object, property } });
+      }
+    }
+  }
+  return reads;
+}
+
+// GN-6m: the HostValue of the value that the core path of a property gives, by its contract type.
+export const readValue = (type: string): string => ({ bool: 'HostValue::Bool(value)', int: 'HostValue::Int(value)', int64: 'HostValue::Int(value)', float: 'HostValue::Float(value)' })[type] ?? '';

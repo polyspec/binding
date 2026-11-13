@@ -2,9 +2,9 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
+import { aliasNode, foreignFailureNode, keptCheckNode, nodeHost } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -326,6 +326,8 @@ fn in_keyed_map<'env, T>(
         let (tag, key) = match key.get_type().map_err(internal)? {
             ValueType::Number => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
+            // GN-6m: a byte string key is a Uint8Array, which a contract lists where the entry keeps the Map itself.
+            ValueType::Object => (1, binding_core::Key::Bytes(in_bytes(key, subject).map_err(|_not_bytes| type_error(subject, expected))?)),
             _ => return Err(type_error(subject, expected)),
         };
         if !kinds.contains(&tag) {
@@ -620,12 +622,12 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-fn thrown(error: Thrown) -> ${failure} {
+${model.callbacks.length === 0 ? '' : `fn thrown(error: Thrown) -> ${failure} {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
 }
-
+`}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
@@ -789,7 +791,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -797,7 +799,7 @@ function libRust(model: Model): string {
     // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
-    model.aliases.length > 0 ? NODE_HOST : '',
+    model.aliases.length > 0 ? nodeHost(model) : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -808,6 +810,8 @@ function libRust(model: Model): string {
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   // I-3: the properties of an error unit are defined on its instance.
+  // GN-6m: the value classes define their kept values on their instances.
+  if (model.kept.length > 0 && model.aliases.length > 0) for (const name of ['Object', 'JsObjectValue', 'JsValue', 'Property', 'PropertyAttributes', 'FromNapiValue']) if (!napiTypes.includes(name)) napiTypes.push(name);
   if (model.errorUnits.length > 0) {
     // A unit without a property defines none, so that the helper and its types are left out (dead code fails the build).
     const defined = model.errorUnits.some((u) => errorProperties(u).length > 0) ? ['Property', 'PropertyAttributes'] : [];
@@ -818,7 +822,7 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -1086,12 +1090,17 @@ ${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).sp
 const ${cls} = ${construct};
 ${wraps.join('\n')}`;
   }).join('\n');
+  // GN-6m: a value class without core_type is a class of the entry that keeps its arguments, which the addon judges, as
+  // own enumerable data properties; the addon knows its instances by the prototype that the entry registers.
+  const kept = model.kept.map((k) => keptClassJs(k)).join('\n') + (model.kept.length === 0 || model.aliases.length === 0 ? '' : `
+addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name, 'class')}.prototype`).join(', ')}]);`);
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   const exports = [
     ...model.classes.map((c) => c.name),
     ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
@@ -1148,11 +1157,41 @@ function checkRecord(fn, name, record, fields, required) {
 }
 ${fns}
 ${objects}
+${kept}
 
 ${constants}
 
 module.exports = { ${exports.join(', ')} };
 `;
+}
+
+// GN-6m: the class of the entry of a value class without core_type: the count of the arguments (G-7), the check of the
+// addon, and the kept values as own enumerable data properties. A keyed map crosses as its entries; a value that is no
+// Map crosses as null, which the addon refuses.
+export function keptClassJs(kept: KeptClass): string {
+  const cls = langName('node', kept.unit.name, 'class');
+  const count = kept.fields.length;
+  const least = kept.fields.filter((f) => f.default === undefined).length;
+  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+  const crossed = kept.fields.map((f, i) => {
+    const keyed = typeof f.type === 'object' && 'keyed_map' in f.type;
+    return keyed ? `args[${i}] === undefined ? undefined : toEntries(args[${i}]) ?? null` : typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
+  });
+  const empty = { null: 'null', map: 'new Map()', list: '[]' };
+  const defined = kept.fields.map((f, i) => {
+    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
+    return `    Object.defineProperty(this, ${jsString(langName('node', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
+  });
+  return `
+class ${cls} {
+  constructor(...args) {
+    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
+      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
+    }
+    addon.__check${cls}(${crossed.join(', ')});
+${defined.join('\n')}
+  }
+}`;
 }
 
 const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
@@ -1163,6 +1202,7 @@ function indexMjs(model: Model): string {
     ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
@@ -1229,6 +1269,13 @@ export declare class ${langName('node', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
+  // GN-6m: the constructor keeps its arguments, each an own property, which a writable property also sets.
+  const kept = model.kept.map((k) => `
+/** GN-6m: keeps the values that its constructor takes. */
+export declare class ${langName('node', k.unit.name, 'class')} {
+  constructor(${k.fields.map((f) => `${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
+${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
+}`).join('\n');
   const callbacks = model.callbacks.map((cb) => `
 /** U-3: a callback that JavaScript code implements. */
 export interface ${langName('node', cb.unit.name, 'class')} {
@@ -1238,7 +1285,7 @@ ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.pa
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
 ${records}
-${objects}
+${objects}${kept}
 ${callbacks}
 
 ${fns}

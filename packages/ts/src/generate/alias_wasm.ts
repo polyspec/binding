@@ -5,8 +5,9 @@
 // getter, a trap of a proxy, an iterator) is called with `catch`, so its exception comes back as a value that the
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
-import { type Model, type ValueAlias, langName, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
-import { container, outArms } from './alias_shared.ts';
+import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
+import { container, outArms, readValue, valueReads } from './alias_shared.ts';
+import { rustString } from './text.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -76,11 +77,11 @@ export function aliasWasm(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const label = langName('wasm', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '');
+  const arms = outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', (kept, field, holds, head) => keptMakeWasm(model, kept, field, holds, head));
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &JsValue, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = JsHost { held: Vec::new() };
+    let mut host = JsHost::new();
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -105,7 +106,7 @@ ${arms.join('\n')}
 // B-1: what a JavaScript value is as a HostValue, one level at a time, by the rule of Node (GN-6e); the children of a
 // container are asked for through HostValues by the handles that describe gave.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
-export const WASM_HOST = (`
+const WASM_HOST = (`
 /// B-1: the functions of JavaScript that may run code of the value (a trap of a proxy, an iterator), imported with
 /// catch, so that their exception is a value that goes back to the caller. The expansion of wasm_bindgen calls
 /// Option::unwrap_or_default, so they are in a module that holds that one allow, as the exports are (GN-18).
@@ -134,19 +135,23 @@ mod js {
 enum Held {
     Items(Array),
     Pairs(Array),
-    Properties(JsValue, Array),
+    Properties(JsValue, Array),/*HELD*/
 }
 
 struct JsHost {
-    held: Vec<Held>,
+    held: Vec<Held>,/*SEEN*/
 }
 
 impl JsHost {
+    const fn new() -> Self {
+        Self { held: Vec::new()/*NEW*/ }
+    }
+
     fn hold(&mut self, held: Held) -> Handle {
         self.held.push(held);
         Handle::new(handle_count(self.held.len() - 1))
     }
-
+/*IDENTITY*/
     /// B-1: a primitive is its kind (a number is untyped: whether it is an integer is the core's rule); a bigint is an
     /// integer, as its decimal token outside i64; a string keeps its UTF-16 units, unpaired surrogates included.
     fn describe(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {
@@ -186,7 +191,7 @@ impl JsHost {
 
     /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a typed
     /// array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
-    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {
+    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {/*DESCRIBE*/
         if js::is_array(value)? {
             let array: Array = value.clone().unchecked_into();
             let len = u64::from(array.length());
@@ -252,8 +257,8 @@ impl HostValues for JsHost {
         Ok((key, value))
     }
 
-    fn read(&mut self, _value: Handle) -> Result<HostValue, binding_core::Raised> {
-        Err(raised_binding("B-1: no value class is read"))
+    fn read(&mut self, /*READ*/) -> Result<HostValue, binding_core::Raised> {
+        /*READS*/
     }
 }
 
@@ -388,4 +393,214 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 }
 `;
   }).join('');
+}
+
+// B-1, GN-6m: the JsHost of a model, as for Node (nodeHost): an instance of a class without core_type, whose prototype
+// is the one that the entry registered, under one handle within the walk; an instance of a class of the module by the
+// handle that the ES module reads from it. read gives the property that the row names.
+export function wasmHost(model: Model): string {
+  const reads = valueReads(model, 'wasm');
+  if (reads.length === 0) {
+    return WASM_HOST.replace('/*HELD*/', '').replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*IDENTITY*/', '').replace('/*DESCRIBE*/', '').replace('/*READ*/', '_value: Handle')
+      .replace('/*READS*/', 'Err(raised_binding("B-1: no value class is read"))');
+  }
+  const kept = reads.some((r) => r.kept !== undefined);
+  const describe = reads.map((r, index) => {
+    if (r.object !== undefined) {
+      const position = model.objects.indexOf(r.object.unit);
+      return `
+        if handle_of(${position}, value).map_err(throw)?.is_some() {
+            let handle = self.hold(Held::Value(value.clone(), ${index}));
+            return Ok(HostValue::Value { kind: ${r.variant}, handle });
+        }`;
+    }
+    const position = model.kept.findIndex((k) => k === r.kept?.unit);
+    return `
+        if value_prototype(${position}, value)? {
+            let handle = self.identity(value, ${index})?;
+            return Ok(HostValue::Value { kind: ${r.variant}, handle });
+        }`;
+  }).join('');
+  const read = reads.map((r, index) => {
+    if (r.kept !== undefined) {
+      return `
+            ${index} => {
+                let kept = Reflect::get(&object, &JsValue::from_str(${rustString(langName('wasm', r.kept.field.name, 'variable'))})).map_err(js_raised)?;
+                self.describe(&kept).map_err(js_raised)
+            }`;
+    }
+    const o = r.object;
+    if (o === undefined) return '';
+    const position = model.objects.indexOf(o.unit);
+    const plain = rustField(o.unit.unit.name).replace(/^r#/, '');
+    const label = rustString(langName('wasm', o.unit.unit.name, 'class'));
+    const value = o.unit.lock === undefined ? `${o.property.corePath}(&held)` : `${o.property.corePath}(&held.read(${label}, &[]).map_err(|error| raised(Thrown::Binding(binding_error(error))))?)`;
+    return `
+            ${index} => {
+                let handle = handle_of(${position}, &object).map_err(|fail| raised(Thrown::Binding(fail)))?.ok_or_else(|| raised_binding("B-1: no such value"))?;
+                let held = held_${plain}(handle).map_err(|fail| raised(Thrown::Binding(fail)))?;
+                let value = ${value};
+                Ok(${readValue(o.property.returns as string)})
+            }`;
+  }).join('');
+  const identity = kept ? `
+    /// GN-6m: the handle of an instance of a value class, the same for the same instance within the walk; the Map of
+    /// the walk keeps the handle as its decimal text.
+    fn identity(&mut self, value: &JsValue, read: usize) -> Result<Handle, JsValue> {
+        let seen = self.seen.get_or_insert_with(js_sys::Map::new).clone();
+        if let Some(found) = seen.get(value).as_string() {
+            let raw = found.parse::<u64>().map_err(|_never| JsValue::from_str("B-1: no handle"))?;
+            return Ok(Handle::new(raw));
+        }
+        let handle = self.hold(Held::Value(value.clone(), read));
+        seen.set(value, &JsValue::from_str(&handle.raw().to_string()));
+        Ok(handle)
+    }
+` : '';
+  return WASM_HOST
+    .replace('/*HELD*/', '\n    Value(JsValue, usize),')
+    .replace('/*SEEN*/', kept ? '\n    seen: Option<js_sys::Map>,' : '')
+    .replace('/*NEW*/', kept ? ', seen: None' : '')
+    .replace('/*IDENTITY*/', identity)
+    .replace('/*DESCRIBE*/', describe)
+    .replace('/*READ*/', 'value: Handle')
+    .replace('/*READS*/', `let Some(Held::Value(object, read)) = self.held.get(handle_position(value.raw())) else {
+            return Err(raised_binding("B-1: no such value"));
+        };
+        let (object, read) = (object.clone(), *read);
+        match read {${read}
+            _ => Err(raised_binding("B-1: no such value")),
+        }`) + (kept ? KEPT_WASM : '');
+}
+
+// GN-6m: the prototypes of the value classes without core_type, which the entry registers, and what makes their
+// instances.
+const KEPT_WASM = `
+thread_local! {
+    /// GN-6m: the prototypes of the value classes, in the order of the contract, which the entry registers once.
+    static VALUE_PROTOTYPES: RefCell<Vec<JsValue>> = const { RefCell::new(Vec::new()) };
+}
+
+/// GN-6m: the registered prototype of a value class.
+fn value_class(position: usize) -> Result<JsValue, JsValue> {
+    VALUE_PROTOTYPES.with_borrow(|registered| registered.get(position).cloned()).ok_or_else(|| JsValue::from_str("GN-6m: the value classes are not registered"))
+}
+
+/// GN-6m: whether the prototype of an object is the prototype of the value class.
+fn value_prototype(position: usize, value: &JsValue) -> Result<bool, JsValue> {
+    let prototype = Reflect::get_prototype_of(value)?;
+    Ok(Object::is(&prototype, &value_class(position)?))
+}
+
+/// GN-6m: a new instance of a value class, whose properties make defines.
+fn value_instance(position: usize) -> Result<Object, Fail> {
+    let prototype = value_class(position).map_err(|error| internal(&error))?;
+    Ok(Object::create(prototype.unchecked_ref()))
+}
+
+/// GN-6m: a kept value as the own enumerable data property of an instance, writable when the property is.
+fn value_define(object: &Object, name: &str, value: &JsValue, writable: bool) -> Result<(), Fail> {
+    let descriptor = Object::new();
+    for (key, part) in [("value", value.clone()), ("writable", JsValue::from_bool(writable)), ("enumerable", JsValue::TRUE)] {
+        Reflect::set(&descriptor, &JsValue::from_str(key), &part).map_err(|error| internal(&error))?;
+    }
+    Object::define_property(object, &JsValue::from_str(name), &descriptor);
+    Ok(())
+}
+`;
+
+// GN-6m: an instance of a value class without core_type made from the content of an out row, before the content, as
+// the object of its handle.
+function keptMakeWasm(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string {
+  const position = model.kept.indexOf(kept);
+  const name = rustString(langName('wasm', field.name, 'variable'));
+  if (holds === 'value') {
+    if (!field.writable) throw new Unsupported(`${kept.unit.id}: a reference makes an instance of a value class whose property keeps the value it holds, which is writable (GN-6m)`);
+    return `{
+            if let Some(made) = made.get(&handle.raw()) {
+                return Ok(made.clone());
+            }
+            let instance = value_instance(${position})?;
+            value_define(&instance, ${name}, &JsValue::NULL, true)?;
+            made.insert(handle.raw(), instance.clone().into());
+            let content = make(*value, source, made)?;
+            value_define(&instance, ${name}, &content, true)?;
+            Ok(instance.into())
+        }`;
+  }
+  return `{
+            ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return Ok(made.clone());
+            }
+            let instance = value_instance(${position})?;
+            let map = js_sys::Map::new();
+            value_define(&instance, ${name}, &map, ${String(field.writable)})?;
+            made.insert(handle.raw(), instance.clone().into());
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(key, source, made)?;
+                let item = make(item, source, made)?;
+                map.set(&key, &item);
+            }
+            Ok(instance.into())
+        }`;
+}
+
+// GN-6m: the exports of a value class without core_type: the check of the arguments of its constructor, which the class
+// of the ES module calls before it keeps them, and, once, the registration of the prototypes.
+export function keptExportsWasm(model: Model): string {
+  if (model.kept.length === 0 || model.aliases.length === 0) return '';
+  const checks = model.kept.map((kept) => {
+    const js = langName('wasm', kept.unit.name, 'class');
+    const variable = (f: KeptField): string => rustIdent(langName('wasm', f.name, 'variable'));
+    const describe = (f: KeptField, value: string): string => {
+      const subject = rustString(langName('wasm', f.name, 'variable'));
+      const type = f.type;
+      if (typeof type === 'object' && 'keyed_map' in type) {
+        const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+        return `{
+                let given = in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, |item| Ok(item.clone()))?;
+                let mut described = binding_core::KeyedMap::new();
+                for (key, item) in given {
+                    described.insert(key, host.describe(&item).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+      }
+      if (typeof type === 'object' && 'list' in type) {
+        return `{
+                let given = in_list(${value}, ${subject}, |item| Ok(item.clone()))?;
+                let mut described = Vec::new();
+                for item in given {
+                    described.push(host.describe(&item).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+      }
+      return `host.describe(${value}).map_err(js_fail)`;
+    };
+    const lines = kept.fields.map((f) => {
+      const v = variable(f);
+      return f.default === undefined ? `        let ${v} = ${describe(f, `&${v}`)}?;` : `        let ${v} = in_default(&${v}, |value| ${describe(f, 'value')})?;`;
+    });
+    return `
+/// GN-6m: judges the arguments of the constructor of ${js}, which the class of the ES module keeps.
+#[wasm_bindgen(js_name = ${rustString(`__check${js}`)})]
+pub fn check_${rustField(kept.unit.name).replace(/^r#/, '')}(${kept.fields.map((f) => `${variable(f)}: JsValue`).join(', ')}) -> Result<(), JsValue> {
+    guard(|| {
+        let mut host = JsHost::new();
+${lines.join('\n')}
+        ${kept.constructor.corePath}(&mut host, ${kept.fields.map(variable).join(', ')}).map_err(failure_error)
+    })
+    .map_err(throw)
+}
+`;
+  }).join('');
+  return `
+/// GN-6m: the ES module registers the prototype of each value class when it loads.
+#[wasm_bindgen(js_name = "__registerValues")]
+pub fn register_values(prototypes: Vec<JsValue>) {
+    VALUE_PROTOTYPES.with(|registered| registered.replace(prototypes));
+}
+${checks}`;
 }

@@ -6,7 +6,7 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -186,6 +186,9 @@ function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
   if (kind === 'map' && Array.isArray(held)) for (const pair of held) madeAsBuilt(unit, lang, (pair as unknown[])[1]);
 }
 
+// GN-13: a case whose value has no form in the language; the test of the case fails with the reason (G-4).
+export class CaseRefused extends Error {}
+
 // GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
 // test of the case fails with.
 export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
@@ -199,7 +202,20 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
 // makes in the language: null, bool, int (a number, or its decimal text outside the safe integers), float, text,
 // bytes, list and map. The other kinds are refused by name until a case needs them (G-4).
+// GN-13: a PHP reference is a place of an array or of a property, so a case value with references is made in a closure
+// that sets a variable for each reference id and returns the value whose places take the variables by reference.
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+  if (ctx.lang !== 'php') return valueOf(model, ctx, value, where, new Map(), false);
+  const refs = new Map<number, string>();
+  const made = valueOf(model, ctx, value, where, refs, false);
+  if (refs.size === 0) return made;
+  const sets = [...refs].map(([id, inner]) => `$r${id} = ${inner};`).join(' ');
+  return `(static function () { ${sets} return ${made}; })()`;
+}
+
+// GN-13: a value of valueFromJson; refs holds the PHP value of each reference id, and slot says whether the value is
+// the value of a place of an array or of a property, the one place where PHP holds a reference.
+function valueOf(model: Model, ctx: Context, value: unknown, where: string, refs: Map<number, string>, slot: boolean): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
@@ -227,21 +243,66 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
     if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
-    const inner = valueFromJson(model, ctx, held, where);
+    const inner = valueOf(model, ctx, held, where, refs, false);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
     return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => [$inner], ${inner})`;
   }
-  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueFromJson(model, ctx, item, where)).join(', ')}]`;
+  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueOf(model, ctx, item, where, refs, true)).join(', ')}]`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? String(raw) : fromJson(model, ctx, keyKind, raw)));
-      const v = valueFromJson(model, ctx, item, where);
+      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
+      const v = valueOf(model, ctx, item, where, refs, true);
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[lang];
   }
+  // GN-6m: an object is an instance of the value class that keeps a keyed map, and a reference one of the class that
+  // keeps one value; PHP takes its own stdClass and its own references, the places that take a variable by reference.
+  if (kind === 'object' && Array.isArray(held)) {
+    const entries = (held as [unknown, unknown][]).map(([key, item]) => {
+      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
+      const v = valueOf(model, ctx, item, where, refs, true);
+      return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+    });
+    if (lang === 'php') return `(object) [${entries.join(', ')}]`;
+    const cls = keptOf(model, 'entries', where);
+    return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({${entries.join(', ')}})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map([${entries.join(', ')}]))`;
+  }
+  if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
+    const ref = held as Record<string, unknown>;
+    if (lang === 'php') {
+      const id = ref['id'];
+      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) throw new Error(`a reference of ${where} is {"id": <n>, "value": <value>}, not ${shown(held)}`);
+      if (!slot) throw new CaseRefused(`a case value of ${where} holds a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place (GN-13)`);
+      if (!refs.has(id)) refs.set(id, valueOf(model, ctx, ref['value'], where, refs, false));
+      return `&$r${id}`;
+    }
+    const cls = keptOf(model, 'value', where);
+    const inner = valueOf(model, ctx, ref['value'], where, refs, false);
+    return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}(${inner})` : `new pkg.${langName('node', cls.unit.name, 'class')}(${inner})`;
+  }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated yet (GN-13)`);
+}
+
+// G-5: an integer key of a case value: a safe integer as a number, a decimal text outside them as a bigint of
+// JavaScript and as the integer of Python and PHP.
+function intKey(lang: Lang3, raw: unknown): string {
+  if (typeof raw === 'number') return String(raw);
+  return lang === 'node' ? `${String(raw)}n` : String(raw);
+}
+
+// GN-6m: the value class without core_type that keeps the content of a case value: a keyed map (an object) or one value
+// (a reference).
+function keptOf(model: Model, holds: 'entries' | 'value', where: string): KeptClass {
+  const found = model.kept.filter((k) => {
+    const [field, ...more] = k.fields;
+    if (field === undefined || more.length > 0) return false;
+    return holds === 'entries' ? typeof field.type === 'object' && 'keyed_map' in field.type : typeof field.type === 'object' && 'unit' in field.type;
+  });
+  const [only] = found;
+  if (only === undefined || found.length > 1) throw new Unsupported(`a case value of ${where}: ${found.length} value classes keep ${holds === 'entries' ? 'a keyed map' : 'one value'} (GN-6m)`);
+  return only;
 }
 
 // The arguments of a call in the form of each language: positional parameters, then the record's fields as Python
@@ -797,6 +858,10 @@ export function judgesCallbackResult(model: Model, callback: Unit): boolean {
 export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', value: unknown) => T): T {
   if (typeof key === 'string') return make('text', key);
   if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
+  // G-5: an integer key outside the safe integers is its decimal text, which the reader of the case files may give as a
+// bigint.
+  if (typeof key === 'object' && key !== null && 'int' in key && typeof (key as { int: unknown }).int === 'bigint') return make('int', String((key as { int: bigint }).int));
+  if (typeof key === 'object' && key !== null && 'int' in key && typeof (key as { int: unknown }).int === 'string' && /^-?(0|[1-9][0-9]*)$/.test((key as { int: string }).int)) return make('int', (key as { int: string }).int);
   if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
   throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${shown(key)}`);
 }

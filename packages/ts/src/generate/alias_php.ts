@@ -36,7 +36,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
                 let item = ${parts.item};
                 array.push(make(item, source, making)?).map_err(php_failed)?;
             }
-            making.remove(&handle.raw());
+            making.entered.remove(&handle.raw());
             let mut zval = Zval::new();
             zval.set_hashtable(array);
             Ok(zval)
@@ -54,7 +54,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
                 let item = make(item, source, making)?;
                 php_insert(&mut array, key, item)?;
             }
-            making.remove(&handle.raw());
+            making.entered.remove(&handle.raw());
             let mut zval = Zval::new();
             zval.set_hashtable(array);
             Ok(zval)
@@ -64,25 +64,56 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
       const parts = container(alias, kind, 'map');
       return `{
             ${parts.head}
-            let mut object = ZendObject::new_stdclass();
-            php_enter(making, handle)?;
+            if let Some(object) = making.objects.get(&handle.raw()) {
+                return Ok(php_shared_object(*object));
+            }
+            let mut zval = ZendObject::new_stdclass().into_zval(false).map_err(php_failed)?;
+            let object = php_object_of(&mut zval)?;
+            making.objects.insert(handle.raw(), object);
             for index in 0..len {
                 let (key, item) = ${parts.entry};
                 let item = make(item, source, making)?;
-                let OutValue::Text(name) = key else {
-                    return Err(binding_error(BindingError::Internal { detail: String::from("U-7: a property of a stdClass whose name is no text") }));
-                };
-                object.set_property(&name, item).map_err(php_failed)?;
+                php_property(object, key, item)?;
             }
-            making.remove(&handle.raw());
-            object.into_zval(false).map_err(php_failed)
+            Ok(zval)
         }`;
     }
+    case 'php_reference':
+      return `{
+            if let Some(reference) = making.references.get(&handle.raw()) {
+                return Ok(php_shared_reference(*reference));
+            }
+            let (zval, reference) = php_new_reference()?;
+            making.references.insert(handle.raw(), reference);
+            let content = make(*value, source, making)?;
+            php_set_reference(reference, content);
+            Ok(zval)
+        }`;
     case 'native':
       return 'native_object(handle)';
     default:
       throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
+}
+
+// U-7: what a make has made so far under the handles of the out value. A PHP array is a value, so one inside its own
+// making is a cycle; an object and a reference have an identity, so a handle that comes again is the same object or
+// reference, a cycle included. A field is generated only when an out row makes that form.
+export function phpMaking(model: Model): string {
+  const makes = model.aliases.flatMap((a) => (a.unit.out ?? []).map((row) => row.make?.php));
+  const forms = new Set(makes.map((form) => (typeof form === 'object' && 'keyed_map' in form ? 'keyed_map' : form)).filter((form) => typeof form === 'string'));
+  const fields = [
+    ['list', 'map', 'keyed_map'].some((form) => forms.has(form)) ? '    entered: BTreeSet<u64>,' : '',
+    forms.has('php_object') ? '    objects: std::collections::BTreeMap<u64, *mut ZendObject>,' : '',
+    forms.has('php_reference') ? '    references: std::collections::BTreeMap<u64, *mut ext_php_rs::ffi::zend_reference>,' : '',
+  ].filter((field) => field !== '');
+  return `
+/// U-7: the arrays that a make has entered, and the objects and references that it has made, under their handles.
+#[derive(Default)]
+struct PhpMaking {
+${fields.join('\n')}
+}
+`;
 }
 
 export function aliasPhp(model: Model, alias: ValueAlias): string {
@@ -102,11 +133,11 @@ fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
 /// U-7: a core value of ${label} leaves as the PHP values of its out rows.
 fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
-    let mut making = BTreeSet::new();
+    let mut making = PhpMaking::default();
     make_${name}(root, &mut source, &mut making)
 }
 
-fn make_${name}(out: OutValue, source: &mut dyn OutValues, making: &mut BTreeSet<u64>) -> Result<Zval, Fail> {
+fn make_${name}(out: OutValue, source: &mut dyn OutValues, making: &mut PhpMaking) -> Result<Zval, Fail> {
     let make = make_${name};
     match out.clone() {
 ${arms.join('\n')}
@@ -224,8 +255,8 @@ fn php_failed(error: ext_php_rs::error::Error) -> Fail {
 }
 
 /// U-7: a container that the make has entered; one inside its own making is a cycle, which a PHP array cannot hold.
-fn php_enter(making: &mut BTreeSet<u64>, handle: Handle) -> Result<(), Fail> {
-    if making.insert(handle.raw()) {
+fn php_enter(making: &mut PhpMaking, handle: Handle) -> Result<(), Fail> {
+    if making.entered.insert(handle.raw()) {
         return Ok(());
     }
     Err(binding_error(BindingError::Internal { detail: String::from("U-7: a cycle that a PHP array cannot hold") }))
@@ -237,8 +268,84 @@ fn php_insert(array: &mut ZendHashTable, key: OutValue, item: Zval) -> Result<()
         OutValue::Int(integer) => array.insert(integer.value(), item).map_err(php_failed),
         OutValue::Int64(integer) => array.insert(integer, item).map_err(php_failed),
         OutValue::Text(text) => array.insert(text.as_str(), item).map_err(php_failed),
+        OutValue::Bytes(bytes) => {
+            let name = ZendStr::new(bytes.value(), false);
+            array.insert(ext_php_rs::types::ArrayKey::ZendString(&name), item).map_err(php_failed)
+        }
         other => Err(binding_error(BindingError::Internal { detail: format!("U-7: an array key of the kind {}", other.kind().as_str()) })),
     }
+}
+
+/// U-7: the object that a zval made from a new stdClass holds.
+fn php_object_of(zval: &mut Zval) -> Result<*mut ZendObject, Fail> {
+    match zval.object_mut() {
+        Some(object) => Ok(std::ptr::from_mut(object)),
+        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: a stdClass that is no object") })),
+    }
+}
+
+/// U-7: a property of a stdClass under its name, the bytes of a string key, which may hold any byte.
+fn php_property(object: *mut ZendObject, key: OutValue, item: Zval) -> Result<(), Fail> {
+    let name = match key {
+        OutValue::Bytes(bytes) => ZendStr::new(bytes.value(), false),
+        OutValue::Text(text) => ZendStr::new(text.as_bytes(), false),
+        other => return Err(binding_error(BindingError::Internal { detail: format!("U-7: a property name of the kind {}", other.kind().as_str()) })),
+    };
+    // SAFETY: the object is a stdClass that this make created and the zval it returns holds; the engine gives its
+    // table of properties, which it creates when the object has none and which no other value shares.
+    let Some(table) = (unsafe { ext_php_rs::ffi::zend_std_get_properties(object).as_mut() }) else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("U-7: a stdClass without a table of properties") }));
+    };
+    table.insert(ext_php_rs::types::ArrayKey::ZendString(&name), item).map_err(php_failed)
+}
+
+/// U-7: an object that this make made before, once more: a zval that adds a reference count to it.
+fn php_shared_object(object: *mut ZendObject) -> Zval {
+    let mut zval = Zval::new();
+    // SAFETY: the object is alive, because the zval that the make made first for it is held by the value being made.
+    zval.set_object(unsafe { &mut *object });
+    zval
+}
+
+/// U-7: a new reference that holds null until the make sets its value, as ZVAL_NEW_EMPTY_REF of Zend/zend_types.h, and
+/// the zval that holds it.
+fn php_new_reference() -> Result<(Zval, *mut ext_php_rs::ffi::zend_reference), Fail> {
+    // GC_REFERENCE of Zend/zend_types.h: the type of a reference, which the cycle collector does not collect.
+    const GC_REFERENCE: u32 = ext_php_rs::ffi::IS_REFERENCE | (1 << 4);
+    let reference = ext_php_rs::alloc::emalloc(std::alloc::Layout::new::<ext_php_rs::ffi::zend_reference>()).cast::<ext_php_rs::ffi::zend_reference>();
+    if reference.is_null() {
+        return Err(binding_error(BindingError::Internal { detail: String::from("U-7: the engine gave no memory for a reference") }));
+    }
+    let content = ext_php_rs::ffi::zend_reference {
+        gc: ext_php_rs::ffi::zend_refcounted_h { refcount: 1, u: ext_php_rs::ffi::_zend_refcounted_h__bindgen_ty_1 { type_info: GC_REFERENCE } },
+        val: Zval::new(),
+        sources: ext_php_rs::ffi::zend_property_info_source_list { ptr: std::ptr::null_mut() },
+    };
+    // SAFETY: the memory is a new allocation of the engine of the size and alignment of a reference.
+    unsafe { reference.write(content) };
+    Ok((php_reference_zval(reference), reference))
+}
+
+/// U-7: a zval that holds a reference, whose count the caller has taken for it.
+fn php_reference_zval(reference: *mut ext_php_rs::ffi::zend_reference) -> Zval {
+    let mut zval = Zval::new();
+    zval.value.ref_ = reference;
+    zval.u1.type_info = ext_php_rs::ffi::IS_REFERENCE_EX;
+    zval
+}
+
+/// U-7: a reference that this make made before, once more: a zval that adds a reference count to it.
+fn php_shared_reference(reference: *mut ext_php_rs::ffi::zend_reference) -> Zval {
+    // SAFETY: the reference is alive, because the zval that the make made first for it is held by the value being made.
+    unsafe { (*reference).gc.refcount += 1 };
+    php_reference_zval(reference)
+}
+
+/// U-7: the value of a reference that the make made, set after its content was made, so that the content may hold it.
+fn php_set_reference(reference: *mut ext_php_rs::ffi::zend_reference, content: Zval) {
+    // SAFETY: the reference is alive, because the zval that the make made for it is held by the value being made; the
+    // null that it held needs no release.
+    unsafe { (*reference).val = content };
 }
 
 /// U-7: the literal token of a number as an int; one beyond the range of an int is kind internal.
