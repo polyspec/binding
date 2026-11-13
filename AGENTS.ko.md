@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 76a705639b41d96789d9a4034887bfb4c37ca26dc9bf9a556b13f34a18e551f6 -->
+<!-- source-sha256: 073115cbaad0f36eccc5ef7e6bc3268ce329a752cac6b302cab1e3bd4592c4ef -->
 # 개발
 
 [English](AGENTS.md)

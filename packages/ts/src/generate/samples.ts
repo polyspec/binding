@@ -821,26 +821,25 @@ export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) =
       positional.push(skipped && ctx.lang !== 'node' ? name(arg, text) : text);
     }
   }
-  // GN-6i: an argument of JavaScript has only its place, so undefined stays where an argument follows it, and only
-  // the undefined arguments at the end of the call are missing arguments.
-  const ended = (args: string[]): string => {
-    const kept = [...args];
-    while (ctx.lang === 'node' && extra === undefined && kept.at(-1) === 'undefined') kept.pop();
-    return kept.join(', ');
+  // U-2: only a trailing argument is missing; an argument left out before one that is given is undefined.
+  const trailing = (): string[] => {
+    const given = [...positional];
+    while (ctx.lang === 'node' && given.at(-1) === 'undefined') given.pop();
+    return given;
   };
   const fields = fn.args.filter((a) => a.field).flatMap((a) => {
     const text = value(a);
     return text === undefined ? [] : [{ arg: a, text }];
   });
-  if (extra !== undefined) positional.push(extra);
-  if (fn.record === undefined) return ended(positional);
+  const tail = extra === undefined ? [] : [extra];
+  if (fn.record === undefined) return [...trailing(), ...tail].join(', ');
   if (ctx.lang === 'node') {
     const object = fields.map((f) => `${langName('node', f.arg.name, 'variable')}: ${f.text}`).join(', ');
     // U-2 {empty: "object"}: a record without a field that is given is left out, when it may be.
-    if (object === '' && fn.record.param.default !== undefined) return ended(positional);
-    return [...positional, object === '' ? '{}' : `{ ${object} }`].join(', ');
+    if (object === '' && fn.record.param.default !== undefined) return [...trailing(), ...tail].join(', ');
+    return [...positional, ...tail, object === '' ? '{}' : `{ ${object} }`].join(', ');
   }
-  return [...positional, ...fields.map((f) => name(f.arg, f.text))].join(', ');
+  return [...positional, ...tail, ...fields.map((f) => name(f.arg, f.text))].join(', ');
 }
 
 // The value of an argument in a case: undefined when the case leaves an argument with a default out (U-2).

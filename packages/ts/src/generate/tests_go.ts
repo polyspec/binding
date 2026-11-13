@@ -74,8 +74,9 @@ function pointerTo(v: Values, type: Type, inner: string): string {
   if (nilAbsent(v.model, type)) return inner;
   v.usesPtr = true;
   if (aliasOf(v.model, type) !== undefined) return `ptr[any](${inner})`;
-  // GN-6v: a pointer to the interface of a variant, not to the struct of the case.
-  return variantOf(v.model, type) !== undefined ? `ptr[${typeName(v, type)}](${inner})` : `ptr(${typed(type, inner)})`;
+  // GN-6v, GN-6aa: a pointer to the interface of a variant or of a callback, not to the struct of the case or of the
+  // fixture.
+  return variantOf(v.model, type) !== undefined || callbackOf(v.model, type) !== undefined ? `ptr[${typeName(v, type)}](${inner})` : `ptr(${typed(type, inner)})`;
 }
 
 const hexBytes = (value: unknown, what: string): string => {

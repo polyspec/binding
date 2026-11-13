@@ -1043,7 +1043,7 @@ ${goImportBlock(std.map((s) => `"${s}"`), valueClassImports(model))}
 // entry is a function of the C ABI: the encoded arguments in, the encoded result or failure out, 0 or 1 back.
 type entry func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t
 
-${back ? `// readerOf reads a buffer that Rust gave: first the cgo.Handle of each func that the buffer gives, whose func it takes
+${model.aliases.length > 0 ? `// readerOf reads a buffer that Rust gave: first the cgo.Handle of each func that the buffer gives, whose func it takes
 // and whose handle it deletes at once, so no handle outlives the buffer whatever the decoding then finds (GN-6u).
 func readerOf(bytes []byte) *Reader {
 	r := &Reader{bytes: bytes}

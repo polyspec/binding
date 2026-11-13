@@ -49,6 +49,48 @@
   and byte string keys stay refused by name, now at every place. `tests/e2e/shapes` has the record `tally` and the
   members `tally_of`, `tally_total`, `merged`, `split_counts`, `doubled` and `present` with their cases: a map in a
   record, in a list, in an optional and in a map, both ways. Verified by `make test-ts`: 394 of 394 pass.
+- A helper of a generated crate that is an `async fn` was kept in every crate: `usedHelpers` read the name of a
+  helper after `fn` or `trait` at the start of its item only, so `async fn caught` of the WASM crate had no name and
+  counted as used, and a WASM crate without a member with `wait: async_driver` (variants, sample) had dead code,
+  which the lints deny. `usedHelpers` now reads the name of an `async fn` too (GN-4, GN-6n). Found by the end-to-end
+  run of variants and of sample ("function `caught` is never used"). Verified by `make test-ts`: the test of `caught`
+  failed for the WASM crate of variants, and 409 of 409 pass with the change.
+- Three texts of the generator that no contract of `tests/e2e` shows. PHP wrote the helper `thrown` for every contract
+  with a failing member or a value alias, while only a callback or a function type calls it, so the crate of a
+  contract with an alias and no callback (the relay fixture) had dead code, which the lints deny; PHP now writes it
+  where `keepsThrown` holds, as Node does (U-3, GN-6z). The assertion of the borrows of a member (GN-6h, I-2) left the
+  `Io` token of `wait: blocking_io` out of the type of the function pointer and wrote the receiver `self` as `&`, so a
+  correct core did not compile against it; the assertion now has `_` for the token after the receiver and the value
+  of the class for the receiver `self` (GN-6m, GN-6o). A Node or WASM member with `machine` and a class parameter gave
+  the core the guard of the parameter, because the entry left the borrow of the guard to a future that a machine does
+  not have; the entry now binds the borrow before its core makes the machine (GN-6ab). Verified by `make test-ts`:
+  each of the three new tests failed for its text, and 409 of 409 pass with the change.
+- `make e2e` without `WORK` gave the script an empty `--work`, which it resolved to the root of the checkout, so the
+  run wrote the tree of the commit, the copies of the repositories and the build directory into the checkout; with
+  `DEPS` the empty value also took `--dep` as the directory. `WORK` is now optional: the recipe gives `--work` only for
+  a named directory, and a run without one makes a directory under the temporary directory of the system and removes
+  it when it ends, when it fails and on SIGINT and SIGTERM. The commands of the run are in a process group of their
+  own and write to one pipe of the script, so a signal stops the group and the directory is removed when the pipe
+  closes, after the last process has exited (GN-14, HR-87); the errors of the run are printed with its output, in the
+  order written. The end-to-end check linted each binding crate with its test features only, so an import that only
+  an entry point of a test feature uses was unused in the build without features and no run saw it. The check now
+  lints each binding crate also without a feature, with `-D warnings`, and names both lints in the outcome of the
+  target (GN-14, GN-5). `scripts/e2e-work.mts` and `scripts/e2e-lint.mts` are files that a run reads from the checkout
+  (GN-14b). Verified by `make test-ts`: the new tests failed without the two modules, and 406 of 406 pass with them.
+- The end-to-end check compiled the generated crates of this tree for the first time and refused six texts. PHP and
+  Node: `thrown_thread` read the number of the thread through a `match` whose `Err` arm gives 0, which clippy names
+  `manual_unwrap_or_default`; it now reads it with `let ... else` (U-3, GN-6u). Python: the generated code reads the
+  cfg `pyo3_disable_reference_pool`, which no crate declared, so rustc refused it (`unexpected_cfgs`); the Python crate
+  now has a `build.rs` that declares the cfg, which its manifest names (GN-3a, GN-6u). WASM: `caught` returned
+  `impl Future` around one `async` block, which clippy names `manual_async_fn`; it is now an `async fn` (GN-6n). Go: for
+  a contract with a callback unit and no value alias, package binding read the list of the handles of a buffer that
+  the Rust crate writes only for a contract with an alias, so every call failed with "the encoded result does not
+  follow the encoding of the binding" or with a misuse of a `cgo.Handle`; Go now reads the list exactly when the crate
+  writes it (GN-6u). Go: a test gave an optional callback as a pointer to the struct of its fixture, which `go vet`
+  refuses for a parameter that is a pointer to the interface; the test now gives `ptr[<interface>](...)` (GN-6aa).
+  Node and WASM: a test left an argument out before the options record by dropping it, so the record took its place;
+  the test now passes `undefined` there, and only a trailing argument is missing (U-2, GN-6i). Verified by
+  `make test-ts`: the six new tests failed, each for its text; with the change 399 of 399 pass.
 - For a contract with a class that has a write place and no member that takes a class as an argument, the generated
   Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
   poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of
