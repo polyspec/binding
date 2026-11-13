@@ -1,10 +1,30 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e2c0e624b98509b5f80e20d62757f860fd50cc02a38d9ac919e1f03b48a6ce28 -->
+<!-- source-sha256: 123a46d9e43ab306af0317d3df1dc974a7b1dbbd5f3405e9dea755b2e1c0df5a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `tests/e2e/functions`의 계약은 네 target을 이름하고 `go`를 이름하지 않았다. `tests/e2e`의 모든 계약은 다섯 target을
+  이름한다(BD-27). 생성기가 Go의 함수 타입을 거부했기 때문이다. 타입이
+  `{"function": {"parameters": ["text", {"list": "int"}], "returns": "text"}}`인 parameter에서 생성은 "a function type is
+  not generated for go (GN-6z)"로 실패했다. 이제 Go는 코어가 보관할 수 있는 함수 타입을 생성한다(GN-6z). parameter는
+  `func(<parameters>) (<R>, error)`이고 `none`이면 `func(<parameters>) error`이며, nil func는 kind
+  `invalid_argument_type`이다. func는 자기 호출의 func로 들어온다. C ABI는 export `<prefix>__go_keep`에 `cgo.Handle`을
+  묻고, package `binding`은 그때부터 그 handle 아래에 func를 가지며, C ABI는 그 handle을 `Native`로 갖는다. 그 `Native`의
+  마지막 drop이 handle을 지운다. 그래서 func는 호출보다 오래 살고, C ABI가 읽지 않은 func는 자기 호출과 함께 끝난다.
+  box된 `Fn`은 어느 호출 안도 아닌 곳에서 `Native`의 handle로 export `<prefix>__go_function`을 통해 func를 부른다. func가
+  돌려준 error와 export가 recover한 panic의 값은 package `binding`의 mutex 뒤의 table에, `Raised`가 이름하는 key 아래에
+  보관한다. func가 실행된 호출의 member는 같은 error 값을 돌려주거나 같은 값으로 panic하고, 코어가 drop한 `Raised`는
+  `<prefix>__go_release_raised`로 항목을 지운다. 결과가 값 alias, callback, 함수를 담은 함수 타입은 Go에서 이름으로
+  거부한다. 생성된 Go 시험은 case의 함수 값을 case의 행으로 답하는 func로 주고, nil func를 시험하며, func의 error와
+  panic을 그것을 실행한 호출에서, 그리고 보관된 func를 실행하는 나중의 호출에서 시험한다. `tests/e2e/functions`의 계약은
+  Go module과 함께 `go`를 이름하고, 그 workspace는 crate `packages/go/internal/ffi`를 이름한다. Go crate가 import를 고를
+  때 주석 안의 이름은 더 이상 `binding_core`의 타입의 사용으로 세지 않는다. `make test-ts`로 검증했다. 시험은 이 계약과
+  함수 타입을 넣은 shapes의 계약의 Go crate, package, 시험을 생성하고, 위의 형태, 두 번 정의된 함수가 없음, GN-4c의 이름,
+  package `binding`의 모든 import의 사용을 요구하며, 여덟 계약의 crate를 읽는 시험은 crate 40개를 읽는다. 이 변경에서
+  생성된 crate는 컴파일하지 않았다.
 
 - Go crate의 member의 C 심볼은 module, class, member를 밑줄 하나로 이었고, package `binding`의 그 함수는 구분자 없이
   이었다. 그래서 두 member가 한 이름을 가졌다. class `tag`의 member `new_x`와 class `tag_new`의 member `x`가 있는

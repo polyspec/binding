@@ -9,6 +9,7 @@
     "php",
     "python",
     "node",
+    "go",
     "wasm"
   ],
   "packages": {
@@ -34,6 +35,9 @@
           }
         }
       }
+    },
+    "go": {
+      "module": "github.com/polyspec/functions/packages/go"
     }
   },
   "naming": {

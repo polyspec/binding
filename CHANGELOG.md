@@ -5,6 +5,28 @@
 
 ## Unreleased
 
+- The contract of `tests/e2e/functions` named four targets and no `go`, while every contract of `tests/e2e` names the
+  five targets (BD-27), because the generator refused a function type for Go: for a parameter of the type
+  `{"function": {"parameters": ["text", {"list": "int"}], "returns": "text"}}` it failed with "a function type is not
+  generated for go (GN-6z)". Go now generates the function type that the core may keep (GN-6z). The parameter is
+  `func(<parameters>) (<R>, error)`, or `func(<parameters>) error` for `none`, and a nil func is kind
+  `invalid_argument_type`. The func enters as a func of its call; the C ABI asks the export `<prefix>__go_keep` for
+  the `cgo.Handle` under which package `binding` holds it from then on and holds that handle as a `Native`, whose
+  last drop deletes it, so the func outlives the call and a func that the C ABI did not read ends with its call. The
+  boxed `Fn` calls the func through the export `<prefix>__go_function` by the handle of the `Native`, in no call. The
+  error that the func returns, and the value of its panic, which the export recovers, are kept in a table of package
+  `binding` behind a mutex under a key that the `Raised` names: the member in whose call the func ran returns the
+  same error value or panics with the same value, and a `Raised` that the core drops removes the entry through
+  `<prefix>__go_release_raised`. A function type whose result holds a value alias, a callback or a function is
+  refused by name for Go. The generated Go test gives a function value of a case as a func that answers by the rows
+  of the case, and tests a nil func, and the error and the panic of the func in the call that runs it and in a later
+  call that runs a kept func. The contract of `tests/e2e/functions` names `go` with its Go module, and its workspace
+  names the crate `packages/go/internal/ffi`. A name in a comment of the Go crate no longer counts as a use of a type
+  of `binding_core` when the crate chooses its imports. Verified by `make test-ts`: the tests generate the Go crate,
+  package and tests of the contract and of the contract of shapes with a function type, require the forms above, no
+  function defined twice, the names of GN-4c and every import of package `binding` used, and the test of the crates
+  of the eight contracts reads 40 crates. The generated crates were not compiled for this change.
+
 - The C symbol of a member of the Go crate joined the module, the class and the member with one underscore, and its
   function of package `binding` joined them with nothing, so two members had one name: for a contract with the member
   `new_x` of the class `tag` and the member `x` of the class `tag_new`, the static library defined

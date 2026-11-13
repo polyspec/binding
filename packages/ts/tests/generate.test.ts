@@ -1948,7 +1948,7 @@ test('a Python test gives a function value of a case as a fixture of the call an
   assert.match(tests, /def test_gn6z_apply_refuses_a_convert_that_is_not_callable\(self\) -> None:\n        with self\.assertRaises\(pkg\.ShapesTypeError\) as caught:\n            pkg\.apply\(0, "a"\)\n        self\.assertEqual\(caught\.exception\.kind, "invalid_argument_type"\)/);
 });
 
-test('Python takes a function type as a boxed Fn that calls the callable; the other targets refuse it by name (T-2, GN-6z)', () => {
+test('Python takes a function type as a boxed Fn that calls the callable, and Go as one that calls a kept func (T-2, GN-6z)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] });
@@ -1961,9 +1961,17 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   assert.match(lib, /\.call1\(\(text_out\(py, [a-z0-9_]+\)\?, list_out\(py, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
-  for (const target of ['go']) {
-    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target as Lang] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
-  }
+  // Go generates the function type too: the contract of shapes has value aliases, so the arguments of the func give
+  // the handles of their funcs first, as those of a callback do.
+  const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['go'] });
+  const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goLib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(&mut input, "convert"\)/);
+  assert.match(goLib, /polyspec_shapes::apply\(convert, /);
+  assert.equal(/fn given_first\(/.test(goLib), /fn kept_called\(native: &Native, args: &\[u8\]\) -> Result<Vec<u8>, Raised> \{\n(?:[^\n]*\n){5,8}    let args = given_first\(args\.to_vec\(\)\);/.test(goLib));
+  assert.match(text(go, 'packages/go/zz_generated_shapes.go'), /\nfunc Apply\(convert func\(string, \[\]int64\) \(string, error\), /);
+  const names = functionNames(goLib);
+  assert.deepEqual([...names].filter(([, count]) => count > 1), []);
+  assert.equal(names.get('go_native'), 1);
 });
 
 test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6z, GN-6u)', () => {
@@ -3831,6 +3839,106 @@ test('a member with core.failure converts the error of its core as the failure o
   // registry.call takes no function, but calls the one that the registry keeps.
   const call = lib.slice(lib.indexOf('fn member_call<'));
   assert.match(call, /polyspec_functions::Registry::call\(receiver, &name, &value\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(failure_error\(py, error\)\),/);
+});
+
+test('Go takes a function type as a boxed Fn over a kept func, which is called by the handle of its Native and whose error is kept by no call (T-2, GN-6z, GN-6u)', () => {
+  // The contract of tests/e2e/functions: apply calls the function during the call, registry.register keeps it and
+  // registry.call calls the kept function in a later call. Before, generation for go was refused: "a function type is
+  // not generated for go (GN-6z)".
+  const out = e2eOwn('functions', ['go']);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  // The core takes the function by value, in the form that it may keep: 'static, Send and Sync.
+  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<polyspec_functions::Error>> \+ Send \+ Sync> = kept_function_in\(&mut input, "convert"\)\.map\(\|native\| -> Box<dyn Fn/);
+  assert.match(lib, /polyspec_functions::apply\(convert, /);
+  // A nil func is no function; a func is kept from the moment the C ABI reads it, as a Native of its cgo.Handle.
+  assert.match(lib, /\nfn kept_function_in\(input: &mut &\[u8\], subject: &str\) -> Result<Native, Fail> \{\n    if !read_tag\(input\)\? \{\n        return Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("a function"\) \}\)\);\n    \}/);
+  assert.match(lib, /let handle = unsafe \{ polyspec_functions__go_keep\(call, function\) \};/);
+  assert.match(lib, /\n    Ok\(go_native\(handle\)\)\n\}/);
+  assert.match(lib, /\nimpl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n[^}]*polyspec_functions__go_release\(self\.handle\)/);
+  // The call names the handle of the Native, not a call: the core calls a kept function in a later call.
+  assert.match(lib, /\nfn kept_called\(native: &Native, args: &\[u8\]\) -> Result<Vec<u8>, Raised> \{/);
+  assert.match(lib, /polyspec_functions__go_function\(function\.handle, args\.as_ptr\(\), args\.len\(\), &mut buffer\)/);
+  assert.match(lib, /let bytes = kept_called\(&native, &args\)\?;/);
+  // What the func returned as its error is the Raised of a key of the table of package binding, which the member takes
+  // or the drop of the Raised releases.
+  assert.match(lib, /\n    Kept \{ key: u64 \},\n/);
+  assert.match(lib, /Ok\(key\) => Err\(thrown\(Thrown::Kept \{ key \}\)\)/);
+  assert.match(lib, /Some\(Thrown::Kept \{ key \}\) => Fail \{ raised: Some\(\(0, key\)\), /);
+  assert.match(lib, /if let Some\(Thrown::Kept \{ key \}\) = taken \{\n[^}]*polyspec_functions__go_release_raised\(key\)/);
+  // No trampoline of a call: the contract has no callback unit and no function of a machine.
+  assert.doesNotMatch(lib, /__go_callback/);
+  assert.doesNotMatch(lib, /Thrown::Go/);
+  // GN-4c: the helper states its direction last and no helper starts with the prefix of a family.
+  const names = functionNames(lib);
+  assert.deepEqual([...names].filter(([, count]) => count > 1), []);
+  assert.deepEqual([...names.keys()].filter((name) => /^(?:in|out)_/.test(name) && !['in_registry', 'out_registry'].includes(name)), []);
+  assert.deepEqual([...names.keys()].filter((name) => name.startsWith('function_')), []);
+  assert.equal(names.get('kept_function_in'), 1);
+  for (const symbol of ['polyspec_functions_apply', 'polyspec_functions_registry__new', 'polyspec_functions_registry__register', 'polyspec_functions_registry__call']) assert.equal(names.get(symbol), 1, symbol);
+  // thrown-count-test counts what THROWN holds, the Raised of a kept func as any other.
+  assert.match(lib, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_functions__thrown_count\(/);
+  assert.doesNotMatch(lib, /thread-test|WrongThread/);
+
+  // The Go package: a func that returns its result and an error; a nil func is encoded as absent.
+  const go = text(out, 'packages/go/zz_generated_functions.go');
+  assert.match(go, /\nfunc Apply\(convert func\(string, \[\]int64\) \(string, error\), value_ string\) \(string, error\) \{\n\tvar zero0 string\n\tcall := binding\.NewCall\(\)\n\tdefer call\.Close\(\)\n/);
+  assert.match(go, /\tif convert == nil \{\n\t\tenc\.Tag\(false\)\n\t\} else \{\n\t\tenc\.Tag\(true\)\n\t\tcall\.Keep\(enc, func\(dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t\t\tvar arg0 string\n\t\t\targ0 = dec\.Text\(\)\n/);
+  assert.match(go, /\t\t\treturned, err := convert\(arg0, arg1\)\n\t\t\tif err != nil \{\n\t\t\t\treturn err\n\t\t\t\}\n\t\t\tenc\.Text\(returned\)\n\t\t\treturn nil\n\t\t\}\)\n\t\}\n/);
+  assert.match(go, /\nfunc \(this \*Registry\) Register\(name string, convert func\(string, \[\]int64\) \(string, error\)\) error \{/);
+  // registry.call takes no func, so it has no call: the error of the kept func comes from the table of package binding.
+  assert.match(go, /\nfunc \(this \*Registry\) Call\(name string, value_ string\) \(string, error\) \{\n\tvar zero0 string\n\tenc := binding\.NewWriter\(\)\n/);
+  assert.match(go, /binding\.Registry_Call\(enc\.Done\(\)\)/);
+
+  // Package binding: the func of a call, its cgo.Handle, its run with the panic recovered, and the table of the errors.
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /\ntype Kept func\(dec \*Reader, enc \*Writer\) error\n/);
+  assert.match(binding, /\nfunc \(c \*Call\) Keep\(enc \*Writer, function Kept\) \{\n\tc\.kept = append\(c\.kept, function\)\n\tenc\.Uint\(uint64\(c\.handle\)\)\n\tenc\.Uint\(uint64\(len\(c\.kept\)\)\)\n\}/);
+  for (const name of ['go_keep', 'go_function', 'go_release', 'go_release_raised']) {
+    assert.match(binding, new RegExp(`\\n//export polyspec_functions__${name}\\nfunc polyspec_functions__${name}\\(`), name);
+    assert.match(lib, new RegExp(`\\n    fn polyspec_functions__${name}\\(`), name);
+  }
+  assert.doesNotMatch(binding, /__go_callback|__go_host|__go_native\b/);
+  assert.match(binding, /\tdefer func\(\) \{\n\t\tif value := recover\(\); value != nil \{\n\t\t\tstatus, out = keepRaised\(&panicked\{value: value\}\)\n\t\t\}\n\t\}\(\)\n/);
+  assert.match(binding, /\nfunc raisedError\(call, index uint64\) error \{\n\tif call == 0 \{\n\t\terr := takeRaised\(index\)\n/);
+  assert.match(binding, /\t\tif p, ok := err\.\(\*panicked\); ok \{\n\t\t\tpanic\(p\.value\)\n\t\t\}\n\t\treturn err\n\t\}\n/);
+  assert.match(binding, /\nvar raisedErrors = raisedTable\{errors: map\[uint64\]error\{\}\}\n/);
+  const functions = [...binding.matchAll(/^func (\w+)\(/gm)].map((m) => m[1] ?? '');
+  assert.deepEqual(functions.filter((name, i) => functions.indexOf(name) !== i), []);
+  // Every import of package binding is used, and it imports what it names.
+  for (const [name, use] of [['sync', /\bsync\./], ['runtime/cgo', /\bcgo\./], ['unsafe', /\bunsafe\./], ['fmt', /\bfmt\./], ['runtime', /\bruntime\.(?!cgo)/]] as const) {
+    assert.equal(new RegExp(`\\n\\t"${name}"\\n`).test(binding), use.test(binding.replace(/\n\t"[a-z/]+"\n/g, '\n')), name);
+  }
+
+  // The generated test: the cases with a func of their rows, a nil func, an error and a panic of the func that come
+  // back unchanged, in the call that receives the func and in the later call that runs the kept one.
+  const tests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(tests, /\tfunction0 := &fixture\{rows: \[\]fixtureRow\{\{member: "call", args: \[\]any\{"ab c", \[\]int64\{2, 1\}\}, result: "AB C", once: false\}\}\}\n\tcall1 := func\(arg0 string, arg1 \[\]int64\) \(string, error\) \{\n\t\tresult, err := function0\.answer\("call", arg0, arg1\)\n\t\tvalue, _ := result\.\(string\)\n\t\treturn value, err\n\t\}\n\tvalue0, err := Apply\(call1, "ab c"\)\n/);
+  assert.match(tests, /\tif len\(function0\.unexpected\) != 0 \{\n/);
+  assert.match(tests, /\ntype fixture struct \{\n/);
+  assert.match(tests, /\nfunc TestGN6zApplyRefusesANilConvert\(t \*testing\.T\) \{\n\t_, err := Apply\(nil, "a"\)\n\tif failure, ok := err\.\(\*liberrors\.FunctionsTypeError\); !ok \|\| failure\.Kind\(\) != "invalid_argument_type" \{\n/);
+  assert.match(tests, /\nfunc TestGN6zRegistryRegisterRefusesANilConvert\(/);
+  // The error and the panic of the func in the call that runs it: apply, by the arguments of its case with a row.
+  assert.match(tests, /\nfunc TestGN6zApplyReturnsTheErrorOfConvert\(t \*testing\.T\) \{\n\traised := errors\.New\("[^"]+"\)\n\tcall0 := func\(_ string, _ \[\]int64\) \(string, error\) \{\n\t\tvar zero string\n\t\treturn zero, raised\n\t\}\n\t_, err := Apply\(call0, "ab c"\)\n\tif err != raised \{\n/);
+  assert.match(tests, /\nfunc TestGN6zApplyPanicsWithThePanicOfConvert\(t \*testing\.T\) \{\n[^}]*\t\tpanic\(raised\)\n\t\}\n\tdefer func\(\) \{\n\t\tif value := recover\(\); value != any\(raised\) \{\n/);
+  // register keeps the func and does not call it, so no case of it has a row and it has no such test.
+  assert.doesNotMatch(tests, /TestGN6zRegistryRegister(?:ReturnsTheErrorOf|PanicsWith)/);
+  // The later call that runs the kept func returns its error and panics with its panic.
+  assert.match(tests, /\nfunc TestGN6zRegistryCallTheKeptFunctionConvertsTheValueReturnsTheErrorOfTheKeptFunction\(t \*testing\.T\) \{\n[^}]*\}\n[^}]*\t\treturn zero, raised\n\t\}\n\tfailure3 := made0\.Register\("up", call2\)\n[^}]*\}\n\t_, err := made0\.Call\("up", "ab c"\)\n\tif err != raised \{\n/);
+  assert.match(tests, /\nfunc TestGN6zRegistryCallTheKeptFunctionConvertsTheValuePanicsWithThePanicOfTheKeptFunction\(/);
+  // No func of the test has the form of the function of a machine (GN-6ae).
+  assert.doesNotMatch(tests, /GN-6ae|invalid_callback|_ \[\]int64\) \(any, error\)/);
+  // GN-6ae: the count of what was thrown is read after each case of a member that takes a function.
+  const counted = text(out, 'packages/go/zz_generated_thrown_count_test.go');
+  for (const name of ['TestGN13eApplyTheFunctionConvertsTheValueKeepsNothingThrown', 'TestGN6zRegistryCallTheKeptFunctionConvertsTheValueReturnsTheErrorOfTheKeptFunctionKeepsNothingThrown']) {
+    assert.match(counted, new RegExp(`\\nfunc ${name}\\(t \\*testing\\.T\\) \\{\\n[^]*?binding\\.ThrownCount\\(\\)`), name);
+  }
+});
+
+test('Go refuses by name a function type whose result is read through a call (GN-6z, G-4)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  unitOf(contract, 'sample').members.push({ id: 'sample.keep', name: ['keep'], kind: 'function', visibility: 'public', parameters: [{ name: ['make'], type: { function: { parameters: ['text'], returns: { unit: 'data' }, async_allowed: false } }, required: true }], returns: 'none', raises: [], wait: 'none', core: 'polyspec_sample::keep' });
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), /sample\.keep[^\n]*a function type whose result holds a value alias, a callback or a function is not generated for Go \(GN-6z\)/);
 });
 
 test('a contract with a function type and no callback unit keeps what its function threw (U-3, GN-6z)', () => {
@@ -5855,14 +5963,18 @@ test('the WASM future that catches a panic of a poll is an async fn, which clipp
 
 test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {
   let callbacksOnly = 0;
-  for (const library of ['sample', 'shapes', 'variants', 'classes', 'points']) {
+  let keptOnly = 0;
+  for (const library of ['sample', 'shapes', 'variants', 'classes', 'points', 'functions']) {
     const out = e2eOwn(library, ['go']);
     const writes = /fn given_first\(/.test(text(out, 'packages/go/internal/ffi/generated/lib.rs'));
     const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
     assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/.test(binding), writes, library);
     assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{ return NewReader\(bytes\) \}/.test(binding), !writes, library);
     if (!writes && /cgo\.NewHandle\(c\)/.test(binding)) callbacksOnly += 1;
+    if (!writes && /func runKept\(/.test(binding)) keptOnly += 1;
   }
+  // functions has a function type that the core keeps and no alias: the arguments of a kept func give no func.
+  assert.equal(keptOnly, 1, 'no contract with a kept function and without an alias was read');
   // variants has a callback and no alias: Go calls back, and no buffer gives a func.
   assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
 });
@@ -6020,8 +6132,8 @@ test('the crates of every contract of the end-to-end check name their functions 
       }
     }
   }
-  // HR-84: the test read the crates of the eight contracts.
-  assert.equal(crates, 39);
+  // HR-84: the test read the crates of the eight contracts, each for its five targets.
+  assert.equal(crates, 40);
 });
 
 test('Node takes the exception of every callback out of the environment where it is called, so a core that answers the Raised returns its value (U-3, GN-6ab)', () => {

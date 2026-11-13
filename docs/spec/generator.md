@@ -21,7 +21,7 @@ the design ids are those of the binding design.
   fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
-  callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
+  callback, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, an abstract class, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
@@ -446,7 +446,32 @@ the design ids are those of the binding design.
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
   either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
-  error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
+  error object of the language is made on the owner thread only, where the failure is converted. Go declares the
+  parameter as `func(<parameters>) (<R>, error)`, and as `func(<parameters>) error` for `none`; a nil func is kind
+  `invalid_argument_type`. A Go value is bound to no thread, so Go has no kind `wrong_thread` and no feature
+  `thread-test`. The func enters as a func of the call and its index in it, and the C ABI asks the export
+  `<prefix>__go_keep` for the `cgo.Handle` under which package `binding` holds the dispatch of the func from then
+  on, and holds that handle as a `Native` (GN-6u), which outlives the call and whose last drop deletes the handle on
+  any thread; a func of a call that fails before the C ABI reads it is held by the call alone, which ends. The
+  function calls the func through the export `<prefix>__go_function`, which takes the handle of the `Native` and
+  not the handle of a call, because the core calls a kept function in a later call or on a thread of its own; the
+  export decodes the arguments, calls the func and encodes its result. The `error` that the func returns, and the
+  value of a panic, which the export recovers as a call recovers the panic of a callback (GN-15b), are kept in a
+  table of package `binding` behind a mutex, which is the table of no call, under a key that is a count of the
+  table, and the `Raised` names that key: the member in whose call the function ran takes the entry out and returns
+  the same error value, or panics with the same value after the call of the C ABI returned, and the last drop of a
+  `Raised` that no member returned removes the entry through the export `<prefix>__go_release_raised`, on any
+  thread. The entry point of `thrown-count-test` counts such a `Raised` as any other. A function type whose result
+  holds a value alias, a callback or a function is refused by name for Go (G-4), because the C ABI reads such a
+  result through a call (GN-15c), and a kept function runs in no call. The Go test of a member that takes a function
+  type requires kind `invalid_argument_type` for a nil func; a function value of a case is a func that answers by
+  the rows of the case and records a call that no row answers, which the test requires to be none; with the
+  arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
+  test requires that the error that the func returns is the error of the call, the same value, and that its panic
+  is the panic of the call. For a case whose receiver was given a func with a row in an earlier call and whose
+  member names `core.failure`, the test requires the same of that later call, and that the count of
+  `thrown-count-test` is 0 after the error. No Go test gives a result of another type, because the Go type of the
+  func fixes its result.
 - **GN-6aa** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
@@ -523,7 +548,8 @@ the design ids are those of the binding design.
     generation under that lock; a drop of an older generation discards its key and touches nothing of the language,
     whose environment is gone, neither a reference nor the threadsafe function, and the `out` of such a `Native` is
     kind `internal`.
-  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
+  - Go holds the `cgo.Handle` of the func of a value alias, or of the dispatch of the func of a function type
+    (GN-6z), which the drop deletes on any thread.
   - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
     so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.
     Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread

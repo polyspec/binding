@@ -13,7 +13,7 @@ import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
 import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, machineFunction, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, countsThrownGo, cSymbol, echoes, libRust, passes, plainName, prefix, releaseSymbol, runsGo, valueClasses } from './go_rust.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, countsThrownGo, cSymbol, keeps, echoes, libRust, passes, plainName, prefix, releaseSymbol, runsGo, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -176,7 +176,12 @@ export function goType(scope: GoScope, type: Type): string {
   if ('optional' in type) return `${nilAbsent(scope.model, type.optional) ? '' : '*'}${goType(scope, type.optional)}`;
   // GN-6ae: a function is a Go func that returns any value and an error, and a passthrough is any value, because a
   // method of Go has no type parameter.
-  if ('function' in type) return `func(${type.function.parameters.map((part) => goType(scope, part)).join(', ')}) (any, error)`;
+  if ('function' in type) {
+    const parts = type.function.parameters.map((part) => goType(scope, part)).join(', ');
+    if (machineFunction(type)) return `func(${parts}) (any, error)`;
+    // GN-6z: a function that the core may keep returns its result and an error, and the error alone for none.
+    return type.function.returns === 'none' ? `func(${parts}) error` : `func(${parts}) (${goType(scope, type.function.returns)}, error)`;
+  }
   if ('passthrough' in type) return 'any';
   if ('tuple' in type) {
     // T-2, GN-16: a tuple inside another type or as a parameter is a Go array of its one part type, else a struct of
@@ -345,6 +350,35 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
   // GN-6ae: a func is a callback of the call, whose dispatch decodes the arguments, a class argument as a new
   // instance, and calls the func; a nil func is kind invalid_callback.
+  if ('function' in type && !machineFunction(type)) {
+    // GN-6z: a func that the core may keep is a func of the call until the C ABI reads it, and package binding holds
+    // it from then on. Its dispatch decodes the arguments, calls the func and encodes its result; the error of the
+    // func is the error of the dispatch. A nil func is kind invalid_argument_type.
+    const parts = type.function.parameters;
+    const returns = type.function.returns;
+    const args = parts.map((_part, i) => `arg${i}`).join(', ');
+    return [
+      `${t}if ${expr} == nil {`,
+      `${t}\tenc.Tag(false)`,
+      `${t}} else {`,
+      `${t}\tenc.Tag(true)`,
+      `${t}\tcall.Keep(enc, func(dec *binding.Reader, enc *binding.Writer) error {`,
+      ...parts.flatMap((part, i) => [`${t}\t\tvar arg${i} ${goType(scope, part)}`, ...goDecode(scope, part, `arg${i}`, indent + 2, depth)]),
+      `${t}\t\tif err := dec.Finish(); err != nil {`,
+      `${t}\t\t\treturn err`,
+      `${t}\t\t}`,
+      ...(returns === 'none' ? [`${t}\t\treturn ${expr}(${args})`] : [
+        `${t}\t\treturned, err := ${expr}(${args})`,
+        `${t}\t\tif err != nil {`,
+        `${t}\t\t\treturn err`,
+        `${t}\t\t}`,
+        ...goEncode(scope, returns, 'returned', indent + 2, depth),
+        `${t}\t\treturn nil`,
+      ]),
+      `${t}\t})`,
+      `${t}}`,
+    ];
+  }
   if ('function' in type) {
     const parts = type.function.parameters;
     return [
@@ -1053,7 +1087,7 @@ func Recognize${goName(u.unit.name)}(err error) error {
     ...model.objects.map((o) => `void ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) ? ['sync'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1125,7 +1159,7 @@ func NewRef(handle uint64, release func(uint64)) *Ref {
 
 // Handle is the handle of the value.
 func (r *Ref) Handle() uint64 { return r.handle }
-`}${back ? goCallBack(model) : ''}${passes(model) ? goPassed(model) : ''}
+`}${back ? goCallBack(model) : ''}${passes(model) ? goPassed(model) : ''}${keeps(model) ? goKept(model) : ''}
 // Writer encodes the arguments of a call: each value in the order of the parameters (B-8).
 type Writer struct{ bytes []byte }
 
@@ -1526,7 +1560,7 @@ type Call struct {
 	handle    cgo.Handle
 	held      []held
 	callbacks []Callback
-	raised    []error
+	raised    []error${keeps(model) ? '\n\tkept      []Kept' : ''}
 }
 
 // NewCall is a call, which Close ends.
@@ -1720,7 +1754,17 @@ func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*
 
 // raisedError is the error that a callback of the call returned (U-3). A panic of the callback (GN-15b) is not returned:
 // the member panics with its value again, now that the call of the C ABI returned.
-func raisedError(call, index uint64) error {
+func raisedError(call, index uint64) error {${!keeps(model) ? '' : `
+	if call == 0 {
+		err := takeRaised(index)
+		if err == nil {
+			return Malformed()
+		}
+		if p, ok := err.(*panicked); ok {
+			panic(p.value)
+		}
+		return err
+	}`}
 	c := callOf(call)
 	if index >= uint64(len(c.raised)) {
 		return Malformed()
@@ -1760,14 +1804,14 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 	}
 	return 0
 }
-
+`}${model.aliases.length === 0 && !keeps(model) ? '' : `
 // ${p}__go_release deletes the cgo.Handle of a func that a Native of the static library held (GN-6u).
 //
 //export ${p}__go_release
 func ${p}__go_release(handle C.uint64_t) {
 	cgo.Handle(uintptr(handle)).Delete()
 }
-
+`}${model.aliases.length === 0 ? '' : `
 // ${p}__go_native gives a new cgo.Handle of the func of a Native, which the decoder of the value deletes (GN-6u).
 //
 //export ${p}__go_native
@@ -1775,6 +1819,110 @@ func ${p}__go_native(handle C.uint64_t) C.uint64_t {
 	return C.uint64_t(cgo.NewHandle(cgo.Handle(uintptr(handle)).Value()))
 }
 `}`;
+}
+
+// GN-6z: the funcs that the core may keep: a func of a call, the cgo.Handle under which package binding holds it once
+// the static library read it, its run by that handle, and the table of the errors that a kept func returned, which
+// belongs to no call.
+function goKept(model: Model): string {
+  const p = prefix(model);
+  const buffer = `C.${p}_buffer`;
+  return `
+// Kept is the dispatch of a func that the core may keep (GN-6z): the decoded arguments in, the encoded result out. Its
+// error is the error that the func returned.
+type Kept func(dec *Reader, enc *Writer) error
+
+// Keep encodes a func that the core may keep: the call and the index of the func in it, by which the static library
+// asks for the cgo.Handle of the func. A func that the static library does not ask for ends with the call.
+func (c *Call) Keep(enc *Writer, function Kept) {
+	c.kept = append(c.kept, function)
+	enc.Uint(uint64(c.handle))
+	enc.Uint(uint64(len(c.kept)))
+}
+
+// ${p}__go_keep gives a new cgo.Handle of a func of a call, which a Native of the static library holds and deletes
+// (GN-6z, GN-6u), or 0 for an index that names no func.
+//
+//export ${p}__go_keep
+func ${p}__go_keep(call C.uint64_t, function C.uint64_t) C.uint64_t {
+	c := callOf(uint64(call))
+	if function == 0 || uint64(function) > uint64(len(c.kept)) {
+		return 0
+	}
+	return C.uint64_t(cgo.NewHandle(c.kept[function-1]))
+}
+
+// raisedTable holds the errors that the kept funcs returned and the values of their panics (GN-6z), each under its
+// key until the member in whose call the func ran takes it or the static library drops its Raised. It is the table of
+// no call, because the core runs a kept func in a later call or on a thread of its own. A key is a count that is never
+// given again.
+type raisedTable struct {
+	mutex  sync.Mutex
+	errors map[uint64]error
+	next   uint64
+}
+
+var raisedErrors = raisedTable{errors: map[uint64]error{}}
+
+// keepRaised holds an error in the table: 1 and its key.
+func keepRaised(err error) (int32, []byte) {
+	raisedErrors.mutex.Lock()
+	defer raisedErrors.mutex.Unlock()
+	raisedErrors.next++
+	raisedErrors.errors[raisedErrors.next] = err
+	enc := NewWriter()
+	enc.Uint(raisedErrors.next)
+	return 1, enc.Done()
+}
+
+// takeRaised takes the error of a key out of the table, or gives nil for a key that names none.
+func takeRaised(key uint64) error {
+	raisedErrors.mutex.Lock()
+	defer raisedErrors.mutex.Unlock()
+	err := raisedErrors.errors[key]
+	delete(raisedErrors.errors, key)
+	return err
+}
+
+// runKept runs the kept func of a handle: 0 and the encoded result, or 1 and the key of the error that it returned. A
+// panic of the func is recovered here, as that of a callback is by its call (GN-15b), because a panic that unwinds
+// through the frames of the static library skips the destructors of the core: it is kept as the error, and the member
+// in whose call the func ran panics with its value again.
+func runKept(handle uint64, args []byte) (status int32, out []byte) {
+	defer func() {
+		if value := recover(); value != nil {
+			status, out = keepRaised(&panicked{value: value})
+		}
+	}()
+	function, ok := cgo.Handle(uintptr(handle)).Value().(Kept)
+	if !ok {
+		return keepRaised(Malformed())
+	}
+	enc := NewWriter()
+	if err := function(readerOf(args), enc); err != nil {
+		return keepRaised(err)
+	}
+	return 0, enc.Done()
+}
+
+// ${p}__go_function runs a kept func for the static library (GN-6z), on the thread that calls it. A Go value is bound
+// to no thread, so the static library may call it on any thread.
+//
+//export ${p}__go_function
+func ${p}__go_function(handle C.uint64_t, args *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	bytes := C.GoBytes(unsafe.Pointer(args), C.int(length))
+	status, out := runKept(uint64(handle), bytes)
+	give(out, result)
+	return C.int32_t(status)
+}
+
+// ${p}__go_release_raised removes the error of a Raised that the static library dropped (GN-6z), on any thread.
+//
+//export ${p}__go_release_raised
+func ${p}__go_release_raised(key C.uint64_t) {
+	takeRaised(uint64(key))
+}
+`;
 }
 
 // GN-6ae, B-3: the table of the values that the funcs of Go code returned, the dispatch of a func, and the export
@@ -2449,13 +2597,24 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // GN-6n: so does a Go member with wait async_driver, unless it drives the state machine of its core (GN-6ab).
   for (const fn of callablesOf(model).filter((f) => waitsAsync(f) && f.machine !== true)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for Go yet (GN-6n)`);
+  // GN-6z: the C ABI reads a value alias, a callback and a function through the call that encoded it (GN-15c), and a
+  // kept func runs in no call, so a function type with such a result is refused by name.
+  const keptTypes = (type: Type): { parameters: Type[]; returns: Type }[] => {
+    if (typeof type === 'string') return [];
+    if ('function' in type) return machineFunction(type) ? [] : [type.function];
+    return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].flatMap(keptTypes);
+  };
+  for (const fn of callablesOf(model)) {
+    for (const arg of fn.args) {
+      if (keptTypes(arg.type).some((kept) => kept.returns !== 'none' && needsCall(model, kept.returns))) {
+        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type whose result holds a value alias, a callback or a function is not generated for Go (GN-6z)`);
+      }
+    }
+  }
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records, ...model.variants.map((v) => v.unit)].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
     if (typeof type === 'string') return false;
-    // GN-6z: generate() refuses a function type for Go by its own name, except the function parameter of a member
-    // with machine (GN-6ae), which is generated.
-    if ('function' in type) return !machineFunction(type);
     if ('unit' in type) return type.library === undefined && aliasOf(model, type) === undefined && !held.has(type.unit);
     return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(refusedBefore);
   };

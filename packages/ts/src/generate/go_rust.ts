@@ -17,6 +17,7 @@ import {
   errorMatched,
   recognizedFn,
   recognizedMatch,
+  takesFunction,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -65,8 +66,12 @@ export const passes = (model: Model): boolean => [...model.functions, ...model.o
 // Whether the core runs Go code through the trampoline of the callbacks: a callback unit (U-3), or a func (GN-6ae).
 export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || passes(model);
 
-// Whether the model calls back into Go: Go code that the core runs, or the walk of a value alias.
-export const callsBack = (model: Model): boolean => runsGo(model) || model.aliases.length > 0;
+// GN-6z: whether a member takes a function type that the core may keep, whose func package binding holds under a
+// cgo.Handle and runs by that handle, in no call.
+export const keeps = (model: Model): boolean => takesFunction(model);
+
+// Whether the model calls back into Go: Go code that the core runs, the walk of a value alias, or a kept func.
+export const callsBack = (model: Model): boolean => runsGo(model) || model.aliases.length > 0 || keeps(model);
 // GN-5, GN-6ae: whether the crate has the entry point of thrown-count-test: the contract counts what was thrown, and
 // the crate writes the table (callBackRust).
 export const countsThrownGo = (model: Model): boolean => countsThrown(model.contract, model.foreign) && callsBack(model);
@@ -97,6 +102,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     return `keyed_map_in(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
   }
   if ('optional' in type) return `optional_in(${input}, ${closure(['input'], boxed(model, type.optional, convertIn(model, type.optional, 'input', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, input, subject);
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `${unitFn('in', alias.unit, alias.library)}(${input})`;
   const unit = unitOf(model, type);
@@ -717,6 +723,83 @@ function argumentLines(model: Model, fn: Fn): string[] {
   return lines;
 }
 
+// GN-6z, GN-6u: a function holds the Go func as a Native of its cgo.Handle. A call writes the arguments, runs the func
+// by that handle through the export of package binding, in no call, and reads the result; the error or the panic of
+// the func, which package binding keeps in its table, or a failure of the binding in the call, goes to the core as a
+// Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, input: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const returns = subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"';
+  const decode = type.returns === 'none'
+    ? '                    finish_input(&bytes)?;\n                    Ok(())'
+    : `                    let mut input: &[u8] = &bytes;\n                    let value: ${result} = ${convertIn(model, type.returns, '&mut input', returns)}?;\n                    finish_input(input)?;\n                    Ok(value)`;
+  return `kept_function_in(${input}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, ${failure}> {
+                let ${names.length === 0 ? '' : 'mut '}args = Vec::new();${names.length === 0 ? '' : `
+                {
+                    let output = &mut args;
+${type.parameters.map((p, i) => `                    ${convertOut(model, p, names[i] ?? '')};`).join('\n')}
+                }`}
+                let bytes = kept_called(&native, &args)?;
+                let read = || -> Result<${result}, Fail> {
+${decode}
+                };
+                read().map_err(|fail| thrown(Thrown::Binding(fail)).into())
+            })
+        })`;
+}
+
+// GN-6z: the func of a function type as the C ABI reads it and its call by the handle of its Native.
+function keptRust(model: Model): string {
+  if (!keeps(model)) return '';
+  const p = prefix(model);
+  return `
+/// GN-6z: a func enters as the call and its index among the funcs of the call that the core may keep. Package binding
+/// gives the cgo.Handle under which it holds the func from then on, which the function holds as a Native (GN-6u), so a
+/// func that the C ABI does not read is held by its call alone. A nil func is kind invalid_argument_type.
+fn kept_function_in(input: &mut &[u8], subject: &str) -> Result<Native, Fail> {
+    if !read_tag(input)? {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+    }
+    let call = uint_in(input)?;
+    let function = uint_in(input)?;
+    // SAFETY: the call is alive while the entry point that named it runs, and the export keeps no pointer.
+    let handle = unsafe { ${p}__go_keep(call, function) };
+    if handle == 0 {
+        return Err(malformed());
+    }
+    Ok(go_native(handle))
+}
+
+/// GN-6z: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in no call, on the
+/// thread of the caller: the encoded result, or the Raised of the key under which package binding keeps the error
+/// that the func returned or the value of its panic.
+fn kept_called(native: &Native, args: &[u8]) -> Result<Vec<u8>, Raised> {
+    let function = match native.downcast::<GoNative>() {
+        Some(function) => function,
+        None => return Err(thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6z: a function that no Go func entered as") })))),
+    };
+    let mut buffer = Buffer { ptr: std::ptr::null_mut(), len: 0, cap: 0 };
+${model.aliases.length === 0 ? '' : `    // GN-6u: the arguments give the handles of their funcs first.
+    let args = given_first(args.to_vec());
+`}    // SAFETY: the handle is alive while its Native is, args is a slice and the buffer is writable.
+    let status = unsafe { ${p}__go_function(function.handle, args.as_ptr(), args.len(), &mut buffer) };
+    let bytes = taken(buffer);
+    if status == 0 {
+        return Ok(bytes);
+    }
+    let mut input: &[u8] = &bytes;
+    match uint_in(&mut input).and_then(|key| finish_input(input).map(|()| key)) {
+        Ok(key) => Err(thrown(Thrown::Kept { key })),
+        Err(fail) => Err(thrown(Thrown::Binding(fail))),
+    }
+}
+`;
+}
+
 // GN-6ae: the lines that make the closure of a function parameter from a Go func, which entered as a callback of the
 // call. Each call of the closure writes the arguments, a class argument as the handle of a new instance, and runs the
 // func through the trampoline of the callbacks; what the func returned is a Passthrough, and its error a Raised.
@@ -942,7 +1025,7 @@ fn failure_error(failure: ${failure}) -> Fail {
 }
 ` : '';
   if (!callsBack(model)) return failureFn;
-  const hosts = model.aliases.length === 0 ? '' : `
+  const natives = model.aliases.length === 0 && !keeps(model) ? '' : `
 /// GN-6u: what a Native of Go holds: the cgo.Handle of the func, which the drop deletes on any thread.
 #[derive(Debug)]
 struct GoNative {
@@ -962,6 +1045,13 @@ impl Drop for GoNative {
 /// GN-6u: the count of the live Natives, which the entry point of native-count-test gives.
 static NATIVE_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// GN-6u: the func of a cgo.Handle that package binding made, as a Native.
+fn go_native(handle: u64) -> Native {
+    NATIVE_COUNT.fetch_add(1, Ordering::SeqCst);
+    Native::new(GoNative { handle })
+}
+`;
+  const hosts = model.aliases.length === 0 ? '' : `
 thread_local! {
     /// GN-6u: the cgo.Handle of each func that the buffer being written gives Go, in the order of their indexes.
     static GIVEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
@@ -986,12 +1076,6 @@ fn given_first(bytes: Vec<u8>) -> Vec<u8> {
     }
     output.extend_from_slice(&bytes);
     output
-}
-
-/// GN-6u: the func of a cgo.Handle that package binding made, as a Native.
-fn go_native(handle: u64) -> Native {
-    NATIVE_COUNT.fetch_add(1, Ordering::SeqCst);
-    Native::new(GoNative { handle })
 }
 
 /// U-7: the walk of a Go value of a call, which package binding describes one level at a time (B-1).
@@ -1074,11 +1158,17 @@ extern "C" {${!runsGo(model) ? '' : `
     /// GN-6ae: the function that package binding exports to remove a value from its table of passthroughs.
     fn ${p}__go_release_passed(handle: u64);`}${model.aliases.length === 0 ? '' : `
     /// U-7: the function that package binding exports to describe a child of a Go value.
-    fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;
+    fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;`}${model.aliases.length === 0 && !keeps(model) ? '' : `
     /// GN-6u: the function that package binding exports to delete the cgo.Handle of a Native.
-    fn ${p}__go_release(handle: u64);${!givesNative(model) ? '' : `
+    fn ${p}__go_release(handle: u64);`}${!givesNative(model) ? '' : `
     /// GN-6u: the function that package binding exports to give a new cgo.Handle of the func of a Native.
-    fn ${p}__go_native(handle: u64) -> u64;`}`}
+    fn ${p}__go_native(handle: u64) -> u64;`}${!keeps(model) ? '' : `
+    /// GN-6z: the function that package binding exports to hold a func of a call under a cgo.Handle of its own.
+    fn ${p}__go_keep(call: u64, function: u64) -> u64;
+    /// GN-6z: the function that package binding exports to run a kept func by its cgo.Handle.
+    fn ${p}__go_function(handle: u64, args: *const u8, len: usize, result: *mut Buffer) -> i32;
+    /// GN-6z: the function that package binding exports to remove what a kept func returned as its error from its table.
+    fn ${p}__go_release_raised(key: u64);`}
 }
 
 /// U-3, U-7: gives Go a buffer of \`len\` bytes, which Go fills with the answer of a call back and this crate takes back.
@@ -1097,7 +1187,8 @@ pub unsafe extern "C" fn ${p}__alloc(len: usize, result: *mut Buffer) {
 /// U-3: what went wrong in a call back into Go: the error that a Go method returned, which the call keeps, or a
 /// failure of the binding there; the core carries it as a Raised.
 enum Thrown {${!runsGo(model) ? '' : `
-    Go { call: u64, index: u64 },`}
+    Go { call: u64, index: u64 },`}${!keeps(model) ? '' : `
+    Kept { key: u64 },`}
     Binding(Fail),
 }
 
@@ -1116,8 +1207,13 @@ impl NativeObject for ThrownKey {}
 
 impl Drop for ThrownKey {
     fn drop(&mut self) {
-        let taken = lock(&THROWN).remove(&self.key);
-        drop(taken);
+        let taken = lock(&THROWN).remove(&self.key);${!keeps(model) ? `
+        drop(taken);` : `
+        // GN-6z: the error of a kept func that no member returned leaves the table of package binding too.
+        if let Some(Thrown::Kept { key }) = taken {
+            // SAFETY: the export takes the key by value and keeps no pointer.
+            unsafe { ${p}__go_release_raised(key) };
+        }`}
     }
 }
 
@@ -1132,12 +1228,13 @@ fn raised_fail(raised: &Raised) -> Fail {
     let taken = raised.native().downcast::<ThrownKey>().and_then(|thrown| lock(&THROWN).remove(&thrown.key));
     match taken {
 ${!runsGo(model) ? '' : `        Some(Thrown::Go { call, index }) => Fail { raised: Some((call, index)), ..binding_error(BindingError::Internal { detail: String::from("U-3: the error of a callback") }) },
+`}${!keeps(model) ? '' : `        Some(Thrown::Kept { key }) => Fail { raised: Some((0, key)), ..binding_error(BindingError::Internal { detail: String::from("U-3: the error of a function") }) },
 `}        Some(Thrown::Binding(fail)) => fail,
         None => binding_error(BindingError::Internal { detail: String::from("U-3: the error of the callback is gone") }),
     }
 }
 
-${failureFn}${hosts}${callbackCall}${passingRust(model)}`;
+${failureFn}${natives}${hosts}${callbackCall}${passingRust(model)}${keptRust(model)}`;
 }
 
 // ---- value aliases (U-7) ----
@@ -1651,9 +1748,11 @@ export function libRust(model: Model): string {
   const used = rustUsed(model);
   const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}`;
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
+  // A name in a comment, such as the cgo.Handle of a doc comment, is no use of a type of binding_core.
+  const code = all.replace(/\/\/[^\n]*/g, '');
   const usesMutex = model.objects.length > 0 || callsBack(model);
   const usesMap = model.objects.length > 0 || callsBack(model);
-  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised', 'ValueKind'].filter((t) => new RegExp(`\\b${t}\\b`).test(all));
+  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised', 'ValueKind'].filter((t) => new RegExp(`\\b${t}\\b`).test(code));
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure
