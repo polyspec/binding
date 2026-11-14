@@ -1,10 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9bea12e177d335ccff9dbb62f9be2f35b0aec2426337fd380edcfd9f7bfc7d37 -->
+<!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `errors.recognize`를 적은 다른 레포의 callback unit의 member는 Go와 WASM에서 recognize한 오류와 함께 생성되지
+  않았다. WASM entry는 소유자의 class를 등록하지 않았고, Go dispatch는 이 레포의 바인딩에 없는
+  `binding.Recognize<Unit>`을 적었다. 이제 WASM은 소유 패키지의 subpath `./wasm`의 class를 라이브러리 class 뒤에
+  등록하고, Go dispatch는 소유 Go module의 패키지 `errors`의 타입을 `binding.RecognizeAs`로 찾으므로 소유자의 코어가 그
+  kind를 받는다(U-3, GN-6s, GN-6d). 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 라이브러리의 패키지
+  `errors`는 그 callback member가 recognize하는 오류 unit마다 `Raised<Unit>`을 준다(GN-15d). `tests/e2e/consumer`의 member
+  `consult`는 다섯 target 모두에서 돈다. 검증: Go와 WASM 시험이 변경 전에 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.222).
 
 - 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
   `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고

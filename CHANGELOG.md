@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A member of a callback unit of another repository that names `errors.recognize` was not generated for Go and WASM
+  with its recognized errors: the WASM entry did not register the classes of the owner, and the Go dispatch named
+  `binding.Recognize<Unit>`, which the binding of this repository does not have. WASM now registers the classes of
+  the subpath `./wasm` of the owner's package after the library classes, and the Go dispatch finds the type of the
+  package `errors` of the owner's Go module with `binding.RecognizeAs`, so the core of the owner takes the kind (U-3,
+  GN-6s, GN-6d). The package `errors` of a library gives `Raised<Unit>` of each error unit that its callback members
+  recognize, because Go code of another module cannot import `internal/binding` to make that error (GN-15d). The
+  member `consult` of `tests/e2e/consumer` runs in all five targets. Verified by `generate.test.ts`, whose Go and
+  WASM test failed before the change; `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample` is queued (B2.222).
+
 - The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
   WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
   reads such a class as Node does (GN-6ar): the entry imports the classes from the subpath `./wasm` of the owner's

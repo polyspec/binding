@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -951,6 +951,11 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
     }`;
   }).join('\n');
+  // GN-6s: an error unit of the owner of a callback unit of another repository is registered after the library classes.
+  const ownerUnits = ownerRecognizedUnits(model);
+  const classIndex = (u: ErrorUnit): number => cb.library === undefined
+    ? model.classes.length + model.errorUnits.indexOf(u)
+    : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
   const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
@@ -958,7 +963,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Js(value) = &error else {
         return thrown(error);
     };
-    let core = recognized_kind(value, &[${(m.recognized?.units ?? []).map((u) => model.classes.length + model.errorUnits.indexOf(u)).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = recognized_kind(value, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
         Some(core) => binding_core::Failure::Kind(core),
         None => thrown(error),
@@ -1226,7 +1231,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), [...model.callbacks, ...model.foreignCallbacks].some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
@@ -1352,8 +1357,8 @@ mod exports {
     /// B-4: the module keeps the library classes when it loads; a missing class fails the load.
     #[wasm_bindgen(js_name = "__register")]
     pub fn register(classes: Vec<Function>${model.objects.length === 0 ? '' : ', makers: Vec<Function>, readers: Vec<Function>'}) -> Result<(), JsValue> {
-        if classes.len() != ${model.classes.length + model.errorUnits.length} {
-            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length + model.errorUnits.length} library classes, {} given", classes.len())));
+        if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} {
+            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} library classes, {} given", classes.len())));
         }
         CLASSES.with(|registered| registered.replace(classes));${registered}
         Ok(())
@@ -1635,7 +1640,7 @@ const url = new URL('./${glue}_bg.wasm', import.meta.url);
 const source = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
-glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class'))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
+glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `foreign_${o.library.replaceAll('-', '_')}.${langName('wasm', o.unit.name, 'class')}`)].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
 ${kept === '' ? '' : `${kept}
 ${model.aliases.length === 0 ? '' : `// GN-6af: the module knows the instances of the value classes by these prototypes.
 glue.__registerValues([${model.kept.map((k) => `${langName('wasm', k.unit.name, 'class')}.prototype`).join(', ')}]);

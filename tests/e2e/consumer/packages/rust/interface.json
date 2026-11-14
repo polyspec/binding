@@ -412,14 +412,6 @@
           ],
           "kind": "function",
           "visibility": "public",
-          "only": {
-            "targets": [
-              "php",
-              "python",
-              "node"
-            ],
-            "reason": "GN-6s"
-          },
           "parameters": [
             {
               "name": [

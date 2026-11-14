@@ -2500,7 +2500,7 @@ test('a callback unit of another repository recognizes the error units of its ow
   assert.match(binding, /\n\tif r, ok := err\.\(\*recognized\); ok \{\n/);
   const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(ffi, /fn recognized_lookup_find\(call: u64, bytes: &\[u8\]\) -> binding_core::Failure<polyspec_sample::Error> \{/);
-  assert.match(ffi, kinds);
+  assert.match(ffi, /let core = match kind\.as_str\(\) \{\n\s+"refused" => Some\(polyspec_sample::Error::recognized\(polyspec_sample::Error::Refused, &message\)\),\n\s+_ => None,/);
   // The fixture of a case raises the error that Raised<Unit> of the owner's package errors makes.
   const goTests = text(out, 'packages/go/zz_generated_test.go');
   assert.match(goTests, /\n\tsampleerrors "github\.com\/polyspec\/sample\/packages\/go\/errors"\n/);
@@ -2508,7 +2508,7 @@ test('a callback unit of another repository recognizes the error units of its ow
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /^import \* as foreign_sample from '@polyspec\/sample\/wasm';$[^]*\['find', \['a'\], null, false, new foreign_sample\.RefusedError\('G-5: refused', 'refused'\)\]/m);
   // GN-15d: the package errors of the owner gives Raised<Unit> of each unit that a member of its callbacks recognizes.
   const errors = text(sampleWith(() => undefined, ['go']), 'packages/go/errors/zz_generated_errors.go');
-  assert.match(errors, /\n\/\/ RaisedRefusedError is a RefusedError of the kind and the message, as Go code makes one[^\n]*\nfunc RaisedRefusedError\(kind, message string\) \*RefusedError \{\n\treturn binding\.RaisedRefusedError\(kind, message\)\n\}\n/);
+  assert.match(errors, /\n\/\/ RaisedRefusedError is a RefusedError of the kind and the message, as Go code makes one[^\n]*\n(?:\/\/[^\n]*\n)*func RaisedRefusedError\(kind, message string\) \*RefusedError \{\n\treturn binding\.RaisedRefusedError\(kind, message\)\n\}\n/);
 });
 
 test('a callback unit of another repository carries language code, so a member that waits and takes it reaches language code (GN-6s, GN-6h, GN-6q, GN-6n)', () => {

@@ -5,7 +5,7 @@
 // getter, a trap of a proxy, an iterator) is called with `catch`, so its exception comes back as a value that the
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
-import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
+import { type KeptClass, type KeptField, type Model, type ValueAlias, ownerRecognizedUnits, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
 import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { foreignClasses } from './alias_node.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
@@ -389,9 +389,11 @@ fn js_unit(unit: &JsValue) -> Option<u16> {
 export function foreignRegistrationWasm(model: Model): { imports: string; register: string } {
   // GN-6ar: the classes of the rows of a value alias of another repository follow those of GN-6x.
   const classes = [...foreignClasses(model).map((c) => ({ library: c.alias.library ?? '', owner: c.alias.owner, unit: c.unit })), ...foreignRowClasses(model, 'wasm')];
-  if (classes.length === 0) return { imports: '', register: '' };
-  const libraries = [...new Set(classes.map((c) => c.library))];
-  const imports = libraries.map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(classes.find((c) => c.library === library)?.owner?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('');
+  // GN-6s: the entry registers the error units of the owner of a callback unit of another repository with the library
+  // classes, from the same import.
+  const libraries = [...new Set([...classes.map((c) => c.library), ...ownerRecognizedUnits(model).map((o) => o.library)])];
+  const imports = libraries.map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('');
+  if (classes.length === 0) return { imports, register: '' };
   const register = `// GN-6x, GN-6ar: the module calls the classes of other repositories; it keeps them from here on.
 glue.__register_foreign([${classes.map((c) => `foreign_${c.library.replaceAll('-', '_')}.${langName('wasm', c.unit.name, 'class')}`).join(', ')}]);
 `;
