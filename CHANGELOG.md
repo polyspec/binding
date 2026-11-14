@@ -11,6 +11,13 @@
   refused as dead code. The crate now writes the wrapper, the conversion and the trait implementation of a callback
   unit only when a value of the unit enters a member of the contract (GN-6d). Verified by
   `node --test packages/ts/tests/generate.test.ts`.
+- The test of SIGINT and SIGTERM of the run of the end-to-end check (GN-14, HR-87) failed now and then with "the inner
+  process outlives the run": it read `kill(pid, 0)`, which succeeds on a process that is exiting and on one whose
+  status its parent has not read. The run awaits the pipe that every process of its command holds, which ends when the
+  last of them has closed its files on its exit; the inner process, whose parent the signal also stopped, can finish
+  its exit after that, and the init process reads its status. The test now reads the state of each process, from `ps`
+  on macOS and from `/proc/<pid>/stat` on Linux, and a test shows that `kill(pid, 0)` succeeds on such a process.
+  Verified by `node --test packages/ts/tests/e2e-work.test.ts`.
 - The end-to-end sample had a callback unit `source` (`source.get`, trait `Source`) for the kept callbacks of GN-6aa, a
   name that another unit of the sample needs. It is now `feed` (`feed.get`, trait `Feed: Send + Sync`), and
   `index.new`, `index.single` and `index.supplied` take it. Verified by `node --test packages/ts/tests/generate.test.ts`.

@@ -11,6 +11,13 @@
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과
   trait 구현을 그 unit의 값이 계약의 member에 들어갈 때만 쓴다(GN-6d). `node --test packages/ts/tests/generate.test.ts`로
   확인했다.
+- end-to-end 검사 실행의 SIGINT와 SIGTERM 시험(GN-14, HR-87)이 가끔 "the inner process outlives the run"으로
+  실패했다. 시험은 `kill(pid, 0)`을 읽었는데, 이 호출은 종료 중인 프로세스와 부모가 아직 상태를 읽지 않은
+  프로세스에서도 성공한다. 실행은 명령의 모든 프로세스가 가진 pipe의 끝을 기다리고, 이 끝은 그 가운데 마지막
+  프로세스가 종료하면서 파일을 닫을 때 온다. 신호가 부모와 함께 멈춘 안쪽 프로세스는 그 뒤에 종료를 마칠 수
+  있고, 그 상태는 init 프로세스가 읽는다. 이제 시험은 각 프로세스의 상태를 macOS에서는 `ps`로, Linux에서는
+  `/proc/<pid>/stat`으로 읽고, 이런 프로세스에서 `kill(pid, 0)`이 성공함을 시험이 보인다.
+  `node --test packages/ts/tests/e2e-work.test.ts`로 검증했다.
 - end-to-end sample에는 GN-6aa의 보관되는 callback을 위한 callback unit `source`(`source.get`, trait `Source`)가 있었는데,
   sample의 다른 unit이 그 이름을 쓴다. 이제 그것은 `feed`(`feed.get`, trait `Feed: Send + Sync`)이고, `index.new`,
   `index.single`, `index.supplied`가 그것을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.

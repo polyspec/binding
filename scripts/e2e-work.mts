@@ -3,7 +3,10 @@
 // because no directory was named, and removes it when the command ends, when it fails and on SIGINT and SIGTERM
 // (HR-87). A command runs in a process group of its own and writes its output and its errors to one pipe of this
 // process, which prints them on its output in the order written: a signal stops the whole group, and the pipe closes
-// when the last process that writes to it has exited, which is the event that the removal waits for.
+// when the last process that writes to it has closed its files on its exit, which is the event that the removal waits
+// for. The rest of the exit of a process, and the read of its status by its parent or, when the signal stopped that
+// parent too, by the init process of the system, comes after it; the run, which is not the parent of every process of
+// its command, cannot await them, and the process holds no file and runs no code of its own during them.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
