@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
+<!-- source-sha256: 1cda4ea7cc33fcb3b583842303a4f7b8ab35a24e4cc8744884e86fdb0ddbad2f -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+- 생성된 GN-6u의 Node 시험은 Native의 첫 셈 전에 event loop를 한 번 돌리고 두 번째 셈까지 아무것도 await하지 않는다. 두
+  셈 사이에서 event loop를 돌렸고, napi는 앞선 시험의 감싼 객체의 finalizer를 `SetImmediate`에서 실행하므로, 보관한
+  callback이 owner 표의 항목인 sample의 `Index`가 해제되어 수를 바꿀 수 있었다.
+  `node --test packages/ts/tests/generate.test.ts`로 확인했고, `make e2e REPO=tests/e2e/sample`은 대기열에 있다.
 - 생성된 GN-6u의 WASM 시험은 Native의 두 셈 사이에 아무것도 await하지 않는다. 각 셈에서 glue module을 await했고 마지막
   호출 전에 event loop를 한 번 돌렸으므로, 두 셈 사이에 `FinalizationRegistry`가 앞선 시험의 객체를 해제할 수 있었다.
   표가 보관한 callback을 가진 `Index` 객체가 해제되면 sample의 `same`이 `0 !== 15`로 실패했다. 이제 시험은 첫 셈 전에

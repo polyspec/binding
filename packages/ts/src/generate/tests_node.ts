@@ -557,6 +557,8 @@ test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', ()
 });`);
   }
   // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
+  // The event loop turns once before the first count, and the test awaits nothing until the second: napi runs the
+  // finalizers of the objects of earlier tests in a SetImmediate, and their Natives would change a count across a turn.
   const roundTrip = nativeRoundTrip(model.contract, 'node');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
   if (roundFn !== undefined) {
@@ -565,10 +567,10 @@ test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', ()
     out.push(`
 test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
   ${same('new Subject()')};
+  await new Promise(setImmediate);
   const before = addon().__nativeCount();
   const subject = new Subject();
   assert.equal(${same('subject')}, subject);
-  await new Promise(setImmediate);
   ${same('new Subject()')};
   assert.equal(addon().__nativeCount(), before);
 });`);

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4a426c5b88004f596add72758a23a9a53dddb3abefff367dd4c67d37a9a5a87d -->
+<!-- source-sha256: 74f9c73cc353c54557ac3b4f162e30fb471e9988e2db97dc31ee53ac34f8c5c9 -->
 # 생성기
 
 [English](generator.md)
@@ -636,11 +636,13 @@
     대기열에 넣는다. 그 스레드는 다음에 예외를 보관하거나 다시 던질 때 대기열의 key를 지우고, 끝날 때 대기열을 버린다. 다른
     스레드에서 난 바인딩의 실패(GN-6z)의 `Native`는 `BindingError` 자체를 갖고, drop이 그것을 버린다.
   - 값 alias가 그 target의 `native` 행을 갖고, 함수가 그 alias를 하나뿐인 parameter로 받아 그것을 돌려주면 왕복과 해제를
-    시험한다. 시험은 준비 호출 한 번 뒤 바인딩이 가진 것을 세고, 시험의 class의 새 인스턴스를 그 함수에 주어 결과가 같은
-    객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고(Node는 먼저 event loop를 한 번 돌린다), 다시
-    센다. 두 수는 같아야 한다. WASM은 `Native`를 곧바로 drop하므로, 그 시험은 첫 셈 전에 glue module을 받고 두 번째 셈까지
-    아무것도 await하지 않는다. 두 셈 사이의 await는 `FinalizationRegistry`가 앞선 시험의 객체를 해제하게 하고, 표가 가진
-    그 객체의 Native 때문에 수가 그 객체의 것이 된다. 세는 것은 Python에서는 대상의 살아 있는 참조 수(`sys.getrefcount`)이고, 대상을 지운 뒤 죽은
+    시험한다. 시험은 준비 호출 한 번 뒤(Node는 그 뒤 event loop를 한 번 돌린다) 바인딩이 가진 것을 세고, 시험의 class의 새
+    인스턴스를 그 함수에 주어 결과가 같은 객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고, 다시
+    센다. 두 수는 같아야 한다. 시험은 첫 셈부터 두 번째 셈까지 아무것도 await하지 않는다. 그 사이의 await는 엔진이 앞선
+    시험의 객체를 해제하게 하고, 표가 가진 그 객체의 Native 때문에 수가 그 객체의 것이 되기 때문이다. Node는 감싼 객체의
+    napi finalizer를 `SetImmediate`에서 실행하고, WASM은 `FinalizationRegistry`를 task 사이에 실행한다. 대상이 들어온
+    `Native`는 호출 안에서 owner 스레드에서 drop되어 곧바로 해제되므로 두 셈 사이에 turn이 필요 없다. WASM은 첫 셈 전에 glue
+    module을 받는다. 세는 것은 Python에서는 대상의 살아 있는 참조 수(`sys.getrefcount`)이고, 대상을 지운 뒤 죽은
     weak reference를 함께 본다. 다른 target에서는 `native-count-test`의 진입점이다. Node, PHP, WASM은 owner 표의 항목 수,
     Go는 Native의 살아 있는 `cgo.Handle` 수이며, Go의 func는 비교할 수 없으므로 시험은 수만 확인한다. `out`의 바이트는 `Native`보다 오래 살므로,
     `native` 행은 func의 새 `cgo.Handle`을 준다. Rust가 Go에 주는 모든 버퍼(결과, 실패, callback의 인자)는 그 버퍼가 주는

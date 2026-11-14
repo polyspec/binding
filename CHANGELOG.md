@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The generated Node test of GN-6u lets the event loop turn once before its first count of the Natives and awaits
+  nothing until the second. It turned the event loop between the counts, where napi runs the finalizers of the
+  wrapped objects of earlier tests in a `SetImmediate`, so a released `Index` of the sample, whose kept callbacks are
+  entries of the owner table, could change the count. Verified by `node --test packages/ts/tests/generate.test.ts`;
+  `make e2e REPO=tests/e2e/sample` is queued.
 - The generated WASM test of GN-6u awaits nothing between its two counts of the Natives. It awaited the glue module
   at each count and let the event loop turn before its last call, so the `FinalizationRegistry` could release the
   objects of earlier tests between the counts, and `same` of the sample failed with `0 !== 15` when it released the
