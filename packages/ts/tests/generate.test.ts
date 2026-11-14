@@ -7369,7 +7369,7 @@ test('the count and the position of a handle convert with let-else, whose else a
 // a plausible value; generated code matches the Result or the Option instead.
 const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
 
-test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option (GN-4, R-1)', () => {
+test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option, and no alternative of an or-pattern binds a name (GN-4, R-1)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const own = (library: string): Map<string, string | Buffer> =>
     generate({ contract: read(`${library}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${library}`, caseFiles: new Map([['contracts/cases.json', read(`${library}/contracts/cases.json`)]]) });
@@ -7394,6 +7394,8 @@ test('no generated Rust calls a method that the clippy.toml of a repository disa
       text(out, path).split('\n').forEach((line, i) => {
         const code = line.replace(/\/\/.*$/, '');
         if (DISALLOWED.test(code)) found.push(`${name} ${path}:${String(i + 1)}: ${line.trim()}`);
+        // E0408: an alternative of an or-pattern binds a name only when every alternative binds it, and None binds none.
+        if (/\(_?[a-z]\w*\)\)* \| None\b/.test(code)) found.push(`${name} ${path}:${String(i + 1)}: ${line.trim()}`);
       });
       for (const helper of ['handle_count', 'handle_position', 'native_owner', 'release_queue', 'clean_up_native', 'release_dropped', 'kind_of_recognized', 'recognized_kind', 'thrown_count', 'native_count', 'php_units', 'js_native']) {
         if (new RegExp(`\\bfn ${helper}\\b`).test(text(out, path))) seen.add(helper);
