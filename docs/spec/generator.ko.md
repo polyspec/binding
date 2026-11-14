@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0e90936581a2b65411073cd862c1de830fd5368e8be3b46d56ca9806470504b7 -->
+<!-- source-sha256: aa81c238a5c6010dff447a8544f30b599d5f4b0403d2588702f5bf99048d10f0 -->
 # 생성기
 
 [English](generator.md)
@@ -1449,19 +1449,24 @@
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
   `map<T>`와 `keyed_map<T>`는 모든 target에 생성한다(GN-10, GN-11, GN-12, GN-18).
-- **GN-17** C ABI(B-8): 함수마다 `<symbol>(args, len, result) -> int32`다. `<prefix>`는 `polyspec_<repository>`이고,
+- **GN-17** C ABI(B-8): 함수마다 `<symbol>(args, len, result) -> int32`다. `<prefix>`는 `polyspec_<repository>_`, 곧
+  각 `-`를 `_`로 쓴 저장소 이름 뒤에 밑줄 하나를 붙인 것이고,
   `<symbol>`은 `<prefix>_`, 그 뒤에 unit의 module의 각 segment를 snake_case로 쓰고 `___`를 붙인 것, 그 뒤에 class의
   member이면 class의 이름과 `__`, 그 뒤에 member의 이름(생성자는 `new`)이다: `<prefix>_<function>`,
   `<prefix>_<unit>__<member>`, `<prefix>_<segment>___<function>`, `<prefix>_<segment>___<unit>__<member>`. 그것을 부르는
   package `binding`의 함수는 같은 부분을 CamelCase로 쓰고 각 구분자의 밑줄이 하나 적다: `<Function>`,
   `<Unit>_<Member>`, `<Segment>__<Function>`, `<Segment>__<Unit>_<Member>`. 계약의 두 이름을 밑줄 하나로 잇지 않으므로,
-  한 계약의 두 member가 한 심볼이나 한 함수를 갖지 않는다(GN-4c). Go는 인자를
+  한 계약의 두 member가 한 심볼이나 한 함수를 갖지 않는다(GN-4c). 저장소 이름은 밑줄 둘을 잇달아 갖지 않고 밑줄로 끝나지
+  않으므로(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`), 심볼의 처음 두 밑줄이 저장소 이름을 끝낸다. 그래서 두 라이브러리는 같은 C
+  symbol을 갖지 않으며, 서로를 이름하지 않는 두 라이브러리의 정적 라이브러리를 한 Go 프로그램이 함께 링크해도 그렇다.
+  이유: `polyspec_<repository>` 뒤에 밑줄이 하나이면 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a_b`의 함수 `c`가 둘 다
+  `polyspec_a_b_c`였고, 한 계약의 검사는 그 계약이 이름하지 않는 라이브러리를 보지 못한다(B2.125, CK-79). Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
   순서의 field, enum은 값 텍스트. C ABI는 디코딩하며 판정하고(T-8), 인자는 마지막 parameter에서 끝나야 한다. 코어의 결과나
   실패(E-1의 category 번호, 메시지, kind, status, errno)는 같은 방식으로 Rust가 할당한 버퍼에 인코딩해 `result`에 쓰고, Go는
-  그것을 `polyspec_<repository>__free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
-  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member의 심볼도 그렇지 않다. 접두어 뒤의 밑줄 하나 다음에 계약의 이름이 오기 때문이다.
+  그것을 `<prefix>__free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
+  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘, 곧 저장소 이름 뒤에 밑줄이 셋이며, 어떤 member의 심볼도 그렇지 않다. 접두어 뒤의 밑줄 하나 다음에 계약의 이름이 오기 때문이다.
   모든 함수는 `catch_unwind` 아래에서 실행하므로 panic이 C ABI를 넘지 않는다(B-7). wait `none` member의 호출은 코어가 돌아올
   때 돌아온다.
 

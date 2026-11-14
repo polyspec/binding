@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4cc2f2ee7d12eb7964fe582b52423b76d2294df96cf45591796097ea52e41f2f -->
+<!-- source-sha256: 4e0e5f52b61e7a751a22544be1945048a6d4ca300d2bc6af26e16c2e51840971 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a-b`의 함수 `c`가 둘 다 Go 정적 라이브러리의 C symbol `polyspec_a_b_c`였으므로,
+  둘을 함께 링크하는 Go program은 그 symbol이 두 번 정의되어 실패했고, 서로를 이름하지 않는 두 라이브러리를 어떤 검사도
+  보지 못했다. 이제 C symbol의 접두는 `polyspec_<repository>_`이므로 symbol의 처음 두 밑줄이 저장소 이름을 끝낸다. 두 함수는
+  `polyspec_a__b_c`와 `polyspec_a_b__c`이고, member가 아닌 symbol은 `polyspec_a___free`처럼 이름 뒤에 밑줄이 셋이다(GN-17).
+  계약의 symbol을 계약이 이름하는 라이브러리의 symbol과 비교하던 CK-79는 폐기했다. 새 시험은 변경 전에
+  실패했다. `make test-ts` 검증은 대기열에 넣었다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

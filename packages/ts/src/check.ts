@@ -172,26 +172,8 @@ export const GO_BINDING_NAMES: ReadonlySet<string> = new Set([
 // GN-17: the words of a name in snake_case, the prefix of the C symbols of a contract, and whether Go takes a unit or
 // a member by its `only`.
 const goSnake = (name: Name): string => name.map((w) => (typeof w === 'string' ? w : w.acronym.toLowerCase())).join('_');
-const goPrefix = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
+const goPrefix = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}_`;
 const goTakes = (only: { targets: readonly string[] } | undefined): boolean => only === undefined || only.targets.includes('go');
-
-// GN-17: the C symbols of the members of a contract that names the target go, each with the id of its member and the
-// path of its name: <prefix>_, each segment of the module followed by ___, the class followed by __, and the member.
-function goSymbolsOf(contract: Contract): Map<string, { id: string; path: string }> {
-  const symbols = new Map<string, { id: string; path: string }>();
-  if (!contract.targets.includes('go')) return symbols;
-  contract.units.forEach((unit, u) => {
-    if ((unit.kind !== 'functions' && unit.kind !== 'class') || unit.origin === 'host' || !goTakes(unit.only)) return;
-    const module = unit.module.split('/').filter((segment) => segment !== '').map((segment) => `${segment.split(/[^a-z0-9]+/).filter((word) => word !== '').join('_')}___`).join('');
-    (unit.members ?? []).forEach((member, m) => {
-      if (!goTakes(member.only) || member.kind === 'constant') return;
-      const name = member.kind === 'constructor' ? 'new' : goSnake(member.name);
-      const symbol = `${goPrefix(contract)}_${module}${unit.kind === 'class' ? `${goSnake(unit.name)}__` : ''}${name}`;
-      if (!symbols.has(symbol)) symbols.set(symbol, { id: member.id, path: `/units/${u}/members/${m}/name` });
-    });
-  });
-  return symbols;
-}
 
 class Checker {
   readonly contract: Contract;
@@ -1139,20 +1121,10 @@ class Checker {
     }
   }
 
-  // ---- CK-79, CK-80, CK-81: the names of the C ABI of Go (GN-17) ----
+  // ---- CK-80, CK-81: the names of the C ABI of Go (GN-17); CK-79 is retired (B2.125) ----
 
   goSymbols(): void {
     if (!this.contract.targets.includes('go')) return;
-    const own = goSymbolsOf(this.contract);
-    // CK-79: a Go program links the static library of each library that it uses, so no two of them define one symbol.
-    for (const [library, raw] of this.dependencies) {
-      if (library === this.contract.library || validate(raw) !== true) continue;
-      const other = goSymbolsOf(raw as Contract);
-      for (const [symbol, at] of own) {
-        const there = other.get(symbol);
-        if (there !== undefined) this.report('CK-79', at.path, `${at.id} has the C symbol ${symbol}, which ${there.id} of the library ${library} has too, so a Go program that links both libraries defines it twice; rename one of the two (GN-17)`);
-      }
-    }
     const prefix = goPrefix(this.contract);
     const releases = new Map<string, string>();
     for (const { value: unit } of this.units.values()) {

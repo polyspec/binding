@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The function `b_c` of the library `a` and the function `c` of the library `a-b` were both the C symbol
+  `polyspec_a_b_c` of their Go static libraries, so a Go program that linked both failed with the symbol defined
+  twice, and no check saw two libraries of which neither names the other. The prefix of a C symbol is now
+  `polyspec_<repository>_`, so the first two underscores of a symbol end the name of its repository: the two functions
+  are `polyspec_a__b_c` and `polyspec_a_b__c`, and a symbol that is not a member has three underscores after the name,
+  such as `polyspec_a___free` (GN-17). CK-79, which compared the symbols of a contract with those of the libraries
+  that it names, is retired. The new tests failed before the change; `make test-ts` is queued for verification.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static

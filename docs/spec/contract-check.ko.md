@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 9497550b5b75d9347612217fe88ce4d7375ccf015a5f29644dba9ceed50e7826 -->
+<!-- source-sha256: cede067f75dd0c413d63049f3267c3da4390fe98e8b97fbdd4343fd2959b93b8 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -204,13 +204,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   생성기의 현재 상태가 아니므로, 두 origin 어느 쪽의 class도 PHP를 적지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
   보고한다.
-- **CK-79** 두 라이브러리의 C symbol(생성기 GN-17): target `go`에서 이 계약의 어떤 C symbol도 계약이 이름하는
-  라이브러리의 C symbol이 아니다. symbol의 접두는 `polyspec_<library>`이고 그 뒤에 밑줄 하나가 오므로, 라이브러리 `a`의
-  함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 둘 다 `polyspec_a_b_c`이며, Go 프로그램은 두 정적 라이브러리를 함께
-  링크한다. finding은 그 symbol과 이 계약의 member, 다른 라이브러리의 member, 그리고 해결 방법을 적는다: 둘 중 하나의
-  이름을 바꾼다. 이 검사는 이 계약을 자기가 읽는 계약, 곧 계약이 이름하는 라이브러리와 그 라이브러리가 이름하는
-  라이브러리의 계약과 비교한다. 서로 이름하지 않는 두 라이브러리는 보지 못한다: 둘을 함께 링크하는 Go 프로그램은 어느
-  계약의 검사도 받지 않는다(구현되지 않음, task B2.125).
+- **CK-79** 폐기(B2.125). 이 검사는 symbol이 `polyspec_<library>` 뒤에 밑줄 하나를 가졌기 때문에 계약의 target `go`
+  C symbol을 계약이 이름하는 라이브러리의 C symbol과 비교했고, 서로를 이름하지 않는 두 라이브러리는 보지 못했다. 생성기
+  GN-17의 symbol은 라이브러리 이름 뒤에 밑줄 둘을 가지며 라이브러리 이름은 밑줄 둘을 잇달아 갖지 않으므로, 두
+  라이브러리의 symbol은 다르고 어떤 검사도 그것을 비교하지 않는다. 이 id는 다른 검사를 이름하지 않는다.
 - **CK-80** C ABI의 C 타입 이름을 가진 함수(생성기 GN-17): target `go`에서 root module의 어떤 함수도 이름이 `buffer`가
   아니다. 그 symbol `<prefix>_buffer`가 C ABI의 모든 호출 결과의 C 타입이기 때문이다. finding은 그 함수와 symbol을
   적는다.

@@ -23,8 +23,10 @@ import { type ValueRead, container, outArms, refuseForeignReads, valueReads } fr
 import { classMakes } from './value_class.ts';
 import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
-// The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
-export const prefix = (model: Model): string => extensionName(model.contract);
+// GN-17: the C symbol prefix of the static library, the PHP extension name of P-1 and one underscore,
+// polyspec_<repository>_. A name of a repository holds no two underscores in a row, so the first two underscores of a
+// symbol end it, and two libraries have no symbol in common (B2.125).
+export const prefix = (model: Model): string => `${extensionName(model.contract)}_`;
 
 // The segments of a module, each as its words.
 const moduleSegments = (module: string): Name[] => module.split('/').filter((s) => s !== '').map((s) => s.split(/[^a-z0-9]+/).filter((w) => w !== ''));

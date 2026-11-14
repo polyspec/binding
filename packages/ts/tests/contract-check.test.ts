@@ -846,7 +846,7 @@ describe('CK-78 a class without core_type on a target that does not generate it 
   });
 });
 
-describe('CK-79, CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
+describe('CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
   // A function of the root module: a functions unit of the root with the first function of the unit forms under
   // another name.
   const added = (c: any, name: string[]): { path: string; id: string } => {
@@ -863,26 +863,19 @@ describe('CK-79, CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
   test('the fixture has no such name', () => {
     assert.deepEqual(judged(() => undefined), []);
   });
-  test('a symbol that a library that the contract reads has too (CK-79)', () => {
-    // The library sample-x has the root function y, polyspec_sample_x_y, which is the function x_y of sample.
+  test('the function x_y of sample and the function y of sample-x are no finding: their symbols differ (CK-79 retired, GN-17, B2.125)', () => {
+    // The symbols are polyspec_sample__x_y and polyspec_sample_x__y, so no check compares two libraries.
     const other = contract();
     other.library = 'sample-x';
-    const there = added(other, ['y']);
-    let at = { path: '', id: '' };
-    assert.deepEqual(judged((c) => { at = added(c, ['x', 'y']); }, [['sample-x', other]]), [{
-      check: 'CK-79',
-      path: at.path,
-      message: `${at.id} has the C symbol polyspec_sample_x_y, which ${there.id} of the library sample-x has too, so a Go program that links both libraries defines it twice; rename one of the two (GN-17)`,
-    }]);
-    // Without the target go in either contract no static library holds the symbol.
-    assert.deepEqual(judged((c) => { added(c, ['x', 'y']); c.targets = c.targets.filter((t: string) => t !== 'go'); }, [['sample-x', other]]).filter((f) => f.check === 'CK-79'), []);
+    added(other, ['y']);
+    assert.deepEqual(judged((c) => { added(c, ['x', 'y']); }, [['sample-x', other]]), []);
   });
   test('a function buffer of the root module (CK-80)', () => {
     let at = { path: '', id: '' };
     assert.deepEqual(judged((c) => { at = added(c, ['buffer']); }), [{
       check: 'CK-80',
       path: at.path,
-      message: `${at.id} has the C symbol polyspec_sample_buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`,
+      message: `${at.id} has the C symbol polyspec_sample__buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`,
     }]);
   });
   test('a function whose function of package binding the package declares itself (CK-81)', () => {

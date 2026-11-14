@@ -1768,21 +1768,29 @@ the design ids are those of the binding design.
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
   `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `<symbol>(args, len, result) -> int32`, where `<prefix>` is
-  `polyspec_<repository>` and `<symbol>` is `<prefix>_`, then each segment of the module of the unit in snake_case
+  `polyspec_<repository>_`, the repository with `_` for each `-` and one underscore after it, and `<symbol>` is
+  `<prefix>_`, then each segment of the module of the unit in snake_case
   followed by `___`, then for a member of a class the name of the class followed by `__`, then the name of the
   member, `new` for the constructor: `<prefix>_<function>`, `<prefix>_<unit>__<member>`,
   `<prefix>_<segment>___<function>` and `<prefix>_<segment>___<unit>__<member>`. The function of package `binding`
   that calls it has the same parts in CamelCase with one underscore less in each separator: `<Function>`,
   `<Unit>_<Member>`, `<Segment>__<Function>` and `<Segment>__<Unit>_<Member>`. No two names of the contract are
-  joined by one underscore, so no two members of a contract have one symbol or one function (GN-4c).
+  joined by one underscore, so no two members of a contract have one symbol or one function (GN-4c). The name of a
+  repository holds no two underscores in a row and ends with no underscore (`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`), so the
+  first two underscores of a symbol end the name of its repository, and two libraries have no C symbol in common,
+  also when neither names the other and a Go program links the static libraries of both. Why: with one underscore
+  after `polyspec_<repository>`, the function `b_c` of the library `a` and the function `c` of the library `a_b` were
+  both `polyspec_a_b_c`, and no check of one contract sees a library that it does not name (B2.125, CK-79).
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
   bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
   ABI decodes and judges them (T-8), and the arguments must end where the last parameter ends; the core's result, or
   the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
-  allocates, writes into `result` and Go frees with `polyspec_<repository>__free`; the return is 0 for a result and 1
+  allocates, writes into `result` and Go frees with `<prefix>__free`; the return is 0 for a result and 1
   for a failure. A buffer that does not follow the encoding is kind `internal`. The symbols that are not members
-  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no symbol of a member has, because a name of the contract follows the one underscore after its prefix. Every function runs under
+  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, three after the name of the
+  repository, which no symbol of a member has, because a name of the contract follows the one underscore after its
+  prefix. Every function runs under
   `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
   returns.
 

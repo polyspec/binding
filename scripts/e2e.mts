@@ -775,7 +775,7 @@ if (targets.includes('go')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const entry = testEntrySymbol(extensionOf(p.contract));
+      const entry = testEntrySymbol(`${extensionOf(p.contract)}_`);
       const leaked = symbols.split('\n').filter((line) => entry.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
