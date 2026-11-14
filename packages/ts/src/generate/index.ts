@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -148,6 +148,8 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('go')) refusals.attempt(() => go(membersFor(model, 'go'), files));
   if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
   refusals.fail();
+  // GN-6z: each crate defines the aliases of the function types that it names.
+  for (const [path, text] of files) if (path.endsWith('generated/lib.rs') && typeof text === 'string') files.set(path, withFunctionAliases(text));
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 

@@ -495,14 +495,24 @@ impl NativeObject for PyNative {}
 #[cfg(pyo3_disable_reference_pool)]
 compile_error!("GN-6u: a Native of Python is dropped on any thread, which PyO3 defers to its next acquisition of the GIL through the reference pool that pyo3_disable_reference_pool removes");
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 

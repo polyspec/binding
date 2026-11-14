@@ -750,9 +750,9 @@ function argumentLines(model: Model, fn: Fn): string[] {
 }
 
 // GN-6z, GN-6u: a function holds the Go func as a Native of its cgo.Handle. A call writes the arguments, runs the func
-// by that handle through the export of package binding, in no call, and reads the result; the error or the panic of
-// the func, which package binding keeps in its table, or a failure of the binding in the call, goes to the core as a
-// Raised.
+// by that handle through the export of package binding, in a call of its run, and reads the result through that call,
+// which it then ends; the error or the panic of the func, which package binding keeps in its table, or a failure of the
+// binding in the call, goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, input: string, subject: string): string {
   const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
@@ -769,11 +769,13 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, i
                     let output = &mut args;
 ${type.parameters.map((p, i) => `                    ${convertOut(model, p, names[i] ?? '')};`).join('\n')}
                 }`}
-                let bytes = kept_called(&native, &args)?;
+                let (run, bytes) = kept_called(&native, &args)?;
                 let read = || -> Result<${result}, Fail> {
 ${decode}
                 };
-                read().map_err(|fail| thrown(Thrown::Binding(fail)).into())
+                let value = read().map_err(|fail| thrown(Thrown::Binding(fail)).into());
+                drop(run);
+                value
             })
         })`;
 }
@@ -800,10 +802,23 @@ fn kept_function_in(input: &mut &[u8], subject: &str) -> Result<Native, Fail> {
     Ok(go_native(handle))
 }
 
-/// GN-6z: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in no call, on the
-/// thread of the caller: the encoded result, or the Raised of the key under which package binding keeps the error
-/// that the func returned or the value of its panic.
-fn kept_called(native: &Native, args: &[u8]) -> Result<Vec<u8>, Raised> {
+/// GN-6z: the call of package binding in which a kept func ran, through which its result is read (a value alias by the
+/// questions of GoHost); its drop ends the call, once the result was read.
+struct KeptRun {
+    call: u64,
+}
+
+impl Drop for KeptRun {
+    fn drop(&mut self) {
+        // SAFETY: the export takes the call by value and keeps no pointer; the call is named once.
+        unsafe { ${p}__go_end(self.call) };
+    }
+}
+
+/// GN-6z: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in a call of its
+/// run, on the thread of the caller: the call and the encoded result, or the Raised of the key under which package
+/// binding keeps the error that the func returned or the value of its panic.
+fn kept_called(native: &Native, args: &[u8]) -> Result<(KeptRun, Vec<u8>), Raised> {
     let function = match native.downcast::<GoNative>() {
         Some(function) => function,
         None => return Err(thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6z: a function that no Go func entered as") })))),
@@ -815,7 +830,11 @@ ${model.aliases.length === 0 ? '' : `    // GN-6u: the arguments give the handle
     let status = unsafe { ${p}__go_function(function.handle, args.as_ptr(), args.len(), &mut buffer) };
     let bytes = taken(buffer);
     if status == 0 {
-        return Ok(bytes);
+        let mut input: &[u8] = &bytes;
+        return match uint_in(&mut input) {
+            Ok(call) => Ok((KeptRun { call }, input.to_vec())),
+            Err(fail) => Err(thrown(Thrown::Binding(fail))),
+        };
     }
     let mut input: &[u8] = &bytes;
     match uint_in(&mut input).and_then(|key| finish_input(input).map(|()| key)) {
@@ -1194,6 +1213,8 @@ extern "C" {${!runsGo(model) ? '' : `
     fn ${p}__go_keep(call: u64, function: u64) -> u64;
     /// GN-6z: the function that package binding exports to run a kept func by its cgo.Handle.
     fn ${p}__go_function(handle: u64, args: *const u8, len: usize, result: *mut Buffer) -> i32;
+    /// GN-6z: the function that package binding exports to end the call in which a kept func ran.
+    fn ${p}__go_end(call: u64);
     /// GN-6z: the function that package binding exports to remove what a kept func returned as its error from its table.
     fn ${p}__go_release_raised(key: u64);`}
 }
@@ -1236,8 +1257,9 @@ impl Drop for ThrownKey {
     fn drop(&mut self) {
         let taken = lock(&THROWN).remove(&self.key);${!keeps(model) ? `
         drop(taken);` : `
-        // GN-6z: the error of a kept func that no member returned leaves the table of package binding too.
-        if let Some(Thrown::Kept { key }) = taken {
+        // GN-6z: the error of a kept func that no member returned leaves the table of package binding too, and so does
+        // the error of a read of a value class in the call of the run of a kept func, which names the call 0.
+        if let Some(Thrown::Kept { key } | Thrown::Binding(Fail { raised: Some((0, key)), .. })) = taken {
             // SAFETY: the export takes the key by value and keeps no pointer.
             unsafe { ${p}__go_release_raised(key) };
         }`}
@@ -1706,7 +1728,7 @@ function testEntries(model: Model): string {
     out.push(entry(model, `${p}__native_count`, 'GN-6u: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
   }
   if (countsThrownGo(model)) {
-    out.push(entry(model, `${p}__thrown_count`, 'GN-6ae: the entry point of the generated tests of the cases that call Go code: the count of what the table of what was thrown keeps.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, u64::try_from(lock(&THROWN).len()).unwrap_or(u64::MAX));', '        Ok(output)'], 'thrown-count-test'));
+    out.push(entry(model, `${p}__thrown_count`, 'GN-6ae: the entry point of the generated tests of the cases that call Go code: the count of what the table of what was thrown keeps.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, lock(&THROWN).len());', '        Ok(output)'], 'thrown-count-test'));
   }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
   const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));

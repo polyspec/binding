@@ -78,6 +78,14 @@ def _outcome(call):
         return ("error", type(error), getattr(error, "kind", None))
 `;
 
+// GN-6af: what a test compares of an instance of a value class without core_type: its class and the values that it
+// keeps, by the names of its properties.
+const PYTHON_KEPT = `
+
+def _kept(instance, names):
+    return (type(instance), *(getattr(instance, name) for name in names))
+`;
+
 // GN-6ae: the exception that a function fixture of the test in progress raises.
 const PYTHON_RAISED = `
 
@@ -227,6 +235,7 @@ export function pythonTests(model: Model, module: string): string {
     return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
   };
   let usesOutcome = false;
+  let usesKept = false;
   let usesAsyncio = false;
   let usesThreads = false;
   // GN-6m: the members whose test of a closed loop is written, one per member.
@@ -378,7 +387,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${name}_${argName}_gives_the_kind_of_${langName('python', refusedValue.kase.alias.unit.name, 'variable')}(self) -> None:
         with self.assertRaises(pkg.${cls(refusedValue.kase.category)}) as caught:
             ${call(new Map([[arg, refusedValue.value]]))}
-        self.assertIs(type(caught.exception), pkg.${cls(refusedValue.kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(refusedValue.kase)})
         self.assertEqual(caught.exception.kind, ${pyString(refusedValue.kase.kind)})`);
       }
       const text = textKind(arg.type);
@@ -411,14 +420,20 @@ export function pythonTests(model: Model, module: string): string {
         self.assertEqual(caught.exception.kind, "invalid_callback")
         self.assertIn(${pyString(`a${langName('python', fn.member.name, 'callable')}`)}, str(caught.exception))`);
     }
+    // GN-6af: an instance of a value class without core_type has no equality of its own in Python, so the two calls of
+    // its constructor are compared by the class of the instance and by what it keeps, read through its properties.
+    const keptClass = fn.kind === 'constructor' ? model.kept.find((k) => k.unit.id === fn.unit.id) : undefined;
+    const keptNames = keptClass?.fields.flatMap((f) => (f.property === undefined ? [] : [pyString(langName('python', f.property.name, 'variable'))])) ?? [];
+    const observed = (made: string): string => (keptClass === undefined ? made : `_kept(${made}, (${keptNames.map((n) => `${n},`).join(' ')}))`);
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
+      usesKept ||= keptClass !== undefined;
       const argName = langName('python', pair.arg.name, 'variable');
       out.push(`
     def test_${pair.rule === 'U-2' ? `u2_${name}_${argName}_left_out_is_its_default` : `t1_${name}_${argName}_takes_a_text_as_its_utf8_bytes`}(self) -> None:
         self.assertEqual(
-            _outcome(lambda: ${target(callArgs(model, ctx, fn, pair.left))}),
-            _outcome(lambda: ${target(callArgs(model, ctx, fn, pair.right))}),
+            _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.left)))}),
+            _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.right)))}),
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
@@ -430,8 +445,11 @@ export function pythonTests(model: Model, module: string): string {
         continue;
       }
       const receiverMade = receiverOfCase(kase.receiver);
-      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
-      const heldReceiver = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      // GN-13f: the receiver is made before the block that expects the failure, so a receiver that cannot be made fails
+      // the test: a receiver that no line made yet is held. GN-6ae: a case with after holds its receiver, which the
+      // calls of after observe.
+      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
+      const heldReceiver = kase.faults === undefined && receiverMade.expr !== '' && (kase.after !== undefined || (receiverMade.lines === '' && kase.receiverFails === undefined));
       if (heldReceiver) receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
       const receiver = heldReceiver ? 'receiver' : receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
@@ -699,7 +717,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
-        self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(kase)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
   // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.
@@ -734,7 +752,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
