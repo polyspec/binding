@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- 끝에서 끝까지 확인은 생성된 Go 모듈을 빌드하고 vet하고 시험했지만 deadcode를 돌리지 않아서, 어떤 program도 시험도
+  닿지 않는 생성 함수가 실행을 통과했고, `deadcode -test`를 돌리는 모듈을 쓰는 저장소의 lint는 그것으로 실패했다. 이제
+  확인은 mise.toml이 고정한 `deadcode -test`(0.52.0)를 모듈에 build tag 없이, 그리고 그 파일들의 build tag마다 돌리고,
+  파일을 컴파일하는 모든 실행이 보고하는 함수로 실패한다(GN-15h). `make test-ts`로 확인했다. 새 시험들은 변경 전에
+  실패했다.
 - Go가 member가 이름하는 다른 module의 variant를 거부했다. 그 encode와 decode 함수가 export되지 않기 때문이다. 그래서
   root가 이름하는 template의 module `ast`의 `node`가 go를 "a variant of the module ast in the module (the root) is not
   generated for Go yet (its encode and decode functions are unexported)"로 거부했다. 이제 다른 module이 이름하는 variant의

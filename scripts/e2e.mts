@@ -32,11 +32,11 @@
 // lint reads the code and runs nothing, so only the tests verify a target, and a target without a test that ran fails.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints, testEntrySymbol } from './e2e-lint.mts';
+import { bindingLints, deadcodeFindings, goBuildTags, testEntrySymbol } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { consumerFiles, debugSections, goRemote, goWork, requiredVersion, type Required } from './go-release.mts';
@@ -373,6 +373,7 @@ const phpTool = targets.includes('php') ? need('php', 'php', '.php-version', fil
 const phpunit = targets.includes('php') ? need('php', 'phpunit', 'config/phpunit', file(join(tools, 'phpunit/vendor/bin/phpunit'))) : '';
 const goTool = targets.includes('go') ? need('go', 'go', 'mise.toml', miseWhich('go')) : '';
 const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhich('gofmt')) : '';
+const deadcode = targets.includes('go') ? need('go', 'deadcode', 'mise.toml', miseWhich('deadcode')) : '';
 // BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
 const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
 // llvm-nm reads the static library of go and the extension of php built without features (GN-13b, GN-8a).
@@ -824,6 +825,35 @@ if (targets.includes('go')) {
       if (unformatted !== '') throw new Error(`gofmt would change: ${unformatted.trim().split('\n').join(', ')}`);
       run(goTool, ['vet', ...scoped(), './...'], { cwd: goModule, env: goEnv });
     })) lintOf('go', `gofmt -l and go vet${of}`);
+    // GN-15h: deadcode -test judges the module as the lint of a consuming repository does, untagged and with each build
+    // tag of its files, without the tags of the test features of the run: a generated function that no program and no
+    // test reaches fails that repository, which cannot change a generated file. deadcode exits 0 when it reports one, so
+    // any line that stands fails the step.
+    if (stepOf(['go'], `deadcode -test${of}`, () => {
+      const goFiles = readdirSync(goModule, { recursive: true, encoding: 'utf8' }).filter((path) => path.endsWith('.go'));
+      const tags = goBuildTags(goFiles.map((path) => readFileSync(join(goModule, path), 'utf8')));
+      const env = { ...process.env, ...goEnv, GOFLAGS: '' };
+      const output = (command: string, argv: string[]): string => {
+        process.stdout.write(`$ ${command} ${argv.join(' ')}\n`);
+        const ran = spawnSync(command, argv, { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env });
+        if (ran.error !== undefined) throw ran.error;
+        if (ran.status !== 0) throw new Error(`${command} ${argv.join(' ')} (status ${String(ran.status)}): ${`${ran.stdout}${ran.stderr}`.trim()}`);
+        return `${ran.stdout}${ran.stderr}`;
+      };
+      const files = '{{.Dir}}{{range .GoFiles}}{{"\\t"}}{{.}}{{end}}{{range .CgoFiles}}{{"\\t"}}{{.}}{{end}}{{range .TestGoFiles}}{{"\\t"}}{{.}}{{end}}{{range .XTestGoFiles}}{{"\\t"}}{{.}}{{end}}';
+      const runs = [undefined, ...tags].map((tag) => {
+        const flags = tag === undefined ? [] : [`-tags=${tag}`];
+        const lines = output(deadcode, ['-test', ...flags, './...']).split('\n').filter((line) => line !== '');
+        const compiled = output(goTool, ['list', ...flags, '-f', files, './...']).split('\n').filter((line) => line !== '').flatMap((line) => {
+          const [dir = '', ...names] = line.split('\t');
+          return names.map((name) => join(realpathSync(dir), name));
+        });
+        return { lines, compiled: new Set(compiled) };
+      });
+      const standing = deadcodeFindings(runs, realpathSync(goModule));
+      if (standing.length > 0) throw new Error(`deadcode reports ${standing.length} line${standing.length === 1 ? '' : 's'}: ${standing.join('; ')}`);
+      process.stdout.write(`deadcode -test, untagged${tags.length === 0 ? '' : ` and with ${tags.join(', ')}`}: no function is unreachable\n`);
+    })) lintOf('go', `deadcode -test${of}`);
     // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
     // skipped.
     const what = `the generated tests${goCases && i === 0 ? ' and the contract cases' : ''}${of} on go test`;

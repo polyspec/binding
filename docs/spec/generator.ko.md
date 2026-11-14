@@ -1431,7 +1431,10 @@
   값으로만 부른다. 다른 값으로 같은 이름을 부르는 것은 다른 타입의 method, 예컨대 계약의 class의 member(`made0.Key`)나
   `reflect.Value`의 method(`v.Float`)이고, 도우미의 쓰임이 아니다. 이유: 어떤 main
   패키지도 어떤 시험도 닿지 않는 함수는 모듈을 쓰는 저장소의 deadcode·unused lint를 실패시키고, 그 저장소는 생성
-  파일을 고칠 수 없다. 그러므로 `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않는다.
+  파일을 고칠 수 없다. 그러므로 `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않는다. 끝에서 끝까지 확인(GN-14)은
+  생성된 Go 모듈에 mise.toml이 고정한 `deadcode -test`를 build tag 없이, 그리고 그 파일들의 `//go:build` 줄이 이름하는
+  tag마다 실행의 시험 feature tag 없이 돌리고, 파일을 컴파일하는 모든 실행이 보고하는 함수와 보고가 아닌 줄을 실패로
+  센다. 모듈을 쓰는 저장소의 lint가 같은 방식으로 판정하기 때문이다.
 - **GN-15i** Go 정적 라이브러리는 link-time optimization 없이 빌드한다. target `go`가 있는 레포의 root manifest와
   `.cargo/config.toml`의 `[profile.release]`는 `lto`를 켜지 않으며(없음, `false`, `"off"`), `binding check`는 다른 값을
   보고한다(CK-91). 이유: LTO는 표준 라이브러리와 `binding_core`를 정적 라이브러리의 한 object에 넣으므로, 두 레포의 정적

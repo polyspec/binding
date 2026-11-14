@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The end-to-end check built, vetted and tested the generated Go module but ran no deadcode, so a generated function
+  that no program and no test reaches passed the run, while the lint of a consuming repository, which runs `deadcode
+  -test`, failed on it. The check now runs the `deadcode -test` that mise.toml pins (0.52.0) on the module, untagged and
+  with each build tag of its files, and fails on a function that every run compiling its file reports (GN-15h).
+  Verified by `make test-ts`: the new tests failed before the change.
 - Go refused a variant of another module that a member names: its encode and decode functions are unexported, so
   `node` of the module `ast` of template, which the root names, refused go with "a variant of the module ast in the
   module (the root) is not generated for Go yet (its encode and decode functions are unexported)". The package of a

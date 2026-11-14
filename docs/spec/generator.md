@@ -1738,7 +1738,11 @@ the design ids are those of the binding design.
   value is a method of another type, such as a member of a class of the contract (`made0.Key`) or of a
   `reflect.Value` (`v.Float`), and no use of a helper. Why: a function that no main package and no test reaches fails the
   deadcode and unused lints of the repository that consumes the module, and that repository cannot change a generated
-  file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper.
+  file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper. The end-to-end check (GN-14) runs the
+  `deadcode -test` that mise.toml pins on the generated Go module, untagged and with each tag that the `//go:build`
+  lines of its files name, without the tags of the test features of the run, and fails on a function that every run
+  compiling its file reports and on any line that is no finding, because the lint of a consuming repository judges
+  the module the same way.
 - **GN-15i** The Go static library is built without link-time optimization: `[profile.release]` of the root manifest
   and of `.cargo/config.toml` of a repository with the target `go` turns on no `lto` (absent, `false` or `"off"`),
   and `binding check` reports any other value (CK-91). Why: LTO puts the standard library and `binding_core` into the
