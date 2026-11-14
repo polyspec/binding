@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 41bc101e17d2d2c1715285e530a53b29e1a09e9bd29cc28de8c9606df07ab13e -->
+<!-- source-sha256: 3d701f80ebed6d2ad17123f74a63dd97e9dc16894f23962f87839172500eec99 -->
 <!-- source-sha256: a3a550defb21ab5b0e06517692e054b62447f287992eb296638d25bca7fcdcee -->
 <!-- source-sha256: 289dbc73aaea910337a066b6851a71b0eef03944d10d5b75472a853942db6f11 -->
 <!-- source-sha256: 494a564c6b77df9f6e2f241a40323f6703ff6b7144e0af0eba81a9a4e1581bf3 -->
@@ -157,3 +157,4 @@
 | B2.190 | CI가 Go 모듈의 release 형태를 musl과 linux/amd64에서 링크하고 실행한다(GN-14g, GN-15g). `.github/workflows/ci.yml`은 끝에서 끝까지 확인을 linux/arm64에서만 실행했고 musl에서 소비자를 실행하지 않았으므로, release가 싣는 `linux_amd64`, `linux_amd64_musl`, `linux_arm64_musl`의 라이브러리를 링크하고 실행하는 job이 없었다. job `e2e`의 각 항목은 자기 work 디렉터리로 `make go-musl-check`를 실행하고, job `e2e-amd64`는 `ubuntu-26.04`에서 `tests/e2e/sample`의 `make e2e`와 `make go-musl-check`를 실행한다 | `.github/workflows/ci.yml`, `packages/ts/tests/ci-workflow.test.ts`, `docs/spec/generator.md`(.ko), `AGENTS.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; workflow 실행의 `make ci-passed`, 그 job `e2e`와 `e2e-amd64`가 `make go-musl-check`와 함께 통과 | [~] |
 | B2.176 | checkout이 `@polyspec/kit` 0.0.112를 고정한다. Makefile의 recipe가 실행하는 utility는 모두 그 release에 있고 recipe의 인자를 받으며, binding의 release는 0.0.112에 더는 없는 release 기능을 쓰지 않는다 | `package.json`, `package-lock.json`, `CHANGELOG.md`(.ko) | `make docs-check`; `make release-coverage` | [o] |
 | B2.270 | 들어오는 Python과 JavaScript container는 host-value 순회 동안 handle 하나를 유지한다(GN-6at). core가 자리마다 새로운 handle을 받아 깊이 제한에 닿지 않고 반복 container와 순환을 식별하기 위해서다. | packages/ts/src/generate/alias_python.ts, alias_node.ts, alias_wasm.ts; packages/ts/tests/generate.test.ts; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | make test-ts; make e2e REPO=tests/e2e/sample | [~] |
+| B2.270-1 | sample host-value core가 열린 container handle과 과도한 비순환 깊이를 구별하고, native Python, Node, WASM, PHP 시험이 순환 거부와 공유 container 허용, Map iterator를 한 번 읽음을 검증한다(GN-6at). | tests/e2e/sample/packages/rust/src/lib.rs; tests/e2e/sample/cases.test.mjs; cases.wasm.test.mjs; test_cases.py; CasesTest.php; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | cargo test --manifest-path tests/e2e/sample/Cargo.toml -p polyspec-sample; make e2e REPO=tests/e2e/sample | [ ] |
