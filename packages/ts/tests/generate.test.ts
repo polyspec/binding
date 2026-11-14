@@ -13,7 +13,7 @@ import { caseTestTargets, generate as generateTargets, type Inputs } from '../sr
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
-import { bindingCoreFinding, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, hostRequirements, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -1372,6 +1372,23 @@ test('pyproject.toml names another library at the version of a release form, and
   }
 });
 
+test('each binding crate depends on a library that only a row of errors.kinds names, whose error the core passes on (GN-3e, GN-7c, CK-19)', () => {
+  // The generated code matches the variant polyspec_stamps::Error::Late by its path, so every binding crate needs the
+  // crate of stamps, although no unit and no type of the contract names stamps.
+  const { contract, foreign } = plotSample();
+  contract.errors.kinds.push({ variant: 'polyspec_plot::Error::Stamp/polyspec_stamps::Error::Late', library: 'stamps' });
+  const points = ['polyspec-points', { path: '../../../points/packages/rust' }] as const;
+  const packages = trackedPackages(contract, '0.0.0', new Map<string, unknown>([points, ['polyspec-stamps', { path: '../../../stamps/packages/rust' }]]), [], foreign);
+  for (const manifest of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
+    assert.match(String(packages.get(manifest)), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/, manifest);
+  }
+  assert.match(String(packages.get('packages/ts/wasm/Cargo.toml')), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/);
+  assert.match(String(packages.get('packages/go/internal/ffi/Cargo.toml')), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/);
+  assert.match(String(packages.get('packages/python/pyproject.toml')), /\ndependencies = \["polyspec-points", "polyspec-stamps"\]\n/);
+  // A core that does not depend on the library gives no binding crate, which scaffold names and CK-19 reports.
+  assert.throws(() => trackedPackages(contract, '0.0.0', new Map<string, unknown>([points]), [], foreign), /does not depend on polyspec-stamps/);
+});
+
 test('a record of another repository is named in the package of its repository in the tests of every target (T-3, GN-6c)', () => {
   const { contract, caseFiles, foreign } = plotSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });
@@ -2075,17 +2092,20 @@ test('package.json and composer.json name the package of another library that th
     const out = trackedPackages(contract, '0.0.0', new Map<string, unknown>([...[...foreign.keys()].map((library): [string, unknown] => [`polyspec-${library}`, { path: `../../../${library}/packages/rust` }]), [crate, line]]), [], foreign);
     return { npm: JSON.parse(String(out.get('packages/ts/package.json'))), composer: JSON.parse(String(out.get('packages/php-ext/composer.json'))) };
   };
+  // The consumer also takes the callback units of sample, whose package the declarations import (GN-6s); its line is a
+  // path, a development form.
+  const sampleName = classes.foreign.get('sample').packages.node.package;
   // A development form of the dependency line of the core names the package without the version of a release.
   const development = manifests(classes.contract, classes.foreign, { path: `../../../${owner}/packages/rust` });
-  assert.deepEqual(development.npm.dependencies, { [npmName]: '*' });
+  assert.deepEqual(development.npm.dependencies, { [npmName]: '*', [sampleName]: '*' });
   assert.deepEqual(development.composer.require, { php: '>=8.4', [`ext-polyspec_${owner.replaceAll('-', '_')}`]: '*', [phpName]: '*' });
   // A release form, an exact version or a tag, names that version.
   const exact = manifests(classes.contract, classes.foreign, '=1.2.3');
-  assert.deepEqual(exact.npm.dependencies, { [npmName]: '1.2.3' });
+  assert.deepEqual(exact.npm.dependencies, { [npmName]: '1.2.3', [sampleName]: '*' });
   assert.equal(exact.composer.require[phpName], '1.2.3');
   assert.equal(exact.composer.require[`ext-polyspec_${owner.replaceAll('-', '_')}`], '*');
   const tagged = manifests(classes.contract, classes.foreign, { git: `https://github.com/polyspec/${owner}.git`, tag: 'v0.4.0' });
-  assert.deepEqual(tagged.npm.dependencies, { [npmName]: '0.4.0' });
+  assert.deepEqual(tagged.npm.dependencies, { [npmName]: '0.4.0', [sampleName]: '*' });
   assert.equal(tagged.composer.require[phpName], '0.4.0');
   // A record of another library is a plain object of JavaScript, so no entry imports the package of its owner, and an
   // instance of the class of the owner's extension in PHP.
@@ -2097,6 +2117,31 @@ test('package.json and composer.json name the package of another library that th
   const alone = trackedPackages(JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8')), '0.0.0');
   assert.equal('dependencies' in JSON.parse(String(alone.get('packages/ts/package.json'))), false);
   assert.deepEqual(JSON.parse(String(alone.get('packages/php-ext/composer.json'))).require, { php: '>=8.4' });
+});
+
+test('package.json names the package of a callback unit of another library, which the generated declarations import (GN-3e, GN-6s)', () => {
+  // The consumer takes the callback units lookup and source of sample and no value class of it: the declarations of
+  // Node name the interface of each from the package of sample, so the manifest names that package.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const npmName = foreign.get('sample').packages.node.package;
+  const declarations = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), 'packages/ts/generated/index.d.ts');
+  assert.match(declarations, new RegExp(`import\\(${JSON.stringify(npmName).replaceAll('/', '\\/')}\\)\\.`));
+  const packages = trackedPackages(contract, '0.0.0', new Map<string, unknown>([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign);
+  assert.deepEqual(JSON.parse(String(packages.get('packages/ts/package.json'))).dependencies, { [npmName]: '*' });
+});
+
+test('CK-19 reads in the package.json of a host package each npm package that the generated code imports (GN-3b, GN-3e)', () => {
+  const { contract, foreign } = consumerSample();
+  const npmName = foreign.get('sample').packages.node.package;
+  const host = { ...contract, packages: { ...contract.packages, node: { ...contract.packages.node, host: true } } };
+  const requirement = hostRequirements(host, parse, undefined, foreign).find((r) => r.item === `dependencies (${npmName})`);
+  assert.ok(requirement, 'a requirement of the package of sample');
+  assert.equal(requirement.path, 'packages/ts/package.json');
+  assert.equal(requirement.want, npmName);
+  // Declared at any version: the host chooses the version.
+  assert.equal(requirement.found(JSON.stringify({ dependencies: { [npmName]: '0.0.6' } })), npmName);
+  assert.equal(requirement.found(JSON.stringify({ dependencies: { '@polyspec/other': '1.0.0' } })), undefined);
+  assert.equal(requirement.found(JSON.stringify({ devDependencies: { [npmName]: '*' } })), undefined);
 });
 
 test('Go describes, reads and makes a value class of another repository through the call of GN-15c (T-3, U-1, GN-6x, GN-15c)', () => {

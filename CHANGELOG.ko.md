@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 3604a871c593ba557635e97dae8ad320228eda987cb203de86e32e9889897fac -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
+<!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -28,6 +29,19 @@
   `functions`와 `kept`의 어떤 export도 `run`을 부르지 않았으므로, `Call`의 method `host`, `run`, `raise`는 그것을 부르는
   export와 함께일 때만, 타입 `panicked`는 `run`이나 보관된 func가 그것을 만들 때만 쓴다.
   `node --test packages/ts/tests/generate.test.ts`로 확인했다.
+- `scaffold`가 쓰는 `package.json`은 계약의 타입 가운데 값 class의 소유자만 `dependencies`에 적었다. 그런데 생성된 선언은 다른
+  레포의 callback unit의 interface를 소유자의 package에서 import하고, Node entry는 그 unit의 member가 recognize하는 오류
+  class를 위해 그 package를 require한다. 그래서 그런 unit을 받고 소유자의 값 class는 받지 않는 package는 entry가 import하는
+  package를 적지 않았고, CK-19는 host `package.json`의 `dependencies`를 읽지 않았다. 이제 manifest는 그 타입들에 값 class나
+  callback unit이 있는 각 소유자의 package를 적고(GN-3e), CK-19는 그 가운데 하나를 version과 상관없이 `dependencies`에 적지
+  않은 host `package.json`을 보고한다(GN-3b).
+  `node --test packages/ts/tests/generate.test.ts packages/ts/tests/contract-check.test.ts`로 확인했다.
+- 계약의 unit과 type이 이름하지 않는 라이브러리의 오류를 `errors.kinds`가 그대로 전달하는 계약은 그 라이브러리의 의존 줄이
+  없는 바인딩 crate를 주었다. 각 crate의 생성된 `lib.rs`는 variant `polyspec_<library>::Error::<Variant>`를 그 경로로
+  맞추므로, rustc가 Python, Node, PHP crate를 E0433 "cannot find module or crate"로 거부했고 `binding check`는 아무것도
+  보고하지 않았다(CK-19). `scaffold`는 manifest의 라이브러리를 unit과 type에서만 모았다. 이제 `errors.kinds`의 각 행의
+  `library`를 더하므로, 각 바인딩 crate와 `pyproject.toml`이 그 라이브러리를 적고(GN-3e, GN-7c), CK-19는 그것이 없는
+  추적 manifest를 보고한다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과

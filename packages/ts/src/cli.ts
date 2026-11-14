@@ -420,7 +420,7 @@ if (command === 'check') {
     }
   }
   // L-2a: a host package's manifest holds what its native module and its release need (GN-3b).
-  for (const requirement of names ? [] : hostRequirements(checked, parse, coreLicense)) {
+  for (const requirement of names ? [] : hostRequirements(checked, parse, coreLicense, foreign as ReadonlyMap<string, Contract>)) {
     const full = join(root, requirement.path);
     let found: unknown;
     try {

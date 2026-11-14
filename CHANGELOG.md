@@ -29,6 +29,21 @@
   The methods `host`, `run` and `raise` of `Call` are written only with the export that calls them, and the type
   `panicked` only where `run` or a kept func makes one, because no export of `functions` or `kept` called `run`.
   Verified by `node --test packages/ts/tests/generate.test.ts`.
+- The `package.json` that `scaffold` writes named in `dependencies` only the owner of a value class among the types of
+  the contract, while the generated declarations import the interface of a callback unit of another repository from
+  the package of its owner and the Node entry requires that package for the error classes that a member of the unit
+  recognizes: a package that took such a unit and no value class of its owner did not declare the package that its
+  entry imports, and CK-19 read no `dependencies` of a host `package.json`. The manifest now names the package of each
+  owner of a value class or a callback unit among those types (GN-3e), and CK-19 reports a host `package.json` whose
+  `dependencies` do not declare one of them at any version (GN-3b). Verified by
+  `node --test packages/ts/tests/generate.test.ts packages/ts/tests/contract-check.test.ts`.
+- A contract whose `errors.kinds` passes on the error of a library that no unit and no type of the contract names gave
+  binding crates without the dependency line of that library: the generated `lib.rs` of each matches the variant
+  `polyspec_<library>::Error::<Variant>` by its path, so rustc refused the Python, Node and PHP crates with E0433
+  "cannot find module or crate", and `binding check` reported nothing (CK-19). `scaffold` collected the libraries of
+  the manifests from the units and the types alone. It now adds the `library` of each row of `errors.kinds`, so each
+  binding crate and `pyproject.toml` name that library (GN-3e, GN-7c), and CK-19 reports a tracked manifest without
+  it. Verified by `node --test packages/ts/tests/generate.test.ts`.
 - A callback unit that no member of its contract takes still had a wrapper and a conversion in the crate of its
   owner: the end-to-end sample declares `source`, which only its class `held_source` implements and only the consumer
   takes, and its Python, Node, Go and WASM crates held `in_source` and `CbSource`, which `cargo clippy -D warnings`
