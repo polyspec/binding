@@ -1276,10 +1276,22 @@ test('a generated test gives an object through a native row and back, and counts
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /def test_gn6u_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
-  for (const [path, entry] of [['packages/ts/generated/tests/generated.test.mjs', 'addon\\(\\)'], ['packages/ts/wasm/generated/tests/generated.test.mjs', '\\(await glueModule\\(\\)\\)']] as const) {
-    const js = text(out, path);
-    assert.match(js, new RegExp(`test\\('GN-6u: same gives back the same object and releases it', async \\(\\) => \\{\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  const before = ${entry}\\.__nativeCount\\(\\);\\n  const subject = new Subject\\(\\);\\n  assert\\.equal\\(pkg\\.same\\(subject\\), subject\\);\\n  await new Promise\\(setImmediate\\);\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  assert\\.equal\\(${entry}\\.__nativeCount\\(\\), before\\);\\n\\}\\);`), path);
-  }
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /test\('GN-6u: same gives back the same object and releases it', async \(\) => \{\n  pkg\.same\(new Subject\(\)\);\n  const before = addon\(\)\.__nativeCount\(\);\n  const subject = new Subject\(\);\n  assert\.equal\(pkg\.same\(subject\), subject\);\n  await new Promise\(setImmediate\);\n  pkg\.same\(new Subject\(\)\);\n  assert\.equal\(addon\(\)\.__nativeCount\(\), before\);\n\}\);/);
+  // WASM drops a Native at once, so the test runs from the first count to the second without an await: no
+  // FinalizationRegistry callback of an object of another test runs between the two counts.
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  const wasmTest = /test\('GN-6u: same gives back the same object and releases it', async \(\) => \{\n[^]*?\n\}\);/.exec(wasm)?.[0] ?? '';
+  assert.equal(wasmTest, `test('GN-6u: same gives back the same object and releases it', async () => {
+  const glue = await glueModule();
+  pkg.same(new Subject());
+  const before = glue.__nativeCount();
+  const subject = new Subject();
+  assert.equal(pkg.same(subject), subject);
+  pkg.same(new Subject());
+  assert.equal(glue.__nativeCount(), before);
+});`);
+  assert.equal(wasmTest.split('const before')[1]?.includes('await'), false);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, /public function testGn6uSameGivesBackTheSameObjectAndReleasesIt\(\): void\n    \{\n        \\Polyspec\\Sample\\same\(new class \{\}\);\n        \$before = \\Polyspec\\Sample\\Internal\\nativeCount\(\);\n        \$subject = new class \{\};\n        self::assertSame\(\$subject, \\Polyspec\\Sample\\same\(\$subject\)\);/);
   const go = text(out, 'packages/go/zz_generated_native_count_test.go');
