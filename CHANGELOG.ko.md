@@ -8,7 +8,9 @@
 
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
-  `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`.
+  `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이
+  통과한 `make e2e REPO=tests/e2e/kept`, 모든 crate의 `cargo clippy`가 통과한 php-serialization checkout의 `make e2e`.
+  B2.162의 PHP 시험 `serialize int_min`도 거기서 통과한다.
 
 - 생성 Rust가 `Result::ok`와 `Result::unwrap_or`를 불렀다. 레포의 `clippy.toml`은 둘 다 오류를 그럴듯한 값으로 바꾸므로
   금하며, 그래서 php-serialization의 PHP, Python, Node, WASM crate의 `cargo clippy -D warnings`가 시험 전에 실패했다.

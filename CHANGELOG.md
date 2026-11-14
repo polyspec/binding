@@ -8,7 +8,9 @@
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
-  walk of `tests/e2e/kept` failed before the change.
+  walk of `tests/e2e/kept` failed before the change, by `make e2e REPO=tests/e2e/kept`, every target passed, and by
+  `make e2e` of the php-serialization checkout, whose `cargo clippy` of every crate passes; its PHP test
+  `serialize int_min` of B2.162 also passes there.
 
 - The generated Rust called `Result::ok` and `Result::unwrap_or`, which the `clippy.toml` of a repository disallows
   because each turns an error into a plausible value, so `cargo clippy -D warnings` of the PHP, Python, Node and WASM
