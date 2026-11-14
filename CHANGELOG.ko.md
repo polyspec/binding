@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## 0.0.5
+
 - `release-wheel`은 Linux에서 policy `manylinux_2_34`의 manylinux wheel을 빌드한다(GN-19c). maturin의 PEP 517
   backend는 compatibility를 받지 않으면 `--compatibility off`를 넘기므로 Linux runner의 wheel에 PyPI가 거부하는
   `linux_<arch>`가 붙었고, `release-platform-assets`가 `... linux_aarch64.whl is no wheel of a platform of the

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.5
+
 - `release-wheel` builds a manylinux wheel on Linux, for the policy `manylinux_2_34` (GN-19c). The PEP 517 backend of
   maturin passes `--compatibility off` unless it is given one, so the wheels of the Linux runners were tagged
   `linux_<arch>`, which PyPI refuses, and `release-platform-assets` failed with `... linux_aarch64.whl is no wheel of a
