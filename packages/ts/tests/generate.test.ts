@@ -2470,6 +2470,47 @@ test('a callback unit of another repository recognizes the error units of its ow
   assert.throws(() => generateTargets({ contract: unnamed.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: unnamed.caseFiles, foreign: unnamed.foreign, targets: ['node'] }), /sample\.lookup\.find: errors\.recognized of sample names no function that makes its core error of a recognized kind \(GN-6d, GN-6s\)/);
 });
 
+// B2.222: Go and WASM read the error that a callback unit of another repository returns or throws as the other
+// targets do (B2.173): WASM by the classes of the subpath ./wasm of the owner's package, Go by the types of the
+// package errors of the owner's Go module.
+test('a callback unit of another repository recognizes the error units of its owner in Go and WASM (U-3, GN-6s, GN-6d, GN-15d)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract, foreign, true);
+  const cases = structuredClone(caseFiles.get('contracts/cases.json')) as Record<string, unknown>;
+  cases['look'] = [{ id: 'a_refused_key_is_none', lookup: { callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'refused_error', kind: 'refused' } }] }, calls: [{ member: 'lookup.find', args: { key: 'a' } }] }, key: 'a', result: null }];
+  contract.cases.push({ member: 'consumer.look', file: 'contracts/cases.json', group: 'look' });
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign, targets: ['go', 'wasm'] });
+  const kinds = /\.and_then\(\|\(kind, message\)\| match kind\.as_str\(\) \{\n\s+"refused" => Some\(polyspec_sample::Error::recognized\(polyspec_sample::Error::Refused, &message\)\),\n\s+_ => None,/;
+  // WASM registers the class of the subpath ./wasm of the owner's package after the library classes.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /if classes\.len\(\) != 8 \{/);
+  assert.match(wasm, /fn recognized_lookup_find\(error: Thrown\) -> binding_core::Failure<polyspec_sample::Error> \{/);
+  assert.match(wasm, /let core = recognized_kind\(value, &\[7\]\)/);
+  assert.match(wasm, kinds);
+  assert.match(wasm, /\nfn recognized_kind\(value: &JsValue, classes: &\[usize\]\) -> Option<\(String, String\)> \{/);
+  const entry = text(out, 'packages/ts/wasm/generated/index.mjs');
+  assert.equal(entry.split("from '@polyspec/sample/wasm';").length - 1, 1, 'one import of the owner package');
+  assert.match(entry, /\nglue\.__register\(\[[^\]]*AbsentError, foreign_sample\.RefusedError\]/);
+  // Go: the dispatch finds the type of the package errors of the owner with errors.As and gives its kind to the core.
+  const go = text(out, 'packages/go/zz_generated_consumer.go');
+  assert.match(go, /\n\tsampleerrors "github\.com\/polyspec\/sample\/packages\/go\/errors"\n/);
+  assert.match(go, /\t\t\t\treturn binding\.RecognizeAs\[\*sampleerrors\.RefusedError\]\(err\)\n/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /\nfunc RecognizeAs\[T interface \{\n\terror\n\tKind\(\) string\n\}\]\(err error\) error \{\n\tvar unit T\n\tif errors\.As\(err, &unit\) \{\n\t\treturn &recognized\{err: err, kind: unit\.Kind\(\), message: unit\.Error\(\)\}\n\t\}\n\treturn err\n\}\n/);
+  assert.match(binding, /\n\tif r, ok := err\.\(\*recognized\); ok \{\n/);
+  const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(ffi, /fn recognized_lookup_find\(call: u64, bytes: &\[u8\]\) -> binding_core::Failure<polyspec_sample::Error> \{/);
+  assert.match(ffi, kinds);
+  // The fixture of a case raises the error that Raised<Unit> of the owner's package errors makes.
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTests, /\n\tsampleerrors "github\.com\/polyspec\/sample\/packages\/go\/errors"\n/);
+  assert.match(goTests, /raise: sampleerrors\.RaisedRefusedError\("refused", "G-5: refused"\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /^import \* as foreign_sample from '@polyspec\/sample\/wasm';$[^]*\['find', \['a'\], null, false, new foreign_sample\.RefusedError\('G-5: refused', 'refused'\)\]/m);
+  // GN-15d: the package errors of the owner gives Raised<Unit> of each unit that a member of its callbacks recognizes.
+  const errors = text(sampleWith(() => undefined, ['go']), 'packages/go/errors/zz_generated_errors.go');
+  assert.match(errors, /\n\/\/ RaisedRefusedError is a RefusedError of the kind and the message, as Go code makes one[^\n]*\nfunc RaisedRefusedError\(kind, message string\) \*RefusedError \{\n\treturn binding\.RaisedRefusedError\(kind, message\)\n\}\n/);
+});
+
 test('a callback unit of another repository carries language code, so a member that waits and takes it reaches language code (GN-6s, GN-6h, GN-6q, GN-6n)', () => {
   const waiting = (wait: string): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
