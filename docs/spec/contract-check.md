@@ -288,6 +288,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `binding check` reports `[profile.release]` of the root manifest or of `.cargo/config.toml` of the repository that
   sets `lto` to any value but `false` or `"off"`, with the file and the value, because a Go program then cannot link
   that static library with the static library of another repository.
+- **CK-94** The release recipes of the repository (generator GN-19h): when the root of the repository holds a
+  `Makefile`, `binding check` reports a Makefile that has no line `include` or `-include` of the file of recipes of
+  the contract (`packages/release.mk`, or `packages/<component>/release.mk`, also by a path that ends in it), and a
+  rule of the Makefile with a recipe of its own for a target that the file defines, with the target; a rule that only
+  adds a prerequisite to such a target is no finding. It also reports the file of recipes when it is there and differs
+  from what `binding release-recipes` of this binding writes. A file that is not there is no finding, because it is
+  generated and not tracked, and a release writes it before it runs a recipe. Why: a recipe copied by hand keeps the
+  defects of the copy that GN-19h fixed, and a file of recipes of another binding builds what that binding builds.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

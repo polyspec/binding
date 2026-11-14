@@ -2651,24 +2651,25 @@ the design ids are those of the binding design.
 
 ## The release of a repository that holds a binding
 
-- **GN-19** A repository that holds a binding releases it by its own recipes, and the work is divided by one rule. A
+- **GN-19** A repository that holds a binding releases it by recipes of make, and the work is divided by one rule. A
   step that a standard tool of an ecosystem performs (Cargo, maturin through `uv build`, the napi CLI, npm, `zip`,
-  `llvm-strip`) is a line of a recipe of the repository that starts that tool with the arguments of GN-19b to
-  GN-19e; binding gives no command for it, and `binding scaffold` writes no recipe, because the Makefile is the
-  repository's. A step that no tool performs and that follows from the form of a binding alone, the commit and the
-  tag of a Go module with their checks, is the command `binding release-go-module` (GN-19f). Why: a command that
-  wraps the call of a standard tool would hold the release procedure of a repository, which belongs to the
-  repository, and Git work that follows from the form alone, copied into every repository, would be wrong in all of
-  them at once when the form changes.
+  `llvm-strip`) is a line of a recipe that starts that tool with the arguments of GN-19b to GN-19e; binding gives no
+  command that wraps such a call. Those recipes are the same in every repository but for the names that its contract
+  gives, so binding writes them for the contract as a file of make that the Makefile of the repository includes
+  (`binding release-recipes`, GN-19h); `binding scaffold` writes no recipe. A step that no tool performs and that
+  follows from the form of a binding alone, the commit and the tag of a Go module with their checks, is the command
+  `binding release-go-module` (GN-19f). Why: a command that wraps the call of a standard tool would hide the call that
+  a reader of a recipe needs to see, and recipes that every repository copies by hand were wrong in all of them at
+  once: two repositories copied the same recipes and had the same defects, which GN-19h names.
 - **GN-19a** The platforms of a release are `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64` (GN-3c), and each
   asset of a platform is built on a runner of that platform, because no tool of GN-19b to GN-19e compiles for another
   platform. The release workflow of the repository names the runners in its own matrix (`include`):
 
   | Platform | Runner | Rust triple | PIE name part | Go directory |
   |---|---|---|---|---|
-  | none (the archives of npm, Composer and the root package of GN-19e) | `ubuntu-24.04` | | | |
-  | `linux-x64-gnu` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
-  | `linux-arm64-gnu` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
+  | none (the archives of npm, Composer and the root package of GN-19e) | `ubuntu-26.04-arm` | | | |
+  | `linux-x64-gnu` | `ubuntu-26.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
+  | `linux-arm64-gnu` | `ubuntu-26.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
   | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
 
   A PHP extension has one entry for each platform and each PHP minor that it supports, and that entry installs the PHP
@@ -2756,3 +2757,65 @@ the design ids are those of the binding design.
   each contract of the repository, every one to its end, and stops when one fails (CK-70). An asset of the GitHub
   Release has the label `<vendor>-<product>-<runtime>-<version>`, followed by `-<platform>` for an asset of a
   platform and by `-php<X.Y>-<platform>` for a PHP extension.
+- **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]` writes
+  the release recipes of the contract into `<packages of the contract>/release.mk`: `packages/release.mk` for a core
+  at `packages/rust`, and `packages/<component>/release.mk` for a core at `packages/<component>/rust`, whose targets
+  end in `-<component>` so that the recipes of two contracts of one repository do not meet. It checks the schema and
+  the names of the contract (CK-1, CK-18) and nothing else, because the recipes depend on the names alone, and it
+  writes the file under another name beside it and renames it into place. The file is generated and not tracked: the
+  repository ignores it, and a release writes it before it runs a recipe. It defines, for the targets of the contract:
+
+  | Target | Target of the contract | What it does |
+  |---|---|---|
+  | `release-go-static` | `go` | GN-19b, with the library of `linux_<arch>_musl` on a Linux host |
+  | `release-wheel` | `python` | GN-19c |
+  | `release-php-ext` | `php` | GN-19d, for the PHP of `PHP` |
+  | `release-npm-platform` | `node` | GN-19e, the platform package of the host |
+  | `release-npm` | `node` or `wasm` | GN-19e, the package itself |
+  | `release-go-module` | `go` | GN-19f, for the tag of `TAG` |
+  | `release-binding-check` | every contract | GN-19g |
+  | `release-platform-assets` | every contract | GN-19g, the upload of the assets of `TAG` |
+  | `install-llvm` | `php` | installs the LLVM of `config/toolchain.json` |
+  | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
+
+  The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
+  recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
+  installed package), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
+  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `NAPI`,
+  `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
+  line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
+  `llvm.version` of `config/toolchain.json`, and the musl targets of its arches in `rust-toolchain.toml`, and ignores
+  the file of recipes and the folder `npm/` of its npm package. The recipes hold the four rules that copies by hand
+  broke:
+  - Each recipe that builds a binding first runs `binding generate --contract <interface.json> --target <target>` of
+    its target, because the generated files are not tracked, so a checkout of a tag holds none of them.
+  - `release-php-ext` builds with `LIBCLANG_PATH` and `CLANG_PATH` of the LLVM of `LLVM_ROOT`, which is
+    `/usr/lib/llvm-<major>` on Linux and the Homebrew formula `llvm@<major>` on macOS by default, and fails before
+    Cargo builds when that LLVM has no clang or no libclang or its clang is of another major release (GN-14a). Each PHP
+    minor and build of PHP builds in its own `CARGO_TARGET_DIR`, because the extension is compiled against the headers
+    of that PHP.
+  - `release-npm-platform` gives `napi create-npm-dirs` and `napi artifacts` the folder
+    `<npm package>/npm/<platform>/npm`, inside the npm package: the napi CLI refuses a folder outside the package of
+    `--package-json-path`.
+  - The recipes are tested in binding (`packages/ts/tests/release-recipes.test.ts`, which `make typecheck-ts` checks
+    with the other tests), with stand-ins of the tools that they start; a repository keeps no test of its own copy.
+
+  `binding check` reports the Makefile of the repository that does not include the file, a recipe of the Makefile for
+  a target of the file, and a file of recipes that differs from what this binding writes (CK-94). Why: the names that
+  the recipes take are in the contract, which binding reads already, and a recipe that each repository keeps by hand
+  gets each defect once in each repository; a generated file that is not tracked cannot drift from the binding that a
+  repository pins, and the check finds a Makefile that still holds a copy.
+- **GN-19i** The workflow that builds the assets of each platform is a workflow of the repository (`assets.yml`), which
+  its workflows of CI and of the release call (`workflow_call`, with the input `ref` of the tag and the input `release`
+  that runs `make release-binding-check` first). Its job `platform` runs, for each platform of GN-19a on its runner
+  (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`), each step as one make target, the build steps after the first also
+  after a failed one (`if: ${{ !cancelled() }}`): the install of its tools, `make release-recipes` (the target of the
+  repository that runs `binding release-recipes`), `make release-go-static`, `make release-wheel`, `make install-llvm`,
+  `make release-php-ext PHP=php` for each PHP minor that it installs, and `make release-npm-platform`, and uploads
+  `var/release/assets` as the artifact `assets-<platform>`. Its job `npm` runs `make release-recipes`, `make
+  install-wasm-bindgen` and `make release-npm` and uploads the artifact `assets-npm`. The release workflow downloads
+  the artifacts into `var/release/assets`, then runs `make release-go-module` and `make release-platform-assets` after
+  the draft release exists. binding writes no workflow: GitHub reads a workflow only from the tracked tree, and the
+  steps of a job name the targets of the repository, which this rule fixes. Why: the steps that build an asset are
+  the recipes of GN-19h, so a workflow that names those targets in this order holds nothing that a repository must
+  change when the recipes change.

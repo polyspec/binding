@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9bf175384bfba985f029a5c0c899a29f1bb8e37bb314f8a6ba1bc3b82e77beba -->
+<!-- source-sha256: 50fc79f757494c71c350fd829375e79bfae3ec0d641082cc674fea489a14a933 -->
 # 생성기
 
 [English](generator.md)
@@ -2139,21 +2139,23 @@
 
 ## 바인딩을 가진 레포의 release
 
-- **GN-19** 바인딩을 가진 레포는 자기 recipe로 그것을 release하며, 일은 한 규칙으로 나눈다. 생태계의 표준 도구(Cargo,
+- **GN-19** 바인딩을 가진 레포는 make의 recipe로 그것을 release하며, 일은 한 규칙으로 나눈다. 생태계의 표준 도구(Cargo,
   `uv build`를 통한 maturin, napi CLI, npm, `zip`, `llvm-strip`)가 하는 단계는 그 도구를 GN-19b~GN-19e의 인자로 시작하는
-  레포 recipe의 한 줄이다. binding은 그 단계의 명령을 주지 않고 `binding scaffold`는 recipe를 쓰지 않는다. Makefile은 레포의
-  것이기 때문이다. 어느 도구도 하지 않고 바인딩의 꼴에서만 나오는 단계, 곧 Go 모듈의 commit과 tag와 그 검사는 명령
-  `binding release-go-module`이다(GN-19f). 이유: 표준 도구의 호출을 감싸는 명령은 레포의 release 절차를 갖게 되는데 그
-  절차는 레포의 것이고, 꼴에서만 나오는 Git 작업을 레포마다 복사하면 꼴이 바뀔 때 모든 레포에서 한꺼번에 틀린다.
+  recipe의 한 줄이다. binding은 그런 호출을 감싸는 명령을 주지 않는다. 그 recipe는 계약이 주는 이름 말고는 모든 레포에서
+  같으므로, binding은 계약에 대해 그것을 레포의 Makefile이 include하는 make 파일로 쓴다(`binding release-recipes`,
+  GN-19h). `binding scaffold`는 recipe를 쓰지 않는다. 어느 도구도 하지 않고 바인딩의 꼴에서만 나오는 단계, 곧 Go 모듈의
+  commit과 tag와 그 검사는 명령 `binding release-go-module`이다(GN-19f). 이유: 표준 도구의 호출을 감싸는 명령은 recipe를
+  읽는 사람이 보아야 할 호출을 숨기고, 레포마다 손으로 복사한 recipe는 모든 레포에서 한꺼번에 틀렸다. 두 레포가 같은
+  recipe를 복사했고 같은 결함을 가졌으며, GN-19h가 그 결함을 적는다.
 - **GN-19a** release의 플랫폼은 `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-arm64`이고(GN-3c), 플랫폼의 asset은 그 플랫폼의
   runner에서 빌드한다. GN-19b~GN-19e의 어느 도구도 다른 플랫폼용으로 compile하지 않기 때문이다. 레포의 release workflow는
   자기 matrix(`include`)에 runner를 적는다.
 
   | 플랫폼 | Runner | Rust triple | PIE 이름 부분 | Go 디렉터리 |
   |---|---|---|---|---|
-  | 없음(npm, Composer의 archive와 GN-19e의 root 패키지) | `ubuntu-24.04` | | | |
-  | `linux-x64-gnu` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
-  | `linux-arm64-gnu` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
+  | 없음(npm, Composer의 archive와 GN-19e의 root 패키지) | `ubuntu-26.04-arm` | | | |
+  | `linux-x64-gnu` | `ubuntu-26.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
+  | `linux-arm64-gnu` | `ubuntu-26.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
   | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
 
   PHP 확장은 지원하는 플랫폼과 PHP minor마다 항목 하나를 갖고, 그 항목은 빌드 전에 그 minor의 PHP를 설치한다. 모든 빌드는
@@ -2231,3 +2233,57 @@
   실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). GitHub Release의 asset은 label
   `<vendor>-<product>-<runtime>-<version>`을 갖고, 플랫폼의 asset은 그 뒤에 `-<platform>`, PHP 확장은
   `-php<X.Y>-<platform>`이 붙는다.
+- **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]`는 계약의
+  release recipe를 `<계약의 packages>/release.mk`에 쓴다. core가 `packages/rust`이면 `packages/release.mk`이고, core가
+  `packages/<component>/rust`이면 `packages/<component>/release.mk`이며, 그 target은 `-<component>`로 끝나서 한 레포의 두
+  계약의 recipe가 만나지 않는다. 계약의 schema와 이름(CK-1, CK-18)만 검사한다. recipe는 이름에만 의존하기 때문이다. 파일은
+  옆에 다른 이름으로 쓴 뒤 제자리로 rename한다. 파일은 생성되고 추적되지 않는다. 레포는 그것을 ignore하고, release는
+  recipe를 실행하기 전에 그것을 쓴다. 파일은 계약의 target에 대해 다음을 정의한다.
+
+  | Target | 계약의 target | 하는 일 |
+  |---|---|---|
+  | `release-go-static` | `go` | GN-19b, Linux host에서는 `linux_<arch>_musl`의 라이브러리도 |
+  | `release-wheel` | `python` | GN-19c |
+  | `release-php-ext` | `php` | GN-19d, `PHP`의 PHP에 대해 |
+  | `release-npm-platform` | `node` | GN-19e, host의 플랫폼 패키지 |
+  | `release-npm` | `node`나 `wasm` | GN-19e, 패키지 자체 |
+  | `release-go-module` | `go` | GN-19f, `TAG`의 tag에 대해 |
+  | `release-binding-check` | 모든 계약 | GN-19g |
+  | `release-platform-assets` | 모든 계약 | GN-19g, `TAG`의 asset upload |
+  | `install-llvm` | `php` | `config/toolchain.json`의 LLVM을 설치한다 |
+  | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
+
+  레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
+  명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
+  도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
+  적는다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
+  명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
+  `llvm.version`에, 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
+  ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.
+  - 바인딩을 빌드하는 recipe는 먼저 자기 target의 `binding generate --contract <interface.json> --target <target>`을
+    실행한다. 생성된 파일은 추적되지 않으므로 tag의 checkout에는 그것이 하나도 없기 때문이다.
+  - `release-php-ext`는 `LLVM_ROOT`의 LLVM의 `LIBCLANG_PATH`와 `CLANG_PATH`로 빌드한다. `LLVM_ROOT`의 기본값은 Linux에서
+    `/usr/lib/llvm-<major>`, macOS에서 Homebrew formula `llvm@<major>`다. 그 LLVM에 clang이나 libclang이 없거나 clang이
+    다른 major release이면 Cargo가 빌드하기 전에 실패한다(GN-14a). PHP의 minor와 build마다 자기 `CARGO_TARGET_DIR`에서
+    빌드한다. 확장은 그 PHP의 header로 compile되기 때문이다.
+  - `release-npm-platform`은 `napi create-npm-dirs`와 `napi artifacts`에 npm 패키지 안의 폴더
+    `<npm 패키지>/npm/<platform>/npm`을 준다. napi CLI는 `--package-json-path`의 패키지 밖의 폴더를 거부한다.
+  - recipe는 binding에서 시험한다(`packages/ts/tests/release-recipes.test.ts`, 다른 테스트와 함께 `make typecheck-ts`가
+    검사한다). 시험은 recipe가 시작하는 도구의 대역을 쓴다. 레포는 자기 복사본의 테스트를 갖지 않는다.
+
+  `binding check`는 그 파일을 include하지 않는 레포의 Makefile, 그 파일의 target에 대한 Makefile의 recipe, 이 binding이
+  쓰는 것과 다른 recipe 파일을 보고한다(CK-94). 이유: recipe가 받는 이름은 binding이 이미 읽는 계약에 있고, 레포마다
+  손으로 지키는 recipe는 결함 하나를 레포마다 한 번씩 갖는다. 추적되지 않는 생성 파일은 레포가 고정한 binding에서
+  벗어날 수 없고, 검사는 아직 복사본을 가진 Makefile을 찾는다.
+- **GN-19i** 플랫폼마다 asset을 빌드하는 workflow는 레포의 workflow(`assets.yml`)이고, 레포의 CI와 release workflow가
+  그것을 부른다(`workflow_call`, tag의 입력 `ref`와 먼저 `make release-binding-check`를 실행하는 입력 `release`). 그 job
+  `platform`은 GN-19a의 플랫폼마다 그 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 각 단계를 make target
+  하나로 실행하고, 첫 빌드 단계 뒤의 빌드 단계는 앞 단계가 실패해도 실행한다(`if: ${{ !cancelled() }}`). 단계는 도구
+  설치, `make release-recipes`(`binding release-recipes`를 실행하는 레포의 target), `make release-go-static`, `make
+  release-wheel`, `make install-llvm`, 설치한 PHP minor마다 `make release-php-ext PHP=php`, `make release-npm-platform`이고,
+  `var/release/assets`를 artifact `assets-<platform>`으로 upload한다. job `npm`은 `make release-recipes`, `make
+  install-wasm-bindgen`, `make release-npm`을 실행하고 artifact `assets-npm`을 upload한다. release workflow는 artifact를
+  `var/release/assets`에 내려받고, draft release가 생긴 뒤 `make release-go-module`과 `make release-platform-assets`를
+  실행한다. binding은 workflow를 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의 단계는 이 규칙이 정하는
+  레포의 target을 적기 때문이다. 이유: asset을 빌드하는 단계는 GN-19h의 recipe이므로, 그 target을 이 순서로 적는
+  workflow는 recipe가 바뀔 때 레포가 바꿀 것을 갖지 않는다.

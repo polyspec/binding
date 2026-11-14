@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: dab7c1315086fce9cf0438aefbb337eb4cff96e5abb175e39aba52f1a085b211 -->
+<!-- source-sha256: b41b319e7a4e2d11e8f8353a978a8227c6c760c9ee5a8207d62d7d99f24df504 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -24,6 +24,21 @@
 - end-to-end 실행은 binding check 전에 사본의 Cargo.lock에 있는 모든 package를 받는다(GN-15f). check는 B2.261부터
   crate를 오프라인으로 읽는데, 코어의 build는 자기 package만 받았으므로 `tests/e2e/consumer`와 `tests/e2e/plot`의
   check가 모든 대상에서 package를 받지 못해 실패했다. CI job `e2e (consumer)`와 `e2e (plot)`으로 검증했다.
+- binding은 바인딩을 가진 레포의 release recipe를 쓴다(GN-19h). `binding release-recipes`는 `packages/release.mk`
+  (component는 `packages/<component>/release.mk`)를 쓴다. 그것은 레포의 Makefile이 include하고 추적되지 않는 make
+  파일이며, 계약의 target에 대해 `release-go-static`, `release-wheel`, `release-php-ext`, `release-npm-platform`,
+  `release-npm`, `release-go-module`, `release-binding-check`, `release-platform-assets`, `install-llvm`,
+  `install-wasm-bindgen` target을 갖는다. 레포들은 이 recipe를 손으로 복사했고 두 복사본은 같은 네 결함을 가졌다.
+  tag의 checkout에는 생성 파일이 없는데 recipe는 바인딩을 생성하지 않고 빌드했고, PHP 확장은 서로 다른 LLVM release의
+  libclang과 clang으로 빌드했으며, `napi create-npm-dirs`에는 npm 패키지 밖의 폴더를 주었는데 napi는 그것을 거부하고,
+  복사본의 테스트는 lint와 type check를 통과하지 않았다. 이제 recipe는 먼저 자기 target을 생성하고, `release-php-ext`는
+  `config/toolchain.json`의 LLVM의 `LIBCLANG_PATH`와 `CLANG_PATH`로 빌드하며 Cargo가 빌드하기 전에 그것을 검사하고,
+  PHP minor마다 자기 target 디렉터리에서 빌드하고, napi 폴더는 npm 패키지 안의 `npm/<platform>`이며, Linux host는 musl의
+  Go 라이브러리도 빌드한다. `binding check`는 그 파일을 include하지 않는 Makefile, Makefile이 손으로 복사한 그 target의
+  recipe, 이 binding이 쓰는 것과 다른 recipe 파일을 보고한다(CK-94). 플랫폼마다 asset을 빌드하는 workflow는 GN-19i로
+  적고, GN-19a의 runner는 `ubuntu-26.04`의 것이다. `node --test packages/ts/tests/release-recipes.test.ts`로 검증했다. 그
+  테스트는 각 recipe를 make와 그 도구의 대역으로 실행하며 변경 전에 실패했다. `make typecheck-ts`로도 검증했다.
+
 - Go는 `cancel` 타입 parameter나 그 `optional`의 `context.Context`를 그 parameter가 계약의 어느 자리에 있든 함수의 첫
   인자로 받는다(GN-6aq). 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에 준다. 취소가 첫
   parameter가 아닌 member는 Go에서 거부되었으므로, cookie 다음에 optional 취소를 받는 파일 저장소의 member에는 Go
