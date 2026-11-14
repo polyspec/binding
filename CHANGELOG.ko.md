@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 010d1aba9e97c3d98dec3cfe003070a9a93a36cb1589af4ef431cb310f235261 -->
+<!-- source-sha256: 88f46acbbc0bddadd27f208f7192021f9ad989aba07cb315d23fec782cf65682 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
+<!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -22,6 +23,11 @@
   `consumer.pair`의 `a_reference_of_the_owner_twice` 시험이 `0 value classes keep one value (GN-6af)`로 실패했다.
   검증: 변경 전에 실패한 `node --test packages/ts/tests/generate.test.ts`의 consumer 시험.
 
+- 생성된 GN-6u의 WASM 시험은 Native의 두 셈 사이에 아무것도 await하지 않는다. 각 셈에서 glue module을 await했고 마지막
+  호출 전에 event loop를 한 번 돌렸으므로, 두 셈 사이에 `FinalizationRegistry`가 앞선 시험의 객체를 해제할 수 있었다.
+  표가 보관한 callback을 가진 `Index` 객체가 해제되면 sample의 `same`이 `0 !== 15`로 실패했다. 이제 시험은 첫 셈 전에
+  glue module을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했고, `make e2e REPO=tests/e2e/sample`은
+  대기열에 있다.
 - lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
   member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성
   시험은 이제 코어 경로가 callback의 실패를 돌려주는 member에만 생성된다(K-2). Go crate는 함수 타입을 받는 계약에만

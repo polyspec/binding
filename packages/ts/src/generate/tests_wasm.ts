@@ -436,6 +436,8 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
 });`);
   }
   // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
+  // WASM drops a Native at once, so the test awaits nothing from the first count to the second: an await there lets
+  // the FinalizationRegistry release objects of earlier tests, whose Natives would change the count.
   const roundTrip = nativeRoundTrip(model.contract, 'wasm');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
   if (roundFn !== undefined) {
@@ -443,13 +445,13 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
     const same = (value: string): string => invoke(roundFn, value, '');
     out.push(`
 test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  const glue = await glueModule();
   ${same('new Subject()')};
-  const before = (await glueModule()).__nativeCount();
+  const before = glue.__nativeCount();
   const subject = new Subject();
   assert.equal(${same('subject')}, subject);
-  await new Promise(setImmediate);
   ${same('new Subject()')};
-  assert.equal((await glueModule()).__nativeCount(), before);
+  assert.equal(glue.__nativeCount(), before);
 });`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

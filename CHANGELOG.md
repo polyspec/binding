@@ -21,6 +21,11 @@
   `consumer.pair` failed with `0 value classes keep one value (GN-6af)`. Verified by the test of the consumer in
   `node --test packages/ts/tests/generate.test.ts`, which failed before the change.
 
+- The generated WASM test of GN-6u awaits nothing between its two counts of the Natives. It awaited the glue module
+  at each count and let the event loop turn before its last call, so the `FinalizationRegistry` could release the
+  objects of earlier tests between the counts, and `same` of the sample failed with `0 !== 15` when it released the
+  `Index` objects whose kept callbacks the table held. The test now takes the glue module before the first count.
+  Verified by `node --test packages/ts/tests/generate.test.ts`; `make e2e REPO=tests/e2e/sample` is queued.
 - Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
   its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the
   generated tests of the callback's exception and of a result of another type are now generated only for a member
