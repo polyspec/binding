@@ -461,12 +461,14 @@ enum Held {
 
 struct JsHost {
     held: Vec<Held>,
+    containers: Option<js_sys::Map>,
+    container_values: Vec<HostValue>,
     marked: u64,/*SEEN*/
 }
 
 impl JsHost {
     const fn new() -> Self {
-        Self { held: Vec::new(), marked: 0/*NEW*/ }
+        Self { held: Vec::new(), containers: None, container_values: Vec::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held) -> Handle {
@@ -523,7 +525,22 @@ impl JsHost {
 
     /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a
     /// Uint8Array is bytes and another typed array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
-    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {/*DESCRIBE*/
+    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {
+        let containers = self.containers.get_or_insert_with(js_sys::Map::new).clone();
+        if let Some(index) = containers.get(value).as_string() {
+            let position = index.parse::<usize>().map_err(|_invalid| JsValue::from_str("GN-6at: invalid container index"))?;
+            return self.container_values.get(position).cloned().ok_or_else(|| JsValue::from_str("GN-6at: no cached container"));
+        }
+        let described = self.describe_object_value(value)?;
+        if matches!(described, HostValue::List { .. } | HostValue::Map { .. } | HostValue::PlainObject { .. }) {
+            containers.set(value, &JsValue::from_str(&self.container_values.len().to_string()));
+            self.container_values.push(described.clone());
+        }
+        Ok(described)
+    }
+
+    /// GN-6at: the first description of a container retains its length, entry keys and handle.
+    fn describe_object_value(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {/*DESCRIBE*/
         if js::is_array(value)? {
             let array: Array = value.clone().unchecked_into();
             let len = u64::from(array.length());

@@ -473,12 +473,14 @@ enum Held<'env> {
 struct JsHost<'env> {
     env: &'env Env,
     held: Vec<Held<'env>>,
+    containers: Option<Object<'env>>,
+    container_values: Vec<HostValue>,
     marked: u64,/*SEEN*/
 }
 
 impl<'env> JsHost<'env> {
     fn new(env: &'env Env) -> Self {
-        Self { env, held: Vec::new(), marked: 0/*NEW*/ }
+        Self { env, held: Vec::new(), containers: None, container_values: Vec::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held<'env>) -> Handle {
@@ -526,6 +528,31 @@ impl<'env> JsHost<'env> {
     /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a
     /// Uint8Array is bytes and another typed array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
     fn describe_object(&mut self, value: Unknown<'env>) -> napi::Result<HostValue> {
+        let containers = match self.containers {
+            Some(containers) => containers,
+            None => {
+                let containers = js_new_map(self.env)?;
+                self.containers = Some(containers);
+                containers
+            }
+        };
+        let found = js_map_get(containers, value)?;
+        if found.get_type()? == ValueType::Number {
+            let index = unsafe { found.cast::<u32>() }?;
+            let position = handle_position(u64::from(index));
+            return self.container_values.get(position).cloned().ok_or_else(|| napi::Error::from_reason("GN-6at: no cached container"));
+        }
+        let described = self.describe_object_value(value)?;
+        if matches!(described, HostValue::List { .. } | HostValue::Map { .. } | HostValue::PlainObject { .. }) {
+            let index = u32::try_from(self.container_values.len()).map_err(|_wide| napi::Error::from_reason("GN-6at: too many containers in one walk"))?;
+            js_map_set(containers, value, ToNapiValue::into_unknown(index, self.env)?)?;
+            self.container_values.push(described.clone());
+        }
+        Ok(described)
+    }
+
+    /// GN-6at: the first description of a container retains its length, entry keys and handle.
+    fn describe_object_value(&mut self, value: Unknown<'env>) -> napi::Result<HostValue> {
         let object: Object<'env> = unsafe { value.cast() }?;/*DESCRIBE*/
         if value.is_array()? {
             let len = u64::from(object.get_array_length()?);
@@ -644,6 +671,11 @@ fn js_new_map(env: &Env) -> napi::Result<Object<'_>> {
 fn js_map_set<'env>(map: Object<'env>, key: Unknown<'env>, value: Unknown<'env>) -> napi::Result<()> {
     let set: Function<'env, FnArgs<(Unknown<'env>, Unknown<'env>)>, Unknown<'env>> = map.get_named_property("set")?;
     set.apply(map, FnArgs::from((key, value))).map(|_map| ())
+}
+
+fn js_map_get<'env>(map: Object<'env>, key: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+    let get: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = map.get_named_property("get")?;
+    get.apply(map, FnArgs::from((key,)))
 }
 
 /// U-7: an integer as a bigint.
@@ -898,10 +930,6 @@ fn value_define<'env>(object: &mut Object<'env>, name: &str, value: Unknown<'env
     object.define_properties(&[property]).map_err(internal)
 }
 
-fn js_map_get<'env>(map: Object<'env>, key: Unknown<'env>) -> napi::Result<Unknown<'env>> {
-    let get: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = map.get_named_property("get")?;
-    get.apply(map, FnArgs::from((key,)))
-}
 `;
 
 // GN-6af: an instance of a value class without core_type made from the content of an out row, before the content, as

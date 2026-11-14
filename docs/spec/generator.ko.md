@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: db21e7c7197d7306a6e7aab6f3e2e5906223e5fe00a0368b35494e5118c656e4 -->
+<!-- source-sha256: f583f0e78292b6db98f69249838448845fc65be873ccbe5b37f160a1c6799379 -->
 # 생성기
 
 [English](generator.md)
@@ -630,6 +630,11 @@
   객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
   객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
   `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
+- **GN-6at** 들어오는 host-value 순회 하나에서 Python list와 dict, JavaScript Array, Map, plain object는
+  각각 handle 하나와 description 하나를 갖는다. 같은 container를 다시 설명하면 그 description을 재사용하며,
+  다른 container는 다른 handle을 유지한다. 순회가 끝날 때까지 원본 container를 보유해서 수거된 container의
+  identity가 재사용되지 않게 한다. core가 handle로 공유 container와 순환을 식별하고, 반복 위치에서 iterator나
+  property 목록을 다시 읽지 않기 위해서다. 순환의 허용 여부와 거부할 error kind는 여전히 core가 정한다.
 - **GN-6u** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
   - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
     `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다. crate의 `build.rs`가 그 cfg를 선언한다

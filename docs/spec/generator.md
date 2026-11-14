@@ -778,6 +778,12 @@ the design ids are those of the binding design.
   drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
   `Other` value is valid only inside the `in` or `out` call that gave it: the binding numbers a `Date` and an `Other`
   value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6u).
+- **GN-6at** During one incoming host-value walk, each Python list or dict and each JavaScript Array, Map or plain
+  object has one handle and one description. Repeated descriptions of the same container reuse that description;
+  distinct containers retain distinct handles. The walk holds the original container until it ends, so an identity
+  cannot be reused after a container is collected. This lets the core recognize shared containers and cycles by
+  their handles, and avoids reading an iterator or property list again at a repeated position. The core still
+  decides whether a cycle is accepted and which error kind rejects it.
 - **GN-6u** What a `Native` (B-1) holds, and what its last drop does, by target:
   - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
     so the crate does not compile with `pyo3_disable_reference_pool`. The `build.rs` of the crate declares that cfg

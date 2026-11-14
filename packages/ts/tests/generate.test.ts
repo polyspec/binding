@@ -204,6 +204,25 @@ const helperName = (path: string, name: string): string => (/^packages\/(python|
 const sampleCases = (): Map<string, unknown> =>
   new Map([['contracts/cases.json', plainSampleCases(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8')))]]);
 
+test('host containers keep their identity during one walk, with and without value classes (GN-6at, B2.270)', () => {
+  for (const classes of [false, true]) {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const out = generate({ contract: classes ? contract : plainSample(contract), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['python', 'node', 'wasm'] });
+    const python = text(out, 'packages/python/generated/lib.rs');
+    assert.match(python, /containers: BTreeMap<usize, \(Bound<'py, PyAny>, HostValue\)>/);
+    assert.match(python, /if let Some\(\(_held, described\)\) = self\.containers\.get\(&address\)[\s\S]*?return Ok\(described\.clone\(\)\)/);
+    assert.match(python, /self\.containers\.insert\(address, \(value\.clone\(\), described\.clone\(\)\)\)/);
+    for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+      const lib = text(out, path);
+      assert.match(lib, /container_values: Vec<HostValue>/, path);
+      assert.match(lib, /fn describe_object_value\(/, path);
+      assert.match(lib, /self\.container_values\.get\(position\)/, path);
+      assert.match(lib, /HostValue::List \{ \.\. \} \| HostValue::Map \{ \.\. \} \| HostValue::PlainObject \{ \.\. \}/, path);
+      assert.match(lib, /self\.container_values\.push\(described\.clone\(\)\)/, path);
+    }
+  }
+});
+
 test('a record that a function returns has its result form in every language (T-4)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { unit: 'options' };

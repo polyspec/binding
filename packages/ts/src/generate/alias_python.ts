@@ -369,12 +369,13 @@ enum Held<'py> {
 struct PyHost<'py> {
     py: Python<'py>,
     held: Vec<Held<'py>>,
+    containers: BTreeMap<usize, (Bound<'py, PyAny>, HostValue)>,
     marked: u64,/*SEEN*/
 }
 
 impl<'py> PyHost<'py> {
     fn new(py: Python<'py>) -> Self {
-        Self { py, held: Vec::new(), marked: 0/*NEW*/ }
+        Self { py, held: Vec::new(), containers: BTreeMap::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held<'py>) -> Handle {
@@ -391,6 +392,20 @@ impl<'py> PyHost<'py> {
     /// B-1: a value of an exact built-in type is that kind (a bool is never an integer, a subclass is another value);
     /// any other object is its handle with its type name, which the core judges.
     fn describe(&mut self, value: &Bound<'py, PyAny>) -> PyResult<HostValue> {
+        if !value.is_exact_instance_of::<PyList>() && !value.is_exact_instance_of::<PyDict>() {
+            return self.describe_value(value);
+        }
+        let address = value.as_ptr().addr();
+        if let Some((_held, described)) = self.containers.get(&address) {
+            return Ok(described.clone());
+        }
+        let described = self.describe_value(value)?;
+        self.containers.insert(address, (value.clone(), described.clone()));
+        Ok(described)
+    }
+
+    /// GN-6at: a container is described once and held until this walk ends.
+    fn describe_value(&mut self, value: &Bound<'py, PyAny>) -> PyResult<HostValue> {
         if value.is_none() {
             return Ok(HostValue::Null);
         }/*DESCRIBE*/

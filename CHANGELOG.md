@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Incoming Python lists and dicts and JavaScript Arrays, Maps and plain objects keep one description and handle
+  throughout a host-value walk (GN-6at, B2.270). Repeated containers previously received fresh handles, so a core
+  could not identify a cycle and reached its depth limit instead. The walk retains the original containers and
+  reuses their descriptions, including the lengths and entry keys already read.
+
 ## 0.0.7
 
 - A contract case can run against a service that the test run of the repository provides (G-5, GN-13j, CK-95). The
