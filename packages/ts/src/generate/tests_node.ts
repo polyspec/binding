@@ -156,8 +156,11 @@ export function nodeTests(model: Model): string {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('node', fn.member.name, 'callable');
-    const cls = `pkg.${langName('node', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    // GN-6s, GN-13f: a member of another repository that an instance value names, through the owner's package.
+    if (fn.library !== undefined) foreignModules.add(fn.library);
+    const prefix = fn.library === undefined ? 'pkg' : `foreign_${fn.library.replaceAll('-', '_')}`;
+    const cls = `${prefix}.${langName('node', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${prefix}.${member}(${args})`;
     if (fn.kind === 'constructor') return `new ${cls}(${args})`;
     if (fn.kind === 'static') return `${cls}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;

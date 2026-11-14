@@ -97,6 +97,30 @@
       },
       "key": "a",
       "result": "1"
+    },
+    {
+      "id": "a_held_source_of_the_sample_library_gives_its_value",
+      "source": {
+        "new": "held_source.new",
+        "args": {
+          "key": "a",
+          "value": "1"
+        }
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_held_source_of_the_sample_library_has_no_other_key",
+      "source": {
+        "new": "held_source.new",
+        "args": {
+          "key": "a",
+          "value": "1"
+        }
+      },
+      "key": "b",
+      "result": null
     }
   ],
   "turned": [

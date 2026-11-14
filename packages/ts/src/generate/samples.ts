@@ -4,10 +4,10 @@
 // U+00FF).
 
 import type { Lang, Name, Type } from '../contract.ts';
-import type { Member, Unit } from '../contract.ts';
+import type { Contract, Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -326,11 +326,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if (unit?.origin === 'callback' && ctx.fixtureNew !== undefined && typeof value === 'object' && value !== null && 'callback' in value) {
     return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(model, unit, value, 'a case value')));
   }
-  if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) {
-    const made = memberById(model, String((value as Record<string, unknown>)['new']))?.returns;
-    const of = typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
-    return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
-  }
+  if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) return ctx.instanceNew(callbackInstance(model, unit, libraryOf(type), value));
   // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
   if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
@@ -1264,6 +1260,50 @@ export function implementerInstance(model: Model, callback: Unit, value: unknown
   return instanceOf(model, implementer.unit.id, value, where);
 }
 
+// GN-6s, GN-13f: the model of the contract of another repository, whose members an instance value at a place of a
+// callback unit of that repository names; each of its members names the library, so a test calls it through the
+// package of that library.
+const ownerModels = new WeakMap<Contract, Model>();
+function ownerModel(model: Model, library: string): Model {
+  const owner = model.foreign.get(library);
+  if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6s, GN-13f)`);
+  const kept = ownerModels.get(owner);
+  if (kept !== undefined) return kept;
+  let built: Model;
+  try {
+    built = buildModel(owner, '0.0.0', owner.library, new Map(), model.foreign);
+  } catch (error) {
+    throw new Unsupported(`the contract of ${library} gives no members to a case: ${error instanceof Error ? error.message : String(error)} (GN-6s, GN-13f)`);
+  }
+  for (const fn of [...built.functions, ...built.objects.flatMap((o) => o.members)]) fn.library = library;
+  ownerModels.set(owner, built);
+  return built;
+}
+
+// GN-13f, GN-6s: the instance of an instance value at a place of a callback unit: the class that its make member
+// gives, a member of this contract or, when this contract has none of that id, of the owner of a callback unit of
+// another repository, whose members take no unit, because the test reads a case value with this contract.
+export function callbackInstance(model: Model, unit: Unit, library: string | undefined, value: unknown): Receiver {
+  const where = `a case value of ${unit.id}`;
+  const id = String((value as Record<string, unknown>)['new'] ?? (value as Record<string, unknown>)['from']);
+  const of = (m: Model): string => {
+    const made = memberById(m, id)?.returns;
+    return typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
+  };
+  if (library === undefined || memberById(model, id) !== undefined) return instanceOf(model, of(model), value, where);
+  const owner = ownerModel(model, library);
+  const receiver = instanceOf(owner, of(owner), value, where);
+  const takesUnit = (type: unknown): boolean => typeof type === 'object' && type !== null && ('unit' in type || Object.values(type).some(takesUnit));
+  const check = (r: Receiver): void => {
+    for (const fn of [r.factory, ...(r.then ?? []).map((step) => step.fn)]) {
+      if (fn.params.some((p) => takesUnit(p.type))) throw new Unsupported(`${where}: ${fn.member.id} of ${library} takes a unit, which a case value of this repository does not give (G-4, GN-6s, GN-13f)`);
+    }
+    if (r.on !== undefined) check(r.on);
+  };
+  check(receiver);
+  return receiver;
+}
+
 // GN-13f, GN-6ap: the instance of an instance value at the place of a generated interface, of the first class of the
 // target that implements the interface and that the factory of the value makes; a value that no such class makes is
 // not written, which fails the test of its case by name (GN-13e).
@@ -1338,6 +1378,7 @@ function instanceAt(model: Model, type: Type, value: unknown, where: string): Re
   const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
   const unit = unitOf(model, inner);
   if (unit?.origin === 'callback' && libraryOf(inner) === undefined) return implementerInstance(model, unit, value);
+  if (unit?.origin === 'callback') return callbackInstance(model, unit, libraryOf(inner), value);
   const iface = interfaceOf(model, inner);
   if (iface !== undefined) return interfaceInstance(model, iface, value);
   return instanceOf(model, unit?.id ?? '', value, where);

@@ -3,6 +3,7 @@
 <!-- source-sha256: 15045cf7af4db5d55565035f398ce578be4d3436d1c836d6e23143a004fad289 -->
 <!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
 <!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
+<!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -71,6 +72,15 @@
   만든다. core_type이 있는 class와 bool, 정수, float의 constructor는 이름을 대고 거부한다. go.mod는 callback unit과 그런
   alias의 라이브러리를 요구한다(GN-15f). 검증: Go 시험이 변경 전에 "the go in row of the class box of sample is not
   generated yet"로 실패한 `generate.test.ts`의 시험.
+- 소유자의 member를 적은 다른 레포의 callback unit 자리의 case 값(예: `consumer.read`의 source에 있는
+  `{"new": "held_source.new", ...}`)은 생성된 시험이 "held_source.new is no member that the binding generates"로
+  실패했다. 이제 각 target의 시험은 그런 member를 소유 패키지로 부른다(Python은 그 패키지의 module, Node는 npm 패키지,
+  WASM은 그 subpath `./wasm`, PHP는 소유자의 namespace, Go는 그 member의 module에 해당하는 package). receiver와 `then`의
+  호출도 함께 한다. unit을 받는 소유자의 member는 이름을 대고 그 case의 시험을 실패시킨다(GN-6s, GN-13f). sample
+  라이브러리에는 `source`를 구현하는 class `held_source`가 있고 `source`의 `read`는 `&self`를 받으며(GN-6w),
+  `consumer.read`의 case가 그것을 만든다. 검증: 변경 전에 시험이 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.135).
+
 - `errors.recognize`를 적은 다른 레포의 callback unit의 member는 Go와 WASM에서 recognize한 오류와 함께 생성되지
   않았다. WASM entry는 소유자의 class를 등록하지 않았고, Go dispatch는 이 레포의 바인딩에 없는
   `binding.Recognize<Unit>`을 적었다. 이제 WASM은 소유 패키지의 subpath `./wasm`의 class를 라이브러리 class 뒤에

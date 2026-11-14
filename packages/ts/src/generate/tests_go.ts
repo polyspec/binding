@@ -30,7 +30,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance,
 } from './samples.ts';
 
 interface Values {
@@ -199,11 +199,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (implemented !== undefined && implemented.library === undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
   // GN-13f, GN-6s: an instance value at a place of a callback of another repository is an instance of the class that
   // its make member returns, as in the other targets.
-  if (implemented !== undefined && isInstanceValue(json)) {
-    const returned = memberById(v.model, String((json as Record<string, unknown>)['new']))?.returns;
-    const of = typeof returned === 'object' && 'unit' in returned ? returned.unit : implemented.unit.id;
-    return made(v, b, instanceOf(v.model, of, json, `a case value of ${implemented.unit.id}`));
-  }
+  if (implemented !== undefined && isInstanceValue(json)) return made(v, b, callbackInstance(v.model, implemented.unit, implemented.library, json));
   // GN-13f, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
   const iface = interfaceOf(v.model, type);
   if (iface !== undefined) return made(v, b, interfaceInstance(v.model, iface, json));
@@ -655,6 +651,14 @@ function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
   const field = keptOwner(v.model, fn)?.fields.find((f) => f.property === fn.member);
   if (field !== undefined) return `kept(${receiver}.${field.writable ? keptField(field) : `${goName(field.name)}()`})`;
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
+    // GN-6s, GN-13f: a member of another repository that an instance value names, through the package of its module in
+    // the Go module of that repository.
+    const owner = fn.library === undefined ? undefined : v.model.foreign.get(fn.library);
+    if (owner !== undefined) {
+      const pkg = goPackage(owner, fn.module);
+      (v.scope.foreignImports ??= new Map()).set(goImport(owner, fn.module), pkg);
+      return `${pkg}.${name}(${args.join(', ')})`;
+    }
     // GN-15a: a function of another module is named by its package.
     if (fn.module === v.module) return `${name}(${args.join(', ')})`;
     v.scope.imports.add(fn.module);
