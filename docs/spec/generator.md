@@ -689,7 +689,9 @@ the design ids are those of the binding design.
   code points; WASM takes a string that `isWellFormed` as its UTF-8 bytes and any other string as its UTF-16 units, so
   that a common text crosses the boundary once, as one text (B2.89); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
   token outside `i64`), a string as its UTF-16 units, an Array, a Map, a plain object (prototype `Object.prototype` or
-  `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
+  `null`, own enumerable string keys), a Date, a function, a `Uint8Array` as `Bytes`, because the out row `bytes` makes
+  a `Uint8Array` and a value that the binding gives must enter again as the same value, and a typed array of another
+  element type or a symbol as `Other`; PHP takes an
   element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass under one
   handle at every place of the object, by which the core knows an object that it has seen, and a Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
   built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
@@ -1823,8 +1825,8 @@ the design ids are those of the binding design.
   and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
   rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16
   units, an Array, a Map (its entries by `Array.from`), a plain object (prototype `Object.prototype` or `null`, the keys
-  of `Object.keys`), a Date, a function, a symbol, a typed array and any other object (with the name of its
-  constructor). A Date and a Map are found by `instanceof` of the global class. A core value leaves by the alias's
+  of `Object.keys`), a Date, a function, a `Uint8Array` as `Bytes` (B-1), a symbol, a typed array of another element
+  type and any other object (with the name of its constructor). A Date and a Map are found by `instanceof` of the global class. A core value leaves by the alias's
   `out` rows of built-in forms, and the same handle is the same object. Every JavaScript operation of the description
   that may run code of the value (a getter, a trap of a proxy, an iterator) is called with `catch` (`Reflect`, and
   `Array.isArray`, `Array.from` and `Object.keys` imported with `catch`), so its exception is a value that the call

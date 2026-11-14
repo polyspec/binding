@@ -563,7 +563,8 @@
   받는다. WASM은 `isWellFormed`인 string을 UTF-8 byte로, 그 밖의 string을 UTF-16 단위로 받으므로 흔한 text는 text
   하나로 경계를 한 번 건넌다(B2.89). Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
-  키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
+  키), Date, 함수로 받고, `Uint8Array`는 `Bytes`로 받는다. out 행 `bytes`가 `Uint8Array`를 만들고, 바인딩이 준 값은 같은
+  값으로 다시 들어와야 하기 때문이다. 다른 원소 타입의 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
   `array_is_list`와 함께, stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
   그리고 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
   행으로, 내장 형식이나 member로 만든다. member는 계약의 생성된 class의 생성자나 static member로, 하나뿐인 parameter가 그
@@ -1494,7 +1495,8 @@
 - **GN-18b** WASM의 `core: {in, out}` 값 alias(U-7), 다른 레포의 것(GN-6k) 포함: 값은 Node와 같이 받고 준다(GN-6e). 모듈은
   JavaScript 값을 Node의 규칙대로 한 단계씩 `HostValue`로 기술한다: number는 `UntypedNumber`, bigint는 `Int`(`i64` 밖이면
   그 십진 token), string은 UTF-16 단위, Array, Map(`Array.from`의 항목), plain object(prototype이 `Object.prototype`이나
-  `null`, 키는 `Object.keys`), Date, 함수, symbol, typed array, 그 밖의 객체(constructor 이름과 함께)다. Date와 Map은 전역
+  `null`, 키는 `Object.keys`), Date, 함수, `Bytes`인 `Uint8Array`(B-1), symbol, 다른 원소 타입의 typed array, 그 밖의
+  객체(constructor 이름과 함께)다. Date와 Map은 전역
   class의 `instanceof`로 찾는다. 코어 값은 alias의 내장 형태 `out` 행으로 나가며, 같은 handle은 같은 객체다. 기술 중 값의
   코드(getter, proxy의 trap, iterator)를 실행할 수 있는 JavaScript 연산은 모두 `catch`로 부른다(`Reflect`와, `catch`로
   import한 `Array.isArray`, `Array.from`, `Object.keys`). 그래서 그 예외는 호출이 그대로 다시 던지는 값이며, 예외는
