@@ -114,6 +114,13 @@ export function pythonTests(model: Model, module: string): string {
     if (unit.module !== '') internalModules.add(internalModule(unit.module));
     return `pkg.${internalModule(unit.module)}.`;
   };
+  // GN-6s, GN-13f: a member of another repository that an instance value names, through the module of its package.
+  const owned = (fn: Fn): string | undefined => {
+    if (fn.library === undefined) return undefined;
+    if (fn.unit.module !== '') throw new Unsupported(`${fn.member.id} of ${fn.library} is in the module ${fn.unit.module}, which a case calls only in the root module (GN-6s, GN-13f)`);
+    foreignModules.add(fn.library);
+    return `foreign_${fn.library.replaceAll('-', '_')}.`;
+  };
   const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
@@ -250,8 +257,9 @@ export function pythonTests(model: Model, module: string): string {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('python', fn.member.name, 'callable');
-    const cls = `${ref(fn.unit)}${langName('python', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `${ref(fn.unit)}${member}(${args})`;
+    const prefix = owned(fn) ?? ref(fn.unit);
+    const cls = `${prefix}${langName('python', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${prefix}${member}(${args})`;
     if (fn.kind === 'constructor') return `${cls}(${args})`;
     if (fn.kind === 'static') return `${cls}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;
@@ -260,8 +268,9 @@ export function pythonTests(model: Model, module: string): string {
   // GN-6ae: the call of the awaited form of a member that waits, a<name>, which gives an awaitable.
   const invokeAwaited = (fn: Fn, args: string, receiver: string): string => {
     const member = `a${langName('python', fn.member.name, 'callable')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
-    if (fn.kind === 'static') return `pkg.${langName('python', fn.unit.name, 'class')}.${member}(${args})`;
+    const prefix = owned(fn) ?? 'pkg.';
+    if (fn.kind === 'function') return `${prefix}${member}(${args})`;
+    if (fn.kind === 'static') return `${prefix}${langName('python', fn.unit.name, 'class')}.${member}(${args})`;
     return `${receiver}.${member}(${args})`;
   };
   // GN-6ae: the function of a function fixture is a function of the module, because a lambda holds no statement: each

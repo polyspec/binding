@@ -1,10 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
+<!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 소유자의 member를 적은 다른 레포의 callback unit 자리의 case 값(예: `consumer.read`의 source에 있는
+  `{"new": "held_source.new", ...}`)은 생성된 시험이 "held_source.new is no member that the binding generates"로
+  실패했다. 이제 각 target의 시험은 그런 member를 소유 패키지로 부른다(Python은 그 패키지의 module, Node는 npm 패키지,
+  WASM은 그 subpath `./wasm`, PHP는 소유자의 namespace, Go는 그 member의 module에 해당하는 package). receiver와 `then`의
+  호출도 함께 한다. unit을 받는 소유자의 member는 이름을 대고 그 case의 시험을 실패시킨다(GN-6s, GN-13f). sample
+  라이브러리에는 `source`를 구현하는 class `held_source`가 있고 `source`의 `read`는 `&self`를 받으며(GN-6w),
+  `consumer.read`의 case가 그것을 만든다. 검증: 변경 전에 시험이 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.135).
 
 - `errors.recognize`를 적은 다른 레포의 callback unit의 member는 Go와 WASM에서 recognize한 오류와 함께 생성되지
   않았다. WASM entry는 소유자의 class를 등록하지 않았고, Go dispatch는 이 레포의 바인딩에 없는

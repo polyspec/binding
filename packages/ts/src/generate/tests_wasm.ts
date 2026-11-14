@@ -67,8 +67,12 @@ export function wasmTests(model: Model): string {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('wasm', fn.member.name, 'callable');
-    const unit = `pkg.${langName('wasm', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    // GN-6s, GN-13f: a member of another repository that an instance value names, through the subpath ./wasm of the
+    // owner's package.
+    if (fn.library !== undefined) foreignModules.add(fn.library);
+    const prefix = fn.library === undefined ? 'pkg' : `foreign_${fn.library.replaceAll('-', '_')}`;
+    const unit = `${prefix}.${langName('wasm', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${prefix}.${member}(${args})`;
     if (fn.kind === 'constructor') return `new ${unit}(${args})`;
     if (fn.kind === 'static') return `${unit}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;

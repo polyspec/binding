@@ -116,7 +116,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const hook = hookCall('php', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('php', fn.member.name, 'callable');
-    const ns = phpNamespace(layout, fn.module);
+    // GN-6s, GN-13f: a member of another repository that an instance value names, in the namespace of the owner.
+    const ownerNamespace = (library: string): string => {
+      const namespace = (model.foreign.get(library)?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+      return `${namespace}${fn.module === '' ? '' : `\\${fn.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}`;
+    };
+    const ns = fn.library === undefined ? phpNamespace(layout, fn.module) : ownerNamespace(fn.library);
     const cls = `\\${ns}\\${langName('php', fn.unit.name, 'class')}`;
     if (fn.kind === 'function') return `\\${ns}\\${member}(${args})`;
     if (fn.kind === 'constructor') return `new ${cls}(${args})`;

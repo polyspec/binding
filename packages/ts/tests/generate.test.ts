@@ -6463,7 +6463,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6476,7 +6476,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6490,7 +6490,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6706,8 +6706,8 @@ test('a Node crate whose only language code is a function parameter has no varia
   const alone = (contract: any): void => {
     const gone = new Set<string>(contract.units.filter((u: any) => u.origin === 'callback' || u.kind === 'alias').map((u: any) => u.id));
     const names = (value: unknown): boolean => [...gone].some((id) => JSON.stringify(value).includes(`"unit":"${id}"`));
-    // A record whose field is such a unit goes with it.
-    for (const unit of contract.units) if (unit.kind === 'record' && names(unit.fields)) gone.add(unit.id);
+    // A record whose field is such a unit goes with it, and so does a class that implements such a unit (GN-6w).
+    for (const unit of contract.units) if ((unit.kind === 'record' && names(unit.fields)) || names(unit.implements ?? [])) gone.add(unit.id);
     contract.units = contract.units.filter((u: any) => !gone.has(u.id));
     const kept = new Set<string>();
     for (const unit of contract.units) {

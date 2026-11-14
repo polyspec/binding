@@ -115,6 +115,9 @@ export interface Fn {
   // N-4 iterate: what the core's iterator gives, an item or the key and the value of an entry, each borrowed.
   yields?: { key?: Type; value: Type };
   fallible: boolean;
+  // GN-6s, GN-13f: the library of a member of another repository that an instance value of a case names, which a test
+  // calls through the package of that library.
+  library?: string;
   // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
   failure: boolean;
   corePath: string;

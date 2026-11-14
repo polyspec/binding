@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A case value at a place of a callback unit of another repository that named a member of the owner, such as
+  `{"new": "held_source.new", ...}` at the source of `consumer.read`, failed its generated test with
+  "held_source.new is no member that the binding generates". The test of each target now calls such a member through
+  the owner's package (Python the module of the package, Node the npm package, WASM its subpath `./wasm`, PHP the
+  namespace of the owner, Go the package of the member's module), with its receiver and its calls of `then`; a member
+  of the owner that takes a unit fails the test of its case by name (GN-6s, GN-13f). The sample library has the class
+  `held_source`, which implements `source`, whose `read` takes `&self` (GN-6w), and the cases of `consumer.read`
+  make it. Verified by `generate.test.ts`, whose test failed before the change; `make e2e REPO=tests/e2e/consumer
+  DEPS=tests/e2e/sample` is queued (B2.135).
+
 - A member of a callback unit of another repository that names `errors.recognize` was not generated for Go and WASM
   with its recognized errors: the WASM entry did not register the classes of the owner, and the Go dispatch named
   `binding.Recognize<Unit>`, which the binding of this repository does not have. WASM now registers the classes of
