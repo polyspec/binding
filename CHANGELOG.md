@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- `release-platform-assets` requires the whole set of the assets of a release before it uploads (GN-19a, GN-19g): the
+  wheel of each platform, the npm package with the platform package of each platform, and the PHP extension of each
+  platform for each PHP minor of `phpExtension.minors` of `config/toolchain.json` of the repository, which the recipe
+  reads. It names the label of each missing asset, and fails for a file of a PHP minor outside the list, for two files
+  of one label and for a repository that names no such list. The recipe counted the extensions and passed any multiple
+  of three, so the assets of a release run (json 0.0.27) held only the PHP 8.4 extension of each platform, and the
+  release uploaded no extension for PHP 8.5, which the requirement `php >=8.4` of the extension admits; it counted the
+  wheels, so two wheels of one platform passed in place of a missing one. A repository with the target `php` adds
+  `"phpExtension": {"minors": ["8.4", "8.5"]}` to `config/toolchain.json`. Verified by `node --test
+  packages/ts/tests/release-recipes.test.ts`, whose new test passed the 8.4 extensions alone through
+  `gh release upload` before the change. (B2.268)
+
 ## 0.0.5
 
 - `release-wheel` builds a manylinux wheel on Linux, for the policy `manylinux_2_34` (GN-19c). The PEP 517 backend of

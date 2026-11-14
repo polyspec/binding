@@ -2682,7 +2682,15 @@ the design ids are those of the binding design.
   | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
 
   A PHP extension has one entry for each platform and each PHP minor that it supports, and that entry installs the PHP
-  of that minor before it builds. Every build runs in a copy of the tree of the tag `vX.Y.Z` with a `CARGO_TARGET_DIR`
+  of that minor before it builds. The PHP minors that an extension supports are the list
+  `phpExtension.minors` of `config/toolchain.json` of the repository (such as `["8.4", "8.5"]`), and no other file of
+  the repository names them: its workflow builds the extension for each of them (GN-19i), and `release-platform-assets`
+  reads the list and requires the extension of each platform for each of them (GN-19g). The first is the minor of the
+  requirement `php >=8.4` of the `composer.json` of the extension (GN-3c), and the list ends with the latest minor that
+  the extension builds for. Why a list in the repository: the requirement of `composer.json` has no upper bound, so it
+  does not name the minors to build, and the minors that PIE can install are those whose archive the release holds;
+  `config/toolchain.json` is the file of the toolchains of the repository that the recipes read already (`llvm.version`).
+  Every build runs in a copy of the tree of the tag `vX.Y.Z` with a `CARGO_TARGET_DIR`
   of the run, so that an asset holds nothing of an earlier build. The workflow of CI builds the same assets of its
   commit with the same matrix, and its last job requires those jobs: a release tags only a commit whose CI run
   passed, so an asset that does not build stops the release before a tag exists.
@@ -2777,7 +2785,13 @@ the design ids are those of the binding design.
 - **GN-19g** Before a recipe of a release builds an archive, it runs `binding check <interface.json> --release` for
   each contract of the repository, every one to its end, and stops when one fails (CK-70). An asset of the GitHub
   Release has the label `<vendor>-<product>-<runtime>-<version>`, followed by `-<platform>` for an asset of a
-  platform and by `-php<X.Y>-<platform>` for a PHP extension.
+  platform and by `-php<X.Y>-<platform>` for a PHP extension. Before it uploads, `release-platform-assets` requires
+  the whole set of the targets of the contract, one asset of each label: the wheel of each platform of GN-19a, the npm
+  package and, for the target `node`, the platform package of each platform, and the PHP extension of each platform
+  for each PHP minor of GN-19a. It fails and names the label of each missing asset, a file that names no platform or no
+  supported PHP minor, and two files of one label. Why: a release whose assets miss a platform or a
+  PHP minor publishes a package that does not install there, and a count of the files does not see two files of one
+  platform in place of two platforms.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]` writes
   the release recipes of the contract into `<packages of the contract>/release.mk`: `packages/release.mk` for a core
   at `packages/rust`, and `packages/<component>/release.mk` for a core at `packages/<component>/rust`, whose targets
@@ -2805,7 +2819,8 @@ the design ids are those of the binding design.
   target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
-  `llvm.version` of `config/toolchain.json`, and the musl targets of its arches in `rust-toolchain.toml`, and ignores
+  `llvm.version` of `config/toolchain.json` and the PHP minors of its extension in `phpExtension.minors` of that file
+  (GN-19a), and the musl targets of its arches in `rust-toolchain.toml`, and ignores
   the file of recipes and the folder `npm/` of its npm package. The recipes hold the four rules that copies by hand
   broke:
   - Each recipe that builds a binding first runs `binding generate --contract <interface.json> --target <target>` of
@@ -2832,7 +2847,7 @@ the design ids are those of the binding design.
   (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`), each step as one make target, the build steps after the first also
   after a failed one (`if: ${{ !cancelled() }}`): the install of its tools, `make release-recipes` (the target of the
   repository that runs `binding release-recipes`), `make release-go-static`, `make release-wheel`, `make install-llvm`,
-  `make release-php-ext PHP=php` for each PHP minor that it installs, and `make release-npm-platform`, and uploads
+  `make release-php-ext PHP=php` for each PHP minor of GN-19a, after it installs that PHP, and `make release-npm-platform`, and uploads
   `var/release/assets` as the artifact `assets-<platform>`. Its job `npm` runs `make release-recipes`, `make
   install-wasm-bindgen` and `make release-npm` and uploads the artifact `assets-npm`. The release workflow downloads
   the artifacts into `var/release/assets`, then runs `make release-go-module` and `make release-platform-assets` after

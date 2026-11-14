@@ -102,6 +102,18 @@ install-wasm-bindgen:
 endif
 `;
 
+// GN-19a: the script of Node.js that prints the PHP minors of the extension, phpExtension.minors of config/toolchain.json of
+// the repository, separated by spaces, and ends with 2 and names the file when the list is missing, empty or holds a value
+// that is no <major>.<minor>. The text is one argument in single quotes of the shell and a line of make, so it holds no
+// single quote and writes each $ as $$.
+function minorsScript(step: string): string {
+  return 'const fs = require("fs"); let minors; '
+    + 'try { minors = JSON.parse(fs.readFileSync("config/toolchain.json", "utf8")).phpExtension?.minors; } catch (error) { minors = undefined; } '
+    + 'if (!Array.isArray(minors) || minors.length === 0 || !minors.every((minor) => typeof minor === "string" && /^[0-9]+[.][0-9]+$$/.test(minor))) { '
+    + `console.error("${step}: config/toolchain.json names no PHP minor of the extension in phpExtension.minors, a list such as [\\"8.4\\", \\"8.5\\"] (GN-19a)"); process.exit(2); } `
+    + 'console.log(minors.join(" "));';
+}
+
 // The text of the recipes of a contract (GN-19h).
 export function releaseRecipes(contract: Contract): Recipes {
   const base = componentBase(contract);
@@ -293,9 +305,10 @@ ${require('BINDING_RUN', 'the command that starts binding')}
 	$(BINDING_RUN) check ${contractPath} --release
 `);
 
-  // GN-19g: the assets of each platform with their labels, and the counts that the targets of the contract give.
+  // GN-19g: the assets of each platform with their labels, and the labels that the targets of the contract require, one
+  // asset of each: a missing platform or PHP minor is named, and two files of one label do not stand for another.
   const loops: string[] = [];
-  const counts: string[] = [];
+  const wanted: string[] = [];
   if (has('python')) {
     loops.push(`	for file in "$$dir"/wheel/*.whl; do \\
 	[ -e "$$file" ] || continue; \\
@@ -303,9 +316,9 @@ ${require('BINDING_RUN', 'the command that starts binding')}
 ${PLATFORMS.map((p) => `	${p.wheel}) platform=${p.platform} ;; \\`).join('\n')}
 	*) fail "$$file is no wheel of a platform of the release" ;; \\
 	esac; \\
-	set -- "$$@" "$$file#${label}-python-$$version-$$platform"; wheels=$$((wheels + 1)); \\
+	take "$$file" "${label}-python-$$version-$$platform"; set -- "$$@" "$$file#${label}-python-$$version-$$platform"; \\
 	done; \\`);
-    counts.push(`	test "$$wheels" -eq ${PLATFORMS.length} || fail "$$dir/wheel holds $$wheels wheels, not one of each of the ${PLATFORMS.length} platforms"; \\`);
+    wanted.push(...PLATFORMS.map((p) => `${label}-python-$$version-${p.platform}`));
   }
   if (has('node') || has('wasm')) {
     const file = npm.replace(/^@/, '').replace('/', '-');
@@ -315,10 +328,9 @@ ${PLATFORMS.map((p) => `	${p.wheel}) platform=${p.platform} ;; \\`).join('\n')}
 	"${file}-$$version") label=${label}-ts-$$version ;; \\
 ${has('node') ? `${PLATFORMS.map((p) => `	"${file}-${p.platform}-$$version") label=${label}-ts-$$version-${p.platform} ;; \\`).join('\n')}\n` : ''}	*) fail "$$file is no npm package of the release $$version" ;; \\
 	esac; \\
-	set -- "$$@" "$$file#$$label"; npm=$$((npm + 1)); \\
+	take "$$file" "$$label"; set -- "$$@" "$$file#$$label"; \\
 	done; \\`);
-    const want = has('node') ? PLATFORMS.length + 1 : 1;
-    counts.push(`	test "$$npm" -eq ${want} || fail "$$dir/npm holds $$npm packages, not ${has('node') ? `the package and one of each of the ${PLATFORMS.length} platforms` : 'the package'}"; \\`);
+    wanted.push(`${label}-ts-$$version`, ...(has('node') ? PLATFORMS.map((p) => `${label}-ts-$$version-${p.platform}`) : []));
   }
   if (has('php')) {
     loops.push(`	for file in "$$dir"/php-ext/*.zip; do \\
@@ -329,20 +341,25 @@ ${PLATFORMS.map((p) => `	php_${extension}-v"$$version"_php*-${p.pie}-*) platform
 	*) fail "$$file is no PHP extension of the release $$version" ;; \\
 	esac; \\
 	minor=$$(echo "$$name" | sed 's/.*_php\\([0-9]*\\.[0-9]*\\)-.*/\\1/'); \\
-	set -- "$$@" "$$file#${label}-php-ext-$$version-php$$minor-$$platform"; php=$$((php + 1)); \\
-	done; \\`);
-    counts.push(`	test "$$php" -gt 0 && test $$((php % ${PLATFORMS.length})) -eq 0 || fail "$$dir/php-ext holds $$php extensions, not one of each of the ${PLATFORMS.length} platforms for each PHP minor"; \\`);
+	case " $$minors " in *" $$minor "*) ;; *) fail "$$file is for PHP $$minor, no PHP minor of phpExtension.minors of config/toolchain.json: $$minors" ;; esac; \\
+	take "$$file" "${label}-php-ext-$$version-php$$minor-$$platform"; set -- "$$@" "$$file#${label}-php-ext-$$version-php$$minor-$$platform"; \\
+	done; \\
+	for minor in $$minors; do wanted="$$wanted ${PLATFORMS.map((p) => `${label}-php-ext-$$version-php$$minor-${p.platform}`).join(' ')}"; done; \\`);
   }
   const step = name('release-platform-assets');
   add('release-platform-assets', `${head('release-platform-assets', `release-platform-assets uploads the assets of each platform to the draft GitHub Release of TAG with gh (GN-19g), each
 under the label ${label}-<runtime>-<version>-<platform>, or -php<X.Y>-<platform> for the PHP extension, and the npm package
 without a platform under ${label}-ts-<version>. A file keeps the name that its packer gave, which PIE and the package
-managers read. It fails before an upload when an asset of a platform is missing or a file names no platform.`, '')}
+managers read. Before an upload it requires one asset of each label that the targets of the contract give: each platform${has('php') ? `,
+and each PHP minor of phpExtension.minors of config/toolchain.json for the PHP extension` : ''}. It names the label of each
+missing asset, and fails for a file that names no platform${has('php') ? ' or no such PHP minor' : ''} and for two files of one label.`, '')}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
-	@set -e; version=$$(echo "$$TAG" | sed 's/^v//'); dir=$(RELEASE_ASSETS); fail() { echo "${step}: $$1" >&2; exit 1; }; \\
-	set --; wheels=0; npm=0; php=0; \\
-${loops.join('\n')}
-${counts.join('\n')}
+${has('php') ? `${require('NODE', 'the Node.js of the checkout')}\n` : ''}	@set -e; version=$$(echo "$$TAG" | sed 's/^v//'); dir=$(RELEASE_ASSETS); fail() { echo "${step}: $$1" >&2; exit 1; }; \\
+	set --; seen=' '; wanted=; \\
+	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; }; \\
+${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loops.join('\n')}
+	missing=; for want in ${wanted.join(' ')} $$wanted; do case "$$seen" in *" $$want "*) ;; *) missing="$$missing $$want" ;; esac; done; \\
+	test -z "$$missing" || fail "$$dir lacks$$missing"; \\
 	set -x; \\
 	gh release upload "$$TAG" "$$@"
 `);

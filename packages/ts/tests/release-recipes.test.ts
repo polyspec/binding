@@ -18,6 +18,8 @@ const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
 const fixtureContract = (): Contract => JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as Contract;
 // The major release of LLVM that a repository pins in config/toolchain.json for the bindgen of ext-php-rs.
 const LLVM_MAJOR = '21';
+// The PHP minors of the extension that a repository names in phpExtension.minors of config/toolchain.json (GN-19a).
+const PHP_MINORS = ['8.4', '8.5'];
 
 test('the recipes of a contract name its crates, packages and targets, and a component has its own file and targets (GN-19h)', () => {
   const contract = fixtureContract();
@@ -86,7 +88,7 @@ function sandbox(t: TestContext, host: string, change: (contract: Contract) => v
   execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
   execFileSync(process.execPath, [cli, 'release-recipes', '--root', root]);
   mkdirSync(join(root, 'config'));
-  writeFileSync(join(root, 'config/toolchain.json'), `{\n  "schema": 1,\n  "llvm": {\n    "version": "${LLVM_MAJOR}"\n  }\n}\n`);
+  writeFileSync(join(root, 'config/toolchain.json'), `${JSON.stringify({ schema: 1, llvm: { version: LLVM_MAJOR }, phpExtension: { minors: PHP_MINORS } }, null, 2)}\n`);
   const bin = join(root, '.stand-ins');
   const sysroot = join(root, '.sysroot');
   const llvm = join(root, '.llvm');
@@ -320,7 +322,9 @@ test('the wheel that release-wheel builds on each platform is a wheel of that pl
   // The names that npm pack and the PHP recipe gave in a release run (json 0.0.27), for the sample at 0.0.3.
   put('npm/polyspec-sample-0.0.3.tgz');
   for (const platform of ['linux-x64-gnu', 'linux-arm64-gnu', 'darwin-arm64']) put(`npm/polyspec-sample-${platform}-0.0.3.tgz`);
-  for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php8.4-${pie}-nts.zip`);
+  for (const minor of PHP_MINORS) {
+    for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php${minor}-${pie}-nts.zip`);
+  }
   const run = box.make('release-platform-assets', 'TAG=v0.0.3');
   assert.equal(run.status, 0, run.output);
   const labels = (box.calls().find((call) => call.tool === 'gh')?.args ?? []).slice(3).filter((arg) => arg.includes('/wheel/')).map((arg) => arg.slice(arg.lastIndexOf('/') + 1)).sort();
@@ -331,7 +335,7 @@ test('the wheel that release-wheel builds on each platform is a wheel of that pl
   ]);
 });
 
-test('the assets of each platform are counted and labelled before an upload (GN-19g)', (t) => {
+test('the assets of each platform are required and labelled before an upload (GN-19g)', (t) => {
   const box = sandbox(t, 'aarch64-unknown-linux-gnu');
   standIn(box.bin, 'gh', '');
   const assets = join(box.root, 'var/release/assets');
@@ -343,11 +347,13 @@ test('the assets of each platform are counted and labelled before an upload (GN-
   put('wheel/polyspec_sample-0.0.3-cp314-abi3-manylinux_2_39_aarch64.whl');
   put('npm/polyspec-sample-0.0.3.tgz');
   for (const platform of ['linux-x64-gnu', 'linux-arm64-gnu', 'darwin-arm64']) put(`npm/polyspec-sample-${platform}-0.0.3.tgz`);
-  for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php8.4-${pie}-nts.zip`);
+  for (const minor of PHP_MINORS) {
+    for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php${minor}-${pie}-nts.zip`);
+  }
   const missing = box.make('release-platform-assets', 'TAG=v0.0.3');
   // make ends with 2 for a recipe that fails, whatever status the recipe gave.
   assert.equal(missing.status, 2, missing.output);
-  assert.match(missing.output, /holds 2 wheels, not one of each of the 3 platforms/);
+  assert.match(missing.output, /var\/release\/assets lacks polyspec-sample-python-0\.0\.3-darwin-arm64$/m);
   assert.equal(box.calls().filter((call) => call.tool === 'gh').length, 0);
   put('wheel/polyspec_sample-0.0.3-cp314-abi3-macosx_11_0_arm64.whl');
   const run = box.make('release-platform-assets', 'TAG=v0.0.3');
@@ -359,6 +365,9 @@ test('the assets of each platform are counted and labelled before an upload (GN-
     'polyspec-sample-php-ext-0.0.3-php8.4-darwin-arm64',
     'polyspec-sample-php-ext-0.0.3-php8.4-linux-arm64-gnu',
     'polyspec-sample-php-ext-0.0.3-php8.4-linux-x64-gnu',
+    'polyspec-sample-php-ext-0.0.3-php8.5-darwin-arm64',
+    'polyspec-sample-php-ext-0.0.3-php8.5-linux-arm64-gnu',
+    'polyspec-sample-php-ext-0.0.3-php8.5-linux-x64-gnu',
     'polyspec-sample-python-0.0.3-darwin-arm64',
     'polyspec-sample-python-0.0.3-linux-arm64-gnu',
     'polyspec-sample-python-0.0.3-linux-x64-gnu',
@@ -367,6 +376,63 @@ test('the assets of each platform are counted and labelled before an upload (GN-
     'polyspec-sample-ts-0.0.3-linux-arm64-gnu',
     'polyspec-sample-ts-0.0.3-linux-x64-gnu',
   ]);
+});
+
+// B2.268: the assets of a release run (json 0.0.27) held the extension of PHP 8.4 alone on each platform, and the
+// recipe counted the extensions, so it uploaded no extension for PHP 8.5, which the requirement php >=8.4 admits.
+test('the upload requires the asset of each label: each platform, and each PHP minor of config/toolchain.json (GN-19a, GN-19g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  standIn(box.bin, 'gh', '');
+  const assets = join(box.root, 'var/release/assets');
+  const put = (path: string): void => {
+    mkdirSync(join(assets, path, '..'), { recursive: true });
+    writeFileSync(join(assets, path), '');
+  };
+  const remove = (path: string): void => { rmSync(join(assets, path)); };
+  const platforms = { 'x86_64-linux-glibc': 'linux-x64-gnu', 'arm64-linux-glibc': 'linux-arm64-gnu', 'arm64-darwin-bsdlibc': 'darwin-arm64' };
+  for (const wheel of ['manylinux_2_34_x86_64', 'manylinux_2_34_aarch64', 'macosx_11_0_arm64']) put(`wheel/polyspec_sample-0.0.3-cp314-abi3-${wheel}.whl`);
+  put('npm/polyspec-sample-0.0.3.tgz');
+  for (const platform of Object.values(platforms)) put(`npm/polyspec-sample-${platform}-0.0.3.tgz`);
+  for (const pie of Object.keys(platforms)) put(`php-ext/php_polyspec_sample-v0.0.3_php8.4-${pie}-nts.zip`);
+  const refused = (expected: RegExp): void => {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make('release-platform-assets', 'TAG=v0.0.3');
+    assert.equal(run.status, 2, run.output);
+    assert.match(run.output, expected);
+    assert.equal(box.calls().filter((call) => call.tool === 'gh').length, 0);
+  };
+  refused(/release-platform-assets: var\/release\/assets lacks polyspec-sample-php-ext-0\.0\.3-php8\.5-linux-x64-gnu polyspec-sample-php-ext-0\.0\.3-php8\.5-linux-arm64-gnu polyspec-sample-php-ext-0\.0\.3-php8\.5-darwin-arm64$/m);
+  for (const pie of Object.keys(platforms)) put(`php-ext/php_polyspec_sample-v0.0.3_php8.5-${pie}-nts.zip`);
+  // A platform package or an extension that is missing is named by its label.
+  remove('php-ext/php_polyspec_sample-v0.0.3_php8.4-arm64-darwin-bsdlibc-nts.zip');
+  remove('npm/polyspec-sample-linux-x64-gnu-0.0.3.tgz');
+  refused(/lacks polyspec-sample-ts-0\.0\.3-linux-x64-gnu polyspec-sample-php-ext-0\.0\.3-php8\.4-darwin-arm64$/m);
+  put('php-ext/php_polyspec_sample-v0.0.3_php8.4-arm64-darwin-bsdlibc-nts.zip');
+  put('npm/polyspec-sample-linux-x64-gnu-0.0.3.tgz');
+  // Two wheels of one platform do not stand for the wheel of another.
+  remove('wheel/polyspec_sample-0.0.3-cp314-abi3-macosx_11_0_arm64.whl');
+  put('wheel/polyspec_sample-0.0.3-cp314-abi3-manylinux_2_39_x86_64.whl');
+  refused(/manylinux_2_\d+_x86_64\.whl has the label polyspec-sample-python-0\.0\.3-linux-x64-gnu of another asset/);
+  remove('wheel/polyspec_sample-0.0.3-cp314-abi3-manylinux_2_39_x86_64.whl');
+  put('wheel/polyspec_sample-0.0.3-cp314-abi3-macosx_11_0_arm64.whl');
+  // An extension of a PHP minor that the repository does not name is refused.
+  put('php-ext/php_polyspec_sample-v0.0.3_php8.3-x86_64-linux-glibc-nts.zip');
+  refused(/php8\.3-x86_64-linux-glibc-nts\.zip is for PHP 8\.3, no PHP minor of phpExtension\.minors of config\/toolchain\.json: 8\.4 8\.5/);
+  remove('php-ext/php_polyspec_sample-v0.0.3_php8.3-x86_64-linux-glibc-nts.zip');
+  // A repository that names no PHP minor of its extension is refused before an upload, since no set can be required.
+  const toolchain = join(box.root, 'config/toolchain.json');
+  const named = readFileSync(toolchain, 'utf8');
+  for (const minors of [undefined, [], ['8']]) {
+    writeFileSync(toolchain, JSON.stringify({ schema: 1, llvm: { version: LLVM_MAJOR }, ...(minors === undefined ? {} : { phpExtension: { minors } }) }));
+    refused(/release-platform-assets: config\/toolchain\.json names no PHP minor of the extension in phpExtension\.minors, a list such as \["8\.4", "8\.5"\] \(GN-19a\)/);
+  }
+  writeFileSync(toolchain, named);
+  writeFileSync(box.env['CALLS'] as string, '');
+  const run = box.make('release-platform-assets', 'TAG=v0.0.3');
+  assert.equal(run.status, 0, run.output);
+  const labels = (box.calls().find((call) => call.tool === 'gh')?.args ?? []).slice(3).map((arg) => arg.slice(arg.indexOf('#') + 1));
+  assert.equal(labels.filter((label) => label.includes('-php-ext-')).length, 6);
+  assert.equal(labels.length, 13);
 });
 
 test('binding check reports a Makefile that does not include the recipes, a recipe copied by hand and recipes that binding writes otherwise (CK-94)', (t) => {

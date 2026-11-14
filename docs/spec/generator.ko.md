@@ -2165,7 +2165,13 @@
   | `linux-arm64-gnu` | `ubuntu-26.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
   | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
 
-  PHP 확장은 지원하는 플랫폼과 PHP minor마다 항목 하나를 갖고, 그 항목은 빌드 전에 그 minor의 PHP를 설치한다. 모든 빌드는
+  PHP 확장은 지원하는 플랫폼과 PHP minor마다 항목 하나를 갖고, 그 항목은 빌드 전에 그 minor의 PHP를 설치한다. 확장이
+  지원하는 PHP minor는 레포의 `config/toolchain.json`의 목록 `phpExtension.minors`(예: `["8.4", "8.5"]`)이고, 레포의 다른 어느
+  파일도 그것을 적지 않는다. 레포의 workflow는 그 minor마다 확장을 빌드하고(GN-19i), `release-platform-assets`는 그 목록을
+  읽어 그 minor마다 플랫폼마다의 확장을 요구한다(GN-19g). 첫 minor는 확장의 `composer.json`의 요구 `php >=8.4`의 minor이고
+  (GN-3c), 목록은 확장이 빌드되는 최신 minor로 끝난다. 레포의 목록인 이유: `composer.json`의 요구에는 상한이 없으므로 빌드할
+  minor를 정하지 못하고, PIE가 설치할 수 있는 minor는 release가 archive를 가진 minor다. `config/toolchain.json`은 recipe가
+  이미 읽는(`llvm.version`) 레포의 toolchain 파일이다. 모든 빌드는
   tag `vX.Y.Z`의 tree 사본에서 실행마다의 `CARGO_TARGET_DIR`로 실행하므로, asset은 이전 빌드의 것을 담지 않는다. CI의
   workflow는 같은 matrix로 자기 commit의 같은 asset을 빌드하고 그 마지막 job이 그 job들을 요구한다. release는 CI 실행이
   통과한 commit에만 tag를 달므로, 빌드되지 않는 asset은 tag가 생기기 전에 release를 막는다.
@@ -2249,7 +2255,11 @@
 - **GN-19g** release의 recipe는 archive를 빌드하기 전에 레포의 contract마다 `binding check <interface.json> --release`를
   실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). GitHub Release의 asset은 label
   `<vendor>-<product>-<runtime>-<version>`을 갖고, 플랫폼의 asset은 그 뒤에 `-<platform>`, PHP 확장은
-  `-php<X.Y>-<platform>`이 붙는다.
+  `-php<X.Y>-<platform>`이 붙는다. `release-platform-assets`는 upload 전에 계약의 target이 정하는 집합 전체를, label마다
+  asset 하나씩 요구한다. GN-19a의 플랫폼마다의 wheel, npm 패키지와 target `node`이면 플랫폼마다의 플랫폼 패키지, GN-19a의
+  PHP minor마다 플랫폼마다의 PHP 확장이다. 빠진 asset마다 그 label을 대며 실패하고, 플랫폼이나 지원 PHP minor를 적지 않은
+  파일과 label이 같은 두 파일에도 실패한다. 이유: 플랫폼이나 PHP minor가 빠진 release는 거기에 설치되지
+  않는 패키지를 내고, 파일의 개수는 두 플랫폼 대신 한 플랫폼의 두 파일이 있는 것을 보지 못한다.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]`는 계약의
   release recipe를 `<계약의 packages>/release.mk`에 쓴다. core가 `packages/rust`이면 `packages/release.mk`이고, core가
   `packages/<component>/rust`이면 `packages/<component>/release.mk`이며, 그 target은 `-<component>`로 끝나서 한 레포의 두
@@ -2275,7 +2285,7 @@
   도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
   적는다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
-  `llvm.version`에, 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
+  `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
   ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.
   - 바인딩을 빌드하는 recipe는 먼저 자기 target의 `binding generate --contract <interface.json> --target <target>`을
     실행한다. 생성된 파일은 추적되지 않으므로 tag의 checkout에는 그것이 하나도 없기 때문이다.
@@ -2297,7 +2307,7 @@
   `platform`은 GN-19a의 플랫폼마다 그 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 각 단계를 make target
   하나로 실행하고, 첫 빌드 단계 뒤의 빌드 단계는 앞 단계가 실패해도 실행한다(`if: ${{ !cancelled() }}`). 단계는 도구
   설치, `make release-recipes`(`binding release-recipes`를 실행하는 레포의 target), `make release-go-static`, `make
-  release-wheel`, `make install-llvm`, 설치한 PHP minor마다 `make release-php-ext PHP=php`, `make release-npm-platform`이고,
+  release-wheel`, `make install-llvm`, GN-19a의 PHP minor마다 그 PHP를 설치한 뒤 `make release-php-ext PHP=php`, `make release-npm-platform`이고,
   `var/release/assets`를 artifact `assets-<platform>`으로 upload한다. job `npm`은 `make release-recipes`, `make
   install-wasm-bindgen`, `make release-npm`을 실행하고 artifact `assets-npm`을 upload한다. release workflow는 artifact를
   `var/release/assets`에 내려받고, draft release가 생긴 뒤 `make release-go-module`과 `make release-platform-assets`를

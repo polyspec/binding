@@ -19,6 +19,16 @@
 
 ## Unreleased
 
+- `release-platform-assets`는 upload 전에 release asset의 집합 전체를 요구한다(GN-19a, GN-19g). 플랫폼마다의 wheel,
+  npm 패키지와 플랫폼마다의 플랫폼 패키지, 레포의 `config/toolchain.json`의 `phpExtension.minors`의 PHP minor마다
+  플랫폼마다의 PHP 확장이며, recipe가 그 목록을 읽는다. 빠진 asset마다 label을 대고, 목록 밖 PHP minor의 파일, label이
+  같은 두 파일, 그 목록이 없는 레포에 실패한다. recipe는 확장의 개수를 세어 3의 배수면 통과했으므로 release 실행(json
+  0.0.27)의 asset은 플랫폼마다 PHP 8.4 확장만 가졌고, release는 확장의 요구 `php >=8.4`가 허용하는 PHP 8.5의 확장을 올리지
+  않았다. wheel도 개수를 세었으므로 빠진 플랫폼 대신 한 플랫폼의 wheel 두 개가 통과했다. target `php`를 가진 레포는
+  `config/toolchain.json`에 `"phpExtension": {"minors": ["8.4", "8.5"]}`를 더한다. `node --test
+  packages/ts/tests/release-recipes.test.ts`로 검증했고, 그 새 시험은 변경 전에 8.4 확장만으로 `gh release upload`까지
+  통과했다. (B2.268)
+
 ## 0.0.5
 
 - `release-wheel`은 Linux에서 policy `manylinux_2_34`의 manylinux wheel을 빌드한다(GN-19c). maturin의 PEP 517
