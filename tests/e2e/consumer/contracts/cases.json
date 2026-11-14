@@ -176,5 +176,60 @@
       ],
       "result": 3
     }
+  ],
+  "consult": [
+    {
+      "id": "a_held_key_is_its_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "x"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "x"
+    },
+    {
+      "id": "a_refused_key_is_the_kind_of_the_lookup",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "refused"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "kind refused"
+    }
   ]
 }

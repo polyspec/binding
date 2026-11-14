@@ -915,6 +915,20 @@ ${outs.join('\n')}
     }`;
   }).join('\n');
   const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  // GN-6s: an error unit of the owner of a callback unit of another repository is found by its name and read in the
+  // scope of the class of its category in the owner's namespace, which declares kind.
+  const recognizedClasses = (m: (typeof cb.members)[number]): string => {
+    if (cb.library === undefined) return `kind_of_recognized(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}])`;
+    const owner = model.foreign.get(cb.library);
+    const namespace = (owner?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+    const pairs = (m.recognized?.units ?? []).map((u) => {
+      const name = `${phpNamespace({ namespace, extension: '' }, u.unit.module)}\\${langName('php', u.unit.name, 'class')}`;
+      const category = owner?.errors.classes[u.category]?.['php'];
+      if (category === undefined) throw new Unsupported(`${cb.library}.${m.member.id}: errors.classes.${u.category} of ${cb.library} names no PHP class (GN-6s)`);
+      return `(${rustString(name)}, ${rustString(category)})`;
+    });
+    return `kind_of_owner_recognized(exception, &[${pairs.join(', ')}])`;
+  };
   const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
@@ -922,7 +936,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Php(exception) = &error else {
         return thrown(error);
     };
-    let core = kind_of_recognized(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = ${recognizedClasses(m)}.and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
         Some(core) => binding_core::Failure::Kind(core),
         None => thrown(error),
@@ -957,6 +971,35 @@ ${recognizing}`;
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
 // members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
+// U-3, GN-6s: the kind and the message of an exception that is an instance of an error unit of the owner of a callback
+// unit of another repository; each unit is found by its name and read in the scope of its category class.
+const OWNER_RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the error classes of the owner of a
+/// callback unit of another repository, each given with its category class (GN-6d, GN-6s).
+fn kind_of_owner_recognized(exception: &ZendObject, classes: &[(&str, &str)]) -> Option<(String, String)> {
+    // An exception whose class, kind or message cannot be read, or a class that is not loaded, is no recognized one;
+    // the caller raises it as it was thrown.
+    let Ok(found) = read_kind_of_owner_recognized(exception, classes) else {
+        return None;
+    };
+    found
+}
+/// U-3: what kind_of_owner_recognized gives, or the error of ext-php-rs that reading a property met.
+fn read_kind_of_owner_recognized(exception: &ZendObject, classes: &[(&str, &str)]) -> Result<Option<(String, String)>, ext_php_rs::error::Error> {
+    for (name, category) in classes {
+        let (Some(class), Some(scope)) = (ClassEntry::try_find(name), ClassEntry::try_find(category)) else {
+            return Ok(None);
+        };
+        if exception.instance_of(class) {
+            let kind = with_scope(scope, || exception.get_property::<String>("kind"))?;
+            let message = with_scope(scope, || exception.get_property::<String>("message"))?;
+            return Ok(Some((kind, message)));
+        }
+    }
+    Ok(None)
+}
+`;
+
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
 fn kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
@@ -1223,6 +1266,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
     ...model.interfaces.map((i) => interfaceRust(model, i)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
+    model.foreignCallbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? OWNER_RECOGNIZED_KIND : '',
     failureRust(model),
     passingRust(model),
     foreignFailurePhp(model),

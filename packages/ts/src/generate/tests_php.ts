@@ -99,8 +99,9 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `\\${namespace}${unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}\\${langName('php', unit.name, 'class')}`;
   };
   // GN-13: an instance of an error unit with a kind, by the constructor of its category class (GN-10).
-  const errorNew = (unit: Unit, kind: string, message: string): string =>
-    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${phpText(message)}, ${phpText(kind)})`;
+  // GN-6s: an error unit of the owner of a callback unit of another repository, by the namespace of its package.
+  const errorNew = (unit: Unit, kind: string, message: string, library?: string): string =>
+    `new ${library === undefined ? `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignClass(library, unit)}(${phpText(message)}, ${phpText(kind)})`;
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.

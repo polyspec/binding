@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 015db5fb5394f0e5a2094b1b224f8a6050da0e08f4e7823bd1d00bf028ec97fd -->
+<!-- source-sha256: 7db6d24cc0df5d9a0a116ea1ee6c7208af456c7c9a7f4d39e33a604555332f53 -->
 # 생성기
 
 [English](generator.md)
@@ -505,7 +505,8 @@
   않으면 다시 던져 둔다. Go는 recognize한 오류의 kind와 메시지를 오류의 index 대신 C ABI에 넘긴다. 이유: recognize한 실패의
   뜻은 코어가 정하고(U-3), binding은 Rust 소스를 읽지 않으므로 코어 오류를 만드는 함수를 계약이 적는다. 언어 코드가 만든
   인스턴스는 property 값이 없으므로(GN-7a) 인스턴스의 property는 코어에 가지 않는다. 다른 라이브러리의 오류 unit을
-  recognize하는 것은 이름을 대어 거부한다(G-4).
+  recognize하는 이 계약의 callback unit은 이름을 대어 거부한다(G-4). 다른 레포의 callback unit은 GN-6s대로 그 소유자의
+  오류 unit을 recognize한다.
 - **GN-6ap** origin이 `generated`인 interface unit(U-1)은 core가 호출하지 않는 interface다: 한 parameter가 받는
   계약의 class들을 이름한다. 그 `core_type`은 그 interface로 type된 parameter에서 core가 받는 Rust 타입이고, 계약의
   class 가운데 그것을 `implements`하는 class(구현 class)의 core 타입 `C`마다 core는 `impl From<&C> for <core_type>`을
@@ -1107,7 +1108,15 @@
   언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
   패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
   타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
-  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  거부한다(G-4). 그런 unit의 member가 `errors.recognize`에 소유자의 오류 unit을 적으면, 그 member는 소유자의 계약으로 GN-6d대로
+  언어 코드의 예외를 읽는다. class는 소유 패키지의 것이다(Python은 module `<소유 root>._errors`, Node는 entry가 소유 npm
+  패키지에서 require하여 라이브러리 class 뒤에 등록하는 class, PHP는 소유 namespace의 class이며 이름으로 찾고 소유자의
+  category class의 scope에서 읽는다). kind는 class가 recognize한 unit이거나 그것을 확장하는 소유자 `errors.kinds`의 행이고,
+  코어 오류는 그 행의 variant에 대한 소유자의 `errors.recognized`이며 trait method가 그것을 `Failure::Kind`로 돌려준다. 그런
+  unit의 fixture의 raise 행(GN-13)은 소유자 class의 인스턴스를 던진다. 이름을 대고 거부하는 것(G-4): 세 번째 라이브러리의 오류
+  unit, `errors.recognized`가 없는 소유자, 둘 이상의 kind를 가진 recognize한 variant. 이유: 소유자의 오류가 무슨 뜻인지는 소유자의
+  코어가 정하고, 그 계약이 class와 오류를 만드는 함수를 적으므로 이 레포의 바인딩은 소유자의 소스를 읽지 않는다. 아직 생성하지
+  않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
   member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).

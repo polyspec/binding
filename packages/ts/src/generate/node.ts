@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -968,7 +968,11 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`}).map_err(|failure| kept(self.env, failure))
     }`;
   }).join('\n');
-  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  // GN-6s: an error unit of the owner of a callback unit of another repository is registered after the library classes.
+  const ownerUnits = ownerRecognizedUnits(model);
+  const classIndex = (u: ErrorUnit): number => cb.library === undefined
+    ? model.classes.length + model.errorUnits.indexOf(u)
+    : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
   const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
@@ -1249,6 +1253,13 @@ impl Drop for Owned {
     }
 }
 `;
+
+// U-3, GN-6s: the packages that own the error units that a callback unit of another repository recognizes, whose
+// classes the entry registers after the library classes.
+function recognizedOwners(model: Model): string {
+  const libraries = [...new Set(ownerRecognizedUnits(model).map((o) => o.library))];
+  return libraries.map((library) => `\nconst recognized_${library.replaceAll('-', '_')} = require(${jsString((model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('');
+}
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
 // members that recognize error units.
@@ -1577,7 +1588,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + ([...model.callbacks, ...model.foreignCallbacks].some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
@@ -1659,8 +1670,8 @@ static CLASSES: OnceLock<Vec<FunctionRef<ClassArgs, ()>>> = OnceLock::new();
 /// B-4: the module keeps a reference to each library class when it loads; a missing class fails the load.
 #[napi(js_name = "__register")]
 pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
-    if classes.len() != ${model.classes.length + model.errorUnits.length} {
-        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length + model.errorUnits.length} library classes, {} given", classes.len())));
+    if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} {
+        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} library classes, {} given", classes.len())));
     }
     let references = classes.iter().map(Function::create_ref).collect::<napi::Result<Vec<_>>>()?;
     CLASSES.set(references).map_err(|_registered| napi::Error::from_reason("B-4: the library classes are registered once"))
@@ -1969,8 +1980,8 @@ const addon = loadAddon();
 ${classes}${units === '' ? '' : `\n${units}`}
 
 
-// B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
-addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
+// B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.${recognizedOwners(model)}
+addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `recognized_${o.library.replaceAll('-', '_')}.${langName('node', o.unit.name, 'class')}`)].join(', ')}]);
 ${foreignRegistration(model)}
 ${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
 // promise of each of its waits (step 0), which this function awaits; a rejection of it is a failure of the binding and

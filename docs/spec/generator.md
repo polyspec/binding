@@ -625,8 +625,9 @@ the design ids are those of the binding design.
   again when it is not recognized; Go passes the kind and the message of a recognized error to the C ABI in place of
   the index of the error. Why: the core decides what a recognized failure means (U-3), and binding reads no Rust
   source, so the contract names the function that makes the core error; the properties of the instance do not reach
-  the core, because an instance that language code makes has none (GN-7a). A recognized error unit of another
-  library is refused by name (G-4).
+  the core, because an instance that language code makes has none (GN-7a). A callback unit of this contract that
+  recognizes an error unit of another library is refused by name (G-4); a callback unit of another repository
+  recognizes the error units of its owner as GN-6s states.
 - **GN-6ap** An interface unit of origin `generated` (U-1) is an interface that the core never calls: it names the
   classes of the contract that one parameter takes. Its `core_type` is the Rust type that the core takes at a
   parameter typed by the interface, and for the core type `C` of each class of the contract that `implements` it, an
@@ -1338,7 +1339,17 @@ the design ids are those of the binding design.
   the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
   Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
   type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
-  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
+  name otherwise (G-4). A member of such a unit whose `errors.recognize` names error units of its owner reads an
+  exception of language code as GN-6d states, with the contract of the owner: the classes are those of the owner's
+  package (Python the module `<owner root>._errors`, Node the classes that the entry requires from the owner's npm
+  package and registers after the library classes, PHP the classes of the owner's namespace, found by name and read
+  in the scope of the owner's category class), the kinds are the rows of the owner's `errors.kinds` whose class is a
+  recognized unit or extends one, and the core error is the owner's `errors.recognized` on the variant of the row,
+  which the trait method returns as `Failure::Kind`. A raise row of a fixture of such a unit (GN-13) throws an
+  instance of the owner's class. Refused by name (G-4): an error unit of a third library, an owner without
+  `errors.recognized`, and a recognized variant of two or more kinds. Why: the owner's core decides what its error
+  means, and its contract names the classes and the function that makes the error, so the binding of this repository
+  reads no source of the owner. Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
   of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a

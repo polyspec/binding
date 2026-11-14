@@ -282,6 +282,20 @@ export const variantValue = (variant: string): string => {
 // U-3, GN-6d: the name of the function that recognizes the exceptions of a callback member.
 export const recognizedFn = (cb: CallbackUnit, m: CallbackMember): string => `recognized_${rustField(cb.unit.name)}_${rustField(m.member.name)}`;
 
+// U-3, GN-6s: the error units of other repositories that a member of a callback unit of another repository
+// recognizes, each once, in the order of the callbacks: Node and WASM register their classes after the library classes.
+export const ownerRecognizedUnits = (model: Pick<Model, 'foreignCallbacks'>): { library: string; unit: Unit }[] => {
+  const out: { library: string; unit: Unit }[] = [];
+  for (const cb of model.foreignCallbacks) {
+    for (const m of cb.members) {
+      for (const u of m.recognized?.units ?? []) {
+        if (!out.some((o) => o.library === cb.library && o.unit.id === u.unit.id)) out.push({ library: cb.library ?? '', unit: u.unit });
+      }
+    }
+  }
+  return out;
+};
+
 // U-3, GN-6d: the match of a recognized kind, `kind` a String and `message` a &str in scope, into Some of the core error
 // or None, at the given indent.
 export const recognizedMatch = (m: CallbackMember, indent: string): string => `match kind.as_str() {
@@ -466,7 +480,6 @@ export function collectModel(
     const members: CallbackMember[] = (resolved.members ?? []).map((member) => {
       if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
       if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
-      if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
       const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
       if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
       const params = (member.parameters ?? []).map((parameter) => {
@@ -477,7 +490,8 @@ export function collectModel(
       });
       const returns = qualify(member.returns ?? 'none');
       supportedType(returns, units, `${library}.${member.id} returns`, foreign);
-      return { member, params, returns, receiver };
+      const recognized = (member.errors?.recognize ?? []).length === 0 ? undefined : ownerRecognized(owner, library, member);
+      return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }) };
     });
     const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
     foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
@@ -1761,6 +1775,33 @@ export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
 // declaration shows, names the constant of the core that it equals in default_core. A default of an optional type is
 // {literal: null} or {computed}, and the core takes the Option of the optional type itself (GN-6i); a {literal: null}
 // default of a value type names no constant, because the core decides what no value is.
+// U-3, GN-6s, GN-6d: the kinds that a member of a callback unit of another repository recognizes, read from the
+// contract of its owner: the error units of the owner that the member names, and for each row of the owner's
+// errors.kinds whose class is one of them or extends one, the owner's errors.recognized on the variant of the row. The
+// owner's core makes its own error, so this binding reads no source of the owner. An error unit of a third library,
+// an owner without errors.recognized and a recognized variant of two or more kinds are refused by name (G-4).
+function ownerRecognized(owner: Contract, library: string, member: Member): NonNullable<CallbackMember['recognized']> {
+  const where = `${library}.${member.id}`;
+  const errorUnit = (id: string, seen = 0): ErrorUnit => {
+    const unit = owner.units.find((u) => u.id === id && u.kind === 'error');
+    if (unit === undefined || unit.category === undefined) throw new Unsupported(`${where}: ${id} is no error unit of ${library} (U-3, GN-6s)`);
+    if (seen > owner.units.length) throw new Unsupported(`${where}: the parents of ${id} of ${library} form a cycle (P-4)`);
+    return { unit, category: unit.category, properties: [], ...(unit.parent === undefined ? {} : { parent: errorUnit(unit.parent, seen + 1) }) };
+  };
+  const units = (member.errors?.recognize ?? []).map((ref) => {
+    if (ref.library !== undefined && ref.library !== library) throw new Unsupported(`${where}: a recognized error unit of another library than ${library} is not generated (U-3, GN-6s)`);
+    return errorUnit(ref.unit);
+  });
+  const make = owner.errors.recognized;
+  if (make === undefined) throw new Unsupported(`${where}: errors.recognized of ${library} names no function that makes its core error of a recognized kind (GN-6d, GN-6s)`);
+  const extendsOne = (unit: ErrorUnit | undefined): boolean => unit !== undefined && (units.some((u) => u.unit.id === unit.unit.id) || extendsOne(unit.parent));
+  const kinds = owner.errors.kinds.filter((row) => row.library === undefined && row.class !== undefined && extendsOne(errorUnit(row.class))).map((row) => {
+    if (row.kinds !== undefined) throw new Unsupported(`${library}.${row.variant}: a recognized variant of two or more kinds is not generated yet`);
+    return { kind: kindText(row.variant), error: `${make}(${variantValue(row.variant)}, &message)` };
+  });
+  return { units, kinds };
+}
+
 // U-7, GN-6x: whether a type names a value alias of this contract, or a value alias or value class of another one.
 function valueTyped(type: Type, units: Map<string, Unit>, foreign: ReadonlyMap<string, Contract> | undefined): boolean {
   if (typeof type !== 'object' || !('unit' in type)) return false;

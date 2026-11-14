@@ -370,6 +370,45 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_consumer::weight"
+        },
+        {
+          "id": "consumer.consult",
+          "name": [
+            "consult"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6s"
+          },
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup",
+                "library": "sample"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::consult"
         }
       ]
     },
@@ -512,6 +551,11 @@
       "member": "consumer.weight",
       "file": "contracts/cases.json",
       "group": "weight"
+    },
+    {
+      "member": "consumer.consult",
+      "file": "contracts/cases.json",
+      "group": "consult"
     }
   ]
 }
