@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: aa81c238a5c6010dff447a8544f30b599d5f4b0403d2588702f5bf99048d10f0 -->
+<!-- source-sha256: 42483bec39b0afe231fd234ef480bf26d1437cabb8c255100cd968b1bfb2524e -->
 # 생성기
 
 [English](generator.md)
@@ -1559,8 +1559,14 @@
   parameter의 값이며, `number`는 text, `text16`은 UTF-16 code unit의 list다. 쌍의 key는 text이거나 그 class의 case 값
   `{kind, value}`다. `{"kind": "list", "repeat": n, "value": <값>}`은 `list`의 member를 n번 부르며, 매번 바로 앞의 값 하나를
   담은 list를 준다. 그런 class의 자리에는 언어의 내장 값을 적지 않는다. binding이 그것을 `invalid_argument_type`으로 거부하고
-  Go는 컴파일하지 않기 때문이다. 그런 class의 instance를 담은 결과는 비교할 case 값이 없으므로, 그 case는 그 이유로 실패하는
-  시험을 갖는다(GN-13e). 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
+  Go는 컴파일하지 않기 때문이다. list, optional, map, tuple, record, variant의 어느 자리에든 그런 class의
+  instance를 담은 결과는 그 case 값이 같은 규칙으로 만든 instance와 비교한다(GN-13e, B2.121). 각 target의 비교는 둘 다
+  그 언어의 owner in 행의 member로 읽는다. 곧 값이 case를 이름하는 `by` member, case의 `read` member, 그리고 텍스트를 주지
+  않는 read에는 그 `units` member로 읽고, 내용을 다시 읽으므로 instance의 list와 반복이 entry를 주는 owner의 map class
+  instance도 끝까지 읽는다. instance를 읽은 것은 `[is]`, `[is, content]`, `[is, null, units]`이며, Python의 `_same`, Node와
+  WASM의 `ordered`, PHP의 `same`, Go의 `foreignRead`가 instance 대신 그것을 비교한다. 이유: instance는 코어의 handle을
+  담으므로 언어의 비교는 두 instance를 정체성(Python)으로, 어떤 property로도 아니게(Node, WASM, PHP), 또는 handle(Go)로
+  비교하며, 같은 값을 담은 두 instance가 같은 결과가 아니었다. 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
   내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(receiver 없는 어떤 member도 만들지 않는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을

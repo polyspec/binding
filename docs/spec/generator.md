@@ -1907,8 +1907,16 @@ the design ids are those of the binding design.
   for `text16`; a key of a pair is a text or a case value `{kind, value}` of the class; and `{"kind": "list",
   "repeat": n, "value": <value>}` is the member of `list` called n times, each on the list of the one value before
   it. No built-in value of the language stands at the place of such a class, because the binding refuses it as
-  `invalid_argument_type` and Go does not compile it. A result that holds an instance of such a class has no case
-  value to be compared with, and its case has a test that fails with that reason (GN-13e). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  `invalid_argument_type` and Go does not compile it. A result that holds an instance of such a class, at any place
+  of a list, an optional, a map, a tuple, a record or a variant, is compared with the instance that its case value
+  makes by the same rule (GN-13e, B2.121): the comparison of each target reads both through the members of the in row
+  of the owner in the language, the `by` member, whose value names the case, the `read` member of the case and, for a
+  read that gives no text, its `units` member, and reads the content again, so a list of instances and an instance of
+  a map class of the owner, whose iteration gives its entries, are read as far as they go. The read of an instance is
+  `[is]`, `[is, content]` or `[is, null, units]`, which `_same` of Python, `ordered` of Node and WASM, `same` of PHP
+  and `foreignRead` of Go compare in place of the instance. Why: an instance holds a handle of its core, so a
+  comparison of the language compares two instances by their identity (Python), by no property (Node, WASM, PHP) or by
+  their handles (Go), and two instances that hold one value were not one result. A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class that no member without

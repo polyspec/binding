@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4e0e5f52b61e7a751a22544be1945048a6d4ca300d2bc6af26e16c2e51840971 -->
+<!-- source-sha256: 651fea8fdff554ce860ae3b775dc1d526f762649bc804fbe8435c5a4a0ec56e7 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 결과가 다른 저장소의 value class instance를 담은 case의 생성된 시험은 "a result that holds an instance of the class
+  value of json has no case value to compare it with"로 실패했으므로, `tests/e2e/relay`의 `carry`와 `passed`의 어떤 case도
+  결과를 적을 수 없었다. 이제 시험은 case 값의 instance를 owner의 out 행으로 만들어 결과와 비교하고, 둘 다 owner의 in 행
+  member로 읽는다: `by` member, 그 case의 `read` member, 그리고 `read`가 주지 않는 텍스트에는 `units` member로 읽고, list와
+  owner의 map class는 항목마다 읽는다. Python `_same`, Node와 WASM `ordered`, PHP `same`, Go `foreignRead`가 결과의 어느
+  자리에서든 instance를 그렇게 읽는다(GN-13e). 이제 `tests/e2e/relay`의 `carry`와 `passed`의 case는 결과를 적는다. 새 시험은
+  변경 전에 실패했다. `make test-ts`와 relay의 `make e2e` 검증은 대기열에 넣었다.
 - 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a-b`의 함수 `c`가 둘 다 Go 정적 라이브러리의 C symbol `polyspec_a_b_c`였으므로,
   둘을 함께 링크하는 Go program은 그 symbol이 두 번 정의되어 실패했고, 서로를 이름하지 않는 두 라이브러리를 어떤 검사도
   보지 못했다. 이제 C symbol의 접두는 `polyspec_<repository>_`이므로 symbol의 처음 두 밑줄이 저장소 이름을 끝낸다. 두 함수는

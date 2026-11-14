@@ -2019,6 +2019,50 @@ const makeFns = (lib: string): { name: string; body: string }[] =>
     return { name: found[2] ?? '', body: lib.slice(from, lib.indexOf(`\n${found[1] ?? ''}}\n`, from)) };
   });
 
+test('a result that holds an instance of a value class of another repository is compared with the instance that its case makes, both read through the in row of the owner (GN-13e, B2.121)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  const tests = Object.fromEntries(Object.entries(RELAY_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof RELAY_TESTS, string>;
+  for (const [target, file] of Object.entries(tests)) {
+    // No case of carry or passed fails because its result holds an instance of the class value of json.
+    assert.doesNotMatch(file, /has no case value to compare it with|is not compared yet/, target);
+  }
+  // Python: _same reads both instances by the kind of value.kind, the read member of the case and, for a text that
+  // string_text does not give, string_units; an OrderedMap is the pairs of its items.
+  assert.match(tests.python, /result = pkg\.carry\(foreign_json\.Value\.from_units\(\[55296\]\)\)\n\s+expected = foreign_json\.Value\.from_units\(\[55296\]\)\n\s+self\.assertTrue\(_same\(result, expected\)/);
+  assert.match(tests.python, /result = pkg\.passed\(/);
+  assert.match(tests.python, /    if isinstance\(expected, \(foreign_json\.Value, foreign_json\.OrderedMap,\)\):\n        return _read_foreign\(actual\) == _read_foreign\(expected\)\n    return actual == expected\n/);
+  assert.match(tests.python, /    if isinstance\(value, foreign_json\.Value\):\n        kind = value\.kind\n/);
+  assert.match(tests.python, /        if kind == "string":\n            content = value\.string_text\(\)\n            return \(kind, content\) if content is not None else \(kind, None, _read_foreign\(value\.string_units\(\)\)\)/);
+  assert.match(tests.python, /        if kind == "object":\n            return \(kind, _read_foreign\(value\.members\(\)\)\)/);
+  assert.match(tests.python, /        if kind == "null":\n            return \(kind,\)/);
+  assert.match(tests.python, /    if isinstance\(value, foreign_json\.OrderedMap\):\n        return \[\(_read_foreign\(key\), _read_foreign\(item\)\) for key, item in value\.items\(\)\]/);
+  // Node and WASM: ordered reads an instance by readForeign, by the names of JavaScript.
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(tests[target], /assert\.deepStrictEqual\(ordered\(pkg\.carry\(foreign_json\.Value\.fromUnits\(\[55296\]\)\)\), ordered\(foreign_json\.Value\.fromUnits\(\[55296\]\)\)\);/, target);
+    assert.match(tests[target], /function ordered\(value\) \{\n  if \(value instanceof foreign_json\.Value \|\| value instanceof foreign_json\.OrderedMap\) return \{ foreign: readForeign\(value\) \};\n/, target);
+    assert.match(tests[target], /    const kind = String\(value\.kind\);\n/, target);
+    assert.match(tests[target], /      const content = value\.stringText\(\);\n      return content === null \|\| content === undefined \? \[kind, null, readForeign\(value\.stringUnits\(\)\)\] : \[kind, content\];/, target);
+    assert.match(tests[target], /  if \(value instanceof foreign_json\.OrderedMap\) return Array\.from\(value, \(\[key, item\]\) => \[readForeign\(key\), readForeign\(item\)\]\);/, target);
+  }
+  // PHP: same reads an instance by readForeign; a property of the owner is a method, and the kind is an enum case.
+  assert.match(tests.php, /self::assertSame\(self::same\(\\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\), self::same\(\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\)\)\);/);
+  assert.match(tests.php, /        if \(\$value instanceof \\Polyspec\\Json\\Value \|\| \$value instanceof \\Polyspec\\Json\\OrderedMap\) \{\n            return \[\$value::class, self::readForeign\(\$value\)\];\n        \}/);
+  assert.match(tests.php, /            \$kind = \$value->kind\(\);\n            \$kind = \$kind instanceof \\BackedEnum \? \$kind->value : \$kind;/);
+  assert.match(tests.php, /                \$content = \$value->stringText\(\);\n                return \$content === null \? \[\$kind, null, self::readForeign\(\$value->stringUnits\(\)\)\] : \[\$kind, \$content\];/);
+  assert.match(tests.php, /            foreach \(\$value as \$key => \$item\) \{\n                \$pairs\[\] = \[self::readForeign\(\$key\), self::readForeign\(\$item\)\];/);
+  // Go: reflect.DeepEqual compares what foreignRead reads of the result and of the instance of the case, also in the
+  // fields of the variant packet.
+  assert.match(tests.go, /!reflect\.DeepEqual\(foreignRead\(reflect\.ValueOf\(value0\)\), foreignRead\(reflect\.ValueOf\(want\)\)\)/);
+  assert.match(tests.go, /\nfunc foreignRead\(value reflect\.Value\) any \{\n/);
+  assert.match(tests.go, /\n\t\tcase \*json\.Value:\n\t\t\tif found == nil \{\n\t\t\t\treturn nil\n\t\t\t\}\n\t\t\tkind, err := found\.Kind\(\)\n/);
+  assert.match(tests.go, /\n\t\t\t\tcontent, err := found\.StringText\(\)\n/);
+  assert.match(tests.go, /\n\t\t\t\tunits, err := found\.StringUnits\(\)\n/);
+  assert.match(tests.go, /\n\t\tcase \*json\.OrderedMap:\n/);
+  const passed = tests.go.slice(tests.go.indexOf('func TestGN13ePassedOneValue('));
+  assert.match(passed.slice(0, passed.indexOf('\n}\n')), /foreignRead\(reflect\.ValueOf\(value0\)\)/);
+});
+
 test('PHP reads the value of an enum case of the owner of a value class from the table of its properties (GN-6x, B2.145)', () => {
   const { contract, caseFiles, foreign } = relaySample();
   const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
@@ -2081,7 +2125,7 @@ test('a case value of a value class of another repository is the call of the mak
   }
   // Python: the module of json is imported, and each kind is the static member of its out row.
   assert.match(tests.python, /^import polyspec\.json as foreign_json$/m);
-  assert.match(tests.python, /def test_gn13e_carry_a_text\(self\) -> None:\n\s+pkg\.carry\(foreign_json\.Value\.string\("name\\xe9"\)\)/);
+  assert.match(tests.python, /def test_gn13e_carry_a_text\(self\) -> None:\n\s+result = pkg\.carry\(foreign_json\.Value\.string\("name\\xe9"\)\)/);
   assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.from_units\(\[55296\]\)\)/);
   assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.number\("123456789012345678901234567890"\)\)/);
   // A map fills the class that the member of its row takes: the constructor, an insert for each pair, a key that the
@@ -2106,7 +2150,7 @@ test('a case value of a value class of another repository is the call of the mak
   // never a built-in value, which is no *json.Value.
   assert.match(tests.go, /"github\.com\/polyspec\/json\/packages\/go"/);
   assert.doesNotMatch(tests.go, /\bCarry\(("|nil\)|\[\]any|map\[string\]any|func\(\))/);
-  assert.match(tests.go, /func TestGN13eCarryAText\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.ValueString\("name\\u00e9"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure1\)\n\t\}\n\t_, err := Carry\(made0\)\n/);
+  assert.match(tests.go, /func TestGN13eCarryAText\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.ValueString\("name\\u00e9"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure1\)\n\t\}\n\tmade2, failure3 := json\.ValueString\("name\\u00e9"\)\n[^]*?\tvalue0, err := Carry\(made0\)\n/);
   assert.match(tests.go, /made0, failure1 := json\.ValueFromUnits\(\[\]uint64\{55296\}\)\n/);
   assert.match(tests.go, /made0, failure1 := json\.ValueNumber\("123456789012345678901234567890"\)\n/);
   assert.match(tests.go, /func TestGN13eCarryAKeyWithAnUnpairedSurrogate\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueFromUnits\(\[\]uint64\{56320\}\)\n[^]*?\tmade4, failure5 := json\.ValueNull\(\)\n[^]*?\t_, failure6 := made0\.Insert\(made2, made4\)\n\tif failure6 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure6\)\n\t\}\n[^]*?\tmade\d+, failure\d+ := json\.ValueObject\(made0\)\n/);

@@ -15,7 +15,8 @@
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
 
-import type { Member, Type, Unit } from '../contract.ts';
+import type { Contract, Member, Type, Unit } from '../contract.ts';
+import { classIn } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
@@ -37,6 +38,8 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
+  // GN-13e, B2.121: whether a test compares a result that holds an instance of a value class of another repository.
+  readsForeign?: boolean;
   // GN-6aa: the callback units whose fixture a case value inside another value makes.
   fixtures: Set<CallbackUnit>;
   // GN-6z: the statement that ends every func of a function type that the values of a test give, in the place of its
@@ -815,6 +818,140 @@ function holdsAlias(model: Model, type: Type): boolean {
   return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsAlias(model, inner));
 }
 
+// GN-13e, B2.121: whether a type holds an instance of a value class of another repository, at any place of a list, an
+// optional, a map, a tuple, a record or a variant.
+function holdsForeign(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+  if (typeof type === 'string') return false;
+  const alias = aliasOf(model, type);
+  if (alias !== undefined) return alias.library !== undefined && alias.unit.kind === 'class';
+  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
+  const unit = unitOf(model, type);
+  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
+    seen.add(unit.id);
+    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
+  }
+  return inner.some((t) => holdsForeign(model, t, seen));
+}
+
+// GN-13e, B2.121: foreignRead, the form of a result in which an instance of a value class of another repository, or of
+// a map class of its owner, is what the members of its in row read: [is], [is, content] or [is, nil, units]. A pointer
+// and an interface are their value, a list, an array and a struct their items, and a map its pairs in the order of the
+// text of their keys, so reflect.DeepEqual compares two results by what their instances hold.
+function foreignReadHelper(v: Values): string {
+  const model = v.model;
+  const arms: string[] = [];
+  const seen = new Set<string>();
+  const imported = (owner: Contract, unit: Unit): string => {
+    const type = ownerType(owner, unit);
+    (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+    return type.name;
+  };
+  for (const alias of model.aliases.filter((a) => a.owner !== undefined && a.library !== undefined && a.unit.kind === 'class')) {
+    const owner = alias.owner as Contract;
+    const row = classIn(alias, 'go');
+    const type = imported(owner, alias.unit);
+    if (!seen.has(type)) {
+      seen.add(type);
+      const cases = row.cases.map((kase) => {
+        const read = (member: Member, name: string): string => `			${name}, err := ${ownerCall(owner, alias.unit, member, '', 'found')}
+			if err != nil {
+				return err
+			}`;
+        if (kase.read === undefined) return `		case ${goString(kase.is)}:
+			return []any{string(kind)}`;
+        if (kase.units === undefined) return `		case ${goString(kase.is)}:
+${read(kase.read, 'content')}
+			return []any{string(kind), foreignRead(reflect.ValueOf(content))}`;
+        return `		case ${goString(kase.is)}:
+${read(kase.read, 'content')}
+			if read := foreignRead(reflect.ValueOf(content)); read != nil {
+				return []any{string(kind), read}
+			}
+${read(kase.units, 'units')}
+			return []any{string(kind), nil, foreignRead(reflect.ValueOf(units))}`;
+      });
+      arms.push(`	case *${type}:
+		if found == nil {
+			return nil
+		}
+		kind, err := ${ownerCall(owner, alias.unit, row.by, '', 'found')}
+		if err != nil {
+			return err
+		}
+		switch string(kind) {
+${cases.join('\n')}
+		}
+		return fmt.Sprintf("GN-6x: ${type} gives the kind %s, which its in row has no case for", kind)`);
+    }
+    for (const map of row.maps) {
+      const name = imported(owner, map.unit);
+      if (seen.has(name)) continue;
+      seen.add(name);
+      arms.push(`	case *${name}:
+		if found == nil {
+			return nil
+		}
+		entries, err := ${ownerCall(owner, map.unit, map.iterate, '', 'found')}
+		if err != nil {
+			return err
+		}
+		pairs := []any{}
+		for key, item := range entries {
+			pairs = append(pairs, []any{foreignRead(reflect.ValueOf(key)), foreignRead(reflect.ValueOf(item))})
+		}
+		return pairs`);
+    }
+  }
+  return `
+// foreignRead gives a result in the form in which an instance of a value class of another repository is what the
+// members of its in row read, so that reflect.DeepEqual compares two results by what their instances hold (GN-13e).
+func foreignRead(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+	if value.CanInterface() {
+		switch found := value.Interface().(type) {
+${arms.join('\n').split('\n').map((line) => (line === '' ? line : `\t${line}`)).join('\n')}
+		}
+	}
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if value.IsNil() {
+			return nil
+		}
+		return foreignRead(value.Elem())
+	case reflect.Slice, reflect.Array:
+		if value.Kind() == reflect.Slice && value.IsNil() {
+			return nil
+		}
+		items := make([]any, value.Len())
+		for at := range items {
+			items[at] = foreignRead(value.Index(at))
+		}
+		return items
+	case reflect.Struct:
+		fields := make([]any, value.NumField())
+		for at := range fields {
+			fields[at] = foreignRead(value.Field(at))
+		}
+		return []any{value.Type().String(), fields}
+	case reflect.Map:
+		keys := value.MapKeys()
+		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+		pairs := make([]any, len(keys))
+		for at, key := range keys {
+			pairs[at] = []any{foreignRead(key), foreignRead(value.MapIndex(key))}
+		}
+		return pairs
+	}
+	if value.CanInterface() {
+		return value.Interface()
+	}
+	return fmt.Sprint(value)
+}
+`;
+}
+
 function memberTests(v: Values, out: Out, fn: Fn): void {
   const model = v.model;
   const types = Object.fromEntries(goErrorTypes(model.contract));
@@ -1160,6 +1297,11 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
           const want = value(v, b, type, given ?? null);
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
           const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
+          // GN-13e, B2.121: an instance of a value class of another repository is compared by what its in row reads.
+          if (holdsForeign(model, type)) {
+            v.readsForeign = true;
+            return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(foreignRead(reflect.ValueOf(value${i})), foreignRead(reflect.ValueOf(want)))${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", foreignRead(reflect.ValueOf(value${i})), foreignRead(reflect.ValueOf(want)))`, '}'];
+          }
           return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want)${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
         });
       } catch (error) {
@@ -1608,6 +1750,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bmust\(/.test(all) ? [MUST] : []),
     ...(/\bkept\(/.test(all) ? [KEPT] : []),
     ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
+    ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),

@@ -5,6 +5,8 @@ import { type Model, callsCode, POISON_ENTRY, Unsupported, cleanupWarning, error
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
+import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
+import type { Unit } from '../contract.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
@@ -54,6 +56,13 @@ function ordered(value) {
   return value;
 }
 `;
+
+// GN-13e, B2.121: ordered with a branch that reads an instance of a value class of another repository, or of a map
+// class of its owner, through the members of its in row (readForeign), so that two instances compare by what they hold.
+export const nodeOrdered = (foreign: string[], read: string): string => (foreign.length === 0 ? NODE_ORDERED : `${read}${NODE_ORDERED.replace(
+  'function ordered(value) {\n',
+  `function ordered(value) {\n  if (${foreign.map((c) => `value instanceof ${c}`).join(' || ')}) return { foreign: readForeign(value) };\n`,
+)}`);
 
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 const NODE_OUTCOME = `
@@ -608,6 +617,10 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
   const usesCasePath = blocks.some((block) => block.includes('casePath('));
+  // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
+  const readers = usesOrdered ? foreignReaders(model, 'node') : [];
+  const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
+  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'node', foreignClass));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -617,7 +630,7 @@ ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesCasePath ? NODE_CASE_PATH : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesCasePath ? NODE_CASE_PATH : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

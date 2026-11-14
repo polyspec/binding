@@ -3,6 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, callsCode, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
 import { internalModule } from './python.ts';
+import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected } from './samples.ts';
@@ -67,6 +68,13 @@ def _same(actual, expected):
         return all(_same(getattr(actual, field.name), getattr(expected, field.name)) for field in dataclasses.fields(expected))
     return actual == expected
 `;
+
+// GN-13e, B2.121: _same with a branch that compares two instances of a value class of another repository, or of a map
+// class of its owner, by what the members of its in row read (_read_foreign).
+const pythonSame = (foreign: string[]): string => (foreign.length === 0 ? PYTHON_SAME : PYTHON_SAME.replace(
+  '    return actual == expected\n',
+  `    if isinstance(expected, (${foreign.map((c) => `${c},`).join(' ')})):\n        return _read_foreign(actual) == _read_foreign(expected)\n    return actual == expected\n`,
+));
 
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 const PYTHON_OUTCOME = `
@@ -741,6 +749,10 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIsNone(alive())`);
   }
   const usesCasePath = out.some((block) => block.includes('self._case_path('));
+  // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
+  const readers = usesSame ? foreignReaders(model, 'python') : [];
+  const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
+  const foreignRead = pythonForeignRead(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
@@ -748,7 +760,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

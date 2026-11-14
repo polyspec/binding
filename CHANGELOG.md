@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A generated test of a case whose result holds an instance of a value class of another repository failed with
+  "a result that holds an instance of the class value of json has no case value to compare it with", so no case of
+  `carry` or `passed` of `tests/e2e/relay` could name its result. The test now makes the instance of the case value by
+  the out rows of the owner and compares it with the result, both read through the members of the in row of the owner:
+  the `by` member, the `read` member of its case and, for a text that `read` does not give, the `units` member; a list
+  and a map class of the owner are read item by item. Python `_same`, Node and WASM `ordered`, PHP `same` and Go
+  `foreignRead` read an instance so, at any place of the result (GN-13e). The cases of `carry` and `passed` of
+  `tests/e2e/relay` now name their results. The new test failed before the change; `make test-ts` and `make e2e` of
+  the relay are queued for verification.
 - The function `b_c` of the library `a` and the function `c` of the library `a-b` were both the C symbol
   `polyspec_a_b_c` of their Go static libraries, so a Go program that linked both failed with the symbol defined
   twice, and no check saw two libraries of which neither names the other. The prefix of a C symbol is now

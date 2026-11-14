@@ -272,9 +272,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   const unit = unitOf(model, type);
   const alias = aliasOf(model, type);
   // GN-6x, GN-13: a value of a value class of another repository is an instance of the owner's class, which the
-  // members of its out rows make; a result that holds one is read through the members of the owner, not compared here.
+  // members of its out rows make; a result that holds one is compared with that instance, both read through the
+  // members of the in row of the owner (GN-13e, B2.121).
   if (alias?.library !== undefined && alias.unit.kind === 'class') {
-    if (out) throw new Unsupported(`a result that holds an instance of the class ${alias.unit.id} of ${alias.library} has no case value to compare it with: the instance is read through the members of its owner (GN-6x)`);
     return foreignClassValue(model, ctx, alias, alias.library, value, `the class ${alias.unit.id} of ${alias.library}`);
   }
   if (alias !== undefined) {
@@ -541,8 +541,9 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
   const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
     // GN-13e: a result of a value alias is compared by the tokens of its places, which name the form of each place.
+    // A value class of another repository is compared as the instance that its case value makes (B2.121).
     const alias = kept ? undefined : aliasOf(model, fn.returns);
-    if (alias !== undefined && alias.unit.out !== undefined) {
+    if (alias !== undefined && alias.unit.out !== undefined && !(alias.library !== undefined && alias.unit.kind === 'class')) {
       const tokens = JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value));
       return alias.inRaises.length > 0 ? { tokens, round: alias.unit.name } : { tokens };
     }
