@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 70fc2312cb5359b2145f3047a752dc32c98482d23dbef31ac35666590c87d355 -->
+<!-- source-sha256: b4cad5df41673a323feec67bcbaddf928f2d7eb799e76027791bd8be1cf6fb7b -->
 # 생성기
 
 [English](generator.md)
@@ -435,6 +435,12 @@
   가리키는 `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은
   `Raised`의 마지막 drop은 GN-6u대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+  target의 crate는 이 계약의 callback unit의 struct, 그 변환(`in_<unit>`, 그리고 GN-6aa의 `kept_<unit>`)과 trait 구현을 그
+  unit의 값이 이 계약의 member에 들어갈 때만 쓴다: parameter로, record의 field로, 또는 그런 것의 list, `optional`, map,
+  tuple의 항목으로. class만 구현하거나(GN-6w) 다른 저장소만 받는(GN-6s) unit은 사용자와 다른 저장소가 이름하는 선언을
+  유지하고, crate에 wrapper를 두지 않는다. 이유: crate의 어떤 코드도 그 wrapper를 부르지 않고, crate의 빌드는 죽은 코드를
+  거부한다(`clippy -D warnings`). class는 자기가 가진 값에서 trait method를 부르고, 다른 저장소는 자기 crate에서 그 unit을
+  감싼다.
 - **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.

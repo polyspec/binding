@@ -541,6 +541,13 @@ the design ids are those of the binding design.
   The last drop of a `Raised` that no caller threw again removes its entry, as GN-6u states.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+  The crate of a target writes the struct of a callback unit of this contract, its conversion (`in_<unit>`, and
+  `kept_<unit>` of GN-6aa) and its trait implementation only when a value of the unit enters a member of this
+  contract: as a parameter, as a field of a record, or as an item of a list, an `optional`, a map or a tuple of one.
+  A unit that only a class implements (GN-6w), or that only another repository takes (GN-6s), keeps its declaration,
+  which a user and the other repository name, and has no wrapper in the crate. Why: no code of the crate would call
+  that wrapper, and the build of the crate refuses dead code (`clippy -D warnings`); the class calls the trait
+  method on its held value, and the other repository wraps the unit in its own crate.
 - **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
