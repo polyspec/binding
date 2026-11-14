@@ -435,13 +435,13 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
     let Some(array) = content.array() else {
         return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
     };
-    // A unit that is no integer of 0 to 0xffff is None, which the collect gives as kind internal.
-    array.values().map(|unit| match unit.long().map(u16::try_from) {
-        Some(Ok(unit)) => Some(unit),
-        Some(Err(_wide)) | None => None,
+    // A unit that is no integer of 0 to 0xffff is kind internal.
+    let refused = || binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") });
+    array.values().map(|unit| match unit.long() {
+        Some(long) => u16::try_from(long).map_err(|_wide| refused()),
+        None => Err(refused()),
     })
-        .collect::<Option<Vec<u16>>>()
-        .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))
+        .collect::<Result<Vec<u16>, Fail>>()
 }
 
 /// GN-6x: how the read member of an in case gives the content of an instance.

@@ -7205,6 +7205,70 @@ test('a result of a value alias is compared by the texts of its places in pre-or
   assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
 });
 
+test('a float case value that the out row of its alias gives as an instance of a value class is that instance in Node and WASM, and else a number (GN-13)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.units.push({
+    id: 'real', name: ['real'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets: ['node', 'wasm'], reason: 'the test of GN-13' }, core_type: 'polyspec_sample::Real',
+    members: [
+      { id: 'real.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: 'float', required: true }], raises: [], wait: 'none', core: 'polyspec_sample::Real::new' },
+      { id: 'real.value', name: ['value'], kind: 'property', visibility: 'public', returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Real::value', receiver: '&self' } },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'float');
+  data.out.push(
+    { kind: 'float', when: { predicate: 'integral_float', is: true }, make: { php: 'float', python: 'float', node: 'real.constructor', go: 'float', wasm: 'real.constructor' } },
+    { kind: 'float', when: { predicate: 'integral_float', is: false }, make: { php: 'float', python: 'float', node: 'float', go: 'float', wasm: 'float' } },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'integral', value: { kind: 'list', value: [{ kind: 'float', value: 1e15 }, { kind: 'float', value: 1.5 }] } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['python', 'node', 'wasm'] });
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.ok(text(out, path).includes('pkg.same([new pkg.Real(1000000000000000), 1.5])'), path);
+  }
+  assert.ok(text(out, 'packages/python/generated/tests/test_generated.py').includes('pkg.same([float(1000000000000000.0), float(1.5)])'));
+});
+
+test('a Go expected result takes the forms of the Go out rows of the alias: a UTF-8 byte string a string, a map with sequence keys a []any, another map a keyed map (GN-13e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  const all = (go: unknown): Record<string, unknown> => ({ php: 'map', python: 'map', node: 'map', wasm: 'map', go });
+  data.out = data.out.filter((row: any) => row.kind !== 'map');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+    { kind: 'map', when: { predicate: 'sequence_keys', is: true }, make: all('list') },
+    { kind: 'map', when: { predicate: 'sequence_keys', is: false }, make: all({ keyed_map: { key: ['int', 'text', 'bytes'] } }) },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'utf8_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: '6162' } } },
+    { id: 'other_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: 'ff' } } },
+    { id: 'empty_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: '' } } },
+    { id: 'sequence_map', value: { kind: 'text', value: 'x' }, result: { kind: 'map', value: [[{ int: 0 }, { kind: 'bool', value: true }]] } },
+    { id: 'keyed', value: { kind: 'text', value: 'x' }, result: { kind: 'map', value: [[{ hex: '6b' }, { kind: 'null' }], [{ int: 5 }, { kind: 'null' }], [{ hex: 'ff' }, { kind: 'null' }]] } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const want = (name: string): string => {
+    const start = go.indexOf(`func TestGN13e${name}(`);
+    assert.ok(start >= 0, `${name}\n${go}`);
+    return go.slice(start, go.indexOf('\n}\n', start));
+  };
+  assert.match(want('SameUtf8Bytes'), /want := \(any\)\("ab"\)/);
+  assert.match(want('SameOtherBytes'), /want := \(any\)\(\[\]byte\("\\xff"\)\)/);
+  assert.match(want('SameEmptyBytes'), /want := \(any\)\(""\)/);
+  assert.match(want('SameSequenceMap'), /want := \(any\)\(\[\]any\{true\}\)/);
+  const keyed = want('SameKeyed');
+  assert.match(keyed, /\.Set\(binding\.TextKey\("k"\), nil\)/);
+  assert.match(keyed, /\.Set\(binding\.IntKey\(5\), nil\)/);
+  assert.match(keyed, /\.Set\(binding\.BytesKey\(\[\]byte\("\\xff"\)\), nil\)/);
+});
+
 test('the result of an alias with the entry points of codec-test goes back through its in and out functions to the same texts (GN-13e, U-1)', () => {
   const out = sampleWith(() => {}, ['python', 'node', 'php']);
   const wasm = sampleWith(() => {}, ['wasm']);
@@ -7376,6 +7440,15 @@ test('the count and the position of a handle convert with let-else, whose else a
 // a plausible value; generated code matches the Result or the Option instead.
 const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
 
+test('the PHP reader of UTF-16 units binds no name in one alternative of an or-pattern alone, which Rust refuses as E0408 (GN-6x, B2.81)', () => {
+  const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
+  const php = [...out.keys()].filter((p) => p.endsWith('.rs')).map((p) => text(out, p)).find((t) => /\bfn php_units\b/.test(t));
+  assert.ok(php !== undefined, 'the relay sample writes php_units');
+  const body = php.slice(php.indexOf('fn php_units'), php.indexOf('\n}\n', php.indexOf('fn php_units')));
+  assert.doesNotMatch(body, /\(\w+\)\)? \| None/);
+  assert.match(body, /match unit\.long\(\) \{\n {8}Some\(long\) => u16::try_from\(long\)\.map_err\(\|_wide\| refused\(\)\),\n {8}None => Err\(refused\(\)\),\n {4}\}\)\n {8}\.collect::<Result<Vec<u16>, Fail>>\(\)/);
+});
+
 test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option (GN-4, R-1)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const own = (library: string): Map<string, string | Buffer> =>
@@ -7477,6 +7550,13 @@ test('the walk of Node and WASM passes the name of a property of a value class w
     assert.ok(lib.includes(line), path);
     assert.doesNotMatch(lib, /value_define\(instance, \*name/, path);
   }
+});
+
+test('Node and WASM describe a Uint8Array as Bytes, the value that the out row bytes makes, and another typed array as Other (B-1, U-7)', () => {
+  const node = text(sampleWith(() => undefined, ['node']), 'packages/ts/generated/lib.rs');
+  assert.match(node, /if value\.is_typedarray\(\)\? \{\n(?: {12}\/\/ [^\n]*\n)+ {12}if let Ok\(bytes\) = unsafe \{ value\.cast::<Uint8Array>\(\) \} \{\n {16}return Ok\(HostValue::Bytes\(bytes\.to_vec\(\)\)\);\n {12}\}\n {12}return Ok\(HostValue::Other \{ type_name: js_constructor_name\(object\)\?, handle: self\.mark\(\) \}\);/);
+  const wasm = text(sampleWith(() => undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /if js_sys::ArrayBuffer::is_view\(value\) && !instance_of\(value, &global, "DataView"\)\? \{\n(?: {12}\/\/ [^\n]*\n)+ {12}if let Some\(bytes\) = value\.dyn_ref::<Uint8Array>\(\) \{\n {16}return Ok\(HostValue::Bytes\(bytes\.to_vec\(\)\)\);\n {12}\}\n {12}return Ok\(HostValue::Other \{ type_name: constructor_name\(value\)\?, handle: self\.mark\(\) \}\);/);
 });
 
 test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {

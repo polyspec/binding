@@ -463,7 +463,7 @@ pub enum HostValue {
     UntypedNumber(f64),
     /// A string of any language, in its own units.
     Text(HostText),
-    /// A Python `bytes` (exactly).
+    /// A Python `bytes` (exactly), a JavaScript `Uint8Array`, a Go `[]byte`.
     Bytes(Vec<u8>),
     /// A JavaScript `Array`, a Python `list`, a Go slice.
     List {

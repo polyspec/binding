@@ -523,8 +523,8 @@ impl<'env> JsHost<'env> {
         }
     }
 
-    /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a typed
-    /// array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
+    /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a
+    /// Uint8Array is bytes and another typed array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
     fn describe_object(&mut self, value: Unknown<'env>) -> napi::Result<HostValue> {
         let object: Object<'env> = unsafe { value.cast() }?;/*DESCRIBE*/
         if value.is_array()? {
@@ -535,6 +535,11 @@ impl<'env> JsHost<'env> {
             return Ok(HostValue::Date(self.mark()));
         }
         if value.is_typedarray()? {
+            // B-1: a Uint8Array is the bytes that the out row bytes makes, so a value that the binding gave enters again;
+            // a typed array of another element type, which napi does not take as a Uint8Array, is outside the set.
+            if let Ok(bytes) = unsafe { value.cast::<Uint8Array>() } {
+                return Ok(HostValue::Bytes(bytes.to_vec()));
+            }
             return Ok(HostValue::Other { type_name: js_constructor_name(object)?, handle: self.mark() });
         }
         let global = self.env.get_global()?;
