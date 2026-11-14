@@ -876,7 +876,8 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);
     if (wide < -(2n ** 63n) || wide >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int ${token} is outside the int of PHP (G-5)`);
-    return token;
+    // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the least int is PHP_INT_MIN.
+    return lang === 'php' && wide === -(2n ** 63n) ? '\\PHP_INT_MIN' : token;
   }
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it, the
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
