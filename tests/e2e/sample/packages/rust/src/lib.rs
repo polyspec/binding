@@ -414,8 +414,45 @@ pub fn seek(mut search: Search<'_>) -> Result<String, Failure<Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{count, resolve, Error, Lookup};
-    use binding_core::Failure;
+    use super::{count, data_from_host, resolve, Error, Lookup};
+    use binding_core::{Failure, Handle, HostValue, HostValues, Raised};
+
+    struct Lists {
+        cycle: bool,
+    }
+
+    impl HostValues for Lists {
+        fn item(&mut self, list: Handle, _index: u64) -> Result<HostValue, Raised> {
+            Ok(HostValue::List {
+                handle: Handle::new(if self.cycle { 0 } else { list.raw() + 1 }),
+                len: 1,
+            })
+        }
+
+        fn entry(&mut self, _map: Handle, _index: u64) -> Result<(HostValue, HostValue), Raised> {
+            Ok((HostValue::Null, HostValue::Null))
+        }
+
+        fn read(&mut self, _value: Handle) -> Result<HostValue, Raised> {
+            Ok(HostValue::Null)
+        }
+    }
+
+    #[test]
+    fn an_open_container_is_a_cycle_and_distinct_handles_reach_the_depth_limit() {
+        let list = || HostValue::List {
+            handle: Handle::new(0),
+            len: 1,
+        };
+        assert!(matches!(
+            data_from_host(&mut Lists { cycle: true }, list()),
+            Err(Failure::Kind(Error::Unsupported { what })) if what == "a container cycle"
+        ));
+        assert!(matches!(
+            data_from_host(&mut Lists { cycle: false }, list()),
+            Err(Failure::Kind(Error::Unsupported { what })) if what == "a value nested too deep"
+        ));
+    }
 
     struct Fixed;
 
