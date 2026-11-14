@@ -1923,7 +1923,7 @@ test('PHP reads the value of an enum case of the owner of a value class from the
   assert.match(lib, /Some\(case\) => match case\.get_properties\(\)\.map_err\(php_failed\)\?\.get\("value"\)\.map\(Zval::dereference\)\.and_then\(Zval::string\) \{/);
 });
 
-test('PHP describes the array that the read member of a list case gives as a list (GN-6x, B2.147)', () => {
+test('PHP describes the array that the read member of a list case gives as a list (GN-6x, B2.151)', () => {
   const { contract, caseFiles, foreign } = relaySample();
   const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
   // The walk of the owner reads the kind that the case names, so the items of value.items cross as HostValue::List.
