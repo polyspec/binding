@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- http-negotiation의 case 37개의 시험이 다섯 target에서 실패했다. property `accept.ranges`의 group `accept`에서 잘못된
+  field를 가진 case는 키 `lines`로 receiver를 만드는 `accept.parse`의 실패를 기대하는데, 시험이 실패를 기대하는 block
+  앞에서 receiver를 만들어서 receiver를 만들 때 시험이 실패했다. 이제 receiver의 factory가 case가 기대하는 kind를 raise하고
+  case에 `faults`도 `after`도 없으면, 시험은 receiver를 만드는 것이나 호출에서 그 실패를 기대하고, Go는 factory의 오류를
+  case의 오류로 받는다(GN-13f). `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다.
 - 코어가 `DEPS`의 레포에 branch로 의존하는 레포에서 end-to-end check의 Go 단계가 실패했다. `go vet`이 "missing go.sum entry
   for module providing package github.com/polyspec/http-media-type/packages/go/media_type"를 냈다. scaffold는 그 의존을
   `replace` 없는 `v0.0.0` require로 쓰고 개발 checkout은 그것을 추적되지 않는 `go.work`로 해소하는데, 실행은 `go.work`를

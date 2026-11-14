@@ -2040,7 +2040,13 @@ the design ids are those of the binding design.
   than the case names. A factory that takes no key of the case fits every case, so it makes the receiver only when no
   factory that takes a key does. The test of a case that raises makes the receiver as a local before the call that
   must fail: a receiver that cannot be made fails the test, and its failure is not taken for the failure that the
-  case expects.
+  case expects. When the factory that makes the receiver from the keys of the case raises a variant whose row of
+  `errors.kinds` gives the kind that the case expects, and the case has neither `faults` nor `after`, the failure of
+  the case is the failure of making the receiver or of the call: the test expects it from both, and Go takes the
+  error of the factory as the error of the case and calls the member only on a receiver that it made. Why: a group
+  of cases that both the factory and a member of its class run, such as the invalid fields of a parser and its
+  property, names the failure of the parse for both, and the runner of the repository makes the receiver and calls
+  the member as one step.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
   a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not

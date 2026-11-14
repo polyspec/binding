@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
+  `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key
+  `lines`, and the tests made the receiver before the block that expects the failure, so the test failed at making
+  it. When the factory of the receiver raises the kind that the case expects, and the case has neither `faults` nor
+  `after`, the test now expects the failure from making the receiver or from the call, and Go takes the error of the
+  factory as the error of the case (GN-13f). Verified by `make test-ts`: the new test failed before the change.
 - The Go steps of the end-to-end check failed for a repository whose core depends on a repository of `DEPS` by a
   branch: `go vet` gave "missing go.sum entry for module providing package
   github.com/polyspec/http-media-type/packages/go/media_type", because the scaffold writes that dependency as a

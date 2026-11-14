@@ -1662,7 +1662,12 @@
   member의 인자를 담는다. factory `from_units` 곁의 메서드 `get_units`의 case에서 `units`가 그렇다. 그 키로 만든
   receiver는 case가 이름한 값과 다른 값이다. case의 키를 하나도 받지 않는 factory는 모든 case에 맞으므로, 키를 받는
   factory가 없을 때만 receiver를 만든다. raises가 있는 case의 시험은 실패해야 하는 호출 앞에서 receiver를 지역 변수로
-  만든다. 만들 수 없는 receiver는 시험을 실패시키며, 그 실패는 case가 기대하는 실패로 받아들여지지 않는다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
+  만든다. 만들 수 없는 receiver는 시험을 실패시키며, 그 실패는 case가 기대하는 실패로 받아들여지지 않는다. case의 키로
+  receiver를 만드는 factory가 `errors.kinds`의 행이 case가 기대하는 kind를 주는 variant를 raise하고, case에 `faults`도
+  `after`도 없으면, case의 실패는 receiver를 만드는 실패이거나 호출의 실패다. 시험은 둘 모두에서 그 실패를 기대하고, Go는
+  factory의 오류를 case의 오류로 받아 만든 receiver에만 member를 부른다. 이유: parser의 잘못된 field와 그 property처럼
+  factory와 그 class의 member가 함께 실행하는 case group은 둘 모두에 parse의 실패를 적으며, 레포의 runner는 receiver를
+  만들고 member를 부르는 것을 한 단계로 한다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
   자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
   그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. `then`의 호출은

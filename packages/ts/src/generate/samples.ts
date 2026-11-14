@@ -1124,6 +1124,17 @@ export interface RaisingCase {
   receiver?: Receiver;
   // GN-6ae: the calls that observe the receiver after the call of the case.
   after?: After[];
+  // GN-13f: the factory that makes the receiver from the keys of the case raises the kind that the case expects, so the
+  // failure of the case is the failure of making the receiver or of the call; never with faults or after.
+  receiverFails?: true;
+}
+
+// GN-13f: whether the factory of a receiver that the keys of a case give may raise the kind of the case: a variant of
+// its raises whose row of errors.kinds gives that kind. A receiver of an instance value is made by its own steps.
+function receiverMayRaise(model: Model, receiver: Receiver | undefined, record: Record<string, unknown>, kind: string): boolean {
+  if (receiver === undefined || record['receiver'] !== undefined || receiver.on !== undefined || receiver.pick !== undefined || receiver.then !== undefined) return false;
+  const raises = receiver.factory.member.raises ?? [];
+  return model.contract.errors.kinds.some((row) => row.library === undefined && raises.includes(row.variant) && kindsOf(row).includes(kind));
 }
 
 // GN-6ae (CK-22): a call of `after` of a case: a method of the class of the receiver, its arguments and its result.
@@ -1520,7 +1531,9 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     if (faults !== undefined && model.faults.length === 0) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
     // GN-5: a point of another library is armed as a point of the contract is, by the arming of the member: its core
     // is linked into the binding crate, whose fault-test turns on the points of that core.
-    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
+    // A case that arms faults or holds after makes its receiver first, as the faults and the calls of after need it.
+    const fails = faults === undefined && record['after'] === undefined && receiverMayRaise(model, receiver, record, raises.kind);
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...(fails ? { receiverFails: true as const } : {}) });
   }
   return out;
 }

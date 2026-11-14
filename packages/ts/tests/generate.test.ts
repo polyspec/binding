@@ -3967,6 +3967,23 @@ test('the receiver of a case is made from the keys that are no parameter of its 
   assert.match(blank, /def test_b4_tag_with_suffix_a_blank_tag_takes_no_empty_suffix\(self\) -> None:\n {8}receiver = pkg\.Tag\.blank\(\)\n {8}with self\.assertRaises\(pkg\.ClassesValueError\) as caught:\n {12}receiver\.with_suffix\(""\)\n/);
 });
 
+test('a case whose receiver the factory of its keys may fail to make expects the failure of making it or of the call (GN-13f, B2.150)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  // tag.parse makes the receiver from `text` and raises the kind missing, which the case of tag.name expects.
+  cases.tag_name.push({ id: 'the_empty_text_names_no_tag', text: '', raises: { kind: 'missing', status: null, category: 'value', message: 'no value for text' } });
+  const out = generate({ contract: read('packages/rust/interface.json'), caseFiles: new Map([['contracts/cases.json', cases]]), version: '0.0.0', coreLib: 'polyspec_classes' });
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_b4_tag_name_the_empty_text_names_no_tag\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.ClassesValueError\) as caught:\n {12}pkg\.Tag\.parse\(""\)\.name\n/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(out, path), /test\('B-4: Tag\.name the_empty_text_names_no_tag', \(\) => \{\n {2}assert\.throws\(\(\) => pkg\.Tag\.parse\(''\)\.name, /, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB4TagNameTheEmptyTextNamesNoTag\(\): void\n {4}\{\n {8}try \{\n {12}\\Polyspec\\Classes\\Tag::parse\(""\)->name\(\);\n/);
+  // Go gives the failure of the factory as the err of the case, and calls the member only on a receiver it made.
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB4TagNameTheEmptyTextNamesNoTag\(t \*testing\.T\) \{\n\tmade0, err := TagParse\(""\)\n\tif err == nil \{\n\t\t_, err = made0\.Name\(\)\n\t\}\n\tfailure, ok := err\.\(\*liberrors\.ClassesValueError\)/);
+  // The factory of the receiver of tag.with_suffix, tag.new, raises nothing, so that receiver is still made first.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_b4_tag_with_suffix_the_empty_suffix_is_refused\(self\) -> None:\n {8}receiver = pkg\.Tag\("a"\)\n/);
+});
+
 test('a class value that the core gives by reference leaves as a new instance of a copy of it (T-5, GN-6b)', () => {
   const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
   const files = ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];

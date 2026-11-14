@@ -1006,8 +1006,16 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
   for (const kase of raisingCases(model, fn)) {
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
+    // GN-13f: a receiver whose factory raises the kind of the case gives its failure as the err of the case, and the
+    // member is called only on a receiver that was made.
+    let making: string | undefined;
     const call = written(fn, kase.id, () => {
-      const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
+      let receiver = '';
+      if (kase.receiver !== undefined && kase.receiverFails === true && goResultCount(kase.receiver.factory) === 1) {
+        const factory = kase.receiver.factory;
+        making = invoke(v, factory, callArgs(v, b, factory, (arg) => caseValue(v, b, arg, kase.receiver?.args ?? new Map())), '');
+        receiver = b.fresh('made');
+      } else if (kase.receiver !== undefined) receiver = made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
     });
     if (typeof call === 'string') {
@@ -1023,7 +1031,12 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
     if (kase.faults !== undefined) {
       lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(kase.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
     }
-    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
+    if (making === undefined) lines.push(callLine(fn, invoke(v, fn, args, receiver)));
+    else {
+      const results = fn.special === 'stringify' ? 1 : goResultCount(fn);
+      lines.push(`${receiver}, err := ${making}`, 'if err == nil {', `\t${[...Array.from({ length: results }, () => '_'), 'err'].join(', ')} = ${invoke(v, fn, args, receiver)}`, '}');
+    }
+    lines.push(...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
     (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
