@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- PHP는 배열이 list인지를 ext-php-rs 0.16.4의 `has_sequential_keys`로 판정했다. 그 iterator는 각 key를
+  `ArrayKey::from_zval`로 읽는데, 이것은 string key를 UTF-8로만 받고 그 밖에는 "Invalid array key!"로 panic한다.
+  그래서 php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351`이 실패했다. 이제 바인딩은 각 key를
+  `next_zval`로 int나 string의 bytes로 읽으며(`sequential_keys`), ext-php-rs의 결함은
+  https://github.com/extphprs/ext-php-rs/issues/848 로 보고했다(U-7, GN-6x, T-2).
+
 - out 행 `bytes`가 UTF-8이 아닌 byte string을 `Uint8Array`로 주는데도 Node와 WASM은 `Uint8Array`를 B-1의 집합 밖
   값으로 기술했다. 그래서 php-serialization의 그런 값의 왕복(Node 시험 264개와 WASM 시험 264개)이 PHP의 값이 아니라고
   거부되었다. 이제 Node와 WASM은 `Uint8Array`를 bytes로, 다른 typed array를 집합 밖의 값으로 기술한다(B-1, U-7,

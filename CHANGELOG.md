@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- PHP judged whether an array is a list with `has_sequential_keys` of ext-php-rs 0.16.4, whose iterator reads each
+  key through `ArrayKey::from_zval`, which takes a string key only as UTF-8 and panics with "Invalid array key!" on
+  another, so the tests `array_invalid_utf8_key` and `random_value_351` of php-serialization failed. The binding now
+  reads each key with `next_zval` as an int or the bytes of a string (`sequential_keys`), and the defect of
+  ext-php-rs is reported as https://github.com/extphprs/ext-php-rs/issues/848 (U-7, GN-6x, T-2).
+
 - Node and WASM described a `Uint8Array` as a value outside the set of B-1, although the out row `bytes` gives a
   byte string that is no UTF-8 as a `Uint8Array`, so the round trip of every such value of php-serialization (264
   tests in Node and 264 in WASM) was refused as no value of PHP. Node and WASM now describe a `Uint8Array` as bytes
