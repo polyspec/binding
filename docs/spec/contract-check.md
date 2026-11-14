@@ -149,7 +149,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   repository's: `Polyspec\CrudUi\Validator`, `polyspec.crud_ui.validator`.
 
 - **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
-  (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding. For
+  (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding, so a
+  Cargo manifest of a binding crate that lacks the dependency line of a library whose path the generated code names
+  (GN-3e), such as a library whose error a row of `errors.kinds` passes on, is a finding. For
   a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module and its release
   need, and names each item that is missing or differs with the value it must have. Of the Go
   module it compares `go.mod`, `internal/ffi/Cargo.toml` and `internal/ffi/src/lib.rs`, the files that the source tree

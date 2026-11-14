@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 95536098d977487f4dada6c50c6036c4bbe48c657ee3408394e53869836f3ae9 -->
+<!-- source-sha256: 37812e4419155f8cd9811631f540cd65ad6bef2b015d19e0b82392241dbefb28 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약의 unit과 type이 이름하지 않는 라이브러리의 오류를 `errors.kinds`가 그대로 전달하는 계약은 그 라이브러리의 의존 줄이
+  없는 바인딩 crate를 주었다. 각 crate의 생성된 `lib.rs`는 variant `polyspec_<library>::Error::<Variant>`를 그 경로로
+  맞추므로, rustc가 Python, Node, PHP crate를 E0433 "cannot find module or crate"로 거부했고 `binding check`는 아무것도
+  보고하지 않았다(CK-19). `scaffold`는 manifest의 라이브러리를 unit과 type에서만 모았다. 이제 `errors.kinds`의 각 행의
+  `library`를 더하므로, 각 바인딩 crate와 `pyproject.toml`이 그 라이브러리를 적고(GN-3e, GN-7c), CK-19는 그것이 없는
+  추적 manifest를 보고한다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과

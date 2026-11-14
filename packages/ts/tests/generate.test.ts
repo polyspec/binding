@@ -1307,6 +1307,23 @@ test('pyproject.toml names another library at the version of a release form, and
   }
 });
 
+test('each binding crate depends on a library that only a row of errors.kinds names, whose error the core passes on (GN-3e, GN-7c, CK-19)', () => {
+  // The generated code matches the variant polyspec_stamps::Error::Late by its path, so every binding crate needs the
+  // crate of stamps, although no unit and no type of the contract names stamps.
+  const { contract, foreign } = plotSample();
+  contract.errors.kinds.push({ variant: 'polyspec_plot::Error::Stamp/polyspec_stamps::Error::Late', library: 'stamps' });
+  const points = ['polyspec-points', { path: '../../../points/packages/rust' }] as const;
+  const packages = trackedPackages(contract, '0.0.0', new Map<string, unknown>([points, ['polyspec-stamps', { path: '../../../stamps/packages/rust' }]]), [], foreign);
+  for (const manifest of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
+    assert.match(String(packages.get(manifest)), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/, manifest);
+  }
+  assert.match(String(packages.get('packages/ts/wasm/Cargo.toml')), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/);
+  assert.match(String(packages.get('packages/go/internal/ffi/Cargo.toml')), /\npolyspec-stamps = \{ path = "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/stamps\/packages\/rust" \}\n/);
+  assert.match(String(packages.get('packages/python/pyproject.toml')), /\ndependencies = \["polyspec-points", "polyspec-stamps"\]\n/);
+  // A core that does not depend on the library gives no binding crate, which scaffold names and CK-19 reports.
+  assert.throws(() => trackedPackages(contract, '0.0.0', new Map<string, unknown>([points]), [], foreign), /does not depend on polyspec-stamps/);
+});
+
 test('a record of another repository is named in the package of its repository in the tests of every target (T-3, GN-6c)', () => {
   const { contract, caseFiles, foreign } = plotSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });

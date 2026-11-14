@@ -102,7 +102,8 @@ const tomlValue = (value: unknown): string => {
 };
 
 // T-3: the libraries whose types the binding of the contract converts, each of which its manifests name (GN-3e): the
-// libraries that the contract names, and the libraries that the members of a callback unit of another library name
+// libraries that the contract names in its units and its types, the libraries whose errors its errors.kinds passes
+// on (GN-7c), and the libraries that the members of a callback unit of another library name
 // when the contract takes that unit, because the binding wraps the callback and converts the values of its members
 // (GN-6s). foreign: the contracts of the libraries; a library whose contract is not there adds none.
 export function namedLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
@@ -130,6 +131,10 @@ function namedUnits(contract: Contract, foreign: ReadonlyMap<string, Contract>):
   };
   walk(contract.units, '', contract.library);
   walk(contract.types, '', contract.library);
+  // GN-3e, GN-7c: a row of errors.kinds that passes on the error of another library (its library, E-1b (a)) makes the
+  // generated code match the variant by its path in the crate of that library. The source of a row (E-1b (b)) and the
+  // rows of errors.wrapped name no crate in the generated code.
+  for (const row of contract.errors.kinds) if (row.library !== undefined && row.library !== contract.library) libraries.add(row.library);
   // A library that the contract names without a unit, such as the owner of a kind, has no unit here.
   return [...found.values(), ...[...libraries].filter((library) => ![...found.values()].some((n) => n.library === library)).map((library) => ({ library, unit: '' }))];
 }

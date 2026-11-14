@@ -148,9 +148,12 @@ the design ids are those of the binding design.
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
   the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
-  code names: each library that the contract names, and each library that the members of a callback unit of another
+  code names: each library that the contract names in its units and its types, each library whose error a row of
+  `errors.kinds` passes on (its `library`, E-1b (a)), because the generated code matches the variant of that error by
+  its path in the crate of that library (GN-7c), and each library that the members of a callback unit of another
   library name when the contract takes that unit, because the binding wraps the callback and converts the values of
-  its members (GN-6s). The Cargo manifest of each binding crate has the dependency line of each of them, which the
+  its members (GN-6s). A library that a row names only as the `source` of a variant of the core error (E-1b (b)) or
+  that `errors.wrapped` names is not named by the generated code and adds no line. The Cargo manifest of each binding crate has the dependency line of each of them, which the
   core names too, and `pyproject.toml` has the Python package of each; `go.mod` requires those of them that own a
   record or a value class among those types (GN-15f). A manifest also names the package of another library that the
   generated code of its ecosystem imports or needs when it is loaded: `package.json` has in `dependencies` the npm

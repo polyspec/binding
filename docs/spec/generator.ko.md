@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b4cad5df41673a323feec67bcbaddf928f2d7eb799e76027791bd8be1cf6fb7b -->
+<!-- source-sha256: 1d95c3c2e72649fc957b67c64a25841afe461bc6bee3ccbab24f41a4ac3b3d64 -->
 # 생성기
 
 [English](generator.md)
@@ -115,9 +115,12 @@
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
-  manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 이름하는 라이브러리와, 계약이 다른
-  라이브러리의 callback unit을 받을 때 그 unit의 member가 이름하는 라이브러리다. 바인딩이 그 callback을 감싸고 member의 값을
-  변환하기 때문이다(GN-6s). 바인딩 crate의 Cargo manifest는 그 각각의 의존 줄을 가지며 코어도 그 줄을 적는다.
+  manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 unit과 types에서 이름하는 라이브러리,
+  `errors.kinds`의 행이 그 오류를 그대로 전달하는 라이브러리(그 행의 `library`, E-1b (a)), 계약이 다른 라이브러리의 callback
+  unit을 받을 때 그 unit의 member가 이름하는 라이브러리다. 그대로 전달하는 오류는 생성된 코드가 그 라이브러리 crate의 경로로
+  variant를 맞추기 때문이고(GN-7c), callback unit은 바인딩이 그 callback을 감싸고 member의 값을 변환하기 때문이다(GN-6s).
+  행이 코어 오류 variant의 `source`로만 적는 라이브러리(E-1b (b))나 `errors.wrapped`가 적는 라이브러리는 생성된 코드가
+  이름하지 않으므로 줄을 더하지 않는다. 바인딩 crate의 Cargo manifest는 그 각각의 의존 줄을 가지며 코어도 그 줄을 적는다.
   `pyproject.toml`은 그 각각의 Python package를 가진다. `go.mod`는 그 가운데 그 타입들에 record나 값 class가 있는 라이브러리를
   require한다(GN-15f). manifest는 그 생태계의 생성된 코드가 import하거나 로드될 때 필요로 하는 다른 라이브러리의 package도
   적는다. `package.json`은 그 타입들에 값 class가 있는 각 라이브러리의 npm package를 `dependencies`에 적는다. Node addon과
