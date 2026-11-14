@@ -81,7 +81,10 @@ ${same}`;
 export function defaultCaseValue(model: Model, arg: Arg): { value: unknown } | undefined {
   const declared = arg.default;
   if (declared === undefined || 'computed' in declared) return undefined;
-  if ('empty' in declared) return { value: [] };
+  // GN-6i: {empty: "object"} of a value type is the empty map of the case form {"kind": "map", "value": []}: an empty
+  // dict, array, Map or Go map of a value alias, and the instance that the out row of the kind map of a value class of
+  // another repository makes from an empty map. {empty: "list"} and {empty: "map"} are the empty list of entries.
+  if ('empty' in declared) return { value: declared.empty === 'object' ? { kind: 'map', value: [] } : [] };
   const found = declaredValue(model, arg);
   return found === undefined ? undefined : { value: found.value };
 }

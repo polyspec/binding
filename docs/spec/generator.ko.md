@@ -727,8 +727,15 @@
   `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
-  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
-  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
+  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 값 alias(U-7), 또는 다른
+  저장소의 값 alias나 값 class(U-7 (a'), GN-6x)의 parameter와 field는 기본값 `{empty: "object"}`를 가질 수 있다. 그
+  코어 parameter는 그 형태의 `Option`이고, 바인딩은 생략된 값에 `None`을 넘기며, 값이 없으면 빈 객체라는 것은 코어가
+  정한다. 선언은 Python에서 `...`, PHP에서 `null`(값 class는 배열을 받지 않기 때문이다), TypeScript에서 선택 parameter를
+  보인다. GN-13d와 Go의 U-2 테스트는 그 자리에 case 값 `{"kind": "map", "value": []}`를 준다. 값 alias에서는 빈
+  `dict`, 배열, `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
+  만드는 instance다. 이유: json 값 같은 값 타입의 options 객체는 빈 객체가 자연스러운 부재이고, `None`이 무엇인지는
+  이미 코어가 정한다. 이름을 대고 거부하는 것(G-4):
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, 값 타입의 다른 `{empty}` 기본값, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
   수·bool·text·latin1·bytes·source·list·map·enum·값 타입·`optional`이 아닌 타입의 기본값, `optional`이나 값 타입의
   `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값. 다만 `optional` 타입의 기본값은 거부하지 않는다. 그런 field의 결과 형태는 그

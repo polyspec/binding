@@ -1856,7 +1856,8 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
     const shown = (a: Arg): string => {
       if (a.default === undefined) return '';
       const value = declaredValue(model, a)?.value;
-      return ` = ${value === undefined ? ('empty' in a.default ? '[]' : 'null') : typeof value === 'string' ? phpText(value) : JSON.stringify(value)}`;
+      // GN-6i: {empty: "object"} of a value type is left out by null, which a value class does not take as an array.
+      return ` = ${value === undefined ? ('empty' in a.default && a.default.empty !== 'object' ? '[]' : 'null') : typeof value === 'string' ? phpText(value) : JSON.stringify(value)}`;
     };
     const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}${a.default !== undefined && 'computed' in a.default ? ` the core decides its value when it is left out (${a.default.computed})` : ''}`);
     const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}${shown(a)}`);

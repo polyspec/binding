@@ -211,5 +211,45 @@
       },
       "result": 0
     }
+  ],
+  "width": [
+    {
+      "id": "an_object_of_two_members",
+      "rule": "U-2",
+      "value": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text",
+              "value": "a"
+            },
+            {
+              "kind": "null"
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "b"
+            },
+            {
+              "kind": "bool",
+              "value": true
+            }
+          ]
+        ]
+      },
+      "result": 2
+    },
+    {
+      "id": "a_text_has_no_member",
+      "rule": "U-2",
+      "value": {
+        "kind": "text",
+        "value": "a"
+      },
+      "result": 0
+    }
   ]
 }

@@ -538,7 +538,7 @@ export function collectModel(
           if (lacking !== undefined) throw new Unsupported(`${where}: the default {empty: "object"} leaves out the record, but its field ${lacking.name.join('_')} has no default (U-2)`);
         }
         record = { unit: recordUnit, param: parameter };
-        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true, units) });
+        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true, units, foreign) });
         continue;
       }
       // GN-6ae: a parameter of a function type whose function returns passthrough belongs to a member with machine;
@@ -550,7 +550,7 @@ export function collectModel(
         if (!(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${where}: a parameter of a function type that returns passthrough is generated for a member with machine only (GN-6ae)`);
         if (type.function.errors !== undefined) throw new Unsupported(`${where}: the recognized errors of a function parameter are not generated yet (GN-6ae)`);
         for (const [i, part] of type.function.parameters.entries()) supportedType(part, units, `${where} parameter ${i}`, foreign);
-        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
+        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units, foreign) });
         continue;
       }
       // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
@@ -563,7 +563,7 @@ export function collectModel(
       const generatedInterface = iface?.kind === 'interface' && iface.origin === 'generated';
       if (generatedInterface && parameter.core !== undefined) throw new Unsupported(`${where}: a parameter of the generated interface ${iface.id} names no core borrow, because the core takes the value (GN-6ap)`);
       if (!source && !foreignDirect && !generatedInterface) supportedType(type, units, where, foreign, true);
-      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
+      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units, foreign) });
     }
     // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
     // parameters in order, and PHP also the fields of the record that follow them.
@@ -1761,7 +1761,15 @@ export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
 // declaration shows, names the constant of the core that it equals in default_core. A default of an optional type is
 // {literal: null} or {computed}, and the core takes the Option of the optional type itself (GN-6i); a {literal: null}
 // default of a value type names no constant, because the core decides what no value is.
-function declaredDefault(item: Parameter | Field, where: string, field: boolean, units: Map<string, Unit>): { default?: Default; defaultCore?: string } {
+// U-7, GN-6x: whether a type names a value alias of this contract, or a value alias or value class of another one.
+function valueTyped(type: Type, units: Map<string, Unit>, foreign: ReadonlyMap<string, Contract> | undefined): boolean {
+  if (typeof type !== 'object' || !('unit' in type)) return false;
+  const unit = type.library === undefined ? units.get(type.unit) : foreign?.get(type.library)?.units.find((u) => u.id === type.unit);
+  if (unit?.origin !== 'value') return false;
+  return unit.kind === 'alias' || (unit.kind === 'class' && type.library !== undefined);
+}
+
+function declaredDefault(item: Parameter | Field, where: string, field: boolean, units: Map<string, Unit>, foreign?: ReadonlyMap<string, Contract>): { default?: Default; defaultCore?: string } {
   const declared = item.default;
   if (declared === undefined) return {};
   const type = item.type;
@@ -1772,6 +1780,9 @@ function declaredDefault(item: Parameter | Field, where: string, field: boolean,
   const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
   if (unit?.kind === 'alias' && unit.origin === 'value' && 'literal' in declared && declared.literal === null) return { default: declared };
   const container = typeof type !== 'object' ? undefined : 'list' in type ? 'list' : 'map' in type || 'keyed_map' in type ? 'map' : undefined;
+  // U-2, GN-6i: {empty: "object"} of a value alias (U-7) or of a value class or value alias of another repository
+  // (GN-6x, U-7 (a')) is left out as None; the core decides that no value is the empty object.
+  if ('empty' in declared && declared.empty === 'object' && valueTyped(type, units, foreign)) return { default: declared };
   if ('empty' in declared) {
     if (declared.empty !== container) throw new Unsupported(`${where}: the default {empty: ${JSON.stringify(declared.empty)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
     return { default: declared };

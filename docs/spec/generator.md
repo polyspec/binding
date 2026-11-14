@@ -890,8 +890,16 @@ the design ids are those of the binding design.
   `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
-  and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
-  field without a default, any other default of a record parameter, a default of an `optional` type other than
+  and the declarations make it optional. A parameter or a field of a value alias (U-7), or of a value alias or a value
+  class of another repository (U-7 (a'), GN-6x), may have the default `{empty: "object"}`: its core parameter is the
+  `Option` of its form, the binding passes `None` when it is left out, and the core decides that no value is the empty
+  object. The declarations show `...` in Python, `null` in PHP, which a value class does not take as an array, and an
+  optional parameter in TypeScript. The U-2 test of GN-13d and of Go gives in its place the case value
+  `{"kind": "map", "value": []}`: an empty `dict`, array, `Map` or Go `map` for a value alias, and for a value class of
+  another repository the instance that the member of the out row of the kind `map` makes from an empty map of its
+  owner. Why: an options object of a value type, such as a json value, has an empty object as its natural absence, and
+  the core already decides what `None` means. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
+  field without a default, any other `{empty}` default of a value type, any other default of a record parameter, a default of an `optional` type other than
   `{literal: null}` and `{computed}`, a default of a type that is no number, bool, text, latin1, bytes, source, list,
   map, enum, value type or `optional`, a `{literal}` or `{const}` default without `default_core` other than
   `{literal: null}` of an `optional` or a value type,
