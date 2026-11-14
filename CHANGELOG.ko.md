@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
+  `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
+  `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`.
+
 - 생성 Rust가 `Result::ok`와 `Result::unwrap_or`를 불렀다. 레포의 `clippy.toml`은 둘 다 오류를 그럴듯한 값으로 바꾸므로
   금하며, 그래서 php-serialization의 PHP, Python, Node, WASM crate의 `cargo clippy -D warnings`가 시험 전에 실패했다.
   owner와 던져진 것의 table은 lock이나 borrow를 `.ok()`로 읽었고, `handle_count`, `handle_position`과 개수 진입점은
