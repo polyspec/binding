@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: f5513239b1fa2cd96b9d1b91d17d4f0a2f51cddab3b71f95f1d790b76c618baa -->
+<!-- source-sha256: 7792e16cb69b78e2f3fc051d89049faddd235fe219397a876cfdee76ac0ed191 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -72,3 +72,4 @@
 | B2.165 | Node와 WASM은 case의 정수 값 float를 숫자가 아니라 그 out 행이 만드는 인스턴스(`php_float.constructor`)로 준다(GN-13e). 숫자는 코어에게 int이므로 php-serialization의 `serialize float_1e15`가 `d:` 대신 `i:`를 냈다. 그것은 두 target 각각에서 다른 값을 비교하는 시험 74개 가운데 하나다 | `packages/ts/src/generate/samples.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.166 | PHP는 key가 UTF-8이 아닌 byte string인 배열을 만든다(U-7, GN-6x). 확장의 make가 ext-php-rs의 "Invalid array key!"로 실패하며, php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351` 4개가 그렇다 | `packages/ts/src/generate/alias_php.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.167 | Node와 WASM의 값 alias walk는 값 class의 property 이름을 명시 deref 없이 넘긴다(GN-6as, GN-6af). `value_define(instance, *name, ...)`이 php-serialization의 Node와 WASM crate의 `cargo clippy -D warnings`를 `explicit_auto_deref`로 실패시켰다 | `packages/ts/src/generate/alias_node.ts`, `alias_wasm.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/kept`; 모든 crate의 `cargo clippy`가 통과하는 php-serialization checkout의 `make e2e` | [o] |
+| B2.220 | Go와 WASM은 다른 레포의 callback unit을 PHP, Python, Node처럼 감싼다(GN-6s, T-3). WASM은 소유 npm 패키지의 subpath `./wasm`의 타입을, Go는 소유 Go module의 interface와 그것을 받는 각 package의 dispatch를 적고, 그 자리의 Go case 값은 그 interface의 fixture이거나 make member가 돌려주는 class의 instance 값이다. 생성기는 hyper의 Go와 WASM을 session-store의 `opening_functions.open_page.store`와 `opening_functions.answer_keep_request.store` 때문에 거부했다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/index.ts`, `go.ts`, `go_rust.ts`, `wasm.ts`, `tests_go.ts`, `packages/ts/tests/generate.test.ts`, `tests/e2e/sample`, `tests/e2e/consumer`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/consumer`; hyper checkout의 `generate`가 callback unit을 대지 않는다 | [ ] |

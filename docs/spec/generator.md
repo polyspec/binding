@@ -1328,9 +1328,15 @@ the design ids are those of the binding design.
   (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the
   language code is `Failure::Raised`, which the core of this repository passes on. The binding declares no type of
   the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
-  Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
-  type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
-  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
+  Protocol of `<owner root>._types`, Node the type that the owning npm package exports, WASM the type that the subpath
+  `./wasm` of that package exports, Go the interface of the package of the unit's module in the owning Go module, which
+  go.mod requires), and a user implements that type. Go writes the dispatch of the unit, which decodes the arguments
+  of a member and calls the method of the Go value, in each package whose members take the unit, as it writes the
+  dispatch of a callback unit of this repository in the package of that unit. A case value at its place is a fixture
+  of the callback, whose type has the methods of the owning type, or an instance value, which the class that its make
+  member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). The name of such a unit differs from the
+  name of every unit of this contract, which the generator refuses by name otherwise (G-4). Not generated yet, each
+  refused by name (G-4): a case value that a member
   of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a

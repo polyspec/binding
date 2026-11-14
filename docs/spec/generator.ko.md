@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 015db5fb5394f0e5a2094b1b224f8a6050da0e08f4e7823bd1d00bf028ec97fd -->
+<!-- source-sha256: 178856e54911c3648b76f8ddd1786ceab545d05c0cb7ef63965fd2722c7bf15c -->
 # 생성기
 
 [English](generator.md)
@@ -1099,8 +1099,13 @@
   method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
   언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
   패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
-  타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
-  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  타입, WASM은 그 패키지의 subpath `./wasm`이 내보내는 타입, Go는 go.mod가 요구하는 소유 Go module 안에서 그 unit의 module에 해당하는
+  package의 interface), 사용자는 그 타입을 구현한다. Go는 이 레포의 callback unit의 dispatch를 그 unit의 package에 쓰듯이, member의
+  인자를 decode하고 Go 값의 method를 부르는 그 unit의 dispatch를 그 unit을 받는 member가 있는 각 package에 쓴다. 그 자리의 case 값은
+  소유 타입의 method를 가진 callback fixture이거나, make member가 돌려주는 class가 주는 instance 값이며, 이 레포의 case와 같다(G-5,
+  GN-6aa, GN-13f). 그런 unit의 이름은
+  이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는
+  것(G-4): 소유 레포의 member가 만드는 case 값(그
   member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
