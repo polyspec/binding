@@ -7166,6 +7166,43 @@ test('a result of a value alias is compared by the texts of its places in pre-or
   assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
 });
 
+test('a Go expected result takes the forms of the Go out rows of the alias: a UTF-8 byte string a string, a map with sequence keys a []any, another map a keyed map (GN-13e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  const all = (go: unknown): Record<string, unknown> => ({ php: 'map', python: 'map', node: 'map', wasm: 'map', go });
+  data.out = data.out.filter((row: any) => row.kind !== 'map');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+    { kind: 'map', when: { predicate: 'sequence_keys', is: true }, make: all('list') },
+    { kind: 'map', when: { predicate: 'sequence_keys', is: false }, make: all({ keyed_map: { key: ['int', 'text', 'bytes'] } }) },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'utf8_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: '6162' } } },
+    { id: 'other_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: 'ff' } } },
+    { id: 'empty_bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: '' } } },
+    { id: 'sequence_map', value: { kind: 'text', value: 'x' }, result: { kind: 'map', value: [[{ int: 0 }, { kind: 'bool', value: true }]] } },
+    { id: 'keyed', value: { kind: 'text', value: 'x' }, result: { kind: 'map', value: [[{ hex: '6b' }, { kind: 'null' }], [{ int: 5 }, { kind: 'null' }], [{ hex: 'ff' }, { kind: 'null' }]] } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const want = (name: string): string => {
+    const start = go.indexOf(`func TestGN13e${name}(`);
+    assert.ok(start >= 0, `${name}\n${go}`);
+    return go.slice(start, go.indexOf('\n}\n', start));
+  };
+  assert.match(want('SameUtf8Bytes'), /want := \(any\)\("ab"\)/);
+  assert.match(want('SameOtherBytes'), /want := \(any\)\(\[\]byte\("\\xff"\)\)/);
+  assert.match(want('SameEmptyBytes'), /want := \(any\)\(""\)/);
+  assert.match(want('SameSequenceMap'), /want := \(any\)\(\[\]any\{true\}\)/);
+  const keyed = want('SameKeyed');
+  assert.match(keyed, /\.Set\(binding\.TextKey\("k"\), nil\)/);
+  assert.match(keyed, /\.Set\(binding\.IntKey\(5\), nil\)/);
+  assert.match(keyed, /\.Set\(binding\.BytesKey\(\[\]byte\("\\xff"\)\), nil\)/);
+});
+
 test('the result of an alias with the entry points of codec-test goes back through its in and out functions to the same texts (GN-13e, U-1)', () => {
   const out = sampleWith(() => {}, ['python', 'node', 'php']);
   const wasm = sampleWith(() => {}, ['wasm']);
