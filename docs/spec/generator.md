@@ -783,8 +783,13 @@ the design ids are those of the binding design.
   language there, as the `reference` of PHP does. `package.json` names the npm package of the owner (GN-3e). Refused
   by name (G-4): a member that is no public constructor, a constructor with another parameter, a reference whose
   class has no such writable property, an `in` row with several cases or a `when`, and a `read` that is no public
-  property of the class. Not generated yet, refused by name (G-4): the Go form, because the Go call of GN-15c has no
-  node that makes an instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
+  property of the class. Go takes such a class when it is a value class without core_type (GN-6af), the struct of
+  the package of the owner, whose Go module go.mod requires (GN-15f): an `in` row reads the property of the pointer,
+  its field when the property is writable and its method otherwise, as node 11 with one handle per pointer of a call,
+  and describes the keyed map of the owner that such an instance keeps as a map of its entries; an `out` row is node
+  13 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
+  owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
+  (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
   language is the only form in which a user of both packages can pass an instance from one to the other.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
@@ -1691,8 +1696,9 @@ the design ids are those of the binding design.
   target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
   again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
   them for every target, so they fail with the same instruction. For
-  each library whose records or value classes (GN-6x) the contract names, or the members of a callback unit of
-  another library that the contract takes name (GN-3e), it writes a line `require <module> <version>`
+  each library whose records, value classes (GN-6x) or callback units (GN-6s) the contract names, or the value
+  aliases whose Go rows name a class of their owner (GN-6ar), or the members of a callback unit of another library that
+  the contract takes name (GN-3e), it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this

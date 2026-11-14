@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6cf28f93db3a8dabf0993f286f445a92c61dc029879a33edf6fbb4d0a9982337 -->
+<!-- source-sha256: e7db208003c10d6bd5a4f5a915ae479ff74f503f5e049b59249b54f4f1ed6d21 -->
 # 생성기
 
 [English](generator.md)
@@ -637,8 +637,13 @@
   그럴 필요가 없다. 타입의 이름이 `only`가 그 target에서 뺀 class(GN-6af)의 이름인 행은 거기서 언어의 타입을 이름한다.
   PHP의 `reference`가 그렇다. `package.json`은 owner의 npm package를 적는다(GN-3e). 이름을 대고 거부하는 것(G-4):
   public constructor가 아닌 member, 다른 parameter를 받는 constructor, 그런 writable property가 없는 class의 reference,
-  case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. 아직 생성하지 않고 이름을 대고
-  거부하는 것(G-4): Go의 꼴. GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
+  case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. Go는 그런 class가 core_type 없는 값
+  class(GN-6af), 곧 go.mod가 Go module을 요구하는(GN-15f) owner package의 struct일 때 받는다. `in` 행은 pointer의
+  property를, writable이면 그 field로 아니면 그 method로 읽어 한 호출에서 pointer마다 handle 하나인 node 11로 묘사하고,
+  그런 인스턴스가 보관하는 owner의 keyed map은 entry의 map으로 묘사한다. `out` 행은 class의 위치를 가진 결과의 node
+  13(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
+  property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
+  PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
@@ -1391,7 +1396,7 @@
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
-  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record나 값 class(GN-6x)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이
