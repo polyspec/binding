@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 52574f3877352ba2b5b341dc014b6777188e1a4f3cba7e838d5ed122b54cd505 -->
+<!-- source-sha256: 258b2d017eb501030d02ad4ae00356390e080453521c52ba7784b13cdc86352b -->
 # 생성기
 
 [English](generator.md)
@@ -1925,3 +1925,10 @@
   `tests/e2e/relay`는 json의 첫 release tag까지 목록에 있다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
+  job `e2e`의 각 항목은 끝에서 끝까지 확인 뒤에 자기 work 디렉터리로 `make go-musl-check`를 실행하므로, 각 Go 모듈의
+  release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). job `e2e-amd64`는 `ubuntu-26.04`에서
+  `tests/e2e/sample`의 `make e2e`와 그 뒤의 `make go-musl-check`를 실행한다. `ubuntu-26.04-arm`에서 돌지 않는 유일한
+  job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고 실행하기
+  때문이다. workflow는 `main`의 push와 수동 실행에서 돈다. `v1/rust-core` 같은 개발 branch는 그 head의 수동
+  실행(`gh workflow run ci.yml --ref <branch>`)으로 확인한다. 그 branch의 push마다 돌면 갈래의 merge마다 전체 검사가
+  시작되기 때문이다.

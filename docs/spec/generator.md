@@ -2378,3 +2378,10 @@ the design ids are those of the binding design.
   its dependency as `DEPS`, before a commit is pushed or merged. Why: a job cannot check out a repository at a
   release that does not exist, an entry that names a missing directory fails for a reason that is no defect of the
   commit, and a contract that is silently left out of the job would look checked.
+  After the end-to-end check each entry of the job `e2e` runs `make go-musl-check` on its work directory, so the
+  released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g). The job `e2e-amd64`
+  runs `make e2e` of `tests/e2e/sample` and then `make go-musl-check` on `ubuntu-26.04`, the one job that does not
+  run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only
+  an amd64 machine links and runs them. The workflow runs on the push of `main` and on a manual run; a development
+  branch such as `v1/rust-core` is checked by a manual run of its head (`gh workflow run ci.yml --ref <branch>`),
+  because a run on every push of that branch would start the whole suite for each merge of a lane.
