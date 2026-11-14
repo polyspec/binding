@@ -646,6 +646,14 @@ the design ids are those of the binding design.
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`,
   each a `Raised` whose `Native` holds its `BindingError`. The wrapper holds only the `Native`, so it is `Send` and
   `Sync`, and a trait that requires them takes it. Python holds the object as a `Py<PyAny>` with or without `keeps`.
+  A member of a kept callback that recognizes an error unit (U-3) gives the core the kind of such an error in every
+  target, as the member of a callback of a call does (GN-6d): Node, PHP and WASM call the member of the struct of the
+  call, which recognizes it, and in Go the run of the kept func gives status 2 with the key under which the table of
+  no call holds the error that the recognized value wraps, its kind and its message; a kind of the unit is the core
+  error of the kind and removes the entry through `<prefix>__go_release_raised`, and any other kind goes back to the
+  caller as the same error. Why: whether the core keeps a callback is no part of how its error is classified, so a
+  kept callback that gave its error back unclassified would make the core see a raised error where the contract
+  names a kind (the case `a_kept_source_that_raises_a_recognized_error_refuses_the_key_in_a_later_call` of `index.get`).
   The end-to-end sample keeps a list of callbacks in an instance of a class and calls them in a later call
   (the class `index` of `tests/e2e/sample`). A callback parameter with `keeps` that is no item of a list or an
   `optional` moves into the core as its box, by value (`index.single`). A record parameter with `keeps` is made from

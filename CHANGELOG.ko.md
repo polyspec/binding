@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9a23ba97864ae56df500ec889b2bdf566553bb365a74a0977ce52855d9d3e17f -->
+<!-- source-sha256: fd683a72223968f3a964ee00f87e0987592634c898553223329a794644eed15e -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 보관되는 callback의 member가 자기가 인식하는 오류를 돌려주면 Go binding은 그 kind가 아니라 던져진 오류를 코어에
+  주었다. kept func의 실행이 인식된 값을 status 1의 오류로 가졌기 때문이다. 이제 그것은 감싼 오류의 key, 그 kind와
+  message와 함께 status 2를 주고, 보관되는 wrapper는 그 kind의 코어 오류를 만들고 항목을 지우며, 다른 kind는 호출자에게
+  같은 오류다(U-3, GN-6d, GN-6aa). sample의 `feed.get`은 `refused_error`를 인식하고, `index.get`과 `sample.ask`의 case가
+  하나씩 있다. `node --test packages/ts/tests/generate.test.ts`로 검증했다.
 
 - 한 parameter가 빌려주고 다른 parameter가 보관하는 callback unit은 그 trait가 `Send`와 `Sync`를 요구하면 Node, PHP,
   WASM에서 컴파일되지 않았다. napi `Object`, PHP `Zval`, `JsValue`를 갖는 호출의 struct가 빌려주는 parameter를 위해 그

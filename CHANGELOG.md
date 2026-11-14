@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The Go binding gave the core a raised error, not its kind, when a member of a kept callback returned an error that
+  the member recognizes: the run of the kept func kept the recognized value as an error of status 1. It now gives
+  status 2 with the key of the wrapped error, its kind and its message, the kept wrapper makes the core error of the
+  kind and removes the entry, and any other kind is the same error for the caller (U-3, GN-6d, GN-6aa). `feed.get`
+  of the sample recognizes `refused_error`, with a case of `index.get` and one of `sample.ask`. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
+
 - A callback unit that one parameter lends and another keeps did not compile in Node, PHP and WASM when its trait
   requires `Send` and `Sync`: the struct of a call, which holds a napi `Object`, a PHP `Zval` or a `JsValue`,
   implemented the trait for the parameter that lends. These targets now convert every value of a kept unit through

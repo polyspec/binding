@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 300dfa8e8bcb698662954f4188a4dcf9bd9045ce02c553130b70c33f9e1ed378 -->
+<!-- source-sha256: 78ee2f3103165e80c062f72f0f35506cd12c0500770108237609c0e95b393aba -->
 # 생성기
 
 [English](generator.md)
@@ -520,7 +520,13 @@
   func의 `cgo.Handle`을 묻는다(`Call.Keep`). owner 스레드에서 member를 부르면 GN-6d대로 바꾸고, 다른 스레드에서 부르면 kind
   `wrong_thread`, owner의 정리(Node의 env, PHP의 request) 뒤에 부르면 kind `internal`이며, 각각 그 `BindingError`를 담은
   `Native`의 `Raised`다. wrapper는 `Native`만 가지므로 `Send`이고 `Sync`이며, 그것을 요구하는 trait도 그것을 받는다.
-  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
+  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. error unit을 인식하는(U-3) 보관되는 callback의 member는 모든
+  대상에서 호출의 callback의 member처럼(GN-6d) 그런 오류의 kind를 코어에 준다. Node, PHP, WASM은 그것을 인식하는 호출의
+  struct의 member를 부르고, Go에서 kept func의 실행은 status 2와 함께, 인식된 값이 감싼 오류를 호출 없는 table이 갖는 key,
+  그 kind와 message를 준다. 그 unit의 kind는 그 kind의 코어 오류이고 `<prefix>__go_release_raised`로 항목을 지우며, 다른
+  kind는 같은 오류로 호출자에게 돌아간다. 이유: 코어가 callback을 보관하는지는 그 오류의 분류와 상관이 없으므로, 오류를
+  분류하지 않고 돌려주는 보관된 callback은 계약이 kind를 이름하는 곳에서 코어가 던져진 오류를 보게 한다(`index.get`의 case
+  `a_kept_source_that_raises_a_recognized_error_refuses_the_key_in_a_later_call`). end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
   나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). list나 `optional`의 항목이 아닌 `keeps`가 있는 callback
   parameter는 그 box로 값째 core에 들어간다(`index.single`). `keeps`가 있는 record parameter는 보관되는 callback의 변환으로
   field들에서 만들어지고, 그 core 타입은 `'static`이다(`index.supplied`). Go는 그 record의 field를 record의 reader가 아니라

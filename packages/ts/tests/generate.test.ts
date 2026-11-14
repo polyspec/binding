@@ -8442,7 +8442,7 @@ test('a callback of a parameter with keeps is held as a Native in Node, PHP and 
   assert.match(wasm, /fn kept_feed\(value: &JsValue, subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
   // Go: the callback is a kept func of the call that reads the number of the member first.
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchFeed\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_ran\(&self\.native, &args\)/);
   // Python holds the object as a Py<PyAny> with or without keeps.
   assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = /);
 });
@@ -9091,4 +9091,26 @@ test('a callback unit that one parameter lends and another keeps is called throu
   assert.match(text(sample, 'packages/python/generated/lib.rs'), /impl polyspec_sample::Feed for CbFeed \{/);
   // The cases of sample.ask call the lent feed in each target.
   assert.match(text(sample, 'packages/ts/generated/tests/generated.test.mjs'), /a_lent_feed_gives_its_value/);
+});
+
+test('Go gives the core the kind of an error that a member of a kept callback recognizes, as a callback of the call does (U-3, GN-6d, GN-6aa, B2.243)', () => {
+  // feed.get of the sample recognizes refused_error, and the index calls its kept feeds in a later call.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const binding = text(sample, 'packages/go/internal/binding/zz_generated_binding.go');
+  // The run of a kept func holds the error that the recognized wraps and gives 2, its key, its kind and its message.
+  assert.match(binding, /func keepRaised\(err error\) \(int32, \[\]byte\) \{\n\tif r, ok := err\.\(\*recognized\); ok \{\n\t\tenc := NewWriter\(\)\n\t\tenc\.Uint\(holdRaised\(r\.err\)\)\n\t\tenc\.Text\(r\.kind\)\n\t\tenc\.Text\(r\.message\)\n\t\treturn 2, enc\.Done\(\)\n\t\}/);
+  const go = text(sample, 'packages/go/internal/ffi/generated/lib.rs');
+  // The kept wrapper reads status 2 and makes the core error of the kind, as recognized_feed_get does for the call.
+  assert.match(go, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?match kept_ran\(&self\.native, &args\)\? \{\n\s+KeptRan::Ran\(run, bytes\) => \(run, bytes\),\n\s+KeptRan::Recognized\(key, kind, message\) => return Err\(kept_recognized_feed_get\(key, kind, message\)\),/);
+  assert.match(go, /fn kept_recognized_feed_get\(key: u64, kind: String, message: String\) -> binding_core::Failure<polyspec_sample::Error> \{\n\s+let core = match kind\.as_str\(\) \{\n\s+"refused" => Some\(polyspec_sample::Error::recognized\(polyspec_sample::Error::Refused, &message\)\),/);
+  // A kind that the core takes removes the error from the table; any other is the same error for the caller.
+  assert.match(go, /Some\(core\) => \{\n\s+\/\/ SAFETY:[^\n]*\n\s+unsafe \{ [a-z_]+__go_release_raised\(key\) \};\n\s+binding_core::Failure::Kind\(core\)\n\s+\}\n\s+None => thrown\(Thrown::Kept \{ key \}\)\.into\(\),/);
+  // The sample keeps no function type and no callback member that recognizes nothing, so kept_called is dead code there.
+  assert.doesNotMatch(go, /\bfn kept_called\b/);
+  // The other targets call the member of the struct of the call, which recognizes the error.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(sample, path), /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?CbFeed::get\(&borrowed, key\)/, path);
+    assert.match(text(sample, path), /fn recognized_feed_get\(/, path);
+  }
+  assert.match(text(sample, 'packages/go/zz_generated_test.go'), /AKeptSourceThatRaisesARecognizedErrorRefusesTheKeyInALaterCall/);
 });

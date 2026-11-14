@@ -1563,6 +1563,10 @@ export const convertsKept = (model: Model, type: Type, unit: Unit): boolean =>
 export const callStruct = (model: Model, cb: CallbackUnit): string =>
   rustType({ ...model, keptUnits: new Set<string>() }, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
 
+// U-3, GN-6d, GN-6aa: whether a member of a callback that a parameter with keeps holds recognizes an error unit, so
+// that Go gives the core its kind from a kept func as from a callback of a call.
+export const keptRecognizes = (model: Model): boolean => keptCallbacks(model).some((cb) => cb.members.some((m) => m.recognized !== undefined));
+
 // GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
 export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
 

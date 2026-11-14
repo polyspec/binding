@@ -11,7 +11,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust, aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew, heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync, machineFunction, unitFn, libraryBlocks, type KeptClass, type KeptField, countsThrown,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
-  errorMatched, keepsAny, keptCallbacks, keptModel,
+  errorMatched, keepsAny, keptCallbacks, keptModel, keptRecognizes,
   recognizedFn,
   recognizedMatch,
   interfaceOf, implementorsOf,
@@ -890,7 +890,7 @@ impl Drop for KeptRun {
     }
 }
 
-/// GN-6z: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in a call of its
+${keptRecognizes(model) ? keptRanRust(model) : `/// GN-6z: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in a call of its
 /// run, on the thread of the caller: the call and the encoded result, or the Raised of the key under which package
 /// binding keeps the error that the func returned or the value of its panic.
 fn kept_called(native: &Native, args: &[u8]) -> Result<(KeptRun, Vec<u8>), Raised> {
@@ -917,7 +917,73 @@ ${model.aliases.length === 0 ? '' : `    // GN-6u: the arguments give the handle
         Err(fail) => Err(thrown(Thrown::Binding(fail))),
     }
 }
-`;
+`}`;
+}
+
+// U-3, GN-6d, GN-6aa: the run of a kept func when a member of a kept callback recognizes an error unit: package binding
+// gives status 2 with the key under which it holds the error, its kind and its message, as a call of a callback gives
+// status 2 with the index of the error (Call.raise). kept_called, for a function type and a member that recognizes
+// nothing, takes such an error as the error that the func returned; it is written only when one of them is kept,
+// because the lints deny dead code.
+function keptRanRust(model: Model): string {
+  const p = prefix(model);
+  const called = takesFunction(model) || keptCallbacks(model).some((cb) => cb.members.some((m) => m.recognized === undefined));
+  return `/// U-3, GN-6aa: how a kept func of Go code ended: its run and the encoded result, or the key under which package binding
+/// holds an error that a member of a kept callback recognizes, with its kind and its message.
+enum KeptRan {
+    Ran(KeptRun, Vec<u8>),
+    Recognized(u64, String, String),
+}
+
+/// GN-6z, U-3: calls a kept func of Go code with the encoded arguments, by the handle of its Native and in a call of its
+/// run, on the thread of the caller: how it ended, or the Raised of the key under which package binding keeps the
+/// error that the func returned or the value of its panic.
+fn kept_ran(native: &Native, args: &[u8]) -> Result<KeptRan, Raised> {
+    let function = match native.downcast::<GoNative>() {
+        Some(function) => function,
+        None => return Err(thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6z: a function that no Go func entered as") })))),
+    };
+    let mut buffer = Buffer { ptr: std::ptr::null_mut(), len: 0, cap: 0 };
+${model.aliases.length === 0 ? '' : `    // GN-6u: the arguments give the handles of their funcs first.
+    let args = given_first(args.to_vec());
+`}    // SAFETY: the handle is alive while its Native is, args is a slice and the buffer is writable.
+    let status = unsafe { ${p}__go_function(function.handle, args.as_ptr(), args.len(), &mut buffer) };
+    let bytes = taken(buffer);
+    let mut input: &[u8] = &bytes;
+    if status == 0 {
+        return match uint_in(&mut input) {
+            Ok(call) => Ok(KeptRan::Ran(KeptRun { call }, input.to_vec())),
+            Err(fail) => Err(thrown(Thrown::Binding(fail))),
+        };
+    }
+    if status == 2 {
+        let mut read = || -> Result<(u64, String, String), Fail> {
+            let key = uint_in(&mut input)?;
+            let kind = text_in(&mut input, "U-3: the kind of a recognized error")?;
+            let message = text_in(&mut input, "U-3: the message of a recognized error")?;
+            finish_input(input)?;
+            Ok((key, kind, message))
+        };
+        return match read() {
+            Ok((key, kind, message)) => Ok(KeptRan::Recognized(key, kind, message)),
+            Err(fail) => Err(thrown(Thrown::Binding(fail))),
+        };
+    }
+    match uint_in(&mut input).and_then(|key| finish_input(input).map(|()| key)) {
+        Ok(key) => Err(thrown(Thrown::Kept { key })),
+        Err(fail) => Err(thrown(Thrown::Binding(fail))),
+    }
+}
+${!called ? '' : `
+/// GN-6z: calls a kept func of Go code as kept_ran does: the call and the encoded result, or the Raised of the key of
+/// its error; an error that a member recognizes is the same error here, because its caller recognizes none.
+fn kept_called(native: &Native, args: &[u8]) -> Result<(KeptRun, Vec<u8>), Raised> {
+    match kept_ran(native, args)? {
+        KeptRan::Ran(run, bytes) => Ok((run, bytes)),
+        KeptRan::Recognized(key, _, _) => Err(thrown(Thrown::Kept { key })),
+    }
+}
+`}`;
 }
 
 // GN-6ae: the lines that make the closure of a function parameter from a Go func, which entered as a callback of the
@@ -1158,7 +1224,10 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
             uint_out(output, ${memberIndex}_u64);
 ${writes.join('\n')}
         }
-        let (run, bytes) = kept_called(&self.native, &args)?;
+        ${m.recognized === undefined ? 'let (run, bytes) = kept_called(&self.native, &args)?;' : `let (run, bytes) = match kept_ran(&self.native, &args)? {
+            KeptRan::Ran(run, bytes) => (run, bytes),
+            KeptRan::Recognized(key, kind, message) => return Err(kept_${recognizedFn(cb, m)}(key, kind, message)),
+        };`}
         let read = || -> Result<${result}, Fail> {
 ${decode}
         };
@@ -1167,6 +1236,25 @@ ${decode}
         value
     }`;
   }).join('\n');
+  // U-3, GN-6d: an error that a member of the kept callback recognizes, which the run of its kept func gave with the key
+  // under which package binding holds it: a kind of the unit is the core error of the kind, and the entry leaves the
+  // table; any other goes back to the caller as the same error.
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3, GN-6aa: an error of ${m.member.id} that it recognizes, which a kept func gave with the key under which package
+/// binding holds it, its kind and its message: a kind of the unit is the core error of the kind (GN-6d), whose entry
+/// leaves the table; any other goes back to the caller as the same error.
+fn kept_${recognizedFn(cb, m)}(key: u64, kind: String, message: String) -> ${failure} {
+    let core = ${recognizedMatch(m, '    ')};
+    match core {
+        Some(core) => {
+            // SAFETY: the export takes the key by value and keeps no pointer.
+            unsafe { ${p}__go_release_raised(key) };
+            binding_core::Failure::Kind(core)
+        }
+        None => thrown(Thrown::Kept { key }).into(),
+    }
+}
+`).join('');
   return `
 /// GN-6aa: ${goName(cb.unit.name)}, held as a Native of a kept func of package binding, which the core keeps after the call.
 struct Kept${struct} {
@@ -1191,7 +1279,7 @@ fn kept_${plain}(input: &mut &[u8], subject: &str) -> Result<Kept${struct}, Fail
 
 impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
 
 // GN-6u: an out row of the Go form gives a native value back, so the crate gives Go a new handle of its func.

@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, cancelsAny, takesCancel } from './model.ts';
+import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
 import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
@@ -2259,8 +2259,16 @@ func holdRaised(err error) uint64 {
 	return raisedErrors.next
 }
 
-// keepRaised holds an error in the table: 1 and its key.
-func keepRaised(err error) (int32, []byte) {
+// keepRaised holds an error in the table: 1 and its key${keptRecognizes(model) ? `, or 2, its key, its kind and its message for an
+// error that a member of a kept callback recognizes (U-3, GN-6d), whose error the table holds` : ''}.
+func keepRaised(err error) (int32, []byte) {${keptRecognizes(model) ? `
+	if r, ok := err.(*recognized); ok {
+		enc := NewWriter()
+		enc.Uint(holdRaised(r.err))
+		enc.Text(r.kind)
+		enc.Text(r.message)
+		return 2, enc.Done()
+	}` : ''}
 	enc := NewWriter()
 	enc.Uint(holdRaised(err))
 	return 1, enc.Done()

@@ -264,6 +264,14 @@
           "core": {
             "path": "polyspec_sample::Feed::get",
             "receiver": "&self"
+          },
+          "errors": {
+            "recognize": [
+              {
+                "unit": "refused_error"
+              }
+            ],
+            "reason": "U-3"
           }
         }
       ]
@@ -836,7 +844,9 @@
           "returns": {
             "optional": "text"
           },
-          "raises": [],
+          "raises": [
+            "polyspec_sample::Error::Refused"
+          ],
           "wait": "none",
           "core": "polyspec_sample::ask",
           "optional_reason": "U-3"
@@ -2131,7 +2141,9 @@
             "optional": "text"
           },
           "optional_reason": "U-3",
-          "raises": [],
+          "raises": [
+            "polyspec_sample::Error::Refused"
+          ],
           "wait": "none",
           "core": {
             "path": "polyspec_sample::Index::get",
