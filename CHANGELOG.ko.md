@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c2491d3f59beb5f6d561bfbc2ed95c4d369068d325d0d4547de263ec2028a251 -->
+<!-- source-sha256: 01675228d2d0d725f5377f86deac25012b6f767513542e68064a578acc28f1b6 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -28,7 +28,8 @@
 
 - sample fixture가 열린 host-container handle과 과도한 비순환 깊이를 구별하고, 열린 경로 밖의 공유를 허용한다
   (GN-6at, B2.270-1). native 시험은 순환, 깊이, 공유, Map 반복 순회를 확인한다. 이전에는 순환도 깊이 제한에
-  닿았고, 열린 handle 추적을 더하기 전에 core 회귀 시험이 그 구별에서 실패했다.
+  닿았고, 열린 handle 추적을 더하기 전에 core 회귀 시험이 그 구별에서 실패했다. commit한 소스의 end-to-end
+  실행은 native Python, Node, WASM, PHP container 회귀 시험을 포함해 다섯 대상 모두 통과했다.
 
 - 들어오는 Python list와 dict, JavaScript Array, Map, plain object가 host-value 순회 동안 description과
   handle 하나를 유지한다(GN-6at, B2.270). 이전에는 반복 container가 새 handle을 받아 core가 순환을 식별하지
