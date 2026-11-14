@@ -42,4 +42,5 @@ export const NOT_READ: readonly Input[] = [
   { path: 'config/checklist.json', why: 'make docs-check reads it to check the checklists of docs/plans; a run of make e2e does not' },
   { path: 'config/documents.json', why: 'make docs-check and make documents-stamp read it to select the documents; a run of make e2e does not' },
   { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
+  { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
 ];
