@@ -95,7 +95,9 @@ the design ids are those of the binding design.
     `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
     fields of a release of GN-3c: `"type":
     "module"`, `napi.binaryName` and `napi.targets`, because the host package is the package that a release builds
-    and publishes; host code imports `native/generated/index.mjs`
+    and publishes; and in `dependencies` the npm package of each other library that the generated Node and WASM code
+    imports or requires (GN-3e), with the version that the host chooses, because the host package installs them for
+    the generated entry; host code imports `native/generated/index.mjs`
     (or `index.cjs`) by its relative path, and so do the generated tests, from `native/generated/tests/`. The WASM
     crate is `native/wasm/`, its module, glue and declarations are `native/wasm/generated/`, which the host's `files`
     names (`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts` and `*.wasm`), and its tests import
@@ -157,8 +159,12 @@ the design ids are those of the binding design.
   core names too, and `pyproject.toml` has the Python package of each; `go.mod` requires those of them that own a
   record or a value class among those types (GN-15f). A manifest also names the package of another library that the
   generated code of its ecosystem imports or needs when it is loaded: `package.json` has in `dependencies` the npm
-  package of each library that owns a value class among those types, because the entries of the Node addon and of the
-  WASM module import that package for its classes (GN-6x), and `composer.json` has in `require` the extension
+  package of each library that owns a value class or a callback unit among those types, because the generated Node
+  and WASM code imports or requires every such package: the entries import the package of a value class for its
+  classes (GN-6x), the declarations name the interface of a callback unit of another repository from the package of
+  its owner (GN-6s), and the Node entry requires that package for the error classes that a member of the unit
+  recognizes (GN-6d). The `package.json` of a host package declares each of them in its `dependencies`, which `check`
+  reads (GN-3b, CK-19), because the host package is the package that installs and loads the generated entry; and `composer.json` has in `require` the extension
   `ext-<extension name>` and the Composer package of each library that owns a record or a value class among those
   types, because the extension makes and reads instances of the classes of that extension, which PHP loads first. A
   library that only the contract of another library names in another place, such as the type of a member of a class

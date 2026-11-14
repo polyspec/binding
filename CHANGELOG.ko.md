@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 37812e4419155f8cd9811631f540cd65ad6bef2b015d19e0b82392241dbefb28 -->
+<!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `scaffold`가 쓰는 `package.json`은 계약의 타입 가운데 값 class의 소유자만 `dependencies`에 적었다. 그런데 생성된 선언은 다른
+  레포의 callback unit의 interface를 소유자의 package에서 import하고, Node entry는 그 unit의 member가 recognize하는 오류
+  class를 위해 그 package를 require한다. 그래서 그런 unit을 받고 소유자의 값 class는 받지 않는 package는 entry가 import하는
+  package를 적지 않았고, CK-19는 host `package.json`의 `dependencies`를 읽지 않았다. 이제 manifest는 그 타입들에 값 class나
+  callback unit이 있는 각 소유자의 package를 적고(GN-3e), CK-19는 그 가운데 하나를 version과 상관없이 `dependencies`에 적지
+  않은 host `package.json`을 보고한다(GN-3b).
+  `node --test packages/ts/tests/generate.test.ts packages/ts/tests/contract-check.test.ts`로 확인했다.
 - 계약의 unit과 type이 이름하지 않는 라이브러리의 오류를 `errors.kinds`가 그대로 전달하는 계약은 그 라이브러리의 의존 줄이
   없는 바인딩 crate를 주었다. 각 crate의 생성된 `lib.rs`는 variant `polyspec_<library>::Error::<Variant>`를 그 경로로
   맞추므로, rustc가 Python, Node, PHP crate를 E0433 "cannot find module or crate"로 거부했고 `binding check`는 아무것도

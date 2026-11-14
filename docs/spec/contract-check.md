@@ -153,7 +153,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   Cargo manifest of a binding crate that lacks the dependency line of a library whose path the generated code names
   (GN-3e), such as a library whose error a row of `errors.kinds` passes on, is a finding. For
   a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module and its release
-  need, and names each item that is missing or differs with the value it must have. Of the Go
+  need, and names each item that is missing or differs with the value it must have; among them is each npm package
+  that the generated Node and WASM code imports or requires (GN-3e), which the `dependencies` of the host's
+  `package.json` declare at any version. Of the Go
   module it compares `go.mod`, `internal/ffi/Cargo.toml` and `internal/ffi/src/lib.rs`, the files that the source tree
   tracks; the generated files `zz_generated_*.go`, `internal/ffi/generated/` and the static libraries of
   `internal/ffi/lib/` are no tracked files, so the check does not read them: a release adds them in the commit of

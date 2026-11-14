@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 15f873e1fc2e753c1b0fab769c73cacffae094daa8c5562ab7d17f96a3c0e395 -->
+<!-- source-sha256: 81963ec73b474596541a658ed17198dbb83ee6e9a2a199cb4356069c46caffc7 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -131,7 +131,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다. 그래서 생성된 코드가 그 경로를
   이름하는 라이브러리(GN-3e), 예를 들어 `errors.kinds`의 행이 그 오류를 그대로 전달하는 라이브러리의 의존 줄이 없는 바인딩
   crate의 Cargo manifest는 finding이다. host 패키지(L-2a, GN-3b)는 host
-  manifest에서 네이티브 모듈과 그 release에 필요한 항목만 읽고, 없거나 다른 항목마다 그 이름과 가져야 할 값을 적는다. Go 모듈에서는
+  manifest에서 네이티브 모듈과 그 release에 필요한 항목만 읽고, 없거나 다른 항목마다 그 이름과 가져야 할 값을 적는다.
+  그 항목에는 생성된 Node와 WASM 코드가 import하거나 require하는 각 npm package가 있으며(GN-3e), host `package.json`의
+  `dependencies`가 version과 상관없이 그것을 적는다. Go 모듈에서는
   `go.mod`, `internal/ffi/Cargo.toml`, `internal/ffi/src/lib.rs`를 비교한다. 이것이 source tree가 추적하는 파일이다.
   생성 파일 `zz_generated_*.go`, `internal/ffi/generated/`, `internal/ffi/lib/`의 정적 라이브러리는 추적 파일이 아니므로
   검사가 읽지 않는다. release가 Go tag의 commit에 그것들을 더한다(GN-15g).

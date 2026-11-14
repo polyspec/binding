@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1d95c3c2e72649fc957b67c64a25841afe461bc6bee3ccbab24f41a4ac3b3d64 -->
+<!-- source-sha256: 47e131757d68d1ae8cfee9e4ff803e3072bc04f3bfccf34c0420f8282398cda2 -->
 # 생성기
 
 [English](generator.md)
@@ -71,7 +71,9 @@
   - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
     `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
     `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 GN-3c의 release 필드 `"type": "module"`, `napi.binaryName`, `napi.targets`를 갖는다. release가
-    빌드하고 배포하는 패키지가 host 패키지이기 때문이다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
+    빌드하고 배포하는 패키지가 host 패키지이기 때문이다. 또 `dependencies`에 생성된 Node와 WASM 코드가 import하거나
+    require하는 다른 라이브러리의 npm package를 각각 host가 고른 version으로 갖는다(GN-3e). host 패키지가 생성된 entry를
+    위해 그것을 설치하기 때문이다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
     생성 시험도 `native/generated/tests/`에서 그렇게 한다. WASM crate는 `native/wasm/`이고, 그 module, glue, 선언은
     `native/wasm/generated/`이며 host의 `files`가 그것을 적는다(`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts`,
     `*.wasm`). 그 시험은 `native/wasm/generated/index.mjs`를 상대 경로로 import한다.
@@ -123,8 +125,12 @@
   이름하지 않으므로 줄을 더하지 않는다. 바인딩 crate의 Cargo manifest는 그 각각의 의존 줄을 가지며 코어도 그 줄을 적는다.
   `pyproject.toml`은 그 각각의 Python package를 가진다. `go.mod`는 그 가운데 그 타입들에 record나 값 class가 있는 라이브러리를
   require한다(GN-15f). manifest는 그 생태계의 생성된 코드가 import하거나 로드될 때 필요로 하는 다른 라이브러리의 package도
-  적는다. `package.json`은 그 타입들에 값 class가 있는 각 라이브러리의 npm package를 `dependencies`에 적는다. Node addon과
-  WASM 모듈의 entry가 그 class를 위해 그 package를 import하기 때문이다(GN-6x). `composer.json`은 그 타입들에 record나 값
+  적는다. `package.json`은 그 타입들에 값 class나 callback unit이 있는 각 라이브러리의 npm package를 `dependencies`에 적는다.
+  생성된 Node와 WASM 코드가 그런 package를 모두 import하거나 require하기 때문이다. entry는 값 class의 package를 그 class를
+  위해 import하고(GN-6x), 선언은 다른 레포의 callback unit의 interface를 소유자의 package에서 이름하며(GN-6s), Node entry는
+  그 unit의 member가 recognize하는 오류 class를 위해 그 package를 require한다(GN-6d). host 패키지의 `package.json`은 그
+  각각을 `dependencies`에 적고 `check`가 그것을 읽는다(GN-3b, CK-19). 생성된 entry를 설치하고 로드하는 패키지가 host
+  패키지이기 때문이다. `composer.json`은 그 타입들에 record나 값
   class가 있는 각 라이브러리의 확장 `ext-<extension name>`과 Composer package를 `require`에 적는다. 확장이 그 확장의
   class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 다른 라이브러리의 계약이 다른
   자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도

@@ -507,17 +507,19 @@ export const WASM_BINDGEN = '0.2.130';
 
 // The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
 // at each entry whose conditions choose it in the browser.
-// GN-3e: the libraries that own a value class among the types that the contract names: the entries of the Node addon and
-// of the WASM module import the npm package of each for its classes (GN-6x). A library whose contract is not there
-// adds none, as in namedLibraries.
-function valueClassLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
+// GN-3e: the libraries whose npm package the generated Node and WASM code imports or requires: the owner of a value
+// class among the types that the contract names, whose package the entries import for its classes (GN-6x), and the
+// owner of a callback unit among them, whose interface the declarations name from its package (GN-6s) and whose error
+// classes the Node entry requires for the members of the unit that recognize them (GN-6d). A library whose contract is
+// not there adds none, as in namedLibraries.
+function npmLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
   // GN-6ar: a value alias whose rows of Node or WASM name a class of its owner is made and read through that class too.
   const classRows = (owner: Contract, unit: Unit): boolean => unit.kind === 'alias' && (['node', 'wasm'] as const).some((lang) =>
     (unit.out ?? []).some((row) => { const make = row.make[lang]; return typeof make === 'string' && make.includes('.'); })
     || (unit.in ?? []).some((row) => owner.units.some((u) => u.kind === 'class' && u.id === row[lang])));
   return [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => {
     const owner = foreign.get(library);
-    return owner?.units.some((u) => u.id === unit && ((u.kind === 'class' && u.origin === 'value') || classRows(owner, u))) === true;
+    return owner?.units.some((u) => u.id === unit && ((u.kind === 'class' && u.origin === 'value') || u.origin === 'callback' || classRows(owner, u))) === true;
   }).map((named) => named.library))].sort();
 }
 
@@ -525,12 +527,17 @@ function valueClassLibraries(contract: Contract, foreign: ReadonlyMap<string, Co
 // of the dependency line of the core, and `*` for a development form, which the development install resolves.
 const packageVersion = (library: string, dependencies: CoreDependencies): string => dependencyForm(dependencies.get(`polyspec-${library}`)).version ?? '*';
 
-// GN-3e: the npm package of each library whose value class the entries import, with its version.
-function npmDependencies(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
-  return Object.fromEntries(valueClassLibraries(contract, foreign).flatMap((library): [string, string][] => {
+// GN-3e: the npm package of each library that the generated Node and WASM code imports or requires (npmLibraries).
+function npmPackages(contract: Contract, foreign: ReadonlyMap<string, Contract>): { library: string; name: string }[] {
+  return npmLibraries(contract, foreign).flatMap((library) => {
     const name = (foreign.get(library)?.packages['node'] as { package?: string } | undefined)?.package;
-    return name === undefined ? [] : [[name, packageVersion(library, dependencies)]];
-  }));
+    return name === undefined ? [] : [{ library, name }];
+  });
+}
+
+// GN-3e: those packages with their versions, which the manifest that scaffold writes names in dependencies.
+function npmDependencies(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
+  return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies)]));
 }
 
 // GN-3e: the extension and the Composer package of each library whose record or value class the extension makes and
@@ -651,7 +658,8 @@ export interface HostRequirement {
 
 // license: the licence of the core, which the host's manifest names too (GN-3f); a core without one asks for none, and
 // CK-71 reports the core.
-export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown, license?: string): HostRequirement[] {
+// foreign: the contracts of the libraries that the contract names, whose npm packages the generated code imports (GN-3e).
+export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown, license?: string, foreign: ReadonlyMap<string, Contract> = new Map()): HostRequirement[] {
   const out: HostRequirement[] = [];
   const toml = (text: string): Record<string, any> => parseToml(text) as Record<string, any>;
   const json = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>;
@@ -681,6 +689,10 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const wasmFiles = contract.targets.includes('wasm') ? ['native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'] : [];
     for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', ...wasmFiles]) {
       out.push({ path, item: `files (${file})`, want: file, found: (t) => ((json(t)['files'] ?? []) as string[]).find((f) => f === file) });
+    }
+    // GN-3b, GN-3e: the host package installs each package that the generated code imports, at the version it chooses.
+    for (const { name } of npmPackages(contract, foreign)) {
+      out.push({ path, item: `dependencies (${name})`, want: name, found: (t) => (Object.hasOwn((json(t)['dependencies'] ?? {}) as object, name) ? name : undefined) });
     }
   }
   if (contract.targets.includes('php') && isHost(contract, 'php')) {
