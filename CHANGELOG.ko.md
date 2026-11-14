@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4386ea0b14f20bee8f89e6771f00493e2e7e8990ce11e873003fe2cc726ce678 -->
+<!-- source-sha256: d56b192e3ddd51a84869782e8fc493d65103710db3a7dea29306a381dcf22ea5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -15,6 +15,12 @@
   `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
   it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
   `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
+
+- 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
+  symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
+  `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을
+  켜는 root manifest나 `.cargo/config.toml`의 release profile을 보고한다(GN-15i, CK-91). `make test-ts`로 검증했다: 새
+  시험이 변경 전에는 실패했다.
 
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는

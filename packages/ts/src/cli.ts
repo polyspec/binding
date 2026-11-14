@@ -308,6 +308,23 @@ if (command === 'check') {
     differs = true;
     process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-71 the core ${checked.core.crate} names no license, which every manifest of its binding packages carries (GN-3f)\n`);
   }
+  // CK-91 (GN-15i): the release profile that builds the Go static library turns on no LTO, which puts the standard
+  // library into the one object of the library, so that two such libraries do not link in one Go program.
+  if (checked.targets.includes('go')) {
+    for (const file of [join(root, 'Cargo.toml'), join(root, '.cargo/config.toml')]) {
+      if (!existsSync(file)) continue;
+      let lto: unknown;
+      try {
+        lto = (parse(readFileSync(file, 'utf8')) as { profile?: { release?: { lto?: unknown } } }).profile?.release?.lto;
+      } catch {
+        // not TOML: Cargo names the file
+        continue;
+      }
+      if (lto === undefined || lto === false || lto === 'off') continue;
+      differs = true;
+      process.stderr.write(`${file}: CK-91 [profile.release] turns on LTO (lto = ${JSON.stringify(lto)}), which puts the standard library into the one object of the Go static library, so that a Go program cannot link it with the static library of another repository (GN-15i)\n`);
+    }
+  }
   // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
   if (options.has('--release')) {
     for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles), foreign as ReadonlyMap<string, Contract>)) {

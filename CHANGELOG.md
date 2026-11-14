@@ -17,6 +17,13 @@
   it", and by `generate` of the hyper checkout, which names no callback unit; `make e2e REPO=tests/e2e/consumer` is
   queued.
 
+- A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
+  built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
+  library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
+  library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
+  `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
+  change.
+
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
@@ -51,7 +58,6 @@
 - PHP read the least int of a case, `-9223372036854775808` in the source of a test, as the negation of the float
   9223372036854775808, so the test `serialize int_min` of php-serialization gave `d:-9.223372036854776E+18;`. The
   generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
-
 
 - The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
   `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key
