@@ -285,10 +285,13 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if (unit?.kind === 'record') {
     if (typeof value !== 'object' || Array.isArray(value)) throw new Unsupported(`a case value of the record ${unit.id} is not an object of its fields`);
     const fields = value as Record<string, unknown>;
-    return ctx.recordNew(
+    return leftOutNew(
+      ctx,
       unit,
       (unit.fields ?? []).map((f) => {
         const key = langName('python', f.name, 'variable');
+        // GN-6a: a field that may be left out is null when the case value leaves it out.
+        if (!(key in fields) && caseLeftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
         if (!(key in fields)) throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
@@ -1058,12 +1061,21 @@ function comparable(model: Model, type: Type, seen: Set<string> = new Set()): bo
 // GN-6v: the value of a field that a case value of an input leaves out, which Python and JavaScript leave out of the
 // value they make, and PHP gives as null at its place in the constructor.
 const LEFT_OUT = '\u0000left out';
-const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
-  const all = kase.unit.fields ?? [];
+const leftOutFields = (ctx: Context, unit: Unit, fields: string[]): { unit: Unit; values: string[] } => {
+  const all = unit.fields ?? [];
   const kept = ctx.lang === 'php' ? all : all.filter((_f, i) => fields[i] !== LEFT_OUT);
   const values = ctx.lang === 'php' ? fields.map((v) => (v === LEFT_OUT ? 'null' : v)) : fields.filter((v) => v !== LEFT_OUT);
-  const unit = { ...kase.unit, fields: kept };
+  return { unit: { ...unit, fields: kept }, values };
+};
+const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
+  const { unit, values } = leftOutFields(ctx, kase.unit, fields);
   return ctx.variantNew === undefined ? ctx.recordNew(unit, values) : ctx.variantNew(variant, { ...kase, unit }, values);
+};
+// GN-6a: a value of a record of the result form, whose fields that a case value of an input leaves out are left out as
+// those of a case are.
+const leftOutNew = (ctx: Context, record: Unit, fields: string[]): string => {
+  const { unit, values } = leftOutFields(ctx, record, fields);
+  return ctx.recordNew(unit, values);
 };
 
 // G-5: two calls of a member whose results the generated test requires to be the same (the outcome is the result, or

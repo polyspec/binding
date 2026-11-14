@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- 기본값이 `{literal: null}`인 `optional` field를 뺀, 결과 형태 record의 case 값은 "a case value of the record ... has
+  no field"로 거부되었고, 결과 형태는 모든 언어에서 그 field를 받았으므로 호출자가 null을 주어야 했다. 이제 그런 field는
+  variant의 case의 field처럼 빠질 수 있다: Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나
+  `undefined`인 member를 null로 읽으며, PHP는 그 자리에서 null을 받고, Go는 pointer를 nil로 두며, case 값은 그 key를 뺄
+  수 있다(GN-6a, T-4). `tests/e2e/shapes`의 record `tally`에 field `note`가 있다. `make test-ts`로 확인했고, 새 시험은
+  변경 전에 실패했다. `make e2e REPO=tests/e2e/shapes`로도 확인했다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

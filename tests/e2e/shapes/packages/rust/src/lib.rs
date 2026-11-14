@@ -424,6 +424,8 @@ pub struct Tally {
     pub counts: OrderedMap<u64>,
     /// Each word by the number of its first occurrence, and the first word by the key `first`.
     pub labels: KeyedMap<String>,
+    /// A note of the tally, which a caller may leave out (SH-3: a field of the result form left out is null).
+    pub note: Option<String>,
 }
 
 /// The sums of the counts of each key, in the order of its first occurrence.
@@ -453,17 +455,24 @@ pub fn tally_of(words: &[String]) -> Tally {
         let _replaced: Option<String> =
             labels.insert(Key::Text(String::from("first")), first.clone());
     }
-    Tally { counts, labels }
+    Tally {
+        counts,
+        labels,
+        note: None,
+    }
 }
 
-/// The counts of a tally together with the number of its labels (GN-12: a map and a keyed map that enter in a record).
+/// The counts of a tally together with the number of its labels and one for its note (GN-12: a map and a keyed map
+/// that enter in a record; SH-3: a note that a caller left out is `None`).
 #[must_use]
 pub fn tally_total(tally: &Tally) -> u64 {
+    let noted = u64::from(tally.note.is_some());
     tally
         .counts
         .iter()
         .map(|(_word, count)| *count)
         .fold(widen(tally.labels.len()), u64::saturating_add)
+        .saturating_add(noted)
 }
 
 /// The maps of a list as one, the counts of a key added (GN-12: a map that enters in a list).

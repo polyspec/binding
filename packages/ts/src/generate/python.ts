@@ -1504,7 +1504,7 @@ ${members}`;
 class ${langName('python', u.name, 'class')}:
     \"\"\"T-4: the result form of the record; the constructor holds the values, which the binding judges when they enter.\"\"\"
 
-${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}`).join('\n')}`).join('');
+${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}${caseLeftOut(f) ? ' = None' : ''}`).join('\n')}`).join('');
   // T-9, GN-6v: a frozen dataclass per case and the alias of their union.
   const variants = model.variants.map((v) => `${v.cases.map((kase) => `
 

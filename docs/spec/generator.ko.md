@@ -300,6 +300,11 @@
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
   `invalid_argument_type`이다.
+  기본값이 `{literal: null}`인 `optional` field(T-4)는 variant의 case의 field(GN-6v)처럼 결과 형태에서 빠질 수 있다:
+  Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
+  선택으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고, Go는 그 field의 pointer를 nil로 두며, case 값은 그 key를 뺄 수
+  있고 그때 값은 null이다. 그런 field는 늘 그 값이나 null로 나간다. 이유: core는 null과 주지 않은 값에 똑같이 `None`을
+  받으므로(GN-6i), 값이 없는 호출자는 아무것도 쓰지 않는다.
 - **GN-6t** tuple(T-1)은 정확히 그 부분들로 된 열로 들어오고, 각 부분은 그 타입대로 바뀌므로 코어는 부분들의 Rust tuple을
   받는다: Python은 `tuple`, Node와 WASM은 `Array`, PHP는 list(키가 0부터 n-1까지 차례인 배열)를 받는다. 다른 타입의 값이나
   항목 수가 다른 열은 kind `invalid_argument_type`이다. tuple은 입력의 모든 자리에서 받는다: parameter, list의 항목, record

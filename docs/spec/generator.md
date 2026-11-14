@@ -369,6 +369,12 @@ the design ids are those of the binding design.
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+  An `optional` field whose default is `{literal: null}` (T-4) may be left out of the result form, as a field of a
+  case of a variant (GN-6v): Python gives the dataclass field the default `None`, Node and WASM read a missing or
+  `undefined` member as null and declare the member optional, PHP takes null at its place in the constructor, Go
+  leaves the pointer of the field nil, and a case value may leave out its key, which is then null. Such a field
+  always leaves with its value or null. Why: the core gets `None` for a null and for a value that was not given
+  alike (GN-6i), so a caller that has no value writes none.
 - **GN-6t** A tuple (T-1) enters as a sequence of exactly its parts, and each part is converted as its type, so the
   core gets the Rust tuple of the parts: Python takes a `tuple`, Node and WASM an `Array`, and PHP a list (an array
   whose keys are 0 to n-1 in order). A value of another type, or a sequence with another number of items, is kind

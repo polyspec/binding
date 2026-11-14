@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A case value of a record of the result form that left out an `optional` field whose default is `{literal: null}`
+  was refused as "a case value of the record ... has no field", and the result form took that field in every
+  language, so a caller had to give null. Such a field may now be left out as a field of a case of a variant: Python
+  gives the dataclass field the default `None`, Node and WASM read a missing or `undefined` member as null, PHP takes
+  null at its place, Go leaves the pointer nil, and a case value may leave out its key (GN-6a, T-4). The record
+  `tally` of `tests/e2e/shapes` has the field `note`. Verified by `make test-ts`, whose new test failed before the
+  change, and by `make e2e REPO=tests/e2e/shapes`.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static

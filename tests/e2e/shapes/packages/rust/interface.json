@@ -1294,6 +1294,18 @@
             ]
           },
           "required": true
+        },
+        {
+          "name": [
+            "note"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "SH-3"
         }
       ]
     }

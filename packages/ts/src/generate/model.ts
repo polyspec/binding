@@ -2147,7 +2147,8 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
   return `${taken}.and_then(|[${names.join(', ')}]| Ok((${parts.map((t, i) => `${part(t, names[i] ?? '')}?`).join(', ')}${parts.length === 1 ? ',' : ''})))`;
 };
 
-// T-9, GN-6v: an optional field of a case whose default is {literal: null} may be left out, and is then null.
+// T-9, GN-6v, GN-6a: an optional field of a case or of a record of the result form whose default is {literal: null}
+// may be left out, and is then null.
 export const caseLeftOut = (field: { type: Type; default?: Default }): boolean =>
   typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;
 

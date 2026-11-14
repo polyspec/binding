@@ -3400,6 +3400,21 @@ test('an optional field of a case whose default is {literal: null} may be left o
   assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[2].fields[0], { default: { literal: 'a' }, default_core: 'polyspec_variants::TEXT' }); }), /figure\.label\.text: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
 });
 
+test('an optional field of a record of the result form whose default is {literal: null} may be left out, and is null (T-4, GN-6a)', () => {
+  // The record tally of shapes has the result form, and its field note is optional<text> = {literal: null}.
+  const out = shaped();
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class Tally:[\s\S]*?\n    note: str \| None = None\n/);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly note\?: string \| null;/, path);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let note: Option<String> = default_in\(member\(value, "note", subject\)\?, \|value\| optional_in\(value, \|value\| text_in\(value, "note"\)\)\)\.map\(Option::flatten\)\?;/);
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/lib.rs'), /let note: Option<String> = default_in\(&member\(value, "note", subject\)\?, /);
+  // G-5: a case value of an input may leave the field out; PHP gives null at its place, Go nil, and a result holds null.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tally_total\(pkg\.Tally\(counts=\{\}, labels=\{\}\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tallyTotal\(\{ counts: new Map\(\[\]\), labels: new Map\(\[\]\) \}\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /tallyTotal\(new \\Polyspec\\Shapes\\Tally\(counts: \[\], labels: \[\], note: null\)\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Tally\{Counts: [^\n]*, Note: nil\}/);
+});
+
 test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {
   const out = variants();
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
