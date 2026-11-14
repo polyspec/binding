@@ -322,6 +322,40 @@
           "core": "polyspec_consumer::copy"
         },
         {
+          "id": "consumer.read",
+          "name": [
+            "read"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": {
+                "unit": "source",
+                "library": "sample"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::read"
+        },
+        {
           "id": "consumer.turned",
           "name": [
             "turned"
@@ -502,6 +536,11 @@
       "member": "consumer.copy",
       "file": "contracts/cases.json",
       "group": "copy"
+    },
+    {
+      "member": "consumer.read",
+      "file": "contracts/cases.json",
+      "group": "read"
     },
     {
       "member": "consumer.turned",

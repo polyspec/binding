@@ -1472,11 +1472,11 @@ test('the contract of a library that only a unit of another library names is rea
     // The contract check takes the unit of the third library, which is a record of its contract.
     const checked = run('check', join(root, 'consumer/packages/rust/interface.json'));
     assert.doesNotMatch(checked.stderr, /CK-9|has no unit|\n {4}at /);
-    // The targets that take a callback unit of another library generate, and their crates name the core of points.
+    // Every target takes a callback unit of another library (GN-6s), so each generates, and its crate names the core of
+    // points.
     const generated = run('generate', '--root', join(root, 'consumer'), '--out', join(root, 'out'));
-    assert.doesNotMatch(generated.stderr, /points has no unit point|\n {4}at /);
-    assert.match(generated.stderr, /\ngenerated: php, python, node\n$/);
-    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs']) {
+    assert.equal(generated.status, 0, generated.stderr);
+    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs', 'ts/wasm/generated/lib.rs', 'go/internal/ffi/generated/lib.rs']) {
       assert.match(readFileSync(join(root, 'out/packages', lib), 'utf8'), /polyspec_points::Point\b/, lib);
     }
     // The manifests name the library whose types the generated code names: the Cargo manifest of each binding crate
@@ -2285,12 +2285,47 @@ test('a callback unit of another repository is wrapped as its core trait, and th
   assert.doesNotMatch(stub, /interface Lookup/);
 });
 
-test('a callback unit of another repository is refused by name in Go and WASM, and where its name is a unit of the contract (GN-6s, G-4)', () => {
+test('a callback unit of another repository is wrapped in Go and WASM as in the other targets, and each declaration names the type of the owning package (GN-6s, T-3)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract, foreign);
-  for (const target of ['go', 'wasm'] as const) {
-    assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), /consumer\.look\.lookup: a callback unit lookup of sample is not generated yet in (go|wasm) \(GN-6s\)/, target);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go', 'wasm'] });
+  // The trait methods return the failure of the core error of sample, as in PHP, Python and Node.
+  for (const path of ['packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /impl polyspec_sample::Lookup for CbLookup \{/, path);
+    assert.match(rust, /fn find\(&mut self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>>/, path);
+    assert.match(rust, /fn in_lookup\(/, path);
   }
+  // WASM declares no interface of the unit: it names the type of the subpath ./wasm of the owning package.
+  const dts = text(out, 'packages/ts/wasm/generated/index.d.ts');
+  assert.match(dts, /export declare function look\(lookup: import\("@polyspec\/sample\/wasm"\)\.Lookup, key: string\): string \| null;/);
+  assert.doesNotMatch(dts, /export interface Lookup/);
+  // Go declares no interface of the unit: the function takes the interface of the Go package of sample, and the
+  // package has the dispatch of it.
+  const go = text(out, 'packages/go/zz_generated_consumer.go');
+  assert.match(go, /func Look\(lookup sample\.Lookup, key string\) \(\*string, error\)/);
+  assert.match(go, /func dispatchLookup\(object sample\.Lookup\) binding\.Callback \{/);
+  assert.match(go, /"github\.com\/polyspec\/sample\/packages\/go"/);
+  assert.doesNotMatch(go, /type Lookup interface/);
+});
+
+test('Go: a case of a member that takes a callback unit of another repository answers by a fixture that implements the interface of the owning package, and an instance value at its place is an instance of the class that its make member returns (GN-6s, G-5, GN-13f)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  // G-5, GN-6aa: the fixture of the callback source of sample has the methods of the interface sample.Source.
+  const tests = text(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /\ntype fixtureSource struct\{ \*fixture \}\n/);
+  assert.match(tests, /\nfunc \(f fixtureSource\) Read\(key string\) \(\*string, error\) \{\n/);
+  // GN-13f: an instance value is made by its make member, as in the other targets; one that names no member of the
+  // binding fails its test by name, and the other tests are written.
+  const cases = structuredClone(caseFiles.get('contracts/cases.json')) as any;
+  cases.read.push({ id: 'an_instance_value_of_no_member', source: { new: 'nothing.made', args: {} }, key: 'a', result: null });
+  const named = text(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(named, /the case an_instance_value_of_no_member of consumer\.read: a case value of source: nothing\.made is no member that the binding generates \(G-5, GN-13f\)/);
+});
+
+test('a callback unit of another repository is refused where its name is a unit of the contract, and with a member that recognizes an error unit (GN-6s, G-4)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract, foreign);
   // GN-6w, G-4: a member of the callback that recognizes an error unit is refused by name.
   const recognizes = consumerSample();
   looking(recognizes.contract, recognizes.foreign, true);
@@ -5113,7 +5148,7 @@ test('a contract with a function type and no callback unit keeps what its functi
   for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     assert.match(lib, /call\(\)\.map_err\(thrown\)/, path);
-    assert.match(lib, path.includes('/wasm/') ? /\nfn thrown\(error: Thrown\) -> binding_core::Failure</ : /\nfn thrown<E>\(error: Thrown\) -> binding_core::Failure<E>/, path);
+    assert.match(lib, /\nfn thrown<E>\(error: Thrown\) -> binding_core::Failure<E>/, path);
   }
   // PHP: the exception of the Closure is the variant Php, which failure_error throws again.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
@@ -6219,7 +6254,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6232,7 +6267,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6246,7 +6281,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });

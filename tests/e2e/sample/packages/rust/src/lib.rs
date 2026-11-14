@@ -125,6 +125,17 @@ pub trait Lookup {
     fn find(&mut self, key: &str) -> Result<Option<String>, Failure<Error>>;
 }
 
+/// A source of values by key that recognizes no error, which language code implements and the consumer library takes
+/// as a callback unit of another repository (GN-6s).
+pub trait Source {
+    /// The value of a key, or `None` when it has none.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the implementation.
+    fn read(&mut self, key: &str) -> Result<Option<String>, Failure<Error>>;
+}
+
 /// The value of a key, which the lookup must hold.
 ///
 /// # Errors

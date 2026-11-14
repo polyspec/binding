@@ -72,6 +72,33 @@
     }
   ],
   "copy": [],
+  "read": [
+    {
+      "id": "a_source_of_another_repository_that_holds_the_key_gives_its_value",
+      "source": {
+        "callback": {
+          "source.read": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "source.read",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "1"
+    }
+  ],
   "turned": [
     {
       "id": "a_blank_stays_blank",
