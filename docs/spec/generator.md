@@ -1698,7 +1698,8 @@ the design ids are those of the binding design.
   that a member of a callback unit of the library recognizes, package `errors` also has `Raised<Unit>(kind,
   message)`, which gives `Raised<Unit>` of `internal/binding`, because Go code of another module, which implements
   that callback unit as a callback unit of another repository (GN-6s), cannot import `internal/binding` and makes the
-  error that the owner's core recognizes through this function.
+  error that the owner's core recognizes through this function. The function is public API of the library, as the
+  types of package `errors` are.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil

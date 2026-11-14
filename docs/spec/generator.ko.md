@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ea989fa105af31ed9d9958914ac9b1908697d49f76d5e1a651026ad71b82fc4e -->
+<!-- source-sha256: 49975823ba5cf391cc89fb76647be76858af06a46d1c0c8727382c00403da8cf -->
 # 생성기
 
 [English](generator.md)
@@ -1398,7 +1398,7 @@
   그 struct로 만든다. 라이브러리의 callback unit의 member가 recognize하는 오류 unit마다 패키지 `errors`에는
   `internal/binding`의 `Raised<Unit>`을 주는 `Raised<Unit>(kind, message)`도 있다. 그 callback unit을 다른 레포의
   callback unit으로(GN-6s) 구현하는 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 소유자의 코어가
-  recognize하는 오류를 이 함수로 만든다.
+  recognize하는 오류를 이 함수로 만든다. 이 함수는 패키지 `errors`의 타입과 같이 라이브러리의 공개 API다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
   `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이
