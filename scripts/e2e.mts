@@ -268,6 +268,10 @@ function prepare(checkout: string): Prepared[] {
     run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--precise', head, '--quiet']);
     if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
   }
+  // GN-15f: the check reads the crates by cargo metadata --locked --offline, which reads every package of Cargo.lock;
+  // the build of the core fetched only its own, so the run fetches the rest of the lock first, as the install target of a
+  // repository does.
+  run('cargo', ['fetch', '--locked', '--manifest-path', join(copy, 'Cargo.toml'), '--quiet']);
   for (const path of paths) runBinding(['check', join(copy, path)], copy);
 
   step(`${library}: the cases in the convention of G-5`);
