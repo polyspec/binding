@@ -16,6 +16,7 @@ import {
   type When,
   type Name,
   type Parameter,
+  type Service,
   type Type,
   type Unit,
   innerVariant,
@@ -419,6 +420,12 @@ class Checker {
       for (const [f, kind] of point.fills.entries()) {
         if (!kinds.has(kind)) this.report('CK-3', `/faults/${i}/fills/${f}`, `${kind} is not a kind of errors.kinds (E-1)`);
       }
+    }
+    // CK-95, GN-13j: a service of the test run is named by its id.
+    const services = new Set<string>();
+    for (const [i, service] of (this.contract.services ?? []).entries()) {
+      if (services.has(service.id)) this.report('CK-95', `/services/${i}/id`, `the service ${service.id} is declared twice (GN-13j)`);
+      services.add(service.id);
     }
     for (const [i, change] of this.contract.changes.entries()) {
       for (const lang of Object.keys(change.from)) langOk(lang, `/changes/${i}/from/${lang}`, 'a change');
@@ -1484,6 +1491,7 @@ class Checker {
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         this.caseScope(row.member, record, `/cases/${i}`);
+        this.caseService(row.member, row.only?.targets, record, `/cases/${i}`);
         const raises = record['raises'];
         const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
         const kind = expected['kind'];
@@ -1807,7 +1815,7 @@ class Checker {
     if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
     for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
+      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on', 'service'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
       const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
       const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
       // A call with on: receiver is a method of the class of the receiver of the value, called on that receiver.
@@ -2108,6 +2116,64 @@ class Checker {
     const fixture = (value as Record<string, unknown>)['function'];
     if (typeof fixture === 'object' && fixture !== null && (fixture as Record<string, unknown>)['raise'] === 'exception') return true;
     return Object.values(value).some((item) => this.raisesException(item));
+  }
+
+  // CK-95, GN-13j: the service of a case is a service of services; its setup, its check and the changes of the calls of
+  // then need the program of the state of that service; a value {"service": ...} and a change stand in a case with a
+  // service; and the row of such a case holds for no target whose core has no socket (WASM).
+  caseService(memberId: string, only: readonly Lang[] | undefined, record: Record<string, unknown>, path: string): void {
+    const where = `the case ${String(record['id'])} of ${memberId}`;
+    const report = (message: string): void => this.report('CK-95', path, `${where}: ${message} (GN-13j)`);
+    // The values {"service": ...} of the case and the calls of then of its instance values that change the service; the
+    // JSON of a state is the program's, so it is not read.
+    let value: string | undefined;
+    let changes = false;
+    const walk = (item: unknown): void => {
+      if (Array.isArray(item)) {
+        for (const each of item) walk(each);
+        return;
+      }
+      if (typeof item !== 'object' || item === null) return;
+      const object = item as Record<string, unknown>;
+      if (Object.keys(object).length === 1 && (object['service'] === 'address' || object['service'] === 'scope')) {
+        value ??= object['service'];
+        return;
+      }
+      const instance = typeof object['new'] === 'string' || typeof object['from'] === 'string';
+      for (const [key, inner] of Object.entries(object)) {
+        if (instance && key === 'then' && Array.isArray(inner)) {
+          for (const step of inner) {
+            if (typeof step !== 'object' || step === null || Array.isArray(step)) continue;
+            const { service, ...rest } = step as Record<string, unknown>;
+            if (service !== undefined) changes = true;
+            walk(rest);
+          }
+        } else walk(inner);
+      }
+    };
+    for (const [key, item] of Object.entries(record)) if (key !== 'service') walk(item);
+    const raw = record['service'];
+    if (raw === undefined) {
+      if (value !== undefined) report(`a case value {"service": "${value}"} stands in a case without service`);
+      if (changes) report('a call of then changes the service, but the case has no service');
+      return;
+    }
+    const object = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+    if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'check'].includes(key))) {
+      this.report('CK-95', path, `${where}: service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${JSON.stringify(raw)}`);
+      return;
+    }
+    const service: Service | undefined = (this.contract.services ?? []).find((s) => s.id === object['id']);
+    if (service === undefined) {
+      report(`the service ${String(object['id'])} is not one of services of the contract`);
+      return;
+    }
+    if (service.state === undefined && (object['setup'] !== undefined || object['check'] !== undefined || changes)) {
+      report(`the service ${service.id} has no state, so the case gives no setup, check or service of a call of then`);
+    }
+    if (this.targetsOf(memberId).includes('wasm') && (only === undefined || only.includes('wasm'))) {
+      this.report('CK-95', path, `the row of ${memberId} holds the case ${String(record['id'])}, which runs against the service ${service.id}, for wasm, whose core has no socket; give the row an only without wasm (GN-13h, GN-13j)`);
+    }
   }
 
   // G-5 (GN-6ae): raises "callback" of a case, and after, the calls that observe the receiver after the call.

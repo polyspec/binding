@@ -4,7 +4,7 @@
 // U+00FF).
 
 import type { Lang, Name, Type } from '../contract.ts';
-import type { Contract, Member, Unit } from '../contract.ts';
+import type { Contract, Member, Service, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
@@ -55,6 +55,8 @@ export interface Context {
   casePath?: (relative: string) => string;
   // GN-6aq: the expression of a cancellation of the language that fired before the call, or one that never fires.
   cancelNew?: (fired: boolean) => string;
+  // GN-13j: the expression of the address of the service of a case, which the test reads from its variable.
+  serviceAddress?: (service: CaseService) => string;
 }
 
 // G-5, GN-6aq: the state of a case value of the type cancel, {"cancel": "fired"} or {"cancel": "open"}.
@@ -200,6 +202,179 @@ export function caseFilesOf(raw: unknown): CaseFile[] {
   });
 }
 
+// GN-13j: the service of a case, which the contract declares in services: the environment variable of its address,
+// that of the program of its state, the member and the case whose scope it names, and the JSON texts of setup and check.
+export class CaseService {
+  readonly id: string;
+  readonly address: string;
+  readonly state: string | undefined;
+  readonly member: string;
+  readonly caseId: string;
+  readonly setup: string | undefined;
+  readonly check: string | undefined;
+
+  constructor(declared: Service, member: string, caseId: string, setup: string | undefined, check: string | undefined) {
+    this.id = declared.id;
+    this.address = declared.address;
+    this.state = declared.state;
+    this.member = member;
+    this.caseId = caseId;
+    this.setup = setup;
+    this.check = check;
+  }
+
+  // The scope of the case in a target: the space of the service that the case alone uses.
+  scope(target: string): string {
+    return `${target}:${this.member}:${this.caseId}:`;
+  }
+}
+
+// GN-13j: a service of a case that the generator cannot run, with the reason that fails the test of the case.
+export class ServiceRefused {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    this.reason = reason;
+  }
+}
+
+// GN-13j: a case value {"service": "address" | "scope"}, with the service of its case.
+export class ServiceValue {
+  readonly which: 'address' | 'scope';
+  readonly service: CaseService | ServiceRefused | undefined;
+
+  constructor(which: 'address' | 'scope', service: CaseService | ServiceRefused | undefined) {
+    this.which = which;
+    this.service = service;
+  }
+
+  toJSON(): unknown {
+    return { service: this.which };
+  }
+}
+
+// GN-13j: the service of a call of then, the JSON text of the state that the call leaves to the program.
+export class ServiceChange {
+  readonly value: string;
+  readonly service: CaseService | ServiceRefused | undefined;
+
+  constructor(value: string, service: CaseService | ServiceRefused | undefined) {
+    this.value = value;
+    this.service = service;
+  }
+}
+
+// GN-13j: the service of a case from its key service and the services of the contract; a service that the case cannot
+// run is its reason.
+function caseServiceOf(services: readonly Service[], member: string, record: Record<string, unknown>): CaseService | ServiceRefused | undefined {
+  const raw = record['service'];
+  if (raw === undefined) return undefined;
+  const object = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+  if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'check'].includes(key))) {
+    return new ServiceRefused(`service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${shown(raw)}`);
+  }
+  const declared = services.find((service) => service.id === object['id']);
+  if (declared === undefined) return new ServiceRefused(`the service ${object['id']} is not one of services of the contract (GN-13j)`);
+  const text = (value: unknown): string | undefined => (value === undefined ? undefined : shown(value));
+  return new CaseService(declared, member, String(record['id']), text(object['setup']), text(object['check']));
+}
+
+// GN-13j: the case with its service read: the service of the case, each value {"service": ...} at any place of it, and
+// the service of each call of then of an instance value. The JSON of setup, check and a change stays as the case gives
+// it, because it is the state that the program of the service reads.
+export function withServices(services: readonly Service[], member: string, kase: unknown): unknown {
+  if (typeof kase !== 'object' || kase === null || Array.isArray(kase)) return kase;
+  const record = kase as Record<string, unknown>;
+  const service = caseServiceOf(services, member, record);
+  const named = (value: unknown): boolean =>
+    typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 1 && ((value as Record<string, unknown>)['service'] === 'address' || (value as Record<string, unknown>)['service'] === 'scope');
+  let found = false;
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (typeof value !== 'object' || value === null) return value;
+    if (named(value)) {
+      found = true;
+      return new ServiceValue((value as { service: 'address' | 'scope' }).service, service);
+    }
+    const object = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(object)) {
+      if (key === 'then' && isInstanceValue(object) && Array.isArray(item)) {
+        out[key] = item.map((step) => {
+          if (typeof step !== 'object' || step === null || Array.isArray(step) || !('service' in step)) return walk(step);
+          const { service: change, ...rest } = step as Record<string, unknown>;
+          found = true;
+          return { ...(walk(rest) as Record<string, unknown>), service: new ServiceChange(shown(change), service) };
+        });
+      } else out[key] = walk(item);
+    }
+    return out;
+  };
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) out[key] = key === 'service' ? service : walk(item);
+  return found || service !== undefined ? out : kase;
+}
+
+// GN-13j: whether a case runs against a service: it has service, or a value or a call of then that names one. A test
+// that takes the values of a case without its lines takes none of such a case.
+export function servesCase(record: Record<string, unknown>): boolean {
+  const names = (value: unknown): boolean => {
+    if (value instanceof ServiceValue || value instanceof ServiceChange) return true;
+    if (Array.isArray(value)) return value.some(names);
+    return typeof value === 'object' && value !== null && Object.values(value).some(names);
+  };
+  return record['service'] !== undefined || names(record);
+}
+
+// GN-13j: the service of a case that a test of the target runs, or the reason that fails the test of the case. The core
+// of WASM has no socket, so it reaches no service.
+export function serviceOf(given: unknown, target: string): CaseService | undefined {
+  if (given === undefined) return undefined;
+  if (given instanceof ServiceRefused) throw new Unsupported(given.reason);
+  if (!(given instanceof CaseService)) throw new Unsupported(`service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${shown(given)}`);
+  if (target === 'wasm') throw new Unsupported('the core of WASM has no socket, so it reaches no service; the row of the case in cases has an only without wasm (GN-13j)');
+  if (given.state === undefined && (given.setup !== undefined || given.check !== undefined)) throw new Unsupported(`the service ${given.id} has no state, so the case gives no setup, check or service of a call of then (GN-13j)`);
+  return given;
+}
+
+// GN-13j: the service that a value {"service": ...} or a change of a call of then names.
+function namedService(service: CaseService | ServiceRefused | undefined, what: string, target: string): CaseService {
+  if (service === undefined) throw new Unsupported(`${what} stands in a case without service (GN-13j)`);
+  const found = serviceOf(service, target);
+  if (found === undefined) throw new Unsupported(`${what} stands in a case without service (GN-13j)`);
+  return found;
+}
+
+// GN-13j: a value {"service": ...} of a case in a target: the service whose address the test reads, or the scope.
+export function serviceValueOf(value: ServiceValue, target: string): { address: CaseService } | { scope: string } {
+  const service = namedService(value.service, `a case value {"service": "${value.which}"}`, target);
+  return value.which === 'address' ? { address: service } : { scope: service.scope(target) };
+}
+
+// GN-13j: the change of a call of then in a target: the service, the program of its state and the JSON text.
+export function serviceChangeOf(change: ServiceChange, target: string): { service: CaseService; state: string; value: string } {
+  const service = namedService(change.service, 'the service of a call of then', target);
+  if (service.state === undefined) throw new Unsupported(`the service ${service.id} has no state, so the case gives no setup, check or service of a call of then (GN-13j)`);
+  return { service, state: service.state, value: change.value };
+}
+
+// GN-13j: the steps of the program of the state of a service that a test runs: setup before the values of the case,
+// check after its call; each with the variable of the program, the scope and the JSON text.
+export interface ServiceSteps {
+  service: CaseService;
+  scope: string;
+  setup?: { state: string; value: string };
+  check?: { state: string; value: string };
+}
+export function serviceSteps(given: unknown, target: string): ServiceSteps | undefined {
+  const service = serviceOf(given, target);
+  if (service === undefined) return undefined;
+  const step = (value: string | undefined): { state: string; value: string } | undefined => (value === undefined || service.state === undefined ? undefined : { state: service.state, value });
+  const setup = step(service.setup);
+  const check = step(service.check);
+  return { service, scope: service.scope(target), ...(setup === undefined ? {} : { setup }), ...(check === undefined ? {} : { check }) };
+}
+
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
 // and a tuple a tuple in Python.
 // GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
@@ -220,7 +395,17 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
 function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: boolean): string {
   const none = ctx.lang === 'python' ? 'None' : 'null';
   if (value === null) return none;
+  if (value instanceof ServiceValue && type !== 'text' && type !== 'latin1' && !(typeof type === 'object' && 'optional' in type)) {
+    throw new Unsupported(`a case value {"service": "${value.which}"} stands at a place of the type text or latin1 alone (GN-13j), not at ${shown(type)}`);
+  }
   if (typeof type === 'string') {
+    // GN-13j: the address of the service of the case, or the scope of the case in the target.
+    if ((type === 'text' || type === 'latin1') && value instanceof ServiceValue) {
+      const given = serviceValueOf(value, ctx.target ?? ctx.lang);
+      if ('scope' in given) return ctx.lang === 'python' ? pyString(given.scope) : ctx.lang === 'node' ? jsString(given.scope) : phpText(given.scope);
+      if (ctx.serviceAddress === undefined) throw new Unsupported(`the address of a service is not generated for ${ctx.target ?? ctx.lang} (GN-13j)`);
+      return ctx.serviceAddress(given.address);
+    }
     // G-5: a text that is not well formed is {"ill_formed": "<text>"}: the text and then one code unit that no well-formed
     // text holds, an unpaired surrogate where a text is code points or UTF-16 and the byte 0xFF where it is bytes.
     if (type === 'text' && typeof value === 'object') {
@@ -1198,7 +1383,8 @@ export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
   let given: Map<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
-    if (record['raises'] !== undefined) continue;
+    // GN-13j: the test runs no lines of a case, so it takes no case that runs against a service.
+    if (record['raises'] !== undefined || servesCase(record)) continue;
     given = argsOf(fn, record);
     if (given !== undefined) break;
   }
@@ -1238,6 +1424,8 @@ export interface RaisingCase {
   faults?: string;
   // GN-13i: the files of the case as the case gives them, which caseRefusal judges and caseFilesOf reads.
   files?: unknown;
+  // GN-13j: the service of the case, which caseRefusal judges and serviceSteps reads.
+  service?: unknown;
   // The instance that a method or property is called on, made by a static member or the constructor (T-5).
   receiver?: Receiver;
   // GN-6ae: the calls that observe the receiver after the call of the case.
@@ -1280,7 +1468,8 @@ export interface Receiver {
   pick?: Pick[];
   // A call of then may fail with a kind, which the test requires before the next step; it may arm faults for itself
   // alone, as the JSON text that the arming entry point takes, and with on: receiver it calls the receiver of the value.
-  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver' }[];
+  // GN-13j: a call of then may change the state of the service of the case after it.
+  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver'; service?: ServiceChange }[];
 }
 
 // GN-13f: whether a receiver, or a receiver that it is made on, has a call of then that arms faults.
@@ -1439,7 +1628,9 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
     const args = argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`);
     const kind = (step['raises'] as Record<string, unknown> | undefined)?.['kind'];
     if (step['raises'] !== undefined && typeof kind !== 'string') return fail(`then ${i} expects ${fn.member.id} to fail by {"kind": <kind>}`);
-    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}) };
+    const change = step['service'];
+    if (change !== undefined && !(change instanceof ServiceChange)) return fail(`then ${i} changes the service by ${shown(change)}, which the generator does not read (GN-13j)`);
+    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}), ...(change === undefined ? {} : { service: change }) };
   });
   const picks = pick.map((step): Pick => (typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
@@ -1462,6 +1653,8 @@ export interface MadeForm {
   // and the statement that requires every fault of that arming to have fired; `what` names the step in the message.
   arm: (local: string, member: string, faults: string) => string;
   left: (local: string, what: string) => string;
+  // GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
+  state?: (service: CaseService, state: string, step: 'setup' | 'change' | 'check', scope: string, value: string) => string;
 }
 
 // GN-13f: the instance of an instance value at a place of a type: the class of the place, also inside an `optional`, or
@@ -1512,6 +1705,13 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
       if (armed !== undefined && step.faults !== undefined) lines.push(form.arm(armed, step.fn.member.id, step.faults));
       lines.push(step.raises === undefined ? form.run(call) : form.fails(call, step.raises, `then ${i} fails with ${step.raises}`));
       if (armed !== undefined) lines.push(form.left(armed, `the faults of then ${i} fire`));
+      // GN-13j: the call leaves the state of the service to the program, as another client of the service would.
+      if (step.service !== undefined) {
+        const target = form.ctx.target ?? form.ctx.lang;
+        const change = serviceChangeOf(step.service, target);
+        if (form.state === undefined) throw new Unsupported(`the state of a service is not generated for ${target} (GN-13j)`);
+        lines.push(form.state(change.service, change.state, 'change', change.service.scope(target), change.value));
+      }
     }
     return form.name(local);
   };
@@ -1576,7 +1776,8 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
       // GN-13i: a test that needs any receiver writes no files, so it takes none of a case that gives files.
-      if (record['raises'] !== undefined || record['files'] !== undefined) continue;
+      // GN-13j: nor of a case that runs against a service, whose lines it does not run.
+      if (record['raises'] !== undefined || record['files'] !== undefined || servesCase(record)) continue;
       const found = receiverOf(model, fn, record, member);
       // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
       if (found !== undefined && !armsFaults(found)) return found;
@@ -1607,12 +1808,14 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
 // GN-13i: the tests of a hook (N-4) write no files, so a case of a hook that gives files is refused by name (G-4).
 function hookWithoutFiles(fn: Fn, record: Record<string, unknown>): void {
   if (record['files'] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives files, which the test of a hook does not write (N-4, GN-13i)`);
+  // GN-13j: nor runs the lines of a service.
+  if (servesCase(record)) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} runs against a service, which the test of a hook does not reach (N-4, GN-13j)`);
 }
 
 // G-4, GN-13e: the reason why the generator cannot write the receiver or an argument of a case in the
 // language, which the test of the case fails with, so that one value that is not written yet fails its own test by
 // name and the other tests of the target run; undefined when every value of the case is written.
-export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; files?: unknown }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
+export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; files?: unknown; service?: unknown }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
   // A row of a callback fixture that is not generated yet refuses the target (G-4), as the emitters read the fixtures.
   const fixed = new Set(fixturesOf(model, fn, kase.id, kase.args).map((fixture) => fixture.arg));
   // The probe writes no steps of a deep value (GN-13e), which the test of the case writes when it makes the value.
@@ -1620,6 +1823,7 @@ export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: stri
   ctx.steps = undefined;
   try {
     caseFilesOf(kase.files);
+    serviceSteps(kase.service, ctx.target ?? ctx.lang);
     receiver(kase.receiver);
     for (const arg of fn.args) if (!fixed.has(arg)) caseValue(model, ctx, arg, kase.args);
     return undefined;
@@ -1647,8 +1851,8 @@ function afterOf(model: Model, fn: Fn, record: Record<string, unknown>): { after
 
 // GN-6ae: the cases that expect the exception of the language that a function fixture of the case raises
 // (raises: "callback"), with the arguments, the receiver and the calls of after.
-export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown }[] {
-  const out: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown }[] = [];
+export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown; service?: unknown }[] {
+  const out: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown; service?: unknown }[] = [];
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     if (record['raises'] !== 'callback') continue;
@@ -1662,7 +1866,14 @@ export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg
 }
 
 // GN-13i: the files of a case as the case gives them, absent when it gives none.
-const filesOf = (record: Record<string, unknown>): { files?: unknown } => (record['files'] === undefined ? {} : { files: record['files'] });
+// GN-13j: the service of the case as withServices reads it, absent when the case has none.
+// A case that runs against a service is marked serves, which a test that takes the values of a case without its lines
+// reads.
+const filesOf = (record: Record<string, unknown>): { files?: unknown; service?: unknown; serves?: true } => ({
+  ...(record['files'] === undefined ? {} : { files: record['files'] }),
+  ...(record['service'] === undefined ? {} : { service: record['service'] }),
+  ...(servesCase(record) ? { serves: true as const } : {}),
+});
 
 // GN-13d: a parameter with a default for which an explicit null is a refused value: every default but {literal: null},
 // whose declared value is that null.
@@ -1735,6 +1946,9 @@ export interface ResultCase {
   after?: After[];
   // GN-13i: the files of the case as the case gives them.
   files?: unknown;
+  // GN-13j: the service of the case, and whether the case runs against a service.
+  service?: unknown;
+  serves?: true;
 }
 
 // GN-13e: whether the language compares a result of the type with the value of a case: a class has no case value

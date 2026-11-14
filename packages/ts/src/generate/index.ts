@@ -4,7 +4,7 @@
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
 import { type Model, collectModel, forLanguage, membersFor, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
-import { phpCaseTests } from './samples.ts';
+import { phpCaseTests, withServices } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -58,12 +58,15 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
     // U-7: the cases of an alias's in function are kept apart from those of the members.
     const into = kase.member === undefined ? aliasCases : cases;
     const id = kase.member ?? kase.alias;
-    into.set(id, [...(into.get(id) ?? []), ...group]);
+    // GN-13j: a case of a member reads its service, and the values and the calls of then that name it.
+    const member = kase.member;
+    const items = member === undefined ? group : group.map((item: unknown) => withServices(inputs.contract.services ?? [], member, item));
+    into.set(id, [...(into.get(id) ?? []), ...items]);
     if (kase.member !== undefined) {
       const keys = resultKeys.get(kase.member) ?? new Map<unknown, string>();
-      for (const item of group) keys.set(item, kase.result ?? 'result');
+      for (const item of items) keys.set(item, kase.result ?? 'result');
       resultKeys.set(kase.member, keys);
-      if (kase.only !== undefined) for (const item of group) caseTargets.set(item, kase.only.targets);
+      if (kase.only !== undefined) for (const item of items) caseTargets.set(item, kase.only.targets);
     }
   }
   const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys, caseTargets };

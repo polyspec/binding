@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- A contract case can run against a service that the test run of the repository provides (G-5, GN-13j, CK-95). The
+  contract declares it in `services` with the environment variable of its address and, optionally, of the program
+  that writes and reads its state; a case names it in `service` with an optional `setup` and `check`, a text place
+  takes `{"service": "address"}` or `{"service": "scope"}`, the space of the service that the case alone uses
+  (`<target>:<member id>:<case id>:`), and a call of `then` may change the state with `service`. Python, Node, PHP and
+  Go read the address and fail the test when it is missing, and run the program with `setup`, `change` and `check`
+  and the JSON of the case; the WASM test of such a case fails by name, because its core has no socket, and
+  `binding check` reports the row of such a case that holds for WASM. The store of Redis of polyspec/session-store
+  gives the kinds of a lock that another holder took, of a lost lock and of a stored record only against a running
+  Redis server, and the generator had no form of a case that needs a service of the test run. Verified by
+  `node --test packages/ts/tests/generate.test.ts packages/ts/tests/contract-check.test.ts`, whose tests of the
+  service of a case and of CK-95 failed before the change; no repository of `tests/e2e` has a service, so the
+  end-to-end evidence waits for session-store.
+
 ## 0.0.6
 
 - `release-platform-assets` requires the whole set of the assets of a release before it uploads (GN-19a, GN-19g): the

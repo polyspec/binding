@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 7ec7a5ea7fc362e85dc19ae1c66c8e435838ab57bc6aca8aded7b0fbb0fe747f -->
+<!-- source-sha256: 7b90b10e22eccbeaa48a34ec21b719b125733d4fa22506cdc1ced6dd1da703bd -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -251,6 +251,14 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `binding release-recipes`가 쓰는 것과 다르면 그 파일도 보고한다. 파일이 없는 것은 finding이 아니다. 그 파일은 생성되고
   추적되지 않으며, release는 recipe를 실행하기 전에 그것을 쓰기 때문이다. 이유: 손으로 복사한 recipe는 GN-19h가 고친
   복사본의 결함을 그대로 갖고, 다른 binding의 recipe 파일은 그 binding이 빌드하는 것을 빌드한다.
+- **CK-95** 시험 실행의 service(생성기 GN-13j): `services`는 `{"id", "address", "state", "reason"}`를 나열한다.
+  `address`와 `state`는 환경 변수의 이름(`^[A-Z][A-Z0-9_]*$`)이고 `state`는 선택이며, id는 겹치지 않는다. `binding
+  check`는 `service`가 `services`의 id를 가진 `{"id", "setup", "check"}`(`setup`과 `check`는 선택)가 아닌 case, `state`가
+  없는 service의 `setup`, `check`, `then` 호출의 `service`, `service`가 없는 case의 case 값 `{"service": ...}`나 `service`가
+  있는 `then` 호출, 그리고 group이 `service`가 있는 case를 담고 WASM에 해당하는 `cases` 행을 보고한다. WASM에 해당한다는
+  것은 그 member가 WASM에 생성되고 행에 `wasm`이 없는 `only`가 없다는 뜻이다(GN-13h). 이유: 실행이 제공하지 않는 service나
+  어떤 program도 쓰지 않는 상태를 가리키는 case는 시험이 실행될 때에야 실패하고, WASM의 코어에는 socket이 없으므로 그런
+  case의 WASM 시험은 실패할 수밖에 없다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

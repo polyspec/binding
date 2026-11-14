@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 50fc79f757494c71c350fd829375e79bfae3ec0d641082cc674fea489a14a933 -->
+<!-- source-sha256: db21e7c7197d7306a6e7aab6f3e2e5906223e5fe00a0368b35494e5118c656e4 -->
 # 생성기
 
 [English](generator.md)
@@ -1975,6 +1975,41 @@
   파일을 쓰지 않는다. 그 진입점은 변환 하나만 실행하기 때문이다. 이유: 주어진 바이트를 담은 저장 파일은 인자처럼 case의
   입력이고, fault injection point는 시스템의 조건을 흉내 낸다(G-5). point가 파일 대신 준 바이트는 어떤 저장 파일도 지나지
   않는 경로를 실행하므로, case가 바이트를 가지고 시험이 그것을 member가 읽는 곳에 쓴다.
+- **GN-13j** case는 레포의 시험 실행이 제공하는 service(예: database 서버)에 대해 실행될 수 있다. 형식은
+  `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`이고 `setup`과 `check`는 선택이다. 계약은 그런
+  service를 `services`에 선언한다(계약 검사 CK-95): `{"id", "address", "state", "reason"}`. `address`는 service의 주소를
+  담은 환경 변수의 이름이고, `state`는 주어지면 service의 상태를 쓰고 읽는 program의 절대 경로를 담은 환경 변수의
+  이름이며, `reason`은 그 service가 필요한 동작의 규칙이다. service는 시험 실행이 소유한다. 실행은 target의 시험 전에
+  service를 시작하고 변수를 설정하며 끝에서 service를 지운다. 생성된 시험은 service를 시작하지도 멈추지도 않는다.
+  `text`나 `latin1` 형식의 자리(`optional`이나 list 안과 case의 receiver 안도 포함)의 case 값은 `{"service": "address"}`,
+  즉 변수 `address`의 text이거나, `{"service": "scope"}`, 즉 case의 scope일 수 있다. scope는
+  `<target>:<member id>:<case id>:`이고, key의 접두사나 database의 이름처럼 그 case만 쓰는 service 공간의 이름이다. 그래서
+  한 target의 두 case도, 한 service에 동시에 실행되는 두 target의 두 case도 상태를 나누지 않는다. `service`가 있는 case의
+  GN-13 case 시험(B-4, GN-6ae, GN-6m, GN-6z, GN-13e)은 GN-13i의 파일을 쓴 뒤 변수 `address`를 읽는다. 변수가 설정되지
+  않았거나 비어 있으면 service와 변수를 밝혀 시험을 실패시킨다. 없는 service는 시험 실행의 실패이지 건너뛴 시험이 아니다.
+  그다음 `setup`이 있으면 변수 `state`의 program을 인자 `setup`과 scope로, 표준 입력에 `setup`의 JSON text를 주어
+  실행한다. 그 뒤 scope는 그 상태만 담는다. 그 뒤에야 case의 receiver, 인자, fixture를 만든다. 호출과 그 확인 뒤에
+  `check`가 있으면 program을 `check`, scope, `check`의 JSON text로 실행하고, program은 scope가 그 상태를 담을 때 0으로
+  끝난다. instance 값(GN-13f)의 `then` 호출은 `"service": <JSON>`을 가질 수 있다. 그 호출 뒤에 시험은 program을
+  `change`, scope, 그 JSON text로 실행한다. 그래서 receiver가 사는 동안 service의 다른 client가 만드는 상태(다른 holder가
+  잡은 잠금)도 case를 가진다. program은 시험의 환경으로 실행되므로 주소를 스스로 읽는다. 시험은 시간 제한 없이 program의
+  종료를 기다리고, 상태가 0이 아니거나 `state`가 설정되지 않았으면 단계, 상태, program의 출력과 함께 실패한다. 각 target은
+  시험 파일의 helper로 program을 실행한다. Python은 `subprocess.run`을 쓰는 `_service_state`, Node는 `node:child_process`의
+  `spawnSync`를 쓰는 `serviceState`, PHP는 `proc_open`을 쓰는 `self::serviceState`, Go는 `os/exec`를 쓰는
+  `serviceState(t, ...)`, WASM은 시험을 실행하는 Node.js의 `node:child_process`를 쓰는 `serviceState`다(GN-13c). 주소는
+  `_service_address`, `serviceAddress`, `self::serviceAddress`, `serviceAddress(t, ...)`가 읽는다. 한 target의 시험은
+  차례로 실행되므로, case의 setup은 그 호출 전에 그 target의 다른 case가 바꾸지 않는다. 아무 receiver나 필요하거나 첫
+  case의 값을 그 case의 줄 없이 가져오는 시험(B-2, B-3, G-7, U-2, 그리고 func의 오류와 panic을 보는 Go 시험, GN-6z)은
+  `service`가 있는 case에서 가져오지 않는다. `service`가 있는 hook(N-4)의 case는 이름으로 거부한다. hook의 시험은 case의
+  줄을 실행하지 않기 때문이다. `case-test`의 진입점(GN-13)으로 실행하는 case는 아무것도 실행하지 않는다. 그 진입점은 변환
+  하나만 실행하기 때문이다. 다른 형식의 `service`, `services`가 선언하지 않은 id, `state`가 없는 service의 `setup`,
+  `check`, `then` 호출의 `service`, `service`가 없는 case의 값 `{"service": ...}`는 모든 target에서 그 case의 시험을 그
+  이유로 실패시키고, 다른 시험은 쓴다(G-4, GN-13e). WASM의 코어(`wasm32-unknown-unknown`)에는 socket이 없어 어떤
+  service에도 닿지 못한다. 그래서 `service`가 있는 case의 WASM 시험은 그 이유로 실패하고, 그런 case의 `cases` 행은
+  `wasm`이 없는 `only`를 가지며(GN-13h), `binding check`가 그것을 요구한다(CK-95). 이유: 다른 holder가 잡은 잠금이나 저장된
+  레코드 같은 서버의 상태는 저장 파일처럼(GN-13i) case의 입력이고, fault injection point는 시스템의 조건을 흉내
+  낸다(G-5). 서버 대신 응답을 준 point는 어떤 서버도 지나지 않는 경로를 실행한다. 상태의 뜻은 service를 소유한 레포의
+  것이므로, binding은 case의 JSON을 그 레포의 program에 넘기고 service의 어떤 protocol도 말하지 않는다.
 
 ## 끝에서 끝까지 확인
 

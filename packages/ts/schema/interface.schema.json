@@ -114,6 +114,13 @@
         "$ref": "#/$defs/fault"
       }
     },
+    "services": {
+      "description": "The services that the test run of the repository provides, such as a database server, which a case runs against (G-5, GN-13j, CK-95).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/service"
+      }
+    },
     "units": {
       "type": "array",
       "items": {
@@ -2070,6 +2077,33 @@
         "place": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "service": {
+      "description": "A service of the test run (GN-13j): address names the environment variable that holds its address; state, when given, the environment variable that holds the absolute path of the program that writes and reads its state; reason is the rule whose behaviour needs the service.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "address",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "address": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "state": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "reason": {
+          "$ref": "#/$defs/ruleId"
         }
       }
     },

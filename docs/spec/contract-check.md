@@ -296,6 +296,15 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   from what `binding release-recipes` of this binding writes. A file that is not there is no finding, because it is
   generated and not tracked, and a release writes it before it runs a recipe. Why: a recipe copied by hand keeps the
   defects of the copy that GN-19h fixed, and a file of recipes of another binding builds what that binding builds.
+- **CK-95** The services of the test run (generator GN-13j): `services` lists `{"id", "address", "state", "reason"}`,
+  whose `address` and `state` are names of environment variables (`^[A-Z][A-Z0-9_]*$`) and whose `state` is
+  optional; the ids are unique. `binding check` reports a case whose `service` is not `{"id", "setup", "check"}`,
+  with `setup` and `check` optional, of an id of `services`; `setup`, `check` or the `service` of a call of `then` of
+  a service without `state`; a case value `{"service": ...}` or a call of `then` with `service` in a case without
+  `service`; and a row of `cases` whose group holds a case with `service` and that holds for WASM: its member is
+  generated for WASM and the row has no `only` without `wasm` (GN-13h). Why: a case that names a service that the run
+  does not provide, or a state that no program writes, fails only when the tests run, and the core of WASM has no
+  socket, so its test of such a case can only fail.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

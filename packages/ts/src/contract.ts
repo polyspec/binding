@@ -162,6 +162,15 @@ export interface FaultPoint {
   place: string;
 }
 
+// GN-13j: a service that the test run of the repository provides, which a case runs against: the environment variable of
+// its address, and the environment variable of the program that writes and reads its state.
+export interface Service {
+  id: string;
+  address: string;
+  state?: string;
+  reason: string;
+}
+
 // K-1: the group of a case file that runs a member, or that holds the cases of a value alias's in function (U-7).
 // G-5: `result` names the key of a case of the group that holds the result of the member (GN-13e), `result` when the row
 // names none.
@@ -191,6 +200,7 @@ export interface Contract {
   types: Partial<Record<'json_value' | 'template_value' | 'php_value', { library: string; unit: string }>>;
   errors: Errors;
   faults?: FaultPoint[];
+  services?: Service[];
   units: Unit[];
   changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | Partial<Record<Lang, string>> | null }[];
   cases: CaseRow[];

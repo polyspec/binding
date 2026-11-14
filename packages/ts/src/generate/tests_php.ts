@@ -6,7 +6,7 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -105,6 +105,56 @@ const PHP_CASE_FILE = `
 // GN-13i: the lines that write the files of a case, first in the body of its test.
 const caseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n        $this->caseFile(${phpText(file.path)}, ${phpText(file.hex)});`).join('');
 
+// GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
+// the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
+// waits for; a missing variable or a status that is not 0 fails the test.
+const PHP_SERVICE = `
+    private static function serviceAddress(string $service, string $variable): string
+    {
+        $address = getenv($variable);
+        if ($address === false || $address === '') {
+            self::fail('G-5: the service ' . $service . ' of the case has no address: the test run sets the environment variable ' . $variable . ' (GN-13j)');
+        }
+        return $address;
+    }
+
+    private static function serviceState(string $service, string $variable, string $step, string $scope, string $value): void
+    {
+        $program = getenv($variable);
+        if ($program === false || $program === '') {
+            self::fail('G-5: the service ' . $service . ' of the case has no program of its state: the test run sets the environment variable ' . $variable . ' (GN-13j)');
+        }
+        $pipes = [];
+        $process = proc_open([$program, $step, $scope], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);
+        if ($process === false) {
+            self::fail('G-5: ' . $step . ' of the service ' . $service . ' for ' . $scope . ' did not start (GN-13j)');
+        }
+        $written = fwrite($pipes[0], $value);
+        fclose($pipes[0]);
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $status = proc_close($process);
+        if ($written !== strlen($value) || $status !== 0) {
+            self::fail('G-5: ' . $step . ' of the service ' . $service . ' for ' . $scope . ' exited with ' . $status . ': ' . (string) $output . ' (GN-13j)');
+        }
+    }
+`;
+
+const phpState = (service: CaseService, state: string, step: string, scope: string, value: string): string =>
+  `self::serviceState(${phpText(service.id)}, ${phpText(state)}, ${phpText(step)}, ${phpText(scope)}, ${phpText(value)});`;
+
+// GN-13j: the lines of the service of a case: its address and its setup first in the body of its test, after its
+// files, and its check at the end.
+const serviceStart = (service: unknown): string => {
+  const steps = serviceSteps(service, 'php');
+  if (steps === undefined) return '';
+  return `\n        self::serviceAddress(${phpText(steps.service.id)}, ${phpText(steps.service.address)});${steps.setup === undefined ? '' : `\n        ${phpState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}`;
+};
+const serviceEnd = (service: unknown): string => {
+  const steps = serviceSteps(service, 'php');
+  return steps?.check === undefined ? '' : `\n        ${phpState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`;
+};
+
 export function phpTests(model: Model, layout: PhpLayout): string {
   checkCaseNames(model, casePascal, true);
   const caseTestList = phpCaseTests(model);
@@ -134,7 +184,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // GN-6s: an error unit of the owner of a callback unit of another repository, by the namespace of its package.
   const errorNew = (unit: Unit, kind: string, message: string, library?: string): string =>
     `new ${library === undefined ? `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignClass(library, unit)}(${phpText(message)}, ${phpText(kind)})`;
-  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})` };
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
@@ -177,6 +227,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     pick: (expr, step) => ('field' in step ? `${expr}->${langName('php', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
     arm: (local, member, faults) => `$${local} = \\${layout.namespace}\\Internal\\armFaults(${phpText(member)}, ${phpText(faults)});`,
     left: (local, what) => `self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($${local}), ${phpText(`G-5: ${what}`)});`,
+    state: (service, state, step, scope, value) => phpState(service, state, step, scope, value),
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -474,7 +525,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       methods.push(`
     public function testB4${name}${id}(): void
-    {${caseFileLines(kase.files)}${receiverMade.lines}${before}${arming}
+    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
         try {
             ${call};
             self::fail('no error');
@@ -484,7 +535,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
             ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
-        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
+        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
@@ -504,14 +555,14 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       usesRaised = true;
       methods.push(`
     public function testGn6ae${name}${id}(): void
-    {${caseFileLines(kase.files)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
+    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
         self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});
         try {
             ${call};
             self::fail('no error');
         } catch (\\LogicException $error) {
             self::assertSame(self::$raised, $error);
-        }${afterChecks(kase.after, '$receiver')}${kept(fn)}
+        }${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -573,7 +624,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
-    {${caseFileLines(kase.files)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
+    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -793,7 +844,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
+{${methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}

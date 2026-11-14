@@ -2438,6 +2438,49 @@ the design ids are those of the binding design.
   stored file that holds given bytes is an input of a case, as an argument is, while a fault injection point imitates
   a condition of the system (G-5); bytes that a point gave in place of a file would run a path that no stored file
   takes, so the case carries the bytes and the test writes them where the member reads.
+- **GN-13j** A case may run against a service that the test run of the repository provides, such as a database
+  server, through `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`, of which `setup` and `check`
+  are optional. The contract declares each such service in `services` (contract check CK-95):
+  `{"id", "address", "state", "reason"}`, where `address` is the name of the environment variable that holds the
+  address of the service, `state`, when given, the name of the environment variable that holds the absolute path of a
+  program that writes and reads the state of the service, and `reason` the rule whose behaviour needs the service.
+  The test run owns the service: it starts the service before the tests of a target, sets the variables, and removes
+  the service at its end; the generated test neither starts nor stops it. A case value at a place of the type `text`
+  or `latin1`, also inside an `optional` or a list and in the receiver of the case, may be `{"service": "address"}`,
+  the text of the variable `address`, or `{"service": "scope"}`, the scope of the case:
+  `<target>:<member id>:<case id>:`, the name of the space of the service that the case alone uses, such as the
+  prefix of its keys or the name of its database. So two cases, of one target or of two targets that run at once
+  against one service, never share state. Each case test of GN-13 (B-4, GN-6ae, GN-6m, GN-6z, GN-13e) of a case with
+  `service`, after it writes the files of GN-13i, reads the variable `address`, and a variable that is not set or
+  is empty fails the test with the service and the variable: a missing service is a failure of the test run, never a
+  skipped test. Then, with `setup`, it runs the program of the variable `state` with the arguments `setup` and the
+  scope and the JSON text of `setup` on its standard input, after which the scope holds that state and nothing else,
+  and only then makes the receiver, the arguments and the fixtures of the case. After the call and its checks, with
+  `check`, it runs the program with `check`, the scope and the JSON text of `check`, which exits with 0 when the
+  scope holds that state. A call of `then` of an instance value (GN-13f) may have `"service": <JSON>`: after that
+  call, the test runs the program with `change`, the scope and that JSON text, so a state that another client of the
+  service makes while the receiver lives (a lock that another holder takes) has a case. The program runs with the
+  environment of the test, so it reads the address itself; the test waits for its exit without a time limit and
+  fails with the step, the status and the output of the program when the status is not 0, or when `state` is not
+  set. Each target runs the program with a helper of its test file: Python `_service_state` with `subprocess.run`,
+  Node `serviceState` with `spawnSync` of `node:child_process`, PHP `self::serviceState` with `proc_open`, Go
+  `serviceState(t, ...)` with `os/exec`, and WASM `serviceState` with `node:child_process` of the Node.js that runs its
+  tests (GN-13c); the address is read by `_service_address`, `serviceAddress`, `self::serviceAddress` and
+  `serviceAddress(t, ...)`. The tests of a target run one after another, so the setup of a case is not changed by
+  another case of the target before its call. A test that needs any receiver or takes the values of the first case
+  without its own lines (B-2, B-3, G-7, U-2, and the Go tests of the error and the panic of a func, GN-6z) takes none from a
+  case with `service`; a case of a hook (N-4) with `service` is refused by name, because the tests of a hook run no
+  lines of a case; and a case that runs through an entry point of `case-test` (GN-13) runs none, because that entry
+  point runs a conversion alone. A `service` of another form, an id that `services` does not declare, `setup`,
+  `check` or the `service` of a call of `then` of a service without `state`, and a value `{"service": ...}` in a case
+  without `service` fail the test of the case with the reason in every target, and the other tests are written (G-4,
+  GN-13e). The core of WASM (`wasm32-unknown-unknown`) has no socket, so it reaches no service: the WASM test of a
+  case with `service` fails with that reason, and the row of `cases` of such a case has an `only` without `wasm`
+  (GN-13h), which `binding check` requires (CK-95). Why: the state of a server, such as a lock that another holder
+  took or a record stored in it, is an input of the case, as a stored file is (GN-13i), while a fault injection point
+  imitates a condition of the system (G-5); a point that gave a reply in place of the server would run a path that no
+  server takes. The meaning of a state belongs to the repository that owns the service, so binding passes the JSON of
+  the case to the program of that repository and speaks no protocol of a service.
 
 ## End-to-end check
 

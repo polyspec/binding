@@ -31,7 +31,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
 } from './samples.ts';
 
 interface Values {
@@ -158,6 +158,14 @@ function mapLocal(b: Body, sink: string[], type: string, sets: string[]): string
 // A case value (JSON) as a Go value of the contract type; an instance value makes its instance in the body.
 function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (json === null) return 'nil';
+  // GN-13j: the address of the service of the case, or the scope of the case in Go.
+  if (json instanceof ServiceValue) {
+    if (type !== 'text' && type !== 'latin1' && !(typeof type === 'object' && 'optional' in type)) throw new Unsupported(`a case value {"service": "${json.which}"} stands at a place of the type text or latin1 alone (GN-13j), not at ${JSON.stringify(type)}`);
+    if (typeof type === 'string') {
+      const given = serviceValueOf(json, 'go');
+      return 'scope' in given ? goString(given.scope) : `serviceAddress(t, ${goString(given.address.id)}, ${goString(given.address.address)})`;
+    }
+  }
   if (typeof type === 'string') {
     if (type === 'text') return textValue(json);
     if (type === 'latin1') return goString(String(json));
@@ -767,6 +775,11 @@ function made(v: Values, b: Body, r: Receiver): string {
       const leftErr = b.fresh('leftErr');
       b.lines.push(`if ${left}, ${leftErr} := binding.FaultLeft(${armed}); ${leftErr} != nil || len(${left}) != 0 {`, `\tt.Fatalf("G-5: the faults of then ${i} %v did not fire (%v)", ${left}, ${leftErr})`, '}');
     }
+    // GN-13j: the call leaves the state of the service to the program, as another client of the service would.
+    if (step.service !== undefined) {
+      const change = serviceChangeOf(step.service, 'go');
+      b.lines.push(goState(change.service, change.state, 'change', change.service.scope('go'), change.value));
+    }
   }
   return local;
 }
@@ -775,9 +788,24 @@ function made(v: Values, b: Body, r: Receiver): string {
 // is not written; the other tests of the target are written.
 // GN-13i: the lines that write the files of a case, first in the body of its test; files of another form are refused by
 // name (G-4), which written gives as the reason of the test of the case.
-function writeFiles(b: Body, files: unknown): void {
+function writeFiles(b: Body, files: unknown, service?: unknown): void {
   b.lines.push(...caseFilesOf(files).map((file) => `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})`));
+  // GN-13j: the address of the service of the case and its setup, after the files.
+  const steps = serviceSteps(service, 'go');
+  if (steps === undefined) return;
+  b.lines.push(`serviceAddress(t, ${goString(steps.service.id)}, ${goString(steps.service.address)})`);
+  if (steps.setup !== undefined) b.lines.push(goState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value));
 }
+
+// GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
+const goState = (service: CaseService, state: string, step: string, scope: string, value: string): string =>
+  `serviceState(t, ${goString(service.id)}, ${goString(state)}, ${goString(step)}, ${goString(scope)}, ${goString(value)})`;
+
+// GN-13j: the check of the service of a case, at the end of its test.
+const serviceCheck = (service: unknown): string[] => {
+  const steps = serviceSteps(service, 'go');
+  return steps?.check === undefined ? [] : [goState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)];
+};
 
 function written<T>(fn: Fn, id: string, write: () => T): T | string {
   try {
@@ -1157,7 +1185,7 @@ ${indent([
       // with the arguments of a case in which the core calls the func, which a case with a row shows.
       const kept = arg.type.function;
       single('GN-6z', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_argument_type', 'GN-6z'));
-      const calling = resultCases(model, fn).find((k) => k.refused === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
+      const calling = resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
       const ends = (end: string): { lines: string[]; call: string } | string => {
         const b = new Body();
         return written(fn, calling?.id ?? '', () => {
@@ -1211,7 +1239,8 @@ ${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value !
   // U-2: the call that leaves an argument with a default out is the call that gives the default.
   const count = fn.special === undefined ? goResultCount(fn) : 0;
   const comparable = count === 1 && fn.kind !== 'iterate' && comparableResult(model, fn.returns) === undefined && fn.args.every((a) => callbackOf(model, a.type) === undefined);
-  const base = resultCases(model, fn).find((k) => k.refused === undefined);
+  // GN-13j: the test runs no lines of a case, so it takes no case that runs against a service.
+  const base = resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined);
   const receiverOf = base?.receiver ?? sample;
   for (const arg of reachable && comparable && !ofKept && (fn.receiver === undefined || receiverOf !== undefined) ? fn.args : []) {
     const declared = defaultCaseValue(model, arg);
@@ -1246,7 +1275,7 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
     // member is called only on a receiver that was made.
     let making: string | undefined;
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files);
+      writeFiles(b, kase.files, kase.service);
       let receiver = '';
       if (kase.receiver !== undefined && kase.receiverFails === true && goResultCount(kase.receiver.factory) === 1) {
         const factory = kase.receiver.factory;
@@ -1273,7 +1302,7 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
       const results = fn.special === 'stringify' ? 1 : goResultCount(fn);
       lines.push(`${receiver}, err := ${making}`, 'if err == nil {', `\t${[...Array.from({ length: results }, () => '_'), 'err'].join(', ')} = ${invoke(v, fn, args, receiver)}`, '}');
     }
-    lines.push(...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
+    lines.push(...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
     (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
@@ -1288,7 +1317,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
   for (const kase of callbackCases(model, fn)) {
     const b = new Body();
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files);
+      writeFiles(b, kase.files, kase.service);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args)) };
     });
@@ -1302,6 +1331,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
         '\tt.Fatalf("GN-6ae: %#v is not the error of the function", err)',
         '}',
         ...afterLines(v, b, fn, kase.id, kase.after, call.receiver),
+        ...serviceCheck(kase.service),
       ];
     out.main.push(`
 func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
@@ -1321,7 +1351,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
     const later = (end: (returns: Type) => string): { lines: string[]; call: string; armed: boolean } | string => {
       const b = new Body();
       return written(fn, kase.id, () => {
-        writeFiles(b, kase.files);
+        writeFiles(b, kase.files, kase.service);
         v.keptEnd = end;
         let receiver: string;
         try {
@@ -1365,7 +1395,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files);
+      writeFiles(b, kase.files, kase.service);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
     });
@@ -1412,7 +1442,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       }
     }
     const lines = refused === undefined
-      ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver)]
+      ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service)]
       : [`t.Fatal(${goString(refused)})`];
     (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
@@ -1748,6 +1778,36 @@ func caseFile(t *testing.T, relative string, content string) {
 }
 `;
 
+// GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
+// the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
+// waits for; a missing variable or a status that is not 0 fails the test.
+const SERVICE = `
+// serviceAddress is the address of the service of a case, which the test run gives in the environment variable.
+func serviceAddress(t *testing.T, service string, variable string) string {
+	t.Helper()
+	address := os.Getenv(variable)
+	if address == "" {
+		t.Fatalf("G-5: the service %s of the case has no address: the test run sets the environment variable %s (GN-13j)", service, variable)
+	}
+	return address
+}
+
+// serviceState runs the program of the state of a service with the step, the scope and the JSON text on its input.
+func serviceState(t *testing.T, service string, variable string, step string, scope string, value string) {
+	t.Helper()
+	program := os.Getenv(variable)
+	if program == "" {
+		t.Fatalf("G-5: the service %s of the case has no program of its state: the test run sets the environment variable %s (GN-13j)", service, variable)
+	}
+	command := exec.Command(program, step, scope)
+	command.Stdin = strings.NewReader(value)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("G-5: %s of the service %s for %s exited with %v: %s (GN-13j)", step, service, scope, err, output)
+	}
+}
+`;
+
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
@@ -1938,7 +1998,7 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['context', 'encoding/hex', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['context', 'encoding/hex', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   std.sort();
   const own = [
@@ -2006,6 +2066,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
+    ...(/\bservice(Address|State)\(t, /.test(all) ? [SERVICE] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),

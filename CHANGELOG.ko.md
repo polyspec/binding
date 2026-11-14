@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b41b319e7a4e2d11e8f8353a978a8227c6c760c9ee5a8207d62d7d99f24df504 -->
+<!-- source-sha256: db9c07386fa26ddd5561808a8ba4ab2069663af82665d7991d90ae171e5b36f4 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -18,6 +18,18 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 계약 case는 레포의 시험 실행이 제공하는 service에 대해 실행될 수 있다(G-5, GN-13j, CK-95). 계약은 `services`에
+  service를 그 주소의 환경 변수와, 선택으로 그 상태를 쓰고 읽는 program의 환경 변수와 함께 선언한다. case는
+  `service`로 그것을 가리키고 선택으로 `setup`과 `check`를 가지며, text 자리는 `{"service": "address"}`나 case만 쓰는
+  service 공간인 `{"service": "scope"}`(`<target>:<member id>:<case id>:`)를 받고, `then` 호출은 `service`로 상태를 바꿀
+  수 있다. Python, Node, PHP, Go는 주소를 읽고 주소가 없으면 시험을 실패시키며, program을 `setup`, `change`, `check`와
+  case의 JSON으로 실행한다. 그런 case의 WASM 시험은 코어에 socket이 없으므로 이름으로 실패하고, `binding check`는 WASM에
+  해당하는 그런 case의 행을 보고한다. polyspec/session-store의 Redis 저장소는 다른 holder가 잡은 잠금, 잃은 잠금, 저장된
+  레코드의 kind를 실행 중인 Redis 서버에 대해서만 내고, 생성기에는 시험 실행의 service가 필요한 case의 형식이 없었다.
+  `node --test packages/ts/tests/generate.test.ts packages/ts/tests/contract-check.test.ts`로 확인했고, case의 service와
+  CK-95의 시험은 변경 전에 실패했다. `tests/e2e`의 어떤 저장소에도 service가 없으므로 end-to-end 증거는 session-store를
+  기다린다.
 
 ## 0.0.6
 

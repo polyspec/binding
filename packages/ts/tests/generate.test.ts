@@ -4445,7 +4445,7 @@ test('a case runs against a service of the test run: its address, its scope and 
   assert.match(node, /^import \{ spawnSync \} from 'node:child_process';$/m);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   const phpScope = phpText(scope('php', 'shapes.repeat', 'twice_with_a_separator'));
-  assert.ok(php.includes(`function testGn13eRepeatTwiceWithASeparator(): void\n    {\n        self::serviceAddress(${phpText('store')}, ${phpText('SHAPES_STORE')});\n        self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('setup')}, ${phpScope}, ${phpText(setup)});\n`), php);
+  assert.ok(php.includes(`function testGn13erepeatTwiceWithASeparator(): void\n    {\n        self::serviceAddress(${phpText('store')}, ${phpText('SHAPES_STORE')});\n        self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('setup')}, ${phpScope}, ${phpText(setup)});\n`), php);
   assert.ok(php.includes(`self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('check')}, ${phpScope}, ${phpText(check)});`));
   assert.ok(php.includes(`self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('change')}, ${phpText(scope('php', 'buffer.size', 'the_size_of_a_text_source'))}, ${phpText(held)});`));
   assert.match(php, /private static function serviceAddress\(string \$service, string \$variable\): string/);
