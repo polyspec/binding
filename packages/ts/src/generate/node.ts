@@ -22,7 +22,7 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', path: 'path_in' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', path: 'path_in', cancel: 'cancel_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -161,6 +161,33 @@ fn source_in(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
 /// T-1 path, GN-6y: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array, which binding_core judges.
 fn path_in(value: Unknown<'_>, subject: &str) -> Result<std::path::PathBuf, Fail> {
     binding_core::path_from_bytes(source_in(value, subject)?, subject).map_err(binding_error)
+}
+
+/// T-1 cancel, GN-6aq: an AbortSignal, as the Cancel of a pair whose trigger fires when the signal aborts: at once when
+/// it aborted before the call, and otherwise by a listener of its event abort, which runs once.
+fn cancel_in(value: Unknown<'_>, subject: &str) -> Result<binding_core::Cancel, Fail> {
+    let env = Env::from_raw(JsValue::value(&value).env);
+    let class: Function<'_, (), Unknown<'_>> = env.get_global().map_err(internal)?.get_named_property("AbortSignal").map_err(internal)?;
+    if !value.instanceof(class).map_err(internal)? {
+        return Err(type_error(subject, "AbortSignal"));
+    }
+    let signal: Object<'_> = unsafe { value.cast() }.map_err(internal)?;
+    let (trigger, cancel) = binding_core::cancel_pair();
+    if signal.get_named_property::<bool>("aborted").map_err(internal)? {
+        trigger.cancel();
+        return Ok(cancel);
+    }
+    let listener = env
+        .create_function_from_closure::<(), (), _>("abort", move |_call| {
+            trigger.cancel();
+            Ok(())
+        })
+        .map_err(internal)?;
+    let mut options = env.create_object().map_err(internal)?;
+    options.set_named_property("once", true).map_err(internal)?;
+    let listen: Function<'_, FnArgs<(&str, Function<'_, (), ()>, Object<'_>)>, Unknown<'_>> = signal.get_named_property("addEventListener").map_err(internal)?;
+    listen.apply(signal, FnArgs::from(("abort", listener, options))).map_err(internal)?;
+    Ok(cancel)
 }
 
 /// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
@@ -1862,7 +1889,7 @@ export const typeParameters = (fn: Fn): string => {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', path: 'string | Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', path: 'string | Uint8Array', cancel: 'AbortSignal', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of

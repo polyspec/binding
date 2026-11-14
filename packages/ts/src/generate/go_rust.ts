@@ -15,7 +15,7 @@ import {
   recognizedFn,
   recognizedMatch,
   interfaceOf, implementorsOf,
-  takesFunction,
+  takesFunction, cancelsAny,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -82,6 +82,8 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     if (type === 'text') return `text_in(${input}, ${subject})`;
     if (type === 'latin1') return `latin1_in(${input}, ${subject})`;
     if (type === 'path') return `path_in(${input}, ${subject})`;
+    // T-1 cancel, GN-6aq: the key of a cancellation that package binding made.
+    if (type === 'cancel') return `cancel_in(${input})`;
     // T-1: a source is a Go []byte, whose bytes the core judges.
     // GN-12a: an int or a uint of the contract is a safe integer, which the Go types do not hold to.
     if (type === 'int' || type === 'uint') return `safe_${type}_in(${input}, ${subject})`;
@@ -690,6 +692,45 @@ fn collected<I: IntoIterator>(items: I) -> Vec<I::Item> {
     items.into_iter().collect()
 }
 `;
+
+// T-1 cancel, GN-6aq: the cancellations that package binding makes, each the trigger that its context fires and the
+// Cancel that a call takes, under its key; Go releases a key when nothing keeps its context.
+const cancelsRust = (model: Model): string => (!cancelsAny(model) ? '' : `
+/// T-1 cancel, GN-6aq: the cancellations of package binding: the trigger and, until a call takes it, the Cancel.
+static CANCELS: Mutex<BTreeMap<u64, (binding_core::CancelTrigger, Option<binding_core::Cancel>)>> = Mutex::new(BTreeMap::new());
+
+static NEXT_CANCEL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// GN-6aq: a new cancellation, whose key package binding writes for the call and keeps for its context.
+#[no_mangle]
+pub extern "C" fn ${prefix(model)}__cancel_new() -> u64 {
+    let key = NEXT_CANCEL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (trigger, cancel) = binding_core::cancel_pair();
+    lock(&CANCELS).insert(key, (trigger, Some(cancel)));
+    key
+}
+
+/// GN-6aq: fires the trigger of a key when its context is done, on any thread; a released key fires nothing.
+#[no_mangle]
+pub extern "C" fn ${prefix(model)}__cancel_fire(key: u64) {
+    if let Some((trigger, _cancel)) = lock(&CANCELS).get(&key) {
+        trigger.cancel();
+    }
+}
+
+/// GN-6aq: drops the trigger of a key that nothing in Go keeps, which cancels nothing.
+#[no_mangle]
+pub extern "C" fn ${prefix(model)}__cancel_release(key: u64) {
+    let released = lock(&CANCELS).remove(&key);
+    drop(released);
+}
+
+/// T-1 cancel, GN-6aq: the Cancel of the key of a cancellation, which one call takes; any other key is malformed.
+fn cancel_in(input: &mut &[u8]) -> Result<binding_core::Cancel, Fail> {
+    let key = uint_in(input)?;
+    lock(&CANCELS).get_mut(&key).and_then(|(_trigger, cancel)| cancel.take()).ok_or_else(malformed)
+}
+`);
 
 // ---- entry points ----
 
@@ -1846,7 +1887,7 @@ function entries(model: Model): string {
 
 // The Rust helpers that the contract's functions use.
 function rustUsed(model: Model): string {
-  const code = `${entries(model)}${model.callbacks.map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}`;
+  const code = `${entries(model)}${model.callbacks.map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}`;
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
@@ -1940,12 +1981,12 @@ export function libRust(model: Model): string {
   const functions = entries(model);
   const callbacks = model.callbacks.map((c, i) => callbackRust(model, c, i)).join('');
   const used = rustUsed(model);
-  const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}`;
+  const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}${cancelsRust(model)}`;
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
   // A name in a comment, such as the cgo.Handle of a doc comment, is no use of a type of binding_core.
   const code = all.replace(/\/\/[^\n]*/g, '');
-  const usesMutex = model.objects.length > 0 || callsBack(model);
-  const usesMap = model.objects.length > 0 || callsBack(model);
+  const usesMutex = model.objects.length > 0 || callsBack(model) || cancelsAny(model);
+  const usesMap = model.objects.length > 0 || callsBack(model) || cancelsAny(model);
   const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised', 'ValueKind'].filter((t) => new RegExp(`\\b${t}\\b`).test(code));
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
@@ -2088,5 +2129,5 @@ pub unsafe extern "C" fn ${prefix(model)}__free(buffer: Buffer) {
         drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
     }
 }
-${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${model.faults.length === 0 && model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? ITERATED : ''}${callBackRust(model)}${foreignFailureRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
+${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${model.faults.length === 0 && model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? ITERATED : ''}${callBackRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
 }

@@ -52,6 +52,15 @@ export interface Context {
   machineFunctionNew?: (fixture: FunctionFixture) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
+  // GN-6aq: the expression of a cancellation of the language that fired before the call, or one that never fires.
+  cancelNew?: (fired: boolean) => string;
+}
+
+// G-5, GN-6aq: the state of a case value of the type cancel, {"cancel": "fired"} or {"cancel": "open"}.
+export function cancelState(value: unknown): boolean {
+  const state = typeof value === 'object' && value !== null ? (value as { cancel?: unknown }).cancel : undefined;
+  if (state !== 'fired' && state !== 'open') throw new Unsupported(`a case value of the type cancel is {"cancel": "fired" | "open"}, not ${shown(value)} (G-5)`);
+  return state === 'fired';
 }
 
 // GN-6ae: a function fixture as its language writes it: each step calls the method `fn` on the argument at the position
@@ -88,6 +97,8 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
       node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()', source: "'a'", path: "'a'" },
       php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""', source: '"a"', path: '"a"' },
     };
+    // GN-6aq: a cancellation that never fires.
+    if (type === 'cancel' && ctx.cancelNew !== undefined) return ctx.cancelNew(false);
     return table[ctx.lang][type] ?? 'null';
   }
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
@@ -230,6 +241,10 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
       if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
       return `hex2bin(${phpText(hex)})`;
+    }
+    if (type === 'cancel') {
+      if (ctx.cancelNew === undefined) throw new Unsupported(`a case value of the type cancel is not generated for ${ctx.target ?? ctx.lang} (GN-6aq)`);
+      return ctx.cancelNew(cancelState(value));
     }
     if (type === 'path') {
       const relative = casePathOf(value);

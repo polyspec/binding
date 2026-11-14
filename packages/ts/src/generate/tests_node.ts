@@ -111,6 +111,8 @@ export function nodeTests(model: Model): string {
   const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     casePath: (relative) => `casePath(${jsString(relative)})`,
+    // GN-6aq: an AbortSignal that was aborted before the call, or one whose controller never aborts it.
+    cancelNew: (fired) => (fired ? 'AbortSignal.abort()' : 'new AbortController().signal'),
     // GN-6x: a class of another repository, through the owner's package.
     foreignClass: (library, unit) => {
       foreignModules.add(library);

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4f55ac65708cb34208b1b897ed22d825934a6863f02132cc86c05ac401cb8d0b -->
+<!-- source-sha256: bf1292e35c3b4405d64cf7ddf9ed5cb7235cfb5b231225f563d2f426296b4a33 -->
 # 생성기
 
 [English](generator.md)
@@ -552,20 +552,21 @@
     취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
     `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
     취소한다.
-  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). binding은 `ctx.Err()`를 읽고, 아니면
-    `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를 발화시킨다. 기다리거나
-    polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때 놓인다
-    (`runtime.AddCleanup`).
-  - PHP: root namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
-    `isCancelled(): bool`을 갖는다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
+  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). 이 타입의 parameter가 첫
+    parameter가 아닌 member는 Go에 대해 이름으로 거절한다. Go는 context를 맨 앞에 넘기기 때문이다. binding은
+    `ctx.Err()`를 읽고, 아니면 `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를
+    발화시킨다. 기다리거나 polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때
+    놓인다(`runtime.AddCleanup`): context는 `context.AfterFunc`의 func를 실행할 때까지 쥐고, `context.Background()`처럼
+    끝나지 않는 context는 아무것도 쥐지 않는다.
+  - PHP: extension namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
+    `isCancelled(): bool`을 갖는다. root namespace에 두지 않는다. 한 process는 class 이름을 한 번만 등록하고, 이 타입을
+    받는 두 extension이 함께 load되기 때문이다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
     호출 사이에 불린다: signal handler(`pcntl_async_signals`), core의 callback, 또는 다른 process와 공유하는 상태를
     호출 전에 읽어 그 상태가 그렇다고 할 때 `cancel()`을 부르는 host 코드가 부른다. binding은 그런 상태를 모르며,
     그것이 필요한 레포가 그 host 코드를 쓴다(GN-6ag).
   case에서 이 타입의 값은 `{"cancel": "fired"}`이거나 `{"cancel": "open"}`이다(GN-13, CK-22): 생성된 테스트는 이미
   발화한 언어 값이나 발화하지 않는 언어 값을 만들어 넘긴다. 이유: 호출자만이, 자기 언어가 이미 가진 취소로
   취소하고, core는 한 타입으로 그것을 관찰한다.
-  구현되지 않음: 생성기는 이 타입을 받는 member를 모든 target에 대해 이름으로 거절한다(`the type cancel is not
-  generated yet`).
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
@@ -928,8 +929,7 @@
     receiver가 `&self`이고 기다리는 member의 class는 `Shared`에 담기므로 두 goroutine이 한 객체 안에서 동시에 기다리고,
     어떤 호출이 그 객체 안에서 기다리는 동안 그 객체의 쓰기 자리가 필요한 호출은 kind `busy`로 실패한다. Go에는 함수의
     꼴이 하나뿐이므로 그 member는 기다리지 않는 member와 같은 이름과 결과를 갖고, 기다리면 안 되는 호출자는 goroutine을
-    띄운다. 어떤 호출도 취소되지 않는다. token `Io`는 취소를 지니지 않고 타입 `cancel`은 생성하지 않으므로(GN-13)
-    그 member는 `context.Context`를 받지 않는다.
+    띄운다. token `Io`는 취소를 지니지 않는다. 타입 `cancel`도 받는 member는 GN-6aq의 `context.Context`를 받는다.
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기

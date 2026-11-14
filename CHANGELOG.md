@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A member with a parameter of the type `cancel` (T-1) was refused by name for every target (`the type cancel is not
+  generated yet`), so a core that observes the cancellation of its caller had no binding. The type is now generated
+  as GN-6aq states: the core takes a `binding_core::Cancel`, whose trigger fires when the language value fires and
+  at once when it fired before the call. Node and WASM take an `AbortSignal`, Python a future, Go the first parameter
+  `ctx context.Context`, through `context.AfterFunc`, and PHP an instance of the generated final class
+  `Cancellation` of the namespace of the extension; a cancel that is not the first parameter is refused by name for
+  Go, and the type at any place other than a parameter is refused by name for every target. The generated tests give
+  the case values `{"cancel": "fired"}` and `{"cancel": "open"}`, and `tests/e2e/classes` has the function `halted`.
+  Verified by `make test-ts`, whose new test failed before the change, and by `make e2e REPO=tests/e2e/classes`.
 - A parameter with `keeps: true` (GN-6aa) was refused by name in Node, and in PHP, WASM and Go its callback was the
   wrapper of the call: PHP and WASM held a language value that is neither `Send` nor `Sync`, and Go held the index of
   the object in a call that ends with the call, so a core that keeps the callback in a `Send` and `Sync` value did not

@@ -5791,7 +5791,8 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   const goPackage = text(go, 'packages/go/zz_generated_classes.go');
   assert.match(goPackage, /\nfunc Read\(name string\) \(string, error\) \{/);
   assert.match(goPackage, /\nfunc \(this \*Gate\) EnterSlowly\(\) \(string, error\) \{/);
-  assert.doesNotMatch(goPackage, /context\.Context/);
+  // The token Io carries no cancellation: only a member that takes the type cancel takes a context (GN-6aq).
+  assert.deepEqual(goPackage.match(/^func [^\n]*context\.Context[^\n]*/gm), ['func Halted(ctx context.Context) (bool, error) {']);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
 });
@@ -8068,23 +8069,45 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.match(text(variants(), 'packages/go/zz_generated_variants.go'), /\nfunc encodeFigure\(enc \*binding\.Writer, value Figure\) \{/);
 });
 
-test('a parameter of the type cancel binds the cancellation of each language to a binding_core::Cancel (T-1, GN-6aq)', { todo: 'B2.111: the type cancel is not generated yet' }, () => {
-  // classes.halted takes cancel: cancel and gives whether the cancellation fired before the core returned.
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
-  contract.units.find((u: any) => u.id === 'classes').members.push({ id: 'classes.halted', name: ['halted'], kind: 'function', visibility: 'public', parameters: [{ name: ['cancel'], type: 'cancel', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_classes::halted' });
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'))]]) });
+test('a parameter of the type cancel binds the cancellation of each language to a binding_core::Cancel (T-1, GN-6aq)', () => {
+  // classes.halted of the end-to-end check takes cancel: cancel and gives whether the cancellation fired.
+  const classes = (): any => JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  const out = generate({ contract: classes(), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles });
   // Every crate makes the pair, keeps the trigger and gives the core the Cancel.
-  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
-    assert.match(text(out, path), /binding_core::cancel_pair\(\)/, path);
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.match(text(out, path), /let \(trigger, cancel\) = binding_core::cancel_pair\(\);/, path);
   }
   // Node and WASM take an AbortSignal: aborted fires at once, and otherwise a listener of abort with once fires it.
-  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function halted\(cancel: AbortSignal\): boolean;/);
-  assert.match(text(out, 'packages/ts/generated/lib.rs'), /"aborted"[\s\S]*"addEventListener"[\s\S]*"once"/);
+  for (const target of ['ts', 'ts/wasm']) {
+    assert.match(text(out, `packages/${target}/generated/index.d.ts`), /export declare function halted\(cancel: AbortSignal\): boolean;/, target);
+    assert.match(text(out, `packages/${target}/generated/lib.rs`), /fn cancel_in\([^)]*\) -> Result<binding_core::Cancel, Fail> \{[\s\S]*?"aborted"[\s\S]*?"once"[\s\S]*?"abort"[\s\S]*?\n\}/, target);
+    assert.match(text(out, `packages/${target}/generated/tests/generated.test.mjs`), /pkg\.halted\(AbortSignal\.abort\(\)\)[\s\S]*pkg\.halted\(new AbortController\(\)\.signal\)/, target);
+  }
   // Python takes a future: cancelled() fires at once, and otherwise a done callback fires it when it is cancelled.
-  assert.match(text(out, 'packages/python/generated/lib.rs'), /"cancelled"[\s\S]*"add_done_callback"/);
-  // PHP takes an instance of the generated final class Cancellation of the root namespace.
-  assert.match(text(out, 'packages/php-ext/generated/stubs.php'), /final class Cancellation\s*\{[\s\S]*public function cancel\(\): void[\s\S]*public function isCancelled\(\): bool/);
-  // Go takes the context as the first parameter ctx, and context.AfterFunc fires the trigger.
-  assert.match(text(out, 'packages/go/zz_generated_classes.go'), /func Halted\(ctx context\.Context\) \(bool, error\)/);
-  assert.match(text(out, 'packages/go/zz_generated_classes.go'), /context\.AfterFunc\(ctx, /);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /fn cancel_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<binding_core::Cancel> \{[\s\S]*?"cancelled"[\s\S]*?"add_done_callback"/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.halted\(self\._future\(True\)\)[\s\S]*pkg\.halted\(self\._future\(False\)\)/);
+  // PHP takes an instance of the generated final class Cancellation of the namespace of the extension.
+  const stubPath = [...out.keys()].find((path) => path.startsWith('packages/php-ext/generated/') && path.endsWith('.stub.php')) ?? '';
+  assert.match(text(out, stubPath), /namespace Polyspec\\Classes \{\n {4}\/\*\*[^\n]*\*\/\n {4}final class Cancellation\n {4}\{\n {8}public function __construct\(\) \{\}\n\n {8}public function cancel\(\): void \{\}\n\n {8}public function isCancelled\(\): bool \{\}/);
+  assert.match(text(out, stubPath), / \* @param \\Polyspec\\Classes\\Cancellation \$cancel\n[\s\S]*?function halted\(mixed \$cancel\): bool/);
+  const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(phpLib, /#\[php\(name = "Polyspec\\\\Classes\\\\Cancellation"\)\]\n#\[php\(flags = ClassFlags::Final\)\]\npub struct PhpCancellation \{/);
+  assert.match(phpLib, /\.class::<PhpCancellation>\(\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /private function cancellation\(bool \$cancelled\): \\Polyspec\\Classes\\Cancellation\n {4}\{\n {8}\$cancellation = new \\Polyspec\\Classes\\Cancellation\(\);[\s\S]*halted\(\$this->cancellation\(true\)\)/);
+  // Go takes the context as the first parameter ctx; package binding fires the trigger by context.AfterFunc and
+  // releases it by runtime.AddCleanup.
+  const goClasses = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(goClasses, /func Halted\(ctx context\.Context\) \(bool, error\) \{[\s\S]*?\tdefer binding\.Cancel\(enc, ctx\)\(\)\n/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /func Cancel\(enc \*Writer, ctx context\.Context\) func\(\) \{[\s\S]*?runtime\.AddCleanup\(held, [\s\S]*?context\.AfterFunc\(ctx, func\(\) \{ held\.fire\(\) \}\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn cancel_in\(input: &mut &\[u8\]\) -> Result<binding_core::Cancel, Fail> \{/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\n\t"context"\n[\s\S]*func cancellation\(cancelled bool\) context\.Context \{[\s\S]*Halted\(cancellation\(true\)\)/);
+  // Go refuses a cancel that is not the first parameter, and every target refuses the type at another place.
+  const second = classes();
+  second.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters.unshift({ name: ['label'], type: 'text', required: true });
+  assert.throws(() => generate({ contract: second, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: a parameter of the type cancel is generated for Go as the first parameter ctx only \(GN-6aq\)/);
+  const returned = classes();
+  returned.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').returns = 'cancel';
+  assert.throws(() => generate({ contract: returned, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['node'] }), /the type cancel is generated as a parameter only \(T-1, GN-6aq\)/);
 });

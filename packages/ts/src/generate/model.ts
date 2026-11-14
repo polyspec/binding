@@ -355,6 +355,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if (typeof type === 'string') {
     // T-1: a source is the original of a parsing operation, so it is a parameter (toFn) and no other place.
     if (type === 'source') throw new Unsupported(`${where}: the type source is generated as a parameter only (T-1)`);
+    // GN-6aq: a cancellation is a parameter of a member, or an optional one, and no other place.
+    if (type === 'cancel') throw new Unsupported(`${where}: the type cancel is generated as a parameter only (T-1, GN-6aq)`);
     if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'path', 'none'].includes(type)) {
       throw new Unsupported(`${where}: the type ${type} is not generated yet`);
     }
@@ -557,8 +559,8 @@ export function collectModel(
       }
       // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
       const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
-      // T-1: a source is taken as a parameter, or an optional one.
-      const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
+      // T-1: a source is taken as a parameter, or an optional one; GN-6aq: a cancellation too.
+      const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source') || takesCancel(type);
       // GN-6ap: a generated interface as a parameter, or an optional one; the core takes the value, so no borrow is named.
       const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
       const iface = typeof inner === 'object' && 'unit' in inner && inner.library === undefined ? units.get(inner.unit) : undefined;
@@ -1344,7 +1346,7 @@ export function withFunctionAliases(crate: string): string {
 export function rustType(model: Model, type: Type, inside = false): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
-      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()',
+      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()', cancel: 'binding_core::Cancel',
     };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type}`);
@@ -1377,8 +1379,8 @@ export function rustType(model: Model, type: Type, inside = false): string {
 // source Vec<u8>/&[u8], path PathBuf/&Path) is taken borrowed, and optional<T> of one as Option<borrowed>, which the
 // generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
 export function coreArg(model: Model, type: Type, variable: string): string {
-  // GN-6z: a function moves into the core, which may keep it.
-  if (byValue(model, type) || (typeof type === 'object' && 'function' in type)) return variable;
+  // GN-6z: a function moves into the core, which may keep it; GN-6aq: so does a cancellation.
+  if (byValue(model, type) || (typeof type === 'object' && 'function' in type) || takesCancel(type)) return variable;
   // GN-6ap: the core takes the value of a generated interface, and an optional one as an Option of it.
   if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
@@ -1436,6 +1438,12 @@ export function takesFunction(model: Model): boolean {
 export function keepsThrown(model: Model): boolean {
   return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
+
+// GN-6aq: whether a type is a cancellation, or an optional one, which a parameter alone takes.
+export const takesCancel = (type: Type): boolean => type === 'cancel' || (typeof type === 'object' && 'optional' in type && type.optional === 'cancel');
+
+// GN-6aq: whether a member of the contract takes a cancellation.
+export const cancelsAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => takesCancel(a.type)));
 
 // GN-6aa: the parameters whose callbacks the core keeps after the call (keeps: true).
 const keptParams = (model: Model): Type[] =>

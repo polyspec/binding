@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1b9f011c4d72afc6a41b8c09b600d95003e9682b33b8f45e92f30539eae43e66 -->
+<!-- source-sha256: 6569beeba7cadcd4efad56f12e5551a7d48c50209733c4e054919ea11295b057 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 타입 `cancel`(T-1)의 parameter를 가진 member는 모든 target에 대해 이름으로 거부되었으므로(`the type cancel is not
+  generated yet`), 호출자의 취소를 관찰하는 core에는 binding이 없었다. 이제 이 타입을 GN-6aq대로 생성한다: core는
+  `binding_core::Cancel`을 받고, 그 trigger는 언어 값이 발화할 때, 그리고 호출 전에 이미 발화했으면 곧바로 발화한다.
+  Node와 WASM은 `AbortSignal`을, Python은 future를, Go는 `context.AfterFunc`를 통해 첫 parameter
+  `ctx context.Context`를, PHP는 extension namespace의 생성된 final class `Cancellation`의 인스턴스를 받는다. 첫
+  parameter가 아닌 cancel은 Go에 대해 이름으로 거부하고, parameter가 아닌 자리의 이 타입은 모든 target에 대해 이름으로
+  거부한다. 생성된 테스트는 case 값 `{"cancel": "fired"}`와 `{"cancel": "open"}`을 주고, `tests/e2e/classes`는 함수
+  `halted`를 갖는다. 새 테스트가 변경 전에 실패한 `make test-ts`와 `make e2e REPO=tests/e2e/classes`로 확인했다.
 - `keeps: true`가 있는 parameter(GN-6aa)는 Node에서 이름으로 거부되었고, PHP, WASM, Go에서 그 callback은 호출의
   wrapper였다. PHP와 WASM은 `Send`도 `Sync`도 아닌 언어 값을 가졌고, Go는 호출과 함께 끝나는 호출 안 객체의 index를
   가졌으므로, callback을 `Send`이고 `Sync`인 값에 두는 코어는 컴파일되지 않거나 끝난 호출을 불렀다. 이제 그런 parameter의

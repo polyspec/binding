@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
+import { DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -55,7 +55,7 @@ const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'r
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in', cancel: 'cancel_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -253,6 +253,20 @@ fn latin1_in(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
 /// T-1 path, GN-6y: the bytes of a string, as they are, which binding_core judges.
 fn path_in(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
     binding_core::path_from_bytes(latin1_in(value, subject)?, subject).map_err(binding_error)
+}
+
+/// T-1 cancel, GN-6aq: an instance of the class Cancellation of the extension, as the Cancel of a pair whose trigger
+/// fires when the instance is cancelled: at once when it was cancelled before the call, and otherwise by its cancel().
+fn cancel_in(value: &Zval, subject: &str) -> Result<binding_core::Cancel, Fail> {
+    let Some(cancellation) = <&PhpCancellation as FromZval>::from_zval(value) else { return Err(type_error(subject, "Cancellation")) };
+    let (trigger, cancel) = binding_core::cancel_pair();
+    let mut state = cancellation.state();
+    if state.cancelled {
+        trigger.cancel();
+    } else {
+        state.triggers.push(trigger);
+    }
+    Ok(cancel)
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
@@ -770,6 +784,62 @@ impl PhpPairs {
 }
 `;
 
+// T-1 cancel, GN-6aq: the class Cancellation of the namespace of the extension, which a parameter of the type cancel
+// takes. It is of the extension's namespace, because the root namespace holds one class of a name for the process and
+// two extensions that take a cancel are loaded together.
+export const phpCancellationName = (layout: PhpLayout): string => `${layout.namespace}\\Cancellation`;
+const CANCELLATION = (layout: PhpLayout): string => `
+/// T-1 cancel, GN-6aq: ${phpCancellationName(layout)}, a cancellation that the caller fires by cancel(), once; the
+/// triggers of the calls that took it fire then, and a call after it fires its trigger at once.
+#[php_class]
+#[php(name = ${rustString(phpCancellationName(layout))})]
+#[php(flags = ClassFlags::Final)]
+pub struct PhpCancellation {
+    pub(crate) state: std::sync::Mutex<CancellationState>,
+}
+
+/// GN-6aq: whether the cancellation fired, and the triggers of the calls that wait for it.
+#[derive(Default)]
+pub struct CancellationState {
+    pub(crate) cancelled: bool,
+    pub(crate) triggers: Vec<binding_core::CancelTrigger>,
+}
+
+#[php_impl]
+impl PhpCancellation {
+    pub fn __construct() -> Self {
+        Self { state: std::sync::Mutex::new(CancellationState::default()) }
+    }
+
+    /// GN-6aq: fires the triggers; a second call has no further effect.
+    pub fn cancel(&self) {
+        let triggers = {
+            let mut state = self.state();
+            state.cancelled = true;
+            std::mem::take(&mut state.triggers)
+        };
+        for trigger in triggers {
+            trigger.cancel();
+        }
+    }
+
+    #[php(name = "isCancelled")]
+    pub fn is_cancelled(&self) -> bool {
+        self.state().cancelled
+    }
+}
+
+impl PhpCancellation {
+    /// GN-6aq: the state, also after a panic while it was held, because each change of it is whole.
+    pub(crate) fn state(&self) -> std::sync::MutexGuard<'_, CancellationState> {
+        match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+`;
+
 // GN-6h: the name of a class in the message of kind busy and of a poisoned object.
 const classLabel = (object: ObjectClass): string => langName('php', object.unit.name, 'class');
 
@@ -1257,7 +1327,7 @@ fn out_${rustField(object.unit.name)}(value: impl CoreForm<${object.unit.core_ty
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
-  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '');
+  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '') + (cancelsAny(model) ? CANCELLATION(layout) : '');
   const enums = [
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
@@ -1488,6 +1558,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     // N-4: the iterator is registered before the classes whose getIterator names it as its return type.
     ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
+    ...(cancelsAny(model) ? ['        .class::<PhpCancellation>()'] : []),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   // GN-13: the case-test entry points of the cases whose value has no PHP form.
@@ -1510,7 +1581,7 @@ use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.variants.length > 0 || model.interfaces.length > 0 || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.variants.length > 0 || model.interfaces.length > 0 || cancelsAny(model) || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
@@ -1846,6 +1917,7 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
+      if (type === 'cancel') return `\\${phpCancellationName(layout)}`;
       return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', path: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
@@ -1883,6 +1955,20 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
         public function errno(): ?int {}
     }
 `).join('\n')}}`);
+  // T-1 cancel, GN-6aq: the class Cancellation of the extension.
+  if (cancelsAny(model)) {
+    blocks.push(`namespace ${layout.namespace} {
+    /** A cancellation that the caller fires by cancel(), which a parameter of the type cancel takes (GN-6aq). */
+    final class Cancellation
+    {
+        public function __construct() {}
+
+        public function cancel(): void {}
+
+        public function isCancelled(): bool {}
+    }
+}`);
+  }
   // E-2, I-3: an error unit extends the class of its parent or of its category; a property is a method.
   for (const u of model.errorUnits) {
     const parent = u.parent === undefined

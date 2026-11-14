@@ -408,6 +408,27 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_classes::label_or"
+        },
+        {
+          "id": "classes.halted",
+          "name": [
+            "halted"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "cancel"
+              ],
+              "type": "cancel",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::halted"
         }
       ]
     },
@@ -1309,6 +1330,11 @@
       "member": "tag.names",
       "file": "contracts/cases.json",
       "group": "tag_names"
+    },
+    {
+      "member": "classes.halted",
+      "file": "contracts/cases.json",
+      "group": "halted"
     }
   ]
 }

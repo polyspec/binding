@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, keptModel, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
+import { type CallbackUnit, keptModel, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, cancelsAny, takesCancel } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
@@ -124,6 +124,8 @@ export interface GoScope {
   foreignImports?: Map<string, string>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
+  // T-1 cancel, GN-6aq: whether a member takes a context.Context.
+  usesContext?: boolean;
   usesJson?: boolean;
   usesIter?: boolean;
 }
@@ -164,6 +166,11 @@ export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
     // T-1: a source is a []byte, which holds the bytes of any Go string ([]byte(s)).
     const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte', path: 'string' };
+    // T-1 cancel, GN-6aq: a cancel is a context.Context, whose nil is an optional left out.
+    if (type === 'cancel') {
+      scope.usesContext = true;
+      return 'context.Context';
+    }
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type} is not generated for Go yet`);
     return found;
@@ -279,6 +286,7 @@ ${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
 // class of another repository. The nil of an optional is a value of the type, so an optional is none.
 export function nilAbsent(model: Model, type: Type): boolean {
   if (typeof type === 'object' && ('map' in type || 'keyed_map' in type)) return true;
+  if (type === 'cancel') return true;
   if (typeof type === 'object' && ('list' in type || 'optional' in type || 'tuple' in type)) return false;
   const alias = aliasOf(model, type);
   return alias === undefined ? objectUnit(model, type) !== undefined : alias.owner !== undefined;
@@ -329,10 +337,39 @@ function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boo
   return fields.some((f) => needsCall(model, f.type, seen));
 }
 
+// T-1 cancel, GN-6aq: the cancellation of a call, from its context.
+const CANCEL = (p: string): string => `
+// cancelHeld keeps the key of a cancellation of the static library while its context may fire it (GN-6aq). It holds a
+// func, a pointer, so that the runtime allocates it on its own and its cleanup runs when it alone is unreachable.
+type cancelHeld struct {
+	fire func()
+}
+
+// Cancel writes the key of a new cancellation of the static library, whose trigger fires when ctx is done: at once when
+// ctx is done before the call, and otherwise by context.AfterFunc, on the goroutine that the context starts (T-1
+// cancel, GN-6aq). The context keeps the func until it runs it, so the key is released (runtime.AddCleanup) once it ran
+// or nothing keeps the context; a context that is never done, such as context.Background, keeps nothing. The func that
+// Cancel returns keeps the key until the call returned.
+func Cancel(enc *Writer, ctx context.Context) func() {
+	key := uint64(C.${p}__cancel_new())
+	enc.Uint(key)
+	held := &cancelHeld{fire: func() { C.${p}__cancel_fire(C.uint64_t(key)) }}
+	runtime.AddCleanup(held, func(key uint64) { C.${p}__cancel_release(C.uint64_t(key)) }, key)
+	if ctx.Err() != nil {
+		held.fire()
+	} else {
+		context.AfterFunc(ctx, func() { held.fire() })
+	}
+	return func() { runtime.KeepAlive(held) }
+}
+`;
+
 // ---- Go encoding of the arguments and decoding of the result ----
 
 function goEncode(scope: GoScope, type: Type, expr: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
+  // T-1 cancel, GN-6aq: the key of a cancellation that ctx fires, which package binding keeps until the call returned.
+  if (type === 'cancel') return [`${t}defer binding.Cancel(enc, ${expr})()`];
   if (typeof type === 'string') {
     const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes', path: 'Text' };
     return [`${t}enc.${method[type] ?? ''}(${expr})`];
@@ -544,7 +581,13 @@ export const goResultCount = (fn: Fn): number => {
 
 function goCallable(scope: GoScope, fn: Fn): string {
   const model = scope.model;
-  const params = fn.params.map((p) => `${goParam(p.name, scope.model)} ${paramType(scope, fn, p)}`).join(', ');
+  // T-1 cancel, GN-6aq: a cancel is the first parameter ctx, as Go passes a context; at another place it is refused.
+  const cancelAt = fn.params.findIndex((p) => takesCancel(p.type));
+  if (cancelAt > 0 || fn.params.filter((p) => takesCancel(p.type)).length > 1) {
+    throw new Unsupported(`${fn.member.id}: a parameter of the type cancel is generated for Go as the first parameter ctx only (GN-6aq)`);
+  }
+  const paramOf = (name: Name, model: Model): string => (cancelAt === 0 && name === fn.params[0]?.name ? 'ctx' : goParam(name, model));
+  const params = fn.params.map((p) => `${paramOf(p.name, scope.model)} ${paramType(scope, fn, p)}`).join(', ');
   const results = memberResults(scope, fn);
   const signature = results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})`;
   const zero = results.map((_, i) => `zero${i}`);
@@ -556,11 +599,11 @@ function goCallable(scope: GoScope, fn: Fn): string {
   if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
   // GN-6aa: the callbacks of a parameter with keeps are kept funcs of the call, which package binding holds.
   const keptBy = (parameter: { name: Name }): boolean => (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
-  for (const parameter of fn.params) lines.push(...goEncode(keptBy(parameter) ? { ...scope, model: keptModel(scope.model) } : scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
+  for (const parameter of fn.params) lines.push(...goEncode(keptBy(parameter) ? { ...scope, model: keptModel(scope.model) } : scope, paramWire(fn, parameter), paramOf(parameter.name, scope.model), 1, 0));
   lines.push(`\tdec, err := binding.${bindingFn(fn)}(enc.Done())`);
   // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
   // the call.
-  const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name, scope.model))];
+  const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => paramOf(p.name, scope.model))];
   for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
   if (alive.length > 0) scope.usesRuntime = true;
   lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}');
@@ -1014,7 +1057,7 @@ func BytesKey(value []byte) Key { return binding.BytesKey(value) }
 func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
-  const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
+  const std = [...(scope.usesContext === true ? ['"context"'] : []), ...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
   const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
@@ -1493,8 +1536,9 @@ func Recognize${goName(u.unit.name)}(err error) error {
     `void ${p}__free(${p}_buffer buffer);`,
     ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
+    ...(cancelsAny(model) ? [`uint64_t ${p}__cancel_new(void);`, `void ${p}__cancel_fire(uint64_t key);`, `void ${p}__cancel_release(uint64_t key);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : []), ...(cancelsAny(model) ? ['context'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1552,7 +1596,7 @@ func invoke(fn entry, args []byte) (*Reader, error) {
 	}
 	return r, nil
 }
-${calls}${releases}${model.objects.length === 0 ? '' : `
+${calls}${releases}${cancelsAny(model) ? CANCEL(p) : ''}${model.objects.length === 0 ? '' : `
 // Ref is the handle of the value of an instance of a class unit (T-5), which the release function frees when the Go
 // runtime finds the Ref unreachable. It keeps the release function, a pointer, so that the runtime allocates it on its
 // own: an object without a pointer shares a block with other small objects, and its cleanup runs only when every

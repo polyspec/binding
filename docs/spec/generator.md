@@ -680,20 +680,21 @@ the design ids are those of the binding design.
     `concurrent.futures.Future`). The binding reads `cancelled()` and otherwise adds a done callback, which fires the
     trigger when the future is cancelled and not when it has a result. Another thread cancels a
     `concurrent.futures.Future` by `cancel()`, and an `asyncio.Future` by `loop.call_soon_threadsafe(future.cancel)`.
-  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`). The binding reads
-    `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine that the
-    context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that keeps
-    it is unreachable (`runtime.AddCleanup`).
-  - PHP: the generated final class `Cancellation` of the root namespace, with `__construct()`, `cancel(): void`,
-    which is idempotent, and `isCancelled(): bool`. One PHP process runs no language code while a core call runs, so
+  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`); a member whose
+    parameter of the type is not the first one is refused by name for Go, because Go passes a context first. The
+    binding reads `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine
+    that the context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that
+    keeps it is unreachable (`runtime.AddCleanup`): the context keeps the func of `context.AfterFunc` until it runs
+    it, and a context that is never done, such as `context.Background()`, keeps nothing.
+  - PHP: the generated final class `Cancellation` of the namespace of the extension, with `__construct()`,
+    `cancel(): void`, which is idempotent, and `isCancelled(): bool`. It is not of the root namespace, because a
+    process registers a class name once and two extensions that take the type are loaded together. One PHP process runs no language code while a core call runs, so
     `cancel()` is called between calls: by a signal handler (`pcntl_async_signals`), by a callback of the core, or by
     host code that reads a state shared with another process before a call and calls `cancel()` when that state says
     so. The binding knows no such state; the repository that needs it writes that host code (GN-6ag).
   In a case a value of the type is `{"cancel": "fired"}` or `{"cancel": "open"}` (GN-13, CK-22): the generated test
   makes a language value that has fired, or one that never fires, and passes it. Why: the caller alone cancels, by
   the cancellation that its language already has, and the core observes it through one type.
-  Not implemented: the generator refuses a member that takes the type by name (`the type cancel is not generated
-  yet`) for every target.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -1132,8 +1133,8 @@ the design ids are those of the binding design.
     `&self` that waits is held in `Shared`, so two goroutines wait in one object at the same time, and a call that
     needs a write place of that object while a call waits in it fails with kind `busy`. Go has one form of a function,
     so the member has the name and the results of a member that does not wait, and its caller starts a goroutine where
-    it must not wait. No call is cancelled: the token `Io` carries no cancellation, and the type `cancel` is not
-    generated (GN-13), so the member takes no `context.Context`.
+    it must not wait. The token `Io` carries no cancellation; a member that also takes the type `cancel` takes the
+    `context.Context` of GN-6aq.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a

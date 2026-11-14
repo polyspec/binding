@@ -25,7 +25,7 @@ export const wasmGlue = (model: Model): string => `${model.contract.library.repl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', cancel: 'cancel_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no WASM input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -150,6 +150,31 @@ fn source_in(value: &JsValue, subject: &str) -> Result<Vec<u8>, Fail> {
         return text_in(value, subject).map(String::into_bytes);
     }
     bytes_in(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
+}
+
+/// T-1 cancel, GN-6aq: an AbortSignal, an object whose aborted is a boolean and whose addEventListener is a function, as
+/// the Cancel of a pair whose trigger fires when the signal aborts: at once when it aborted before the call, and
+/// otherwise by a listener of its event abort, which runs once.
+fn cancel_in(value: &JsValue, subject: &str) -> Result<binding_core::Cancel, Fail> {
+    let property = |name: &str| match Reflect::get(value, &JsValue::from_str(name)) {
+        Ok(found) if value.is_object() => Some(found),
+        _ => None,
+    };
+    let aborted = property("aborted").and_then(|aborted| aborted.as_bool());
+    let listen = property("addEventListener").filter(JsValue::is_function).map(Function::from);
+    let (Some(aborted), Some(listen)) = (aborted, listen) else {
+        return Err(type_error(subject, "AbortSignal"));
+    };
+    let (trigger, cancel) = binding_core::cancel_pair();
+    if aborted {
+        trigger.cancel();
+        return Ok(cancel);
+    }
+    let listener = wasm_bindgen::closure::Closure::once_into_js(move || trigger.cancel());
+    let options = js_sys::Object::new();
+    Reflect::set(&options, &JsValue::from_str("once"), &JsValue::TRUE).map_err(|error| internal(&error))?;
+    listen.call3(value, &JsValue::from_str("abort"), &listener, &options).map_err(|error| internal(&error))?;
+    Ok(cancel)
 }
 
 /// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
@@ -1476,7 +1501,7 @@ const jsBase = (category: string): string => ({ value: 'RangeError', type: 'Type
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', cancel: 'AbortSignal', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of

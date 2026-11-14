@@ -4,7 +4,7 @@
 import type { Member, Unit } from '../contract.ts';
 import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type PhpLayout, phpNamespace } from './php.ts';
+import { type PhpLayout, phpCancellationName, phpNamespace } from './php.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
@@ -44,6 +44,18 @@ ${values.members.map((member) => `            public function ${member.slice(1, 
             }
         }`;
 }
+
+// GN-6aq: a Cancellation that was cancelled before the call, or one that is never cancelled.
+const PHP_CANCELLATION = (name: string): string => `
+    private function cancellation(bool $cancelled): \\${name}
+    {
+        $cancellation = new \\${name}();
+        if ($cancelled) {
+            $cancellation->cancel();
+        }
+        return $cancellation;
+    }
+`;
 
 // GN-6y: the directory of a test, in which a case resolves its relative paths; PHPUnit makes an instance per test, and
 // tearDown removes the directory.
@@ -101,7 +113,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // GN-13: an instance of an error unit with a kind, by the constructor of its category class (GN-10).
   const errorNew = (unit: Unit, kind: string, message: string): string =>
     `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${phpText(message)}, ${phpText(kind)})`;
-  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
@@ -751,7 +763,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}${usesRaised ? `
+{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}
