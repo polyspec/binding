@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bbb8e3de512eb57be3acb6c0e2141143ed53240a9b207291a5845c22f4a15065 -->
+<!-- source-sha256: e02aff06cfa1939b5cfabe4825159a28482e46371c319c4e5e2292dddf32694f -->
 # 생성기
 
 [English](generator.md)
@@ -1812,7 +1812,9 @@
   map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
   인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
-  자리의 동일성과 각 순환을 비교한다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
+  자리의 동일성과 각 순환을 비교한다. case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
+  PHP는 한 자리가 가진 reference를 유지하지 않는다. `ReflectionReference::fromArrayElement`는 그것에 null을 주고
+  `zend_array_dup`은 그 값을 복사하므로, 바인딩이 그 자리에 만드는 reference는 보이지 않는다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
   거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
   준다. 이것은 결과를 alias의 `in` 함수로 받아 그 코어 값을 `out` 함수로 돌려주며, 시험은 같은 텍스트를 요구한다. 그래서
   `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. Go는 값 alias를 담은 결과를 `reflect.DeepEqual`로 비교하며,

@@ -9053,3 +9053,14 @@ test('Python moves a callback parameter with keeps into the core as its box (GN-
   assert.match(python, /let source: Box<dyn polyspec_sample::Feed[^\n]*> = in_feed\([^\n]*\)[^\n]*\.map\(/);
   assert.doesNotMatch(python, /let source: CbFeed = /);
 });
+
+test('PHP compares a reference whose id has one place in a case value as its value, because PHP keeps no reference that one place holds (GN-13e, GN-6ar, B2.239)', () => {
+  const generated = e2eGenerated();
+  const sample = text(generated.get('sample') ?? new Map(), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(sample, /function testGn13esameAReferenceComesBack\(\): void\n {4}\{\n[^\n]*\n {8}\$expected = json_decode\("\[\\"list 1\\",\\"string 78\\"\]"/);
+  const consumer = text(generated.get('consumer') ?? new Map(), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const pair = /function testGn13epairAReferenceOfTheOwnerTwice\(\): void\n {4}\{\n([\s\S]*?)\n {4}\}\n/.exec(consumer)?.[1] ?? '';
+  assert.match(pair, /assertSame\(json_decode\("\[\\"list 2\\",\\"list 1\\",\\"string 78\\",\\"list 1\\",\\"string 78\\"\]"/);
+  // Node keeps the class of the reference, whose instance is an object of its own at each place.
+  assert.match(text(generated.get('sample') ?? new Map(), 'packages/ts/generated/tests/generated.test.mjs'), /cell #0/);
+});

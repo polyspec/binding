@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The generated PHP tests of the end-to-end repositories required a reference that PHP cannot show. PHP keeps no
+  reference that one place holds, so a reference whose id has one place in a case value is now compared as its value
+  (GN-13e).
+
 - Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
   its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the
   generated tests of the callback's exception and of a result of another type are now generated only for a member

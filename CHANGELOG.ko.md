@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 442fd0207d08ea0f4ba6ce4f509facb6a2e62a730590ac1fa826284cc75c8ed2 -->
+<!-- source-sha256: aaa9256d2a14999e4b525bcb671e3e012ea2bfea0a9964e1754c5bdf76bc8886 -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,9 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 끝에서 끝까지 레포의 생성 PHP 시험이 PHP가 보일 수 없는 reference를 요구했다. PHP는 한 자리가 가진 reference를
+  유지하지 않으므로, case 값에서 id의 자리가 하나인 reference는 이제 그 값으로 비교된다(GN-13e).
 
 - lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
   member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성

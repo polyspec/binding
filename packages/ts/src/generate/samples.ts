@@ -612,7 +612,8 @@ export const raisesException = (value: unknown): boolean => {
 // (Python, PHP); text and bytes, the hex of the UTF-8 or the bytes (Python, Node, WASM), string in PHP; list n, then
 // its items; map n, then each key and its value; and an instance of a value class of the out rows, a PHP object and a
 // PHP reference, numbered together by their first place: `<unit> #k`, then its field, `php_object #k n`, then its
-// pairs, `php_reference #k`, then its value, and `<form> again k` at a later place.
+// pairs, `php_reference #k`, then its value, and `<form> again k` at a later place. A PHP reference whose id has one
+// place is its value alone, because PHP keeps no reference that one place holds.
 export type TokenForm = { unit: string; cls: string; field: string; library?: string };
 
 // The value classes that the out rows of an alias name as `<unit>.constructor` in a language, with their field.
@@ -727,6 +728,22 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
   const stack: unknown[] = [top];
   const objects = new Map<number, number>();
   const references = new Map<number, number>();
+  // GN-13e: the places of each reference id; PHP keeps no reference that one place holds.
+  const placesOfId = new Map<number, number>();
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (typeof node !== 'object' || node === null) return;
+    const record = node as Record<string, unknown>;
+    if (record['kind'] === 'reference' && typeof record['value'] === 'object' && record['value'] !== null) {
+      const id = Number((record['value'] as Record<string, unknown>)['id']);
+      placesOfId.set(id, (placesOfId.get(id) ?? 0) + 1);
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(top);
   let count = 0;
   const intToken = (decimal: string): string => {
     if (lang !== 'node') return `int ${decimal}`;
@@ -826,6 +843,10 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
         const ref = held as Record<string, unknown>;
         const name = cls?.unit ?? 'php_reference';
         const id = Number(ref['id']);
+        if (cls === undefined && lang === 'php' && placesOfId.get(id) === 1) {
+          stack.push(ref['value']);
+          break;
+        }
         if (!('value' in ref)) {
           out.push(`${name} again ${String(references.get(id))}`);
           break;

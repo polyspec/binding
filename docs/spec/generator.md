@@ -2230,7 +2230,10 @@ the design ids are those of the binding design.
   that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
   `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
-  `<form> again k` at a later place, so the identity of each place and each cycle is compared. The result of an
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
+  id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one
+  place holds, because `ReflectionReference::fromArrayElement` gives null for it and `zend_array_dup` copies its
+  value, so the reference that the binding makes for that place cannot be seen. The result of an
   alias with the entry points of `codec-test` (`in_raises`, GN-5) also goes through the round trip of the rows of the
   alias (U-1): the test gives the result to `_alias_round_<alias>` (Python), `__aliasRound<Alias>` (Node, WASM) or
   `Internal\aliasRound<Alias>` (PHP), which takes it by the `in` function of the alias and gives the core value back
