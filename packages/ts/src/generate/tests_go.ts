@@ -30,7 +30,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel,
 } from './samples.ts';
 
 interface Values {
@@ -195,7 +195,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   const alias = aliasOf(v.model, type);
   // GN-6x, GN-13b: a value of a value class of another repository is an instance of the owner's class.
   if (alias?.library !== undefined && alias.unit.kind === 'class') return foreignMade(v, b, alias, json);
-  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true);
+  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true, alias.library === undefined ? undefined : foreignKept(v, alias.library));
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
   if (implemented !== undefined && implemented.library === undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
@@ -325,8 +325,8 @@ const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', o
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false): string {
-  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result };
+function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false, foreign?: ForeignKept): string {
+  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result, ...(foreign === undefined ? {} : { foreign }) };
   const text = aliasPart(model, unit, json, where, making);
   // GN-13: the instances of the value classes are made first and then filled, as statements of the test, so every
   // place of an id is the same pointer and a cycle is made.
@@ -344,6 +344,29 @@ interface Making {
   objects: Map<number, string>;
   // GN-13e: the value is the expected result of a case, made by the Go out rows of the alias.
   result: boolean;
+  // GN-6ar: the owner of the alias of the value, when it is another repository: an object and a reference are then
+  // instances of the value classes of that repository, which the test makes through the package of the owner.
+  foreign?: ForeignKept;
+}
+
+// GN-6ar, GN-6af: the value classes without core_type of the owner of a value alias of another repository, and the
+// package of the owner that names the constructor of one, which the test imports.
+interface ForeignKept {
+  model: Model;
+  pkg: (unit: Unit) => string;
+}
+
+function foreignKept(v: Values, library: string): ForeignKept {
+  const owner = v.model.foreign.get(library);
+  if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6ar)`);
+  return {
+    model: ownerModel(v.model, library),
+    pkg: (unit) => {
+      const type = ownerType(owner, unit);
+      (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+      return type.pkg;
+    },
+  };
 }
 
 // The id of a reference or of an object of a case value (G-5).
@@ -421,18 +444,20 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   }
   // GN-6af, GN-15c: an object is an instance of the value class that keeps a keyed map, and a reference one of the
   // class that keeps one value. The constructor makes each without content, and a statement fills it after it is
-  // made, so no constructor judges the instances inside it again.
-  const construct = (cls: KeptClass): string => `must(binding.New${goName(cls.unit.name)}(nil))`;
+  // made, so no constructor judges the instances inside it again. GN-6ar: the classes of a value alias of another
+  // repository are those of its owner, whose package the test names.
+  const keptModel = making.foreign?.model ?? model;
+  const construct = (cls: KeptClass): string => `must(${making.foreign?.pkg(cls.unit) ?? 'binding'}.New${goName(cls.unit.name)}(nil))`;
   const access = (cls: KeptClass): string => {
     const [field] = cls.fields;
     if (field === undefined) throw new Unsupported(`${cls.unit.id} keeps no value (GN-6af)`);
     return field.writable ? keptField(field) : `${goName(field.name)}()`;
   };
   if (kind === 'object') {
-    const cls = keptOf(model, 'entries', where);
+    const cls = keptOf(keptModel, 'entries', where);
     const key = access(cls);
     // GN-13e: a key of an expected result takes the key form of the keyed map of the class.
-    const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(model, cls.unit.id)) : goKey(entryKey));
+    const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(keptModel, cls.unit.id)) : goKey(entryKey));
     if (record['repeat'] !== undefined) {
       const repeat = record['repeat'];
       if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${JSON.stringify(json)}`);
@@ -473,7 +498,7 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
       return known;
     }
     if (known !== undefined) throw new Error(`a case value of ${where} gives the value of the reference ${id} at two places (G-5)`);
-    const cls = keptOf(model, 'value', where);
+    const cls = keptOf(keptModel, 'value', where);
     const [field] = cls.fields;
     if (field === undefined || !field.writable) throw new Unsupported(`a case value of ${where} sets the value of ${cls.unit.id}, whose property is not writable (GN-6af)`);
     const local = making.b.fresh('reference');
@@ -1358,7 +1383,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
             v.result = false;
           }
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
-          const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
+          const same = (model.kept.length > 0 || foreignKeptClasses(model).length > 0) && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
           // GN-13e: reflect.DeepEqual finds a NaN unequal to itself, so a result whose case holds a NaN is compared by
           // sameValue, which is reflect.DeepEqual except that a NaN equals a NaN.
           const compare = (got: string, wanted: string): string => holdsNaN(given) ? `sameValue(${got}, ${wanted})` : `reflect.DeepEqual(${got}, ${wanted})`;
@@ -1811,12 +1836,26 @@ const KEPT = `
 func kept[T any](value T) (T, error) { return value, nil }
 `;
 
-// GN-15c: the places of the instances of the value classes without core_type in a value, which two deeply equal
-// values share only when each holds the same pointer where the other does.
+// GN-6ar, GN-6af: the value classes without core_type of the owners of the value aliases of other repositories, each
+// with the package of its owner, whose instances a result of such an alias holds.
+function foreignKeptClasses(model: Model): { cls: KeptClass; pkg: string }[] {
+  const libraries = [...new Set(model.aliases.flatMap((a) => (a.library !== undefined && a.unit.kind !== 'class' ? [a.library] : [])))];
+  return libraries.flatMap((library) => {
+    const owner = model.foreign.get(library);
+    if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6ar)`);
+    return ownerModel(model, library).kept.map((cls) => ({ cls, pkg: ownerType(owner, cls.unit).pkg }));
+  });
+}
+
+// GN-15c, GN-6ar: the places of the instances of the value classes without core_type in a value, of this repository
+// and of the owners of the value aliases of other repositories, which two deeply equal values share only when each
+// holds the same pointer where the other does.
 function placesHelper(model: Model): string {
-  const cases = model.kept.map((k) => {
+  const foreign = foreignKeptClasses(model);
+  const classes = [...model.kept.map((cls) => ({ cls, pkg: 'binding' })), ...foreign];
+  const cases = classes.map(({ cls: k, pkg }) => {
     const walked = k.fields.map((f) => `\t\t\twalk(found.${f.writable ? keptField(f) : `${goName(f.name)}()`})`).join('\n');
-    return `		case *binding.${goName(k.unit.name)}:
+    return `		case *${pkg}.${goName(k.unit.name)}:
 			if found == nil {
 				return
 			}
@@ -1850,12 +1889,12 @@ func places(top any) string {
 			for _, key := range keys {
 				walk(found[key])
 			}
-		case *binding.KeyedMap[any]:
+${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *${pkg}.KeyedMap[any]:
 			for _, key := range found.Keys() {
 				item, _ := found.Get(key)
 				walk(item)
 			}
-${cases}
+`).join('')}${cases}
 		}
 	}
 	walk(top)

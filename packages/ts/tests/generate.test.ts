@@ -1940,6 +1940,24 @@ test('Go makes and reads the class of a row of a value alias of another reposito
   assert.throws(() => generate({ contract: cored.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: cored.caseFiles, foreign: cored.foreign, targets: ['go'] }), /the go row of the class ratio of sample names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner \(GN-6ar, GN-6af\)/);
 });
 
+test('the Go test of the consumer of the end-to-end check makes a reference of a case as an instance of the class of the owner (GN-6ar, GN-6af, GN-13, B2.240)', () => {
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });
+  const tests = text(out, 'packages/go/zz_generated_test.go');
+  // The reference of the case a_reference_of_the_owner_twice is an instance of the class cell of the sample, which
+  // the constructor of the package of the owner makes on nil and whose writable property the test then sets.
+  const kase = /\nfunc Test\w*AReferenceOfTheOwnerTwice\w*\(t \*testing\.T\) \{\n[\s\S]*?\n\}\n/.exec(tests)?.[0] ?? '';
+  assert.notEqual(kase, '', 'the test of the case a_reference_of_the_owner_twice');
+  assert.doesNotMatch(kase, /t\.Fatal\(/);
+  assert.match(kase, /\n\treference\d+ := must\(sample\.NewCell\(nil\)\)\n/);
+  assert.match(kase, /\n\treference\d+\.Value = "x"\n/);
+  assert.match(tests, /\n\t"github\.com\/polyspec\/sample\/packages\/go"\n/);
+  // The result holds two instances of cell, so it is compared also by the places of the pointers of the owner's classes.
+  assert.match(kase, / \|\| places\(value0\) != places\(want\) \{\n/);
+  assert.match(tests, /\n\t\tcase \*sample\.Cell:\n[\s\S]*?\n\t\t\twalk\(found\.Value\)\n/);
+  assert.match(tests, /\n\t\tcase \*sample\.KeyedMap\[any\]:\n/);
+});
+
 test('WASM makes and reads the class of a row of a value alias of another repository as Node does (GN-6ar, GN-6k)', () => {
   const { contract, caseFiles, foreign } = classRowsSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['wasm'] });

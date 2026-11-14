@@ -14,6 +14,12 @@
 - The generated PHP tests of the end-to-end repositories required a reference that PHP cannot show. PHP keeps no
   reference that one place holds, so a reference whose id has one place in a case value is now compared as its value
   (GN-13e).
+- The generated Go test of a case of a value alias of another repository makes a reference or an object of the case
+  as an instance of the value class without `core_type` of the owner, by `New<Class>` of the package of the owner on
+  nil, and compares the result also by the places of the pointers of those classes (GN-6ar, GN-6af, GN-13). It looked
+  for the class in the contract of the consumer, which has none, so the test of `a_reference_of_the_owner_twice` of
+  `consumer.pair` failed with `0 value classes keep one value (GN-6af)`. Verified by the test of the consumer in
+  `node --test packages/ts/tests/generate.test.ts`, which failed before the change.
 
 - Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
   its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the

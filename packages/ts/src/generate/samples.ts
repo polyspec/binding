@@ -1324,9 +1324,10 @@ export function implementerInstance(model: Model, callback: Unit, value: unknown
 
 // GN-6s, GN-13f: the model of the contract of another repository, whose members an instance value at a place of a
 // callback unit of that repository names; each of its members names the library, so a test calls it through the
-// package of that library.
+// package of that library. GN-6ar: it also gives the value classes without core_type of the owner of a value alias,
+// whose instances a case value of that alias holds.
 const ownerModels = new WeakMap<Contract, Model>();
-function ownerModel(model: Model, library: string): Model {
+export function ownerModel(model: Model, library: string): Model {
   const owner = model.foreign.get(library);
   if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6s, GN-13f)`);
   const kept = ownerModels.get(owner);
