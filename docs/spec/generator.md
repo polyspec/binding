@@ -1859,7 +1859,11 @@ the design ids are those of the binding design.
   with its keys, or when the contract has a value alias, whose decoder makes one (GN-6e); otherwise no code outside
   package `binding` can make one, so `describeOwn` has no case of it, and `describeOwn` is not written when it has no
   case. `zz_generated_thrown_count.go` is written only with the Go tests of the count (GN-6ae), which run the cases
-  of a member that takes a callback or a function type. Why: an export is reached at run time through the static
+  of a member that takes a callback or a function type. A method of `Call` that only an export calls is written
+  with that export alone: `host` with `<prefix>__go_host` (a value alias), and `run` and `raise` with
+  `<prefix>__go_callback` (a callback, or a function of a member with `machine`). The type `panicked` is written only
+  when Go code that the static library runs can panic into a call: `run`, or `keepRaised` of a kept func (GN-6z,
+  GN-15b). Why: an export is reached at run time through the static
   library, which no Go analysis sees, while a case of a type that no caller can make, or a function that no test
   calls, is unreachable in every program.
 - **GN-15i** The Go static library is built without link-time optimization: `[profile.release]` of the root manifest

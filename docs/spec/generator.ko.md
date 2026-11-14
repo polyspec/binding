@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 701645f3ac2c0e282fff1ea10bf20b6c2049267d4c599ab79a26b5e53b0a097d -->
+<!-- source-sha256: 14baa08919905da5a7345ed3850c1b6f0a5dda45a0537683125fc48154c01ed8 -->
 # 생성기
 
 [English](generator.md)
@@ -1525,7 +1525,10 @@
   있어 그 decoder가 그것을 만들 때(GN-6e)만 `*KeyedMap[any]`이다. 그 밖에는 패키지 `binding` 밖의 어떤 코드도 그것을
   만들 수 없으므로 `describeOwn`은 그 case를 갖지 않고, case가 없는 `describeOwn`은 쓰지 않는다.
   `zz_generated_thrown_count.go`는 callback이나 함수 타입을 받는 member의 case를 실행하는 개수의 Go 시험(GN-6ae)과
-  함께일 때만 쓴다. 이유: export는 실행 중에 정적 라이브러리를 거쳐 닿지만 어떤 Go 분석도 그것을 보지 못하고, 어떤
+  함께일 때만 쓴다. export만 부르는 `Call`의 method는 그 export와 함께일 때만 쓴다. `host`는 `<prefix>__go_host`(값
+  alias)와, `run`과 `raise`는 `<prefix>__go_callback`(callback, 또는 `machine`을 가진 member의 함수)과 함께 쓴다.
+  타입 `panicked`는 정적 라이브러리가 실행하는 Go 코드가 호출 안에서 panic할 수 있을 때만 쓴다. 그것은 `run`, 또는 보관된
+  func의 `keepRaised`다(GN-6z, GN-15b). 이유: export는 실행 중에 정적 라이브러리를 거쳐 닿지만 어떤 Go 분석도 그것을 보지 못하고, 어떤
   호출자도 만들 수 없는 타입의 case나 어떤 시험도 부르지 않는 함수는 모든 프로그램에서 닿지 않는다.
 - **GN-15i** Go 정적 라이브러리는 link-time optimization 없이 빌드한다. target `go`가 있는 레포의 root manifest와
   `.cargo/config.toml`의 `[profile.release]`는 `lto`를 켜지 않으며(없음, `false`, `"off"`), `binding check`는 다른 값을
