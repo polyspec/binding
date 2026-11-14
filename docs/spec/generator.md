@@ -2166,6 +2166,13 @@ the design ids are those of the binding design.
   an alias (GN-18b), with `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
+- **GN-13h** A row of `cases` that names a member may have `only` (Q-4): the cases of its group are generated, as tests
+  and as values that another test reads, only for the targets that it lists, and the tests of every other target
+  leave them out; a row without `only` holds for every target of its member. A row with `only` names at least one
+  target where its member is generated. Why: a case may state a behaviour that a target does not have, such as a
+  render that needs a loader that reads files, which WebAssembly has no file system for, while the member itself is
+  generated there; the row keeps the case for the targets that have the behaviour, instead of an `only` of the member
+  that would leave every other case of the member out of that target too.
 
 ## End-to-end check
 

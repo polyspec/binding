@@ -343,6 +343,8 @@ export interface Model {
   aliasCases: Map<string, unknown[]>;
   // GN-13e: for each member, the key of each of its cases that holds its result (the `result` of the row of `cases`).
   resultKeys?: Map<string, Map<unknown, string>>;
+  // GN-13h: the targets of the only of the row of `cases` that holds a case, for the cases of a row with only.
+  caseTargets?: ReadonlyMap<unknown, readonly Lang[]>;
 }
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
@@ -1695,6 +1697,8 @@ export function membersFor(model: Model, lang: Lang): Model {
     interfaces: model.interfaces.filter(unitHas),
     aliases: model.aliases.filter((a) => unitHas(a.unit)),
     errorUnits: model.errorUnits.filter((u) => unitHas(u.unit)),
+    // GN-13h: a case of a row with only is a case of the targets that the only lists alone.
+    cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => model.caseTargets?.get(item)?.includes(lang) ?? true)])),
   };
 }
 

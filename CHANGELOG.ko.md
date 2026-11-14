@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- 어떤 target에 없는 동작을 말하는 case를 그 target에서만 뺄 수 없었다. template의 `engine.render`, `engine.render_bound`,
+  `engine.render_json`의 case `load_not_loaded`는 파일을 읽는 로더가 필요한데 WebAssembly에는 그것이 없고, 그 member들은
+  거기서 생성된다. 그 CK-92 보고를 해소하는 길은 member의 `only`뿐이었고, 그러면 그 member의 다른 모든 case도 WASM에서
+  빠졌다. 이제 member를 이름하는 `cases`의 행은 `only`(Q-4)를 가질 수 있다. 그 group의 case는 그 행이 나열한 target의
+  시험에만 들어가고(GN-13h), CK-92는 그 행의 target을 읽으며, `only`가 그 member가 생성되는 target을 하나도 이름하지 않는
+  행은 CK-92로 보고된다. `contract-check.test.ts`의 CK-92 시험과 `generate.test.ts`의 GN-13h 시험으로 확인했다. 그 시험들은
+  변경 전에 실패했다.
 - 끝에서 끝까지 확인은 생성된 Go 모듈을 빌드하고 vet하고 시험했지만 deadcode를 돌리지 않아서, 어떤 program도 시험도
   닿지 않는 생성 함수가 실행을 통과했고, `deadcode -test`를 돌리는 모듈을 쓰는 저장소의 lint는 그것으로 실패했다. 이제
   확인은 mise.toml이 고정한 `deadcode -test`(0.52.0)를 모듈에 build tag 없이, 그리고 그 파일들의 build tag마다 돌리고,

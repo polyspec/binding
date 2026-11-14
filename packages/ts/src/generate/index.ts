@@ -49,6 +49,8 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
   const aliasCases = new Map<string, unknown[]>();
   // GN-13e: the key of each case that holds the result of its member, by the row that names the group.
   const resultKeys = new Map<string, Map<unknown, string>>();
+  // GN-13h: the targets of the only of the row that holds a case, for the cases of a row with only.
+  const caseTargets = new Map<unknown, readonly Lang[]>();
   for (const kase of inputs.contract.cases) {
     const file = inputs.caseFiles.get(kase.file) as Record<string, unknown> | undefined;
     const group = file?.[kase.group];
@@ -61,9 +63,10 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
       const keys = resultKeys.get(kase.member) ?? new Map<unknown, string>();
       for (const item of group) keys.set(item, kase.result ?? 'result');
       resultKeys.set(kase.member, keys);
+      if (kase.only !== undefined) for (const item of group) caseTargets.set(item, kase.only.targets);
     }
   }
-  const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys };
+  const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys, caseTargets };
   return model;
 }
 

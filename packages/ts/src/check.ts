@@ -1502,9 +1502,13 @@ class Checker {
       }
       const kinds = raised.get(row.member) ?? new Set<string>();
       this.caseFixtures(row.member, group, `/cases/${i}`);
+      // CK-92, GN-13h: an only of the row names a target where its member is generated.
+      if (row.only !== undefined && this.members.has(row.member) && !row.only.targets.some((lang) => this.targetsOf(row.member).includes(lang))) {
+        this.report('CK-92', `/cases/${i}`, `the row of ${row.member} names in only ${row.only.targets.join(', ')}, where ${row.member} is not generated (GN-13h, Q-4)`);
+      }
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
-        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`);
+        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         this.caseScope(row.member, record, `/cases/${i}`);
@@ -1574,7 +1578,8 @@ class Checker {
   // The receiver of a method is an instance value or, without the key receiver, the arguments of a factory of its
   // class among the keys of the case.
   // Gives what the calls of then of the instance values of the case arm (GN-13f).
-  caseInstances(memberId: string, record: Record<string, unknown>, path: string): ThenFaults {
+  // `rowTargets`: the targets of the only of the row of cases that holds the case (GN-13h), when it has one.
+  caseInstances(memberId: string, record: Record<string, unknown>, path: string, rowTargets?: readonly string[]): ThenFaults {
     const armed: ThenFaults = { fills: new Set<string>(), broken: new Set<string>(), any: false };
     const found = this.members.get(memberId);
     if (found === undefined) return armed;
@@ -1591,13 +1596,14 @@ class Checker {
     this.instanceArgs(found.member, record, report, 'the case');
     this.armedThen = undefined;
     this.namedThen = undefined;
-    // CK-92: the test of the case is generated for each target of its member, so every member that its instance values
-    // call is generated there too; only that keeps such a member out of a target keeps the member of the case out too.
-    const own = this.targetsOf(memberId);
+    // CK-92: the test of the case is generated for each target of its member and of its row, so every member that its
+    // instance values call is generated there too; only that keeps such a member out of a target keeps the member of
+    // the case, or the row of the case, out too.
+    const own = this.targetsOf(memberId).filter((lang) => rowTargets === undefined || rowTargets.includes(lang));
     for (const id of named) {
       const missing = own.filter((lang) => !this.targetsOf(id).includes(lang));
       if (missing.length > 0) {
-        this.report('CK-92', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId} or its unit an only without ${missing.join(', ')} (Q-4, GN-13f)`);
+        this.report('CK-92', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId}, its unit or the row of the case an only without ${missing.join(', ')} (Q-4, GN-13f, GN-13h)`);
       }
     }
     return armed;

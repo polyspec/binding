@@ -5002,6 +5002,26 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false, null]]).object`), 'node');
 });
 
+test('the cases of a row of cases with only are tests of the targets that it lists alone, and the other cases of the member stay (GN-13h)', () => {
+  // The cases load_not_loaded of engine.render of template need a loader that reads files, which WASM has not; their
+  // row keeps them out of the WASM tests while engine.render and its other cases are generated there.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const row = contract.cases.find((r: any) => r.member === 'gate.enter');
+  // The first case of the group moves into a group of its own, whose row lists every target but wasm.
+  const [moved, ...rest] = cases[row.group];
+  cases[`${row.group}_files`] = [moved];
+  cases[row.group] = rest;
+  contract.cases.push({ member: 'gate.enter', file: row.file, group: `${row.group}_files`, only: { targets: contract.targets.filter((t: string) => t !== 'wasm'), reason: 'GN-6q' } });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`Gate.enter ${moved.id}'`), 'node keeps the case of the row with only');
+  assert.ok(!wasm.includes(`Gate.enter ${moved.id}'`), 'wasm leaves the case of the row with only out');
+  for (const kase of rest) assert.ok(wasm.includes(`Gate.enter ${kase.id}'`), `wasm keeps ${kase.id}`);
+});
+
 test('Go reads a record whose callback field is optional and writes no output conversion for it (GN-6aa)', () => {
   // The record engine_options of template holds { optional: { unit: loader } }; Go wrote out_engine_options for it and
   // was refused with "no Go output conversion for {"unit":"loader"}".

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A case that states a behaviour that a target does not have could not be kept out of that target alone: the cases
+  `load_not_loaded` of `engine.render`, `engine.render_bound` and `engine.render_json` of template need a loader that
+  reads files, which WebAssembly has not, while those members are generated there, and the only resolution of their
+  CK-92 findings was an `only` of the member, which left every other case of the member out of WASM too. A row of
+  `cases` that names a member now takes `only` (Q-4): the cases of its group are tests of the targets that it lists
+  alone (GN-13h), CK-92 reads the targets of the row, and a row whose `only` names no target where its member is
+  generated is a CK-92 finding. Verified by the tests of CK-92 in `contract-check.test.ts` and the GN-13h test of
+  `generate.test.ts`, which failed before the change.
 - The end-to-end check built, vetted and tested the generated Go module but ran no deadcode, so a generated function
   that no program and no test reaches passed the run, while the lint of a consuming repository, which runs `deadcode
   -test`, failed on it. The check now runs the `deadcode -test` that mise.toml pins (0.52.0) on the module, untagged and

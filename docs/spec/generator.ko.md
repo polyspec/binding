@@ -1763,6 +1763,12 @@
   포함하고 K-2 시험과 case의 callback fixture, alias의 U-7 시험(GN-18b)도 포함해, 설치한 패키지의 subpath `./wasm`에 대해
   `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
   `internal`을 기대하고, 그 뒤의 호출은 인스턴스가 trap했으면 kind `internal`이고 모듈이 unwind하면 성공해야 한다(GW-7).
+- **GN-13h** member를 이름하는 `cases`의 행은 `only`(Q-4)를 가질 수 있다. 그 group의 case는 시험으로도, 다른 시험이 읽는
+  값으로도, 그 행이 나열한 target에서만 생성되고, 다른 target의 시험은 그것을 뺀다. `only`가 없는 행은 그 member의 모든
+  target에 해당한다. `only`가 있는 행은 그 member가 생성되는 target을 하나 이상 이름한다. 이유: case는 어떤 target에 없는
+  동작을 말할 수 있다. 예를 들어 파일을 읽는 로더가 필요한 render는 파일 시스템이 없는 WebAssembly에 없지만 member
+  자체는 거기서 생성된다. 그 행은 그 동작이 있는 target에만 case를 남긴다. member의 `only`를 쓰면 그 member의 다른 모든
+  case도 그 target에서 빠지기 때문이다.
 
 ## 끝에서 끝까지 확인
 
