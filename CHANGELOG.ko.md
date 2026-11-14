@@ -2,6 +2,7 @@
 <!-- source-sha256: dab7c1315086fce9cf0438aefbb337eb4cff96e5abb175e39aba52f1a085b211 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
+<!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
 <!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
@@ -41,6 +42,14 @@
   뒤에서 Python과 Node만 받는 cancel이 Go의 parameter가 되어 cancel이 첫 parameter라는 Go의 규칙이 Go target 전체를
   거부했고, PHP와 WASM의 parameter도 되었다. 검증: 그런 parameter의 시험이 변경 전에 실패한
   `node --test packages/ts/tests/generate.test.ts`.
+- 함수 타입의 인자나 결과인 다른 라이브러리의 record는 그 라이브러리 module의 변환을 갖는다(GN-4c, GN-6z, B2.260).
+  다른 라이브러리의 record를 함수 타입 parameter만 이름하는 계약은 모든 target의 crate에서
+  `library_<library>::out_<record>`를 부르고 그 정의가 없어 crate가 컴파일되지 않았다. `node --test packages/ts/tests/generate.test.ts`로 검증했다.
+- 릴리스의 npm archive는 자기 버전의 tag로 `polyspec-binding-core`를 고정한 Cargo.lock에서 CK-20을 통과하고, 다른
+  라이브러리의 계약은 `cargo metadata --locked --offline`으로 읽는다(CK-20, GN-15f, B2.261). archive는 커밋을 담지 않아
+  CK-20이 자기 릴리스의 tag까지 코어의 모든 Git source를 알 수 없는 커밋으로 거부했고, `--locked` 없는 `cargo metadata`는
+  레포의 Cargo.lock을 다시 쓰고 network를 읽을 수 있었다. `node --test packages/ts/tests/commit.test.ts packages/ts/tests/generate.test.ts`로 검증했다.
+
 ## 0.0.1
 
 - 계약 case는 `files`를 가질 수 있다. 생성된 시험은 case의 값을 만들기 전에 그 파일을 시험의 디렉터리에 쓴다(G-5,

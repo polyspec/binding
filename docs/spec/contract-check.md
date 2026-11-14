@@ -358,7 +358,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   A git dependency is also pinned at the commit of the running binding: the commit that `git archive` wrote into
   `packages/ts/archive-commit` of a tree that it wrote (the attribute `export-subst` of `.gitattributes`; a checkout keeps
   the placeholder `$Format:%H$`), the HEAD of its checkout, or the commit that the npm lock of the project that
-  installed it from git resolved; another or an unknown commit is a finding.
+  installed it from git resolved; another commit is a finding. A binding that knows none of these commits is the npm
+  archive of a release (`polyspec-binding-X.Y.Z.tgz` of the GitHub Release), which carries no commit, and the release of
+  the version X.Y.Z is the annotated tag `vX.Y.Z`, which no step moves: a Git source that names the tag `v<version>` of
+  the running binding (`?tag=vX.Y.Z`) is then its commit, and any other source is a finding.
 
 ## Tables of binding
 

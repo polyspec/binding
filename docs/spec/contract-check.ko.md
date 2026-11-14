@@ -298,8 +298,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다. git 의존이면 실행 중인 binding의 커밋으로도 고정한다.
   그 커밋은 `git archive`가 쓴 tree에서는 그것이 `packages/ts/archive-commit`에 쓴 커밋(`.gitattributes`의 속성
   `export-subst`; checkout은 자리표시 `$Format:%H$`를 그대로 둔다)이고, 아니면 binding checkout의 HEAD이거나, binding을 git에서
-  설치한 프로젝트의 npm lock이 정한 커밋이다. 다른 커밋이거나 커밋을
-  알 수 없으면 finding이다.
+  설치한 프로젝트의 npm lock이 정한 커밋이다. 다른 커밋이면 finding이다.
+  이 커밋을 하나도 알 수 없는 binding은 커밋을 담지 않는 릴리스의 npm archive(GitHub Release의 `polyspec-binding-X.Y.Z.tgz`)이고,
+  버전 X.Y.Z의 릴리스는 어떤 단계도 옮기지 않는 annotated tag `vX.Y.Z`다. 그래서 실행 중인 binding의 tag `v<version>`을
+  이름하는 Git source(`?tag=vX.Y.Z`)는 그 커밋이고, 다른 source는 finding이다.
 
 ## binding의 표
 

@@ -18,7 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
-import { ownCommit } from './commit.ts';
+import { gitPinDiffers, ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
@@ -60,7 +60,9 @@ function cargoContracts(contract: unknown, crateDir: string): { found: Map<strin
     const out = join(scratch, 'metadata.json');
     const fd = openSync(out, 'w');
     try {
-      const run = spawnSync('cargo', ['metadata', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
+      // GN-15f: --locked reads the Cargo.lock of the repository as it is and never writes it, and --offline reads only
+      // the crates that the machine fetched, so the contracts that a check reads depend on no network.
+      const run = spawnSync('cargo', ['metadata', '--locked', '--offline', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
         stdio: ['ignore', fd, 'inherit'],
       });
       if (run.error !== undefined) throw run.error;
@@ -342,11 +344,10 @@ if (command === 'check') {
     const found = lock === undefined ? 'there is no Cargo.lock' : pinned.length === 0 ? 'Cargo.lock pins no polyspec-binding-core' : `Cargo.lock pins polyspec-binding-core ${pinned.join(', ')}`;
     process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this binding (L-2)\n`);
   } else if (pins[0]?.source?.startsWith('git+') === true) {
-    const commit = pins[0].source.slice(pins[0].source.lastIndexOf('#') + 1);
-    const mine = ownCommit(resolve(dirname(new URL(import.meta.url).pathname), '..'));
-    if (mine === undefined || mine !== commit) {
+    const finding = gitPinDiffers(pins[0].source, own, ownCommit(resolve(dirname(new URL(import.meta.url).pathname), '..')));
+    if (finding !== undefined) {
       differs = true;
-      process.stderr.write(`${lockPath}: CK-20 Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine ?? 'the commit of this binding, which is unknown'} (L-2)\n`);
+      process.stderr.write(`${lockPath}: CK-20 ${finding} (L-2)\n`);
     }
   }
   // CK-65 (GN-5): a core with fault injection points has itself as a dev-dependency with fault-test, so cargo test of

@@ -387,13 +387,17 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     const metadata = { packages: [...filler, { name: 'polyspec-forms-dep', manifest_path: join(root, 'dep/Cargo.toml') }] };
     writeFileSync(join(root, 'metadata.json'), JSON.stringify(metadata));
     assert.ok(readFileSync(join(root, 'metadata.json')).length > 2 ** 22);
-    writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat '${join(root, 'metadata.json')}'\n`, { mode: 0o755 });
+    writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${join(root, 'arguments')}'\ncat '${join(root, 'metadata.json')}'\n`, { mode: 0o755 });
     const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json')], {
       encoding: 'utf8',
       env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` },
     });
     assert.doesNotMatch(run.stderr, /ENOBUFS|interface\.json#/, run.stderr);
     assert.match(run.stderr, /CK-19 is missing/);
+    // GN-15f: cargo metadata reads the Cargo.lock as it is and the crates that the machine fetched, so it writes no
+    // Cargo.lock of the repository and reads no network. Before, it ran without --locked and --offline.
+    const args = readFileSync(join(root, 'arguments'), 'utf8').split('\n');
+    assert.ok(args.includes('--locked') && args.includes('--offline'), args.join(' '));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -7384,6 +7388,38 @@ test('the conversions of a unit of another library are functions of the module o
       const root = defined.get('') ?? [];
       assert.equal(root.includes('out_c_a_b'), own, path);
       assert.equal(root.some((name) => /^(?:in|out)_(?:a_b|b)$/.test(name)), false, path);
+    }
+  }
+});
+
+test('a record of another library that only a function type names has the conversions of the module of its library that the crate calls (GN-4c, GN-6z)', () => {
+  // Before, a record of another library that was only an argument of a function-typed parameter was converted out
+  // through library_<library>::out_<record>, which no module defined.
+  for (const place of ['argument', 'result'] as const) {
+    const { contract, caseFiles, foreign } = plotSample();
+    const clock = JSON.parse(JSON.stringify(foreign.get('points')));
+    clock.library = 'clock';
+    const unit = unitOf(clock, 'point');
+    unit.id = 'moment';
+    unit.name = ['moment'];
+    unit.core_type = 'polyspec_clock::Moment';
+    foreign.set('clock', clock);
+    const moment = { unit: 'moment', library: 'clock' };
+    const fn = place === 'argument'
+      ? { function: { parameters: [{ list: 'int' }, moment], returns: 'text', async_allowed: false } }
+      : { function: { parameters: ['text'], returns: moment, async_allowed: false } };
+    unitOf(contract, 'plot').members.push({
+      id: 'plot.every', name: ['every'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_plot::every',
+      parameters: [{ name: ['host', 'function'], type: fn, required: true }],
+    });
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });
+    const libs = [...out].filter(([path]) => path.endsWith('generated/lib.rs'));
+    assert.equal(libs.length, 5, place);
+    for (const [path, lib] of libs) {
+      const defined = definedIn(String(lib));
+      const called = [...String(lib).matchAll(/\b(library_[a-z0-9_]+)::([a-z0-9_]+)\b/g)];
+      for (const [, module, name] of called) assert.ok((defined.get(module ?? '') ?? []).includes(name ?? ''), `${path} ${place}: ${String(module)}::${String(name)} is called and not defined`);
+      assert.ok(called.some(([, module, name]) => module === 'library_clock' && name === (place === 'argument' ? 'out_moment' : 'in_moment')), `${path} ${place}`);
     }
   }
 });
