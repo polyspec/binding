@@ -565,7 +565,8 @@
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
   키), Date, 함수로 받고, `Uint8Array`는 `Bytes`로 받는다. out 행 `bytes`가 `Uint8Array`를 만들고, 바인딩이 준 값은 같은
   값으로 다시 들어와야 하기 때문이다. 다른 원소 타입의 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
-  `array_is_list`와 함께, stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
+  `array_is_list`와 함께(바인딩은 각 key를 int나 string의 bytes로 읽으므로 UTF-8이 아닌 string key도 다른 key와 같다.
+  ext-php-rs의 list 판정은 string key를 UTF-8로만 읽고 그 밖에는 panic하므로 바인딩은 그것을 부르지 않는다), stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
   그리고 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
   행으로, 내장 형식이나 member로 만든다. member는 계약의 생성된 class의 생성자나 static member로, 하나뿐인 parameter가 그
   kind의 내용(bool, int, int64, float, text, bytes)이고 실패하지 않는 것이며, 그 내용으로 그 코어 경로를 부르고 그 값은 그

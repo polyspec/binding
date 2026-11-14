@@ -692,7 +692,9 @@ the design ids are those of the binding design.
   `null`, own enumerable string keys), a Date, a function, a `Uint8Array` as `Bytes`, because the out row `bytes` makes
   a `Uint8Array` and a value that the binding gives must enter again as the same value, and a typed array of another
   element type or a symbol as `Other`; PHP takes an
-  element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass under one
+  element that is a reference as `PhpReference` with its identity, an array with `array_is_list` (the binding reads
+  each key as an int or as the bytes of a string, so a string key that is no UTF-8 is a key like any other; the list
+  test of ext-php-rs reads a string key only as UTF-8 and panics on another, so the binding does not call it), a stdClass under one
   handle at every place of the object, by which the core knows an object that it has seen, and a Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
   built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
   parameter is the content of the kind (bool, int, int64, float, text or bytes) and which cannot fail is called on that
