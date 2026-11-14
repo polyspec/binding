@@ -28,6 +28,18 @@
   call through the export `<prefix>__go_end`. An error of a read of a value class in that call is kept in the table
   of no call under the call 0, because the member returns it after that call ended (GN-6z, GN-15c). Verified by
   `make test-ts`: the new tests failed before the change.
+- The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
+  `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
+  contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`
+  also when no generated code called them. `deadcode -test` of the repository that consumes the module reported each
+  of them as unreachable, and that repository cannot change a generated file. The generator now writes a helper of
+  the package only when the Go code of the generation uses it, and drops the import `math` with the helpers that
+  alone used it (GN-15h). A method of a class of the contract with the name of such a method, such as `Key`, keeps
+  no helper. Verified by `make test-ts`: the tests of a contract without a `keyed_map<T>` and of a class member named
+  `Key` failed before the change, and the test of a contract with a `keyed_map<T>` keeps its helpers; by
+  `make e2e REPO=tests/e2e/shapes`, which has keyed maps, and by `make e2e` of the fsm checkout, every target passed;
+  and in the fsm checkout `deadcode` and `golangci-lint` of its Go module report nothing.
+
 - The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
   the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
   the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields
