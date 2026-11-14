@@ -279,6 +279,14 @@ pub trait Source: Send + Sync {
     fn get(&self, key: &str) -> Result<Option<String>, Failure<Error>>;
 }
 
+/// A source with a label, which an index keeps with the record that holds it (GN-6aa: `keeps` on a record).
+pub struct Supply<'a> {
+    /// The source of the supply.
+    pub source: Box<dyn Source + 'a>,
+    /// The label of the supply.
+    pub label: String,
+}
+
 /// The sources that an index keeps from its construction on, which a later call asks in order (GN-6aa: `keeps`).
 pub struct Index {
     sources: Vec<Box<dyn Source>>,
@@ -289,6 +297,18 @@ impl Index {
     #[must_use]
     pub fn new(sources: Vec<Box<dyn Source>>) -> Self {
         Self { sources }
+    }
+
+    /// An index that keeps one source.
+    #[must_use]
+    pub fn single(source: Box<dyn Source>) -> Self {
+        Self { sources: vec![source] }
+    }
+
+    /// An index that keeps the source of the supply.
+    #[must_use]
+    pub fn supplied(supply: Supply<'static>) -> Self {
+        Self { sources: vec![supply.source] }
     }
 
     /// The value of the key in the first source that holds it.

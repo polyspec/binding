@@ -553,15 +553,20 @@ ${arms.join('\n')}
 // T-4, U-2: a record, its fields in contract order; a field with a default is Option<T>, None when Go leaves it nil.
 // GN-15f, GN-4c: a record of another repository has the helpers in_<record> and out_<record> of the module of its
 // library.
+// T-4: the reads of the fields of a record from the input, in contract order.
+function recordReads(model: Model, unit: Unit, input: string): string[] {
+  return (unit.fields ?? []).map((f) => {
+    const subject = rustString(goName(f.name));
+    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, input, subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, input, subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
+  });
+}
+
 function recordRust(model: Model, unit: Unit, library?: string): string {
   const name = recordFn(unit);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
-  const reads = fields.map((f) => {
-    const subject = rustString(goName(f.name));
-    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, 'input', subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
-  });
+  const reads = recordReads(model, unit, 'input');
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
   const writes = (): string[] => fields.map((f) => `    ${convertOut(model, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
@@ -784,7 +789,14 @@ function argumentLines(model: Model, fn: Fn): string[] {
     } else {
       // GN-6aa: the callbacks of a parameter with keeps are kept funcs, held as Natives.
       const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
-      lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${convertIn(typed, parameter.type, '&mut input', subject)}?;`);
+      const record = typed === model || libraryOf(parameter.type) !== undefined ? undefined : unitOf(model, parameter.type);
+      if (record?.kind === 'record') {
+        // GN-6aa: a record parameter with keeps is read field by field here, its callbacks kept funcs and its type 'static.
+        lines.push(...recordReads(typed, record, '&mut input').map((l) => `    ${l}`));
+        lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => rustField(f.name)).join(', ')} };`);
+        continue;
+      }
+      lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${boxed(typed, parameter.type, convertIn(typed, parameter.type, '&mut input', subject))}?;`);
       // GN-6ac, GN-6ad: the core call chooses the core's own type, which IntoCore narrows to; a list is then a Vec of
       // the core's items, whose slice the core borrows.
       if (narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);

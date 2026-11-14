@@ -1632,6 +1632,35 @@
       ]
     },
     {
+      "id": "supply",
+      "name": [
+        "supply"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Supply",
+      "fields": [
+        {
+          "name": [
+            "source"
+          ],
+          "type": {
+            "unit": "source"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "label"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
       "id": "index",
       "name": [
         "index"
@@ -1667,6 +1696,58 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::Index::new"
+        },
+        {
+          "id": "index.single",
+          "name": [
+            "single"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": {
+                "unit": "source"
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": {
+            "unit": "index"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::single"
+        },
+        {
+          "id": "index.supplied",
+          "name": [
+            "supplied"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "supply"
+              ],
+              "type": {
+                "unit": "supply"
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": {
+            "unit": "index"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::supplied"
         },
         {
           "id": "index.get",
@@ -2364,6 +2445,16 @@
       "member": "index.get",
       "file": "contracts/cases.json",
       "group": "index_get"
+    },
+    {
+      "member": "index.single",
+      "file": "contracts/cases.json",
+      "group": "index_single"
+    },
+    {
+      "member": "index.supplied",
+      "file": "contracts/cases.json",
+      "group": "index_supplied"
     }
   ]
 }

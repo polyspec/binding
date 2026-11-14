@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Node, PHP, WASM and Go refused `keeps: true` on a record parameter and on a callback parameter that is no item of a
+  list or an `optional` (GN-6aa), so a core that keeps one callback, or a record of callbacks, after the call had no
+  binding in those targets. The callback now moves into the core as its box, and the record is made from its fields
+  with the conversion of a kept callback and is `'static`. The sample has `index.single` and `index.supplied`, whose
+  cases call the kept source in a later `index.get`. Verified by `node --test packages/ts/tests/generate.test.ts`,
+  whose two new tests failed before the change with the refusals.
 - `make e2e` without `WORK` stopped at its first step on macOS with `npm ci` `Missing: ts@0.0.1 from lock file`: the run
   made its directory under the temporary directory of the system, which is under `/var`, a symbolic link to
   `/private/var`, and npm read the package of the generator under that path as a link that the lock does not hold. The

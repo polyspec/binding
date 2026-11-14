@@ -1436,6 +1436,76 @@
       ],
       "key": "a",
       "result": null
+    },
+    {
+      "id": "a_source_kept_alone_gives_its_value_in_a_later_call",
+      "receiver": {
+        "new": "index.single",
+        "args": {
+          "source": {
+            "callback": {
+              "source.get": [
+                {
+                  "args": {
+                    "key": "a"
+                  },
+                  "result": "c"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "key": "a",
+      "result": "c"
+    },
+    {
+      "id": "a_source_kept_in_a_supply_gives_its_value_in_a_later_call",
+      "receiver": {
+        "new": "index.supplied",
+        "args": {
+          "supply": {
+            "source": {
+              "callback": {
+                "source.get": [
+                  {
+                    "args": {
+                      "key": "a"
+                    },
+                    "result": "d"
+                  }
+                ]
+              }
+            },
+            "label": "x"
+          }
+        }
+      },
+      "key": "a",
+      "result": "d"
+    }
+  ],
+  "index_single": [
+    {
+      "id": "an_index_keeps_one_source",
+      "source": {
+        "callback": {
+          "source.get": []
+        }
+      }
+    }
+  ],
+  "index_supplied": [
+    {
+      "id": "an_index_keeps_the_source_of_its_supply",
+      "supply": {
+        "source": {
+          "callback": {
+            "source.get": []
+          }
+        },
+        "label": "x"
+      }
     }
   ]
 }

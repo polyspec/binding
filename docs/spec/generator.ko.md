@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 83993699637823db5ef9eb7886ea9c3f8ec7624aba235abe5515633ce0318e0e -->
+<!-- source-sha256: 777085d7ed31e3e07f989d211d41313df2cb97fbc981f6e0961665332c39b97c -->
 # 생성기
 
 [English](generator.md)
@@ -492,9 +492,10 @@
   `wrong_thread`, owner의 정리(Node의 env, PHP의 request) 뒤에 부르면 kind `internal`이며, 각각 그 `BindingError`를 담은
   `Native`의 `Raised`다. wrapper는 `Native`만 가지므로 `Send`이고 `Sync`이며, 그것을 요구하는 trait도 그것을 받는다.
   Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
-  나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). 아직 생성하지 않는 것(G-4): Node, PHP, WASM, Go에서
-  `keeps`가 있는 record parameter(record의 두 번째 변환이 필요하다)와, list나 `optional` 안에 있지 않은 `keeps`가 있는
-  callback parameter. 각 target은 그것들을 이름을 대고 거부한다.
+  나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). list나 `optional`의 항목이 아닌 `keeps`가 있는 callback
+  parameter는 그 box로 값째 core에 들어간다(`index.single`). `keeps`가 있는 record parameter는 보관되는 callback의 변환으로
+  field들에서 만들어지고, 그 core 타입은 `'static`이다(`index.supplied`). Go는 그 record의 field를 record의 reader가 아니라
+  진입점 안에서 직접 읽는데, record의 reader가 만드는 callback은 그 호출 동안만 살기 때문이다.
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는

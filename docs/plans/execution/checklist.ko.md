@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 81eb33422287c4a1f9fc268eff3358c38029851b863317af015ba62221e7f106 -->
+<!-- source-sha256: fce9a54e28d2ab81909b3a9dcbe64815cbaced24ecdb2e1024dad1abb3e94763 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -73,4 +73,4 @@
 | B2.166 | PHP는 key가 UTF-8이 아닌 byte string인 배열을 만든다(U-7, GN-6x). 확장의 make가 ext-php-rs의 "Invalid array key!"로 실패하며, php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351` 4개가 그렇다 | `packages/ts/src/generate/alias_php.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.167 | Node와 WASM의 값 alias walk는 값 class의 property 이름을 명시 deref 없이 넘긴다(GN-6as, GN-6af). `value_define(instance, *name, ...)`이 php-serialization의 Node와 WASM crate의 `cargo clippy -D warnings`를 `explicit_auto_deref`로 실패시켰다 | `packages/ts/src/generate/alias_node.ts`, `alias_wasm.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/kept`; 모든 crate의 `cargo clippy`가 통과하는 php-serialization checkout의 `make e2e` | [o] |
 | B2.170 | Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을 켜는 release profile을 보고한다(GN-15i, CK-91). http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가, 두 레포가 `[profile.release]`에 `lto = true`를 두어 중복 symbol로 실패했다 | `packages/ts/src/cli.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; http-media-type과 http-negotiation checkout의 `binding check`가 CK-91을 보고 | [o] |
-| B2.210 | Node, PHP, WASM, Go는 record parameter의 `keeps: true`와 list나 `optional`의 항목이 아닌 callback parameter의 `keeps: true`를 생성한다(GN-6aa). B2.134는 둘을 이름으로 거부하므로, 호출 뒤에 callback의 record나 callback 하나를 갖는 core는 그 네 target에서 binding이 없다 | `packages/ts/src/generate/`, `tests/e2e/`의 계약, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그 계약의 `make e2e`, 그 기록이 `evidence: true` | [ ] |
+| B2.210 | Node, PHP, WASM, Go는 record parameter의 `keeps: true`와 list나 `optional`의 항목이 아닌 callback parameter의 `keeps: true`를 생성한다(GN-6aa). B2.134는 둘을 이름으로 거부하므로, 호출 뒤에 callback의 record나 callback 하나를 갖는 core는 그 네 target에서 binding이 없다 | `packages/ts/src/generate/`, `tests/e2e/`의 계약, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그 계약의 `make e2e`, 그 기록이 `evidence: true` | [~] |

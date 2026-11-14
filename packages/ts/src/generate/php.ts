@@ -875,8 +875,9 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
       continue;
     }
     // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
-    const kept = !arg.field && (fn.member.parameters ?? []).some((p) => p.name === arg.name && p.keeps === true);
-    const converted = kept ? convertIn(keptModel(model), arg.type, rustIdent(variable), rustString(variable)) : arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
+    // A field of a record parameter with keeps is kept with it.
+    const kept = (fn.member.parameters ?? []).some((p) => p.name === (arg.field ? fn.record?.param.name : arg.name) && p.keeps === true);
+    const converted = kept ? boxed(keptModel(model), arg.type, convertIn(keptModel(model), arg.type, rustIdent(variable), rustString(variable))) : arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(kept ? keptModel(model) : model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
@@ -884,7 +885,8 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
-    const recordLet = rustType(model, { unit: fn.record.unit.id });
+    const keeps = (fn.member.parameters ?? []).some((p) => p.name === fn.record?.param.name && p.keeps === true);
+    const recordLet = rustType(keeps ? keptModel(model) : model, { unit: fn.record.unit.id });
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordLet} = ${recordType} { ${fields} };`);
   }

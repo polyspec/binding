@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1629b76280d597efd60448a9b7ce862914091820e80ad30e19b52c079e53811e -->
+<!-- source-sha256: b752338b803f1d08396cc27b67fb2812aba64da9f7c9b66b29f1e2c122e01375 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node, PHP, WASM, Go는 record parameter의 `keeps: true`와 list나 `optional`의 항목이 아닌 callback parameter의
+  `keeps: true`를 거부했다(GN-6aa). 그래서 호출 뒤에 callback 하나나 callback의 record를 갖는 core는 그 target들에서
+  binding이 없었다. 이제 callback은 그 box로 core에 들어가고, record는 보관되는 callback의 변환으로 field들에서 만들어지며
+  `'static`이다. sample에 `index.single`과 `index.supplied`가 있고, 그 case는 보관된 source를 나중의 `index.get`에서 부른다.
+  새 시험 두 개가 변경 전에 그 거부로 실패한 `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - `WORK` 없는 `make e2e`는 macOS에서 첫 단계의 `npm ci`가 `Missing: ts@0.0.1 from lock file`로 멈췄다. 실행이 시스템
   임시 디렉터리 아래에 디렉터리를 만들었는데 그것은 `/private/var`로 가는 symbolic link인 `/var` 아래에 있고, npm은 그
   경로 아래 생성기 패키지를 lock에 없는 link로 읽었다. 이제 실행은 디렉터리를 그 실제 경로로 부른다(GN-14). 새 단언이

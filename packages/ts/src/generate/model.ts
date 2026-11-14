@@ -1366,7 +1366,8 @@ export function rustType(model: Model, type: Type, inside = false): string {
   if ('unit' in type) {
     const unit = unitOf(model, type);
     // U-3: a callback is the generated struct that implements the core trait over the language object.
-    if (unit?.origin === 'callback') return inside ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
+    // GN-6aa: a callback that the core keeps moves into it as the box, at any place.
+    if (unit?.origin === 'callback') return inside || model.keptCallbacks === true ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
     if (unit?.core_type === undefined) throw new Unsupported(`${type.unit} has no core_type`);
     // GN-6aa: the core type of a record with a callback field has one lifetime, which the binding writes.
     if (unit.kind === 'record' && (unit.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type))) return `${unit.core_type}<${model.callbackLife ?? "'static"}>`;
@@ -1455,12 +1456,18 @@ export const keepsAny = (model: Model): boolean => keptParams(model).length > 0;
 // GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
 export function keptCallbacks(model: Model): CallbackUnit[] {
   const found = new Set<Unit>();
+  const seen = new Set<string>();
   const visit = (type: Type): void => {
     if (typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
     if ('optional' in type) return visit(type.optional);
     const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
     if (unit?.origin === 'callback') found.add(unit);
+    // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
+    if (unit?.kind === 'record' && !seen.has(unit.id)) {
+      seen.add(unit.id);
+      (unit.fields ?? []).forEach((f) => visit(f.type));
+    }
   };
   keptParams(model).forEach(visit);
   return model.callbacks.filter((c) => found.has(c.unit));
@@ -1468,15 +1475,6 @@ export function keptCallbacks(model: Model): CallbackUnit[] {
 
 // GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
 export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
-
-// GN-6aa: whether a parameter with keeps holds a record, which the targets that hold a kept callback as a Native do not
-// convert yet.
-export const keepsRecord = (model: Model, type: Type): boolean => {
-  if (typeof type === 'string') return false;
-  if ('list' in type) return keepsRecord(model, type.list);
-  if ('optional' in type) return keepsRecord(model, type.optional);
-  return unitOf(model, type)?.kind === 'record';
-};
 
 // GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
 export function usesNative(model: Model): boolean {
@@ -1579,6 +1577,8 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
     // A parameter whose `core` is `value` gives a clone of the value under its read guard, as the contract names it.
     if (held.some((h) => h.param === p)) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `CoreForm::core_form(${variable(p)})`;
+    // GN-6aa: a callback parameter with keeps moves into the core as its box.
+    if ((fn.member.parameters ?? []).some((q) => q.name === p.name && q.keeps === true) && unitOf(model, p.type)?.origin === 'callback') return variable(p);
     return p.default === undefined || ownOption(p) ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io or process_wait takes its token first after

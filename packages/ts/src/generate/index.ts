@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, keepsRecord, libraryOf, membersFor, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -107,17 +107,6 @@ export function generate(inputs: Inputs): Files {
   const js = targets.filter((target) => target === 'node' || target === 'wasm');
   for (const place of js.length === 0 ? [] : keyedPlaces) {
     refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
-  }
-  // GN-6aa: Node, PHP, WASM and Go hold a callback that the core keeps as a Native of its owner, which a record of a
-  // parameter with keeps would need a second conversion for; the record is refused by name.
-  for (const target of targets.filter((t) => t !== 'python')) {
-    const forTarget = membersFor(model, target);
-    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
-      for (const parameter of (fn.member.parameters ?? []).filter((p) => p.keeps === true)) {
-        if (keepsRecord(model, parameter.type)) refusals.refuse(`${fn.member.id}.${parameter.name.join('_')}: a record whose callback the core keeps is not generated yet for ${target} (GN-6aa)`);
-        if (unitOf(model, parameter.type)?.origin === 'callback') refusals.refuse(`${fn.member.id}.${parameter.name.join('_')}: a callback parameter that the core keeps, not inside a list or an optional, is not generated yet for ${target} (GN-6aa)`);
-      }
-    }
   }
   // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
   for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {

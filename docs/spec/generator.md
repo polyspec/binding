@@ -610,9 +610,11 @@ the design ids are those of the binding design.
   each a `Raised` whose `Native` holds its `BindingError`. The wrapper holds only the `Native`, so it is `Send` and
   `Sync`, and a trait that requires them takes it. Python holds the object as a `Py<PyAny>` with or without `keeps`.
   The end-to-end sample keeps a list of callbacks in an instance of a class and calls them in a later call
-  (the class `index` of `tests/e2e/sample`). Not generated yet (G-4): in Node, PHP, WASM and Go, a record parameter
-  with `keeps`, which needs a second conversion of the record, and a callback parameter with `keeps` that is not
-  inside a list or an `optional`; each refuses them by name.
+  (the class `index` of `tests/e2e/sample`). A callback parameter with `keeps` that is no item of a list or an
+  `optional` moves into the core as its box, by value (`index.single`). A record parameter with `keeps` is made from
+  its fields with the conversion of a kept callback, and its core type is `'static` (`index.supplied`); Go reads the
+  fields of that record in the entry point itself, not through the reader of the record, whose callbacks last for the
+  call only.
 - **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
