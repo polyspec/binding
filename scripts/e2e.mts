@@ -35,11 +35,11 @@ import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_pr
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
+import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints, deadcodeFindings, goBuildTags, testEntrySymbol } from './e2e-lint.mts';
+import { bindingLints, deadcodeFindings, goBuildTags } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
-import { consumerFiles, debugSections, goRemote, goWork, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -104,6 +104,9 @@ const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
 const { convert, libraryName } = await import('../packages/ts/src/names.ts');
 const { componentBase, isHost, namedLibraries, place } = await import('../packages/ts/src/generate/packages.ts');
 const { GO_PLATFORMS } = await import('../packages/ts/src/generate/go.ts');
+// GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
+// module are those of `binding release-go-module`.
+const { consumerFiles, debugSections, goRemote, goWork, requiredVersion, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';

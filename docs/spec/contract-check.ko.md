@@ -19,7 +19,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 이유: 처음 실패한 검사에서 멈추는 실행은 다른 검사의 finding을 가린다. 예를 들어 계약의 finding 뒤에 다른 binding의 pin이
 숨는다.
 
-`binding check <interface.json> --release`는 release의 검사 CK-70도 실행한다. release를 빌드하는 도구가 이 옵션을 준다. 옵션이
+`binding check <interface.json> --release`는 release의 검사 CK-70도 실행한다. release의 recipe(생성기 GN-19g)가 이 옵션을 준다. 옵션이
 없는 검사는 CK-70을 실행하지 않는다. 개발 checkout은 release가 담으면 안 되는 개발 꼴을 담기 때문이다.
 
 ## 검사

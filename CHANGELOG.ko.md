@@ -6,6 +6,7 @@
 <!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
 <!-- source-sha256: efe6277ecf0ce7c597df382db781325e49d9d095c68ee100c8b56fec8a7a64ab -->
 <!-- source-sha256: 6bf280bae124bfcfde95ef351791eaf40865908ae3f63b59c3767399d290f664 -->
+<!-- source-sha256: a8953e363e9f2b17de3ec5bb25620db653449a4aeb5138c1cc8b0f0009c40683 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -164,6 +165,28 @@
   패키지(B2.92)는 변경을 담은 commit에서 돌린 `make e2e REPO=tests/e2e/classes`로
   확인했다. 그 기록은 evidence이고, 플랫폼 패키지와 패키지를 두 archive로 설치한 target node가 시험
   110개를 통과했다.
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]`이 정적 라이브러리를 가진 Go 모듈의 commit과 tag를 만든다(GN-19f, GN-15g). 실패한
+  검사를 모두 적고 아무것도 만들지 않는다: `HEAD`가 tag의 commit이 아니다, `go.mod`에 `replace`나 `v0.0.0` require가 있다,
+  `binding generate --target go`가 쓰는 플랫폼의 파일이 work tree에 없다, 라이브러리가 없거나 비었거나 그 플랫폼 object의
+  `ar` archive가 아니거나 시험 진입점이나 debug section을 담는다. 명령은 checkout을 바꾸지 않고 실행의 index로 commit을
+  만들고, 실행의 bare 저장소에서 `GOPROXY=direct`로 tag를 받는 소비자 모듈로 그것을 증명하고, annotated tag
+  `<directory>/vX.Y.Z`를 만들고, recipe가 push할 reference를 출력한다. 명령은 아무것도 push하지 않으며, 같은 commit을
+  가리키는 이전 실행의 tag는 그대로 두고 다른 commit을 가리키는 tag에는 실패한다. 끝에서 끝까지 확인은 tag, 소비자, debug
+  section, 시험 진입점을 같은 모듈(`packages/ts/src/release/go-module.ts`)에서 읽으며, 이 모듈이 `scripts/go-release.mts`를
+  대신한다. Git, Go, rustc, llvm 도구의 대역 프로그램으로 `make test-ts`에서 확인했다. 명령은 실제 도구로 실행하지 않았고,
+  끝에서 끝까지 확인은 import를 바꾼 뒤 실행하지 않았다(B2.142).
+- 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). 표준 도구가 하는 단계는 레포 recipe의 줄이며, asset
+  종류마다의 명령(Go 모듈의 정적 라이브러리, wheel, PHP 확장, npm 플랫폼 패키지), 플랫폼마다의 runner, CI에서의 asset
+  증명을 적는다. 어느 도구도 하지 않는 Go 모듈의 commit과 tag는 명령 `binding release-go-module`이며 그 검사, 소비자
+  증명, 출력을 적는다(B2.141).
+- 생성기 명세는 GN-3c의 release 필드가 없는 패키지를 거부하는 것으로 공용 도구의 규칙을, 플랫폼 패키지와 Go 모듈의
+  commit(GN-15g)을 만드는 것으로 release 도구를 적었다. 공용 도구 0.0.112에는 둘 다 없으므로, 명세는 이제 그 필드를 누가
+  읽는지(napi CLI와 PIE)와, 바인딩의 release 단계가 그것을 가진 레포의 recipe임을 적는다(B2.140).
+- `package.json`과 `package-lock.json`이 `@polyspec/kit`을 0.0.109에서 0.0.112로 고정한다. Makefile의 recipe가 실행하는
+  utility는 모두 그 release에 있고 recipe가 주는 인자를 받는다. binding의 release, 곧 `packages/ts`의 npm archive와
+  `binding_core`의 tag는 0.0.112에 더는 없는 것(플랫폼별 package kind, asset set, Go 모듈의 commit, release의 contract
+  검사)을 쓰지 않는다. 설치한 0.0.112에서 `make docs-check`와 `make release-coverage`로 확인했다(B2.176).
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

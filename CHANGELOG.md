@@ -168,6 +168,33 @@
   a failing target (B2.98). The platform packages of the Node addon (B2.92) are verified by
   `make e2e REPO=tests/e2e/classes` of a commit that holds the change, whose record is evidence and whose target node
   passed 110 tests with the platform package and the package installed as two archives.
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]` makes the commit and the tag of a Go module with its static libraries (GN-19f,
+  GN-15g). It names every failed check and then makes nothing: `HEAD` is not the commit of the tag, the `go.mod` holds
+  a `replace` or a requirement at `v0.0.0`, a file of a platform that `binding generate --target go` writes is not in
+  the work tree, a library is missing, empty, no `ar` archive of objects of its platform, or holds a test entry point
+  or a debug section. It makes the commit through an index of the run without a change of the checkout, proves it by
+  a consumer module that fetches the tag from a bare repository of the run with `GOPROXY=direct`, creates the
+  annotated tag `<directory>/vX.Y.Z` and prints the reference that the recipe pushes; it pushes nothing, leaves a tag
+  of an earlier run that names the same commit and fails for one that names another. The end-to-end check reads the
+  tag, the consumer, the debug sections and the test entry points from the same module
+  (`packages/ts/src/release/go-module.ts`), which replaces `scripts/go-release.mts`. Verified by `make test-ts` with
+  stand-in programs for Git, Go, rustc and the llvm tools; the command has not run with the real tools, and the
+  end-to-end check has not run since the change of its imports (B2.142).
+- The generator specification states the release of a repository that holds a binding (GN-19 to GN-19g): the steps
+  that a standard tool performs are lines of the repository's recipes, with the command of each kind of asset (the
+  static library of the Go module, the wheel, the PHP extension, the npm platform packages), the runner of each
+  platform and the proof of the assets in CI; the commit and the tag of a Go module, which no tool performs, are the
+  command `binding release-go-module` with its checks, its consumer proof and its output (B2.141).
+- The generator specification named a rule of the shared tools as what refuses a package without the release fields
+  of GN-3c, and a release tool as what builds the platform packages and the commit of a Go module (GN-15g). The
+  shared tools 0.0.112 hold neither, so the specification now states who reads the fields (the napi CLI and PIE) and
+  that the steps of the release of a binding are recipes of the repository that holds it (B2.140).
+- `package.json` and `package-lock.json` pin `@polyspec/kit` 0.0.112, from 0.0.109. Every utility that a recipe of the
+  Makefile runs is in that release and takes the arguments that the recipe gives. The release of binding, the npm
+  archive of `packages/ts` and the tag of `binding_core`, uses nothing that 0.0.112 no longer holds: the per-platform
+  package kinds, the asset sets, the commit of a Go module and the contract check of a release. Verified with
+  `make docs-check` and `make release-coverage` on the installed 0.0.112 (B2.176).
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static

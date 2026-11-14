@@ -18,14 +18,6 @@ export function bindingLints(manifest: string, crate: string, features: string):
   ];
 }
 
-// GN-5, GN-17: the line of `llvm-nm --defined-only` that defines a test entry point of the Go static library of a
-// contract. The prefix is polyspec_<repository>_ (B2.125), and a test entry point is the prefix, two underscores and the
-// name of the entry; the symbol of a member has a name of the contract after one underscore, so the member echo_x of a
-// class, <prefix>_<unit>__echo_x, is no test entry point, and neither is a symbol of another library.
-export function testEntrySymbol(prefix: string): RegExp {
-  return new RegExp(` [A-Z] _?${prefix}__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|thrown_count|number_in)`);
-}
-
 // GN-15h: the build tags that the go tool sets itself, the platforms, the architectures and the toolchains, which no
 // file of the generated module selects by.
 const GO_SET_TAGS = new Set([
