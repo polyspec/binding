@@ -11,7 +11,9 @@
 #
 # Each job runs the bootstrap right after the checkout (uses: ./.github/actions/bootstrap), then installs the tools of its
 # entry with make install-tools: the Rust toolchain of rust-toolchain.toml, which the tests of packages/ts also run for
-# cargo fmt. No job waits for another job or reads its build output.
+# cargo fmt. A job that runs the end-to-end check first sets up the PHP of .php-version with setup-php, because make
+# install-tools wraps the php of the PATH as it is and the PHP of the runner image is another minor; its extensions are
+# those that the PHPUnit of config/phpunit requires. No job waits for another job or reads its build output.
 #
 # The job e2e runs the end-to-end check (make e2e) of each repository of tests/e2e, one entry of its matrix per
 # repository with the repositories that its core depends on (DEPS), on every tool of the checkout (make install-tools)
@@ -106,6 +108,14 @@ jobs:
       - uses: ./.github/actions/bootstrap
         id: bootstrap
         if: ${{ !cancelled() }}
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        id: php
+        if: ${{ !cancelled() }}
+        with:
+          php-version-file: .php-version
+          extensions: dom, filter, json, libxml, mbstring, phar, tokenizer, xmlwriter
+          tools: none
+          coverage: none
       - id: tools
         if: ${{ !cancelled() }}
         run: make install-tools
@@ -133,6 +143,14 @@ jobs:
       - uses: ./.github/actions/bootstrap
         id: bootstrap
         if: ${{ !cancelled() }}
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        id: php
+        if: ${{ !cancelled() }}
+        with:
+          php-version-file: .php-version
+          extensions: dom, filter, json, libxml, mbstring, phar, tokenizer, xmlwriter
+          tools: none
+          coverage: none
       - id: tools
         if: ${{ !cancelled() }}
         run: make install-tools

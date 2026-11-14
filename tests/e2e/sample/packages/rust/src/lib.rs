@@ -342,13 +342,17 @@ impl Index {
     /// An index that keeps one source.
     #[must_use]
     pub fn single(source: Box<dyn Feed>) -> Self {
-        Self { sources: vec![source] }
+        Self {
+            sources: vec![source],
+        }
     }
 
     /// An index that keeps the source of the supply.
     #[must_use]
     pub fn supplied(supply: Supply<'static>) -> Self {
-        Self { sources: vec![supply.source] }
+        Self {
+            sources: vec![supply.source],
+        }
     }
 
     /// The value of the key in the first source that holds it.

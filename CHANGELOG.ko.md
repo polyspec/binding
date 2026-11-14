@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
+<!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,13 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- CI job `e2e`와 `e2e-amd64`는 PATH의 `php`를 감싸는 `make install-tools` 전에 `.php-version`의 PHP를 설정한다.
+  runner image의 PHP는 8.5라서 모든 끝에서 끝까지 실행이 어떤 target보다 먼저 `the target php needs PHP 8.4`로
+  멈췄고, 실행이 `<work>/go-release`를 쓰지 않았으므로 그 뒤의 `make go-musl-check`도 실패했다(GN-14g). `tests/e2e`의
+  classes, consumer, sample 레포의 손으로 쓴 Rust 소스는 이제 job `check (rust)`의 `make fmt-e2e`가 실패시킨
+  rustfmt 형식이다. 검증: 끝에서 끝까지 job의 PHP 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/ci-workflow.test.ts`와 `make fmt-e2e`.
 
 - 다른 저장소의 값 alias의 case에 대한 생성된 Go 시험은 case의 reference나 object를 owner의 `core_type`이 없는
   value class의 인스턴스로, owner의 package의 `New<Class>`를 nil로 호출해 만들고, 결과를 그 class의 pointer가 놓인

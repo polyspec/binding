@@ -521,7 +521,10 @@ impl Named {
 /// Whether the cancellation of the caller fired (T-1 cancel, GN-6aq): a cancellation that fired before the call is
 /// cancelled when the core is called.
 #[must_use]
-#[allow(clippy::needless_pass_by_value, reason = "GN-6aq: the core takes a Cancel by value")]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "GN-6aq: the core takes a Cancel by value"
+)]
 pub fn halted(cancel: binding_core::Cancel) -> bool {
     cancel.is_cancelled()
 }

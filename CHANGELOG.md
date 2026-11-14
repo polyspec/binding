@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The CI jobs `e2e` and `e2e-amd64` set up the PHP of `.php-version` before `make install-tools`, which wraps the
+  `php` of the PATH: the PHP of the runner image is 8.5, so every end-to-end run stopped before any target with
+  `the target php needs PHP 8.4`, and `make go-musl-check` failed after it because the run wrote no
+  `<work>/go-release` (GN-14g). The hand-written Rust sources of the classes, consumer and sample repositories of
+  `tests/e2e` are now in the form of rustfmt, which `make fmt-e2e` of the job `check (rust)` failed. Verified by
+  `node --test packages/ts/tests/ci-workflow.test.ts`, whose test of the PHP of the end-to-end jobs failed before the
+  change, and by `make fmt-e2e`.
+
 - The generated Go test of a case of a value alias of another repository makes a reference or an object of the case
   as an instance of the value class without `core_type` of the owner, by `New<Class>` of the package of the owner on
   nil, and compares the result also by the places of the pointers of those classes (GN-6ar, GN-6af, GN-13). It looked
