@@ -1040,9 +1040,9 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
   for (const [path, made] of [
-    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
-    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
-    // GN-6as: the instance is a value without children, which the walk of Node puts next.
+    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
+    // GN-6as: the instance is a value without children, which the walk of PHP, Python, Node and WASM puts next.
+    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
   ] as const) {
@@ -1053,7 +1053,8 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   row.make.go = 'tag.new';
   const go = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
   const ffi = text(go, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.ok(ffi.includes('        OutValue::Text(value) => alias_out_tag(output, polyspec_sample::Tag::new(&value)),'), ffi);
+  // GN-6as: the instance is a node without children, after which the walk writes the next node.
+  assert.match(ffi, /        OutValue::Text\(value\) => \{\n\s*alias_out_tag\(output, polyspec_sample::Tag::new\(&value\)\);\n\s*None\n\s*\},/, ffi);
   assert.match(ffi, /\nfn alias_out_tag\(output: &mut Vec<u8>, value: polyspec_sample::Tag\) \{\n {4}output\.push\(10\);\n {4}uint_out\(output, 0u64\);\n {4}out_tag\(output, value\);\n\}/);
   const pkg = text(go, 'packages/go/zz_generated_sample.go');
   assert.match(pkg, /= dec\.ValueWith\(aliasInstance\)/);
@@ -1088,7 +1089,7 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\), type_name, json_serializable: false \}\)/);
   // A value outside the closed set is valid for the call alone.
   assert.match(python, /HostValue::Other \{ type_name, handle: self\.mark\(\) \}/);
-  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\),/);
+  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(OutStep::Put\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\)\),/);
   // WASM holds the key of the table of its one thread; the drop removes it.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
@@ -1116,7 +1117,7 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(go, /\[9\] => HostValue::Callable\(go_native\(uint_in\(input\)\?\)\),/);
   assert.match(go, /fn go_native\(handle: u64\) -> Native \{\n    NATIVE_COUNT\.fetch_add\(1, Ordering::SeqCst\);\n    Native::new\(GoNative \{ handle \}\)/);
   assert.match(go, /impl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n        \/\/ SAFETY: [^\n]*\n        unsafe \{ polyspec_sample___go_release\(self\.handle\) \};/);
-  assert.match(go, /OutValue::Native\(native\) => match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(13\);/);
+  assert.match(go, /OutValue::Native\(native\) => \{\n\s+match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(13\);/);
   const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
   assert.match(goBinding, /case reflect\.Func:\n\t\tenc\.bytes = append\(enc\.bytes, 9\)\n\t\tenc\.Uint\(uint64\(cgo\.NewHandle\(value\.Interface\(\)\)\)\)/);
   assert.match(goBinding, /\/\/export polyspec_sample___go_release\nfunc polyspec_sample___go_release\(handle C\.uint64_t\) \{\n\tcgo\.Handle\(uintptr\(handle\)\)\.Delete\(\)\n\}/);
@@ -1718,7 +1719,9 @@ test('a value alias of another repository whose rows name a class of its owner m
   // Out: the constructor of the owner's class takes the dict of the entries, which is filled after the instance is
   // made, and a reference is made on None and takes its value by its writable property.
   assert.match(python, /let map = PyDict::new\(py\);\n +let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\.call1\(\(map\.clone\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);/);
-  assert.match(python, /let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Cell"\)\?\.call1\(\(py\.None\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +let content = make\(py, \*value, source, made\)\?;\n +instance\.setattr\("value", content\)\?;/);
+  assert.match(python, /let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Cell"\)\?\.call1\(\(py\.None\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), fill: OutFill::Property\(instance\.clone\(\), "value"\), made: instance \}\)\)/);
+  // GN-6as: the made value of the reference goes into the writable property of the level that waits for it.
+  assert.match(python, /OutFill::Property\(instance, name\) => \{\n +instance\.setattr\(\*name, value\)\?;/);
   // In: an instance of the owner's class is HostValue::Value with the kind of its row, under one handle within the
   // walk, and read gives the property that the row names.
   assert.match(python, /if value\.is_instance\(&foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\)\? \{\n {12}let address = value\.as_ptr\(\)\.addr\(\);[\s\S]*?Held::Foreign\(value\.clone\(\), Some\(\("entries", false, ReadAs::Content\)\)\)[\s\S]*?return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Map, handle \}\)\);/);
@@ -1934,7 +1937,7 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(lib, /fn read\(&mut self, value: Handle\) -> Result<HostValue, Raised> \{\n\s*let mut values = self\.ask\(2, value, 0, 1\)\?;/);
   assert.doesNotMatch(lib, /Go gives no value of a value class/);
   // A core value leaves as node 11 with the number of the class and of its Go out row, then the content of the row.
-  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*uint_out\(output, 0_u64\);\n\s*uint_out\(output, 0_u64\);\n\s*\}/);
+  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*uint_out\(output, 0_u64\);\n\s*uint_out\(output, 0_u64\);\n\s*None\n\s*\}/);
   assert.match(lib, /OutValue::Text\(value\) => \{\n\s*output\.push\(11\);\n\s*uint_out\(output, 0_u64\);\n\s*uint_out\(output, 3_u64\);\n\s*text_out\(output, value\);/);
   // Package binding imports the owner's package, describes its instances by the in row and makes them by the out rows.
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
@@ -2091,13 +2094,14 @@ test('the make function of a value alias walks the value with a work stack and c
     consumer: { ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' },
     kept: own('kept'),
   };
-  // The targets whose make function is the walk; the other targets are not generated in this form yet (GN-6as).
-  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
+  // The make function of each of the five targets is the walk (GN-6as).
+  const wasm = 'packages/ts/wasm/generated/lib.rs';
+  const libs = ['packages/ts/generated/lib.rs', wasm, 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
   for (const [sample, inputs] of Object.entries(samples)) {
     const out = generate(inputs);
     const found = libs.filter((path) => out.has(path));
     // The contracts of sample and consumer are not generated for WASM (BD-27).
-    assert.deepEqual(found, sample === 'sample' || sample === 'consumer' ? libs.slice(0, 1) : libs, sample);
+    assert.deepEqual(found, sample === 'sample' || sample === 'consumer' ? libs.filter((path) => path !== wasm) : libs, sample);
     for (const path of found) {
       const fns = makeFns(text(out, path));
       assert.ok(fns.length > 0, `${sample} ${path}: a make function`);
@@ -7003,7 +7007,7 @@ test('a value class without core_type keeps the language values that its constru
   assert.match(goLib, /let call = uint_in\(&mut input\)\?;\n\s*let value: Option<HostValue> = optional_in\(&mut input, read_host\)\?;\n\s*finish_input\(input\)\?;\n\s*let mut host = GoHost \{ call \};\n\s*if let Err\(failure\) = polyspec_sample::check_boxed\(&mut host, value\) \{\n\s*return Err\(failure_error\(failure\)\);/);
   assert.match(goLib, /\[12\] => ValueKind::Reference,/);
   assert.match(goLib, /fn read\(&mut self, value: Handle\) -> Result<HostValue, Raised> \{\n\s*let mut values = self\.ask\(2, value, 0, 1\)\?;/);
-  assert.match(goLib, /OutValue::Reference \{ handle, value \} => \{\n\s*if let Some\(index\) = made\.get\(&handle\.raw\(\)\) \{\n\s*output\.push\(8\);\n\s*write_length\(output, \*index\);\n\s*return;\n\s*\}\n\s*made\.insert\(handle\.raw\(\), made\.len\(\)\);\n\s*output\.push\(12\);\n\s*uint_out\(output, 0u64\);\n\s*make\(output, \*value, source, made\);\n\s*\}/);
+  assert.match(goLib, /OutValue::Reference \{ handle, value \} => \{\n\s*if let Some\(index\) = made\.get\(&handle\.raw\(\)\) \{\n\s*output\.push\(8\);\n\s*write_length\(output, \*index\);\n\s*return None;\n\s*\}\n\s*made\.insert\(handle\.raw\(\), made\.len\(\)\);\n\s*output\.push\(12\);\n\s*uint_out\(output, 0u64\);\n\s*Some\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\)(, children: OutChildren::Value)? \}\)\n\s*\}/);
   assert.doesNotMatch(goLib, /polyspec_sample::Boxed\b/);
 });
 
@@ -7417,8 +7421,11 @@ test('PHP makes a stdClass and a reference with their identity, and a case value
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // The make keeps the objects and references that it made under their handles, and makes each before its content.
   assert.match(lib, /struct PhpMaking \{[^}]*objects: std::collections::BTreeMap<u64, \*mut ZendObject>,[^}]*references: std::collections::BTreeMap<u64, \*mut ext_php_rs::ffi::zend_reference>,/);
-  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*php_set_reference\(reference, content\);/);
-  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*php_property\(object, key, item\)\?;/);
+  // GN-6as: the walk enters a reference and a stdClass as levels whose made children go into them.
+  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*waiting: Some\(\*value\), fill: OutFill::Reference\(zval, reference\)/);
+  assert.match(lib, /OutFill::Reference\(_, reference\) => \{\n\s*php_set_reference\(\*reference, value\);/);
+  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*fill: OutFill::Object\(zval, object, None\)/);
+  assert.match(lib, /OutFill::Object\(_, object, key\) => \{\n[^\n]*let Some\(key\) = key\.take\(\) else \{\n[^\n]*\n[^\n]*\n\s*php_property\(\*object, key, value\)\?;/);
   // A property name and an array key are the bytes of the key.
   assert.match(lib, /fn php_property\(object: \*mut ZendObject, key: OutValue, item: Zval\)/);
   assert.match(lib, /OutValue::Bytes\(bytes\) => \{\n\s*let name = ZendStr::new\(bytes\.value\(\), false\);\n\s*array\.insert\(ext_php_rs::types::ArrayKey::ZendString\(&name\), item\)/);

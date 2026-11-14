@@ -5,79 +5,101 @@
 // takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type ForeignMake, container, foreignReads, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
 import type { Contract, Member, Unit } from '../contract.ts';
 
+// U-7: the containers that the walk of a value alias fills.
+const PUT_APPENDED = (list: string): string => `${list}.append(value)?;
+level.index = level.index.saturating_add(1);`;
+
+const ALIAS_FILLS: Fill[] = [
+  { name: 'Items', doc: 'A list that takes the items of a list.', type: "Bound<'py, PyList>", pattern: 'OutFill::Items(list)', put: PUT_APPENDED('list'), next: 'Some(source.item(level.handle, level.index))' },
+  { name: 'Values', doc: 'A list that takes the values of the entries of a map or an object (U-7 (c)).', type: "Bound<'py, PyList>", pattern: 'OutFill::Values(list)', put: PUT_APPENDED('list'), next: 'Some(source.entry(level.handle, level.index).1)' },
+  { name: 'Entries', doc: 'A dict that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: "Bound<'py, PyDict>, Option<Bound<'py, PyAny>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('map.set_item(key, value)?;'), next: NEXT_ENTRY },
+  { name: 'Property', doc: 'GN-6ar: an instance of a class of another repository, whose writable property takes the value of a reference.', type: "Bound<'py, PyAny>, &'static str", pattern: 'OutFill::Property(instance, name)', put: 'instance.setattr(*name, value)?;' },
+];
+
+// GN-6af: the container of each value class without core_type that a reference makes: the instance whose one field
+// takes the value of the reference.
+const keptFills = (model: Model): Fill[] => model.kept.flatMap((kept) => {
+  const [field, ...more] = kept.fields;
+  if (field === undefined || more.length > 0) return [];
+  const struct = `Py${langName('python', kept.unit.name, 'class')}`;
+  return [{ name: `Kept${struct}`, doc: `GN-6af: an instance of ${langName('python', kept.unit.name, 'class')}, whose field takes the value of a reference.`, type: `Bound<'py, ${struct}>`, pattern: `OutFill::Kept${struct}(instance)`, put: `instance.borrow_mut().${rustField(field.name)} = value.unbind();` }];
+});
+
+// GN-6as: the make function of Python.
+const PYTHON_WALK: WalkShape = {
+  generics: "<'py>", life: "<'py>", anon: "<'_>", env: { params: "py: Python<'py>, ", args: 'py, ' }, value: "Bound<'py, PyAny>",
+  result: (type) => `PyResult<${type}>`, internal: (detail) => `Err(binding_error(py, BindingError::Internal { detail: ${detail} }))`, language: 'Python',
+};
+const PYTHON_MADE = { name: 'made', type: "&mut BTreeMap<u64, Bound<'py, PyAny>>" };
+
 // The Python value of a built-in form, made from the content of the matched OutValue.
-function builtin(alias: ValueAlias, form: string, kind: string): string {
+function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return 'Ok(py.None().into_bound(py))';
+      return put('py.None().into_bound(py)');
     case 'bool':
-      return 'Ok(PyBool::new(py, value).to_owned().into_any())';
+      return put('PyBool::new(py, value).to_owned().into_any()');
     case 'int':
     case 'bigint':
-      if (kind === 'number') return 'py.get_type::<PyInt>().call1((value,))';
-      if (kind === 'int64') return 'Ok(value.into_pyobject(py)?.into_any())';
-      return 'Ok(value.value().into_pyobject(py)?.into_any())';
+      if (kind === 'number') return leaf('py.get_type::<PyInt>().call1((value,))');
+      if (kind === 'int64') return put('value.into_pyobject(py)?.into_any()');
+      return put('value.value().into_pyobject(py)?.into_any()');
     case 'float':
-      if (kind === 'number') return 'py.get_type::<PyFloat>().call1((value,))';
-      if (kind === 'float') return 'Ok(PyFloat::new(py, value.value()).into_any())';
+      if (kind === 'number') return leaf('py.get_type::<PyFloat>().call1((value,))');
+      if (kind === 'float') return put('PyFloat::new(py, value.value()).into_any()');
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return `match ${kind === 'int64' ? 'value' : 'value.value()'}.to_string().parse::<f64>() {
-            Ok(float) => Ok(PyFloat::new(py, float).into_any()),
-            Err(_never) => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: an integer that is no number") })),
+      return `{
+            let Ok(float) = ${kind === 'int64' ? 'value' : 'value.value()'}.to_string().parse::<f64>() else {
+                return Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: an integer that is no number") }));
+            };
+            ${put('PyFloat::new(py, float).into_any()')}
         }`;
     case 'text':
       if (kind === 'bytes') {
-        return `match std::str::from_utf8(value.value()) {
-            Ok(text) => Ok(PyString::new(py, text).into_any()),
-            Err(_bytes) => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
+        return `{
+            let Ok(text) = std::str::from_utf8(value.value()) else {
+                return Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") }));
+            };
+            ${put('PyString::new(py, text).into_any()')}
         }`;
       }
-      return 'Ok(PyString::new(py, &value).into_any())';
+      return put('PyString::new(py, &value).into_any()');
     case 'bytes':
-      return kind === 'text' ? 'Ok(PyBytes::new(py, value.as_bytes()).into_any())' : 'Ok(PyBytes::new(py, value.value()).into_any())';
+      return put(kind === 'text' ? 'PyBytes::new(py, value.as_bytes()).into_any()' : 'PyBytes::new(py, value.value()).into_any()');
     case 'list': {
       const parts = container(alias, kind, form);
+      // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
+      const fill = kind === 'list' ? 'Items' : 'Values';
       return `{
-            ${parts.head}
-            if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+            ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return ${put('made.clone()')};
             }
             let list = PyList::empty(py);
             made.insert(handle.raw(), list.clone().into_any());
-            for index in 0..len {
-                let item = ${parts.item};
-                list.append(make(py, item, source, made)?)?;
-            }
-            Ok(list.into_any())
+            ${level({ walks: true, fill: `OutFill::${fill}(list.clone())`, made: 'list.into_any()' })}
         }`;
     }
     case 'map':
     case 'keyed_map': {
       const parts = container(alias, kind, form);
       return `{
-            ${parts.head}
-            if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+            ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return ${put('made.clone()')};
             }
             let map = PyDict::new(py);
             made.insert(handle.raw(), map.clone().into_any());
-            for index in 0..len {
-                let (key, item) = ${parts.entry};
-                let key = make(py, key, source, made)?;
-                map.set_item(key, make(py, item, source, made)?)?;
-            }
-            Ok(map.into_any())
+            ${level({ walks: true, fill: 'OutFill::Entries(map.clone(), None)', made: 'map.into_any()' })}
         }`;
     }
     case 'native':
       return `match native.downcast::<PyNative>() {
-            Some(object) => Ok(object._held.clone_ref(py).into_bound(py)),
+            Some(object) => ${put('object._held.clone_ref(py).into_bound(py)')},
             None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
         }`;
     default:
@@ -103,34 +125,27 @@ function rowClass(owner: Contract, unit: Unit): string {
 // owner's package: the content of the kind; the dict of the entries, which the instance keeps (GN-6af) and which is
 // filled after the instance is made; or a reference made on None, whose writable property takes the made value. An
 // object and a reference are the same instance at every position of their handle (U-7 (d)).
-const foreignMake = (make: ForeignMake, kind: string, head: string): string => {
+const foreignMake = (make: ForeignMake, kind: string, head: string, { put, leaf, level }: Walk): string => {
   const cls = rowClass(make.owner, make.unit);
-  if (make.holds === 'content') return `${cls}.call1((${kind === 'bool' || kind === 'int64' ? 'value' : 'value.value()'},))`;
+  if (make.holds === 'content') return leaf(`${cls}.call1((${kind === 'bool' || kind === 'int64' ? 'value' : 'value.value()'},))`);
   if (make.holds === 'value') {
     return `{
             if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return ${put('made.clone()')};
             }
             let instance = ${cls}.call1((py.None(),))?;
             made.insert(handle.raw(), instance.clone());
-            let content = make(py, *value, source, made)?;
-            instance.setattr(${rustString(langName('python', make.set?.name ?? [], 'callable'))}, content)?;
-            Ok(instance)
+            ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Property(instance.clone(), ${rustString(langName('python', make.set?.name ?? [], 'callable'))})`, made: 'instance' })}
         }`;
   }
   return `{
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return ${put('made.clone()')};
             }
             let map = PyDict::new(py);
             let instance = ${cls}.call1((map.clone(),))?;
             made.insert(handle.raw(), instance.clone());
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(py, key, source, made)?;
-                map.set_item(key, make(py, item, source, made)?)?;
-            }
-            Ok(instance)
+            ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance' })}
         }`;
 };
 
@@ -149,34 +164,35 @@ function valueClassPython(alias: ValueAlias, name: string, core: string, failure
     const { name: method } = access(member);
     return member.kind === 'constructor' ? `class.call1((${args},))` : args === '' ? `class.call_method0(${rustString(method)})` : `class.call_method1(${rustString(method)}, (${args},))`;
   };
-  const arms = classMakes(alias, 'python').map((make) => {
+  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
+  // instance from them when the last child is made.
+  const fills: Fill[] = [];
+  const closes = new Map<string, string>();
+  const arms = (walk: Walk): string => classMakes(alias, 'python').map((make) => {
     if (make.form === 'content') {
       const variant = make.kind === 'null' ? 'OutValue::Null' : `OutValue::${CONTENT[make.kind] ?? 'Text'}(value)`;
-      return `        ${variant} => ${call(make.member, make.params === 0 ? '' : 'value')},`;
+      return `        ${variant} => ${walk.leaf(call(make.member, make.params === 0 ? '' : 'value'))},`;
     }
     if (make.form === 'list') {
+      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The list of the made items of a list.', type: "Bound<'py, PyList>", pattern: 'OutFill::Items(items)', put: PUT_APPENDED('items'), next: 'Some(source.item(level.handle, level.index))' });
+      closes.set('Items', call(make.member, 'items'));
       return `        OutValue::List { handle, len } => {
             let items = PyList::empty(py);
-            for index in 0..len {
-                let item = source.item(handle, index);
-                items.append(make(py, item, source)?)?;
-            }
-            ${call(make.member, 'items')}
+            ${walk.level({ walks: true, fill: 'OutFill::Items(items)' })}
         }`;
     }
+    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: "Bound<'py, PyAny>, Option<Bound<'py, PyAny>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(`map.call_method1(${rustString(access(make.insert).name)}, (key, value))?;`), next: NEXT_ENTRY });
+    closes.set('Entries', call(make.member, 'map'));
     return `        OutValue::Map(value) => {
             let handle = value.handle();
             let len = value.len();
             let map = ${ownerClass(alias, make.map)}.call0()?;
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(py, key, source)?;
-                let item = make(py, item, source)?;
-                map.call_method1(${rustString(access(make.insert).name)}, (key, item))?;
-            }
-            ${call(make.member, 'map')}
+            ${walk.level({ walks: true, fill: 'OutFill::Entries(map, None)' })}
         }`;
-  });
+  }).join('\n');
+  // The arms are written once here, so that the containers that they fill are known to the walk.
+  const ownClass = `let class = ${own};`;
+  const opened = /\bclass\./.test(arms({ put: (value) => value, leaf: (made) => made, level: () => '' })) ? ownClass : '';
   return `
 /// GN-6x: an instance of ${langName('python', alias.unit.name, 'class')} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
@@ -193,16 +209,7 @@ fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bo
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     make_${name}(py, root, &mut source)
 }
-
-fn make_${name}<'py>(py: Python<'py>, out: OutValue, source: &mut dyn OutValues) -> PyResult<Bound<'py, PyAny>> {
-    let make = make_${name};
-    let class = ${own};
-    match out {
-${arms.join('\n')}
-        other => Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(PYTHON_WALK, name, fills, arms, 'other => Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -330,7 +337,7 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPython(alias, name, core, failure);
-  const arms = outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', keptMake, 'out_', foreignMake);
+  const arms = (walk: Walk): string => outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', (kept, field, holds, head) => keptMake(kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMake(make, kind, head, walk), walk.leaf).join('\n');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
@@ -345,20 +352,7 @@ fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bo
     let mut made = BTreeMap::new();
     make_${name}(py, root, &mut source, &mut made)
 }
-
-fn make_${name}<'py>(
-    py: Python<'py>,
-    out: OutValue,
-    source: &mut dyn OutValues,
-    made: &mut BTreeMap<u64, Bound<'py, PyAny>>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let make = make_${name};
-    match out.clone() {
-${arms.join('\n')}
-        other => Err(binding_error(py, BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(PYTHON_WALK, name, [...ALIAS_FILLS, ...keptFills(model)], arms, 'other => Err(binding_error(py, BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PYTHON_MADE)}`;
 }
 
 // B-1: what a Python value is as a HostValue, one level at a time; the children of a container are asked for through
@@ -630,34 +624,27 @@ export function pythonHost(model: Model): string {
 
 // GN-6af: an instance of a value class without core_type made from the content of an out row, before the content, as
 // the object of its handle.
-const keptMake = (kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string => {
+const keptMake = (kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string, { put, level }: Walk): string => {
   const struct = `Py${langName('python', kept.unit.name, 'class')}`;
   const name = rustField(field.name);
   if (holds === 'value') {
     return `{
             if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return ${put('made.clone()')};
             }
             let instance = Bound::new(py, ${struct} { ${name}: py.None() })?;
             made.insert(handle.raw(), instance.clone().into_any());
-            let content = make(py, *value, source, made)?;
-            instance.borrow_mut().${name} = content.unbind();
-            Ok(instance.into_any())
+            ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Kept${struct}(instance.clone())`, made: 'instance.into_any()' })}
         }`;
   }
   return `{
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return ${put('made.clone()')};
             }
             let map = PyDict::new(py);
             let instance = Bound::new(py, ${struct} { ${name}: map.clone().into_any().unbind() })?;
             made.insert(handle.raw(), instance.clone().into_any());
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(py, key, source, made)?;
-                map.set_item(key, make(py, item, source, made)?)?;
-            }
-            Ok(instance.into_any())
+            ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance.into_any()' })}
         }`;
 };
 
