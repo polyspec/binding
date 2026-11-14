@@ -123,6 +123,19 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
     }
 }
 
+/// The value that the source of the sample library, a callback unit of another repository, has for the key (T-3,
+/// GN-6s).
+///
+/// # Errors
+///
+/// The failure of the source.
+pub fn read(
+    source: &mut dyn polyspec_sample::Source,
+    key: &str,
+) -> Result<Option<String>, Failure<polyspec_sample::Error>> {
+    source.read(key)
+}
+
 /// A note (T-9, GN-6v: a variant whose cases hold the data of the sample library, a unit of another repository, as a
 /// field and as the values of a map).
 #[derive(Debug, Clone, PartialEq)]

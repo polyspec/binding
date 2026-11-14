@@ -20,7 +20,7 @@ import {
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
-import { type ValueRead, container, outArms, refuseForeignReads, valueReads } from './alias_shared.ts';
+import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
 import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
@@ -56,16 +56,22 @@ export const releaseSymbol = (model: Model, unit: Unit): string => `${prefix(mod
 export const classLabel = (object: ObjectClass): string => goName(object.unit.name);
 
 const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
+  const library = libraryOf(type);
+  // GN-6s: a callback unit of another repository, which a parameter takes.
+  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
   const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
+
+// U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
+const allCallbacks = (model: Model): CallbackUnit[] => [...model.callbacks, ...model.foreignCallbacks];
 
 // GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a model has such a member.
 const passesFn = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
 export const passes = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passesFn);
 
 // Whether the core runs Go code through the trampoline of the callbacks: a callback unit (U-3), or a func (GN-6ae).
-export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || passes(model);
+export const runsGo = (model: Model): boolean => allCallbacks(model).length > 0 || passes(model);
 
 // GN-6z: whether a member takes a function type that the core may keep, whose func package binding holds under a
 // cgo.Handle and runs by that handle, in no call.
@@ -977,9 +983,11 @@ function traitParam(model: Model, type: Type): string {
 // callback in it) and implements the core trait; each member calls into Go, which runs the method of the object.
 function callbackRust(model: Model, cb: CallbackUnit, index: number): string {
   const plain = plainName(cb.unit);
-  const struct = rustType(model, { unit: cb.unit.id });
+  // GN-6s: a callback unit of another repository is the trait of its core, whose methods return the failure of the core
+  // error of that repository.
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const goType = goName(cb.unit.name);
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m, memberIndex) => {
     const method = langName('go', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -1529,6 +1537,38 @@ function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'ent
         }`;
 }
 
+// GN-6ar, GN-15c: node 14, an instance of a class of the owner of a value alias of another repository that an out row
+// makes: the position of the class in foreignRowClasses, then the entries of its keyed map or the value of its
+// reference, which the Go decoder gives the instance after its constructor made it, as node 12 does (keptMakeGo).
+function foreignMakeGo(model: Model, make: ForeignMake, kind: string, head: string): string {
+  if (make.holds === 'content') throw new Unsupported(`the go make ${make.unit.id}.constructor of the kind ${kind} of ${make.library} is not generated yet: a constructor of a class of another repository takes the keyed map of an object or a map, or the value of a reference, in Go (GN-6ar)`);
+  rowReads(model);
+  const position = foreignRowClasses(model, 'go').findIndex((c) => c.library === make.library && c.unit.id === make.unit.id);
+  const first = `${head === '' ? '' : `${head}\n            `}if let Some(index) = made.get(&handle.raw()) {
+                output.push(8);
+                write_length(output, *index);
+                return;
+            }
+            made.insert(handle.raw(), made.len());
+            output.push(14);
+            uint_out(output, ${position}u64);`;
+  if (make.holds === 'value') {
+    return `{
+            ${first}
+            make(output, *value, source, made);
+        }`;
+  }
+  return `{
+            ${first}
+            uint_out(output, len);
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                make(output, key, source, made);
+                make(output, item, source, made);
+            }
+        }`;
+}
+
 // GN-6af, GN-15c: the C ABI of the constructor of a value class without core_type: the call that walks the Go values,
 // then each argument as package binding describes it, which the core judges; the entry returns nothing, because Go
 // keeps the values.
@@ -1568,10 +1608,8 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassRust(model, alias, name, core, failure);
-  // GN-6ar: Go does not generate a class row of a value alias of another repository yet.
-  if (alias.library !== undefined) refuseForeignReads(model, 'go');
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = (walk: GoWalk): string => outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind, walk), `no_form_out(output, "U-7: no out row takes the value")${walk.end === '' ? '' : `;\n            ${walk.end}`}`, 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head, walk), 'alias_out_', undefined, (made) => goArm(walk, `${made};`)).join('\n');
+  const arms = (walk: GoWalk): string => outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind, walk), `no_form_out(output, "U-7: no out row takes the value")${walk.end === '' ? '' : `;\n            ${walk.end}`}`, 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head, walk), 'alias_out_', (make, kind, head) => foreignMakeGo(model, make, kind, head), (made) => goArm(walk, `${made};`)).join('\n');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1862,7 +1900,7 @@ function entries(model: Model): string {
 
 // The Rust helpers that the contract's functions use.
 function rustUsed(model: Model): string {
-  const code = `${entries(model)}${model.callbacks.map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}`;
+  const code = `${entries(model)}${allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}`;
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
@@ -1888,7 +1926,17 @@ export const keptReads = (model: Model): ValueRead[] => (model.kept.length === 0
 
 // GN-6x, GN-6af: whether package binding describes an instance of a value class, of another repository or without
 // core_type, which the question read (op 2) opens.
-export const readsValues = (model: Model): boolean => valueClasses(model).length > 0 || keptReads(model).length > 0;
+export const readsValues = (model: Model): boolean => valueClasses(model).length > 0 || keptReads(model).length > 0 || rowReads(model).length > 0;
+
+// GN-6ar: the in rows of the value aliases of other repositories that name a class of their owner, which Go reads as a
+// value class without core_type of the package of the owner; any other class is refused by name.
+export function rowReads(model: Model): ForeignRead[] {
+  const reads = foreignReads(model, 'go');
+  for (const row of [...reads, ...foreignRowClasses(model, 'go')]) {
+    if (row.unit.core_type !== undefined || row.unit.origin !== 'value') throw new Unsupported(`the go row of the class ${row.unit.id} of ${row.library} names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner (GN-6ar, GN-6af)`);
+  }
+  return reads;
+}
 
 // GN-6x, GN-15c: node 11, an instance of a value class of another repository with the kind of its in case and its
 // handle, and node 12, the error that a member of the owner returned, kept by Go in the call under its index.
@@ -1930,7 +1978,7 @@ function tupleReaders(model: Model): string {
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const unit of [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))]) for (const f of unit.fields ?? []) visit(f.type);
-  for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
+  for (const cb of allCallbacks(model)) for (const m of cb.members) visit(m.returns);
   return [...arities].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
     return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
@@ -1954,7 +2002,7 @@ const testEntryUses = (model: Model): Record<string, string> => ({
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = entries(model);
-  const callbacks = model.callbacks.map((c, i) => callbackRust(model, c, i)).join('');
+  const callbacks = allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('');
   const used = rustUsed(model);
   const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}`;
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');

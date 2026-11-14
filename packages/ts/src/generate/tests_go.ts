@@ -196,7 +196,14 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
-  if (implemented !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
+  if (implemented !== undefined && implemented.library === undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
+  // GN-13f, GN-6s: an instance value at a place of a callback of another repository is an instance of the class that
+  // its make member returns, as in the other targets.
+  if (implemented !== undefined && isInstanceValue(json)) {
+    const returned = memberById(v.model, String((json as Record<string, unknown>)['new']))?.returns;
+    const of = typeof returned === 'object' && 'unit' in returned ? returned.unit : implemented.unit.id;
+    return made(v, b, instanceOf(v.model, of, json, `a case value of ${implemented.unit.id}`));
+  }
   // GN-13f, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
   const iface = interfaceOf(v.model, type);
   if (iface !== undefined) return made(v, b, interfaceInstance(v.model, iface, json));
@@ -230,7 +237,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   const unit = unitOf(v.model, type);
   // GN-6aa: a callback value inside another value is a fixture of the body, whose calls the test does not read.
-  const callback = v.model.callbacks.find((c) => c.unit === unit);
+  const callback = [...v.model.callbacks, ...v.model.foreignCallbacks].find((c) => c.unit === unit);
   if (callback !== undefined && unit !== undefined && typeof json === 'object' && 'callback' in json) {
     v.fixtures.add(callback);
     return fixtureLines(v, b, fixtureOf(v.model, unit, json, 'a case value'), b.fresh('fixture'));
@@ -841,7 +848,7 @@ const labelOf = (fn: Fn): string => {
 // The fixtures of a case, each a local of the body.
 function fixturesFor(v: Values, out: Out, b: Body, fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: Fixture; name: string }[] {
   return fixturesOf(v.model, fn, id, args).map((fixture, i) => {
-    const callback = v.model.callbacks.find((c) => c.unit === fixture.unit);
+    const callback = [...v.model.callbacks, ...v.model.foreignCallbacks].find((c) => c.unit === fixture.unit);
     if (callback !== undefined) out.callbacks.add(callback);
     return { fixture, name: fixtureLines(v, b, fixture, `fixture${i}`) };
   });

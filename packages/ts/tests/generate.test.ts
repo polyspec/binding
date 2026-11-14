@@ -1256,9 +1256,16 @@ test('Go: a record of another repository is the struct of its Go module, which g
   for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }, { git: 'https://github.com/polyspec/points.git', branch: 'main', tag: 'v0.1.2' }]) {
     assert.match(goMod(spec), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n$`), JSON.stringify(spec));
   }
-  // A library whose records the contract does not name is not required: the consumer names only a value alias.
+  // A library whose records the contract does not name is not required: without its member read, the consumer names
+  // only a value alias of sample, whose Go rows name no class.
   const consumer = consumerSample();
-  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+  const aliasOnly = structuredClone(consumer.contract);
+  const holder = aliasOnly.units.find((u: any) => u.id === 'consumer');
+  holder.members = holder.members.filter((m: any) => m.id !== 'consumer.read');
+  aliasOnly.cases = aliasOnly.cases.filter((c: any) => c.member !== 'consumer.read');
+  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, aliasOnly, consumer.foreign), /require/);
+  // GN-6s: the member read takes the callback unit source of sample, whose interface the Go binding imports.
+  assert.match(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
 });
 
 test('pyproject.toml names another library at the version of a release form, and alone for a development form (GN-3e)', () => {
@@ -1508,11 +1515,11 @@ test('the contract of a library that only a unit of another library names is rea
     // The contract check takes the unit of the third library, which is a record of its contract.
     const checked = run('check', join(root, 'consumer/packages/rust/interface.json'));
     assert.doesNotMatch(checked.stderr, /CK-9|has no unit|\n {4}at /);
-    // The targets that take a callback unit of another library generate, and their crates name the core of points.
+    // Every target takes a callback unit of another library (GN-6s), so each generates, and its crate names the core of
+    // points.
     const generated = run('generate', '--root', join(root, 'consumer'), '--out', join(root, 'out'));
-    assert.doesNotMatch(generated.stderr, /points has no unit point|\n {4}at /);
-    assert.match(generated.stderr, /\ngenerated: php, python, node\n$/);
-    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs']) {
+    assert.equal(generated.status, 0, generated.stderr);
+    for (const lib of ['php-ext/generated/lib.rs', 'python/generated/lib.rs', 'ts/generated/lib.rs', 'ts/wasm/generated/lib.rs', 'go/internal/ffi/generated/lib.rs']) {
       assert.match(readFileSync(join(root, 'out/packages', lib), 'utf8'), /polyspec_points::Point\b/, lib);
     }
     // The manifests name the library whose types the generated code names: the Cargo manifest of each binding crate
@@ -1525,7 +1532,9 @@ test('the contract of a library that only a unit of another library names is rea
       assert.match(tracked(manifest), /\npolyspec-points = \{ path = "(\.\.\/)+points\/packages\/rust" \}\n/, manifest);
     }
     assert.match(tracked('python/pyproject.toml'), /\ndependencies = \["polyspec-points", "polyspec-sample"\]\n/);
-    assert.match(tracked('go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+    // GN-6s: the consumer takes the callback unit lookup of sample, whose interface the Go binding imports too.
+    assert.match(tracked('go/go.mod'), /\nrequire \(\n\tgithub\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\tgithub\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n\)\n/);
+    assert.match(tracked('go/go.mod'), /\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n/);
     // A unit that the third library does not have is a finding of the check, with the libraries on the way.
     const pointsPath = join(root, 'points/packages/rust/interface.json');
     const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
@@ -1747,12 +1756,6 @@ test('a value alias of another repository whose rows name a class of its owner m
   const php = classRowsSample();
   php.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ php: 'cell', cases: [{ kind: 'reference', read: 'builtin' }] });
   assert.match(text(generate({ contract: php.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: php.caseFiles, foreign: php.foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs'), /fn in_data\(/);
-  // WASM and Go do not generate the rows yet and refuse them by name.
-  for (const target of ['wasm', 'go'] as const) {
-    const parts = classRowsSample();
-    if (target === 'go') parts.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
-    assert.throws(() => generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: [target] }), new RegExp(`data: (the ${target} in row of the class box of sample is not generated yet \\(GN-6ar\\)|a ${target} make by a member \\((box|ratio|cell)\\.constructor\\) is not generated yet)`), target);
-  }
   // A make that is no constructor of a class of the owner, and a constructor that takes another content, are named.
   const refused = (change: (data: any, owner: any) => void): (() => unknown) => () => {
     const parts = classRowsSample();
@@ -1764,6 +1767,62 @@ test('a value alias of another repository whose rows name a class of its owner m
   assert.throws(refused((data) => { data.out[0].make.python = 'tag.new'; }), /data: the python make tag\.new of the kind null takes text, which is not generated: a constructor of a class of another repository takes a bool, an integer or a float of its kind, the keyed map of an object or a map, or the value of a reference \(GN-6ar\)/);
   assert.throws(refused((_data, owner) => { owner.units.find((u: any) => u.id === 'cell').members[1].writable = false; }), /data: the python make cell\.constructor of the kind reference needs a writable property of cell with the name of the parameter/);
   assert.throws(refused((data) => { data.in.find((row: any) => row.python === 'box').cases[0].read = 'box.none'; }), /data: the python in row of the class box of sample reads box\.none, which is no public property of the class \(GN-6ar\)/);
+});
+
+test('Go makes and reads the class of a row of a value alias of another repository, a value class without core_type of the package of its owner (GN-6ar, GN-15c, GN-15f)', () => {
+  const parts = classRowsSample();
+  parts.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  const { contract, caseFiles, foreign } = parts;
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /\n\t"github\.com\/polyspec\/sample\/packages\/go"\n/);
+  // In: an instance of the owner's class is node 11 with the kind of its row, whose read gives the field of its
+  // writable property, and the keyed map of the owner is a map of its entries.
+  assert.match(binding, /\n\tif c\.describeRow\(enc, value\) \{\n\t\treturn\n\t\}\n/);
+  assert.match(binding, /\n\tcase \*sample\.Box:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tc\.describeKept\(enc, \d+, found, func\(\) \(any, error\) \{ return found\.Entries, nil \}\)\n\t\treturn true\n/);
+  assert.match(binding, /\n\tcase \*sample\.Cell:\n[\s\S]*?return found\.Value, nil/);
+  assert.match(binding, /\n\tcase \*sample\.KeyedMap\[any\]:\n[\s\S]*?if integer, isInt := key\.Int\(\); isInt \{/);
+  assert.match(binding, /\n\tseen +map\[any\]uint64\n/);
+  // Out: node 14 is made by the constructor of the owner on an empty keyed map or on nil, then filled.
+  assert.match(binding, /\n\tcase 14:\n\t\treturn r\.foreign\(made, instance\)\n/);
+  assert.match(binding, /\n\t\tentries := &sample\.KeyedMap\[any\]\{\}\n\t\tkept, err := sample\.NewBox\(entries\)\n/);
+  assert.match(binding, /\n\t\tkept, err := sample\.NewCell\(nil\)\n[\s\S]*?\n\t\tkept\.Value = r\.value\(made, instance\)\n/);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 0u64\);\n +uint_out\(output, len\);/);
+  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 1u64\);\n +make\(output, \*value, source, made\);/);
+  // GN-15f: go.mod requires the Go module of the owner, whose package the binding imports.
+  assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
+  // G-4: a class with core_type in a Go row is refused by name.
+  const cored = classRowsSample();
+  cored.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  cored.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ go: 'ratio', cases: [{ kind: 'float', read: 'ratio.value' }] });
+  cored.foreign.get('sample').units.find((u: any) => u.id === 'ratio').only = undefined;
+  assert.throws(() => generate({ contract: cored.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: cored.caseFiles, foreign: cored.foreign, targets: ['go'] }), /the go row of the class ratio of sample names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner \(GN-6ar, GN-6af\)/);
+});
+
+test('WASM makes and reads the class of a row of a value alias of another repository as Node does (GN-6ar, GN-6k)', () => {
+  const { contract, caseFiles, foreign } = classRowsSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['wasm'] });
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  // The JavaScript entry hands the classes of the owner to the module from the subpath ./wasm of its package.
+  const entry = text(out, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(entry, /\nimport \* as foreign_sample from '@polyspec\/sample\/wasm';\n/);
+  assert.match(entry, /\nglue\.__register_foreign\(\[foreign_sample\.Box, foreign_sample\.Cell, foreign_sample\.Ratio\]\);\n/);
+  assert.match(lib, /\n {8}if classes\.len\(\) != 3 \{\n/);
+  // Out: the constructor of the owner's class takes the float, the Map of the entries, which is filled after the
+  // instance is made, and null for a reference, whose writable property takes the made value as an assignment does.
+  assert.match(lib, /OutValue::Float\(value\) => \{\n +let class = foreign_class\(2\)\.map_err\(js_fail\)\?;\n +let instance = Reflect::construct\(&class, &Array::of1\(&JsValue::from_f64\(value\.value\(\)\)\)\)\.map_err\(js_fail\)\?;\n +Ok\(OutStep::Put\(instance\)\)/);
+  assert.match(lib, /let map = js_sys::Map::new\(\);\n +let class = foreign_class\(0\)\.map_err\(js_fail\)\?;\n +let instance = Reflect::construct\(&class, &Array::of1\(&map\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len, index: 0, waiting: None, fill: OutFill::Entries\(map, None\), made: instance \}\)\)/);
+  assert.match(lib, /let class = foreign_class\(1\)\.map_err\(js_fail\)\?;\n +let instance = Reflect::construct\(&class, &Array::of1\(&JsValue::NULL\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), fill: OutFill::Property\(instance\.clone\(\), "value"\), made: instance \}\)\)/);
+  assert.match(lib, /OutFill::Property\(object, name\) => \{\n +Reflect::set\(object, &JsValue::from_str\(name\), &value\)\.map_err\(js_fail\)\?;/);
+  // In: an instance of the owner's class is HostValue::Value with the kind of its row; one that holds a float is a
+  // value, and any other has one handle within the walk.
+  assert.match(lib, /if foreign_instance\(value, &foreign_class\(2\)\?\)\? \{\n {12}return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Float, handle: self\.hold\(Held::Foreign\(value\.clone\(\), Some\(\("value", false, ReadAs::Float\)\)\)\) \}\)\);/);
+  assert.match(lib, /if foreign_instance\(value, &foreign_class\(0\)\?\)\? \{\n {12}let handle = self\.foreign_identity\(value, \("entries", false, ReadAs::Content\)\)\?;\n {12}return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Map, handle \}\)\);/);
+  assert.match(lib, /ReadAs::Float => content\.as_f64\(\)\.map\(HostValue::Float\)/);
+  assert.match(lib, /\n {4}seen: Option<js_sys::Map>,\n/);
+  // GN-3e: package.json names the npm package of the owner, whose classes the entry hands over.
+  assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/ts/package.json')), /"@polyspec\/sample": "\*"/);
 });
 
 // The consumer sample with the function relay, which takes and gives the value class of the owner fixture (GN-6x).
@@ -2368,12 +2427,47 @@ test('a callback unit of another repository is wrapped as its core trait, and th
   assert.doesNotMatch(stub, /interface Lookup/);
 });
 
-test('a callback unit of another repository is refused by name in Go and WASM, and where its name is a unit of the contract (GN-6s, G-4)', () => {
+test('a callback unit of another repository is wrapped in Go and WASM as in the other targets, and each declaration names the type of the owning package (GN-6s, T-3)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract, foreign);
-  for (const target of ['go', 'wasm'] as const) {
-    assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), /consumer\.look\.lookup: a callback unit lookup of sample is not generated yet in (go|wasm) \(GN-6s\)/, target);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go', 'wasm'] });
+  // The trait methods return the failure of the core error of sample, as in PHP, Python and Node.
+  for (const path of ['packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /impl polyspec_sample::Lookup for CbLookup \{/, path);
+    assert.match(rust, /fn find\(&mut self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>>/, path);
+    assert.match(rust, /fn in_lookup\(/, path);
   }
+  // WASM declares no interface of the unit: it names the type of the subpath ./wasm of the owning package.
+  const dts = text(out, 'packages/ts/wasm/generated/index.d.ts');
+  assert.match(dts, /export declare function look\(lookup: import\("@polyspec\/sample\/wasm"\)\.Lookup, key: string\): string \| null;/);
+  assert.doesNotMatch(dts, /export interface Lookup/);
+  // Go declares no interface of the unit: the function takes the interface of the Go package of sample, and the
+  // package has the dispatch of it.
+  const go = text(out, 'packages/go/zz_generated_consumer.go');
+  assert.match(go, /func Look\(lookup sample\.Lookup, key string\) \(\*string, error\)/);
+  assert.match(go, /func dispatchLookup\(object sample\.Lookup\) binding\.Callback \{/);
+  assert.match(go, /"github\.com\/polyspec\/sample\/packages\/go"/);
+  assert.doesNotMatch(go, /type Lookup interface/);
+});
+
+test('Go: a case of a member that takes a callback unit of another repository answers by a fixture that implements the interface of the owning package, and an instance value at its place is an instance of the class that its make member returns (GN-6s, G-5, GN-13f)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  // G-5, GN-6aa: the fixture of the callback source of sample has the methods of the interface sample.Source.
+  const tests = text(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /\ntype fixtureSource struct\{ \*fixture \}\n/);
+  assert.match(tests, /\nfunc \(f fixtureSource\) Read\(key string\) \(\*string, error\) \{\n/);
+  // GN-13f: an instance value is made by its make member, as in the other targets; one that names no member of the
+  // binding fails its test by name, and the other tests are written.
+  const cases = structuredClone(caseFiles.get('contracts/cases.json')) as any;
+  cases.read.push({ id: 'an_instance_value_of_no_member', source: { new: 'nothing.made', args: {} }, key: 'a', result: null });
+  const named = text(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(named, /the case an_instance_value_of_no_member of consumer\.read: a case value of source: nothing\.made is no member that the binding generates \(G-5, GN-13f\)/);
+});
+
+test('a callback unit of another repository is refused where its name is a unit of the contract, and with a member that recognizes an error unit (GN-6s, G-4)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract, foreign);
   // GN-6w, G-4: a member of the callback that recognizes an error unit is refused by name.
   const recognizes = consumerSample();
   looking(recognizes.contract, recognizes.foreign, true);
@@ -5246,7 +5340,7 @@ test('a contract with a function type and no callback unit keeps what its functi
   for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     assert.match(lib, /call\(\)\.map_err\(thrown\)/, path);
-    assert.match(lib, path.includes('/wasm/') ? /\nfn thrown\(error: Thrown\) -> binding_core::Failure</ : /\nfn thrown<E>\(error: Thrown\) -> binding_core::Failure<E>/, path);
+    assert.match(lib, /\nfn thrown<E>\(error: Thrown\) -> binding_core::Failure<E>/, path);
   }
   // PHP: the exception of the Closure is the variant Php, which failure_error throws again.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
@@ -6352,7 +6446,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6365,7 +6459,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6379,7 +6473,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });

@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 651fea8fdff554ce860ae3b775dc1d526f762649bc804fbe8435c5a4a0ec56e7 -->
 <!-- source-sha256: 15045cf7af4db5d55565035f398ce578be4d3436d1c836d6e23143a004fad289 -->
+<!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -61,6 +62,33 @@
   실패시키며, `make commit-msg-hook MESSAGE=<file>`은 hook의 검사를 돌린다. `make hooks`, `make hooks-check`, 그리고 AI
   도구의 co-author trailer가 있는 메시지(`commit-ai-footer`로 실패)와 없는 메시지(통과)에 대한 `make commit-msg-hook`으로
   확인했다.
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 Go를 거부했다. 그래서 php-serialization의
+  `std_class`의 `in` 행 때문에 hyper의 Go 바인딩이 생성되지 않았고, go.mod는 계약이 받는 callback unit의 라이브러리의 Go
+  module을 요구하지 않았다. Go 바인딩은 그 package를 import한다(GN-6s). 이제 Go는 그런 class가 owner package의 core_type
+  없는 값 class일 때 받는다(GN-6ar). `in` 행은 read가 property의 field나 method를 주는 node 11이고, owner의 keyed map은
+  entry의 map으로 묘사하며, `out` 행은 결과의 node 14로서 owner의 constructor가 내용보다 먼저 빈 keyed map이나 nil 위에
+  만든다. core_type이 있는 class와 bool, 정수, float의 constructor는 이름을 대고 거부한다. go.mod는 callback unit과 그런
+  alias의 라이브러리를 요구한다(GN-15f). 검증: Go 시험이 변경 전에 "the go in row of the class box of sample is not
+  generated yet"로 실패한 `generate.test.ts`의 시험.
+
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
+  `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고
+  읽는다(GN-6ar). entry는 owner package의 subpath `./wasm`에서 class를 가져와 GN-6x의 class 뒤에 넘기고, `in` 행은
+  `Symbol.hasInstance`로 인스턴스를 검사해 그 property를 읽으며 한 순회 안에서 인스턴스마다 handle이 하나이고, `out`
+  행은 `Reflect.construct`로 인스턴스를 만들고 reference를 `Reflect.set`으로 채운다. Go는 여전히 그런 행을 이름을 대고
+  거부한다(B2.136-2). 검증: WASM 시험이 변경 전에 "the wasm in row of the class box of sample is not generated yet"로
+  실패한 `generate.test.ts`의 GN-6ar 시험.
+
+- 생성기는 다른 레포의 callback unit을 받는 member에 대해 Go와 WASM을 거부했다. 그래서 session-store의 `store`를 받는
+  `opening_functions.open_page.store`와 `opening_functions.answer_keep_request.store` 때문에 hyper의 Go와 WASM 바인딩이
+  생성되지 않았다. 이제 Go와 WASM은 그런 unit을 PHP, Python, Node처럼 감싼다(GN-6s). trait method는 소유 오류의 실패를
+  돌려주고, WASM은 소유 npm 패키지의 subpath `./wasm`의 타입을 적고, Go는 소유 Go module의 interface를 적고 그 unit을 받는
+  각 package에 그 unit의 dispatch를 쓰며, 그 자리의 Go case 값은 그 interface의 fixture이거나 make member가 돌려주는
+  class의 instance 값이다. `tests/e2e/sample`에 callback unit `source`가, `tests/e2e/consumer`에 그것을 받는 member
+  `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
+  it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
+  `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
+
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

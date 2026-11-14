@@ -768,26 +768,32 @@ the design ids are those of the binding design.
   a class. The binding makes and reads the instance through the language API of the owner's package, as it calls the
   members of a value class of another repository (GN-6x), and never takes the native object of the owner's binding
   out: Python reads the class from the module of the owner's package, and the JavaScript entry of the Node addon
-  hands the classes over when the module loads, after the classes of GN-6x. Out: the constructor has one parameter. A
-  bool, an integer or a float of the kind of the row is passed to it (Node: a bool or a float); a keyed map of the
+  and of the WASM module hands the classes over when the module loads, after the classes of GN-6x; WASM checks an
+  instance by the `Symbol.hasInstance` of the class and makes one by `Reflect.construct`. Out: the constructor has one parameter. A
+  bool, an integer or a float of the kind of the row is passed to it (Node and WASM: a bool or a float); a keyed map of the
   alias takes the entries of the kind `object` or `map` as a new map of the language (a `dict`, a `Map`), which the
   instance keeps (GN-6af), so the binding makes the instance on the empty map and then gives the map each made entry;
   the alias itself takes the value of the kind `reference`: the binding makes the instance on the null of the
-  language and sets the made value through the writable property of the class that has the name of the parameter.
+  language and sets the made value through the writable property of the class that has the name of the parameter,
+  as an assignment of the language does (WASM: `Reflect.set`).
   An object and a reference are therefore made before their content and are the same instance at every position of
   their handle (U-7 (d)), so a cycle through them is made. In: an instance of the class is `HostValue::Value` with
   the kind of the one case of the row, which has no `when`, and `read` of `HostValues` gives the public property that
   the case names: a property of the type bool, an integer or float is the `HostValue` of that type, because a number
   of JavaScript alone does not tell an integer from a float, and any other property is described again by the rules
   of the language. An instance whose property is described again has one handle within one walk of the core (Python
-  by its address, Node by a `Map` of the walk); an instance that holds a bool or a number is a value and needs none.
+  by its address, Node and WASM by a `Map` of the walk); an instance that holds a bool or a number is a value and needs none.
   A row whose type has the name of a class that `only` leaves out for the target (GN-6af) names the type of the
   language there, as the `reference` of PHP does. `package.json` names the npm package of the owner (GN-3e). Refused
   by name (G-4): a member that is no public constructor, a constructor with another parameter, a reference whose
   class has no such writable property, an `in` row with several cases or a `when`, and a `read` that is no public
-  property of the class. Not generated yet, refused by name (G-4): the WASM and Go forms, because the WASM module has
-  no instance check and constructor call for a class of a row yet and the Go call of GN-15c has no node that makes an
-  instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
+  property of the class. Go takes such a class when it is a value class without core_type (GN-6af), the struct of
+  the package of the owner, whose Go module go.mod requires (GN-15f): an `in` row reads the property of the pointer,
+  its field when the property is writable and its method otherwise, as node 11 with one handle per pointer of a call,
+  and describes the keyed map of the owner that such an instance keeps as a map of its entries; an `out` row is node
+  14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
+  owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
+  (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
   language is the only form in which a user of both packages can pass an instance from one to the other.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
@@ -1335,9 +1341,15 @@ the design ids are those of the binding design.
   (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the
   language code is `Failure::Raised`, which the core of this repository passes on. The binding declares no type of
   the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
-  Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
-  type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
-  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
+  Protocol of `<owner root>._types`, Node the type that the owning npm package exports, WASM the type that the subpath
+  `./wasm` of that package exports, Go the interface of the package of the unit's module in the owning Go module, which
+  go.mod requires), and a user implements that type. Go writes the dispatch of the unit, which decodes the arguments
+  of a member and calls the method of the Go value, in each package whose members take the unit, as it writes the
+  dispatch of a callback unit of this repository in the package of that unit. A case value at its place is a fixture
+  of the callback, whose type has the methods of the owning type, or an instance value, which the class that its make
+  member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). The name of such a unit differs from the
+  name of every unit of this contract, which the generator refuses by name otherwise (G-4). Not generated yet, each
+  refused by name (G-4): a case value that a member
   of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
@@ -1692,8 +1704,9 @@ the design ids are those of the binding design.
   target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
   again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
   them for every target, so they fail with the same instruction. For
-  each library whose records or value classes (GN-6x) the contract names, or the members of a callback unit of
-  another library that the contract takes name (GN-3e), it writes a line `require <module> <version>`
+  each library whose records, value classes (GN-6x) or callback units (GN-6s) the contract names, or the value
+  aliases whose Go rows name a class of their owner (GN-6ar), or the members of a callback unit of another library that
+  the contract takes name (GN-3e), it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this

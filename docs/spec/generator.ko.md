@@ -624,23 +624,28 @@
 - **GN-6ar** 다른 레포의 값 alias의 행은 owner의 class를 이름할 수 있다(U-1, GN-6af). `make`가 owner의 public class의
   public constructor인 `out` 행과, 언어 타입이 그런 class인 `in` 행이다. 바인딩은 다른 레포의 값 class의 member를
   부르듯이(GN-6x) owner package의 언어 API로 인스턴스를 만들고 읽으며, owner 바인딩의 native 객체를 꺼내지 않는다.
-  Python은 owner package의 module에서 class를 읽고, Node addon의 JavaScript entry는 module이 로드될 때 GN-6x의 class
-  뒤에 그 class들을 넘겨준다. 나갈 때: constructor는 parameter가 하나다. 행의 kind의 bool, 정수, float은 그대로
-  넘긴다(Node는 bool과 float). 그 alias의 keyed map은 kind `object`나 `map`의 entry를 언어의 새 map(`dict`, `Map`)으로
+  Python은 owner package의 module에서 class를 읽고, Node addon과 WASM module의 JavaScript entry는 module이 로드될 때
+  GN-6x의 class 뒤에 그 class들을 넘겨준다. WASM은 class의 `Symbol.hasInstance`로 인스턴스를 검사하고 `Reflect.construct`로
+  만든다. 나갈 때: constructor는 parameter가 하나다. 행의 kind의 bool, 정수, float은 그대로
+  넘긴다(Node와 WASM은 bool과 float). 그 alias의 keyed map은 kind `object`나 `map`의 entry를 언어의 새 map(`dict`, `Map`)으로
   받고, 인스턴스는 그 map을 그대로 보관하므로(GN-6af) 바인딩은 빈 map으로 인스턴스를 만든 다음 만든 entry를 그 map에
   넣는다. alias 자체는 kind `reference`의 값을 받는다. 바인딩은 언어의 null로 인스턴스를 만들고, parameter와 이름이 같은
-  그 class의 writable property로 만든 값을 넣는다. 그래서 object와 reference는 내용보다 먼저 만들어지고 자기 handle의
+  그 class의 writable property에 언어의 대입처럼 만든 값을 넣는다(WASM은 `Reflect.set`). 그래서 object와 reference는 내용보다 먼저 만들어지고 자기 handle의
   모든 자리에서 같은 인스턴스이며(U-7 (d)), 그것을 지나는 순환이 만들어진다. 들어올 때: 그 class의 인스턴스는 행의 한
   case(`when` 없음)의 kind를 가진 `HostValue::Value`이고, `HostValues`의 `read`는 그 case가 이름한 public property를
   준다. 타입이 bool, 정수, float인 property는 그 타입의 `HostValue`다. JavaScript의 number만으로는 정수와 float을
   구별할 수 없기 때문이다. 그 밖의 property는 언어의 규칙으로 다시 묘사한다. property를 다시 묘사하는 인스턴스는 코어의
-  한 번의 순회 안에서 handle이 하나다(Python은 주소로, Node는 순회의 `Map`으로). bool이나 수를 가진 인스턴스는 값이므로
+  한 번의 순회 안에서 handle이 하나다(Python은 주소로, Node와 WASM은 순회의 `Map`으로). bool이나 수를 가진 인스턴스는 값이므로
   그럴 필요가 없다. 타입의 이름이 `only`가 그 target에서 뺀 class(GN-6af)의 이름인 행은 거기서 언어의 타입을 이름한다.
   PHP의 `reference`가 그렇다. `package.json`은 owner의 npm package를 적는다(GN-3e). 이름을 대고 거부하는 것(G-4):
   public constructor가 아닌 member, 다른 parameter를 받는 constructor, 그런 writable property가 없는 class의 reference,
-  case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. 아직 생성하지 않고 이름을 대고
-  거부하는 것(G-4): WASM과 Go의 꼴. WASM module에는 행의 class에 대한 인스턴스 검사와 constructor 호출이 아직 없고,
-  GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
+  case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. Go는 그런 class가 core_type 없는 값
+  class(GN-6af), 곧 go.mod가 Go module을 요구하는(GN-15f) owner package의 struct일 때 받는다. `in` 행은 pointer의
+  property를, writable이면 그 field로 아니면 그 method로 읽어 한 호출에서 pointer마다 handle 하나인 node 11로 묘사하고,
+  그런 인스턴스가 보관하는 owner의 keyed map은 entry의 map으로 묘사한다. `out` 행은 class의 위치를 가진 결과의 node
+  14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
+  property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
+  PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
@@ -1103,8 +1108,13 @@
   method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
   언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
   패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
-  타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
-  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  타입, WASM은 그 패키지의 subpath `./wasm`이 내보내는 타입, Go는 go.mod가 요구하는 소유 Go module 안에서 그 unit의 module에 해당하는
+  package의 interface), 사용자는 그 타입을 구현한다. Go는 이 레포의 callback unit의 dispatch를 그 unit의 package에 쓰듯이, member의
+  인자를 decode하고 Go 값의 method를 부르는 그 unit의 dispatch를 그 unit을 받는 member가 있는 각 package에 쓴다. 그 자리의 case 값은
+  소유 타입의 method를 가진 callback fixture이거나, make member가 돌려주는 class가 주는 instance 값이며, 이 레포의 case와 같다(G-5,
+  GN-6aa, GN-13f). 그런 unit의 이름은
+  이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는
+  것(G-4): 소유 레포의 member가 만드는 case 값(그
   member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
@@ -1392,7 +1402,7 @@
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
-  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record나 값 class(GN-6x)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이

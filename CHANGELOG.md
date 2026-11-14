@@ -66,6 +66,38 @@
   fails a checkout without it, and `make commit-msg-hook MESSAGE=<file>` runs the check of the hook. Verified by `make
   hooks`, `make hooks-check`, and `make commit-msg-hook` on a message with a co-author trailer of an AI tool, which
   failed with `commit-ai-footer`, and on one without, which passed.
+- The generator refused Go for a value alias of another repository whose rows name a class of its owner, so the Go
+  binding of hyper was not generated for the `in` row of `std_class` of php-serialization, and go.mod did not require
+  the Go module of a library whose callback unit the contract takes, whose package the Go binding imports (GN-6s).
+  Go now takes such a class when it is a value class without core_type of the owner's package (GN-6ar): an `in` row
+  is node 11 whose read gives the field or the method of the property, the owner's keyed map is described as a map
+  of its entries, and an `out` row is node 14 of the result, which the owner's constructor makes on an empty keyed
+  map or on nil before its content; a class with core_type and a constructor of a bool, an integer or a float are
+  refused by name. go.mod requires the library of a callback unit and of such an alias (GN-15f). Verified by the
+  tests of `generate.test.ts`, whose Go test failed before the change with "the go in row of the class box of
+  sample is not generated yet".
+
+- The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
+  WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
+  reads such a class as Node does (GN-6ar): the entry imports the classes from the subpath `./wasm` of the owner's
+  package and hands them over after those of GN-6x, an `in` row checks an instance by `Symbol.hasInstance` and reads
+  its property, one handle per instance within a walk, and an `out` row makes the instance by `Reflect.construct`
+  and sets a reference by `Reflect.set`. Go still refuses such a row by name (B2.136-2). Verified by the GN-6ar tests
+  of `generate.test.ts`, whose WASM test failed before the change with "the wasm in row of the class box of sample is
+  not generated yet".
+
+- The generator refused Go and WASM for a member that takes a callback unit of another repository, so the Go and
+  WASM bindings of hyper were not generated for `opening_functions.open_page.store` and
+  `opening_functions.answer_keep_request.store`, which take `store` of session-store. Go and WASM now wrap such a unit
+  as PHP, Python and Node do (GN-6s): the trait methods return the failure of the owner's error, WASM names the type of
+  the subpath `./wasm` of the owning npm package, Go names the interface of the owning Go module and writes the
+  dispatch of the unit in each package that takes it, and a Go case value at its place is a fixture of that interface
+  or an instance value of the class that its make member returns. `tests/e2e/sample` has the callback unit `source`,
+  and `tests/e2e/consumer` the member `read`, which takes it. Verified by the tests of `generate.test.ts`, whose Go
+  case test failed before the change with "a case value of source is an instance value of no class that implements
+  it", and by `generate` of the hyper checkout, which names no callback unit; `make e2e REPO=tests/e2e/consumer` is
+  queued.
+
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
@@ -140,7 +172,6 @@
 - PHP read the least int of a case, `-9223372036854775808` in the source of a test, as the negation of the float
   9223372036854775808, so the test `serialize int_min` of php-serialization gave `d:-9.223372036854776E+18;`. The
   generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
-
 
 - The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
   `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key

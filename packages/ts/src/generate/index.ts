@@ -121,18 +121,6 @@ export function generate(inputs: Inputs): Files {
       }
     }
   }
-  // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
-  for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
-    const forTarget = membersFor(model, target);
-    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
-      for (const arg of fn.args) {
-        const library = libraryOf(arg.type);
-        if (library !== undefined && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === (arg.type as { unit: string }).unit)) {
-          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6s)`);
-        }
-      }
-    }
-  }
   if (targets.includes('go')) {
     refuseForGo(membersFor(model, 'go'), refusals);
   }
