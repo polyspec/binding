@@ -595,6 +595,71 @@ test('the Go package binding holds the keyed-map helpers that a keyed_map<T> of 
   assert.match(returned, /^type KeyedMap\[T any\] struct/m);
 });
 
+test('the Go package binding names each export in a blank variable, describes a KeyedMap only where one can be made, and writes ThrownCount only with its tests (GN-15h, GN-6ae)', () => {
+  const e2e = (name: string): Map<string, string | Buffer> => {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+    return generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] as Inputs['targets'] & string[] });
+  };
+  const BINDING = 'packages/go/internal/binding/zz_generated_binding.go';
+  const THROWN = 'packages/go/internal/binding/zz_generated_thrown_count.go';
+  // The static library calls an export through C, which deadcode does not see: the blank variable names each export
+  // that the package writes, and only those.
+  const reached = (binding: string): string[] => [...(/\nvar _ = \[\.\.\.\]any\{\n((?:\t\w+,\n)*)\}\n/.exec(binding)?.[1] ?? '').matchAll(/\t(\w+),/g)].map((m) => m[1] ?? '');
+  const exported = (binding: string): string[] => [...binding.matchAll(/^\/\/export (\w+)$/gm)].map((m) => m[1] ?? '');
+  // functions takes function types and has no value alias and no keyed_map<T>: no code can make a KeyedMap, so the
+  // package has no case of it, no KeyedMap and no Key; its members take functions, so the count has its tests.
+  const functions = e2e('functions');
+  const fnBinding = text(functions, BINDING);
+  assert.deepEqual(exported(fnBinding), ['polyspec_functions___go_release', 'polyspec_functions___go_keep', 'polyspec_functions___go_end', 'polyspec_functions___go_function', 'polyspec_functions___go_release_raised']);
+  assert.deepEqual(reached(fnBinding), exported(fnBinding));
+  for (const helper of [/case \*KeyedMap\[any\]/, /^type KeyedMap\[/m, /^type Key struct/m, /^func IntKey\(/m, /^func \(m \*KeyedMap\[T\]\) Set\(/m]) assert.doesNotMatch(fnBinding, helper);
+  assert.ok(functions.has(THROWN));
+  assert.ok(functions.has('packages/go/zz_generated_thrown_count_test.go'));
+  // kept has a value alias, whose decoder makes a KeyedMap, so describeOwn describes one; no member takes a callback or
+  // a function type, so no test counts what was thrown and ThrownCount is not written.
+  const kept = e2e('kept');
+  const keptBinding = text(kept, BINDING);
+  assert.deepEqual(reached(keptBinding), ['polyspec_kept___go_host', 'polyspec_kept___go_release', 'polyspec_kept___go_native']);
+  assert.deepEqual(reached(keptBinding), exported(keptBinding));
+  assert.match(keptBinding, /\tcase \*KeyedMap\[any\]:\n/);
+  assert.ok(![...kept.keys()].some((path) => /zz_generated_thrown_count/.test(path)));
+  // A package without an export writes no blank variable.
+  const shapes = text(e2e('shapes'), BINDING);
+  assert.deepEqual(exported(shapes), []);
+  assert.doesNotMatch(shapes, /^var _ = \[\.\.\.\]any\{/m);
+});
+
+test('the Go package binding writes a method of Call only with the export that calls it, and panicked only where a call makes one (GN-15h, U-3, GN-15b)', () => {
+  const binding = (name: string, foreign = new Map<string, unknown>()): string => {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+    const contract = read('packages/rust/interface.json');
+    if (name === 'sample') plainSample(contract);
+    const caseFiles = new Map([['contracts/cases.json', name === 'sample' ? plainSampleCases(read('contracts/cases.json')) : read('contracts/cases.json')]]);
+    return text(generate({ contract, version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles, foreign: foreign as any, targets: ['go'] as Inputs['targets'] & string[] }), 'packages/go/internal/binding/zz_generated_binding.go');
+  };
+  const host = /^func \(c \*Call\) host\(/m;
+  const run = /^func \(c \*Call\) run\(/m;
+  const raise = /^func \(c \*Call\) raise\(/m;
+  const panicked = /^type panicked struct/m;
+  // functions keeps funcs, whose run makes a panicked (keepRaised); no callback and no value alias, so no export calls
+  // run or host.
+  const functions = binding('functions');
+  assert.doesNotMatch(functions, /^\/\/export \w+__go_(?:callback|host)$/m);
+  for (const absent of [host, run, raise]) assert.doesNotMatch(functions, absent);
+  assert.match(functions, panicked);
+  assert.match(functions, /keepRaised\(&panicked\{value: value\}\)/);
+  // kept has a value alias, whose walk the export __go_host answers through host; no callback and no kept func, so
+  // nothing runs Go code that panics into a call, and nothing makes a panicked.
+  const kept = binding('kept');
+  assert.match(kept, /^\/\/export polyspec_kept___go_host$/m);
+  assert.match(kept, host);
+  for (const absent of [run, raise, panicked, /\*panicked\b/]) assert.doesNotMatch(kept, absent);
+  // The sample takes callbacks: the export __go_callback calls run, which makes a panicked and calls raise.
+  const sample = binding('sample');
+  assert.match(sample, /^\/\/export polyspec_sample___go_callback$/m);
+  for (const present of [run, raise, panicked]) assert.match(sample, present);
+});
+
 test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM (T-2, GN-12, GN-18)', () => {
   const { contract, caseFiles } = load();
   const member = contract.units[0].members[0];

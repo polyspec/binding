@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5977b5ea464d6d70f7cb67ddf65b9d2e534b6ea4de8e3c61dd5d213dfbe471d5 -->
+<!-- source-sha256: 593e149dd1f57d5940a4a14c735759ff597dce2c76f931e6a3e0379ae9864417 -->
 # 생성기
 
 [English](generator.md)
@@ -1523,6 +1523,20 @@
   생성된 Go 모듈에 mise.toml이 고정한 `deadcode -test`를 build tag 없이, 그리고 그 파일들의 `//go:build` 줄이 이름하는
   tag마다 실행의 시험 feature tag 없이 돌리고, 파일을 컴파일하는 모든 실행이 보고하는 함수와 보고가 아닌 줄을 실패로
   센다. 모듈을 쓰는 저장소의 lint가 같은 방식으로 판정하기 때문이다.
+  정적 라이브러리는 패키지 `binding`의 각 export(`//export <prefix>__go_<name>`)를 C로 부르는데, deadcode의 호출
+  그래프는 그 호출을 담지 않는다. deadcode의 root는 모듈과 그 시험의 프로그램의 main과 init 함수이므로, export에도
+  export만 부르는 함수에도 닿지 않는다. 그러므로 패키지 `binding`은 자기가 쓰는 모든 export를 빈 변수의
+  initializer(`var _ = [...]any{…}`)에 적고, 패키지의 init이 그것을 실행한다. deadcode는 `reflect.Value.Call`을 가진
+  프로그램에서, `fmt`를 import하는 모든 프로그램이 그렇듯, 닿은 함수가 주소를 취한 함수를 닿은 것으로 센다. 호출의 Go
+  값은 계약의 타입이 `keyed_map<T>`를 이름할 때(root 패키지가 그 Go 타입을 키와 함께 내보낸다), 또는 계약에 값 alias가
+  있어 그 decoder가 그것을 만들 때(GN-6e)만 `*KeyedMap[any]`이다. 그 밖에는 패키지 `binding` 밖의 어떤 코드도 그것을
+  만들 수 없으므로 `describeOwn`은 그 case를 갖지 않고, case가 없는 `describeOwn`은 쓰지 않는다.
+  `zz_generated_thrown_count.go`는 callback이나 함수 타입을 받는 member의 case를 실행하는 개수의 Go 시험(GN-6ae)과
+  함께일 때만 쓴다. export만 부르는 `Call`의 method는 그 export와 함께일 때만 쓴다. `host`는 `<prefix>__go_host`(값
+  alias)와, `run`과 `raise`는 `<prefix>__go_callback`(callback, 또는 `machine`을 가진 member의 함수)과 함께 쓴다.
+  타입 `panicked`는 정적 라이브러리가 실행하는 Go 코드가 호출 안에서 panic할 수 있을 때만 쓴다. 그것은 `run`, 또는 보관된
+  func의 `keepRaised`다(GN-6z, GN-15b). 이유: export는 실행 중에 정적 라이브러리를 거쳐 닿지만 어떤 Go 분석도 그것을 보지 못하고, 어떤
+  호출자도 만들 수 없는 타입의 case나 어떤 시험도 부르지 않는 함수는 모든 프로그램에서 닿지 않는다.
 - **GN-15i** Go 정적 라이브러리는 link-time optimization 없이 빌드한다. target `go`가 있는 레포의 root manifest와
   `.cargo/config.toml`의 `[profile.release]`는 `lto`를 켜지 않으며(없음, `false`, `"off"`), `binding check`는 다른 값을
   보고한다(CK-91). 이유: LTO는 표준 라이브러리와 `binding_core`를 정적 라이브러리의 한 object에 넣으므로, 두 레포의 정적

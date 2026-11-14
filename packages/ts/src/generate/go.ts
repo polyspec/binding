@@ -1524,6 +1524,25 @@ function keepGoHelpers(files: Files, path: string): void {
   files.set(path, text);
 }
 
+// GN-15h: the static library calls each export of package binding (//export <prefix>__go_<name>) through C, which
+// the call graph of a Go analysis does not hold, so deadcode, whose roots are the main and init functions of the
+// programs of the module and of its tests, reaches neither the export nor the functions that only it calls. The
+// package therefore takes the value of each export in the initializer of a blank variable: the init of package
+// binding, which every program of the module runs, takes their addresses, and deadcode counts a function whose
+// address a reached function takes as reached in a program that holds reflect.Value.Call, as every program that
+// imports fmt does. A package without an export writes no such variable.
+function withExportsReached(text: string): string {
+  const exports = [...text.matchAll(/^\/\/export (\w+)$/gm)].map((m) => m[1] ?? '');
+  if (exports.length === 0) return text;
+  return `${text.replace(/\n*$/, '\n')}
+// The static library calls these exports through C (B-8). The initializer takes the value of each, so a call graph
+// of the Go code alone, such as that of deadcode, reaches them and what they call (GN-15h).
+var _ = [...]any{
+${exports.map((name) => `\t${name},`).join('\n')}
+}
+`;
+}
+
 function goBinding(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
@@ -1961,10 +1980,10 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 			}
 			return
 		}
-	}
+	}${!describesOwn(model) ? '' : `
 	if c.describeOwn(enc, value) {
 		return
-	}${rowReads(model).length === 0 ? '' : `
+	}`}${rowReads(model).length === 0 ? '' : `
 	if c.describeRow(enc, value) {
 		return
 	}`}
@@ -2021,7 +2040,7 @@ func (c *Call) hold(value held) uint64 {
 	return uint64(len(c.held))
 }
 
-// host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
+${model.aliases.length === 0 ? '' : `// host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
 // of a map (op 1)${!readsValues(model) ? '' : ', or the content of an instance of a value class (op 2, GN-6x, GN-6af)'}.
 func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	if handle == 0 || handle > uint64(len(c.held)) {
@@ -2073,14 +2092,14 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}${goDescribeOwn(model)}${goDescribeRows(model)}// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
+`}${goValueClassCall(model)}${goDescribeOwn(model)}${goDescribeRows(model)}${!makesPanicked(model) ? '' : `// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
 // of the C ABI returned and the member panics with the same value.
 type panicked struct{ value any }
 
 // Error is the text of the value of the panic.
 func (p *panicked) Error() string { return fmt.Sprint(p.value) }
 
-// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
+`}${!runsGo(model) ? '' : `// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
 // index, the kind and the message of an error that the member recognizes (U-3). A panic of the callback is recovered
 // here, because a panic that unwinds through the frames of the static library skips the destructors of the core, its
 // guards and its locks: it is the error of the call, whose value the member panics with again (GN-15b).
@@ -2116,7 +2135,7 @@ func (c *Call) raise(err error) (int32, []byte) {${[...model.callbacks, ...model
 	return 1, enc.Done()
 }
 
-// callOf is the call of a handle that the static library gave back.
+`}// callOf is the call of a handle that the static library gave back.
 func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*Call) }
 
 // raisedError is the error that a callback of the call returned (U-3). A panic of the callback (GN-15b) is not returned:
@@ -2135,10 +2154,10 @@ func raisedError(call, index uint64) error {${!keeps(model) ? '' : `
 	c := callOf(call)
 	if index >= uint64(len(c.raised)) {
 		return Malformed()
-	}
+	}${!makesPanicked(model) ? '' : `
 	if p, ok := c.raised[index].(*panicked); ok {
 		panic(p.value)
-	}
+	}`}
 	return c.raised[index]
 }
 
@@ -2416,6 +2435,32 @@ function valueClassImports(model: Model): string[] {
   return [...paths].map((path) => goString(path));
 }
 
+// GN-15h: whether a Go value of the call may be a *KeyedMap[any] of package binding: a type of the contract names a
+// keyed_map<T>, whose Go type the root package exports with its keys, or the decoder of a value alias makes one
+// (GN-6e). Otherwise no code outside package binding can make a KeyedMap, so describeOwn has no case of it, and the
+// KeyedMap, its Key and their methods are not written (GN-15h).
+function describesKeyedMap(model: Model): boolean {
+  if (model.aliases.length > 0) return true;
+  const named = (type: Type | undefined): boolean => {
+    if (type === undefined || typeof type === 'string') return false;
+    if ('keyed_map' in type) return true;
+    if ('tuple' in type) return type.tuple.some(named);
+    if ('function' in type) return type.function.parameters.some(named) || named(type.function.returns);
+    return (['list', 'optional', 'map'] as const).some((key) => key in type && named((type as Record<string, Type>)[key]));
+  };
+  return callablesOf(model).some((fn) => fn.params.some((p) => named(p.type)) || named(fn.returns) || named(fn.yields?.key) || named(fn.yields?.value))
+    || [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))].some((unit) => (unit.fields ?? []).some((f) => named(f.type)))
+    || [...model.callbacks, ...model.foreignCallbacks].some((cb) => cb.members.some((m) => m.params.some((p) => named(p.type)) || named(m.returns)));
+}
+
+// GN-15b, GN-15h: whether a call makes a panicked: run recovers the panic of a callback or of a func of a member with
+// machine (U-3, GN-6ae), which the export __go_callback runs, and keepRaised that of a kept func (GN-6z). Otherwise no
+// Go code of the static library runs Go code that panics, and the type is not written.
+const makesPanicked = (model: Model): boolean => runsGo(model) || keeps(model);
+
+// GN-15c: whether describeOwn has a case: a *KeyedMap[any] or a pointer to a value class without core_type.
+const describesOwn = (model: Model): boolean => describesKeyedMap(model) || keptReads(model).some((r) => r.kept !== undefined);
+
 // GN-6af, GN-15c: the description of the values of package binding itself: a *KeyedMap[any] as a map of its entries
 // in their order, and a pointer to a value class without core_type as node 11 with the kind of its in row and one
 // handle per pointer of a call, whose kept value the question read gives.
@@ -2435,13 +2480,13 @@ function goDescribeOwn(model: Model): string {
 		return true
 `;
   }).join('');
-  return `// describeOwn describes a value of a type of this package: a *KeyedMap[any] as a map of its entries in their order,
-// each key an integer, a text or a byte string${reads.length === 0 ? '' : ', and a pointer to a value class without core_type by the in row of\n// its class (GN-6af)'}.
+  const keyed = describesKeyedMap(model);
+  const own = !describesOwn(model) ? '' : `// describeOwn describes a value of a type of this package${keyed ? ': a *KeyedMap[any] as a map of its entries in their order,\n// each key an integer, a text or a byte string' : ''}${reads.length === 0 ? '' : `${keyed ? ',' : ':'} and a pointer to a value class without core_type by the in row of\n// its class (GN-6af)`}.
 func (c *Call) describeOwn(enc *Writer, value reflect.Value) bool {
 	if !value.CanInterface() {
 		return false
 	}
-	switch found := value.Interface().(type) {
+	switch found := value.Interface().(type) {${!keyed ? '' : `
 	case *KeyedMap[any]:
 		var pairs [][2]reflect.Value
 		for _, key := range found.Keys() {
@@ -2458,12 +2503,13 @@ func (c *Call) describeOwn(enc *Writer, value reflect.Value) bool {
 		enc.bytes = append(enc.bytes, 8)
 		enc.Uint(c.hold(held{entries: pairs}))
 		enc.Uint(uint64(len(pairs)))
-		return true
+		return true`}
 ${cases}	}
 	return false
 }
 
-${reads.length === 0 && rowReads(model).length === 0 ? '' : `// describeKept writes node 11: an instance of a value class without core_type, the number of the kind of its in row
+`;
+  return `${own}${reads.length === 0 && rowReads(model).length === 0 ? '' : `// describeKept writes node 11: an instance of a value class without core_type, the number of the kind of its in row
 // and the handle under which the question read gives its kept value; one pointer has one handle in a call, so the
 // core sees one object at each of its places (GN-6af, U-7 (d)).
 func (c *Call) describeKept(enc *Writer, kind byte, instance any, read func() (any, error)) {
@@ -3419,14 +3465,17 @@ export function go(model: Model, files: Files): void {
     for (const [name, text] of goTestFiles(model, module)) files.set(`${goDir(module)}/${name}`, text);
   }
   files.set(`${GO}/errors/zz_generated_errors.go`, goErrors(model));
-  files.set(`${BINDING}/zz_generated_binding.go`, goBinding(model));
+  files.set(`${BINDING}/zz_generated_binding.go`, withExportsReached(goBinding(model)));
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (passes(model)) files.set(`${BINDING}/zz_generated_passed_test.go`, goPassedTest(internalType(model)));
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
-  if (countsThrownGo(model)) files.set(`${BINDING}/zz_generated_thrown_count.go`, goBindingThrownCount(model));
+  // GN-6ae, GN-15h: ThrownCount is written only for the generated tests of the count, which run the cases of a member
+  // that takes a callback or a function type; a contract whose only Go code that the core runs is the walk of a value
+  // alias has no such test, and no other code calls ThrownCount.
+  if (countsThrownGo(model) && [...files.keys()].some((path) => /\/zz_generated_thrown_count(?:_fault)?_test\.go$/.test(path))) files.set(`${BINDING}/zz_generated_thrown_count.go`, goBindingThrownCount(model));
   const echo = echoes(model);
   if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined) || numberTypes(model).length > 0) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));

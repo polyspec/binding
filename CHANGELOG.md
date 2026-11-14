@@ -20,6 +20,15 @@
   `explicit_auto_deref`). Verified by `node --test packages/ts/tests/generate.test.ts` and
   `node --test packages/ts/tests/contract-check.test.ts`; the crates are verified by `make e2e` of sample, classes
   and consumer.
+- The Go module of a contract with a function type or a value alias failed `deadcode -test` (GN-15h): the static
+  library calls the exports of package `binding` through C, which deadcode does not see, so it reported each export and
+  each function that only an export calls, for `functions`, `relay` and `kept`. Package `binding` now names each
+  export in the initializer of a blank variable. The case of a `*KeyedMap[any]` in `describeOwn`, which kept
+  `KeyedMap`, `Key` and their constructors in a contract where no code can make one, is written only when a type names
+  a `keyed_map<T>` or the contract has a value alias, and `ThrownCount` is written only with the tests that call it.
+  The methods `host`, `run` and `raise` of `Call` are written only with the export that calls them, and the type
+  `panicked` only where `run` or a kept func makes one, because no export of `functions` or `kept` called `run`.
+  Verified by `node --test packages/ts/tests/generate.test.ts`.
 - A callback unit that no member of its contract takes still had a wrapper and a conversion in the crate of its
   owner: the end-to-end sample declares `source`, which only its class `held_source` implements and only the consumer
   takes, and its Python, Node, Go and WASM crates held `in_source` and `CbSource`, which `cargo clippy -D warnings`

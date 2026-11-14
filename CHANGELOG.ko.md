@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 3604a871c593ba557635e97dae8ad320228eda987cb203de86e32e9889897fac -->
+<!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -19,6 +20,14 @@
   이름하며(E0425), Node의 property 채우기는 `name`을 넘긴다(clippy `explicit_auto_deref`).
   `node --test packages/ts/tests/generate.test.ts`와 `node --test packages/ts/tests/contract-check.test.ts`로 확인했고,
   crate는 sample, classes, consumer의 `make e2e`로 확인한다.
+- 함수 타입이나 값 alias가 있는 계약의 Go 모듈이 `deadcode -test`(GN-15h)에서 실패했다. 정적 라이브러리는 패키지
+  `binding`의 export를 deadcode가 보지 못하는 C로 부르므로, `functions`, `relay`, `kept`에서 deadcode는 각 export와
+  export만 부르는 각 함수를 보고했다. 이제 패키지 `binding`은 각 export를 빈 변수의 initializer에 적는다. 어떤 코드도
+  `*KeyedMap[any]`를 만들 수 없는 계약에서 `KeyedMap`, `Key`와 그 생성자를 남기던 `describeOwn`의 그 case는 타입이
+  `keyed_map<T>`를 이름하거나 계약에 값 alias가 있을 때만 쓰고, `ThrownCount`는 그것을 부르는 시험과 함께일 때만 쓴다.
+  `functions`와 `kept`의 어떤 export도 `run`을 부르지 않았으므로, `Call`의 method `host`, `run`, `raise`는 그것을 부르는
+  export와 함께일 때만, 타입 `panicked`는 `run`이나 보관된 func가 그것을 만들 때만 쓴다.
+  `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과
