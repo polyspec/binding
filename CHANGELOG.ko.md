@@ -6,6 +6,30 @@
 
 ## Unreleased
 
+- 생성 Rust가 `Result::ok`와 `Result::unwrap_or`를 불렀다. 레포의 `clippy.toml`은 둘 다 오류를 그럴듯한 값으로 바꾸므로
+  금하며, 그래서 php-serialization의 PHP, Python, Node, WASM crate의 `cargo clippy -D warnings`가 시험 전에 실패했다.
+  owner와 던져진 것의 table은 lock이나 borrow를 `.ok()`로 읽었고, `handle_count`, `handle_position`과 개수 진입점은
+  `unwrap_or`로 변환했으며, 인식된 예외를 읽는 함수는 각 property를 `.ok()?`로 읽었다. 이제 각각 값을 match하거나 `?`로
+  오류를 넘기고, 아무것도 주지 않거나 고정 값을 주는 arm마다 그 이유를 주석에 적는다. 시험 진입점의 개수가 그 정수에
+  맞지 않으면 오류이며, Go와 WASM은 개수를 그대로 준다(GN-4). PHP case-test 진입점의 host는 id가 있는 object를 가진
+  case가 없을 때에도 `reserve`와 `fill`을 담았고, lint는 그것을 죽은 코드로 금한다. 이제 생성기는 그런 case가 있을 때만
+  그것을 쓴다(GN-13). Go는 case `an_integer_below_64_bits_is_refused` 때문에 모든 target의 생성을 거부했다. 그 정수
+  -9223372036854775809를 담는 Go 정수 타입이 없기 때문이다. 이제 생성 시험은 그것을 `*big.Int`로 주고, package binding은
+  그것을 다른 target이 주는 token과 같은 10진 text로 기술한다(GN-15c, G-5). package binding의 codec 시험도
+  `"testing"`을 다른 import 뒤에 두었고, `gofmt -l`이 그것을 보고했다. 검증: `make test-ts`(575 통과)에서 금지 method,
+  case-test host, `*big.Int`의 시험이 변경 전에 실패했다. `make e2e REPO=tests/e2e/sample`에서 모든 target이 통과했다.
+  php-serialization checkout의 `make e2e`에서 모든 crate의 `cargo clippy`가 이제 통과하고 Python target이 통과하며, 다른
+  target은 B2.163부터 B2.166까지의 결함으로 실패한다.
+
+- 값 alias의 U-7 시험이 kind의 행이 error unit을 적을 때에도 kind의 category 클래스를 요구했다. 그래서 kind가 모두
+  클래스 `FormatError`를 갖는 php-serialization의 각 target에서 U-7 시험 7개가, 바인딩이 그 클래스를 던졌는데도
+  실패했다. 이제 member의 시험처럼 error unit의 클래스를 요구한다(U-7, E-2). 검증: 그런 kind의 시험이 변경 전에
+  실패한 `make test-ts`, 그리고 PHP와 Python의 U-7 시험이 통과한 php-serialization checkout의 `make e2e`.
+
+- PHP가 case의 가장 작은 int, 곧 시험 소스의 `-9223372036854775808`을 float 9223372036854775808의 부정으로 읽었다.
+  그래서 php-serialization의 시험 `serialize int_min`이 `d:-9.223372036854776E+18;`을 냈다. 이제 생성 시험은
+  `\PHP_INT_MIN`을 준다(G-5). 검증: 변경 전에 실패한 `make test-ts`의 시험.
+
 - 모든 계약의 Go 패키지 `internal/binding`이 모든 타입의 도우미를 담았다. `keyed_map<T>`가 없는 계약에도 keyed-map
   도우미(`Key`, `IntKey`, `BytesKey`, `TextKey`, `Key`와 `KeyedMap`의 method, `Writer.Key`, `Reader.Key`)를 담았고,
   생성 코드가 부르지 않을 때에도 method `Writer.Bool`, `Writer.Tag`, `Writer.Bytes`, `Reader.Float`를 담았다. 모듈을

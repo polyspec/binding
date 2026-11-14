@@ -5,6 +5,35 @@
 
 ## Unreleased
 
+- The generated Rust called `Result::ok` and `Result::unwrap_or`, which the `clippy.toml` of a repository disallows
+  because each turns an error into a plausible value, so `cargo clippy -D warnings` of the PHP, Python, Node and WASM
+  crates of php-serialization failed before any test: the tables of the owners and of what was thrown read a lock or
+  a borrow with `.ok()`, `handle_count`, `handle_position` and the count entry points converted with `unwrap_or`, and
+  the readers of a recognized exception read each property with `.ok()?`. Each now matches the value or passes the
+  error with `?`, and each arm that gives nothing or a fixed value states why in a comment; a count of a test entry
+  point that does not fit its integer is an error, and Go and WASM give the count as it is (GN-4). The PHP host of
+  the case-test entry points held `reserve` and `fill` also when no case has an object with an id, which the lints
+  deny as dead code; the generator now writes them only for such a case (GN-13). Go refused the generation of every
+  target for the case `an_integer_below_64_bits_is_refused`, whose integer -9223372036854775809 has no Go integer
+  type; the generated test now gives it as a `*big.Int`, which package binding describes as its decimal text, the
+  token that the other targets give (GN-15c, G-5); the codec test of
+  package binding also ordered `"testing"` after the other imports, which `gofmt -l` reported. Verified by
+  `make test-ts` (575 passed): the tests of the disallowed methods, of the host of case-test and of the `*big.Int`
+  failed before the change; by `make e2e REPO=tests/e2e/sample`, every target passed; and by `make e2e` of the
+  php-serialization checkout, whose `cargo clippy` of every crate now passes, whose Python target passes, and whose
+  other targets fail on the defects of B2.163 to B2.166.
+
+- The U-7 tests of a value alias required the class of the category of a kind also when the row of the kind names an
+  error unit, so the 7 U-7 tests of each target of php-serialization, whose kinds all have the class `FormatError`,
+  failed although the binding raised that class. They now require the class of the error unit, as the tests of a
+  member do (U-7, E-2). Verified by `make test-ts`, whose test of such a kind failed before the change, and by
+  `make e2e` of the php-serialization checkout, in which the U-7 tests of PHP and Python pass.
+
+- PHP read the least int of a case, `-9223372036854775808` in the source of a test, as the negation of the float
+  9223372036854775808, so the test `serialize int_min` of php-serialization gave `d:-9.223372036854776E+18;`. The
+  generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
+
+
 - The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
   `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
   contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`
