@@ -102,7 +102,16 @@ fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, name), 'built');`);
   standIn(bin, 'binding', '');
   standIn(bin, 'git', `console.log('1767323045');`);
-  standIn(bin, 'uv', '');
+  // uv build runs the PEP 517 backend of maturin 1.16, which passes --compatibility off unless MATURIN_PEP517_ARGS names
+  // a compatibility, so a Linux wheel has the tag linux_<arch> (cp314-abi3-linux_x86_64 of a release run); a named
+  // manylinux policy gives manylinux_<policy>_<arch>, and macOS ignores the option (cp314-abi3-macosx_11_0_arm64).
+  standIn(bin, 'uv', `const pep517 = (process.env.MATURIN_PEP517_ARGS ?? '').split(' ');
+const named = pep517.includes('--compatibility') ? pep517[pep517.indexOf('--compatibility') + 1] : 'off';
+const host = ${JSON.stringify(host)};
+const arch = host.split('-')[0];
+const tag = host.endsWith('-apple-darwin') ? 'macosx_11_0_' + (arch === 'aarch64' ? 'arm64' : arch) : named === 'off' || named === 'linux' ? 'linux_' + arch : named + '_' + arch;
+fs.mkdirSync(option('--out-dir'), { recursive: true });
+fs.writeFileSync(path.join(option('--out-dir'), 'polyspec_sample-0.0.3-cp314-abi3-' + tag + '.whl'), 'wheel');`);
   standIn(bin, 'php', `const code = option('-r');
 if (code.includes('PHP_MAJOR_VERSION')) process.stdout.write(process.env.PHP_MINOR ?? '8.4');
 else if (code.includes('PHP_DEBUG')) process.stdout.write('-nts');`);
@@ -287,6 +296,39 @@ test('the release check and the Go module run the commands of binding on the con
   assert.equal(box.make('release-go-module', 'TAG=v0.0.3').status, 0);
   const calls = box.calls();
   assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'go')) < callIndex(calls, 'binding', 'release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3'));
+});
+
+// B2.267: the wheel that release-wheel builds on each platform is one that release-platform-assets takes, a manylinux
+// wheel on Linux, because pip and PyPI install a linux_<arch> wheel on no other system.
+test('the wheel that release-wheel builds on each platform is a wheel of that platform for release-platform-assets (GN-19c, GN-19g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  standIn(box.bin, 'gh', '');
+  const assets = join(box.root, 'var/release/assets');
+  for (const host of ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']) {
+    const built = sandbox(t, host);
+    const run = built.make('release-wheel');
+    assert.equal(run.status, 0, `${host}: ${run.output}`);
+    for (const wheel of readdirSync(join(built.root, 'var/release/assets/wheel'))) {
+      mkdirSync(join(assets, 'wheel'), { recursive: true });
+      cpSync(join(built.root, 'var/release/assets/wheel', wheel), join(assets, 'wheel', wheel));
+    }
+  }
+  const put = (path: string): void => {
+    mkdirSync(join(assets, path, '..'), { recursive: true });
+    writeFileSync(join(assets, path), '');
+  };
+  // The names that npm pack and the PHP recipe gave in a release run (json 0.0.27), for the sample at 0.0.3.
+  put('npm/polyspec-sample-0.0.3.tgz');
+  for (const platform of ['linux-x64-gnu', 'linux-arm64-gnu', 'darwin-arm64']) put(`npm/polyspec-sample-${platform}-0.0.3.tgz`);
+  for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php8.4-${pie}-nts.zip`);
+  const run = box.make('release-platform-assets', 'TAG=v0.0.3');
+  assert.equal(run.status, 0, run.output);
+  const labels = (box.calls().find((call) => call.tool === 'gh')?.args ?? []).slice(3).filter((arg) => arg.includes('/wheel/')).map((arg) => arg.slice(arg.lastIndexOf('/') + 1)).sort();
+  assert.deepEqual(labels, [
+    'polyspec_sample-0.0.3-cp314-abi3-macosx_11_0_arm64.whl#polyspec-sample-python-0.0.3-darwin-arm64',
+    'polyspec_sample-0.0.3-cp314-abi3-manylinux_2_34_aarch64.whl#polyspec-sample-python-0.0.3-linux-arm64-gnu',
+    'polyspec_sample-0.0.3-cp314-abi3-manylinux_2_34_x86_64.whl#polyspec-sample-python-0.0.3-linux-x64-gnu',
+  ]);
 });
 
 test('the assets of each platform are counted and labelled before an upload (GN-19g)', (t) => {

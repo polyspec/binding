@@ -2693,10 +2693,17 @@ the design ids are those of the binding design.
   machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
   A Linux entry also builds the library of `linux_<arch>_musl` of its arch with `--target <arch>-unknown-linux-musl`
   (GN-15g) and hands it as `linux_<arch>_musl/libpolyspec_<repository>_go.a`, so the release carries five libraries.
-- **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS=--locked SOURCE_DATE_EPOCH=<commit time of the
-  tag> uv build --wheel --python python3 --out-dir <assets> <package directory>`. maturin names the wheel with the
-  platform tag (`manylinux_*_x86_64`, `manylinux_*_aarch64`, `macosx_*_arm64`), and the wheel is abi3 (GN-1), so one
-  wheel of a platform serves every supported Python.
+- **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
+  SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
+  directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
+  `macosx_11_0_arm64`), and the wheel is abi3 (GN-1), so one wheel of a platform serves every supported Python. Why
+  the compatibility is named: the PEP 517 backend of maturin passes `--compatibility off` unless it is given one, and
+  then tags a Linux wheel `linux_<arch>`, which PyPI refuses and pip installs on no other system. Why
+  `manylinux_2_34`: Rust std links `pthread_key_create`, `pthread_key_delete` and `pthread_setspecific` at
+  `GLIBC_2.34` against the glibc of the `ubuntu-26.04` runners (GN-19a), so a library built there needs at least that
+  policy, and maturin checks the library against the policy and refuses one that needs a later symbol or a library
+  outside it. The libraries of a release run need `libc.so.6`, `libgcc_s.so.1` and `ld-linux`, and symbols up to
+  `GLIBC_2.34`. macOS ignores the option.
 - **GN-19d** The PHP extension, on each platform and PHP minor: `PHP=<php> PHP_CONFIG=<php-config> cargo build
   --release --locked -p polyspec-<repository>-php-ext`, then the cdylib is copied as `<extension-name>.so`, and the
   recipe requires that `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'` ends

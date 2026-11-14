@@ -19,6 +19,14 @@
 
 ## Unreleased
 
+- `release-wheel`은 Linux에서 policy `manylinux_2_34`의 manylinux wheel을 빌드한다(GN-19c). maturin의 PEP 517
+  backend는 compatibility를 받지 않으면 `--compatibility off`를 넘기므로 Linux runner의 wheel에 PyPI가 거부하는
+  `linux_<arch>`가 붙었고, `release-platform-assets`가 `... linux_aarch64.whl is no wheel of a platform of the
+  release`로 실패했다. Rust std는 runner의 glibc에 대해 `GLIBC_2.34`가 필요하므로 `manylinux_2_34`가 그 빌드가 맞출 수
+  있는 가장 낮은 policy이고, maturin은 라이브러리를 그 policy에 대해 검사한다. 시험의 stand-in uv는 이제 maturin처럼
+  wheel 이름을 붙인다. `node --test packages/ts/tests/release-recipes.test.ts`로 확인했고, 플랫폼마다의 wheel 시험은 변경
+  전에 그 메시지로 실패했다. (B2.267)
+
 ## 0.0.4
 
 - `release-npm`은 `npm pack --dry-run --json`의 목록을 `devEngines`가 고정한 npm의 형식, 곧 패키지 이름을 키로 하는

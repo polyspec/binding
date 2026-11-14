@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- `release-wheel` builds a manylinux wheel on Linux, for the policy `manylinux_2_34` (GN-19c). The PEP 517 backend of
+  maturin passes `--compatibility off` unless it is given one, so the wheels of the Linux runners were tagged
+  `linux_<arch>`, which PyPI refuses, and `release-platform-assets` failed with `... linux_aarch64.whl is no wheel of a
+  platform of the release`. Rust std needs `GLIBC_2.34` against the glibc of the runners, so `manylinux_2_34` is the
+  lowest policy that their builds meet, and maturin checks the library against it. The stand-in uv of the tests now
+  names the wheel as maturin does. Verified by `node --test packages/ts/tests/release-recipes.test.ts`, whose test of
+  the wheel of each platform failed before the change with that message. (B2.267)
+
 ## 0.0.4
 
 - `release-npm` reads the list of `npm pack --dry-run --json` in the form of the npm that `devEngines` pins, an

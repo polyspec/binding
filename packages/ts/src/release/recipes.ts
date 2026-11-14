@@ -11,6 +11,12 @@ import type { Contract } from '../contract.ts';
 import { componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
 
 // The steps of a release in the order that GN-19h names them; a contract has those of its targets.
+// GN-19c: the manylinux policy of a Linux wheel. The PEP 517 backend of maturin passes --compatibility off unless it is
+// given one, which tags a wheel linux_<arch>, a tag that PyPI refuses and pip installs on no other system. Rust std links
+// pthread_key_create and pthread_setspecific at GLIBC_2.34 against the glibc of the ubuntu-26.04 runners (GN-19a),
+// so manylinux_2_34 is the lowest policy that their builds meet; maturin refuses a library that needs a later symbol.
+export const MANYLINUX = 'manylinux_2_34';
+
 export const RELEASE_STEPS = ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets'] as const;
 
 export interface Recipes {
@@ -151,14 +157,15 @@ ${generate('go')}
 
   if (has('python')) {
     add('release-wheel', `${head('release-wheel', `release-wheel builds the abi3 wheel of the platform of the host (GN-19c) with the uv of the checkout: maturin builds
-with --locked, and the time of the commit of HEAD dates the files of the wheel.`)}
+with --locked and, on Linux, for the policy ${MANYLINUX}, which it checks, and the time of the commit of HEAD dates the files
+of the wheel.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('UV', 'the uv of the checkout')}
 ${generate('python')}
 	@$(call binding_release_host,${name('release-wheel')}); \\
 	set -ex; \\
 	epoch=$$(git log -1 --format=%ct HEAD); \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) MATURIN_PEP517_ARGS=--locked SOURCE_DATE_EPOCH=$$epoch $(UV) build --wheel --python python3 --out-dir $(RELEASE_ASSETS)/wheel ${base}/python
+	CARGO_TARGET_DIR=$(RELEASE_TARGET) MATURIN_PEP517_ARGS='--locked --compatibility ${MANYLINUX}' SOURCE_DATE_EPOCH=$$epoch $(UV) build --wheel --python python3 --out-dir $(RELEASE_ASSETS)/wheel ${base}/python
 `);
   }
 

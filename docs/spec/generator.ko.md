@@ -2176,10 +2176,16 @@
   `<Go 디렉터리>/libpolyspec_<repository>_go.a`로 GN-19f를 실행하는 job에 넘긴다.
   Linux 항목은 자기 arch의 `linux_<arch>_musl` 라이브러리도 `--target <arch>-unknown-linux-musl`로 빌드하고(GN-15g)
   `linux_<arch>_musl/libpolyspec_<repository>_go.a`로 넘기므로, release는 라이브러리 다섯 개를 싣는다.
-- **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS=--locked SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel
-  --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이 wheel의 이름에 platform tag(`manylinux_*_x86_64`,
-  `manylinux_*_aarch64`, `macosx_*_arm64`)를 붙이고, wheel은 abi3이므로(GN-1) 플랫폼의 wheel 하나가 지원하는 모든 Python에
-  쓰인다.
+- **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
+  SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이
+  wheel의 이름에 platform tag(`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`)를 붙이고, wheel은
+  abi3이므로(GN-1) 플랫폼의 wheel 하나가 지원하는 모든 Python에 쓰인다. compatibility를 적는 이유: maturin의 PEP 517
+  backend는 compatibility를 받지 않으면 `--compatibility off`를 넘기고, 그러면 Linux wheel에 `linux_<arch>`를 붙인다.
+  PyPI는 그 wheel을 거부하고 pip는 다른 시스템에 설치하지 않는다. `manylinux_2_34`인 이유: Rust std는 `ubuntu-26.04`
+  runner(GN-19a)의 glibc에 대해 `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`을 `GLIBC_2.34`로
+  link하므로, 거기서 빌드한 라이브러리는 적어도 그 policy가 필요하다. maturin은 라이브러리를 policy에 대해 검사하고, 더
+  나중 symbol이나 policy 밖의 라이브러리가 필요한 것은 거부한다. release 실행의 라이브러리는 `libc.so.6`,
+  `libgcc_s.so.1`, `ld-linux`와 `GLIBC_2.34`까지의 symbol을 필요로 한다. macOS는 이 option을 무시한다.
 - **GN-19d** PHP 확장, 플랫폼과 PHP minor마다: `PHP=<php> PHP_CONFIG=<php-config> cargo build --release --locked -p
   polyspec-<repository>-php-ext`, 그다음 cdylib을 `<extension-name>.so`로 복사한다. recipe는
   `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'`이 0으로 끝나는 것을 요구한
