@@ -18,7 +18,7 @@ const ALIAS_FILLS: Fill[] = [
   { name: 'Items', doc: 'An array that takes the items of a list.', type: "Array<'env>", pattern: 'OutFill::Items(array)', put: PUT_INDEXED('array'), next: 'Some(source.item(level.handle, level.index))' },
   { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: "Array<'env>", pattern: 'OutFill::Values(array)', put: PUT_INDEXED('array'), next: 'Some(source.entry(level.handle, level.index).1)' },
   { name: 'Entries', doc: 'A Map that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: "Object<'env>, Option<Unknown<'env>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('js_map_set(*map, key, value).map_err(internal)?;'), next: NEXT_ENTRY },
-  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, *name, value, true)?;' },
+  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, name, value, true)?;' },
   { name: 'Property', doc: 'GN-6ar: an instance of a class of another repository, whose writable property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Property(object, name)', put: 'object.set_named_property(*name, value).map_err(js_fail)?;' },
 ];
 

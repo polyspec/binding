@@ -20,7 +20,7 @@ const ALIAS_FILLS: Fill[] = [
   { name: 'Items', doc: 'An array that takes the items of a list.', type: 'Array', pattern: 'OutFill::Items(array)', put: PUT_INDEXED, next: 'Some(source.item(level.handle, level.index))' },
   { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: 'Array', pattern: 'OutFill::Values(array)', put: PUT_INDEXED, next: 'Some(source.entry(level.handle, level.index).1)' },
   { name: 'Entries', doc: 'A Map that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: 'js_sys::Map, Option<JsValue>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('map.set(&key, &value);'), next: NEXT_ENTRY },
-  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, *name, &value, true)?;' },
+  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, name, &value, true)?;' },
 ];
 
 // GN-6as: the make function of WASM.
