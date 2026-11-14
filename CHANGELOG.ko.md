@@ -19,6 +19,13 @@
 
 ## Unreleased
 
+- build tag 뒤의 파일만 부르는 Go 패키지 `binding`의 도우미는 그 tag 뒤의 `zz_generated_<tags>_helpers.go`에
+  쓴다(GN-15h). 도우미는 모든 생성 Go 파일의 쓰임으로 남았으므로, 실수를 받고 정수를 받지 않는 계약은
+  `polyspec_codec_test` 뒤의 codec 숫자 시험만 부르는 `Writer.Int`를 `zz_generated_binding.go`에 남겼고, tag 없는
+  `deadcode -test`가 `unreachable func: Writer.Int`를 보고했다. `node --test packages/ts/tests/generate.test.ts`로
+  확인했고, 그 tag 없는 도우미 시험은 변경 전에 `points: ... holds func (w *Writer) Float(value float64)`, 그리고 tag
+  없는 Go 코드가 그것을 부르지 않는다는 메시지로 실패했다. (B2.264)
+
 ## 0.0.3
 
 - binding은 바인딩을 가진 레포의 release recipe를 쓴다(GN-19h). `binding release-recipes`는 `packages/release.mk`

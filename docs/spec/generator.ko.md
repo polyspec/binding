@@ -1558,7 +1558,12 @@
 - **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
   `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을
-  때만 쓴다. 빠진 도우미만 쓰던 import는 그 도우미와 함께 빠진다. 생성기는 쓰임을 주석과 literal 내용을 뺀 생성 Go
+  때만 쓴다. 빠진 도우미만 쓰던 import는 그 도우미와 함께 빠진다. 쓰임은 build마다 센다. `zz_generated_binding.go`는
+  build tag 없는 Go 코드가 부르는 도우미를 담고, build tag 뒤의 파일만 부르는 도우미는 패키지 `binding`의 파일
+  `zz_generated_<tags>_helpers.go`에 그 tag들을 `||`로 이은 tag 뒤에 쓴다. 예컨대 정수가 없는 계약의 `Writer.Int`는
+  `polyspec_codec_test` 뒤의 codec 숫자 시험만 부른다. 이유: build tag 없는 deadcode나 unused lint의 실행은 tag 뒤의
+  파일을 컴파일하지 않으므로 그런 파일만 부르는 도우미는 그 실행에서 닿지 않고, build tag를 추적 파일에서 읽는 저장소의
+  lint는 추적하지 않는 생성 모듈에 그 tag 없는 실행만 돌린다. 생성기는 쓰임을 주석과 literal 내용을 뺀 생성 Go
   코드에서 읽고, 남는 도우미가 다른 도우미를 부를 수 있으므로 더 남는 도우미가 없을 때까지 되풀이한다. 생성 코드는
   `Writer`의 method를 `enc`, `tenc`, `w`라는 이름의 값으로만, `Reader`의 method를 `dec`, `r`, `properties`라는 이름의
   값으로만 부른다. 다른 값으로 같은 이름을 부르는 것은 다른 타입의 method, 예컨대 계약의 class의 member(`made0.Key`)나

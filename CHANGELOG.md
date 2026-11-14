@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A helper of the Go package `binding` that only files behind a build tag call is written behind those tags, in
+  `zz_generated_<tags>_helpers.go` (GN-15h). The helpers were kept by the uses in every generated Go file, so a
+  contract that takes a float and no integer kept `Writer.Int`, which only the number test of the codec behind
+  `polyspec_codec_test` calls, in `zz_generated_binding.go`, and `deadcode -test` without a tag reported
+  `unreachable func: Writer.Int`. Verified by `node --test packages/ts/tests/generate.test.ts`, whose test of the
+  untagged helpers failed before the change with `points: ... holds func (w *Writer) Float(value float64)` and no
+  untagged Go code calls it. (B2.264)
+
 ## 0.0.3
 
 - binding writes the release recipes of a repository that holds a binding (GN-19h): `binding release-recipes` writes

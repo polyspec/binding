@@ -1904,7 +1904,13 @@ the design ids are those of the binding design.
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
   and its methods, and the type `KeyedMap` with its methods, only when that code names them; an import that only a
-  dropped helper used is dropped with it. The generator reads the uses from the generated Go code without its comments
+  dropped helper used is dropped with it. The uses are counted per build: `zz_generated_binding.go` holds the helpers
+  that the Go code without a build tag calls, and a helper that only the files behind build tags call, such as
+  `Writer.Int` in a contract without an integer, whose only caller is the number test of the codec behind
+  `polyspec_codec_test`, is written in the file `zz_generated_<tags>_helpers.go` of package `binding` behind those tags
+  joined by `||`. Why: a run of deadcode or of the unused lint without a build tag compiles no file behind a tag, so a
+  helper that only such a file calls is unreachable in it, and a repository whose lint takes its build tags from its
+  tracked files runs only that untagged run on the generated module, whose files it does not track. The generator reads the uses from the generated Go code without its comments
   and the contents of its literals, and repeats until no further helper is kept, because a kept helper may call
   another. The generated code calls a method of a `Writer` only through a value named `enc`, `tenc` or `w` and a
   method of a `Reader` only through a value named `dec`, `r` or `properties`; a call of the same name through another

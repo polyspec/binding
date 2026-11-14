@@ -599,6 +599,52 @@ test('the Go package binding holds the keyed-map helpers that a keyed_map<T> of 
   assert.match(returned, /^type KeyedMap\[T any\] struct/m);
 });
 
+// GN-15h: a deadcode or unused lint that runs without a build tag reaches no code of a file behind a tag, so each
+// helper that package binding holds untagged is called by the untagged Go code of the generation, and a helper that
+// only the files of build tags call is written in a file behind those tags.
+test('each helper of the untagged Go package binding is called by untagged Go code, and a helper that only tagged files call is behind their tags (GN-15h)', () => {
+  const read = (name: string, path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+  const tagOf = (source: string): string | undefined => /^\/\/go:build (polyspec_\w+(?: \|\| polyspec_\w+)*)$/m.exec(source)?.[1];
+  const helperOf = (line: string): string | undefined => /^func \((?:w \*Writer|r \*Reader)\) ([A-Z]\w*)\(/.exec(line)?.[1];
+  const check = (label: string, out: Map<string, string | Buffer>): void => {
+    const go = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([path, t]) => [path, String(t)] as const);
+    const untagged = go.filter(([, t]) => tagOf(t) === undefined);
+    const uses = untagged.map(([, t]) => t.replace(/\/\/[^\n]*/g, '')).join('\n');
+    for (const [path, source] of untagged) {
+      for (const line of source.split('\n')) {
+        const method = helperOf(line);
+        if (method === undefined || method === 'Done' || method === 'Finish') continue;
+        const names = line.startsWith('func (w') ? '(?:enc|tenc|w)' : '(?:dec|r|properties)';
+        assert.ok(new RegExp(`\\b${names}\\.${method}\\(`).test(uses), `${label}: ${path} holds ${line.slice(0, 40)} and no untagged Go code calls it`);
+      }
+    }
+    // Each method that a tagged file calls is declared in a file that the same build compiles.
+    for (const [path, source] of go.filter(([, t]) => tagOf(t) !== undefined)) {
+      const tags = (tagOf(source) ?? '').split(' || ');
+      const code = source.replace(/\/\/[^\n]*/g, '');
+      for (const [, receiver, method] of code.matchAll(/\b(enc|tenc|dec)\.([A-Z]\w*)\(/g)) {
+        const type = receiver === 'dec' ? 'r \\*Reader' : 'w \\*Writer';
+        const declared = go.some(([, t]) => {
+          const at = tagOf(t);
+          return (at === undefined || tags.every((tag) => at.split(' || ').includes(tag))) && new RegExp(`^func \\(${type}\\) ${method ?? ''}\\(`, 'm').test(t);
+        });
+        assert.ok(declared, `${label}: ${path} calls ${receiver ?? ''}.${method ?? ''}, which no file of its build declares`);
+      }
+    }
+  };
+  for (const name of ['classes', 'functions', 'kept', 'points', 'shapes', 'variants']) {
+    check(name, generate({ contract: read(name, 'packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read(name, 'contracts/cases.json')]]), targets: ['go'] as Inputs['targets'] & string[] }));
+  }
+  // A contract that takes a float and no integer, whose number test of the codec alone encodes an integer.
+  const contract = goContract();
+  const member = contract.units[0].members[0];
+  member.parameters = [{ ...member.parameters[0], type: 'float' }];
+  member.returns = 'float';
+  const floats = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  assert.match(text(floats, 'packages/go/internal/binding/zz_generated_codec.go'), /\benc\.Int\(/);
+  check('float', floats);
+});
+
 test('the Go package binding names each export in a blank variable, describes a KeyedMap only where one can be made, and writes ThrownCount only with its tests (GN-15h, GN-6ae)', () => {
   const e2e = (name: string): Map<string, string | Buffer> => {
     const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));

@@ -1212,6 +1212,12 @@ func make${name}(base *${categoryType(model, unit.category)}, r *Reader) *${name
 // the generated code calls a method of a Writer only through a value named enc, tenc or w and a method of a Reader
 // only through a value named dec, r or properties. A call through another name is a method of another type, such as
 // a member of a class of the contract (made0.Key) or of a reflect.Value (v.Float), and no use of a helper.
+//
+// The uses are counted per build: a lint that runs without a build tag compiles no file behind a tag, such as the
+// codec tests behind polyspec_codec_test, so a helper that only such files call is unreachable in that run. The
+// untagged code keeps the helpers of zz_generated_binding.go; a helper that only the files of some build tags call is
+// written in a file of package binding behind those tags, zz_generated_<tags>_helpers.go, which every build that
+// compiles one of those files compiles.
 
 interface GoHelper {
   name: string;
@@ -1473,7 +1479,7 @@ const helperMark = (name: string): string => `\u0000${name}\u0000`;
 const HELPER_MARK = /\u0000([^\u0000]*)\u0000/g;
 const goHelpers = (helpers: GoHelper[]): string => helpers.map((h) => helperMark(h.name)).join('');
 // The imports of package binding that only a helper may use, each with the selector that uses it.
-const HELPER_IMPORTS = [{ line: '\t"math"\n', selector: /\bmath\./ }];
+const HELPER_IMPORTS = [{ line: '\t"encoding/binary"\n', selector: /\bbinary\./ }, { line: '\t"math"\n', selector: /\bmath\./ }];
 
 // Go source without its comments and with its literals empty, for the uses of a helper.
 export function goCode(source: string): string {
@@ -1509,24 +1515,59 @@ export function goCode(source: string): string {
 // GN-15h: writes the helpers of package binding that the Go code of the files uses, and drops the others with the
 // imports that only they used.
 function keepGoHelpers(files: Files, path: string): void {
-  const binding = files.get(path) ?? '';
-  const others = [...files].filter(([p]) => p !== path && p.endsWith('.go')).map(([, text]) => text);
-  const base = goCode([binding.replace(HELPER_MARK, ''), ...others].join('\n'));
-  const kept = new Set<string>();
-  let code = base;
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const [name, helper] of GO_HELPERS) {
-      if (kept.has(name) || !helper.kept(code)) continue;
-      kept.add(name);
-      code += `\n${goCode(helper.text)}`;
-      grew = true;
+  const binding = String(files.get(path) ?? '');
+  // The build tag of a file that a build compiles only with one tag of the generation (polyspec_<name>_test).
+  const tagOf = (text: string): string | undefined => /^\/\/go:build (polyspec_\w+)$/m.exec(text)?.[1];
+  const others = [...files].filter(([p]) => p !== path && p.endsWith('.go')).map(([, text]) => String(text));
+  // The helpers that `code` uses, with those that the helpers of `from` and the ones it adds use.
+  const closure = (code: string, from: ReadonlySet<string>): Set<string> => {
+    const kept = new Set(from);
+    let all = code + [...from].map((name) => `\n${goCode(GO_HELPERS.get(name)?.text ?? '')}`).join('');
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const [name, helper] of GO_HELPERS) {
+        if (kept.has(name) || !helper.kept(all)) continue;
+        kept.add(name);
+        all += `\n${goCode(helper.text)}`;
+        grew = true;
+      }
     }
+    return kept;
+  };
+  const base = goCode([binding.replace(HELPER_MARK, ''), ...others.filter((t) => tagOf(t) === undefined)].join('\n'));
+  const kept = closure(base, new Set());
+  // Each helper that only tagged files use, with the tags of the builds that use it.
+  const tagged = new Map<string, string[]>();
+  for (const tag of [...new Set(others.map(tagOf).filter((t) => t !== undefined))].sort()) {
+    const code = goCode(others.filter((t) => tagOf(t) === tag).join('\n'));
+    for (const name of closure(`${base}\n${code}`, kept)) if (!kept.has(name)) tagged.set(name, [...(tagged.get(name) ?? []), tag]);
   }
-  let text = binding.replace(HELPER_MARK, (_, name: string) => (kept.has(name) ? (GO_HELPERS.get(name)?.text ?? '') : ''));
-  const used = goCode(text);
-  for (const { line, selector } of HELPER_IMPORTS) if (!selector.test(used)) text = text.replace(line, '');
-  files.set(path, text);
+  const withImports = (text: string): string => {
+    let out = text;
+    const used = goCode(out);
+    for (const { line, selector } of HELPER_IMPORTS) if (!selector.test(used)) out = out.replace(line, '');
+    return out;
+  };
+  files.set(path, withImports(binding.replace(HELPER_MARK, (_, name: string) => (kept.has(name) ? (GO_HELPERS.get(name)?.text ?? '') : ''))));
+  const groups = new Map<string, string[]>();
+  for (const [name] of GO_HELPERS) {
+    const tags = tagged.get(name);
+    if (tags !== undefined) groups.set(tags.join(' || '), [...(groups.get(tags.join(' || ')) ?? []), name]);
+  }
+  for (const [constraint, names] of groups) {
+    const label = constraint.split(' || ').map((tag) => tag.replace(/^polyspec_/, '').replace(/_test$/, '')).join('_');
+    const text = names.map((name) => GO_HELPERS.get(name)?.text ?? '').join('');
+    const imports = HELPER_IMPORTS.filter(({ selector }) => selector.test(goCode(text))).map(({ line }) => line);
+    files.set(`${path.slice(0, path.lastIndexOf('/'))}/zz_generated_${label}_helpers.go`, `${goHeader()}
+
+//go:build ${constraint}
+
+package binding
+${imports.length === 0 ? '' : `
+import (
+${imports.join('')})
+`}${text}`);
+  }
 }
 
 // GN-15h: the static library calls each export of package binding (//export <prefix>__go_<name>) through C, which
