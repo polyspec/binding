@@ -6,6 +6,32 @@
 
 ## Unreleased
 
+- out 행 `bytes`가 UTF-8이 아닌 byte string을 `Uint8Array`로 주는데도 Node와 WASM은 `Uint8Array`를 B-1의 집합 밖
+  값으로 기술했다. 그래서 php-serialization의 그런 값의 왕복(Node 시험 264개와 WASM 시험 264개)이 PHP의 값이 아니라고
+  거부되었다. 이제 Node와 WASM은 `Uint8Array`를 bytes로, 다른 typed array를 집합 밖의 값으로 기술한다(B-1, U-7,
+  GN-18b). describe는 `Uint8Array`를 crate의 import 이름으로 적으므로, 그것을 import하는 crate의 import 검사가 통과한다.
+
+- Go의 GN-13e 시험의 기대 결과를 alias out 행의 Go 형태가 아니라 case의 kind로 썼다. 그래서 php-serialization의 Go
+  시험 267개가 실패했다. 행이 `string`으로 만드는 빈 UTF-8 byte string을 `[]byte{}`로, 행이 `[]any`로 만드는 sequence
+  key의 map을 map으로 기대했고, 반복된 객체의 key를 포함해 keyed map의 key를 case의 kind로 기대했다. 이제 생성기는
+  기대 결과를 행의 Go 형태로 쓴다. 행이 `text`로 만드는 byte string은 `string`, 행이 `list`로 만드는 map은 `[]any`,
+  행이 `keyed_map`으로 만드는 map은 `*KeyedMap[any]`이며, key는 그 keyed map이 text를 받고 그 bytes가 UTF-8일 때만
+  text다(GN-13e).
+
+- Node와 WASM은 case의 정수 값 float를 숫자로 주었고, binding은 그것을 int로 기술한다. 그래서 php-serialization의
+  시험 `serialize float_1e15`가 `d:` 대신 `i:`를 냈다. 이제 alias의 out 행이 값 class의 인스턴스
+  (`php_float.constructor`)로 만드는 float case 값은 그 인스턴스다(GN-13).
+
+- Go는 모든 결과를 `reflect.DeepEqual`로 비교했는데, 이것은 NaN을 자기 자신과 다르다고 본다. 그래서
+  php-serialization의 시험 `unserialize float_nan`이 실패했다. 이제 case가 NaN을 담은 결과는 시험 파일의 `sameValue`로
+  비교한다. 이것은 NaN이 NaN과 같다는 점만 `reflect.DeepEqual`과 다르다(GN-13e). Go는 case의 음의 0을 Go 상수 0인
+  `-0`으로 썼으므로 `serialize float_negative_zero`가 `d:-0;` 대신 `d:0;`을 냈다. 이제 그것은
+  `math.Copysign(0, -1)`이다(G-5, GN-13).
+
+- member가 주는 UTF-16 단위를 읽는 PHP reader가 `Some(Err(_wide)) | None`과 일치시켰다. 이 or-pattern은 한 갈래에서만
+  `_wide`를 묶으므로, relay의 PHP crate의 `cargo clippy`가 E0408로 실패했다. 이제 reader는 단위마다 `Result`를 주고
+  그것들을 하나로 모은다(GN-6x).
+
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
   `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이
