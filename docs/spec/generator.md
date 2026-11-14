@@ -1937,7 +1937,8 @@ the design ids are those of the binding design.
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes. A value of the language that is no value of the value type is `{"host": <sort>}`
+  the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
+  `-9223372036854775808` as the negation of a float. A value of the language that is no value of the value type is `{"host": <sort>}`
   of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
   `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
   `datetime.date(1970, 1, 1)`, which the test imports, Node and WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`,
