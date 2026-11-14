@@ -995,22 +995,35 @@ ${recognizing}`;
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
 fn recognized_kind(value: &JsValue, classes: &[usize]) -> Option<(String, String)> {
-    if !value.is_object() {
+    // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
+    // thrown.
+    let Ok(found) = read_recognized_kind(value, classes) else {
         return None;
+    };
+    found
+}
+/// U-3: what recognized_kind gives, or the JavaScript error that reading the exception met.
+fn read_recognized_kind(value: &JsValue, classes: &[usize]) -> Result<Option<(String, String)>, JsValue> {
+    if !value.is_object() {
+        return Ok(None);
     }
     for index in classes {
-        let prototype = CLASSES.with(|registered| registered.borrow().get(*index).map(|class| Reflect::get(class, &JsValue::from_str("prototype"))))?.ok()?;
+        let Some(prototype) = CLASSES.with(|registered| registered.borrow().get(*index).map(|class| Reflect::get(class, &JsValue::from_str("prototype")))) else {
+            return Ok(None);
+        };
+        let prototype = prototype?;
         let mut current = Object::get_prototype_of(value);
         while !current.is_null() {
             if Object::is(&current, &prototype) {
-                let kind = Reflect::get(value, &JsValue::from_str("kind")).ok()?.as_string()?;
-                let message = Reflect::get(value, &JsValue::from_str("message")).ok()?.as_string()?;
-                return Some((kind, message));
+                let (Some(kind), Some(message)) = (Reflect::get(value, &JsValue::from_str("kind"))?.as_string(), Reflect::get(value, &JsValue::from_str("message"))?.as_string()) else {
+                    return Ok(None);
+                };
+                return Ok(Some((kind, message)));
             }
             current = Object::get_prototype_of(&current);
         }
     }
-    None
+    Ok(None)
 }
 `;
 
@@ -1045,7 +1058,11 @@ impl binding_core::NativeObject for ThrownKey {}
 
 impl Drop for ThrownKey {
     fn drop(&mut self) {
-        let taken = THROWN.try_with(|map| map.try_borrow_mut().ok().and_then(|mut map| map.remove(&self.key)));
+        let taken = THROWN.try_with(|map| match map.try_borrow_mut() {
+            Ok(mut map) => map.remove(&self.key),
+            // A table that is borrowed at this drop keeps the object; no Raised names its key again.
+            Err(_borrowed) => None,
+        });
         drop(taken);
     }
 }
@@ -1386,18 +1403,16 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
 `}${nativeRoundTrip(model.contract, 'wasm') === undefined ? '' : `    /// GN-6u: the entry point of the generated release test: the count of the values that the table of Natives holds.
     #[cfg(feature = "native-count-test")]
     #[wasm_bindgen(js_name = "__nativeCount")]
-    pub fn native_count() -> u32 {
-        let count = NATIVE.with_borrow(|native| native.values.len());
-        u32::try_from(count).unwrap_or(u32::MAX)
+    pub fn native_count() -> usize {
+        NATIVE.with_borrow(|native| native.values.len())
     }
 
 `}${!countsThrown(model.contract, model.foreign) || !carriesThrown(model) ? '' : `    /// GN-6ae: the entry point of the generated tests of the cases that call JavaScript code: the count of what the table
     /// of what was thrown keeps.
     #[cfg(feature = "thrown-count-test")]
     #[wasm_bindgen(js_name = "__thrownCount")]
-    pub fn thrown_count() -> u32 {
-        let count = THROWN.with_borrow(|map| map.len());
-        u32::try_from(count).unwrap_or(u32::MAX)
+    pub fn thrown_count() -> usize {
+        THROWN.with_borrow(|map| map.len())
     }
 
 `}    /// B-7: the entry point of the generated panic test.

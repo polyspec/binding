@@ -234,7 +234,7 @@ test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
       if (refusedValue !== undefined) {
         out.push(`
 test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${cls(refusedValue.kase.category)} && error.kind === ${jsString(refusedValue.kase.kind)});
+  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${exactClass(refusedValue.kase)} && error.kind === ${jsString(refusedValue.kase.kind)});
 });`);
       }
       const text = textKind(arg.type);
@@ -446,7 +446,7 @@ test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the
     out.push(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   const glue = await glueModule();
-  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
+  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.

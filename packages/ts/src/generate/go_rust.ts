@@ -1728,7 +1728,7 @@ function testEntries(model: Model): string {
     out.push(entry(model, `${p}__native_count`, 'GN-6u: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
   }
   if (countsThrownGo(model)) {
-    out.push(entry(model, `${p}__thrown_count`, 'GN-6ae: the entry point of the generated tests of the cases that call Go code: the count of what the table of what was thrown keeps.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, u64::try_from(lock(&THROWN).len()).unwrap_or(u64::MAX));', '        Ok(output)'], 'thrown-count-test'));
+    out.push(entry(model, `${p}__thrown_count`, 'GN-6ae: the entry point of the generated tests of the cases that call Go code: the count of what the table of what was thrown keeps.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, lock(&THROWN).len());', '        Ok(output)'], 'thrown-count-test'));
   }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
   const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));

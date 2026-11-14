@@ -6552,7 +6552,7 @@ test('a Raised of the Node and WASM crates is released by its last drop, and no 
   for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     assert.match(lib, /impl binding_core::NativeObject for ThrownKey \{\}/, path);
-    assert.match(lib, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n[\s\S]*?THROWN\.try_with\(\|map\| map\.try_borrow_mut\(\)\.ok\(\)\.(?:map|and_then)\(\|mut map\| map\.remove\(&self\.key\)\)\);/, path);
+    assert.match(lib, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n[\s\S]*?THROWN\.try_with\(\|map\| match map\.try_borrow_mut\(\) \{\n\s+Ok\(mut map\) => (?:Some\()?map\.remove\(&self\.key\)\)?,\n\s+\/\/ [^\n]*\n\s+Err\(_borrowed\) => None,\n\s+\}\);/, path);
     assert.match(lib, /binding_core::Raised::from_generated\(binding_core::Native::new\(ThrownKey \{ (?:thread: thrown_thread\(\), )?key \}\)\)/, path);
     // The closure of a function of a machine makes its Raised by the same function as a callback does.
     assert.match(lib, /fn thrown(?:<E>)?\(error: Thrown\) -> binding_core::Failure<[^>]+> \{\n {4}binding_core::Failure::Raised\((?:keep_thrown|raised)\(error\)\)\n\}/, path);
@@ -6575,7 +6575,7 @@ test('a Raised of the PHP, Python and Go crates is released by its last drop, on
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   const python = text(out, 'packages/python/generated/lib.rs');
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(php, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}if thrown_thread\(\) == self\.thread \{\n {12}let removed = THROWN\.try_with\(\|map\| map\.try_borrow_mut\(\)\.ok\(\)\.map\(\|mut map\| map\.remove\(&self\.key\)\)\);/);
+  assert.match(php, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}if thrown_thread\(\) == self\.thread \{\n {12}let removed = THROWN\.try_with\(\|map\| match map\.try_borrow_mut\(\) \{\n {16}Ok\(mut map\) => Some\(map\.remove\(&self\.key\)\),/);
   assert.match(php, /fn keep_thrown\(error: Thrown\) -> binding_core::Raised \{\n {4}release_dropped\(\);\n {4}let key = NEXT_THROWN\.fetch_add\(1, Ordering::Relaxed\);\n {4}THROWN\.with_borrow_mut\(\|map\| map\.insert\(key, error\)\);\n {4}binding_core::Raised::from_generated\(binding_core::Native::new\(ThrownKey \{ thread: thrown_thread\(\), key \}\)\)\n\}/);
   assert.match(python, /static THROWN: Mutex<BTreeMap<u64, Py<PyAny>>> = Mutex::new\(BTreeMap::new\(\)\);/);
   assert.match(python, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = thrown_map\(\)\.remove\(&self\.key\);\n {8}drop\(taken\);\n {4}\}\n\}/);
@@ -7319,15 +7319,137 @@ test('the number of the thread of a thrown object is read without a match that c
   }
 });
 
-test('the count and the position of a handle are read by Result::unwrap_or, which R-1 allows, without an allow of manual_unwrap_or (GN-6u, R-1)', () => {
+test('the count and the position of a handle convert with let-else, whose else arm states why it gives the largest value, without an allow of manual_unwrap_or (GN-6u, GN-4, R-1)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
-    assert.ok(lib.includes('fn handle_count(value: usize) -> u64 {\n    u64::try_from(value).unwrap_or(u64::MAX)\n}'), path);
+    assert.match(lib, /fn handle_count\(value: usize\) -> u64 \{\n {4}\/\/ GN-6ac: [^\n]*\n {4}const _: \(\) = assert!\(usize::BITS <= u64::BITS\);\n {4}let Ok\(count\) = u64::try_from\(value\) else \{\n {8}return u64::MAX;\n {4}\};\n {4}count\n\}/, path);
     // A crate keeps the helper of the position only where its host reads a position.
-    if (lib.includes('fn handle_position(')) assert.ok(lib.includes('fn handle_position(value: u64) -> usize {\n    usize::try_from(value).unwrap_or(usize::MAX)\n}'), path);
+    if (lib.includes('fn handle_position(')) assert.match(lib, /fn handle_position\(value: u64\) -> usize \{\n(?: {4}\/\/ [^\n]*\n)+ {4}let Ok\(position\) = usize::try_from\(value\) else \{\n {8}return usize::MAX;\n {4}\};\n {4}position\n\}/, path);
     assert.doesNotMatch(lib, /clippy::manual_unwrap_or\b(?!_)/, path);
   }
+});
+
+// GN-4, R-1: the methods that the clippy.toml of a repository disallows, because each turns an error or an absence into
+// a plausible value; generated code matches the Result or the Option instead.
+const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
+
+test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option (GN-4, R-1)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const own = (library: string): Map<string, string | Buffer> =>
+    generate({ contract: read(`${library}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${library}`, caseFiles: new Map([['contracts/cases.json', read(`${library}/contracts/cases.json`)]]) });
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    fixture: () => generate({ ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }),
+    sample: () => sampleWith(() => undefined),
+    scoped: () => scopedSample(['php', 'python', 'node', 'wasm', 'go']),
+    shapes: () => shaped(),
+    variants: () => variants(),
+    classes: () => own('classes'),
+    functions: () => own('functions'),
+    points: () => own('points'),
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    plot: () => generate({ ...plotSample(), version: '0.0.0', coreLib: 'polyspec_plot' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const [name, make] of Object.entries(inputs)) {
+    const out = make();
+    for (const path of [...out.keys()].filter((p) => p.endsWith('.rs'))) {
+      text(out, path).split('\n').forEach((line, i) => {
+        const code = line.replace(/\/\/.*$/, '');
+        if (DISALLOWED.test(code)) found.push(`${name} ${path}:${String(i + 1)}: ${line.trim()}`);
+      });
+      for (const helper of ['handle_count', 'handle_position', 'native_owner', 'release_queue', 'clean_up_native', 'release_dropped', 'kind_of_recognized', 'recognized_kind', 'thrown_count', 'native_count', 'php_units', 'js_native']) {
+        if (new RegExp(`\\bfn ${helper}\\b`).test(text(out, path))) seen.add(helper);
+      }
+    }
+  }
+  // The check read every helper that called such a method.
+  assert.deepEqual([...seen].sort(), ['clean_up_native', 'handle_count', 'handle_position', 'js_native', 'kind_of_recognized', 'native_count', 'native_owner', 'php_units', 'recognized_kind', 'release_dropped', 'release_queue', 'thrown_count']);
+  assert.deepEqual(found, []);
+});
+
+test('a lock or a table that cannot be taken is matched, and each arm that gives nothing states why (GN-6u, U-3, GN-4)', () => {
+  const lib = text(generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }), 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, /fn native_owner\(\) -> Option<\(usize, u64\)> \{\n {4}\/\/ A poisoned table of the owners gives no owner, which the caller reports as kind internal\.\n {4}let Ok\(mut owners\) = OWNERS\.lock\(\) else \{\n {8}return None;\n {4}\};/);
+  assert.match(lib, /let keys = match OWNERS\.lock\(\) \{\n {8}Ok\(mut owners\) => match owners\.get_mut\(owner\) \{\n {12}Some\(owner\) => std::mem::take\(&mut owner\.released\),\n {12}None => return,\n {8}\},\n {8}\/\/ [^\n]*\n {8}Err\(_poisoned\) => return,\n {4}\};/);
+  // A thrown object whose table is borrowed at its drop still goes to DROPPED, as before.
+  assert.match(lib, /let removed = THROWN\.try_with\(\|map\| match map\.try_borrow_mut\(\) \{\n {16}Ok\(mut map\) => Some\(map\.remove\(&self\.key\)\),\n {16}\/\/ [^\n]*DROPPED[^\n]*\n {16}Err\(_borrowed\) => None,\n {12}\}\);\n {12}if let Ok\(Some\(taken\)\) = removed \{/);
+});
+
+test('the PHP host of the case-test entry points has reserve and fill only when a case has an object with an id (GN-13, GN-4)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'null', node: 'null', go: 'null', wasm: 'null' } });
+  const one = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
+  const libOf = (extra: unknown[]): string => {
+    const cases = sampleCases();
+    (cases.get('contracts/cases.json') as Record<string, unknown[]>)['echo']?.push(...extra);
+    return text(generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  };
+  const plain = libOf([{ id: 'a_top_reference', value: one }]);
+  assert.match(plain, /struct CaseHost \{/);
+  assert.doesNotMatch(plain, /fn reserve\(|fn fill\(/);
+  // A reference to an object with an id has no PHP form, so its case reaches case-test with the object reserved.
+  const object = { kind: 'object', id: 1, value: [['a', { kind: 'int', value: 1 }]] };
+  const withObject = libOf([{ id: 'a_top_reference_to_an_object', value: { kind: 'reference', value: { id: 0, value: object } } }]);
+  assert.match(withObject, /let object_1 = host\.reserve\(\);/);
+  assert.match(withObject, /fn reserve\(&mut self\) -> Handle \{/);
+  assert.match(withObject, /host\.fill\(object_1, entries\);/);
+  assert.match(withObject, /fn fill\(&mut self, handle: Handle, entries: Vec<\(HostValue, HostValue\)>\) \{/);
+});
+
+test('a U-7 test of a kind of a value alias whose row names an error unit requires the class of that unit, in every target (U-7, E-2, B-4)', () => {
+  const out = sampleWith((c) => { c.errors.kinds.find((k: any) => k.variant === 'polyspec_sample::Error::Unsupported').class = 'refused_error'; });
+  const php = text(out, phpTests);
+  assert.match(php, /public function testU7DataInBytesThatAreNoTextAreNotData\(\): void\n {4}\{\n(?: {8}[^\n]*\n)*? {12}self::assertSame\(\\Polyspec\\Sample\\RefusedError::class, \$error::class\);/);
+  assert.match(php, /GivesTheKindOfData\(\): void\n {4}\{\n(?: {8}[^\n]*\n)*? {12}self::assertSame\(\\Polyspec\\Sample\\RefusedError::class, \$error::class\);/);
+  const python = text(out, pythonTests);
+  assert.match(python, /def test_u7_data_in_bytes_that_are_no_text_are_not_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
+  assert.match(python, /_gives_the_kind_of_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
+  for (const js of [text(out, nodeTests), text(sampleWith((c) => { c.errors.kinds.find((k: any) => k.variant === 'polyspec_sample::Error::Unsupported').class = 'refused_error'; }, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
+    assert.match(js, /__aliasInData\([^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
+    assert.match(js, /gives the kind of data in [^\n]*\n[^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
+    assert.doesNotMatch(js, /\(error\) => error\.constructor === pkg\.SampleValueError && error\.kind === 'unsupported'/);
+  }
+  const codec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(codec, /if failure, ok := err\.\(\*RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /if failure, ok := err\.\(\*liberrors\.RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{\n\t+t\.Fatalf\("U-7: /);
+});
+
+test('PHP gives the least int of a case as PHP_INT_MIN, because PHP reads -9223372036854775808 as the negation of a float (G-5, T-1)', () => {
+  const raises = { kind: 'unsupported', status: null, category: 'value' };
+  const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'the_least_int', value: { kind: 'int', value: '-9223372036854775808' }, raises }, { id: 'the_largest_int', value: { kind: 'int', value: '9223372036854775807' }, raises }); }, ['php']);
+  const php = text(out, phpTests);
+  assert.match(php, /Internal\\aliasInData\(\\PHP_INT_MIN\);/);
+  assert.match(php, /Internal\\aliasInData\(9223372036854775807\);/);
+  assert.doesNotMatch(php, /-9223372036854775808\)/);
+});
+
+test('the walk of Node and WASM passes the name of a property of a value class without an explicit deref, which clippy names explicit_auto_deref (GN-6as, GN-6af, R-1)', () => {
+  const out = e2eOwn('kept');
+  for (const [path, line] of [['packages/ts/generated/lib.rs', 'value_define(instance, name, value, true)?;'], ['packages/ts/wasm/generated/lib.rs', 'value_define(instance, name, &value, true)?;']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, /OutFill::Defined\(instance, name\) =>/, path);
+    assert.ok(lib.includes(line), path);
+    assert.doesNotMatch(lib, /value_define\(instance, \*name/, path);
+  }
+});
+
+test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {
+  const raises = { kind: 'unsupported', status: null, category: 'value' };
+  const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
+  const codec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(codec, /^\t"math\/big"$/m);
+  // gofmt orders the imports of a block by their path, "testing" among them.
+  const imports = (/\nimport \(\n((?:\t"[^"]+"\n)+)\)/.exec(codec)?.[1] ?? '').split('\n').filter((line) => line !== '');
+  assert.ok(imports.includes('\t"testing"'), codec);
+  assert.deepEqual(imports, [...imports].sort());
+  assert.match(codec, /\t(number\d*) := new\(big\.Int\)\n\tif _, parsed := \1\.SetString\("-9223372036854775809", 10\); !parsed \{\n\t\tpanic\("G-5: -9223372036854775809 is no decimal integer"\)\n\t\}\n(?:\t[^\n]*\n)*?\terr := AliasInData\(\1\)/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /^\t"math\/big"$/m);
+  assert.match(binding, /if number, isBig := value\.Interface\(\)\.\(\*big\.Int\); isBig && number != nil \{\n\t\t\tif number\.IsInt64\(\) \{\n\t\t\t\tenc\.bytes = append\(enc\.bytes, 2\)\n\t\t\t\tenc\.Int\(number\.Int64\(\)\)\n\t\t\t\} else \{\n\t\t\t\tenc\.bytes = append\(enc\.bytes, 3\)\n\t\t\t\tenc\.Text\(number\.String\(\)\)/);
 });
 
 test('the Python crate declares the cfg pyo3_disable_reference_pool that its generated code reads, in its build script (GN-6u)', () => {
@@ -7719,17 +7841,17 @@ const THROWN_COUNT_CRATES = [
 test('a crate that keeps what was thrown has the entry point of thrown-count-test, which gives the count of the table (GN-5, GN-6ae)', () => {
   const out = scopedSample(['php', 'python', 'node', 'go', 'wasm']);
   // Node and PHP remove the keys that a drop on another thread queued, and then count the table of the thread.
-  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[napi\(js_name = "__thrownCount"\)\]\npub fn thrown_count\(\) -> u32 \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}u32::try_from\(count\)\.unwrap_or\(u32::MAX\)\n\}/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[napi\(js_name = "__thrownCount"\)\]\npub fn thrown_count\(\) -> napi::Result<u32> \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}u32::try_from\(count\)\.map_err\(\|_wide\| napi::Error::from_reason\(format!\("GN-6ae: the count \{count\} is beyond a u32"\)\)\)\n\}/);
   const php = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(php, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\thrownCount"\)\]\npub fn thrown_count\(\) -> i64 \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}i64::try_from\(count\)\.unwrap_or\(i64::MAX\)\n\}/);
+  assert.match(php, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\thrownCount"\)\]\npub fn thrown_count\(\) -> Result<i64, PhpException> \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}i64::try_from\(count\)\.map_err\(\|_wide\| PhpException::from_message\(format!\("GN-6ae: the count \{count\} is beyond an int"\)\)\)\n\}/);
   assert.match(php, /#\[cfg\(feature = "thrown-count-test"\)\]\n {8}let module = module\.function\(wrap_function!\(thrown_count\)\);/);
-  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__thrownCount"\)\]\n {4}pub fn thrown_count\(\) -> u32 \{\n {8}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {8}u32::try_from\(count\)\.unwrap_or\(u32::MAX\)\n {4}\}/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__thrownCount"\)\]\n {4}pub fn thrown_count\(\) -> usize \{\n {8}THROWN\.with_borrow\(\|map\| map\.len\(\)\)\n {4}\}/);
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[pyfunction\]\nfn _thrown_count\(\) -> usize \{\n {4}thrown_map\(\)\.len\(\)\n\}/);
   assert.match(python, /#\[cfg\(feature = "thrown-count-test"\)\]\n {4}module\.add_function\(wrap_pyfunction!\(_thrown_count, module\)\?\)\?;/);
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(go, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__thrown_count\(args: \*const u8, len: usize, result: \*mut Buffer\) -> i32 \{/);
-  assert.match(go, /uint_out\(&mut output, u64::try_from\(lock\(&THROWN\)\.len\(\)\)\.unwrap_or\(u64::MAX\)\);/);
+  assert.match(go, /uint_out\(&mut output, lock\(&THROWN\)\.len\(\)\);/);
   const binding = text(out, 'packages/go/internal/binding/zz_generated_thrown_count.go');
   assert.match(binding, /\n\/\/go:build polyspec_thrown_count_test\n/);
   assert.match(binding, /func ThrownCount\(\) \(uint64, error\) \{\n\tdec, err := invoke\(func\(pointer \*C\.uint8_t, length C\.size_t, result \*C\.polyspec_sample_buffer\) C\.int32_t \{\n\t\treturn C\.polyspec_sample__thrown_count\(pointer, length, result\)/);

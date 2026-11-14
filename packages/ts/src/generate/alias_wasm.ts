@@ -20,7 +20,7 @@ const ALIAS_FILLS: Fill[] = [
   { name: 'Items', doc: 'An array that takes the items of a list.', type: 'Array', pattern: 'OutFill::Items(array)', put: PUT_INDEXED, next: 'Some(source.item(level.handle, level.index))' },
   { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: 'Array', pattern: 'OutFill::Values(array)', put: PUT_INDEXED, next: 'Some(source.entry(level.handle, level.index).1)' },
   { name: 'Entries', doc: 'A Map that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: 'js_sys::Map, Option<JsValue>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('map.set(&key, &value);'), next: NEXT_ENTRY },
-  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, *name, &value, true)?;' },
+  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, name, &value, true)?;' },
 ];
 
 // GN-6as: the make function of WASM.
@@ -580,14 +580,24 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on wasm32).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 
 /// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again.
@@ -873,7 +883,11 @@ impl NativeObject for WasmNative {}
 
 impl Drop for WasmNative {
     fn drop(&mut self) {
-        let released = NATIVE.try_with(|native| native.try_borrow_mut().ok().and_then(|mut native| native.values.remove(&self.key)));
+        let released = NATIVE.try_with(|native| match native.try_borrow_mut() {
+            Ok(mut native) => native.values.remove(&self.key),
+            // A table that is borrowed at this drop keeps the value; no Native names its key again.
+            Err(_borrowed) => None,
+        });
         // The value is released after the table is no longer borrowed.
         drop(released);
     }
