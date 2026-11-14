@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
+  (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded
+  those fields, so the tests checked only exact class and kind and could pass with incorrect metadata.
+
 - The sample fixture distinguishes open host-container handles from excessive acyclic depth and accepts sharing
   outside the open path (GN-6at, B2.270-1). Its native checks cover cycles, depth, sharing and repeated Map
   iteration; previously a cycle reached the depth limit. The core regression failed on that distinction before

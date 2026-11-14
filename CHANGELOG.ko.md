@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6e717b6acd734482021340f40aafaa04f1eed0794eeeeac2f1fe8d20fd6d204f -->
+<!-- source-sha256: 17e9bc58352779f86e74788cc47b8db33a1188058305145663fd1f2c2eaf4034 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -18,6 +18,10 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
+  `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와
+  kind만 확인했고, 잘못된 metadata도 통과할 수 있었다.
 
 - sample fixture가 열린 host-container handle과 과도한 비순환 깊이를 구별하고, 열린 경로 밖의 공유를 허용한다
   (GN-6at, B2.270-1). native 시험은 순환, 깊이, 공유, Map 반복 순회를 확인한다. 이전에는 순환도 깊이 제한에

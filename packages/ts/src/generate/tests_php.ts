@@ -806,6 +806,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
+    const errno = expectedErrno(kase);
+    const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
     const alias = langName('php', kase.alias.unit.name, 'class');
     // GN-13: a value of the case that has no PHP form runs through the entry point of the feature case-test.
     const entry = caseTestList.findIndex((t) => t.fn === undefined && t.alias === kase.alias && t.id === kase.id);
@@ -824,7 +826,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (${cls(kase.category)} $error) {
             self::assertSame(${exactClass(kase)}::class, $error::class);
-            self::assertSame(${phpText(kase.kind)}, $error->kind());
+            self::assertSame(${phpText(kase.kind)}, $error->kind());${kase.raises.status === undefined ? '' : `\n            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());`}
+            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
         }
     }`);
   }

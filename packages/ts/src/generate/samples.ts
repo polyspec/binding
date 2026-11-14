@@ -2219,7 +2219,7 @@ export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', 
 
 // G-5: the errno that a raising case expects: none, a number, or the symbol of an errno, whose value each language
 // gives on the target.
-export function expectedErrno(kase: RaisingCase): { symbol: string } | { value: number } | null {
+export function expectedErrno(kase: { id: string; raises: { errno?: unknown } }): { symbol: string } | { value: number } | null {
   const errno = kase.raises.errno;
   if (errno === undefined || errno === null) return null;
   if (typeof errno === 'string') return { symbol: errno };
@@ -2235,6 +2235,7 @@ export interface AliasCase {
   value: unknown;
   kind: string;
   category: string;
+  raises: { status?: number | null; errno?: unknown };
 }
 
 // GN-13e: the words of the id of a case, split at every run of characters other than ASCII letters and digits, which
@@ -2288,7 +2289,7 @@ export function aliasCases(model: Model): AliasCase[] {
       if (sort !== undefined && (typeof sort !== 'string' || !Object.hasOwn(HOST_VALUES, sort) || Object.keys(value as object).length !== 1)) {
         throw new Error(`${where}: a value {"host"} is ${Object.keys(HOST_VALUES).map((k) => JSON.stringify(k)).join(', ').replace(/, ([^,]*)$/, ' or $1')}, not ${shown(sort)} (G-5)`);
       }
-      out.push({ alias, id: String(record['id']), value, kind, category: row.category });
+      out.push({ alias, id: String(record['id']), value, kind, category: row.category, raises: record['raises'] as AliasCase['raises'] });
     }
   }
   return out;

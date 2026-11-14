@@ -672,10 +672,12 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
+    const errno = expectedErrno(kase);
+    usesErrno ||= errno !== null && 'symbol' in errno;
     usesAddon = true;
     out.push(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
-  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)});
+  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)}${kase.raises.status === undefined ? '' : ` && error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)}`} && error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});
 });`);
   }
   // GN-6m: a block may hold several tests, each of which awaits when its call does.

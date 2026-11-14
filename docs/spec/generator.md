@@ -2492,6 +2492,13 @@ the design ids are those of the binding design.
   server takes. The meaning of a state belongs to the repository that owns the service, so binding passes the JSON of
   the case to the program of that repository and speaks no protocol of a service.
 
+- **GN-13k** Every alias-case test checks the declared error status, including an explicit `null`, and the errno
+  as well as the exact error class and kind. A case without `status` declares no status expectation. An absent or
+  null errno expects no errno; a numeric errno expects that number, and a symbol is resolved as in the member
+  tests of GN-13 (WASM expects no platform errno for a symbol). These checks also apply when PHP runs a value
+  without a PHP form through `case-test`. Alias normalization retains these expectations because discarding
+  them would allow an incorrect error payload to pass the test.
+
 ## End-to-end check
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,

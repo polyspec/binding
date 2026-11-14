@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 81ed2e6eddad883e84ed4416aa4cce9fa883d928c7545b4d5f21b43ade0e5592 -->
+<!-- source-sha256: 2ac4712b3463f28fc2f57e24b6067b2388aadff4ed678e1791a05ef0b6bd3e85 -->
 # 생성기
 
 [English](generator.md)
@@ -2019,6 +2019,12 @@
   레코드 같은 서버의 상태는 저장 파일처럼(GN-13i) case의 입력이고, fault injection point는 시스템의 조건을 흉내
   낸다(G-5). 서버 대신 응답을 준 point는 어떤 서버도 지나지 않는 경로를 실행한다. 상태의 뜻은 service를 소유한 레포의
   것이므로, binding은 case의 JSON을 그 레포의 program에 넘기고 service의 어떤 protocol도 말하지 않는다.
+
+- **GN-13k** 모든 alias-case 시험은 정확한 error class와 kind뿐 아니라 선언된 error status(명시적 `null`
+  포함)와 errno도 확인한다. `status`를 생략한 case는 status 기대값을 선언하지 않는다. 없거나 null인 errno는
+  errno가 없음을 기대한다. 숫자는 그 값을 기대하고, symbol은 GN-13 member 시험처럼 해석한다(WASM은 symbol에
+  대해 platform errno가 없음을 기대한다). PHP가 PHP 표현이 없는 값을 `case-test`로 실행할 때도 이 검사를
+  적용한다. 이 기대값을 버리면 잘못된 error payload도 시험을 통과하므로 alias 정규화가 이를 보존한다.
 
 ## 끝에서 끝까지 확인
 

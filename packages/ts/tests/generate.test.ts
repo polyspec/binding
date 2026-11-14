@@ -5490,6 +5490,53 @@ test('a case of an alias gives a value of the language that is no value of the a
   assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'socket' }; }), /the case bytes_that_are_no_text_are_not_data of the alias data: a value \{"host"\} is "callable", "date" or "object", not "socket" \(G-5\)/);
 });
 
+test('alias-case tests preserve declared status and errno, including PHP case-test values (GN-13k, B2.271)', () => {
+  const change = (_contract: any, cases: any): void => {
+    const entry = (id: string, status: number | null, errno: number | string | null, value: unknown = { kind: 'bytes', value: { hex: 'ff' } }): any => ({ id, value, raises: { kind: 'unsupported', category: 'value', status, errno } });
+    cases.data_in.push(entry('metadata_null', null, null), entry('metadata_numbers', 451, 5), entry('metadata_symbol', null, 'EIO'), entry('metadata_wide', null, null, { kind: 'int', value: '9223372036854775808' }));
+    cases.data_in.push({ id: 'metadata_absent', value: { kind: 'bytes', value: { hex: 'ff' } }, raises: { kind: 'unsupported', category: 'value' } });
+  };
+  const out = sampleWith(change);
+  const php = text(out, phpTests);
+  const phpBody = (name: string): string => new RegExp(`public function testU7DataIn${name}\\(\\): void\\n    \\{([\\s\\S]*?)\\n    \\}`).exec(php)?.[1] ?? '';
+  assert.match(phpBody('MetadataNull'), /self::assertSame\(null, \$error->status\(\)\)/);
+  assert.match(phpBody('MetadataNull'), /self::assertNull\(\$error->errno\(\)\)/);
+  assert.match(phpBody('MetadataNumbers'), /self::assertSame\(451, \$error->status\(\)\)/);
+  assert.match(phpBody('MetadataNumbers'), /self::assertSame\(5, \$error->errno\(\)\)/);
+  assert.match(phpBody('MetadataSymbol'), /Internal\\errnoOf\("EIO"\)/);
+  assert.match(phpBody('MetadataWide'), /Internal\\caseTest\d+\(\)/);
+  assert.match(phpBody('MetadataWide'), /self::assertSame\(null, \$error->status\(\)\)/);
+  assert.doesNotMatch(phpBody('MetadataAbsent'), /->status\(\)/);
+  const python = text(out, pythonTests);
+  const pyBody = (name: string): string => new RegExp(`def test_u7_data_in_metadata_${name}\\(self\\) -> None:([\\s\\S]*?)(?=\\n    def |$)`).exec(python)?.[1] ?? '';
+  assert.match(pyBody('null'), /self\.assertEqual\(caught\.exception\.status, None\)/);
+  assert.match(pyBody('null'), /self\.assertIsNone\(caught\.exception\.errno\)/);
+  assert.match(pyBody('numbers'), /self\.assertEqual\(caught\.exception\.status, 451\)/);
+  assert.match(pyBody('numbers'), /self\.assertEqual\(caught\.exception\.errno, 5\)/);
+  assert.match(pyBody('symbol'), /caught\.exception\.errno, errno\.EIO/);
+  assert.doesNotMatch(pyBody('absent'), /caught\.exception\.status/);
+  assert.match(python, /^import errno$/m);
+  const wasm = text(sampleWith(change, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  for (const [file, symbolic] of [[text(out, nodeTests), 'errnoOf.EIO'], [wasm, 'null']] as const) {
+    const body = (id: string): string => new RegExp(`test\\('U-7: data in metadata_${id}', (?:async )?\\(\\) => \\{([\\s\\S]*?)\\n\\}\\);`).exec(file)?.[1] ?? '';
+    assert.match(body('null'), /error\.status === null/);
+    assert.match(body('null'), /error\.errno === null/);
+    assert.match(body('numbers'), /error\.status === 451/);
+    assert.match(body('numbers'), /error\.errno === 5/);
+    assert.ok(body('symbol').includes(`error.errno === ${symbolic}`), body('symbol'));
+    assert.doesNotMatch(body('absent'), /error\.status/);
+  }
+  const go = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  const goBody = (name: string): string => new RegExp(`func TestU7DataInMetadata${name}\\(t \\*testing\\.T\\) \\{([\\s\\S]*?)\\n\\}`).exec(go)?.[1] ?? '';
+  assert.match(goBody('Null'), /if _, ok := failure\.Status\(\); ok/);
+  assert.match(goBody('Null'), /if _, ok := failure\.Errno\(\); ok/);
+  assert.match(goBody('Numbers'), /status != 451/);
+  assert.match(goBody('Numbers'), /errno != 5/);
+  assert.match(goBody('Symbol'), /int\(syscall\.EIO\)/);
+  assert.match(go, /^\t"syscall"$/m);
+  assert.doesNotMatch(goBody('Absent'), /failure\.Status\(\)/);
+});
+
 test('core.result says whether the core returns a Result, and a return of none is bound as the unit (E-1c)', () => {
   const out = sampleWith(() => {});
   for (const path of LIBS) {
@@ -8505,12 +8552,12 @@ test('a U-7 test of a kind of a value alias whose row names an error unit requir
   assert.match(python, /def test_u7_data_in_bytes_that_are_no_text_are_not_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
   assert.match(python, /_gives_the_kind_of_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
   for (const js of [text(out, nodeTests), text(sampleWith((c) => { c.errors.kinds.find((k: any) => k.variant === 'polyspec_sample::Error::Unsupported').class = 'refused_error'; }, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
-    assert.match(js, /__aliasInData\([^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
+    assert.match(js, /__aliasInData\([^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported' && error\.status === null && error\.errno === null\);/);
     assert.match(js, /gives the kind of data in [^\n]*\n[^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
     assert.doesNotMatch(js, /\(error\) => error\.constructor === pkg\.SampleValueError && error\.kind === 'unsupported'/);
   }
   const codec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
-  assert.match(codec, /if failure, ok := err\.\(\*RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{/);
+  assert.match(codec, /failure, ok := err\.\(\*RefusedError\)\n\tif !ok \|\| failure\.Kind\(\) != "unsupported" \{/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /if failure, ok := err\.\(\*liberrors\.RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{\n\t+t\.Fatalf\("U-7: /);
 });
 

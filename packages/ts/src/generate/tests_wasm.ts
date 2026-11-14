@@ -456,11 +456,12 @@ test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
+    const errno = expectedErrno(kase);
     usesGlue = true;
     out.push(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   const glue = await glueModule();
-  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)});
+  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)}${kase.raises.status === undefined ? '' : ` && error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)}`} && error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});
 });`);
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.

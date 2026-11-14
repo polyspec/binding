@@ -2269,15 +2269,23 @@ func TestT2AKeyedMapRoundTripsInItsOrder(t *testing.T) {
 ` : '';
   const local = new Set(aliasesWithKinds(model).filter((a) => a.library === undefined));
   const aliases = aliasCases(model).filter((c) => local.has(c.alias)).map((kase) => {
+    const errno = expectedErrno(kase);
     // The statements that make the instances of the value classes of the value, in package binding itself.
     const b = new Body();
     const given = aliasValue(model, b, kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`).replace(/\bbinding\./g, '');
     return `
 func TestU7${goName(kase.alias.unit.name)}In${testName(kase.id)}(t *testing.T) {
 ${b.lines.map((line) => `\t${line.replace(/\bbinding\./g, '')}\n`).join('')}	err := AliasIn${goName(kase.alias.unit.name)}(${given})
-	if failure, ok := err.(*${exactType(model, kase)}); !ok || failure.Kind() != ${goString(kase.kind)} {
+	failure, ok := err.(*${exactType(model, kase)})
+	if !ok || failure.Kind() != ${goString(kase.kind)} {
 		t.Fatalf("U-7: %#v", err)
 	}
+${kase.raises.status === undefined ? '' : `\t${kase.raises.status === null ? 'if _, ok := failure.Status(); ok {' : `if status, ok := failure.Status(); !ok || status != ${kase.raises.status} {`}
+\t\tt.Fatalf("U-7: the status of %#v", err)
+\t}
+`}\t${errno === null ? 'if _, ok := failure.Errno(); ok {' : `if errno, ok := failure.Errno(); !ok || errno != ${'symbol' in errno ? `int(syscall.${errno.symbol})` : String(errno.value)} {`}
+\t\tt.Fatalf("U-7: the errno of %#v", err)
+\t}
 }
 `;
   }).join('');
@@ -2313,7 +2321,7 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
   const tests = `${latin1}${map}${keyed}${aliases}${numbers}`;
   const body = `${/\bmust\(/.test(tests) ? MUST : ''}${tests}`;
   // gofmt orders the imports of a block by their path, so "testing" takes its place among them.
-  const std = [...['fmt', 'math', 'math/big', 'reflect', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
+  const std = [...['fmt', 'math', 'math/big', 'reflect', 'syscall', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test

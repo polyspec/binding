@@ -796,12 +796,15 @@ export function pythonTests(model: Model, module: string): string {
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
+    const errno = expectedErrno(kase);
+    usesErrno ||= errno !== null && 'symbol' in errno;
     out.push(`
     def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
         self.assertIs(type(caught.exception), pkg.${exactClass(kase)})
-        self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
+        self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})${kase.raises.status === undefined ? '' : `\n        self.assertEqual(caught.exception.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})`}
+        ${errno === null ? 'self.assertIsNone(caught.exception.errno)' : `self.assertEqual(caught.exception.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}`);
   }
   // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.
   const usesDatetime = out.some((line) => line.includes(HOST_VALUES.date.python));
