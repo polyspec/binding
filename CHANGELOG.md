@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Specify the pending PHP runtime expectation and header-minor checks of the generated release recipe (B2.275).
+
 - Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
   and verification remain open.
 

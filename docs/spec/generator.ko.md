@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2ac4712b3463f28fc2f57e24b6067b2388aadff4ed678e1791a05ef0b6bd3e85 -->
+<!-- source-sha256: 37566bc998e3ead861d5a800b02347aa44f280104aa0205b7af1e71b03a232c7 -->
 # 생성기
 
 [English](generator.md)
@@ -2248,6 +2248,10 @@
   뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
   <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
   PHP에서 읽는다(`PHP_ZTS`, `PHP_DEBUG`).
+  B2.275 계획이며 아직 구현하지 않았다. `release-php-ext`는 선택적 `EXPECTED_PHP_MINOR`를 `major.minor`
+  형식으로 받고, 실제 runtime minor가 다르면 Cargo 빌드 전에 거부한다. 선택한 `php-config --version`의 minor를
+  runtime과 항상 비교하고 두 전체 버전을 기록한다. 이는 모든 ABI와 patch flag가 아닌 header minor를
+  확인하며, native 확장 load 검증은 계속 요구한다.
 - **GN-19e** npm 플랫폼 패키지(GN-3c), 플랫폼마다, 레포가 devDependency `@napi-rs/cli`로 고정한 napi CLI로:
   `napi build --platform --release --no-js --manifest-path <Cargo.toml> --package-json-path <package.json> --target-dir
   <target> --output-dir <addons> --target <Rust triple> -- --locked`. 그다음 그 플랫폼의 Rust triple만 적은 실행의 설정
