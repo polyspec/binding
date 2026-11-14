@@ -1065,7 +1065,8 @@ const leftOutFields = (ctx: Context, unit: Unit, fields: string[]): { unit: Unit
   const all = unit.fields ?? [];
   const kept = ctx.lang === 'php' ? all : all.filter((_f, i) => fields[i] !== LEFT_OUT);
   const values = ctx.lang === 'php' ? fields.map((v) => (v === LEFT_OUT ? 'null' : v)) : fields.filter((v) => v !== LEFT_OUT);
-  return { unit: { ...unit, fields: kept }, values };
+  // The unit itself when no field is left out: a test names a record of another repository by the identity of its unit.
+  return { unit: kept.length === all.length ? unit : { ...unit, fields: kept }, values };
 };
 const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
   const { unit, values } = leftOutFields(ctx, kase.unit, fields);

@@ -3627,7 +3627,7 @@ test('a default of an optional type is one Option, None when it is left out or n
   // T-4: a field of an optional type with a default has the result form of its type, so a record that a member also
   // returns is generated, and a None of the core is the null of the language.
   const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
-  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None\n/);
+  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None = None\n/);
 });
 
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
@@ -6271,7 +6271,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6284,7 +6284,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6298,7 +6298,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6414,8 +6414,9 @@ test('Go recovers the panic of a method of a callback in the call, and the membe
     assert.match(binding, /\ntype panicked struct\{ value any \}\n/);
     // The member panics with that value after the call of the C ABI returned.
     assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
-    // One place recovers: the dispatch of a func does not.
-    assert.equal(binding.split('recover()').length - 1, 1);
+    // One place recovers besides the run of a kept func (GN-6aa, the class index of the sample): the dispatch of a func
+    // does not.
+    assert.equal(binding.replace(/\nfunc runKept\([\s\S]*?\n\}\n/, '\n').split('recover()').length - 1, 1);
   }
   // The test: a callback whose method panics, the same value at the caller, the member again on the same instance,
   // and a member that writes the instance, which is not busy.
@@ -6519,9 +6520,13 @@ test('a Node crate whose only language code is a function parameter has no varia
     contract.units = contract.units.filter((u: any) => !gone.has(u.id));
     const kept = new Set<string>();
     for (const unit of contract.units) {
-      unit.members = (unit.members ?? []).filter((m: any) => !names(m));
-      for (const m of unit.members) kept.add(m.id);
+      const before = unit.members ?? [];
+      unit.members = before.filter((m: any) => !names(m));
+      // A class whose constructor takes such a unit goes with it, with the members that are left.
+      if (before.some((m: any) => m.kind === 'constructor' && !unit.members.includes(m))) gone.add(unit.id);
     }
+    contract.units = contract.units.filter((u: any) => !gone.has(u.id));
+    for (const unit of contract.units) for (const m of unit.members) kept.add(m.id);
     contract.cases = contract.cases.filter((k: any) => k.member !== undefined && kept.has(k.member));
   };
   const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
@@ -6632,7 +6637,8 @@ test('a Raised of the PHP, Python and Go crates is released by its last drop, on
   assert.match(python, /static THROWN: Mutex<BTreeMap<u64, Py<PyAny>>> = Mutex::new\(BTreeMap::new\(\)\);/);
   assert.match(python, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = thrown_map\(\)\.remove\(&self\.key\);\n {8}drop\(taken\);\n {4}\}\n\}/);
   assert.match(python, /fn keep_thrown\(object: Py<PyAny>\) -> binding_core::Raised \{\n {4}let key = NEXT_THROWN\.fetch_add\(1, Ordering::Relaxed\);\n {4}thrown_map\(\)\.insert\(key, object\);\n {4}binding_core::Raised::from_generated\(binding_core::Native::new\(ThrownKey \{ key \}\)\)\n\}/);
-  assert.match(go, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = lock\(&THROWN\)\.remove\(&self\.key\);\n {8}drop\(taken\);\n {4}\}\n\}/);
+  // The sample keeps a func (the class index, GN-6aa), so the drop also releases the error of a kept func.
+  assert.match(go, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = lock\(&THROWN\)\.remove\(&self\.key\);\n(?: {8}\/\/[^\n]*\n)*? {8}if let Some\(Thrown::Kept \{ key \}/);
   assert.match(go, /fn thrown\(error: Thrown\) -> Raised \{\n {4}let key = NEXT_THROWN\.fetch_add\(1, Ordering::Relaxed\);\n {4}lock\(&THROWN\)\.insert\(key, error\);\n {4}Raised::from_generated\(Native::new\(ThrownKey \{ key \}\)\)\n\}/);
   // No crate records the Raised values of a call, and no guard opens a scope for them.
   for (const lib of [php, python, go]) assert.doesNotMatch(lib, /\bRAISING\b|fn raised_released|\.handle\(\)\.raw\(\)/);
