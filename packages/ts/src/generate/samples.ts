@@ -888,7 +888,7 @@ function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>
     case 'utf8':
       return kind === 'text' || isUtf8(caseBytes(held));
     case 'safe_integer':
-      return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
+      return kind === 'float' ? Number.isSafeInteger(caseNumber(held)) : BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
     case 'integral_float': {
       const number = caseNumber(held);
       return Number.isFinite(number) && Number.isInteger(number);

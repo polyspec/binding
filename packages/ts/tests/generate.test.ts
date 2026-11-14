@@ -8242,6 +8242,35 @@ test('a float case value that the out row of its alias gives as an instance of a
   assert.ok(text(out, 'packages/python/generated/tests/test_generated.py').includes('pkg.same([float(1000000000000000.0), float(1.5)])'));
 });
 
+test('B2.272: float safe_integer selects wrappers only for safe integral case values (GN-13)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.units.push({
+    id: 'real', name: ['real'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets: ['node', 'wasm'], reason: 'the test of GN-13' }, core_type: 'polyspec_sample::Real',
+    members: [
+      { id: 'real.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: 'float', required: true }], raises: [], wait: 'none', core: 'polyspec_sample::Real::new' },
+      { id: 'real.value', name: ['value'], kind: 'property', visibility: 'public', returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Real::value', receiver: '&self' } },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'float');
+  data.out.push(
+    { kind: 'float', when: { predicate: 'safe_integer', is: true }, make: { php: 'float', python: 'float', node: 'real.constructor', go: 'float', wasm: 'real.constructor' } },
+    { kind: 'float', when: { predicate: 'safe_integer', is: false }, make: { php: 'float', python: 'float', node: 'float', go: 'float', wasm: 'float' } },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'integral', value: { kind: 'list', value: [1, -0, 1e16, 1.5, { float: 'nan' }, { float: 'inf' }, { float: '-inf' }].map((value) => ({ kind: 'float', value })) } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['python', 'node', 'wasm'] });
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const generated = text(out, path);
+    assert.match(generated, /pkg\.same\(\[new pkg\.Real\(1\), new pkg\.Real\(-0\), 10000000000000000, 1\.5,/);
+
+  }
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) assert.match(text(out, path), /Predicate::SafeInteger/);
+});
+
 test('a Go expected result takes the forms of the Go out rows of the alias: a UTF-8 byte string a string, a map with sequence keys a []any, another map a keyed map (GN-13e)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const data = sample.units.find((u: any) => u.id === 'data');

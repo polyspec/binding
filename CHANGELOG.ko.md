@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 01675228d2d0d725f5377f86deac25012b6f767513542e68064a578acc28f1b6 -->
+<!-- source-sha256: bc3a2dc399d9894a8a7d3a762eb35b506b25fe5ac3034cd06ed04c113d84cc01 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -19,8 +19,11 @@
 
 ## Unreleased
 
-- 미구현 float `safe_integer` 범위와 순서가 있는 case의 분기 일치 조건을 명세했다(B2.272).
-  구현과 검증은 아직 남아 있다.
+- `FloatOut::safe_integer`와 `OutValue::predicate`가 음의 영을 포함해 닫힌 안전 정수 범위에 있는 유한한
+  정수 float를 판별한다(B2.272). `Predicate::applies_to`가 단일 kind `kind` API를 대신한다. checker는 도달
+  가능한 모든 분기가 outgoing kind와 일치할 때만 순서가 있는 incoming case를 허용하므로, 모호하지 않은
+  큰 정수 float를 native number로 유지한다. 생성 case도 소수와 비유한 값을 BigInt로 바꾸지 않고 같은
+  float 술어를 판별한다.
 
 - Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
   `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와

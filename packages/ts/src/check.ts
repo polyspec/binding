@@ -25,7 +25,7 @@ import {
 } from './contract.ts';
 import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
-import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
+import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KINDS, builtinTypes, madePredicates } from './values.ts';
 
 const LANG_KEYS = ['php', 'python', 'node', 'go', 'wasm'] as const;
 
@@ -749,8 +749,8 @@ class Checker {
     for (const [r, row] of (unit.out ?? []).entries()) {
       const rowPath = `${path}${pointer('out', r)}`;
       byKind.set(row.kind, [...(byKind.get(row.kind) ?? []), { value: row, path: rowPath }]);
-      if (row.when !== undefined && row.when !== 'else' && PREDICATE_KIND[row.when.predicate] !== row.kind) {
-        this.report('CK-8', `${rowPath}/when`, `${row.when.predicate} applies to ${PREDICATE_KIND[row.when.predicate]}, not to ${row.kind}`);
+      if (row.when !== undefined && row.when !== 'else' && !PREDICATE_KINDS[row.when.predicate]?.includes(row.kind)) {
+        this.report('CK-8', `${rowPath}/when`, `${row.when.predicate} applies to ${PREDICATE_KINDS[row.when.predicate]?.join(' or ')}, not to ${row.kind}`);
       }
       for (const lang of targets) {
         if (row.make[lang] === undefined) this.report('CK-8', `${rowPath}/make`, `the row makes no ${lang} value`);
@@ -830,22 +830,39 @@ class Checker {
       chosen = row.kind;
     } else {
       const known = madePredicates(form, row, siblings);
+      const possible = new Set<string | undefined>();
+      let reachable = true;
+      let unknown: string | undefined;
       for (const kase of into.cases) {
         const when = kase.when;
         if (when === undefined || when === 'else') {
-          chosen = kase.kind;
+          possible.add(kase.kind);
+          reachable = false;
           break;
         }
         const value = known.get(when.predicate);
         if (value === undefined) {
-          this.report('CK-8', path, `the ${lang} value of this row does not tell ${when.predicate}, which the in row of ${made} asks (U-7 (f))`);
-          return;
-        }
-        if (value === when.is) {
-          chosen = kase.kind;
+          if (!PREDICATE_KINDS[when.predicate]?.includes(row.kind)) {
+            this.report('CK-8', path, `the ${lang} value of this row does not tell ${when.predicate}, which the in row of ${made} asks (U-7 (f))`);
+            return;
+          }
+          // The matching path ends here. Only its opposite reaches later cases, so a repeated predicate must
+          // agree with that constraint. No inference equates a large integral float with a fractional one.
+          possible.add(kase.kind);
+          known.set(when.predicate, !when.is);
+          unknown ??= when.predicate;
+        } else if (value === when.is) {
+          possible.add(kase.kind);
+          reachable = false;
           break;
         }
       }
+      if (reachable) possible.add(undefined);
+      if (possible.size > 1) {
+        this.report('CK-8', path, `the ${lang} value of this row does not tell ${unknown ?? 'the predicate'}, which the in row of ${made} asks; reachable cases disagree or leave a value unclassified (U-7 (f))`);
+        return;
+      }
+      chosen = possible.values().next().value;
     }
     if (chosen === undefined) {
       this.report('CK-8', path, `no case of the in row of ${lang} ${made} takes the value of this row (P-3)`);

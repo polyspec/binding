@@ -483,6 +483,53 @@ describe('CK-8 native values (VAL-18)', () => {
 });
 
 describe('CK-8 representative units and predicate round trips', () => {
+  const floatBranches = (cases: unknown[]): Finding[] => findings((c) => {
+    const value = unit(c, 'value');
+    value.out = value.out.filter((row: any) => row.kind !== 'int');
+    value.out.push({ kind: 'float', make: { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' } });
+    for (const row of value.in) if (row.node === 'number' || row.wasm === 'number') row.cases = structuredClone(cases);
+    for (const [lang, type] of [['php', 'float'], ['python', 'float'], ['go', 'float64']] as [string, string][]) value.in.push({ [lang]: type, cases: [{ kind: 'float', read: 'builtin' }] });
+  });
+  const floatCase = (predicate: string, is: boolean, kind = 'float'): unknown => ({ when: { predicate, is }, kind, read: 'builtin' });
+  test('B2.272: unresolved complementary branches may agree on the float kind', () => {
+    assert.deepEqual(floatBranches([floatCase('safe_integer', true), floatCase('safe_integer', false)]), []);
+  });
+  test('B2.272: unresolved branches that disagree remain refused', () => {
+    const result = floatBranches([floatCase('safe_integer', true, 'int'), { when: 'else', kind: 'float', read: 'builtin' }]);
+    assert.deepEqual(result.map((f) => f.path), [`${at('value')}/out/2/make/node`, `${at('value')}/out/2/make/wasm`]);
+    assert.ok(result.every((f) => f.check === 'CK-8' && /reachable cases disagree/.test(f.message)));
+  });
+  test('B2.272: agreement on a wrong kind and an uncovered path remain refused', () => {
+    const wrong = floatBranches([floatCase('safe_integer', true, 'int'), { when: 'else', kind: 'int', read: 'builtin' }]);
+    assert.ok(wrong.some((f) => f.path.endsWith('/make/node') && /comes back as int/.test(f.message)));
+    const uncovered = floatBranches([floatCase('safe_integer', true)]);
+    assert.ok(uncovered.some((f) => f.path.endsWith('/make/node') && /unclassified/.test(f.message)));
+  });
+  test('B2.272: agreement does not permit a predicate outside the float domain', () => {
+    const result = floatBranches([floatCase('utf8', true), { when: 'else', kind: 'float', read: 'builtin' }]);
+    assert.ok(result.some((f) => f.path.endsWith('/make/node') && /does not tell utf8/.test(f.message)));
+  });
+  test('B2.272: float safe_integer=false permits either integral_float branch when both return float', () => {
+    assert.deepEqual(findings((c) => {
+      const value = unit(c, 'value');
+      unit(c, 'value_type').variants.push({ name: ['float'], value: 'float' });
+      value.members.push({ id: 'value.number', name: ['number'], kind: 'property', visibility: 'public', returns: 'float', wait: 'none' });
+      c.cases.push({ member: 'value.number', file: 'contracts/forms.json', group: 'number' });
+      for (const row of value.in) {
+        if (row.by !== undefined) row.cases.push({ is: 'float', kind: 'float', read: 'value.number' });
+        if (row.node === 'number' || row.wasm === 'number') row.cases = [
+          { when: { predicate: 'integral_float', is: false }, kind: 'float', read: 'builtin' },
+          { when: { predicate: 'safe_integer', is: true }, kind: 'int', read: 'builtin' },
+          { when: 'else', kind: 'float', read: 'builtin' },
+        ];
+      }
+      for (const [lang, type] of [['php', 'float'], ['python', 'float'], ['go', 'float64']] as [string, string][]) value.in.push({ [lang]: type, cases: [{ kind: 'float', read: 'builtin' }] });
+      value.out.push(
+        { kind: 'float', when: { predicate: 'safe_integer', is: true }, make: { php: 'float', python: 'float', node: 'value.new', wasm: 'value.new', go: 'float' } },
+        { kind: 'float', when: { predicate: 'safe_integer', is: false }, make: { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' } },
+      );
+    }), []);
+  });
   test('a value alias without its core functions (U-7)', () =>
     fails('CK-8', '/units/', (c) => {
       const value = unit(c, 'value');

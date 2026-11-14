@@ -143,14 +143,14 @@ impl ValueKind {
     }
 }
 
-/// A predicate of an [`OutValue`] that a row of the `out` table may select on (U-1 `when`). Each applies to one kind.
+/// A predicate of an [`OutValue`] that a row of the `out` table may select on (U-1 `when`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Predicate {
     /// Bytes that are valid UTF-8.
     Utf8,
     /// A map whose keys are the integers 0 to n-1 in order.
     SequenceKeys,
-    /// An integer from -(2^53 - 1) to 2^53 - 1, which a JavaScript number holds exactly.
+    /// An integer or finite integral float from -(2^53 - 1) to 2^53 - 1.
     SafeInteger,
     /// A finite float with no fractional part, which a JavaScript number cannot tell from an integer.
     IntegralFloat,
@@ -171,15 +171,16 @@ impl Predicate {
         }
     }
 
-    /// The kind that the predicate applies to.
+    /// Whether the predicate applies to the kind.
     #[must_use]
-    pub const fn kind(self) -> ValueKind {
-        match self {
-            Self::Utf8 => ValueKind::Bytes,
-            Self::SequenceKeys => ValueKind::Map,
-            Self::SafeInteger => ValueKind::Int,
-            Self::IntegralFloat => ValueKind::Float,
-        }
+    pub const fn applies_to(self, kind: ValueKind) -> bool {
+        matches!(
+            (self, kind),
+            (Self::Utf8, ValueKind::Bytes)
+                | (Self::SequenceKeys, ValueKind::Map)
+                | (Self::SafeInteger, ValueKind::Int | ValueKind::Float)
+                | (Self::IntegralFloat, ValueKind::Float)
+        )
     }
 }
 
@@ -211,7 +212,7 @@ impl IntOut {
     }
 }
 
-/// An outgoing float with its predicate `integral_float`.
+/// An outgoing float with its predicates `integral_float` and `safe_integer`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOut {
     value: f64,
@@ -234,6 +235,12 @@ impl FloatOut {
     #[must_use]
     pub fn integral_float(self) -> bool {
         self.value.is_finite() && self.value.fract() == 0.0
+    }
+
+    /// Whether the float is integral and in the safe integer range; `-0.0` is safe.
+    #[must_use]
+    pub fn safe_integer(self) -> bool {
+        self.integral_float() && self.value.abs() <= 9_007_199_254_740_991.0
     }
 }
 
@@ -408,6 +415,7 @@ impl OutValue {
     pub fn predicate(&self, predicate: Predicate) -> Option<bool> {
         match (self, predicate) {
             (Self::Int(int), Predicate::SafeInteger) => Some(int.safe_integer()),
+            (Self::Float(float), Predicate::SafeInteger) => Some(float.safe_integer()),
             (Self::Float(float), Predicate::IntegralFloat) => Some(float.integral_float()),
             (Self::Bytes(bytes), Predicate::Utf8) => Some(bytes.utf8()),
             (Self::Map(map), Predicate::SequenceKeys) => Some(map.sequence_keys()),
@@ -567,13 +575,40 @@ mod tests {
     }
 
     #[test]
+    fn float_safe_integer_includes_negative_zero_but_not_large_integral_values() {
+        for (value, safe) in [
+            (0.0, true),
+            (-0.0, true),
+            (1.0, true),
+            (-1.0, true),
+            (9_007_199_254_740_991.0, true),
+            (-9_007_199_254_740_991.0, true),
+            (9_007_199_254_740_992.0, false),
+            (-9_007_199_254_740_992.0, false),
+            (1.0e16, false),
+            (-1.0e16, false),
+            (1.5, false),
+            (-1.5, false),
+            (f64::NAN, false),
+            (f64::INFINITY, false),
+            (f64::NEG_INFINITY, false),
+        ] {
+            assert_eq!(
+                OutValue::Float(FloatOut::new(value)).predicate(Predicate::SafeInteger),
+                Some(safe),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
     fn utf8_is_computed_from_the_bytes() {
         assert!(BytesOut::new(b"caf\xc3\xa9".to_vec()).utf8());
         assert!(!BytesOut::new(b"caf\xe9".to_vec()).utf8());
     }
 
     #[test]
-    fn each_predicate_applies_to_its_kind_only() {
+    fn each_predicate_applies_to_its_declared_kinds_only() {
         let values = [
             OutValue::Int(IntOut::new(1)),
             OutValue::Float(FloatOut::new(1.0)),
@@ -583,7 +618,7 @@ mod tests {
         ];
         for value in &values {
             for predicate in Predicate::ALL {
-                let applies = predicate.kind() == value.kind();
+                let applies = predicate.applies_to(value.kind());
                 assert_eq!(
                     value.predicate(predicate).is_some(),
                     applies,
@@ -594,6 +629,18 @@ mod tests {
             }
         }
         assert_eq!(values[3].predicate(Predicate::SequenceKeys), Some(true));
+        for predicate in Predicate::ALL {
+            for kind in ValueKind::ALL {
+                let expected = matches!(
+                    (predicate, kind),
+                    (Predicate::Utf8, ValueKind::Bytes)
+                        | (Predicate::SequenceKeys, ValueKind::Map)
+                        | (Predicate::SafeInteger, ValueKind::Int | ValueKind::Float)
+                        | (Predicate::IntegralFloat, ValueKind::Float)
+                );
+                assert_eq!(predicate.applies_to(kind), expected, "{predicate:?} {kind:?}");
+            }
+        }
     }
 
     #[test]

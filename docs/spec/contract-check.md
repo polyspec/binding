@@ -393,12 +393,13 @@ These closed sets are binding's own; the Rust names are those of `binding_core` 
   as UTF-16 code units, unpaired surrogates included, which a value class gives and makes by a member that reads or
   takes a list of `uint` (GN-6x); no built-in form makes it, because the string of PHP and Go cannot hold an unpaired
   surrogate.
-- Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float)
+- Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int and float), `integral_float` (float)
   (`Predicate`). A row writes `when: {predicate, is}`.
-  Planned in B2.272, not implemented: `safe_integer` also applies to float and is true exactly for finite integral
+  For float, `safe_integer` is true exactly for finite integral
   values in the inclusive range ±(2^53−1), including negative zero. An ordered incoming case list is sound only
   when every branch consistent with the outgoing row classifies the value as its outgoing kind. An unknown
-  predicate may take either branch; an uncovered branch or different resulting kinds fail CK-8. In particular,
+  applicable predicate may take either branch; an uncovered branch or different resulting kinds fail CK-8. A predicate
+  outside the kind's domain remains refused. In particular,
   `safe_integer=false` leaves `integral_float` unknown: both a fraction and 1e16 satisfy the former condition.
 - Built-in forms and the language type each makes:
 

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 8acd7073ea035095e91c8038c872d26185f31806fa9c0c822c043c8a014387ae -->
+<!-- source-sha256: c038e1def142ff7e2e6a745f433ae5d3f62d21d281d0a4188f257d5300da97d3 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -330,12 +330,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1). `text16`은 짝 없는 surrogate까지 담는 UTF-16 code
   unit의 text이고, 값 class가 `uint`의 list를 읽거나 받는 member로 주고 만든다(GN-6x). PHP와 Go의 문자열은 짝 없는
   surrogate를 담지 못하므로 어떤 내장 형태도 그것을 만들지 않는다.
-- 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
+- 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int와 float), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
-  B2.272 계획이며 아직 구현하지 않았다. `safe_integer`는 float에도 적용하고 음의 영을 포함해 ±(2^53−1)의
+  float의 `safe_integer`는 음의 영을 포함해 ±(2^53−1)의
   닫힌 범위에 있는 유한한 정수 값에서만 참이다. 순서가 있는 incoming case 목록은 outgoing 행과 일치하는
-  모든 분기가 그 outgoing kind로 분류할 때만 유효하다. 미정 술어는 양쪽 분기를 모두 가질 수 있고,
-  미분류 분기가 있거나 결과 kind가 다르면 CK-8이 실패한다. 특히 소수와 1e16이 모두 조건을 만족하므로
+  모든 분기가 그 outgoing kind로 분류할 때만 유효하다. 적용 가능한 미정 술어는 양쪽 분기를 모두 가질 수 있고,
+  미분류 분기가 있거나 결과 kind가 다르면 CK-8이 실패한다. kind의 적용 범위 밖인 술어는 계속 거부한다.
+  특히 소수와 1e16이 모두 조건을 만족하므로
   `safe_integer=false`에서 `integral_float`는 미정으로 남는다.
 - 내장 형태와 각각이 만드는 언어 타입:
 

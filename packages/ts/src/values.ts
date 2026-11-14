@@ -10,11 +10,11 @@ export const VALUE_KINDS = [
   'nested:json_value', 'nested:template_value', 'nested:php_value',
 ] as const;
 
-export const PREDICATE_KIND: Readonly<Record<string, string>> = {
-  utf8: 'bytes',
-  sequence_keys: 'map',
-  safe_integer: 'int',
-  integral_float: 'float',
+export const PREDICATE_KINDS: Readonly<Record<string, readonly string[]>> = {
+  utf8: ['bytes'],
+  sequence_keys: ['map'],
+  safe_integer: ['int', 'float'],
+  integral_float: ['float'],
 };
 
 export const BUILTIN_FORMS = [

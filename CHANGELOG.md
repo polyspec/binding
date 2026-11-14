@@ -5,8 +5,11 @@
 
 ## Unreleased
 
-- Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
-  and verification remain open.
+- `FloatOut::safe_integer` and `OutValue::predicate` recognize finite integral floats in the inclusive safe
+  integer range, including negative zero (B2.272). `Predicate::applies_to` replaces the single-kind `kind` API.
+  The checker accepts ordered incoming cases only when every reachable branch agrees on the outgoing kind,
+  preserving large integral floats as native numbers when unambiguous. Generated cases judge the same float
+  predicate without converting fractional or nonfinite values to BigInt.
 
 - Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
   (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded
