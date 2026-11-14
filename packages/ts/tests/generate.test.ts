@@ -9064,3 +9064,22 @@ test('PHP compares a reference whose id has one place in a case value as its val
   // Node keeps the class of the reference, whose instance is an object of its own at each place.
   assert.match(text(generated.get('sample') ?? new Map(), 'packages/ts/generated/tests/generated.test.mjs'), /cell #0/);
 });
+
+test('the hand-written contract cases of the consumer run every pair case, a reference included, and compare the identity of its places (GN-6ar, GN-13e, B2.244)', () => {
+  const read = (name: string): string => readFileSync(new URL(`../../../tests/e2e/consumer/${name}`, import.meta.url), 'utf8');
+  const files: [string, RegExp, RegExp][] = [
+    ['cases.test.mjs', /given\.kind === 'reference'[\s\S]*new sample\.Cell\(\)/, /for \(const kase of cases\.pair\) assert\.deepEqual\(shape\(/],
+    ['cases.wasm.test.mjs', /given\.kind === 'reference'[\s\S]*new sample\.Cell\(\)/, /for \(const kase of cases\.pair\) assert\.deepEqual\(shape\(/],
+    ['test_cases.py', /given\["kind"\] == "reference"[\s\S]*sample\.Cell\(\)/, /for case in cases\["pair"\]:\n[\s\S]*?shape\(consumer\.pair\(/],
+    ['CasesTest.php', /\$given\['kind'\] !== 'reference'[\s\S]*\$into\[\$key\] = &\$ids\[\$id\];/, /foreach \(\$cases\['pair'\] as \$case\) \{\n\s*self::assertSame\(self::shape\(/],
+    ['cases_test.go', /case "reference":[\s\S]*sample\.NewCell\(nil\)/, /reflect\.DeepEqual\(shape\(got, /],
+  ];
+  const consumerCases = JSON.parse(read('contracts/cases.json'));
+  assert.ok(consumerCases.pair.some((kase: any) => JSON.stringify(kase.value).includes('"kind":"reference"')), 'a pair case holds a reference');
+  for (const [name, reads, compares] of files) {
+    const source = read(name);
+    assert.match(source, reads, name);
+    assert.match(source, compares, name);
+    assert.doesNotMatch(source, /\bplain\(/, name);
+  }
+});

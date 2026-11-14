@@ -44,38 +44,95 @@ final class CasesTest extends TestCase
     }
 
     /**
-     * A case value of data as the PHP value that the alias takes and gives (GN-13).
+     * A case value of data as the PHP value that the alias takes and gives (GN-13). A reference is a place of an
+     * array, which takes the variable of its id by reference, so every place of an id shares one reference; the
+     * variables end with this call, so a reference that one place holds is its value, as PHP keeps it (GN-13e).
      *
      * @param array<string, mixed> $given
      */
     private static function value(array $given): mixed
     {
-        return match ($given['kind']) {
-            'null' => null,
-            'list' => array_map(self::value(...), $given['value']),
-            'map' => array_combine(array_column($given['value'], 0), array_map(self::value(...), array_column($given['value'], 1))),
-            default => $given['value'],
-        };
+        $ids = [];
+        return self::made($given, $ids);
     }
 
     /**
-     * GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
-     * tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only.
+     * @param array<string, mixed> $given
+     * @param array<int, mixed> $ids
      */
-    private static function plain(array $given): bool
+    private static function made(array $given, array &$ids): mixed
     {
-        if ($given['kind'] === 'reference') {
-            return false;
+        $out = [];
+        switch ($given['kind']) {
+            case 'null':
+                return null;
+            case 'list':
+                foreach ($given['value'] as $index => $item) {
+                    self::put($out, $index, $item, $ids);
+                }
+                return $out;
+            case 'map':
+                foreach ($given['value'] as [$key, $item]) {
+                    self::put($out, $key, $item, $ids);
+                }
+                return $out;
+            case 'reference':
+                return self::made($given['value']['value'], $ids);
+            default:
+                return $given['value'];
         }
-        if (!is_array($given['value'])) {
-            return true;
+    }
+
+    /**
+     * The place of an array under its key: a value, or the reference of the id of a node of kind reference.
+     *
+     * @param array<int|string, mixed> $into
+     * @param array<string, mixed> $given
+     * @param array<int, mixed> $ids
+     */
+    private static function put(array &$into, int|string $key, array $given, array &$ids): void
+    {
+        if ($given['kind'] !== 'reference') {
+            $into[$key] = self::made($given, $ids);
+            return;
         }
-        foreach ($given['value'] as $item) {
-            if (!self::plain(array_is_list($item) && count($item) === 2 && is_array($item[1]) ? $item[1] : $item)) {
-                return false;
+        $id = $given['value']['id'];
+        if (!array_key_exists('value', $given['value'])) {
+            $into[$key] = &$ids[$id];
+            return;
+        }
+        $ids[$id] = null;
+        $into[$key] = &$ids[$id];
+        $ids[$id] = self::made($given['value']['value'], $ids);
+    }
+
+    /**
+     * The places of a value in pre-order, as the generated tests compare them (GN-13e): a reference is numbered by its
+     * first place and named by that number at a later place, so the identity of each place is compared.
+     *
+     * @param array<string, int> $seen
+     */
+    private static function shape(mixed $held, array &$seen = []): mixed
+    {
+        if (!is_array($held)) {
+            return $held;
+        }
+        $out = [];
+        foreach (array_keys($held) as $key) {
+            $reference = \ReflectionReference::fromArrayElement($held, $key);
+            if ($reference === null) {
+                $out[$key] = self::shape($held[$key], $seen);
+                continue;
             }
+            $id = $reference->getId();
+            if (array_key_exists($id, $seen)) {
+                $out[$key] = ['again', $seen[$id]];
+                continue;
+            }
+            $seen[$id] = count($seen);
+            $out[$key] = ['reference', $seen[$id], self::shape($held[$key], $seen)];
         }
-        return true;
+        return $out;
     }
 
     public function testMeasureAndPair(): void
@@ -86,8 +143,8 @@ final class CasesTest extends TestCase
         foreach ($cases['measure'] as $case) {
             self::assertSame($case['result'], Consumer\measure(self::value($case['value'])), $case['id']);
         }
-        foreach (array_filter($cases['pair'], static fn (array $case): bool => self::plain($case['value'])) as $case) {
-            self::assertSame(self::value($case['result']), Consumer\pair(self::value($case['value'])), $case['id']);
+        foreach ($cases['pair'] as $case) {
+            self::assertSame(self::shape(self::value($case['result'])), self::shape(Consumer\pair(self::value($case['value']))), $case['id']);
         }
     }
 

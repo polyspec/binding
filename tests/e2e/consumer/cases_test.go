@@ -12,6 +12,7 @@ import (
 
 	consumer "github.com/polyspec/consumer/packages/go"
 	liberrors "github.com/polyspec/consumer/packages/go/errors"
+	sample "github.com/polyspec/sample/packages/go"
 )
 
 // given is a case value of data: its kind and the value of the kind.
@@ -54,8 +55,15 @@ func load(t *testing.T) cases {
 	return all
 }
 
-// value makes a case value of data as the Go value that the alias takes and gives (GN-13).
+// value makes a case value of data as the Go value that the alias takes and gives (GN-13): a reference is an instance
+// of the class Cell of the owner of the alias (GN-6ar), made once per id and set after it is made, so every place of
+// an id holds the same instance.
 func value(t *testing.T, of given) any {
+	t.Helper()
+	return made(t, of, map[int]*sample.Cell{})
+}
+
+func made(t *testing.T, of given, ids map[int]*sample.Cell) any {
 	t.Helper()
 	switch of.Kind {
 	case "null":
@@ -67,7 +75,7 @@ func value(t *testing.T, of given) any {
 		}
 		items := make([]any, 0, len(held))
 		for _, item := range held {
-			items = append(items, value(t, item))
+			items = append(items, made(t, item, ids))
 		}
 		return items
 	case "map":
@@ -85,9 +93,27 @@ func value(t *testing.T, of given) any {
 			if err := json.Unmarshal(pair[1], &item); err != nil {
 				t.Fatal(err)
 			}
-			entries[key] = value(t, item)
+			entries[key] = made(t, item, ids)
 		}
 		return entries
+	case "reference":
+		var reference struct {
+			ID    int    `json:"id"`
+			Value *given `json:"value"`
+		}
+		if err := json.Unmarshal(of.Value, &reference); err != nil {
+			t.Fatal(err)
+		}
+		if reference.Value == nil {
+			return ids[reference.ID]
+		}
+		cell, err := sample.NewCell(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[reference.ID] = cell
+		cell.Value = made(t, *reference.Value, ids)
+		return cell
 	}
 	var held any
 	if err := json.Unmarshal(of.Value, &held); err != nil {
@@ -96,30 +122,31 @@ func value(t *testing.T, of given) any {
 	return held
 }
 
-// plain reports whether a case value holds no node of kind reference (GN-6ar): such a node is an instance of a class
-// of the owner, which the generated tests (GN-13e) make; these tests read the plain data of the alias only.
-func plain(of given) bool {
-	if of.Kind == "reference" {
-		return false
-	}
-	var items []json.RawMessage
-	if json.Unmarshal(of.Value, &items) != nil {
-		return true
-	}
-	for _, item := range items {
-		var entry [2]json.RawMessage
-		var inner given
-		if json.Unmarshal(item, &entry) == nil {
-			if json.Unmarshal(entry[1], &inner) == nil && !plain(inner) {
-				return false
-			}
-			continue
+// shape is the places of a value in pre-order, as the generated tests compare them (GN-13e): an instance of Cell is
+// numbered by its first place and named by that number at a later place, so the identity of each place is compared.
+func shape(held any, cells map[*sample.Cell]int) any {
+	switch held := held.(type) {
+	case *sample.Cell:
+		if number, ok := cells[held]; ok {
+			return []any{"again", number}
 		}
-		if json.Unmarshal(item, &inner) == nil && !plain(inner) {
-			return false
+		number := len(cells)
+		cells[held] = number
+		return []any{"cell", number, shape(held.Value, cells)}
+	case []any:
+		items := make([]any, 0, len(held))
+		for _, item := range held {
+			items = append(items, shape(item, cells))
 		}
+		return items
+	case map[string]any:
+		entries := map[string]any{}
+		for key, item := range held {
+			entries[key] = shape(item, cells)
+		}
+		return entries
 	}
-	return true
+	return held
 }
 
 // holder is a holder of data by key, as Go code implements it.
@@ -152,11 +179,8 @@ func TestMeasureAndPair(t *testing.T) {
 		}
 	}
 	for _, c := range all.Pair {
-		if !plain(c.Value) {
-			continue
-		}
 		got, err := consumer.Pair(value(t, c.Value))
-		if want := value(t, c.Result); err != nil || !reflect.DeepEqual(got, want) {
+		if want := value(t, c.Result); err != nil || !reflect.DeepEqual(shape(got, map[*sample.Cell]int{}), shape(want, map[*sample.Cell]int{})) {
 			t.Errorf("%s: %#v, %v, want %#v", c.ID, got, err, want)
 		}
 	}

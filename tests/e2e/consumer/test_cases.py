@@ -16,27 +16,42 @@ def load() -> dict:
         return json.load(file)
 
 
-def value(given: dict) -> object:
-    """A case value of data as the Python value that the alias takes and gives (GN-13)."""
+def value(given: dict, ids: dict | None = None) -> object:
+    """A case value of data as the Python value that the alias takes and gives (GN-13): a reference is an instance of
+    the class Cell of the owner of the alias (GN-6ar), made once per id and set after it is made, so every place of
+    an id holds the same instance."""
+    ids = {} if ids is None else ids
     if given["kind"] == "null":
         return None
     if given["kind"] == "list":
-        return [value(item) for item in given["value"]]
+        return [value(item, ids) for item in given["value"]]
     if given["kind"] == "map":
-        return {key: value(item) for key, item in given["value"]}
+        return {key: value(item, ids) for key, item in given["value"]}
+    if given["kind"] == "reference":
+        if "value" not in given["value"]:
+            return ids[given["value"]["id"]]
+        cell = sample.Cell()
+        ids[given["value"]["id"]] = cell
+        cell.value = value(given["value"]["value"], ids)
+        return cell
     return given["value"]
 
 
-def plain(given: object) -> bool:
-    """GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
-    tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only."""
-    if not isinstance(given, dict):
-        return True
-    if given["kind"] == "reference":
-        return False
-    if isinstance(given["value"], list):
-        return all(plain(item[1]) if isinstance(item, list) else plain(item) for item in given["value"])
-    return True
+def shape(held: object, cells: dict | None = None) -> object:
+    """The places of a value in pre-order, as the generated tests compare them (GN-13e): an instance of Cell is
+    numbered by its first place and named by that number at a later place, so the identity of each place is
+    compared."""
+    cells = {} if cells is None else cells
+    if isinstance(held, sample.Cell):
+        if id(held) in cells:
+            return ("again", cells[id(held)])
+        cells[id(held)] = len(cells)
+        return ("cell", cells[id(held)], shape(held.value, cells))
+    if isinstance(held, list):
+        return [shape(item, cells) for item in held]
+    if isinstance(held, dict):
+        return {key: shape(item, cells) for key, item in held.items()}
+    return held
 
 
 class Holder:
@@ -58,9 +73,9 @@ class ContractCaseTest(unittest.TestCase):
         for case in cases["measure"]:
             with self.subTest(case=case["id"]):
                 self.assertEqual(consumer.measure(value(case["value"])), case["result"])
-        for case in filter(lambda case: plain(case["value"]), cases["pair"]):
+        for case in cases["pair"]:
             with self.subTest(case=case["id"]):
-                self.assertEqual(consumer.pair(value(case["value"])), value(case["result"]))
+                self.assertEqual(shape(consumer.pair(value(case["value"]))), shape(value(case["result"])))
 
     def test_holder(self) -> None:
         held = {"a": {"k": [1.5, "x", None, True]}}

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The hand-written contract cases of the consumer read a case value of the kind `reference` and run every pair case,
+  where they did not know the kind and the case `a_reference_of_the_owner_twice` failed in Node and WASM. Node, WASM,
+  Python and Go make a reference as an instance of the class `Cell` of the owner, one per id, and PHP as a reference
+  that the places of its id share; each test compares the places of the result in pre-order with the identity of
+  each instance or reference, as the generated tests do (GN-6ar, GN-13e).
+
 - The generated PHP tests of the end-to-end repositories required a reference that PHP cannot show. PHP keeps no
   reference that one place holds, so a reference whose id has one place in a case value is now compared as its value
   (GN-13e).
@@ -16,8 +22,7 @@
   contract that takes a function type, which the sample and the consumer do not (GN-6z). Node `cancel_in` names the
   type of `addEventListener` by an alias, which `clippy::type_complexity` requires (GN-6aq). Python moves a callback
   parameter with keeps into the core as its box, where it passed the struct of the call (GN-6aa). The classes
-  repository has a case of `shout`, so a Go test calls every exported function, and the hand-written tests of the
-  consumer skip a pair case that holds a reference node (GN-6ar).
+  repository has a case of `shout`, so a Go test calls every exported function.
 
 - The generated crates of the end-to-end repositories did not compile once the lanes met. The Node crate of the
   sample named the check function of the value class `box` `check_r#box`, which is no Rust token (GN-6); it is now

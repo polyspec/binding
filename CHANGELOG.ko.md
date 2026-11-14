@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: aaa9256d2a14999e4b525bcb671e3e012ea2bfea0a9964e1754c5bdf76bc8886 -->
+<!-- source-sha256: 8c73f9db30610d19ee926141c60eda911866d5e1c4afa0dec9e8f1232ef7b2e6 -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,11 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- consumer의 손으로 쓴 계약 case는 kind `reference`의 case 값을 읽고 모든 pair case를 실행한다. 그 kind를 몰라서
+  case `a_reference_of_the_owner_twice`가 Node와 WASM에서 실패했다. Node, WASM, Python, Go는 reference를 id마다
+  하나인 owner의 class `Cell`의 인스턴스로 만들고, PHP는 그 id의 자리들이 함께 가진 reference로 만든다. 각 시험은
+  생성 시험처럼 결과의 자리를 전위 순서로 각 인스턴스나 reference의 동일성과 함께 비교한다(GN-6ar, GN-13e).
 
 - 끝에서 끝까지 레포의 생성 PHP 시험이 PHP가 보일 수 없는 reference를 요구했다. PHP는 한 자리가 가진 reference를
   유지하지 않으므로, case 값에서 id의 자리가 하나인 reference는 이제 그 값으로 비교된다(GN-13e).
@@ -17,8 +22,7 @@
   `kept_function_in`을 쓰며, sample과 consumer는 그것을 받지 않는다(GN-6z). Node `cancel_in`은
   `clippy::type_complexity`가 요구하는 대로 `addEventListener`의 타입을 alias로 이름한다(GN-6aq). Python은 keeps가
   있는 callback parameter를 호출의 struct 대신 그 box로 코어에 옮긴다(GN-6aa). classes 레포는 `shout`의 case를
-  가져서 Go 시험이 내보낸 모든 함수를 부르고, consumer의 손으로 쓴 시험은 reference node를 가진 pair case를
-  건너뛴다(GN-6ar).
+  가져서 Go 시험이 내보낸 모든 함수를 부른다.
 
 - end-to-end 저장소의 생성 crate는 lane들이 합쳐진 뒤 컴파일되지 않았다. sample의 Node crate는 value class `box`의
   check 함수를 Rust token이 아닌 `check_r#box`로 이름했다(GN-6). 이제 `check_box`다. trait가 `Send + Sync`이고 값이

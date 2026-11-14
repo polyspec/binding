@@ -4,20 +4,39 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as consumer from '@polyspec/consumer/wasm';
+import * as sample from '@polyspec/sample/wasm';
 
 const cases = JSON.parse(readFileSync(process.env.CASES, 'utf8'));
 
-// A case value of data as the JavaScript value that the alias takes and gives (GN-13).
-function value(given) {
+// A case value of data as the JavaScript value that the alias takes and gives (GN-13): a reference is an instance of
+// the class Cell of the owner of the alias (GN-6ar), made once per id and set after it is made, so every place of an
+// id holds the same instance.
+function value(given, ids = new Map()) {
   if (given.kind === 'null') return null;
-  if (given.kind === 'list') return given.value.map(value);
-  if (given.kind === 'map') return new Map(given.value.map(([key, item]) => [key, value(item)]));
+  if (given.kind === 'list') return given.value.map((item) => value(item, ids));
+  if (given.kind === 'map') return new Map(given.value.map(([key, item]) => [key, value(item, ids)]));
+  if (given.kind === 'reference') {
+    if (!('value' in given.value)) return ids.get(given.value.id);
+    const cell = new sample.Cell();
+    ids.set(given.value.id, cell);
+    cell.value = value(given.value.value, ids);
+    return cell;
+  }
   return given.value;
 }
 
-// GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
-// tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only.
-const plain = (given) => given.kind !== 'reference' && (!Array.isArray(given.value) || given.value.every((item) => (Array.isArray(item) ? plain(item[1]) : plain(item))));
+// The places of a value in pre-order, as the generated tests compare them (GN-13e): an instance of Cell is numbered by
+// its first place and named by that number at a later place, so the identity of each place is compared.
+function shape(held, cells = new Map()) {
+  if (held instanceof sample.Cell) {
+    if (cells.has(held)) return { again: cells.get(held) };
+    cells.set(held, cells.size);
+    return { cell: cells.get(held), value: shape(held.value, cells) };
+  }
+  if (Array.isArray(held)) return held.map((item) => shape(item, cells));
+  if (held instanceof Map) return [...held].map(([key, item]) => [key, shape(item, cells)]);
+  return held;
+}
 
 const holder = (held) => ({
   get: (key) => (held.has(key) ? held.get(key) : null),
@@ -27,7 +46,7 @@ const holder = (held) => ({
 test('measure and pair take and give data', () => {
   assert.ok(cases.measure.length > 0 && cases.pair.length > 0);
   for (const kase of cases.measure) assert.equal(consumer.measure(value(kase.value)), kase.result, kase.id);
-  for (const kase of cases.pair.filter((kase) => plain(kase.value))) assert.deepEqual(consumer.pair(value(kase.value)), value(kase.result), kase.id);
+  for (const kase of cases.pair) assert.deepEqual(shape(consumer.pair(value(kase.value))), shape(value(kase.result)), kase.id);
 });
 
 test('the holder gives and takes data', () => {
