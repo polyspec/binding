@@ -117,7 +117,11 @@ export function pythonTests(model: Model, module: string): string {
   const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
-    errorNew: (unit, kind, message) => `pkg.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`,
+    // GN-6s: an error unit of the owner of a callback unit of another repository, through the module of its package.
+    errorNew: (unit, kind, message, library) => {
+      if (library !== undefined) foreignModules.add(library);
+      return `${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`;
+    },
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');

@@ -625,8 +625,9 @@ the design ids are those of the binding design.
   again when it is not recognized; Go passes the kind and the message of a recognized error to the C ABI in place of
   the index of the error. Why: the core decides what a recognized failure means (U-3), and binding reads no Rust
   source, so the contract names the function that makes the core error; the properties of the instance do not reach
-  the core, because an instance that language code makes has none (GN-7a). A recognized error unit of another
-  library is refused by name (G-4).
+  the core, because an instance that language code makes has none (GN-7a). A callback unit of this contract that
+  recognizes an error unit of another library is refused by name (G-4); a callback unit of another repository
+  recognizes the error units of its owner as GN-6s states.
 - **GN-6ap** An interface unit of origin `generated` (U-1) is an interface that the core never calls: it names the
   classes of the contract that one parameter takes. Its `core_type` is the Rust type that the core takes at a
   parameter typed by the interface, and for the core type `C` of each class of the contract that `implements` it, an
@@ -896,8 +897,16 @@ the design ids are those of the binding design.
   `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
-  and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
-  field without a default, any other default of a record parameter, a default of an `optional` type other than
+  and the declarations make it optional. A parameter or a field of a value alias (U-7), or of a value alias or a value
+  class of another repository (U-7 (a'), GN-6x), may have the default `{empty: "object"}`: its core parameter is the
+  `Option` of its form, the binding passes `None` when it is left out, and the core decides that no value is the empty
+  object. The declarations show `...` in Python, `null` in PHP, which a value class does not take as an array, and an
+  optional parameter in TypeScript. The U-2 test of GN-13d and of Go gives in its place the case value
+  `{"kind": "map", "value": []}`: an empty `dict`, array, `Map` or Go `map` for a value alias, and for a value class of
+  another repository the instance that the member of the out row of the kind `map` makes from an empty map of its
+  owner. Why: an options object of a value type, such as a json value, has an empty object as its natural absence, and
+  the core already decides what `None` means. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
+  field without a default, any other `{empty}` default of a value type, any other default of a record parameter, a default of an `optional` type other than
   `{literal: null}` and `{computed}`, a default of a type that is no number, bool, text, latin1, bytes, source, list,
   map, enum, value type or `optional`, a `{literal}` or `{const}` default without `default_core` other than
   `{literal: null}` of an `optional` or a value type,
@@ -1341,8 +1350,17 @@ the design ids are those of the binding design.
   dispatch of a callback unit of this repository in the package of that unit. A case value at its place is a fixture
   of the callback, whose type has the methods of the owning type, or an instance value, which the class that its make
   member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). The name of such a unit differs from the
-  name of every unit of this contract, which the generator refuses by name otherwise (G-4). Not generated yet, each
-  refused by name (G-4): a case value that a member
+  name of every unit of this contract, which the generator refuses by name otherwise (G-4). A member of such a unit whose `errors.recognize` names error units of its owner reads an
+  exception of language code as GN-6d states, with the contract of the owner: the classes are those of the owner's
+  package (Python the module `<owner root>._errors`, Node the classes that the entry requires from the owner's npm
+  package and registers after the library classes, PHP the classes of the owner's namespace, found by name and read
+  in the scope of the owner's category class), the kinds are the rows of the owner's `errors.kinds` whose class is a
+  recognized unit or extends one, and the core error is the owner's `errors.recognized` on the variant of the row,
+  which the trait method returns as `Failure::Kind`. A raise row of a fixture of such a unit (GN-13) throws an
+  instance of the owner's class. Refused by name (G-4): an error unit of a third library, an owner without
+  `errors.recognized`, and a recognized variant of two or more kinds. Why: the owner's core decides what its error
+  means, and its contract names the classes and the function that makes the error, so the binding of this repository
+  reads no source of the owner. Not generated yet, each refused by name (G-4): the recognized errors in Go and WASM; a case value that a member
   of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a

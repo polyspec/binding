@@ -436,7 +436,7 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
     // A unit that is no integer of 0 to 0xffff is None, which the collect gives as kind internal.
     array.values().map(|unit| match unit.long().map(u16::try_from) {
         Some(Ok(unit)) => Some(unit),
-        Some(Err(_wide)) | None => None,
+        Some(Err(_)) | None => None,
     })
         .collect::<Option<Vec<u16>>>()
         .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))

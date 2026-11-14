@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1516dad216a64d599cf44647b50864b5714e339668cf31a18fd6e0d079e99203 -->
+<!-- source-sha256: 9bea12e177d335ccff9dbb62f9be2f35b0aec2426337fd380edcfd9f7bfc7d37 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -23,6 +23,20 @@
   `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
   it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
   `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
+
+- 멤버가 `errors.recognized`를 이름하는 다른 저장소의 callback unit은 `recognized callback errors are not
+  generated yet`로 거부되었다. 이제 PHP, Python, Node에서 그런 callback이 callback을 소유한 library의 인식된 error
+  unit의 instance로 던진 error는 그 kind로 대응된다. 세 번째 library의 unit과, `errors.recognized`가 함수를 이름하지
+  않는 소유자는 이름으로 거부된다(U-3, GN-6s, GN-6d). Go와 WASM은 아직 다른 저장소의 callback unit을 생성하지
+  않는다(GN-6s). 검증: `sample.lookup`의 consumer 시험이 변경 전에 실패한 `make test-ts`, cases `consult`가 lookup의
+  kind `refused`를 주는 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`(B2.173).
+
+- 값 alias, 또는 다른 저장소의 값 alias나 값 class의 parameter와 field가 기본값 `{empty: "object"}`를 가지면
+  `the default {empty: "object"} of the type {"unit":"value","library":"json"} is not generated`로 거부되었다. 이제
+  그것은 `None`으로 생략되고, 각 target의 U-2 테스트는 그 자리에 언어의 빈 객체를 준다(U-2, GN-6i). PHP alias의
+  units는 `Some(Err(_wide)) | None`의 한 alternative에만 `_wide`를 묶었고, `cargo clippy`는 그것을 E0408로 거부해
+  relay의 PHP crate가 build되지 않았다. 이제 그 alternative는 이름을 묶지 않는다. 검증: 두 시험이 변경 전에 실패한
+  `make test-ts`, cases `width`가 통과한 json checkout과의 `make e2e REPO=tests/e2e/relay`(B2.172).
 
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와

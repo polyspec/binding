@@ -188,6 +188,29 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_relay::count"
+        },
+        {
+          "id": "relay.width",
+          "name": [
+            "width"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "json_value",
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_relay::width"
         }
       ]
     },
@@ -250,6 +273,11 @@
       "member": "relay.count",
       "file": "contracts/cases.json",
       "group": "count"
+    },
+    {
+      "member": "relay.width",
+      "file": "contracts/cases.json",
+      "group": "width"
     }
   ]
 }

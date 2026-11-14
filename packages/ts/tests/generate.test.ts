@@ -1480,11 +1480,12 @@ const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
     unit.members.push({ ...fetch, id: 'consumer.ask', name: ['ask'], parameters: [{ name: ['lookup'], type: { unit: 'lookup', library: 'sample' }, required: true }, { name: ['key'], type: 'text', required: true }], returns: 'text', raises: [], core: 'polyspec_consumer::ask' });
     contract.cases.push({ member: 'consumer.ask', file: 'contracts/cases.json', group: 'consumer_ask' });
   });
-  edit('consumer/contracts/cases.json', (cases) => { cases.consumer_ask = []; });
+  // consumer.consult gives the text that lookup.find returns, which these tests change to a point, so its cases are left out.
+  edit('consumer/contracts/cases.json', (cases) => { cases.consumer_ask = []; cases.consult = []; });
   edit('sample/packages/rust/interface.json', (contract) => {
     const find = contract.units.find((u: any) => u.id === 'lookup').members[0];
     find.returns = { optional: { unit: 'point', library: 'points' } };
-    // A callback of another library that recognizes an error unit is not generated yet, which is no subject of these tests.
+    // The recognized error units of a callback of another library (B2.173) are no subject of these tests.
     delete find.errors;
   });
   const manifest = join(root, 'consumer/packages/rust/Cargo.toml');
@@ -2152,6 +2153,41 @@ test('a value class of another repository inside a list is made by the same memb
   assert.match(go, /\tmade0, failure1 := json\.ValueString\("a"\)\n[^]*?\tmade2, failure3 := json\.ValueNull\(\)\n[^]*?\tmade4, failure5 := json\.ValueBoolean\(true\)\n[^]*?Gather\(\[\]\*json\.Value\{made0, made2, made4\}\)/);
 });
 
+// B2.172: {empty: "object"} of a value class of another repository and of a value alias is left out as None, and the
+// U-2 test gives the empty object of the language in its place in the five targets.
+test('a parameter of a value type with the default {empty: "object"} is None when it is left out, and its U-2 test gives the empty object (U-2, GN-6i, GN-13d)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units[0].members.push({ id: 'relay.size', name: ['size'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', default: { empty: 'object' } }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_relay::size' });
+  contract.cases.push({ member: 'relay.size', file: 'contracts/size.json', group: 'size' });
+  caseFiles.set('contracts/size.json', { size: [{ id: 'a_text', value: { kind: 'text', value: 'a' }, result: 1 }] });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  // The core takes Option, None when the value is left out.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let value: Option<polyspec_json::Value> = default_in\(&value, [^\n]*\n\s+let result = polyspec_relay::size\(value\.as_ref\(\)\);/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_relay::size\(value\.as_ref\(\)\)/);
+  // The declarations: null in PHP, which a value class does not take as an array.
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_relay.stub.php'), /function size\(mixed \$value = null\): int \{\}/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/relay/_native.pyi'), /def size\(value: object = \.\.\.\) -> int: \.\.\./);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function size\(value\?: unknown\): number;/);
+  // U-2: the empty object is the instance that the out row of the kind map makes from an empty map.
+  assert.match(text(out, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\(lambda filled: \(foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)\),/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(text(out, RELAY_TESTS[target]), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(\(\(\) => \{ const filled = new foreign_json\.OrderedMap\(\); return foreign_json\.Value\.object\(filled\); \}\)\(\)\)\)/, target);
+  }
+  assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\size\(\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)\)/);
+  assert.match(text(out, RELAY_TESTS.go), /func TestU2SizeWithoutValueIsTheCallWithItsDefault\(t \*testing\.T\) \{\n\tvalue0, err0 := Size\(nil\)\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueObject\(made0\)\n[^]*?\tvalue1, err1 := Size\(made2\)\n/);
+  // A value alias: the empty map of the language.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
+  const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  assert.match(text(own, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\{\}\)\),/);
+  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
+  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(\[\]\)\),/);
+  assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
+  // Any other {empty} of a value type stays refused by name.
+  for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'list' };
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /sample\.size\.value: the default \{empty: "list"\} of the type \{"unit":"data"\} is not generated \(U-2\)/);
+});
+
 test('a library without kinds that takes a value class of another repository calls no conversion of a core error that it does not have (E-1c, GN-6x)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
@@ -2264,10 +2300,11 @@ test('an error unit is the class of the kinds that name it, with the properties 
   assert.match(node, /polyspec_consumer::Error::Absent \{ \.\. \} => 6,/);
   assert.match(node, /let value0 = String::from\(polyspec_consumer::Error::key\(error\)\);/);
   assert.match(node, /read_only\(object, "length", property\)\?;/);
-  assert.match(node, /B-4: 7 library classes/);
+  // The seven library classes, then RefusedError of sample, which consumer.consult recognizes (GN-6s, B2.173).
+  assert.match(node, /B-4: 8 library classes/);
   const cjs = text(out, 'packages/ts/generated/index.cjs');
   assert.match(cjs, /\nclass AbsentError extends ConsumerValueError \{/);
-  assert.match(cjs, /addon\.__register\(\[[^\]]*ConsumerInternalError, AbsentError\]\);/);
+  assert.match(cjs, /addon\.__register\(\[[^\]]*ConsumerInternalError, AbsentError, recognized_sample\.RefusedError\]\);/);
   assert.match(cjs, /module\.exports = \{[^}]*\bAbsentError\b/);
   assert.match(text(out, 'packages/ts/generated/index.mjs'), /export const \{[^}]*\bAbsentError\b/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class AbsentError extends ConsumerValueError \{\n  readonly key: string;\n  readonly length: number \| null;\n\}/);
@@ -2308,8 +2345,8 @@ test('a kind of a dependency that the core passes on is matched as the inner var
 });
 
 // consumer.look takes the callback lookup of sample, which language code implements (T-3, U-3). The lookup of the
-// sample recognizes an error unit (GN-6w), which a wrapper of a callback of another repository refuses by name (G-4),
-// so the owner's contract of these tests is the sample without that recognition; `recognizing` keeps it.
+// sample recognizes an error unit (GN-6d); the owner's contract of these tests is the sample without that recognition,
+// and `recognizing` keeps it (B2.173).
 const looking = (contract: any, foreign: Map<string, any>, recognizing = false): void => {
   if (!recognizing) for (const member of foreign.get('sample').units.find((u: any) => u.id === 'lookup').members) delete member.errors;
   contract.units.find((u: any) => u.id === 'consumer').members.push({
@@ -2381,17 +2418,56 @@ test('Go: a case of a member that takes a callback unit of another repository an
   assert.match(named, /the case an_instance_value_of_no_member of consumer\.read: a case value of source: nothing\.made is no member that the binding generates \(G-5, GN-13f\)/);
 });
 
-test('a callback unit of another repository is refused where its name is a unit of the contract, and with a member that recognizes an error unit (GN-6s, G-4)', () => {
+test('a callback unit of another repository is refused where its name is a unit of the contract (GN-6s, G-4)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract, foreign);
-  // GN-6w, G-4: a member of the callback that recognizes an error unit is refused by name.
-  const recognizes = consumerSample();
-  looking(recognizes.contract, recognizes.foreign, true);
-  assert.throws(() => generateTargets({ contract: recognizes.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: recognizes.caseFiles, foreign: recognizes.foreign, targets: ['node'] }), /lookup\.find: recognized callback errors are not generated yet/);
   const named = structuredClone(contract);
   named.units.find((u: any) => u.id === 'holder').id = 'lookup';
   named.units.find((u: any) => u.id === 'lookup').name = ['lookup'];
   assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6s\)/);
+});
+
+// B2.173: a member of a callback unit of another repository that recognizes an error unit of its owner reads an
+// exception of the owner's class and gives the core of the owner the error that the owner's errors.recognized makes.
+test('a callback unit of another repository recognizes the error units of its owner (U-3, GN-6s, GN-6d)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract, foreign, true);
+  const cases = structuredClone(caseFiles.get('contracts/cases.json')) as Record<string, unknown>;
+  cases['look'] = [{ id: 'a_refused_key_is_none', lookup: { callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'refused_error', kind: 'refused' } }] }, calls: [{ member: 'lookup.find', args: { key: 'a' } }] }, key: 'a', result: null }];
+  contract.cases.push({ member: 'consumer.look', file: 'contracts/cases.json', group: 'look' });
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign, targets: ['php', 'python', 'node'] });
+  const kinds = /\.and_then\(\|\(kind, message\)\| match kind\.as_str\(\) \{\n\s+"refused" => Some\(polyspec_sample::Error::recognized\(polyspec_sample::Error::Refused, &message\)\),\n\s+_ => None,/;
+  // Python reads the class of the errors module of the owner's package.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn recognized_lookup_find\(py: Python<'_>, error: PyErr\) -> binding_core::Failure<polyspec_sample::Error> \{\n\s+let core = kind_of_recognized\(py, &error, Some\("polyspec\.sample\._errors"\), &\["RefusedError"\]\)/);
+  assert.match(python, kinds);
+  assert.match(python, /Some\(name\) => py\.import\(name\)\?,\n\s+None => errors\(py\)\?\.clone\(\),/);
+  // Node registers the class of the owner's package after the library classes.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /if classes\.len\(\) != 8 \{/);
+  assert.match(node, /let core = recognized_kind\(env, exception, &\[7\]\)/);
+  // The failure of the callback is that of the owner, so the failure that kept keeps is of any core error.
+  assert.match(node, /\nfn kept<E>\(env: &Env, failure: binding_core::Failure<E>\) -> binding_core::Failure<E> \{/);
+  assert.match(node, kinds);
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /\nconst recognized_sample = require\('@polyspec\/sample'\);\naddon\.__register\(\[[^\]]*AbsentError, recognized_sample\.RefusedError\]\);/);
+  // PHP finds the class by its name and reads it in the scope of the class of its category.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let core = kind_of_owner_recognized\(exception, &\[\("Polyspec\\\\Sample\\\\RefusedError", "Polyspec\\\\Sample\\\\SampleValueError"\)\]\)/);
+  assert.match(php, kinds);
+  assert.match(php, /let \(Some\(class\), Some\(scope\)\) = \(ClassEntry::try_find\(name\), ClassEntry::try_find\(category\)\) else \{/);
+  // The fixture of a case raises an instance of the owner's class.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /^import polyspec\.sample as foreign_sample$[^]*\("find", \("a",\), None, False, foreign_sample\.RefusedError\("G-5: refused", "refused"\)\)/m);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /^import \* as foreign_sample from '@polyspec\/sample';$[^]*\['find', \['a'\], null, false, new foreign_sample\.RefusedError\('G-5: refused', 'refused'\)\]/m);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\["find", \["a"\], null, false, new \\Polyspec\\Sample\\RefusedError\("G-5: refused", "refused"\)\]/);
+  // An error unit of a third library, and an owner without errors.recognized, are refused by name.
+  const third = consumerSample();
+  looking(third.contract, third.foreign, true);
+  third.foreign.get('sample').units.find((u: any) => u.id === 'lookup').members[0].errors.recognize = [{ unit: 'refused_error', library: 'other' }];
+  assert.throws(() => generateTargets({ contract: third.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: third.caseFiles, foreign: third.foreign, targets: ['node'] }), /sample\.lookup\.find: a recognized error unit of another library than sample is not generated \(U-3, GN-6s\)/);
+  const unnamed = consumerSample();
+  looking(unnamed.contract, unnamed.foreign, true);
+  delete unnamed.foreign.get('sample').errors.recognized;
+  assert.throws(() => generateTargets({ contract: unnamed.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: unnamed.caseFiles, foreign: unnamed.foreign, targets: ['node'] }), /sample\.lookup\.find: errors\.recognized of sample names no function that makes its core error of a recognized kind \(GN-6d, GN-6s\)/);
 });
 
 test('a callback unit of another repository carries language code, so a member that waits and takes it reaches language code (GN-6s, GN-6h, GN-6q, GN-6n)', () => {
@@ -6617,7 +6693,7 @@ test('Node takes the exception of a callback that a machine owns out of the envi
   const lib = text(scopedSample(['node']), 'packages/ts/generated/lib.rs');
   const ownedImpl = lib.slice(lib.indexOf('impl polyspec_sample::Lookup for OwnedCbLookup'));
   assert.match(ownedImpl.slice(0, ownedImpl.indexOf('\n}\n')), /let mut borrowed = CbLookup \{ object, env: &env[^}]*\};\n\s+polyspec_sample::Lookup::[a-z_]+\(&(?:mut )?borrowed[^\n]*\)\.map_err\(\|failure\| kept\(&env, failure\)\)\n/);
-  assert.match(lib, /fn kept\(env: &Env, failure: binding_core::Failure<polyspec_sample::Error>\) -> binding_core::Failure<polyspec_sample::Error> \{\n {4}let binding_core::Failure::Raised\(raised\) = &failure else \{\n {8}return failure;\n {4}\};/);
+  assert.match(lib, /fn kept<E>\(env: &Env, failure: binding_core::Failure<E>\) -> binding_core::Failure<E> \{\n {4}let binding_core::Failure::Raised\(raised\) = &failure else \{\n {8}return failure;\n {4}\};/);
   // GN-6u: the Raised names the entry of the table by the key of its ThrownKey.
   assert.match(lib, /let Some\(key\) = raised\.native\(\)\.downcast::<ThrownKey>\(\)\.map\(\|thrown\| thrown\.key\) else \{\n {8}return failure;\n {4}\};\n {4}let pending = THROWN\.with_borrow\(\|map\| matches!\(map\.get\(&key\), Some\(Thrown::Js\(error\)\) if error\.status == napi::Status::PendingException\)\);/);
   assert.match(lib, /napi::sys::napi_get_and_clear_last_exception\(env\.raw\(\), &mut exception\) \} == napi::sys::Status::napi_ok \{\n[^\n]*\n {8}match Owned::boxed\(env, unsafe \{ Unknown::from_raw_unchecked\(env\.raw\(\), exception\) \}\) \{\n {12}Ok\(held\) => Thrown::Held\(held\),/);
@@ -6634,7 +6710,7 @@ test('Node takes the exception of a callback that a machine owns out of the envi
   assert.match(alone, /\n {4}fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{/);
   assert.match(alone, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
   assert.match(alone, /\nfn thrown_again\(exception: &Owned\) -> Fail \{/);
-  assert.match(alone, /\nfn kept\(env: &Env, /);
+  assert.match(alone, /\nfn kept<E>\(env: &Env, /);
 });
 
 test('a Raised of the Node and WASM crates is released by its last drop, and no call or machine keeps a list of them (U-3, GN-6u, GN-6ae)', () => {
@@ -7427,7 +7503,7 @@ test('the count and the position of a handle convert with let-else, whose else a
 // a plausible value; generated code matches the Result or the Option instead.
 const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
 
-test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option (GN-4, R-1)', () => {
+test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option, and no alternative of an or-pattern binds a name (GN-4, R-1)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const own = (library: string): Map<string, string | Buffer> =>
     generate({ contract: read(`${library}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${library}`, caseFiles: new Map([['contracts/cases.json', read(`${library}/contracts/cases.json`)]]) });
@@ -7452,6 +7528,8 @@ test('no generated Rust calls a method that the clippy.toml of a repository disa
       text(out, path).split('\n').forEach((line, i) => {
         const code = line.replace(/\/\/.*$/, '');
         if (DISALLOWED.test(code)) found.push(`${name} ${path}:${String(i + 1)}: ${line.trim()}`);
+        // E0408: an alternative of an or-pattern binds a name only when every alternative binds it, and None binds none.
+        if (/\(_?[a-z]\w*\)\)* \| None\b/.test(code)) found.push(`${name} ${path}:${String(i + 1)}: ${line.trim()}`);
       });
       for (const helper of ['handle_count', 'handle_position', 'native_owner', 'release_queue', 'clean_up_native', 'release_dropped', 'kind_of_recognized', 'recognized_kind', 'thrown_count', 'native_count', 'php_units', 'js_native']) {
         if (new RegExp(`\\bfn ${helper}\\b`).test(text(out, path))) seen.add(helper);
@@ -7914,7 +7992,7 @@ test('Node takes the exception of every callback out of the environment where it
     contract.cases = contract.cases.filter((k: any) => k.member === undefined || kept.has(k.member));
   }), 'packages/ts/generated/lib.rs');
   assert.doesNotMatch(plain, /struct Driven/);
-  assert.match(plain, /\nfn kept\(env: &Env, failure: /);
+  assert.match(plain, /\nfn kept<E>\(env: &Env, failure: /);
   assert.match(plain, /\n {4}Held\(Owned\),\n/);
   assert.match(plain, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
   assert.match(plain, /\.map_err\(\|failure\| kept\(self\.env, failure\)\)/);

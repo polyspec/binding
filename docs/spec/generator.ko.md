@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e7db208003c10d6bd5a4f5a915ae479ff74f503f5e049b59249b54f4f1ed6d21 -->
+<!-- source-sha256: 7150bd65ff440bedfbce6ad9091e17bbdd13957c02533c12fe6580c2cb924772 -->
 # 생성기
 
 [English](generator.md)
@@ -505,7 +505,8 @@
   않으면 다시 던져 둔다. Go는 recognize한 오류의 kind와 메시지를 오류의 index 대신 C ABI에 넘긴다. 이유: recognize한 실패의
   뜻은 코어가 정하고(U-3), binding은 Rust 소스를 읽지 않으므로 코어 오류를 만드는 함수를 계약이 적는다. 언어 코드가 만든
   인스턴스는 property 값이 없으므로(GN-7a) 인스턴스의 property는 코어에 가지 않는다. 다른 라이브러리의 오류 unit을
-  recognize하는 것은 이름을 대어 거부한다(G-4).
+  recognize하는 이 계약의 callback unit은 이름을 대어 거부한다(G-4). 다른 레포의 callback unit은 GN-6s대로 그 소유자의
+  오류 unit을 recognize한다.
 - **GN-6ap** origin이 `generated`인 interface unit(U-1)은 core가 호출하지 않는 interface다: 한 parameter가 받는
   계약의 class들을 이름한다. 그 `core_type`은 그 interface로 type된 parameter에서 core가 받는 Rust 타입이고, 계약의
   class 가운데 그것을 `implements`하는 class(구현 class)의 core 타입 `C`마다 core는 `impl From<&C> for <core_type>`을
@@ -732,8 +733,15 @@
   `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
-  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
-  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
+  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 값 alias(U-7), 또는 다른
+  저장소의 값 alias나 값 class(U-7 (a'), GN-6x)의 parameter와 field는 기본값 `{empty: "object"}`를 가질 수 있다. 그
+  코어 parameter는 그 형태의 `Option`이고, 바인딩은 생략된 값에 `None`을 넘기며, 값이 없으면 빈 객체라는 것은 코어가
+  정한다. 선언은 Python에서 `...`, PHP에서 `null`(값 class는 배열을 받지 않기 때문이다), TypeScript에서 선택 parameter를
+  보인다. GN-13d와 Go의 U-2 테스트는 그 자리에 case 값 `{"kind": "map", "value": []}`를 준다. 값 alias에서는 빈
+  `dict`, 배열, `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
+  만드는 instance다. 이유: json 값 같은 값 타입의 options 객체는 빈 객체가 자연스러운 부재이고, `None`이 무엇인지는
+  이미 코어가 정한다. 이름을 대고 거부하는 것(G-4):
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, 값 타입의 다른 `{empty}` 기본값, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
   수·bool·text·latin1·bytes·source·list·map·enum·값 타입·`optional`이 아닌 타입의 기본값, `optional`이나 값 타입의
   `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값. 다만 `optional` 타입의 기본값은 거부하지 않는다. 그런 field의 결과 형태는 그
@@ -1109,8 +1117,15 @@
   인자를 decode하고 Go 값의 method를 부르는 그 unit의 dispatch를 그 unit을 받는 member가 있는 각 package에 쓴다. 그 자리의 case 값은
   소유 타입의 method를 가진 callback fixture이거나, make member가 돌려주는 class가 주는 instance 값이며, 이 레포의 case와 같다(G-5,
   GN-6aa, GN-13f). 그런 unit의 이름은
-  이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는
-  것(G-4): 소유 레포의 member가 만드는 case 값(그
+  이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 그런 unit의 member가 `errors.recognize`에 소유자의 오류 unit을 적으면, 그 member는 소유자의 계약으로 GN-6d대로
+  언어 코드의 예외를 읽는다. class는 소유 패키지의 것이다(Python은 module `<소유 root>._errors`, Node는 entry가 소유 npm
+  패키지에서 require하여 라이브러리 class 뒤에 등록하는 class, PHP는 소유 namespace의 class이며 이름으로 찾고 소유자의
+  category class의 scope에서 읽는다). kind는 class가 recognize한 unit이거나 그것을 확장하는 소유자 `errors.kinds`의 행이고,
+  코어 오류는 그 행의 variant에 대한 소유자의 `errors.recognized`이며 trait method가 그것을 `Failure::Kind`로 돌려준다. 그런
+  unit의 fixture의 raise 행(GN-13)은 소유자 class의 인스턴스를 던진다. 이름을 대고 거부하는 것(G-4): 세 번째 라이브러리의 오류
+  unit, `errors.recognized`가 없는 소유자, 둘 이상의 kind를 가진 recognize한 variant. 이유: 소유자의 오류가 무슨 뜻인지는 소유자의
+  코어가 정하고, 그 계약이 class와 오류를 만드는 함수를 적으므로 이 레포의 바인딩은 소유자의 소스를 읽지 않는다. 아직 생성하지
+  않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM에서 recognize한 오류, 소유 레포의 member가 만드는 case 값(그
   member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).

@@ -116,7 +116,11 @@ export function nodeTests(model: Model): string {
       foreignModules.add(library);
       return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}`;
     },
-    errorNew: (unit, kind, message) => `new pkg.${langName('node', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
+    // GN-6s: an error unit of the owner of a callback unit of another repository, through the owner's package.
+    errorNew: (unit, kind, message, library) => {
+      if (library !== undefined) foreignModules.add(library);
+      return `new ${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('node', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`;
+    },
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
