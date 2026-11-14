@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 67053f970b472392c99c646554ccbe4eeba5a0dda8fd2c67e36fb9e3c252d95f -->
+<!-- source-sha256: c5b9a215046507ee8e4a5e8528dadcb4848f53ad8fbc01e636cc70d761a92a03 -->
 # 생성기
 
 [English](generator.md)
@@ -767,7 +767,13 @@
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는
   `only`의 target에만 case다. 다른 target은 그 값을 넘길 수 없기 때문이다. 이유: Python과 Node만 줄 수 있는 member의
   cancellation처럼 한 언어에 형태가 없는 parameter는, 그렇지 않으면 그 언어가 그 parameter 없이 부를 수 있는 member나
-  target 전체를 거부하게 된다.
+  target 전체를 거부하게 된다. `only`가 있는 record의 field도 같이 그것이 적은 target에만 있는 field다. 다른 target은
+  class, 선언, record 읽기에 그 field가 없고, 그 바인딩은 코어에 그 field를 생략된 것(`None`)으로 준다. 그래서 그 field는
+  기본값이나 `optional` 타입을 가진다. 둘 다 없는 field와 variant case의 field에 있는 `only`는 이름을 대고 거부한다(G-4).
+  `only`가 있는 parameter나 field에 값을 주는 case는 다른 target의 시험에서 빠지므로 그 시험은 그대로 빌드되고, 계약
+  검사는 그 case의 `cases` 행이 그 target이 없는 `only`를 가질 때까지 그 case를 보고한다(CK-93, GN-13h). 이유: case는
+  계약을 읽는 사람이 보는 그 행의 `only`로만 target에서 빠진다. 생성기가 스스로 뺀 case는 어떤 target의 시험이 그것을
+  잃었다는 사실을 숨기며, CK-92는 인스턴스 값이 부르는 member에 대해 이미 그것을 보고한다.
 - **GN-6i** 기본값이 있는 parameter와 record parameter의 field(U-2, T-4)는 생략할 수 있다. 그 코어 parameter나 field는
   `Option<T>`이고, 바인딩은 생략된 값에 `None`을 넘기며 어떤 값도 채우지 않는다. 그래서 값은 코어만 정한다(B-1). 빌린
   형태는 text가 `Option<&str>`, latin1·bytes·source가 `Option<&[u8]>`, list가 `Option<&[T]>`, map이 `Option<&Map>`이고 수와

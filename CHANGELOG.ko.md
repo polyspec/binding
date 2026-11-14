@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 47efbf448cfb3b2ff72a116e676854af5a30a011ee4a24b8d223bcd5e1d1d1ed -->
+<!-- source-sha256: e7f7cbadf44c7200ab7da1d2421d5da9dd4a19fec0a628bfd7e824c19fe322d8 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
@@ -13,6 +13,17 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `only`(Q-4)가 있는 record의 field는 `only`가 있는 parameter와 같이 그것이 적은 target에만 있는 field다. 다른
+  target에는 그 field가 없고, 그 바인딩은 코어에 `None`을 주며, 그 field에 값을 주는 case는 그 target의 case가 아니다.
+  기본값이나 `optional` 타입이 없는 그런 field와 variant case의 field에 있는 `only`는 이름을 대고 거부한다. 생성기는
+  field의 `only`를 읽지 않았으므로 그 field는 모든 target의 field였다. 검증: 그런 field의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
+
+- `binding check`는 case가 생성되는 target을 `only`가 빼는 parameter나 record의 field에 값을 주는 case를, 그 case가
+  있는 `cases` 행이 그 target이 없는 `only`를 가질 때까지 보고한다(CK-93, GN-13h). 생성기는 그런 case를 그 target의
+  시험에서 스스로 뺐고, 계약을 읽는 사람은 그것을 보지 못했다. 검증: CK-93의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/contract-check.test.ts`.
 
 - `only`(Q-4)가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target에는 그 parameter가 없고, 그
   바인딩은 코어에 `None`을 주며, 그 parameter에 값을 주는 case는 그 target의 case가 아니다. 기본값이나 `optional`

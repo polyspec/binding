@@ -1578,7 +1578,56 @@ class Checker {
         this.report('CK-92', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId}, its unit or the row of the case an only without ${missing.join(', ')} (Q-4, GN-13f, GN-13h)`);
       }
     }
+    // CK-93: a case that gives a value to a parameter, or to a field of a record, whose only leaves out a target of the
+    // case is no case of that target, so the row of the case names that only (GN-13h) instead of the generator leaving
+    // the case out by itself.
+    const given: { what: string; only: { targets: readonly string[] } }[] = [];
+    for (const parameter of found.member.parameters ?? []) {
+      const key = convert(parameter.name, 'python', 'variable');
+      if (!Object.hasOwn(record, key)) continue;
+      if (parameter.only !== undefined) given.push({ what: `the parameter ${key}`, only: parameter.only });
+      this.givenFields(parameter.type, record[key], given, new Set());
+    }
+    for (const { what, only } of given) {
+      const missing = own.filter((lang) => !only.targets.includes(lang));
+      if (missing.length > 0) {
+        this.report('CK-93', path, `${where}: it gives ${what}, which only keeps out of ${missing.join(', ')}, where the case is generated; hold the case in a row of cases whose only names ${only.targets.join(', ')} alone (Q-4, GN-13h)`);
+      }
+    }
     return armed;
+  }
+
+  // CK-93: the fields with only of the records that a case value of a type gives, at any place of a list, an optional,
+  // a map, a keyed map or a tuple.
+  givenFields(type: Type, value: unknown, given: { what: string; only: { targets: readonly string[] } }[], seen: ReadonlySet<string>): void {
+    if (typeof type === 'string' || value === null || typeof value !== 'object') return;
+    if ('optional' in type) return this.givenFields(type.optional, value, given, seen);
+    if ('list' in type) {
+      if (Array.isArray(value)) for (const item of value) this.givenFields(type.list, item, given, seen);
+      return;
+    }
+    if ('tuple' in type) {
+      if (Array.isArray(value)) type.tuple.forEach((part, i) => this.givenFields(part, value[i], given, seen));
+      return;
+    }
+    if ('map' in type) {
+      for (const item of Object.values(value)) this.givenFields(type.map, item, given, seen);
+      return;
+    }
+    if ('keyed_map' in type) {
+      if (Array.isArray(value)) for (const entry of value) if (Array.isArray(entry)) this.givenFields(type.keyed_map, entry[1], given, seen);
+      return;
+    }
+    if (!('unit' in type) || type.library !== undefined || Array.isArray(value)) return;
+    const unit = this.contract.units.find((u) => u.id === type.unit);
+    if (unit?.kind !== 'record' || seen.has(unit.id)) return;
+    const fields = value as Record<string, unknown>;
+    for (const field of unit.fields ?? []) {
+      const key = convert(field.name, 'python', 'variable');
+      if (!Object.hasOwn(fields, key)) continue;
+      if (field.only !== undefined) given.push({ what: `the field ${key} of ${unit.id}`, only: field.only });
+      this.givenFields(field.type, fields[key], given, new Set([...seen, unit.id]));
+    }
   }
 
   // Q-4: the targets that generate a member: the targets of the contract that the only of its unit and its own only keep.

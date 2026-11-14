@@ -19,6 +19,7 @@ import {
   holdsCallback,
   takenCallbacks,
   lentCallbacks,
+  absentInits,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -589,7 +590,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
+    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
 }
 ${entersOnly ? '' : `
 fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
@@ -806,7 +807,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
       if (record?.kind === 'record') {
         // GN-6aa: a record parameter with keeps is read field by field here, its callbacks kept funcs and its type 'static.
         lines.push(...recordReads(typed, record, '&mut input').map((l) => `    ${l}`));
-        lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => rustField(f.name)).join(', ')} };`);
+        lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(record)} };`);
         continue;
       }
       // GN-6aa: a callback parameter with keeps moves into the core as its box; one without keeps is the struct of the

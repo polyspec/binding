@@ -8970,6 +8970,43 @@ test('a parameter with only is a parameter of the targets that it lists alone, a
   assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: the parameter cancel has only, which needs a default or an optional type, because the targets without it give the core the parameter as left out \(Q-4, U-2\)/);
 });
 
+// Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
+// end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
+// binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
+test('a field with only is a field of the record of the targets that it lists alone, and the others give the core None (Q-4, B2.254)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const points = (): any => {
+    const contract = read('points/packages/rust/interface.json');
+    contract.units.find((u: any) => u.id === 'point').fields.push({ name: ['z'], type: { optional: 'int' }, default: { literal: null }, reason: 'a depth that only Python and Node give', only: { targets: ['python', 'node'], reason: 'B-5' } });
+    return contract;
+  };
+  const cases = read('points/contracts/cases.json');
+  cases.shift.push({ id: 'a_point_with_a_depth_moves', point: { x: 1, y: 2, z: 7 }, by: 3, result: { x: 4, y: 5, z: 7 } });
+  const caseFiles = new Map([['contracts/cases.json', cases]]);
+  const out = generate({ contract: points(), version: '0.0.0', coreLib: 'polyspec_points', caseFiles });
+  // The targets of the only take the field.
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /\bz\?: number \| null\b|\bz\?: bigint \| number \| null\b|\breadonly z\b|\bz: /);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_points::Point \{ x, y, z \}/);
+  // Go, PHP and WASM build the core struct with None for the field and have no case that gives it.
+  for (const path of ['packages/go/internal/ffi/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_points::Point \{ x, y, z: None \}/, path);
+  }
+  const goPoint = /\ntype Point struct \{\n([\s\S]*?)\n\}/.exec(text(out, 'packages/go/zz_generated_points.go'))?.[1] ?? '';
+  assert.match(goPoint, /\bX\b/);
+  assert.doesNotMatch(goPoint, /\bZ\b/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /APointWithADepthMoves/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /a_point_with_a_depth_moves/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /a_point_with_a_depth_moves/);
+  // G-4: a field with only that cannot be left out has no value in the other targets, so it is refused by name.
+  const required = points();
+  const z = required.units.find((u: any) => u.id === 'point').fields.at(-1);
+  z.type = 'int';
+  z.required = true;
+  delete z.reason;
+  delete z.default;
+  assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_points', caseFiles, targets: ['go'] }), /point: the field z has only, which needs a default or an optional type, because the targets without it give the core the field as left out \(Q-4, U-2\)/);
+});
+
 // The repositories of the end-to-end check, generated for the five targets as the run of make e2e generates them.
 const e2eGenerated = (): Map<string, Map<string, string | Buffer>> => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));

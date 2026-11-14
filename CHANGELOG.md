@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- A field of a record with `only` (Q-4) is a field of the targets that it lists alone, as a parameter with `only` is.
+  The other targets have no such field, their binding gives the core `None` for it, and a case that gives it a value
+  is no case of theirs; such a field without a default or an `optional` type, and `only` at a field of a case of a
+  variant, are refused by name. The generator read no `only` of a field, so the field was a field of every target.
+  Verified by `node --test packages/ts/tests/generate.test.ts`, whose test of such a field failed before the change.
+
+- `binding check` reports a case that gives a value to a parameter or to a field of a record whose `only` leaves out
+  a target where the case is generated (CK-93), until the row of `cases` that holds the case has an `only` without
+  those targets (GN-13h). The generator left such a case out of the tests of those targets by itself, which no reader
+  of the contract saw. Verified by `node --test packages/ts/tests/contract-check.test.ts`, whose tests of CK-93 failed
+  before the change.
+
 - A parameter with `only` (Q-4) is a parameter of the targets that it lists alone. The other targets have no such
   parameter, their binding gives the core `None` for it, and a case that gives it a value is no case of theirs; a
   parameter with `only` without a default or an `optional` type is refused by name. The generator read no `only` of a

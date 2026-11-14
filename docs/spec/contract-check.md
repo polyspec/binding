@@ -276,6 +276,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   A row whose `only` names no target where its member is generated is reported too. Why: the test of a case is
   generated for each target of its member and its row, and a test that cannot make its instance in a target would
   either refuse the target or leave the case out silently, so that what was not verified there would not show.
+- **CK-93** A case gives no parameter and no field that an `only` keeps out of a target of the case (generator GN-6g,
+  GN-13h): for each case, a parameter of its member with `only` that the case gives a value, and a field with `only`
+  of a record that a value of the case gives, also inside a list, an `optional`, a map, a keyed map or a tuple, lists
+  every target where the case is generated, which are the targets of its member that the `only` of its row of `cases`
+  keeps. Another such parameter or field is reported with the case and the targets that its `only` leaves out; the
+  contract resolves it by an `only` of the row of `cases` that holds the case. Why: the other targets have no such
+  parameter or field and cannot pass its value, so the generator leaves the case out of their tests; the row states
+  that drop where a reader of the contract sees it, as CK-92 asks for the members that instance values call.
 - **CK-91** The release profile of the Go static library (generator GN-15i): for a contract with the target `go`,
   `binding check` reports `[profile.release]` of the root manifest or of `.cargo/config.toml` of the repository that
   sets `lto` to any value but `false` or `"off"`, with the file and the value, because a Go program then cannot link

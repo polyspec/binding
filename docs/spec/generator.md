@@ -942,7 +942,15 @@ the design ids are those of the binding design.
   `Option`; one without either is refused by name (G-4). A case that gives the parameter a value is a case of the
   targets of the `only` alone, because another target cannot pass that value. Why: a parameter that one language has
   no form of, such as the cancellation of a member that only Python and Node can give, would otherwise refuse the
-  whole member, or the whole target, where the language could call it without that parameter.
+  whole member, or the whole target, where the language could call it without that parameter. A field of a record with
+  `only` is in the same way a field of the targets that it lists alone: every other target has no such field in its
+  class, its declarations and its reading of the record, and its binding gives the core the field as left out
+  (`None`), so the field has a default or an `optional` type; a field without either, and `only` at a field of a case of
+  a variant, are refused by name (G-4). A case that gives a value to a parameter or a field with `only` is left out of
+  the tests of the other targets, so that those tests still build, and the contract check reports the case (CK-93)
+  until its row of `cases` has an `only` without those targets (GN-13h). Why: a case leaves a target only through the
+  `only` of its row, which a reader of the contract sees; a case that the generator left out by itself would hide that
+  the test of a target lost it, which CK-92 already reports for the members that instance values call.
 - **GN-6i** A parameter, or a field of a record parameter, with a default (U-2, T-4) may be left out. Its core
   parameter or field is `Option<T>`, and the binding passes `None` for a value that was left out and fills no value
   in, so the core alone decides the value (B-1). The borrowed forms are `Option<&str>` for text, `Option<&[u8]>` for
