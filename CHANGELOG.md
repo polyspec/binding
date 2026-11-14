@@ -5,6 +5,45 @@
 
 ## Unreleased
 
+- The end-to-end sample had a callback unit `source` (`source.get`, trait `Source`) for the kept callbacks of GN-6aa, a
+  name that another unit of the sample needs. It is now `feed` (`feed.get`, trait `Feed: Send + Sync`), and
+  `index.new`, `index.single` and `index.supplied` take it. Verified by `node --test packages/ts/tests/generate.test.ts`.
+- Node, PHP, WASM and Go refused `keeps: true` on a record parameter and on a callback parameter that is no item of a
+  list or an `optional` (GN-6aa), so a core that keeps one callback, or a record of callbacks, after the call had no
+  binding in those targets. The callback now moves into the core as its box, and the record is made from its fields
+  with the conversion of a kept callback and is `'static`. The sample has `index.single` and `index.supplied`, whose
+  cases call the kept source in a later `index.get`. Verified by `node --test packages/ts/tests/generate.test.ts`,
+  whose two new tests failed before the change with the refusals.
+- `make e2e` without `WORK` stopped at its first step on macOS with `npm ci` `Missing: ts@0.0.1 from lock file`: the run
+  made its directory under the temporary directory of the system, which is under `/var`, a symbolic link to
+  `/private/var`, and npm read the package of the generator under that path as a link that the lock does not hold. The
+  run now names its directory by its real path (GN-14). Verified by `node --test packages/ts/tests/e2e-work.test.ts`,
+  whose new assertion failed before the change, and by `npm ci --dry-run` of the tree under both paths.
+- A member with a parameter of the type `cancel` (T-1) was refused by name for every target (`the type cancel is not
+  generated yet`), so a core that observes the cancellation of its caller had no binding. The type is now generated
+  as GN-6aq states: the core takes a `binding_core::Cancel`, whose trigger fires when the language value fires and
+  at once when it fired before the call. Node and WASM take an `AbortSignal`, Python a future, Go the first parameter
+  `ctx context.Context`, through `context.AfterFunc`, and PHP an instance of the generated final class
+  `Cancellation` of the namespace of the extension; a cancel that is not the first parameter is refused by name for
+  Go, and the type at any place other than a parameter is refused by name for every target. The generated tests give
+  the case values `{"cancel": "fired"}` and `{"cancel": "open"}`, and `tests/e2e/classes` has the function `halted`.
+  Verified by `make test-ts`, whose new test failed before the change, and by `make e2e REPO=tests/e2e/classes`.
+- A parameter with `keeps: true` (GN-6aa) was refused by name in Node, and in PHP, WASM and Go its callback was the
+  wrapper of the call: PHP and WASM held a language value that is neither `Send` nor `Sync`, and Go held the index of
+  the object in a call that ends with the call, so a core that keeps the callback in a `Send` and `Sync` value did not
+  compile or called an ended call. A callback inside a list or an `optional` of such a parameter is now held as a
+  `Native` of its owner thread in Node, PHP and WASM, as a function type is held (GN-6z), and in Go as a kept func of
+  package `binding` that reads the number of the member first; a call on another thread is kind `wrong_thread`. A
+  record with `keeps` and a callback with `keeps` that is no item of a list or an `optional` are refused by name in
+  those four targets. The class `index` of `tests/e2e/sample` keeps a list of sources and calls them in a later call.
+  Verified by `make test-ts`, whose new test failed before the change, and by `make e2e REPO=tests/e2e/sample`.
+- A case value of a record of the result form that left out an `optional` field whose default is `{literal: null}`
+  was refused as "a case value of the record ... has no field", and the result form took that field in every
+  language, so a caller had to give null. Such a field may now be left out as a field of a case of a variant: Python
+  gives the dataclass field the default `None`, Node and WASM read a missing or `undefined` member as null, PHP takes
+  null at its place, Go leaves the pointer nil, and a case value may leave out its key (GN-6a, T-4). The record
+  `tally` of `tests/e2e/shapes` has the field `note`. Verified by `make test-ts`, whose new test failed before the
+  change, and by `make e2e REPO=tests/e2e/shapes`.
 - A test of `packages/ts` copied a fixture with the `cp` tool, whose `cp -r <dir>/ <root>/` copies the contents of
   `<dir>` into `<root>` on macOS and `<dir>` itself into `<root>/<dir>` on Linux, so the test of CK-65 failed on Linux
   with ENOENT for `packages/rust/interface.json`. Every copy of `generate.test.ts` now uses `cpSync` of `node:fs`, and

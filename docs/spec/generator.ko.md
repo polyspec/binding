@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 42483bec39b0afe231fd234ef480bf26d1437cabb8c255100cd968b1bfb2524e -->
+<!-- source-sha256: 70fc2312cb5359b2145f3047a752dc32c98482d23dbef31ac35666590c87d355 -->
 # 생성기
 
 [English](generator.md)
@@ -304,6 +304,11 @@
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
   `invalid_argument_type`이다.
+  기본값이 `{literal: null}`인 `optional` field(T-4)는 variant의 case의 field(GN-6v)처럼 결과 형태에서 빠질 수 있다:
+  Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
+  선택으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고, Go는 그 field의 pointer를 nil로 두며, case 값은 그 key를 뺄 수
+  있고 그때 값은 null이다. 그런 field는 늘 그 값이나 null로 나간다. 이유: core는 null과 주지 않은 값에 똑같이 `None`을
+  받으므로(GN-6i), 값이 없는 호출자는 아무것도 쓰지 않는다.
 - **GN-6t** tuple(T-1)은 정확히 그 부분들로 된 열로 들어오고, 각 부분은 그 타입대로 바뀌므로 코어는 부분들의 Rust tuple을
   받는다: Python은 `tuple`, Node와 WASM은 `Array`, PHP는 list(키가 0부터 n-1까지 차례인 배열)를 받는다. 다른 타입의 값이나
   항목 수가 다른 열은 kind `invalid_argument_type`이다. tuple은 입력의 모든 자리에서 받는다: parameter, list의 항목, record
@@ -484,11 +489,17 @@
   이유는 lifetime이 `core_type`의 경로에 없고 생성기가 Rust를 읽지 않기 때문이다. `keeps`가 있는 parameter에 대해 생성기는
   모든 target에서 box와 record의 코어 타입을 적는 곳에 `'static`을 적고(`polyspec_x::Options<'static>`), 없는 parameter에는
   호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env` 동안인
-  Node에서 컴파일되지 않는다. Python, PHP, WASM, Go는 다른 타입 안의 모든 callback에 `'static`을 적으므로 `keeps`는 그
-  crate의 text를 바꾸지 않는다. 아직 생성하지 않는 것(G-4): Node는 `keeps: true`가 있는 parameter를 이름을 대고 거부한다.
-  다른 타입 안의 callback의 wrapper가 JavaScript 객체를 호출의 환경 동안 갖고, owner 스레드의 `Native`(GN-6u)로 갖는
-  wrapper가 없기 때문이다. 또 PHP와 WASM의 wrapper가 호출보다 오래 사는지를 보인 실행이 아직 없으며, 그런 callback을 갖는
-  end-to-end check의 계약이 그것을 보여야 한다.
+  Node에서 컴파일되지 않는다. `keeps`가 있는 parameter 안의 callback은 호출보다
+  오래 살므로, 호출 동안 언어 객체를 갖는 wrapper로는 모자란다. Node, PHP, WASM은 함수 타입(GN-6z)처럼 그 객체를 owner
+  스레드의 `Native`(GN-6u)로 갖고, Go는 package `binding`에 member의 번호를 먼저 읽고 객체의 그 member를 실행하는 kept
+  func의 `cgo.Handle`을 묻는다(`Call.Keep`). owner 스레드에서 member를 부르면 GN-6d대로 바꾸고, 다른 스레드에서 부르면 kind
+  `wrong_thread`, owner의 정리(Node의 env, PHP의 request) 뒤에 부르면 kind `internal`이며, 각각 그 `BindingError`를 담은
+  `Native`의 `Raised`다. wrapper는 `Native`만 가지므로 `Send`이고 `Sync`이며, 그것을 요구하는 trait도 그것을 받는다.
+  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
+  나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). list나 `optional`의 항목이 아닌 `keeps`가 있는 callback
+  parameter는 그 box로 값째 core에 들어간다(`index.single`). `keeps`가 있는 record parameter는 보관되는 callback의 변환으로
+  field들에서 만들어지고, 그 core 타입은 `'static`이다(`index.supplied`). Go는 그 record의 field를 record의 reader가 아니라
+  진입점 안에서 직접 읽는데, record의 reader가 만드는 callback은 그 호출 동안만 살기 때문이다.
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는
@@ -547,20 +558,21 @@
     취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
     `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
     취소한다.
-  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). binding은 `ctx.Err()`를 읽고, 아니면
-    `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를 발화시킨다. 기다리거나
-    polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때 놓인다
-    (`runtime.AddCleanup`).
-  - PHP: root namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
-    `isCancelled(): bool`을 갖는다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
+  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). 이 타입의 parameter가 첫
+    parameter가 아닌 member는 Go에 대해 이름으로 거절한다. Go는 context를 맨 앞에 넘기기 때문이다. binding은
+    `ctx.Err()`를 읽고, 아니면 `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를
+    발화시킨다. 기다리거나 polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때
+    놓인다(`runtime.AddCleanup`): context는 `context.AfterFunc`의 func를 실행할 때까지 쥐고, `context.Background()`처럼
+    끝나지 않는 context는 아무것도 쥐지 않는다.
+  - PHP: extension namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
+    `isCancelled(): bool`을 갖는다. root namespace에 두지 않는다. 한 process는 class 이름을 한 번만 등록하고, 이 타입을
+    받는 두 extension이 함께 load되기 때문이다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
     호출 사이에 불린다: signal handler(`pcntl_async_signals`), core의 callback, 또는 다른 process와 공유하는 상태를
     호출 전에 읽어 그 상태가 그렇다고 할 때 `cancel()`을 부르는 host 코드가 부른다. binding은 그런 상태를 모르며,
     그것이 필요한 레포가 그 host 코드를 쓴다(GN-6ag).
   case에서 이 타입의 값은 `{"cancel": "fired"}`이거나 `{"cancel": "open"}`이다(GN-13, CK-22): 생성된 테스트는 이미
   발화한 언어 값이나 발화하지 않는 언어 값을 만들어 넘긴다. 이유: 호출자만이, 자기 언어가 이미 가진 취소로
   취소하고, core는 한 타입으로 그것을 관찰한다.
-  구현되지 않음: 생성기는 이 타입을 받는 member를 모든 target에 대해 이름으로 거절한다(`the type cancel is not
-  generated yet`).
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
@@ -939,8 +951,7 @@
     receiver가 `&self`이고 기다리는 member의 class는 `Shared`에 담기므로 두 goroutine이 한 객체 안에서 동시에 기다리고,
     어떤 호출이 그 객체 안에서 기다리는 동안 그 객체의 쓰기 자리가 필요한 호출은 kind `busy`로 실패한다. Go에는 함수의
     꼴이 하나뿐이므로 그 member는 기다리지 않는 member와 같은 이름과 결과를 갖고, 기다리면 안 되는 호출자는 goroutine을
-    띄운다. 어떤 호출도 취소되지 않는다. token `Io`는 취소를 지니지 않고 타입 `cancel`은 생성하지 않으므로(GN-13)
-    그 member는 `context.Context`를 받지 않는다.
+    띄운다. token `Io`는 취소를 지니지 않는다. 타입 `cancel`도 받는 member는 GN-6aq의 `context.Context`를 받는다.
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
@@ -1852,8 +1863,10 @@
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
-  실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들고, 실행이 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 실행의
-  모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는 아무것도 쓰지 않는다
+  실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들어 그 실제 경로로 부르고, 실행이 끝날 때, 실패할 때, SIGINT와
+  SIGTERM을 받을 때 실행의 모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는
+  아무것도 쓰지 않는다. 실제 경로로 부르는 것은 npm이 macOS의 `/var`처럼 symbolic link를 지나는 경로 아래의 패키지를
+  lock에 없는 link로 읽기 때문이다
   (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치하며, 모두 실행의 사본 안에서 하고 checkout에는 아무것도 쓰지 않는다: Python은 그 wheel, PHP는 그 확장, Go는 `go.mod`가 require하는 Go 모듈의 정적 라이브러리, Node와 WASM은 그 npm 패키지이며, addon은 플랫폼 패키지로, WASM 모듈은 glue와 함께 넣는다. npm 패키지는 실행이 npm 패키지를 pack하는 contract가 직접 또는 다른 그런 레포를 거쳐 가리키는 `DEPS`의 레포마다 만든다. 그 contract의 생성된 entry가 Node에서, 그리고 subpath `./wasm`으로 owner의 npm 패키지를 import하기 때문이다. contract가 가리키는 `DEPS`의 레포에 그 대상 `node`나 `wasm`이 없으면 대상 `node`와 `wasm`의 이름 있는 실패다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
   생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어를 lint하고 각 바인딩 crate를 host에서 그 매니페스트의 시험 feature로, 그리고 feature 없이 lint하고(시험 feature의 진입점만 쓰는 import나 helper는 feature 없는 빌드에서만 쓰이지 않기 때문이다, GN-5), 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로

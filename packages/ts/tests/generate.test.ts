@@ -3695,6 +3695,23 @@ test('an optional field of a case whose default is {literal: null} may be left o
   assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[2].fields[0], { default: { literal: 'a' }, default_core: 'polyspec_variants::TEXT' }); }), /figure\.label\.text: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
 });
 
+test('an optional field of a record of the result form whose default is {literal: null} may be left out, and is null (T-4, GN-6a)', () => {
+  // The record tally of shapes has the result form, and its field note is optional<text> = {literal: null}.
+  const out = shaped();
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class Tally:[\s\S]*?\n    note: str \| None = None\n/);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly note\?: string \| null;/, path);
+  // Node and WASM read a missing or undefined member as null where the record of the result form enters (tallies_total).
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let note: Option<String> = default_in\(member\(value, "note", subject\)\?, \|value\| optional_in\(value, \|value\| text_in\(value, "note"\)\)\)\.map\(Option::flatten\)\?;/);
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/lib.rs'), /let note: Option<String> = default_in\(&member\(value, "note", subject\)\?, /);
+  // G-5: a case value of an input may leave the field out; PHP gives null at its place, Go nil, and a result holds null.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tallies_total\(\[pkg\.Tally\(counts=\{\}, labels=\{\}\), pkg\.Tally\(counts=\{\}, labels=\{\}, note="x"\)\]\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /expected = pkg\.Tally\(counts=\{\}, labels=\{\}, note=None\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.talliesTotal\(\[\{ counts: new Map\(\[\]\), labels: new Map\(\[\]\) \}, /);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /talliesTotal\(\[new \\Polyspec\\Shapes\\Tally\(counts: \[\], labels: \[\], note: null\), /);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /TalliesTotal\(\[\]Tally\{Tally\{Counts: entries0, Labels: entries1, Note: nil\}, /);
+});
+
 test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {
   const out = variants();
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
@@ -3905,7 +3922,7 @@ test('a default of an optional type is one Option, None when it is left out or n
   // T-4: a field of an optional type with a default has the result form of its type, so a record that a member also
   // returns is generated, and a None of the core is the null of the language.
   const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
-  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None\n/);
+  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None = None\n/);
 });
 
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
@@ -6119,7 +6136,8 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   const goPackage = text(go, 'packages/go/zz_generated_classes.go');
   assert.match(goPackage, /\nfunc Read\(name string\) \(string, error\) \{/);
   assert.match(goPackage, /\nfunc \(this \*Gate\) EnterSlowly\(\) \(string, error\) \{/);
-  assert.doesNotMatch(goPackage, /context\.Context/);
+  // The token Io carries no cancellation: only a member that takes the type cancel takes a context (GN-6aq).
+  assert.deepEqual(goPackage.match(/^func [^\n]*context\.Context[^\n]*/gm), ['func Halted(ctx context.Context) (bool, error) {']);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
 });
@@ -6613,7 +6631,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6626,7 +6644,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6640,7 +6658,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6756,8 +6774,9 @@ test('Go recovers the panic of a method of a callback in the call, and the membe
     assert.match(binding, /\ntype panicked struct\{ value any \}\n/);
     // The member panics with that value after the call of the C ABI returned.
     assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
-    // One place recovers: the dispatch of a func does not.
-    assert.equal(binding.split('recover()').length - 1, 1);
+    // One place recovers besides the run of a kept func (GN-6aa, the class index of the sample): the dispatch of a func
+    // does not.
+    assert.equal(binding.replace(/\nfunc runKept\([\s\S]*?\n\}\n/, '\n').split('recover()').length - 1, 1);
   }
   // The test: a callback whose method panics, the same value at the caller, the member again on the same instance,
   // and a member that writes the instance, which is not busy.
@@ -6861,9 +6880,13 @@ test('a Node crate whose only language code is a function parameter has no varia
     contract.units = contract.units.filter((u: any) => !gone.has(u.id));
     const kept = new Set<string>();
     for (const unit of contract.units) {
-      unit.members = (unit.members ?? []).filter((m: any) => !names(m));
-      for (const m of unit.members) kept.add(m.id);
+      const before = unit.members ?? [];
+      unit.members = before.filter((m: any) => !names(m));
+      // A class whose constructor takes such a unit goes with it, with the members that are left.
+      if (before.some((m: any) => m.kind === 'constructor' && !unit.members.includes(m))) gone.add(unit.id);
     }
+    contract.units = contract.units.filter((u: any) => !gone.has(u.id));
+    for (const unit of contract.units) for (const m of unit.members) kept.add(m.id);
     contract.cases = contract.cases.filter((k: any) => k.member !== undefined && kept.has(k.member));
   };
   const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
@@ -6974,7 +6997,8 @@ test('a Raised of the PHP, Python and Go crates is released by its last drop, on
   assert.match(python, /static THROWN: Mutex<BTreeMap<u64, Py<PyAny>>> = Mutex::new\(BTreeMap::new\(\)\);/);
   assert.match(python, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = thrown_map\(\)\.remove\(&self\.key\);\n {8}drop\(taken\);\n {4}\}\n\}/);
   assert.match(python, /fn keep_thrown\(object: Py<PyAny>\) -> binding_core::Raised \{\n {4}let key = NEXT_THROWN\.fetch_add\(1, Ordering::Relaxed\);\n {4}thrown_map\(\)\.insert\(key, object\);\n {4}binding_core::Raised::from_generated\(binding_core::Native::new\(ThrownKey \{ key \}\)\)\n\}/);
-  assert.match(go, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = lock\(&THROWN\)\.remove\(&self\.key\);\n {8}drop\(taken\);\n {4}\}\n\}/);
+  // The sample keeps a func (the class index, GN-6aa), so the drop also releases the error of a kept func.
+  assert.match(go, /impl Drop for ThrownKey \{\n {4}fn drop\(&mut self\) \{\n {8}let taken = lock\(&THROWN\)\.remove\(&self\.key\);\n(?: {8}\/\/[^\n]*\n)*? {8}if let Some\(Thrown::Kept \{ key \}/);
   assert.match(go, /fn thrown\(error: Thrown\) -> Raised \{\n {4}let key = NEXT_THROWN\.fetch_add\(1, Ordering::Relaxed\);\n {4}lock\(&THROWN\)\.insert\(key, error\);\n {4}Raised::from_generated\(Native::new\(ThrownKey \{ key \}\)\)\n\}/);
   // No crate records the Raised values of a call, and no guard opens a scope for them.
   for (const lib of [php, python, go]) assert.doesNotMatch(lib, /\bRAISING\b|fn raised_released|\.handle\(\)\.raw\(\)/);
@@ -8202,19 +8226,85 @@ test('Go reads the list of the handles of a buffer exactly when the Rust crate w
   assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
 });
 
-test('a parameter whose callback the core keeps is refused by name in Node and changes no text of the other targets (GN-6aa, CK-90)', () => {
-  const kept = (targets: Lang[], keeps: boolean): Map<string, string | Buffer> => {
+test('a callback of a parameter with keeps is held as a Native in Node, PHP and WASM and as a kept func in Go (GN-6aa, CK-90)', () => {
+  // The class index of the sample keeps the list of sources that its constructor takes, and index.get calls them later.
+  const sampleOf = (change: (c: any) => void = () => undefined, targets?: Lang[]): Map<string, string | Buffer> => {
     const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-    const seek = sample.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
-    if (keeps) seek.parameters[0].keeps = true;
-    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets });
+    change(sample);
+    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets }) });
   };
-  // Node writes 'env for the box and the record, and has no wrapper that outlives the environment of the call.
-  assert.throws(() => kept(['node'], true), /sample\.seek\.search: a callback that the core keeps is not generated yet for node \(GN-6aa\)/);
-  // Python, PHP, WASM and Go write 'static for every callback inside another type.
-  for (const target of ['python', 'php', 'wasm', 'go'] as const) {
-    assert.deepEqual([...kept([target], true)].map(([path, file]) => [path, String(file)]), [...kept([target], false)].map(([path, file]) => [path, String(file)]), target);
+  const out = sampleOf();
+  // Node: the box is 'static, the wrapper holds a Native and borrows the object in the env of its owner for a call.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(env, item, "sources"\)\.map\(/);
+  assert.match(node, /pub struct KeptCbFeed \{\n    native: Native,\n\}/);
+  assert.match(node, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_env\(&self\.native, "Feed\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?polyspec_sample::Feed::get\(&borrowed, key\)/);
+  // A parameter without keeps keeps the box of the call.
+  assert.match(node, /let lookups: Vec<Box<dyn polyspec_sample::Lookup \+ 'env>> = /);
+  // PHP: the wrapper holds a Native and checks its thread before it borrows the object.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(item, "sources"\)/);
+  assert.match(php, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_thread\(&self\.native, "Feed::get\(\)"\)[\s\S]*?thrown_elsewhere\(error\)/);
+  // WASM: the wrapper holds a Native of the one thread of the module.
+  const wasm = text(sampleOf(undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn kept_feed\(value: &JsValue, subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
+  // Go: the callback is a kept func of the call that reads the number of the member first.
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchFeed\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
+  // Python holds the object as a Py<PyAny> with or without keeps.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = /);
+});
+
+test('a callback parameter with keeps that is no item of a list or an optional moves into the core as its box (GN-6aa)', () => {
+  // index.single of the sample keeps one source, which index.get calls in a later call.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
+  const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
+  const libs: [string, RegExp][] = [
+    ['packages/ts/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(env, source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/php-ext/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/go/internal/ffi/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(&mut input, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+  ];
+  for (const [path, line] of libs) {
+    const lib = text(out, path);
+    assert.match(lib, line, path);
+    // The core takes the box by value.
+    assert.match(lib, /polyspec_sample::Index::single\(source\)/, path);
   }
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&source, "source"\\)\\.map\\(`));
+  assert.match(wasm, /polyspec_sample::Index::single\(source\)/);
+  // A callback parameter without keeps is still the struct of the call, which the core borrows.
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /&mut \{ lookup \}/);
+  // The case of index.get calls the source that index.single kept.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /a_source_kept_alone_gives_its_value_in_a_later_call/);
+});
+
+test('a record parameter with keeps holds the callbacks of its fields as Natives and is static (GN-6aa)', () => {
+  // index.supplied of the sample keeps the source of its supply, which index.get calls in a later call.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
+  const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
+  const libs: [string, string][] = [
+    ['packages/ts/generated/lib.rs', 'kept_feed\\(env, member\\(supply, "source", "supply"\\)\\?, "source"\\)'],
+    ['packages/php-ext/generated/lib.rs', 'kept_feed\\(source, "source"\\)'],
+    ['packages/go/internal/ffi/generated/lib.rs', 'kept_feed\\(&mut input, "Source"\\)'],
+  ];
+  for (const [path, read] of libs) {
+    const lib = text(out, path);
+    assert.match(lib, new RegExp(`let source: ${box} = ${read}\\.map\\(`), path);
+    assert.match(lib, /let supply: polyspec_sample::Supply<'static> = polyspec_sample::Supply \{ source, label \};/, path);
+    assert.match(lib, /polyspec_sample::Index::supplied\(supply\)/, path);
+  }
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&member\\(&supply, "source", "supply"\\)\\?, "source"\\)\\.map\\(`));
+  assert.match(wasm, /let supply: polyspec_sample::Supply<'static> = polyspec_sample::Supply \{ source, label \};/);
+  // Go keeps the func of the field in the call.
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func IndexSupplied\(supply Supply\)[\s\S]*?call\.Keep\(enc, func[\s\S]*?dispatchFeed\(supply\.Source\)/);
+  // The case of index.get calls the source that index.supplied kept.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /a_source_kept_in_a_supply_gives_its_value_in_a_later_call/);
 });
 
 test('a Go test gives an optional callback as a pointer to its interface, not to the struct of the fixture (U-3, GN-6aa)', () => {
@@ -8557,4 +8647,47 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /held\.one\.value: a value alias in a case of a variant is not generated yet \(GN-6v\)/);
   // A variant without an alias or a callback keeps the encoding without the call.
   assert.match(text(variants(), 'packages/go/zz_generated_variants.go'), /\nfunc encodeFigure\(enc \*binding\.Writer, value Figure\) \{/);
+});
+
+test('a parameter of the type cancel binds the cancellation of each language to a binding_core::Cancel (T-1, GN-6aq)', () => {
+  // classes.halted of the end-to-end check takes cancel: cancel and gives whether the cancellation fired.
+  const classes = (): any => JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  const out = generate({ contract: classes(), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles });
+  // Every crate makes the pair, keeps the trigger and gives the core the Cancel.
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.match(text(out, path), /let \(trigger, cancel\) = binding_core::cancel_pair\(\);/, path);
+  }
+  // Node and WASM take an AbortSignal: aborted fires at once, and otherwise a listener of abort with once fires it.
+  for (const target of ['ts', 'ts/wasm']) {
+    assert.match(text(out, `packages/${target}/generated/index.d.ts`), /export declare function halted\(cancel: AbortSignal\): boolean;/, target);
+    assert.match(text(out, `packages/${target}/generated/lib.rs`), /fn cancel_in\([^)]*\) -> Result<binding_core::Cancel, Fail> \{[\s\S]*?"aborted"[\s\S]*?"once"[\s\S]*?"abort"[\s\S]*?\n\}/, target);
+    assert.match(text(out, `packages/${target}/generated/tests/generated.test.mjs`), /pkg\.halted\(AbortSignal\.abort\(\)\)[\s\S]*pkg\.halted\(new AbortController\(\)\.signal\)/, target);
+  }
+  // Python takes a future: cancelled() fires at once, and otherwise a done callback fires it when it is cancelled.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /fn cancel_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<binding_core::Cancel> \{[\s\S]*?"cancelled"[\s\S]*?"add_done_callback"/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.halted\(self\._future\(True\)\)[\s\S]*pkg\.halted\(self\._future\(False\)\)/);
+  // PHP takes an instance of the generated final class Cancellation of the namespace of the extension.
+  const stubPath = [...out.keys()].find((path) => path.startsWith('packages/php-ext/generated/') && path.endsWith('.stub.php')) ?? '';
+  assert.match(text(out, stubPath), /namespace Polyspec\\Classes \{\n {4}\/\*\*[^\n]*\*\/\n {4}final class Cancellation\n {4}\{\n {8}public function __construct\(\) \{\}\n\n {8}public function cancel\(\): void \{\}\n\n {8}public function isCancelled\(\): bool \{\}/);
+  assert.match(text(out, stubPath), / \* @param \\Polyspec\\Classes\\Cancellation \$cancel\n[\s\S]*?function halted\(mixed \$cancel\): bool/);
+  const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(phpLib, /#\[php\(name = "Polyspec\\\\Classes\\\\Cancellation"\)\]\n#\[php\(flags = ClassFlags::Final\)\]\npub struct PhpCancellation \{/);
+  assert.match(phpLib, /\.class::<PhpCancellation>\(\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /private function cancellation\(bool \$cancelled\): \\Polyspec\\Classes\\Cancellation\n {4}\{\n {8}\$cancellation = new \\Polyspec\\Classes\\Cancellation\(\);[\s\S]*halted\(\$this->cancellation\(true\)\)/);
+  // Go takes the context as the first parameter ctx; package binding fires the trigger by context.AfterFunc and
+  // releases it by runtime.AddCleanup.
+  const goClasses = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(goClasses, /func Halted\(ctx context\.Context\) \(bool, error\) \{[\s\S]*?\tdefer binding\.Cancel\(enc, ctx\)\(\)\n/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /func Cancel\(enc \*Writer, ctx context\.Context\) func\(\) \{[\s\S]*?runtime\.AddCleanup\(held, [\s\S]*?context\.AfterFunc\(ctx, func\(\) \{ held\.fire\(\) \}\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn cancel_in\(input: &mut &\[u8\]\) -> Result<binding_core::Cancel, Fail> \{/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\n\t"context"\n[\s\S]*func cancellation\(cancelled bool\) context\.Context \{[\s\S]*Halted\(cancellation\(true\)\)/);
+  // Go refuses a cancel that is not the first parameter, and every target refuses the type at another place.
+  const second = classes();
+  second.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters.unshift({ name: ['label'], type: 'text', required: true });
+  assert.throws(() => generate({ contract: second, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: a parameter of the type cancel is generated for Go as the first parameter ctx only \(GN-6aq\)/);
+  const returned = classes();
+  returned.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').returns = 'cancel';
+  assert.throws(() => generate({ contract: returned, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['node'] }), /the type cancel is generated as a parameter only \(T-1, GN-6aq\)/);
 });

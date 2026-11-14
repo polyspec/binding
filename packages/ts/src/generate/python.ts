@@ -78,6 +78,29 @@ fn source_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResul
     }
 }
 
+/// T-1 cancel, GN-6aq: a future, an object with cancelled() and add_done_callback, as the Cancel of a pair whose
+/// trigger fires when the future is cancelled: at once when it was cancelled before the call, and otherwise by a done
+/// callback, which fires it when the future is cancelled and not when it has a result.
+fn cancel_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<binding_core::Cancel> {
+    let future = value.hasattr("cancelled")? && value.hasattr("add_done_callback")?;
+    if !future {
+        return Err(binding_error(py, type_error(subject, "a future")));
+    }
+    let (trigger, cancel) = binding_core::cancel_pair();
+    if value.call_method0("cancelled")?.is_truthy()? {
+        trigger.cancel();
+        return Ok(cancel);
+    }
+    let done = pyo3::types::PyCFunction::new_closure(py, None, None, move |args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, pyo3::types::PyDict>>| -> PyResult<()> {
+        if args.get_item(0)?.call_method0("cancelled")?.is_truthy()? {
+            trigger.cancel();
+        }
+        Ok(())
+    })?;
+    value.call_method1("add_done_callback", (done,))?;
+    Ok(cancel)
+}
+
 /// T-1 path, B-3, GN-6y: a str, bytes or os.PathLike, as the bytes of os.fsencode. A value that os.fsencode refuses
 /// by its type is kind invalid_argument_type, a str that it cannot encode kind invalid_path, and binding_core judges
 /// the bytes.
@@ -347,7 +370,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', bytes: 'bytes_in', source: 'source_in', float: 'float_in', path: 'path_in' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', bytes: 'bytes_in', source: 'source_in', float: 'float_in', path: 'path_in', cancel: 'cancel_in' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(py, ${value}, ${subject}, ${closure(['py', 'item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
@@ -1410,7 +1433,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', path: input ? 'str | bytes | PathLike[str] | PathLike[bytes]' : 'str', none: 'None', never: 'NoReturn' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', path: input ? 'str | bytes | PathLike[str] | PathLike[bytes]' : 'str', cancel: 'Future[object] | ConcurrentFuture[object]', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -1510,7 +1533,7 @@ ${members}`;
 class ${langName('python', u.name, 'class')}:
     \"\"\"T-4: the result form of the record; the constructor holds the values, which the binding judges when they enter.\"\"\"
 
-${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}`).join('\n')}`).join('');
+${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}${caseLeftOut(f) ? ' = None' : ''}`).join('\n')}`).join('');
   // T-9, GN-6v: a frozen dataclass per case and the alias of their union.
   const variants = model.variants.map((v) => `${v.cases.map((kase) => `
 
@@ -1647,7 +1670,7 @@ function nativePyi(model: Model): string {
   }
   return `${pyHeader()}
 from collections.abc import ${/\bCallable\[/.test([...fns, ...classes].join('\n')) ? 'Callable, ' : ''}${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
-${/\bPathLike\b/.test([...fns, ...classes].join('\n')) ? 'from os import PathLike\n' : ''}from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
+${/\bConcurrentFuture\[/.test([...fns, ...classes].join('\n')) ? 'from asyncio import Future\nfrom concurrent.futures import Future as ConcurrentFuture\n' : ''}${/\bPathLike\b/.test([...fns, ...classes].join('\n')) ? 'from os import PathLike\n' : ''}from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
 ${classes.join('')}`;

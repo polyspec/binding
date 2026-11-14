@@ -30,7 +30,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState,
 } from './samples.ts';
 
 interface Values {
@@ -168,6 +168,8 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (type === 'source') return typeof json === 'string' ? `[]byte(${goString(json)})` : hexBytes(json, type);
     // GN-6y: a path of a case is relative to the directory of the test.
     if (type === 'path') return `casePath(t, ${goString(casePathOf(json))})`;
+    // GN-6aq: a context that was cancelled before the call, or one that is never done.
+    if (type === 'cancel') return `cancellation(${String(cancelState(json))})`;
     throw new Unsupported(`no Go case value of the type ${type}`);
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
@@ -586,7 +588,7 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
 // A value of the type that the binding converts without failing; rich: a list has one item, so that a member that
 // calls a callback per item calls it (K-2).
 function placeholder(v: Values, b: Body, type: Type, rich = false): string {
-  if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")', path: '"a"' } as Record<string, string>)[type] ?? '0';
+  if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")', path: '"a"', cancel: 'context.Background()' } as Record<string, string>)[type] ?? '0';
   // GN-6ae: a func that returns no value.
   if ('function' in type) {
     if (machineFunction(type)) return `${funcHead(v, type.function, () => '_')} { return nil, nil }`;
@@ -1653,6 +1655,19 @@ func (w *warnings) await(warning string) {
 }
 `;
 
+// GN-6aq: a context that was cancelled before the call, or one that is never done.
+const CANCELLATION = `
+// cancellation is a context that was cancelled before the call, or one that is never done.
+func cancellation(cancelled bool) context.Context {
+	if !cancelled {
+		return context.Background()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+`;
+
 // GN-6y: the directory of a test, in which a case resolves its relative paths; t.TempDir removes it at the end of the
 // test.
 const CASE_PATH = `
@@ -1847,7 +1862,7 @@ ${cases}
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['context', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   std.sort();
   const own = [
@@ -1914,6 +1929,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bsameValue\(/.test(all) ? [SAME_VALUE] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
+    ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),

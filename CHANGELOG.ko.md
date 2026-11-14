@@ -1,4 +1,5 @@
 <!-- doc-id: changelog -->
+<!-- source-sha256: 63f130ee0452bc3b52c0208eb0782bd97805fbbc8b4d5384d0142a14d1f59508 -->
 <!-- source-sha256: 651fea8fdff554ce860ae3b775dc1d526f762649bc804fbe8435c5a4a0ec56e7 -->
 <!-- source-sha256: 15045cf7af4db5d55565035f398ce578be4d3436d1c836d6e23143a004fad289 -->
 <!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
@@ -13,6 +14,41 @@
 
 ## Unreleased
 
+- end-to-end sample에는 GN-6aa의 보관되는 callback을 위한 callback unit `source`(`source.get`, trait `Source`)가 있었는데,
+  sample의 다른 unit이 그 이름을 쓴다. 이제 그것은 `feed`(`feed.get`, trait `Feed: Send + Sync`)이고, `index.new`,
+  `index.single`, `index.supplied`가 그것을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.
+- Node, PHP, WASM, Go는 record parameter의 `keeps: true`와 list나 `optional`의 항목이 아닌 callback parameter의
+  `keeps: true`를 거부했다(GN-6aa). 그래서 호출 뒤에 callback 하나나 callback의 record를 갖는 core는 그 target들에서
+  binding이 없었다. 이제 callback은 그 box로 core에 들어가고, record는 보관되는 callback의 변환으로 field들에서 만들어지며
+  `'static`이다. sample에 `index.single`과 `index.supplied`가 있고, 그 case는 보관된 source를 나중의 `index.get`에서 부른다.
+  새 시험 두 개가 변경 전에 그 거부로 실패한 `node --test packages/ts/tests/generate.test.ts`로 확인했다.
+- `WORK` 없는 `make e2e`는 macOS에서 첫 단계의 `npm ci`가 `Missing: ts@0.0.1 from lock file`로 멈췄다. 실행이 시스템
+  임시 디렉터리 아래에 디렉터리를 만들었는데 그것은 `/private/var`로 가는 symbolic link인 `/var` 아래에 있고, npm은 그
+  경로 아래 생성기 패키지를 lock에 없는 link로 읽었다. 이제 실행은 디렉터리를 그 실제 경로로 부른다(GN-14). 새 단언이
+  변경 전에 실패한 `node --test packages/ts/tests/e2e-work.test.ts`와 두 경로 아래 tree의 `npm ci --dry-run`으로
+  확인했다.
+- 타입 `cancel`(T-1)의 parameter를 가진 member는 모든 target에 대해 이름으로 거부되었으므로(`the type cancel is not
+  generated yet`), 호출자의 취소를 관찰하는 core에는 binding이 없었다. 이제 이 타입을 GN-6aq대로 생성한다: core는
+  `binding_core::Cancel`을 받고, 그 trigger는 언어 값이 발화할 때, 그리고 호출 전에 이미 발화했으면 곧바로 발화한다.
+  Node와 WASM은 `AbortSignal`을, Python은 future를, Go는 `context.AfterFunc`를 통해 첫 parameter
+  `ctx context.Context`를, PHP는 extension namespace의 생성된 final class `Cancellation`의 인스턴스를 받는다. 첫
+  parameter가 아닌 cancel은 Go에 대해 이름으로 거부하고, parameter가 아닌 자리의 이 타입은 모든 target에 대해 이름으로
+  거부한다. 생성된 테스트는 case 값 `{"cancel": "fired"}`와 `{"cancel": "open"}`을 주고, `tests/e2e/classes`는 함수
+  `halted`를 갖는다. 새 테스트가 변경 전에 실패한 `make test-ts`와 `make e2e REPO=tests/e2e/classes`로 확인했다.
+- `keeps: true`가 있는 parameter(GN-6aa)는 Node에서 이름으로 거부되었고, PHP, WASM, Go에서 그 callback은 호출의
+  wrapper였다. PHP와 WASM은 `Send`도 `Sync`도 아닌 언어 값을 가졌고, Go는 호출과 함께 끝나는 호출 안 객체의 index를
+  가졌으므로, callback을 `Send`이고 `Sync`인 값에 두는 코어는 컴파일되지 않거나 끝난 호출을 불렀다. 이제 그런 parameter의
+  list나 `optional` 안의 callback은 Node, PHP, WASM에서 함수 타입(GN-6z)처럼 owner 스레드의 `Native`로, Go에서는 member의
+  번호를 먼저 읽는 package `binding`의 kept func로 잡힌다. 다른 스레드에서의 호출은 kind `wrong_thread`다. `keeps`가 있는
+  record와, list나 `optional`의 항목이 아닌 `keeps`가 있는 callback은 그 네 target에서 이름으로 거부된다.
+  `tests/e2e/sample`의 클래스 `index`는 source의 list를 갖고 나중 호출에서 그것들을 부른다. `make test-ts`로 확인했고, 새
+  시험은 변경 전에 실패했다. `make e2e REPO=tests/e2e/sample`로도 확인했다.
+- 기본값이 `{literal: null}`인 `optional` field를 뺀, 결과 형태 record의 case 값은 "a case value of the record ... has
+  no field"로 거부되었고, 결과 형태는 모든 언어에서 그 field를 받았으므로 호출자가 null을 주어야 했다. 이제 그런 field는
+  variant의 case의 field처럼 빠질 수 있다: Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나
+  `undefined`인 member를 null로 읽으며, PHP는 그 자리에서 null을 받고, Go는 pointer를 nil로 두며, case 값은 그 key를 뺄
+  수 있다(GN-6a, T-4). `tests/e2e/shapes`의 record `tally`에 field `note`가 있다. `make test-ts`로 확인했고, 새 시험은
+  변경 전에 실패했다. `make e2e REPO=tests/e2e/shapes`로도 확인했다.
 - `packages/ts`의 시험이 fixture를 `cp` 도구로 복사했다. `cp -r <dir>/ <root>/`는 macOS에서는 `<dir>`의 내용을 `<root>`에
   복사하고 Linux에서는 `<dir>` 자체를 `<root>/<dir>`에 복사하므로, CK-65의 시험이 Linux에서 `packages/rust/interface.json`을
   찾지 못하고 ENOENT로 실패했다. 이제 `generate.test.ts`의 모든 복사는 `node:fs`의 `cpSync`를 쓰고, `copies.test.ts`는

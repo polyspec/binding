@@ -229,6 +229,46 @@
       ]
     },
     {
+      "id": "feed",
+      "name": [
+        "feed"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_sample::Feed",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "feed.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_sample::Feed::get",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "source",
       "name": [
         "source"
@@ -1632,6 +1672,153 @@
       ]
     },
     {
+      "id": "supply",
+      "name": [
+        "supply"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Supply",
+      "fields": [
+        {
+          "name": [
+            "source"
+          ],
+          "type": {
+            "unit": "feed"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "label"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "index",
+      "name": [
+        "index"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Index",
+      "final": true,
+      "members": [
+        {
+          "id": "index.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "sources"
+              ],
+              "type": {
+                "list": {
+                  "unit": "feed"
+                }
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::new"
+        },
+        {
+          "id": "index.single",
+          "name": [
+            "single"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": {
+                "unit": "feed"
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": {
+            "unit": "index"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::single"
+        },
+        {
+          "id": "index.supplied",
+          "name": [
+            "supplied"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "supply"
+              ],
+              "type": {
+                "unit": "supply"
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": {
+            "unit": "index"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::supplied"
+        },
+        {
+          "id": "index.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Index::get",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "store",
       "name": [
         "store"
@@ -2340,6 +2527,26 @@
       "member": "held_source.new",
       "file": "contracts/cases.json",
       "group": "held_source_new"
+    },
+    {
+      "member": "index.new",
+      "file": "contracts/cases.json",
+      "group": "index_new"
+    },
+    {
+      "member": "index.get",
+      "file": "contracts/cases.json",
+      "group": "index_get"
+    },
+    {
+      "member": "index.single",
+      "file": "contracts/cases.json",
+      "group": "index_single"
+    },
+    {
+      "member": "index.supplied",
+      "file": "contracts/cases.json",
+      "group": "index_supplied"
     }
   ]
 }

@@ -742,5 +742,21 @@
       },
       "result": false
     }
+  ],
+  "halted": [
+    {
+      "id": "a_cancellation_that_fired_is_halted",
+      "cancel": {
+        "cancel": "fired"
+      },
+      "result": true
+    },
+    {
+      "id": "an_open_cancellation_is_not_halted",
+      "cancel": {
+        "cancel": "open"
+      },
+      "result": false
+    }
   ]
 }

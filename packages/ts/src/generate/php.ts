@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
+import { DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -55,7 +55,7 @@ const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'r
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in', cancel: 'cancel_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -70,6 +70,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('function' in type) return functionIn(model, type.function, value, subject);
   if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
+  // GN-6aa: a callback of a parameter with keeps is held as a Native of its owner thread.
+  if (unit?.origin === 'callback' && model.keptCallbacks === true && libraryOf(type) === undefined) return `kept_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
@@ -251,6 +253,20 @@ fn latin1_in(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
 /// T-1 path, GN-6y: the bytes of a string, as they are, which binding_core judges.
 fn path_in(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
     binding_core::path_from_bytes(latin1_in(value, subject)?, subject).map_err(binding_error)
+}
+
+/// T-1 cancel, GN-6aq: an instance of the class Cancellation of the extension, as the Cancel of a pair whose trigger
+/// fires when the instance is cancelled: at once when it was cancelled before the call, and otherwise by its cancel().
+fn cancel_in(value: &Zval, subject: &str) -> Result<binding_core::Cancel, Fail> {
+    let Some(cancellation) = <&PhpCancellation as FromZval>::from_zval(value) else { return Err(type_error(subject, "Cancellation")) };
+    let (trigger, cancel) = binding_core::cancel_pair();
+    let mut state = cancellation.state();
+    if state.cancelled {
+        trigger.cancel();
+    } else {
+        state.triggers.push(trigger);
+    }
+    Ok(cancel)
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
@@ -782,6 +798,62 @@ impl PhpPairs {
 }
 `;
 
+// T-1 cancel, GN-6aq: the class Cancellation of the namespace of the extension, which a parameter of the type cancel
+// takes. It is of the extension's namespace, because the root namespace holds one class of a name for the process and
+// two extensions that take a cancel are loaded together.
+export const phpCancellationName = (layout: PhpLayout): string => `${layout.namespace}\\Cancellation`;
+const CANCELLATION = (layout: PhpLayout): string => `
+/// T-1 cancel, GN-6aq: ${phpCancellationName(layout)}, a cancellation that the caller fires by cancel(), once; the
+/// triggers of the calls that took it fire then, and a call after it fires its trigger at once.
+#[php_class]
+#[php(name = ${rustString(phpCancellationName(layout))})]
+#[php(flags = ClassFlags::Final)]
+pub struct PhpCancellation {
+    pub(crate) state: std::sync::Mutex<CancellationState>,
+}
+
+/// GN-6aq: whether the cancellation fired, and the triggers of the calls that wait for it.
+#[derive(Default)]
+pub struct CancellationState {
+    pub(crate) cancelled: bool,
+    pub(crate) triggers: Vec<binding_core::CancelTrigger>,
+}
+
+#[php_impl]
+impl PhpCancellation {
+    pub fn __construct() -> Self {
+        Self { state: std::sync::Mutex::new(CancellationState::default()) }
+    }
+
+    /// GN-6aq: fires the triggers; a second call has no further effect.
+    pub fn cancel(&self) {
+        let triggers = {
+            let mut state = self.state();
+            state.cancelled = true;
+            std::mem::take(&mut state.triggers)
+        };
+        for trigger in triggers {
+            trigger.cancel();
+        }
+    }
+
+    #[php(name = "isCancelled")]
+    pub fn is_cancelled(&self) -> bool {
+        self.state().cancelled
+    }
+}
+
+impl PhpCancellation {
+    /// GN-6aq: the state, also after a panic while it was held, because each change of it is whole.
+    pub(crate) fn state(&self) -> std::sync::MutexGuard<'_, CancellationState> {
+        match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+`;
+
 // GN-6h: the name of a class in the message of kind busy and of a poisoned object.
 const classLabel = (object: ObjectClass): string => langName('php', object.unit.name, 'class');
 
@@ -816,15 +888,19 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
       lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
       continue;
     }
-    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
+    // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
+    // A field of a record parameter with keeps is kept with it.
+    const kept = (fn.member.parameters ?? []).some((p) => p.name === (arg.field ? fn.record?.param.name : arg.name) && p.keeps === true);
+    const converted = kept ? boxed(keptModel(model), arg.type, convertIn(keptModel(model), arg.type, rustIdent(variable), rustString(variable))) : arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
     lines.push(held === undefined
-      ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
+      ? `        let ${rustField(arg.name)}: ${argType(kept ? keptModel(model) : model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
     if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(rustField(arg.name), rustString(variable), 'binding_error')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
-    const recordLet = rustType(model, { unit: fn.record.unit.id });
+    const keeps = (fn.member.parameters ?? []).some((p) => p.name === fn.record?.param.name && p.keeps === true);
+    const recordLet = rustType(keeps ? keptModel(model) : model, { unit: fn.record.unit.id });
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordLet} = ${recordType} { ${fields} };`);
   }
@@ -981,6 +1057,51 @@ ${checks}
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
 ${recognizing}`;
+}
+
+// GN-6u, GN-6aa: whether the extension holds Natives: for a value alias, a function type or a callback that the core
+// keeps.
+const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
+
+// GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
+// after the call that gave it. A call on the owner thread borrows the object and calls it as the callback of a call
+// does; a call on another thread is kind wrong_thread, and one after the end of the request kind internal, each a Raised
+// of its BindingError.
+function keptCallbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const label = langName('php', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const passed = m.params.map((p) => rustField(p.name)).join(', ');
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const mutable = m.receiver === '&mut self';
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        if let Err(error) = native_thread(&self.native, ${rustString(`${label}::${langName('php', m.member.name, 'callable')}()`)}) {
+            return Err(thrown_elsewhere(error));
+        }
+        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ', owner: std::thread::current().id()' : ''} };
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+    }`;
+  }).join('\n');
+  return `
+/// GN-6aa: ${label}, held as a Native of its owner thread, which the core keeps after the call that gave it.
+pub struct Kept${struct} {
+    native: Native,
+}
+
+/// GN-6aa: a callback object that the core keeps is checked when it enters, as in_${name} checks it.
+fn kept_${name}(value: &Zval, subject: &str) -> Result<Kept${struct}, Fail> {
+    let checked = in_${name}(value, subject)?;
+    Ok(Kept${struct} { native: php_native(&checked.object)? })
+}
+
+impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
+}
+`;
 }
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
@@ -1155,12 +1276,12 @@ ${!keepsPhp ? '' : `            Some(Thrown::Php(exception)) => match exception.
                 Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
             },
 `}            Some(Thrown::Binding(fail)) => fail,
-            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
+            None => ${takesFunction(model) || keepsAny(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-${takesFunction(model) ? elsewhereRust(model) : ''}
+${takesFunction(model) || keepsAny(model) ? elsewhereRust(model) : ''}
 /// U-3: whether the class of an object has a method of the name.
 fn has_method(object: &ZendObject, name: &str) -> bool {
     let class = object.get_class_entry();
@@ -1265,7 +1386,7 @@ fn out_${rustField(object.unit.name)}(value: impl CoreForm<${object.unit.core_ty
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
-  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '');
+  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '') + (cancelsAny(model) ? CANCELLATION(layout) : '');
   const enums = [
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
@@ -1278,6 +1399,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     }),
     ...model.objects.map((object) => objectOut(model, object)),
     ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
+    ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)),
     ...model.interfaces.map((i) => interfaceRust(model, i)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     model.foreignCallbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? OWNER_RECOGNIZED_KIND : '',
@@ -1286,7 +1408,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     foreignFailurePhp(model),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? `${phpHost(model)}${phpMaking(model)}` : '',
-    usesNative(model) ? PHP_NATIVE : '',
+    holdsNative(model) ? PHP_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -1496,6 +1618,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     // N-4: the iterator is registered before the classes whose getIterator names it as its return type.
     ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
+    ...(cancelsAny(model) ? ['        .class::<PhpCancellation>()'] : []),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   // GN-13: the case-test entry points of the cases whose value has no PHP form.
@@ -1513,17 +1636,17 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use ext_php_rs::args::Arg;
+${holdsNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use ext_php_rs::args::Arg;
 use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.variants.length > 0 || model.interfaces.length > 0 || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.variants.length > 0 || model.interfaces.length > 0 || cancelsAny(model) || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${usesNative(model) || /\bTHROWN\b/.test(used) ? '{Mutex, OnceLock}' : 'OnceLock'};
+${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${holdsNative(model) || /\bTHROWN\b/.test(used) ? '{Mutex, OnceLock}' : 'OnceLock'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1758,7 +1881,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${holdsNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -1822,7 +1945,7 @@ ${poisonRust(model, layout)}${caseTests.entries}
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
             .name(${rustString(layout.extension)})
-    ${register.join('\n')};${!usesNative(model) ? '' : `
+    ${register.join('\n')};${!holdsNative(model) ? '' : `
         // GN-6u: the Natives of a request are released at its end, while the engine is alive.
         let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `
         #[cfg(feature = "thread-test")]
@@ -1854,6 +1977,7 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
+      if (type === 'cancel') return `\\${phpCancellationName(layout)}`;
       return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', path: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
@@ -1891,6 +2015,20 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
         public function errno(): ?int {}
     }
 `).join('\n')}}`);
+  // T-1 cancel, GN-6aq: the class Cancellation of the extension.
+  if (cancelsAny(model)) {
+    blocks.push(`namespace ${layout.namespace} {
+    /** A cancellation that the caller fires by cancel(), which a parameter of the type cancel takes (GN-6aq). */
+    final class Cancellation
+    {
+        public function __construct() {}
+
+        public function cancel(): void {}
+
+        public function isCancelled(): bool {}
+    }
+}`);
+  }
   // E-2, I-3: an error unit extends the class of its parent or of its category; a property is a method.
   for (const u of model.errorUnits) {
     const parent = u.parent === undefined

@@ -330,6 +330,8 @@ export interface Model {
   // GN-6aa: the lifetime of a callback in a box of the core trait: 'env in Node, whose callback lives in the environment
   // of the call, and 'static elsewhere.
   callbackLife?: string;
+  // GN-6aa: the conversions of a parameter with keeps, whose callbacks a target holds as a Native of their owner.
+  keptCallbacks?: boolean;
   // T-3: the records of other repositories that this contract's types name, in the order they are first named.
   foreignRecords: ForeignRecord[];
   // The contracts of the libraries that the contract names (T-3).
@@ -372,6 +374,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if (typeof type === 'string') {
     // T-1: a source is the original of a parsing operation, so it is a parameter (toFn) and no other place.
     if (type === 'source') throw new Unsupported(`${where}: the type source is generated as a parameter only (T-1)`);
+    // GN-6aq: a cancellation is a parameter of a member, or an optional one, and no other place.
+    if (type === 'cancel') throw new Unsupported(`${where}: the type cancel is generated as a parameter only (T-1, GN-6aq)`);
     if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'path', 'none'].includes(type)) {
       throw new Unsupported(`${where}: the type ${type} is not generated yet`);
     }
@@ -574,8 +578,8 @@ export function collectModel(
       }
       // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
       const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
-      // T-1: a source is taken as a parameter, or an optional one.
-      const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
+      // T-1: a source is taken as a parameter, or an optional one; GN-6aq: a cancellation too.
+      const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source') || takesCancel(type);
       // GN-6ap: a generated interface as a parameter, or an optional one; the core takes the value, so no borrow is named.
       const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
       const iface = typeof inner === 'object' && 'unit' in inner && inner.library === undefined ? units.get(inner.unit) : undefined;
@@ -1361,7 +1365,7 @@ export function withFunctionAliases(crate: string): string {
 export function rustType(model: Model, type: Type, inside = false): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
-      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()',
+      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()', cancel: 'binding_core::Cancel',
     };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type}`);
@@ -1381,7 +1385,8 @@ export function rustType(model: Model, type: Type, inside = false): string {
   if ('unit' in type) {
     const unit = unitOf(model, type);
     // U-3: a callback is the generated struct that implements the core trait over the language object.
-    if (unit?.origin === 'callback') return inside ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
+    // GN-6aa: a callback that the core keeps moves into it as the box, at any place.
+    if (unit?.origin === 'callback') return inside || model.keptCallbacks === true ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
     if (unit?.core_type === undefined) throw new Unsupported(`${type.unit} has no core_type`);
     // GN-6aa: the core type of a record with a callback field has one lifetime, which the binding writes.
     if (unit.kind === 'record' && (unit.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type))) return `${unit.core_type}<${model.callbackLife ?? "'static"}>`;
@@ -1394,8 +1399,8 @@ export function rustType(model: Model, type: Type, inside = false): string {
 // source Vec<u8>/&[u8], path PathBuf/&Path) is taken borrowed, and optional<T> of one as Option<borrowed>, which the
 // generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
 export function coreArg(model: Model, type: Type, variable: string): string {
-  // GN-6z: a function moves into the core, which may keep it.
-  if (byValue(model, type) || (typeof type === 'object' && 'function' in type)) return variable;
+  // GN-6z: a function moves into the core, which may keep it; GN-6aq: so does a cancellation.
+  if (byValue(model, type) || (typeof type === 'object' && 'function' in type) || takesCancel(type)) return variable;
   // GN-6ap: the core takes the value of a generated interface, and an optional one as an Option of it.
   if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
@@ -1453,6 +1458,42 @@ export function takesFunction(model: Model): boolean {
 export function keepsThrown(model: Model): boolean {
   return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
+
+// GN-6aq: whether a type is a cancellation, or an optional one, which a parameter alone takes.
+export const takesCancel = (type: Type): boolean => type === 'cancel' || (typeof type === 'object' && 'optional' in type && type.optional === 'cancel');
+
+// GN-6aq: whether a member of the contract takes a cancellation.
+export const cancelsAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => takesCancel(a.type)));
+
+// GN-6aa: the parameters whose callbacks the core keeps after the call (keeps: true).
+const keptParams = (model: Model): Type[] =>
+  [...model.functions, ...model.objects.flatMap((o) => o.members)].flatMap((fn) => (fn.member.parameters ?? []).filter((p) => p.keeps === true).map((p) => p.type));
+
+// GN-6aa: whether a member takes a parameter with keeps.
+export const keepsAny = (model: Model): boolean => keptParams(model).length > 0;
+
+// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
+export function keptCallbacks(model: Model): CallbackUnit[] {
+  const found = new Set<Unit>();
+  const seen = new Set<string>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return visit(type.list);
+    if ('optional' in type) return visit(type.optional);
+    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+    if (unit?.origin === 'callback') found.add(unit);
+    // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
+    if (unit?.kind === 'record' && !seen.has(unit.id)) {
+      seen.add(unit.id);
+      (unit.fields ?? []).forEach((f) => visit(f.type));
+    }
+  };
+  keptParams(model).forEach(visit);
+  return model.callbacks.filter((c) => found.has(c.unit));
+}
+
+// GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
+export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
 
 // GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
 export function usesNative(model: Model): boolean {
@@ -1555,6 +1596,8 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
     // A parameter whose `core` is `value` gives a clone of the value under its read guard, as the contract names it.
     if (held.some((h) => h.param === p)) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `CoreForm::core_form(${variable(p)})`;
+    // GN-6aa: a callback parameter with keeps moves into the core as its box.
+    if ((fn.member.parameters ?? []).some((q) => q.name === p.name && q.keeps === true) && unitOf(model, p.type)?.origin === 'callback') return variable(p);
     return p.default === undefined || ownOption(p) ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io or process_wait takes its token first after
@@ -2206,7 +2249,8 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
   return `${taken}.and_then(|[${names.join(', ')}]| Ok((${parts.map((t, i) => `${part(t, names[i] ?? '')}?`).join(', ')}${parts.length === 1 ? ',' : ''})))`;
 };
 
-// T-9, GN-6v: an optional field of a case whose default is {literal: null} may be left out, and is then null.
+// T-9, GN-6v, GN-6a: an optional field of a case or of a record of the result form whose default is {literal: null}
+// may be left out, and is then null.
 export const caseLeftOut = (field: { type: Type; default?: Default }): boolean =>
   typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;
 

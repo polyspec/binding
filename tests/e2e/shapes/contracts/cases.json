@@ -485,6 +485,30 @@
         "counts": {},
         "labels": []
       }
+    },
+    {
+      "id": "one_word_noted_null",
+      "words": [
+        "a"
+      ],
+      "result": {
+        "counts": {
+          "a": 1
+        },
+        "labels": [
+          [
+            {
+              "int": 0
+            },
+            "a"
+          ],
+          [
+            "first",
+            "a"
+          ]
+        ],
+        "note": null
+      }
     }
   ],
   "tally_total": [
@@ -513,6 +537,32 @@
         "labels": []
       },
       "result": 0
+    },
+    {
+      "id": "a_noted_tally",
+      "tally": {
+        "counts": {},
+        "labels": [],
+        "note": "x"
+      },
+      "result": 1
+    }
+  ],
+  "tallies_total": [
+    {
+      "id": "a_note_left_out_is_null",
+      "tallies": [
+        {
+          "counts": {},
+          "labels": []
+        },
+        {
+          "counts": {},
+          "labels": [],
+          "note": "x"
+        }
+      ],
+      "result": 1
     }
   ],
   "merged": [

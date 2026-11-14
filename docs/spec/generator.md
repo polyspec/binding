@@ -375,6 +375,12 @@ the design ids are those of the binding design.
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+  An `optional` field whose default is `{literal: null}` (T-4) may be left out of the result form, as a field of a
+  case of a variant (GN-6v): Python gives the dataclass field the default `None`, Node and WASM read a missing or
+  `undefined` member as null and declare the member optional, PHP takes null at its place in the constructor, Go
+  leaves the pointer of the field nil, and a case value may leave out its key, which is then null. Such a field
+  always leaves with its value or null. Why: the core gets `None` for a null and for a value that was not given
+  alike (GN-6i), so a caller that has no value writes none.
 - **GN-6t** A tuple (T-1) enters as a sequence of exactly its parts, and each part is converted as its type, so the
   core gets the Rust tuple of the parts: Python takes a `tuple`, Node and WASM an `Array`, and PHP a list (an array
   whose keys are 0 to n-1 in order). A value of another type, or a sequence with another number of items, is kind
@@ -601,11 +607,20 @@ the design ids are those of the binding design.
   parameter with `keeps` the generator writes `'static` where it names the box and the core type of the record
   (`polyspec_x::Options<'static>`) in every target, and for a parameter without it the lifetime of the call. The
   compiler judges the core (I-2): a core that keeps the value of a parameter without `keeps` does not compile in
-  Node, whose box lasts for `'env`. Python, PHP, WASM and Go write `'static` for every callback inside another type,
-  so `keeps` changes no text of their crates. Not generated yet (G-4): Node refuses a parameter with `keeps: true` by
-  name, because the wrapper of a callback inside another type holds the JavaScript object for the environment of the
-  call and none holds it as a `Native` of its owner thread (GN-6u); and no run shows yet that the wrappers of PHP and
-  WASM outlive their call, which a contract of the end-to-end check that keeps such a callback has to show.
+  Node, whose box lasts for `'env`. A callback inside a parameter with `keeps` outlives the call, so the
+  wrapper that holds the language object for the call does not suffice: Node, PHP and WASM hold the object as a
+  `Native` of its owner thread (GN-6u), as a function type is held (GN-6z), and Go asks package `binding` for the
+  `cgo.Handle` of a kept func (`Call.Keep`) that reads the number of the member first and runs that member of the
+  object. A call of a member on the owner thread converts as GN-6d states; a call on another thread is kind
+  `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`,
+  each a `Raised` whose `Native` holds its `BindingError`. The wrapper holds only the `Native`, so it is `Send` and
+  `Sync`, and a trait that requires them takes it. Python holds the object as a `Py<PyAny>` with or without `keeps`.
+  The end-to-end sample keeps a list of callbacks in an instance of a class and calls them in a later call
+  (the class `index` of `tests/e2e/sample`). A callback parameter with `keeps` that is no item of a list or an
+  `optional` moves into the core as its box, by value (`index.single`). A record parameter with `keeps` is made from
+  its fields with the conversion of a kept callback, and its core type is `'static` (`index.supplied`); Go reads the
+  fields of that record in the entry point itself, not through the reader of the record, whose callbacks last for the
+  call only.
 - **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
@@ -674,20 +689,21 @@ the design ids are those of the binding design.
     `concurrent.futures.Future`). The binding reads `cancelled()` and otherwise adds a done callback, which fires the
     trigger when the future is cancelled and not when it has a result. Another thread cancels a
     `concurrent.futures.Future` by `cancel()`, and an `asyncio.Future` by `loop.call_soon_threadsafe(future.cancel)`.
-  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`). The binding reads
-    `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine that the
-    context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that keeps
-    it is unreachable (`runtime.AddCleanup`).
-  - PHP: the generated final class `Cancellation` of the root namespace, with `__construct()`, `cancel(): void`,
-    which is idempotent, and `isCancelled(): bool`. One PHP process runs no language code while a core call runs, so
+  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`); a member whose
+    parameter of the type is not the first one is refused by name for Go, because Go passes a context first. The
+    binding reads `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine
+    that the context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that
+    keeps it is unreachable (`runtime.AddCleanup`): the context keeps the func of `context.AfterFunc` until it runs
+    it, and a context that is never done, such as `context.Background()`, keeps nothing.
+  - PHP: the generated final class `Cancellation` of the namespace of the extension, with `__construct()`,
+    `cancel(): void`, which is idempotent, and `isCancelled(): bool`. It is not of the root namespace, because a
+    process registers a class name once and two extensions that take the type are loaded together. One PHP process runs no language code while a core call runs, so
     `cancel()` is called between calls: by a signal handler (`pcntl_async_signals`), by a callback of the core, or by
     host code that reads a state shared with another process before a call and calls `cancel()` when that state says
     so. The binding knows no such state; the repository that needs it writes that host code (GN-6ag).
   In a case a value of the type is `{"cancel": "fired"}` or `{"cancel": "open"}` (GN-13, CK-22): the generated test
   makes a language value that has fired, or one that never fires, and passes it. Why: the caller alone cancels, by
   the cancellation that its language already has, and the core observes it through one type.
-  Not implemented: the generator refuses a member that takes the type by name (`the type cancel is not generated
-  yet`) for every target.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -1147,8 +1163,8 @@ the design ids are those of the binding design.
     `&self` that waits is held in `Shared`, so two goroutines wait in one object at the same time, and a call that
     needs a write place of that object while a call waits in it fails with kind `busy`. Go has one form of a function,
     so the member has the name and the results of a member that does not wait, and its caller starts a goroutine where
-    it must not wait. No call is cancelled: the token `Io` carries no cancellation, and the type `cancel` is not
-    generated (GN-13), so the member takes no `context.Context`.
+    it must not wait. The token `Io` carries no cancellation; a member that also takes the type `cancel` takes the
+    `context.Context` of GN-6aq.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
@@ -2279,9 +2295,10 @@ the design ids are those of the binding design.
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout in the directory `WORK`,
-  or, without `WORK`, in a directory that the run makes under the temporary directory of the system and removes when it
-  ends, when it fails and on SIGINT and SIGTERM, after every process of the run has exited, so a run without `WORK`
-  writes nothing into the checkout but its record (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+  or, without `WORK`, in a directory that the run makes under the temporary directory of the system, named by its real
+  path, and removes when it ends, when it fails and on SIGINT and SIGTERM, after every process of the run has exited, so
+  a run without `WORK` writes nothing into the checkout but its record; the real path is the name because npm reads a
+  package under a path through a symbolic link, such as `/var` of macOS, as a link that its lock does not hold (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the first among them the two forms of a call of `then` (GN-13f: the tally of a counter that arms its own fault and
   leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and

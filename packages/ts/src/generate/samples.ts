@@ -53,6 +53,15 @@ export interface Context {
   machineFunctionNew?: (fixture: FunctionFixture) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
+  // GN-6aq: the expression of a cancellation of the language that fired before the call, or one that never fires.
+  cancelNew?: (fired: boolean) => string;
+}
+
+// G-5, GN-6aq: the state of a case value of the type cancel, {"cancel": "fired"} or {"cancel": "open"}.
+export function cancelState(value: unknown): boolean {
+  const state = typeof value === 'object' && value !== null ? (value as { cancel?: unknown }).cancel : undefined;
+  if (state !== 'fired' && state !== 'open') throw new Unsupported(`a case value of the type cancel is {"cancel": "fired" | "open"}, not ${shown(value)} (G-5)`);
+  return state === 'fired';
 }
 
 // GN-6ae: a function fixture as its language writes it: each step calls the method `fn` on the argument at the position
@@ -89,6 +98,8 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
       node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()', source: "'a'", path: "'a'" },
       php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""', source: '"a"', path: '"a"' },
     };
+    // GN-6aq: a cancellation that never fires.
+    if (type === 'cancel' && ctx.cancelNew !== undefined) return ctx.cancelNew(false);
     return table[ctx.lang][type] ?? 'null';
   }
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
@@ -232,6 +243,10 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
       return `hex2bin(${phpText(hex)})`;
     }
+    if (type === 'cancel') {
+      if (ctx.cancelNew === undefined) throw new Unsupported(`a case value of the type cancel is not generated for ${ctx.target ?? ctx.lang} (GN-6aq)`);
+      return ctx.cancelNew(cancelState(value));
+    }
     if (type === 'path') {
       const relative = casePathOf(value);
       if (ctx.casePath === undefined) throw new Unsupported(`a case value of the type path is not generated for ${ctx.target ?? ctx.lang} (GN-6y)`);
@@ -286,10 +301,13 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if (unit?.kind === 'record') {
     if (typeof value !== 'object' || Array.isArray(value)) throw new Unsupported(`a case value of the record ${unit.id} is not an object of its fields`);
     const fields = value as Record<string, unknown>;
-    return ctx.recordNew(
+    return leftOutNew(
+      ctx,
       unit,
       (unit.fields ?? []).map((f) => {
         const key = langName('python', f.name, 'variable');
+        // GN-6a: a field that may be left out is null when the case value leaves it out.
+        if (!(key in fields) && caseLeftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
         if (!(key in fields)) throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
@@ -1083,12 +1101,22 @@ function comparable(model: Model, type: Type, seen: Set<string> = new Set()): bo
 // GN-6v: the value of a field that a case value of an input leaves out, which Python and JavaScript leave out of the
 // value they make, and PHP gives as null at its place in the constructor.
 const LEFT_OUT = '\u0000left out';
-const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
-  const all = kase.unit.fields ?? [];
+const leftOutFields = (ctx: Context, unit: Unit, fields: string[]): { unit: Unit; values: string[] } => {
+  const all = unit.fields ?? [];
   const kept = ctx.lang === 'php' ? all : all.filter((_f, i) => fields[i] !== LEFT_OUT);
   const values = ctx.lang === 'php' ? fields.map((v) => (v === LEFT_OUT ? 'null' : v)) : fields.filter((v) => v !== LEFT_OUT);
-  const unit = { ...kase.unit, fields: kept };
+  // The unit itself when no field is left out: a test names a record of another repository by the identity of its unit.
+  return { unit: kept.length === all.length ? unit : { ...unit, fields: kept }, values };
+};
+const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
+  const { unit, values } = leftOutFields(ctx, kase.unit, fields);
   return ctx.variantNew === undefined ? ctx.recordNew(unit, values) : ctx.variantNew(variant, { ...kase, unit }, values);
+};
+// GN-6a: a value of a record of the result form, whose fields that a case value of an input leaves out are left out as
+// those of a case are.
+const leftOutNew = (ctx: Context, record: Unit, fields: string[]): string => {
+  const { unit, values } = leftOutFields(ctx, record, fields);
+  return ctx.recordNew(unit, values);
 };
 
 // G-5: two calls of a member whose results the generated test requires to be the same (the outcome is the result, or
