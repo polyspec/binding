@@ -7427,6 +7427,16 @@ test('PHP gives the least int of a case as PHP_INT_MIN, because PHP reads -92233
   assert.doesNotMatch(php, /-9223372036854775808\)/);
 });
 
+test('the walk of Node and WASM passes the name of a property of a value class without an explicit deref, which clippy names explicit_auto_deref (GN-6as, GN-6af, R-1)', () => {
+  const out = e2eOwn('kept');
+  for (const [path, line] of [['packages/ts/generated/lib.rs', 'value_define(instance, name, value, true)?;'], ['packages/ts/wasm/generated/lib.rs', 'value_define(instance, name, &value, true)?;']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, /OutFill::Defined\(instance, name\) =>/, path);
+    assert.ok(lib.includes(line), path);
+    assert.doesNotMatch(lib, /value_define\(instance, \*name/, path);
+  }
+});
+
 test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {
   const raises = { kind: 'unsupported', status: null, category: 'value' };
   const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
