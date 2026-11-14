@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -70,6 +70,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('function' in type) return functionIn(model, type.function, value, subject);
   if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
+  // GN-6aa: a callback of a parameter with keeps is held as a Native of its owner thread.
+  if (unit?.origin === 'callback' && model.keptCallbacks === true && libraryOf(type) === undefined) return `kept_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
@@ -802,9 +804,11 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
       lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
       continue;
     }
-    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
+    // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
+    const kept = !arg.field && (fn.member.parameters ?? []).some((p) => p.name === arg.name && p.keeps === true);
+    const converted = kept ? convertIn(keptModel(model), arg.type, rustIdent(variable), rustString(variable)) : arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
     lines.push(held === undefined
-      ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
+      ? `        let ${rustField(arg.name)}: ${argType(kept ? keptModel(model) : model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
     if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(rustField(arg.name), rustString(variable), 'binding_error')}`);
   }
@@ -955,6 +959,51 @@ impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 ${recognizing}`;
 }
 
+// GN-6u, GN-6aa: whether the extension holds Natives: for a value alias, a function type or a callback that the core
+// keeps.
+const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
+
+// GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
+// after the call that gave it. A call on the owner thread borrows the object and calls it as the callback of a call
+// does; a call on another thread is kind wrong_thread, and one after the end of the request kind internal, each a Raised
+// of its BindingError.
+function keptCallbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const label = langName('php', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const passed = m.params.map((p) => rustField(p.name)).join(', ');
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const mutable = m.receiver === '&mut self';
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        if let Err(error) = native_thread(&self.native, ${rustString(`${label}::${langName('php', m.member.name, 'callable')}()`)}) {
+            return Err(thrown_elsewhere(error));
+        }
+        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ', owner: std::thread::current().id()' : ''} };
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+    }`;
+  }).join('\n');
+  return `
+/// GN-6aa: ${label}, held as a Native of its owner thread, which the core keeps after the call that gave it.
+pub struct Kept${struct} {
+    native: Native,
+}
+
+/// GN-6aa: a callback object that the core keeps is checked when it enters, as in_${name} checks it.
+fn kept_${name}(value: &Zval, subject: &str) -> Result<Kept${struct}, Fail> {
+    let checked = in_${name}(value, subject)?;
+    Ok(Kept${struct} { native: php_native(&checked.object)? })
+}
+
+impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
+}
+`;
+}
+
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
 // members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
 const RECOGNIZED_KIND = `
@@ -1098,12 +1147,12 @@ ${!keepsPhp ? '' : `            Some(Thrown::Php(exception)) => match exception.
                 Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
             },
 `}            Some(Thrown::Binding(fail)) => fail,
-            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
+            None => ${takesFunction(model) || keepsAny(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-${takesFunction(model) ? elsewhereRust(model) : ''}
+${takesFunction(model) || keepsAny(model) ? elsewhereRust(model) : ''}
 /// U-3: whether the class of an object has a method of the name.
 fn has_method(object: &ZendObject, name: &str) -> bool {
     let class = object.get_class_entry();
@@ -1221,6 +1270,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     }),
     ...model.objects.map((object) => objectOut(model, object)),
     ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
+    ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)),
     ...model.interfaces.map((i) => interfaceRust(model, i)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
@@ -1228,7 +1278,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     foreignFailurePhp(model),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? `${phpHost(model)}${phpMaking(model)}` : '',
-    usesNative(model) ? PHP_NATIVE : '',
+    holdsNative(model) ? PHP_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -1455,7 +1505,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use ext_php_rs::args::Arg;
+${holdsNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use ext_php_rs::args::Arg;
 use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
@@ -1465,7 +1515,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${usesNative(model) || /\bTHROWN\b/.test(used) ? '{Mutex, OnceLock}' : 'OnceLock'};
+${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${holdsNative(model) || /\bTHROWN\b/.test(used) ? '{Mutex, OnceLock}' : 'OnceLock'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1700,7 +1750,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${holdsNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -1764,7 +1814,7 @@ ${poisonRust(model, layout)}${caseTests.entries}
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
             .name(${rustString(layout.extension)})
-    ${register.join('\n')};${!usesNative(model) ? '' : `
+    ${register.join('\n')};${!holdsNative(model) ? '' : `
         // GN-6u: the Natives of a request are released at its end, while the engine is alive.
         let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `
         #[cfg(feature = "thread-test")]

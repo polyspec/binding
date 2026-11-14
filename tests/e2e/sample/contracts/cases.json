@@ -1373,5 +1373,69 @@
         }
       ]
     }
+  ],
+  "index_new": [
+    {
+      "id": "an_index_keeps_its_sources",
+      "sources": [
+        {
+          "callback": {
+            "source.get": []
+          }
+        }
+      ]
+    }
+  ],
+  "index_get": [
+    {
+      "id": "a_kept_source_gives_its_value_in_a_later_call",
+      "sources": [
+        {
+          "callback": {
+            "source.get": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        },
+        {
+          "callback": {
+            "source.get": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "a",
+      "result": "b"
+    },
+    {
+      "id": "no_kept_source_holds_the_key",
+      "sources": [
+        {
+          "callback": {
+            "source.get": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "a",
+      "result": null
+    }
   ]
 }

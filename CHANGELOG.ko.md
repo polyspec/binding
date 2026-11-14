@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4cc2f2ee7d12eb7964fe582b52423b76d2294df96cf45591796097ea52e41f2f -->
+<!-- source-sha256: 1b9f011c4d72afc6a41b8c09b600d95003e9682b33b8f45e92f30539eae43e66 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `keeps: true`가 있는 parameter(GN-6aa)는 Node에서 이름으로 거부되었고, PHP, WASM, Go에서 그 callback은 호출의
+  wrapper였다. PHP와 WASM은 `Send`도 `Sync`도 아닌 언어 값을 가졌고, Go는 호출과 함께 끝나는 호출 안 객체의 index를
+  가졌으므로, callback을 `Send`이고 `Sync`인 값에 두는 코어는 컴파일되지 않거나 끝난 호출을 불렀다. 이제 그런 parameter의
+  list나 `optional` 안의 callback은 Node, PHP, WASM에서 함수 타입(GN-6z)처럼 owner 스레드의 `Native`로, Go에서는 member의
+  번호를 먼저 읽는 package `binding`의 kept func로 잡힌다. 다른 스레드에서의 호출은 kind `wrong_thread`다. `keeps`가 있는
+  record와, list나 `optional`의 항목이 아닌 `keeps`가 있는 callback은 그 네 target에서 이름으로 거부된다.
+  `tests/e2e/sample`의 클래스 `index`는 source의 list를 갖고 나중 호출에서 그것들을 부른다. `make test-ts`로 확인했고, 새
+  시험은 변경 전에 실패했다. `make e2e REPO=tests/e2e/sample`로도 확인했다.
 - 기본값이 `{literal: null}`인 `optional` field를 뺀, 결과 형태 record의 case 값은 "a case value of the record ... has
   no field"로 거부되었고, 결과 형태는 모든 언어에서 그 field를 받았으므로 호출자가 null을 주어야 했다. 이제 그런 field는
   variant의 case의 field처럼 빠질 수 있다: Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나

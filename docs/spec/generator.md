@@ -601,11 +601,18 @@ the design ids are those of the binding design.
   parameter with `keeps` the generator writes `'static` where it names the box and the core type of the record
   (`polyspec_x::Options<'static>`) in every target, and for a parameter without it the lifetime of the call. The
   compiler judges the core (I-2): a core that keeps the value of a parameter without `keeps` does not compile in
-  Node, whose box lasts for `'env`. Python, PHP, WASM and Go write `'static` for every callback inside another type,
-  so `keeps` changes no text of their crates. Not generated yet (G-4): Node refuses a parameter with `keeps: true` by
-  name, because the wrapper of a callback inside another type holds the JavaScript object for the environment of the
-  call and none holds it as a `Native` of its owner thread (GN-6u); and no run shows yet that the wrappers of PHP and
-  WASM outlive their call, which a contract of the end-to-end check that keeps such a callback has to show.
+  Node, whose box lasts for `'env`. A callback inside a parameter with `keeps` outlives the call, so the
+  wrapper that holds the language object for the call does not suffice: Node, PHP and WASM hold the object as a
+  `Native` of its owner thread (GN-6u), as a function type is held (GN-6z), and Go asks package `binding` for the
+  `cgo.Handle` of a kept func (`Call.Keep`) that reads the number of the member first and runs that member of the
+  object. A call of a member on the owner thread converts as GN-6d states; a call on another thread is kind
+  `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`,
+  each a `Raised` whose `Native` holds its `BindingError`. The wrapper holds only the `Native`, so it is `Send` and
+  `Sync`, and a trait that requires them takes it. Python holds the object as a `Py<PyAny>` with or without `keeps`.
+  The end-to-end sample keeps a list of callbacks in an instance of a class and calls them in a later call
+  (the class `index` of `tests/e2e/sample`). Not generated yet (G-4): in Node, PHP, WASM and Go, a record parameter
+  with `keeps`, which needs a second conversion of the record, and a callback parameter with `keeps` that is not
+  inside a list or an `optional`; each refuses them by name.
 - **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations

@@ -11,7 +11,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust, aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew, heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync, machineFunction, unitFn, libraryBlocks, type KeptClass, type KeptField, countsThrown,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
-  errorMatched,
+  errorMatched, keepsAny, keptCallbacks, keptModel,
   recognizedFn,
   recognizedMatch,
   interfaceOf, implementorsOf,
@@ -66,7 +66,8 @@ export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || p
 
 // GN-6z: whether a member takes a function type that the core may keep, whose func package binding holds under a
 // cgo.Handle and runs by that handle, in no call.
-export const keeps = (model: Model): boolean => takesFunction(model);
+// GN-6z, GN-6aa: whether package binding keeps funcs for the static library: of a function type or of a kept callback.
+export const keeps = (model: Model): boolean => takesFunction(model) || keepsAny(model);
 
 // Whether the model calls back into Go: Go code that the core runs, the walk of a value alias, or a kept func.
 export const callsBack = (model: Model): boolean => runsGo(model) || model.aliases.length > 0 || keeps(model);
@@ -108,6 +109,8 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (unit?.kind === 'variant') return `${unitFn('in', unit)}(${input}, ${subject})`;
   if (unit?.kind === 'record') return `${unitFn('in', unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
+  // GN-6aa: a callback of a parameter with keeps is a kept func of package binding, held as a Native.
+  if (callbackOf(model, type) !== undefined && unit !== undefined && model.keptCallbacks === true) return `kept_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (unit !== undefined && interfaceOf(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
@@ -738,7 +741,9 @@ function argumentLines(model: Model, fn: Fn): string[] {
     if (arg !== undefined && pointed(arg)) {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
     } else {
-      lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', subject)}?;`);
+      // GN-6aa: the callbacks of a parameter with keeps are kept funcs, held as Natives.
+      const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
+      lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${convertIn(typed, parameter.type, '&mut input', subject)}?;`);
       // GN-6ac, GN-6ad: the core call chooses the core's own type, which IntoCore narrows to; a list is then a Vec of
       // the core's items, whose slice the core borrows.
       if (narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
@@ -1049,7 +1054,69 @@ fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${struct}, Fail> {
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-${recognizing}`;
+${recognizing}${keptCallbacks(model).includes(cb) ? keptCallbackRust(model, cb) : ''}`;
+}
+
+// GN-6aa: a callback of a parameter with keeps, held as a Native of the cgo.Handle of a kept func of package binding,
+// which reads the number of the member first and runs that member of the object. A call writes the number and the
+// arguments and runs the func as a kept func of a function type runs (GN-6z); the error of the member goes to the core
+// as a Raised.
+function keptCallbackRust(model: Model, cb: CallbackUnit): string {
+  const plain = plainName(cb.unit);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const p = prefix(model);
+  const methods = cb.members.map((m, memberIndex) => {
+    const goType = goName(cb.unit.name);
+    const method = langName('go', m.member.name, 'callable');
+    const params = m.params.map((param) => `, ${rustField(param.name)}: ${traitParam(model, param.type)}`).join('');
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const writes = m.params.map((param) => `            ${convertOut(model, param.type, rustField(param.name))};`);
+    const decode = m.returns === 'none'
+      ? '            finish_input(&bytes)?;\n            Ok(())'
+      : `            let mut input: &[u8] = &bytes;\n            let value: ${result} = ${convertIn(model, m.returns, '&mut input', rustString(`${goType}.${method}() returns`))}?;\n            finish_input(input)?;\n            Ok(value)`;
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        let mut args = Vec::new();
+        {
+            let output = &mut args;
+            uint_out(output, ${memberIndex}_u64);
+${writes.join('\n')}
+        }
+        let (run, bytes) = kept_called(&self.native, &args)?;
+        let read = || -> Result<${result}, Fail> {
+${decode}
+        };
+        let value = read().map_err(|fail| thrown(Thrown::Binding(fail)).into());
+        drop(run);
+        value
+    }`;
+  }).join('\n');
+  return `
+/// GN-6aa: ${goName(cb.unit.name)}, held as a Native of a kept func of package binding, which the core keeps after the call.
+struct Kept${struct} {
+    native: Native,
+}
+
+/// GN-6aa: a callback that the core keeps enters as the call and its index among the kept funcs of the call; package
+/// binding gives the cgo.Handle under which it holds the func from then on. A nil interface is kind invalid_callback.
+fn kept_${plain}(input: &mut &[u8], subject: &str) -> Result<Kept${struct}, Fail> {
+    if !read_tag(input)? {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    let call = uint_in(input)?;
+    let function = uint_in(input)?;
+    // SAFETY: the call is alive while the entry point that named it runs, and the export keeps no pointer.
+    let handle = unsafe { ${p}__go_keep(call, function) };
+    if handle == 0 {
+        return Err(malformed());
+    }
+    Ok(Kept${struct} { native: go_native(handle) })
+}
+
+impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
+}
+`;
 }
 
 // GN-6u: an out row of the Go form gives a native value back, so the crate gives Go a new handle of its func.

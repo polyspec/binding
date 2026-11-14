@@ -229,6 +229,46 @@
       ]
     },
     {
+      "id": "source",
+      "name": [
+        "source"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_sample::Source",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "source.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_sample::Source::get",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "refused_error",
       "name": [
         "refused",
@@ -1592,6 +1632,72 @@
       ]
     },
     {
+      "id": "index",
+      "name": [
+        "index"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Index",
+      "final": true,
+      "members": [
+        {
+          "id": "index.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "sources"
+              ],
+              "type": {
+                "list": {
+                  "unit": "source"
+                }
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Index::new"
+        },
+        {
+          "id": "index.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Index::get",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "store",
       "name": [
         "store"
@@ -2248,6 +2354,16 @@
       "member": "store.attempt",
       "file": "contracts/cases.json",
       "group": "store_attempt"
+    },
+    {
+      "member": "index.new",
+      "file": "contracts/cases.json",
+      "group": "index_new"
+    },
+    {
+      "member": "index.get",
+      "file": "contracts/cases.json",
+      "group": "index_get"
     }
   ]
 }

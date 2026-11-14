@@ -7687,19 +7687,37 @@ test('Go reads the list of the handles of a buffer exactly when the Rust crate w
   assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
 });
 
-test('a parameter whose callback the core keeps is refused by name in Node and changes no text of the other targets (GN-6aa, CK-90)', () => {
-  const kept = (targets: Lang[], keeps: boolean): Map<string, string | Buffer> => {
+test('a callback of a parameter with keeps is held as a Native in Node, PHP and WASM and as a kept func in Go (GN-6aa, CK-90)', () => {
+  // The class index of the sample keeps the list of sources that its constructor takes, and index.get calls them later.
+  const sampleOf = (change: (c: any) => void = () => undefined, targets?: Lang[]): Map<string, string | Buffer> => {
     const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-    const seek = sample.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
-    if (keeps) seek.parameters[0].keeps = true;
-    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets });
+    change(sample);
+    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets }) });
   };
-  // Node writes 'env for the box and the record, and has no wrapper that outlives the environment of the call.
-  assert.throws(() => kept(['node'], true), /sample\.seek\.search: a callback that the core keeps is not generated yet for node \(GN-6aa\)/);
-  // Python, PHP, WASM and Go write 'static for every callback inside another type.
-  for (const target of ['python', 'php', 'wasm', 'go'] as const) {
-    assert.deepEqual([...kept([target], true)].map(([path, file]) => [path, String(file)]), [...kept([target], false)].map(([path, file]) => [path, String(file)]), target);
-  }
+  const out = sampleOf();
+  // Node: the box is 'static, the wrapper holds a Native and borrows the object in the env of its owner for a call.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = list_in\(sources, "sources", \|item\| kept_source\(env, item, "sources"\)\.map\(/);
+  assert.match(node, /pub struct KeptCbSource \{\n    native: Native,\n\}/);
+  assert.match(node, /impl polyspec_sample::Source for KeptCbSource \{[\s\S]*?native_env\(&self\.native, "Source\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?polyspec_sample::Source::get\(&borrowed, key\)/);
+  // A parameter without keeps keeps the box of the call.
+  assert.match(node, /let lookups: Vec<Box<dyn polyspec_sample::Lookup \+ 'env>> = /);
+  // PHP: the wrapper holds a Native and checks its thread before it borrows the object.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = list_in\(sources, "sources", \|item\| kept_source\(item, "sources"\)/);
+  assert.match(php, /impl polyspec_sample::Source for KeptCbSource \{[\s\S]*?native_thread\(&self\.native, "Source::get\(\)"\)[\s\S]*?thrown_elsewhere\(error\)/);
+  // WASM: the wrapper holds a Native of the one thread of the module.
+  const wasm = text(sampleOf(undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn kept_source\(value: &JsValue, subject: &str\) -> Result<KeptCbSource, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
+  // Go: the callback is a kept func of the call that reads the number of the member first.
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchSource\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_source\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbSource, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
+  // G-4: a record with keeps, and a callback with keeps that is no item of a list or an optional, are refused by name.
+  const seek = (c: any): any => c.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
+  assert.throws(() => sampleOf((c) => { seek(c).parameters[0].keeps = true; }, ['node']), /sample\.seek\.search: a record whose callback the core keeps is not generated yet for node \(GN-6aa\)/);
+  assert.throws(() => sampleOf((c) => { const known = c.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'ledger.known'); known.parameters[0].keeps = true; }, ['php']), /ledger\.known\.lookup: a callback parameter that the core keeps, not inside a list or an optional, is not generated yet for php \(GN-6aa\)/);
+  // Python holds the object as a Py<PyAny> with or without keeps.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = /);
 });
 
 test('a Go test gives an optional callback as a pointer to its interface, not to the struct of the fixture (U-3, GN-6aa)', () => {
@@ -8043,3 +8061,4 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   // A variant without an alias or a callback keeps the encoding without the call.
   assert.match(text(variants(), 'packages/go/zz_generated_variants.go'), /\nfunc encodeFigure\(enc \*binding\.Writer, value Figure\) \{/);
 });
+

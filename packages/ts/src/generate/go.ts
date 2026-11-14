@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
+import { type CallbackUnit, keptModel, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
@@ -424,6 +424,11 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   if (callback !== undefined) {
     const pkg = reached(scope, callback.unit);
     const dispatch = pkg === undefined ? `dispatch${goName(callback.unit.name)}(${expr})` : `${pkg}.Dispatch${goName(callback.unit.name)}(binding.Token{}, ${expr})`;
+    // GN-6aa: a callback that the core keeps is a kept func of the call, which reads the number of the member first and
+    // runs that member of the object.
+    if (scope.model.keptCallbacks === true && pkg === undefined) {
+      return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Keep(enc, func(call *binding.Call, dec *binding.Reader, enc *binding.Writer) error {`, `${t}\t\treturn ${dispatch}(call, uint32(dec.Uint()), dec, enc)`, `${t}\t})`, `${t}}`];
+    }
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, ${dispatch})`, `${t}}`];
   }
   const unit = unitOf(scope.model, type);
@@ -549,7 +554,9 @@ function goCallable(scope: GoScope, fn: Fn): string {
   if (fn.params.some((p) => needsCall(model, p.type))) lines.push('\tcall := binding.NewCall()', '\tdefer call.Close()');
   lines.push('\tenc := binding.NewWriter()');
   if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
-  for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
+  // GN-6aa: the callbacks of a parameter with keeps are kept funcs of the call, which package binding holds.
+  const keptBy = (parameter: { name: Name }): boolean => (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
+  for (const parameter of fn.params) lines.push(...goEncode(keptBy(parameter) ? { ...scope, model: keptModel(scope.model) } : scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
   lines.push(`\tdec, err := binding.${bindingFn(fn)}(enc.Done())`);
   // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
   // the call.

@@ -268,6 +268,44 @@ pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Fa
     }))
 }
 
+/// A source of values that the core keeps after the call that gave it (GN-6aa: a callback of a parameter with
+/// `keeps`, which any thread may hold).
+pub trait Source: Send + Sync {
+    /// The value of a key, or `None` when it has none.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the implementation.
+    fn get(&self, key: &str) -> Result<Option<String>, Failure<Error>>;
+}
+
+/// The sources that an index keeps from its construction on, which a later call asks in order (GN-6aa: `keeps`).
+pub struct Index {
+    sources: Vec<Box<dyn Source>>,
+}
+
+impl Index {
+    /// An index that keeps the sources.
+    #[must_use]
+    pub fn new(sources: Vec<Box<dyn Source>>) -> Self {
+        Self { sources }
+    }
+
+    /// The value of the key in the first source that holds it.
+    ///
+    /// # Errors
+    ///
+    /// The failure of a source.
+    pub fn get(&self, key: &str) -> Result<Option<String>, Failure<Error>> {
+        for source in &self.sources {
+            if let Some(value) = source.get(key)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// The value of a key in the lookup, and `None` without a lookup (GN-6aa: an optional callback).
 ///
 /// # Errors

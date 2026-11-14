@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -43,6 +43,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   if (unit !== undefined && (objectUnit(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  // GN-6aa: a callback of a parameter with keeps is held as a Native, which is Send and Sync.
+  if (unit?.origin === 'callback' && model.keptCallbacks === true && libraryOf(type) === undefined) return `kept_${rustField(unit.name)}(${value}, ${subject})`;
   // U-3, U-7: a callback object and a value of an alias are judged by their own conversions.
   if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   const alias = aliasOf(model, type);
@@ -568,7 +570,10 @@ function functionRust(model: Model, fn: Fn): string {
       lines.push(`        let ${variable} = held_param_${plainName(object?.unit ?? fn.unit)}(&${variable}, ${rustString(langName('wasm', parameter.name, 'variable'))})?;`);
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
-      lines.push(`        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
+      // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
+      const kept = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
+      const typed = kept ? keptModel(model) : model;
+      lines.push(`        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? convertIn(typed, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable'))) : converted(arg, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
       if (arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, rustString(langName('wasm', parameter.name, 'variable')), 'binding_error')}`);
     }
   }
@@ -992,6 +997,43 @@ impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 ${recognizing}`;
 }
 
+// GN-6aa: a callback of a parameter with keeps, held as a Native of the one thread of the module, so that the core may
+// keep it after the call that gave it and a trait that requires Send and Sync takes it. A call borrows the object and
+// calls it as the callback of a call does.
+function keptCallbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const jsName = langName('wasm', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const passed = m.params.map((p) => rustField(p.name)).join(', ');
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const mutable = m.receiver === '&mut self';
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object };
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+    }`;
+  }).join('\n');
+  return `
+/// GN-6aa: ${jsName}, held as a Native, which the core keeps after the call that gave it.
+struct Kept${struct} {
+    native: Native,
+}
+
+/// GN-6aa: a callback object that the core keeps is checked when it enters, as in_${name} checks it.
+fn kept_${name}(value: &JsValue, subject: &str) -> Result<Kept${struct}, Fail> {
+    let checked = in_${name}(value, subject)?;
+    Ok(Kept${struct} { native: wasm_native(&checked.object) })
+}
+
+impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
+}
+`;
+}
+
 // U-3, GN-6d: the kind and the message of an exception whose prototype chain holds the prototype of one of the error
 // classes, for the members that recognize error units.
 const RECOGNIZED_KIND = `
@@ -1226,11 +1268,11 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
-  const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.filter((a) => a.library === undefined).map((a) => aliasWasm(model, a)), wasmHost(model)]), ...(usesNative(model) ? [WASM_NATIVE] : [])];
+  const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.filter((a) => a.library === undefined).map((a) => aliasWasm(model, a)), wasmHost(model)]), ...(usesNative(model) || keepsAny(model) ? [WASM_NATIVE] : [])];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -1250,7 +1292,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${(usesNative(model) || keepsAny(model)) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 && !drivesMachine(model) ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;

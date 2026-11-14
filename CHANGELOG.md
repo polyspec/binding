@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A parameter with `keeps: true` (GN-6aa) was refused by name in Node, and in PHP, WASM and Go its callback was the
+  wrapper of the call: PHP and WASM held a language value that is neither `Send` nor `Sync`, and Go held the index of
+  the object in a call that ends with the call, so a core that keeps the callback in a `Send` and `Sync` value did not
+  compile or called an ended call. A callback inside a list or an `optional` of such a parameter is now held as a
+  `Native` of its owner thread in Node, PHP and WASM, as a function type is held (GN-6z), and in Go as a kept func of
+  package `binding` that reads the number of the member first; a call on another thread is kind `wrong_thread`. A
+  record with `keeps` and a callback with `keeps` that is no item of a list or an `optional` are refused by name in
+  those four targets. The class `index` of `tests/e2e/sample` keeps a list of sources and calls them in a later call.
+  Verified by `make test-ts`, whose new test failed before the change, and by `make e2e REPO=tests/e2e/sample`.
 - A case value of a record of the result form that left out an `optional` field whose default is `{literal: null}`
   was refused as "a case value of the record ... has no field", and the result form took that field in every
   language, so a caller had to give null. Such a field may now be left out as a field of a case of a variant: Python

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0e90936581a2b65411073cd862c1de830fd5368e8be3b46d56ca9806470504b7 -->
+<!-- source-sha256: 4f55ac65708cb34208b1b897ed22d825934a6863f02132cc86c05ac401cb8d0b -->
 # 생성기
 
 [English](generator.md)
@@ -485,11 +485,16 @@
   이유는 lifetime이 `core_type`의 경로에 없고 생성기가 Rust를 읽지 않기 때문이다. `keeps`가 있는 parameter에 대해 생성기는
   모든 target에서 box와 record의 코어 타입을 적는 곳에 `'static`을 적고(`polyspec_x::Options<'static>`), 없는 parameter에는
   호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env` 동안인
-  Node에서 컴파일되지 않는다. Python, PHP, WASM, Go는 다른 타입 안의 모든 callback에 `'static`을 적으므로 `keeps`는 그
-  crate의 text를 바꾸지 않는다. 아직 생성하지 않는 것(G-4): Node는 `keeps: true`가 있는 parameter를 이름을 대고 거부한다.
-  다른 타입 안의 callback의 wrapper가 JavaScript 객체를 호출의 환경 동안 갖고, owner 스레드의 `Native`(GN-6u)로 갖는
-  wrapper가 없기 때문이다. 또 PHP와 WASM의 wrapper가 호출보다 오래 사는지를 보인 실행이 아직 없으며, 그런 callback을 갖는
-  end-to-end check의 계약이 그것을 보여야 한다.
+  Node에서 컴파일되지 않는다. `keeps`가 있는 parameter 안의 callback은 호출보다
+  오래 살므로, 호출 동안 언어 객체를 갖는 wrapper로는 모자란다. Node, PHP, WASM은 함수 타입(GN-6z)처럼 그 객체를 owner
+  스레드의 `Native`(GN-6u)로 갖고, Go는 package `binding`에 member의 번호를 먼저 읽고 객체의 그 member를 실행하는 kept
+  func의 `cgo.Handle`을 묻는다(`Call.Keep`). owner 스레드에서 member를 부르면 GN-6d대로 바꾸고, 다른 스레드에서 부르면 kind
+  `wrong_thread`, owner의 정리(Node의 env, PHP의 request) 뒤에 부르면 kind `internal`이며, 각각 그 `BindingError`를 담은
+  `Native`의 `Raised`다. wrapper는 `Native`만 가지므로 `Send`이고 `Sync`이며, 그것을 요구하는 trait도 그것을 받는다.
+  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
+  나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). 아직 생성하지 않는 것(G-4): Node, PHP, WASM, Go에서
+  `keeps`가 있는 record parameter(record의 두 번째 변환이 필요하다)와, list나 `optional` 안에 있지 않은 `keeps`가 있는
+  callback parameter. 각 target은 그것들을 이름을 대고 거부한다.
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는

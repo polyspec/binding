@@ -313,6 +313,8 @@ export interface Model {
   // GN-6aa: the lifetime of a callback in a box of the core trait: 'env in Node, whose callback lives in the environment
   // of the call, and 'static elsewhere.
   callbackLife?: string;
+  // GN-6aa: the conversions of a parameter with keeps, whose callbacks a target holds as a Native of their owner.
+  keptCallbacks?: boolean;
   // T-3: the records of other repositories that this contract's types name, in the order they are first named.
   foreignRecords: ForeignRecord[];
   // The contracts of the libraries that the contract names (T-3).
@@ -1434,6 +1436,39 @@ export function takesFunction(model: Model): boolean {
 export function keepsThrown(model: Model): boolean {
   return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
+
+// GN-6aa: the parameters whose callbacks the core keeps after the call (keeps: true).
+const keptParams = (model: Model): Type[] =>
+  [...model.functions, ...model.objects.flatMap((o) => o.members)].flatMap((fn) => (fn.member.parameters ?? []).filter((p) => p.keeps === true).map((p) => p.type));
+
+// GN-6aa: whether a member takes a parameter with keeps.
+export const keepsAny = (model: Model): boolean => keptParams(model).length > 0;
+
+// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
+export function keptCallbacks(model: Model): CallbackUnit[] {
+  const found = new Set<Unit>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return visit(type.list);
+    if ('optional' in type) return visit(type.optional);
+    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+    if (unit?.origin === 'callback') found.add(unit);
+  };
+  keptParams(model).forEach(visit);
+  return model.callbacks.filter((c) => found.has(c.unit));
+}
+
+// GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
+export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
+
+// GN-6aa: whether a parameter with keeps holds a record, which the targets that hold a kept callback as a Native do not
+// convert yet.
+export const keepsRecord = (model: Model, type: Type): boolean => {
+  if (typeof type === 'string') return false;
+  if ('list' in type) return keepsRecord(model, type.list);
+  if ('optional' in type) return keepsRecord(model, type.optional);
+  return unitOf(model, type)?.kind === 'record';
+};
 
 // GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
 export function usesNative(model: Model): boolean {
