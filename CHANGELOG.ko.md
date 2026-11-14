@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 95536098d977487f4dada6c50c6036c4bbe48c657ee3408394e53869836f3ae9 -->
+<!-- source-sha256: 77213e35257853913353cfd8d1d9be50ad6bb5005960a28e01e1678370e8fd94 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 함수 타입이나 값 alias가 있는 계약의 Go 모듈이 `deadcode -test`(GN-15h)에서 실패했다. 정적 라이브러리는 패키지
+  `binding`의 export를 deadcode가 보지 못하는 C로 부르므로, `functions`, `relay`, `kept`에서 deadcode는 각 export와
+  export만 부르는 각 함수를 보고했다. 이제 패키지 `binding`은 각 export를 빈 변수의 initializer에 적는다. 어떤 코드도
+  `*KeyedMap[any]`를 만들 수 없는 계약에서 `KeyedMap`, `Key`와 그 생성자를 남기던 `describeOwn`의 그 case는 타입이
+  `keyed_map<T>`를 이름하거나 계약에 값 alias가 있을 때만 쓰고, `ThrownCount`는 그것을 부르는 시험과 함께일 때만 쓴다.
+  `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과
