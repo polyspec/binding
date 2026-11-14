@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
+  and verification remain open.
+
 - Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
   (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded
   those fields, so the tests checked only exact class and kind and could pass with incorrect metadata.

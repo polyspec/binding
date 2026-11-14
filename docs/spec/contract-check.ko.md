@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 7b90b10e22eccbeaa48a34ec21b719b125733d4fa22506cdc1ced6dd1da703bd -->
+<!-- source-sha256: 8acd7073ea035095e91c8038c872d26185f31806fa9c0c822c043c8a014387ae -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -332,6 +332,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   surrogate를 담지 못하므로 어떤 내장 형태도 그것을 만들지 않는다.
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
+  B2.272 계획이며 아직 구현하지 않았다. `safe_integer`는 float에도 적용하고 음의 영을 포함해 ±(2^53−1)의
+  닫힌 범위에 있는 유한한 정수 값에서만 참이다. 순서가 있는 incoming case 목록은 outgoing 행과 일치하는
+  모든 분기가 그 outgoing kind로 분류할 때만 유효하다. 미정 술어는 양쪽 분기를 모두 가질 수 있고,
+  미분류 분기가 있거나 결과 kind가 다르면 CK-8이 실패한다. 특히 소수와 1e16이 모두 조건을 만족하므로
+  `safe_integer=false`에서 `integral_float`는 미정으로 남는다.
 - 내장 형태와 각각이 만드는 언어 타입:
 
   | 형태 | php | python | node, wasm | go |

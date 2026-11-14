@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 17e9bc58352779f86e74788cc47b8db33a1188058305145663fd1f2c2eaf4034 -->
+<!-- source-sha256: c2491d3f59beb5f6d561bfbc2ed95c4d369068d325d0d4547de263ec2028a251 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -18,6 +18,9 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 미구현 float `safe_integer` 범위와 순서가 있는 case의 분기 일치 조건을 명세했다(B2.272).
+  구현과 검증은 아직 남아 있다.
 
 - Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
   `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와
