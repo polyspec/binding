@@ -5,6 +5,23 @@
 
 ## Unreleased
 
+- binding writes the release recipes of a repository that holds a binding (GN-19h): `binding release-recipes` writes
+  `packages/release.mk` (`packages/<component>/release.mk` for a component), a make file that the Makefile of the
+  repository includes and that is not tracked, with the targets `release-go-static`, `release-wheel`,
+  `release-php-ext`, `release-npm-platform`, `release-npm`, `release-go-module`, `release-binding-check`,
+  `release-platform-assets`, `install-llvm` and `install-wasm-bindgen` for the targets of the contract. Repositories
+  copied these recipes by hand, and both copies had the same four defects: a recipe built a binding without
+  generating it, though a checkout of a tag holds no generated file; the PHP extension was built with a libclang and a
+  clang of different LLVM releases; `napi create-npm-dirs` was given a folder outside the npm package, which it
+  refuses; and the tests of the copies passed no lint or type check. Each recipe now generates its target first,
+  `release-php-ext` builds with `LIBCLANG_PATH` and `CLANG_PATH` of the LLVM of `config/toolchain.json` and checks it
+  before Cargo builds, each PHP minor builds in its own target directory, the napi folder is `npm/<platform>` inside
+  the npm package, and a Linux host also builds the Go library of musl. `binding check` reports a Makefile that does
+  not include the file, a recipe of its targets that the Makefile copies by hand, and a file of recipes that this
+  binding writes otherwise (CK-94). The workflow of the assets of each platform is stated as GN-19i, and the runners
+  of GN-19a are those of `ubuntu-26.04`. Verified by `node --test packages/ts/tests/release-recipes.test.ts`, which runs
+  each recipe with make and stand-ins of its tools and failed before the change, and by `make typecheck-ts`.
+
 - Go takes the `context.Context` of a parameter of the type `cancel`, or of an `optional` of it, as the first
   argument of the function wherever the parameter stands in the contract (GN-6aq); the other arguments keep the order
   of the contract, and the binding gives the core the cancellation at its place in the contract. A member whose

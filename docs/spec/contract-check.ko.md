@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 304c752e06ce1b15da87c6a593f83e7585af1cc94ca2ca4e006a5f29088d16ef -->
+<!-- source-sha256: 7ec7a5ea7fc362e85dc19ae1c66c8e435838ab57bc6aca8aded7b0fbb0fe747f -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -244,6 +244,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-91** Go 정적 라이브러리의 release profile(생성기 GN-15i): target `go`가 있는 계약에 대해 `binding check`는
   레포의 root manifest나 `.cargo/config.toml`의 `[profile.release]`가 `lto`를 `false`나 `"off"`가 아닌 값으로 정하면 그
   파일과 값을 보고한다. 그러면 Go program이 그 정적 라이브러리를 다른 레포의 정적 라이브러리와 링크할 수 없기 때문이다.
+- **CK-94** 레포의 release recipe(생성기 GN-19h): 레포의 root에 `Makefile`이 있으면 `binding check`는 계약의 recipe
+  파일(`packages/release.mk`, 또는 `packages/<component>/release.mk`, 그것으로 끝나는 경로도 포함)을 `include`나
+  `-include`하는 줄이 없는 Makefile과, 그 파일이 정의하는 target에 자기 recipe를 가진 Makefile의 rule을 그 target과
+  함께 보고한다. 그런 target에 prerequisite만 더하는 rule은 finding이 아니다. recipe 파일이 있고 이 binding의
+  `binding release-recipes`가 쓰는 것과 다르면 그 파일도 보고한다. 파일이 없는 것은 finding이 아니다. 그 파일은 생성되고
+  추적되지 않으며, release는 recipe를 실행하기 전에 그것을 쓰기 때문이다. 이유: 손으로 복사한 recipe는 GN-19h가 고친
+  복사본의 결함을 그대로 갖고, 다른 binding의 recipe 파일은 그 binding이 빌드하는 것을 빌드한다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

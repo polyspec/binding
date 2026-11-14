@@ -10,6 +10,8 @@
 // binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
 //     --work <directory> [--remote <name>]
 //   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
+// binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]
+//   Writes the release recipes of the binding, the make file that the Makefile of the repository includes (GN-19h).
 
 import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -24,6 +26,7 @@ import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } 
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
 import { Refused, releaseGoModule } from './release/go-module.ts';
+import { releaseRecipes } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -118,7 +121,7 @@ function fail(message: string): never {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -184,8 +187,44 @@ function releaseGoModuleCommand(argv: string[]): never {
   process.exit(0);
 }
 
+// GN-19h: the release recipes of the binding, which depend on the names of the contract alone, so the command checks
+// only what it reads: the schema and the names (CK-1, CK-18), as scaffold does. The file is written whole under another
+// name beside it and renamed into place, so a make that reads it never reads a part.
+function releaseRecipesCommand(argv: string[]): never {
+  const given = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i];
+    const value = argv[i + 1];
+    if (key === undefined || value === undefined || !['--root', '--contract', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    given.set(key, value);
+  }
+  const contractOption = given.get('--contract');
+  if (contractOption !== undefined && given.has('--root')) usage('give --root or --contract, not both');
+  const path = contractOption !== undefined ? resolve(contractOption) : join(resolve(given.get('--root') ?? '.'), 'packages/rust/interface.json');
+  const contract = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  const findings = checkContract(contract, { dependencies: new Map(), caseFiles: new Map() }).filter((f) => f.check === 'CK-1' || f.check === 'CK-18');
+  for (const f of findings) process.stderr.write(`${path}#${f.path}: ${f.check} ${f.message}\n`);
+  if (findings.length > 0) process.exit(1);
+  const checkedContract = contract as Contract;
+  const top = resolve(dirname(path), ...checkedContract.core.path.split('/').map(() => '..'));
+  let recipes;
+  try {
+    recipes = releaseRecipes(checkedContract);
+  } catch (error) {
+    for (const sentence of sentences(error)) process.stderr.write(`binding: ${sentence}\n`);
+    process.exit(1);
+  }
+  const target = join(resolve(given.get('--out') ?? top), recipes.path);
+  mkdirSync(dirname(target), { recursive: true });
+  const part = `${target}.part`;
+  writeFileSync(part, recipes.text);
+  renameSync(part, target);
+  process.exit(0);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 if (command === 'release-go-module') releaseGoModuleCommand(rest);
+if (command === 'release-recipes') releaseRecipesCommand(rest);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
@@ -383,6 +422,38 @@ if (command === 'check') {
       if (lto === undefined || lto === false || lto === 'off') continue;
       differs = true;
       process.stderr.write(`${file}: CK-91 [profile.release] turns on LTO (lto = ${JSON.stringify(lto)}), which puts the standard library into the one object of the Go static library, so that a Go program cannot link it with the static library of another repository (GN-15i)\n`);
+    }
+  }
+  // CK-94 (GN-19h): the Makefile of the repository includes the release recipes that binding writes and copies none of
+  // them, and a file of recipes that a run wrote is the one that this binding writes. The file is not tracked, so a
+  // checkout without it is no finding: the release writes it before it runs a recipe.
+  {
+    const recipes = releaseRecipes(checked);
+    const fragment = join(root, recipes.path);
+    if (existsSync(fragment) && readFileSync(fragment, 'utf8') !== recipes.text) {
+      differs = true;
+      process.stderr.write(`${fragment}: CK-94 differs from what binding release-recipes writes for the contract; binding release-recipes writes it again (GN-19h)\n`);
+    }
+    const makefile = join(root, 'Makefile');
+    if (existsSync(makefile)) {
+      const lines = readFileSync(makefile, 'utf8').split('\n');
+      const file = recipes.path.replaceAll('.', '\\.');
+      if (!lines.some((line) => new RegExp(`^\\s*-?include\\s+(.*[\\s/])?${file}(\\s|$)`).test(line))) {
+        differs = true;
+        process.stderr.write(`${makefile}: CK-94 includes no ${recipes.path}, the release recipes that binding release-recipes writes for the contract (GN-19h)\n`);
+      }
+      // A rule of a target of the recipes with a recipe of its own is a copy by hand; a rule that adds a prerequisite is none.
+      const own = new Set(recipes.targets);
+      lines.forEach((line, i) => {
+        const rule = /^([^\s:=#.][^:=#]*?)\s*::?(?!=)(.*)$/.exec(line);
+        if (rule === null) return;
+        const recipe = (rule[2] ?? '').includes(';') || (lines[i + 1] ?? '').startsWith('\t');
+        for (const target of (rule[1] ?? '').split(/\s+/)) {
+          if (!recipe || !own.has(target)) continue;
+          differs = true;
+          process.stderr.write(`${makefile}: CK-94 defines the recipe of ${target}, which ${recipes.path} holds; the Makefile includes the recipes that binding writes and copies none of them (GN-19h)\n`);
+        }
+      });
     }
   }
   // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
