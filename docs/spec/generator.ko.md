@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 984711f9c7faac7a21f98c959edd7fd3914aef3be52fdf76e5cc34d4c943c67f -->
+<!-- source-sha256: c6d0d34c7c54a492d924679924ef77662e3c8c924bfbb53c9a8b5f0847d0cdcf -->
 # 생성기
 
 [English](generator.md)
@@ -2076,7 +2076,11 @@
   release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). job `e2e-amd64`는 `ubuntu-26.04`에서
   `tests/e2e/sample`의 `make e2e`와 그 뒤의 `make go-musl-check`를 실행한다. `ubuntu-26.04-arm`에서 돌지 않는 유일한
   job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고 실행하기
-  때문이다. workflow는 `main`의 push와 수동 실행에서 돈다. `v1/rust-core` 같은 개발 branch는 그 head의 수동
+  때문이다. 두 job은 `make install-tools` 전에 pin한 `shivammathur/setup-php`로 `.php-version`의 PHP를 설정하며,
+  extension은 `config/phpunit`의 PHPUnit이 요구하는 것(`dom`, `filter`, `json`, `libxml`, `mbstring`, `phar`,
+  `tokenizer`, `xmlwriter`)이다. `make install-tools`는 PATH의 `php`를 그대로 감싸고 실행은 그 minor를 `.php-version`과
+  비교하는데, runner image의 PHP는 다른 minor라서 그것으로는 실행이 어떤 target보다 먼저 멈추기 때문이다. workflow는
+  `main`의 push와 수동 실행에서 돈다. `v1/rust-core` 같은 개발 branch는 그 head의 수동
   실행(`gh workflow run ci.yml --ref <branch>`)으로 확인한다. 그 branch의 push마다 돌면 갈래의 merge마다 전체 검사가
   시작되기 때문이다.
 

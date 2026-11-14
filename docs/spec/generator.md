@@ -2574,7 +2574,11 @@ the design ids are those of the binding design.
   released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g). The job `e2e-amd64`
   runs `make e2e` of `tests/e2e/sample` and then `make go-musl-check` on `ubuntu-26.04`, the one job that does not
   run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only
-  an amd64 machine links and runs them. The workflow runs on the push of `main` and on a manual run; a development
+  an amd64 machine links and runs them. Before `make install-tools` both jobs set up the PHP of `.php-version` with
+  the pinned `shivammathur/setup-php`, with the extensions that the PHPUnit of `config/phpunit` requires (`dom`,
+  `filter`, `json`, `libxml`, `mbstring`, `phar`, `tokenizer`, `xmlwriter`), because `make install-tools` wraps the
+  `php` of the PATH as it is and the run compares its minor with `.php-version`: the PHP of the runner image is
+  another minor, and with it the run stops before any target. The workflow runs on the push of `main` and on a manual run; a development
   branch such as `v1/rust-core` is checked by a manual run of its head (`gh workflow run ci.yml --ref <branch>`),
   because a run on every push of that branch would start the whole suite for each merge of a lane.
 

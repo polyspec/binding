@@ -1,7 +1,8 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 88f46acbbc0bddadd27f208f7192021f9ad989aba07cb315d23fec782cf65682 -->
+<!-- source-sha256: fdcd322b50a12e301b75b97474a82b13aff46d05e0bb2dcd25d07bc164714a21 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
+<!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -17,6 +18,13 @@
 
 - 끝에서 끝까지 레포의 생성 PHP 시험이 PHP가 보일 수 없는 reference를 요구했다. PHP는 한 자리가 가진 reference를
   유지하지 않으므로, case 값에서 id의 자리가 하나인 reference는 이제 그 값으로 비교된다(GN-13e).
+- CI job `e2e`와 `e2e-amd64`는 PATH의 `php`를 감싸는 `make install-tools` 전에 `.php-version`의 PHP를 설정한다.
+  runner image의 PHP는 8.5라서 모든 끝에서 끝까지 실행이 어떤 target보다 먼저 `the target php needs PHP 8.4`로
+  멈췄고, 실행이 `<work>/go-release`를 쓰지 않았으므로 그 뒤의 `make go-musl-check`도 실패했다(GN-14g). `tests/e2e`의
+  classes, consumer, sample 레포의 손으로 쓴 Rust 소스는 이제 job `check (rust)`의 `make fmt-e2e`가 실패시킨
+  rustfmt 형식이다. 검증: 끝에서 끝까지 job의 PHP 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/ci-workflow.test.ts`와 `make fmt-e2e`.
+
 - 다른 저장소의 값 alias의 case에 대한 생성된 Go 시험은 case의 reference나 object를 owner의 `core_type`이 없는
   value class의 인스턴스로, owner의 package의 `New<Class>`를 nil로 호출해 만들고, 결과를 그 class의 pointer가 놓인
   자리로도 비교한다(GN-6ar, GN-6af, GN-13). 시험은 그 class를 class가 없는 consumer의 계약에서 찾았으므로

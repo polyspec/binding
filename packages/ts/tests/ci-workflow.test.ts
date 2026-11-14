@@ -143,6 +143,25 @@ test('the job e2e-amd64 runs the end-to-end check of the sample and its consumer
   assert.ok(upload?.some((l) => l.trim() === 'path: var/report/e2e/') === true, 'the job e2e-amd64 does not upload var/report/e2e/');
 });
 
+// B2.246: kit wraps the php of the PATH of the runner as it is (install-tools), and the PHP of ubuntu-26.04 is not the
+// minor of .php-version, so a job that runs the PHP target sets up the PHP of .php-version before it installs its tools.
+test('every job that runs the end-to-end check sets up the PHP of .php-version before its tools, with the extensions that the PHPUnit of config/phpunit requires (GN-14, HR-81, B2.246)', () => {
+  const withE2e = [...jobs()].filter(([, job]) => job.some((l) => /^\s+(?:- )?run: make e2e /.test(l)));
+  assert.deepEqual(withE2e.map(([name]) => name).sort(), ['e2e', 'e2e-amd64']);
+  for (const [name, job] of withE2e) {
+    const all = steps(job);
+    const php = all.findIndex((step) => step.some((l) => /^\s+(?:- )?uses: shivammathur\/setup-php@[0-9a-f]{40}( #.*)?$/.test(l)));
+    const tools = all.findIndex((step) => step.some((l) => l.trim() === 'run: make install-tools'));
+    assert.ok(php >= 0, `the job ${name} sets up no PHP, so var/tools/bin/php wraps the PHP of the runner`);
+    assert.ok(php < tools, `the job ${name} sets up PHP after make install-tools, which wraps the php of the PATH`);
+    const step = (all[php] ?? []).map((l) => l.trim());
+    assert.ok(step.includes('php-version-file: .php-version'), `the PHP of the job ${name} is not the one of .php-version`);
+    const extensions = step.find((l) => l.startsWith('extensions: '))?.slice('extensions: '.length).split(',').map((e) => e.trim()) ?? [];
+    for (const extension of ['dom', 'filter', 'json', 'libxml', 'mbstring', 'phar', 'tokenizer', 'xmlwriter']) assert.ok(extensions.includes(extension), `the PHP of the job ${name} does not name the extension ${extension} that PHPUnit requires`);
+    assert.ok(step.includes('tools: none'), `the PHP of the job ${name} installs tools that the checkout does not pin`);
+  }
+});
+
 test('ci-passed needs every other job and runs after a failed one (AGENTS)', () => {
   const all = jobs();
   const last = all.get('ci-passed');
