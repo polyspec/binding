@@ -279,7 +279,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   }
   if (alias !== undefined) {
     if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
-    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
+    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, unit);
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
@@ -837,10 +837,10 @@ export function keyedField(model: Model, unit: string): readonly string[] {
 // content, then filled, in an expression that names it: a closure in PHP, whose references are variables that the
 // places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
 // every place of an id holds the same instance and a later place inside the first makes a cycle.
-function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+function valueFromJson(model: Model, ctx: Context, value: unknown, where: string, alias?: Unit): string {
   const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
   if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
-  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
+  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set(), alias };
   const value_ = valueOf(model, ctx, value, where, making, false);
   if (making.made.length === 0 && making.fills.length === 0) return value_;
   if (ctx.lang === 'python') return `(${[...making.made, ...making.fills, value_].join(', ')})[-1]`;
@@ -864,6 +864,8 @@ interface Making {
   fills: string[];
   references: Set<number>;
   objects: Set<number>;
+  // GN-13: the value alias of the case value, whose out rows name the form of a float.
+  alias: Unit | undefined;
 }
 
 // The id of a reference or of an object of a case value (G-5).
@@ -888,6 +890,11 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   if (kind === 'bytes') return fromJson(model, ctx, 'bytes', held);
   if (kind === 'float') {
     const float = fromJson(model, ctx, 'float', held);
+    // GN-13: a float that the out row of its alias gives as an instance of a value class (a Node integral float, which a
+    // number would give as an int) is that instance, the form that the binding gives and takes back as the float.
+    const form = making.alias !== undefined && lang !== 'php' && (making.alias.out ?? []).some((row) => row.kind === 'float') ? aliasOutForm(making.alias, ctx.target ?? lang, 'float', record) : undefined;
+    const cls = typeof form === 'string' && form.endsWith('.constructor') ? model.contract.units.find((u) => `${u.id}.constructor` === form) : undefined;
+    if (cls !== undefined) return lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(float(${float}))` : `new pkg.${langName('node', cls.name, 'class')}(${float})`;
     return lang === 'python' ? `float(${float})` : lang === 'php' ? `(float) ${float}` : float;
   }
   if (kind === 'int') {
