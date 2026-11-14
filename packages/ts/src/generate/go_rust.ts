@@ -16,6 +16,7 @@ import {
   recognizedMatch,
   interfaceOf, implementorsOf,
   takesFunction,
+  holdsCallback,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -560,8 +561,10 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
   const writes = (): string[] => fields.map((f) => `    ${convertOut(model, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
-  // GN-6aa: a record with a callback field has one lifetime and only enters.
-  const entersOnly = fields.some((f) => unitOf(model, f.type)?.origin === 'callback');
+  // GN-6aa: a record with a callback field, in an optional, a list, a map or a tuple too, has one lifetime and only
+  // enters, as rustType writes its core type.
+  const units = new Map(model.contract.units.map((u) => [u.id, u]));
+  const entersOnly = fields.some((f) => holdsCallback(units, f.type));
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {

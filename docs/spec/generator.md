@@ -1586,10 +1586,11 @@ the design ids are those of the binding design.
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
   panics with the error of the core because `fmt.Stringer` has no error result. A member of another module reaches a
-  class or a callback unit through functions of its package whose first parameter is `binding.Token` of
+  class, a callback unit or a variant through functions of its package whose first parameter is `binding.Token` of
   `internal/binding`, a type that only the packages of the Go module can name: `<Class>Handle` gives the handle of an
   instance, `<Class>FromHandle` makes the instance of a handle, and `Dispatch<Callback>` gives the dispatch of a Go
-  value of the callback. A package has them only for a unit that another module names, and CK-13 counts their names.
+  value of the callback, and `Encode<Variant>` and `Decode<Variant>` encode and decode a value of the variant (GN-6v),
+  whose own functions are unexported. A package has them only for a unit that another module names, and CK-13 counts their names.
   Modules whose packages would import each other are refused by name, because Go refuses an import cycle. A to_json is `MarshalJSON` of `json.Marshaler`,
   which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
   `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the

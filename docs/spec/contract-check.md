@@ -121,7 +121,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-13** Go names (E-7, P-2): an error unit's Go name is not a category error type (`ValueError`, `TypeError`,
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
   `functions` units, the `New<Unit>` constructors, the functions `<Class><Member>` of static members, and the functions
-  `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` that another module reaches a unit through (GN-15a)
+  `<Class>Handle`, `<Class>FromHandle`, `Dispatch<Callback>`, `Encode<Variant>` and `Decode<Variant>` that another module reaches a
+  unit through (GN-15a)
   are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
 - **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`, the folders of hand-written Go code,
@@ -262,6 +263,15 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   GN-6z), so `keeps` at a parameter that holds only functions is reported too. Why: the attribute changes the lifetime
   that the generator writes for the callback, and at a parameter without a callback it would state a lifetime of
   nothing, which a reader takes for a rule of the member.
+- **CK-91** The members that the instance values of a case call are generated where the member of the case is
+  (generator GN-13f): each member that a `new`, a `from` or a call of `then` of an instance value of the case names,
+  also inside the receiver or an argument of another and inside a list, an `optional`, a map or a field of a record at
+  the place of a class or an interface, is generated for every target of the contract that the `only` of
+  the unit and of the member of the case keep. A member that an `only` keeps out of such a target is reported with the
+  case, the member and the targets; the contract resolves it by an `only` of the member of the case, or of its unit,
+  without those targets. Why: the test of a case is generated for each target of its member, and a test that cannot
+  make its instance in a target would either refuse the target or leave the case out silently, so that what was not
+  verified there would not show.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

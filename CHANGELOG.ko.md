@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+- Go가 member가 이름하는 다른 module의 variant를 거부했다. 그 encode와 decode 함수가 export되지 않기 때문이다. 그래서
+  root가 이름하는 template의 module `ast`의 `node`가 go를 "a variant of the module ast in the module (the root) is not
+  generated for Go yet (its encode and decode functions are unexported)"로 거부했다. 이제 다른 module이 이름하는 variant의
+  패키지는 `<Class>Handle`처럼 `binding.Token`을 받는 `Encode<Variant>`와 `Decode<Variant>`를 갖고, 다른 module은 그것을
+  부른다. CK-13은 두 이름을 센다(GN-15a, GN-6v). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다.
+- case의 인스턴스 값이 `only`가 case의 member의 target에서 빼는 member를 부르면, 그 target의 시험은 인스턴스를 만들 수
+  없었다. template의 `prepared_render.render`는 wasm에서 생성되는데, 그 case들의 receiver는 `only`가 wasm에서 빼는
+  `engine.prepare`가 만들므로, wasm이 "the case a_render_of_prepare of prepared_render.render: engine.prepare is no member
+  that the binding generates"로 거부되었다. 이제 `binding check`가 그런 member를 case와 target과 함께 보고하고(CK-91),
+  class나 interface 자리의 list, `optional`, map, record의 field 안에 있는 인스턴스 값도 그렇게 보고한다. 예를 들어
+  `engine.render`의 receiver의 record `options` 안의 `fs_loader.new`는 `only`가 wasm에서 뺀다. 계약은 case의 member나
+  그 unit의 `only`로 그것을 해소한다. 생성기는 case를 빼지 않는다. target이 검증하지 않는 것이 보이게 하기 위해서다.
+  `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. template 계약의 `binding check`는
+  `prepared_render.render`의 case마다 CK-91을 보고한다.
+- Go가 callback field가 `optional`인 record를 거부했다. template의 `engine_options`는 `{ "optional": { "unit":
+  "loader" } }`를 가지는데, Go crate가 그것의 `out_engine_options`를 썼고 go가 "no Go output conversion for
+  {"unit":"loader"}"로 거부되었다. 이제 그런 record는 callback field가 `optional`이 아닌 record처럼 들어가기만 하고, 그
+  core type은 GN-6aa의 lifetime을 가진다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
 - AI 도구의 footer나 정체 줄이 있는 commit 메시지를 거부하는 hook이 없어서, 그런 줄이 확인 없이 push에 닿았다. 이제
   `.githooks`의 hook `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`로 그것을
   거부한다. `make hooks`는 `core.hooksPath`를 `.githooks`로 가리키고, `make hooks-check`는 hook이 없는 checkout을

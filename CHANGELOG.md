@@ -5,6 +5,26 @@
 
 ## Unreleased
 
+- Go refused a variant of another module that a member names: its encode and decode functions are unexported, so
+  `node` of the module `ast` of template, which the root names, refused go with "a variant of the module ast in the
+  module (the root) is not generated for Go yet (its encode and decode functions are unexported)". The package of a
+  variant that another module names now has `Encode<Variant>` and `Decode<Variant>`, which take `binding.Token` as
+  `<Class>Handle` does, and the other module calls them; CK-13 counts the two names (GN-15a, GN-6v). Verified by `make
+  test-ts`: the new tests failed before the change.
+- A case whose instance values call a member that an `only` keeps out of a target of the member of the case had a
+  test that could not make its instance there: `prepared_render.render` of template is generated for wasm, and the
+  receivers of its cases are made by `engine.prepare`, which `only` keeps out of wasm, so wasm was refused with "the
+  case a_render_of_prepare of prepared_render.render: engine.prepare is no member that the binding generates".
+  `binding check` now reports such a member with the case and the targets (CK-91), also for an instance value inside a
+  list, an `optional`, a map or a field of a record at the place of a class or an interface, such as `fs_loader.new`
+  in the record `options` of the receiver of `engine.render`, which `only` keeps out of wasm, and the contract
+  resolves it by an `only` of the member of the case or of its unit; the generator leaves no case out, so that what a
+  target does not verify shows. Verified by `make test-ts`: the new tests failed before the change; `binding check` of
+  the template contract reports CK-91 for each case of `prepared_render.render`.
+- Go refused a record whose callback field is optional: `engine_options` of template holds `{ "optional": { "unit":
+  "loader" } }`, the Go crate wrote `out_engine_options` for it, and go was refused with "no Go output conversion for
+  {"unit":"loader"}". Such a record only enters, as one whose callback field is not optional, and its core type has
+  the lifetime of GN-6aa. Verified by `make test-ts`: the new test failed before the change.
 - No hook refused a commit message with the footer or the identity line of an AI tool, so such a line reached a push
   unchecked. The hook `commit-msg` of `.githooks` now refuses it through the rules `commit-ai-footer` and
   `commit-ai-identity` of `check-commits` of kit; `make hooks` points `core.hooksPath` at `.githooks`, `make hooks-check`

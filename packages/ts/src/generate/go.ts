@@ -434,7 +434,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   // T-9, GN-6v: a variant, which may hold itself, is encoded by the function of its package.
   const variant = variantOf(scope.model, type);
   // A variant that holds a value alias or a callback passes the call of the member on (GN-6v).
-  if (variant !== undefined) return [`${t}encode${variantPackage(scope, variant)}(${needsCall(scope.model, type) ? 'call, ' : ''}enc, ${expr})`];
+  if (variant !== undefined) return [`${t}${variantCall(scope, variant, 'encode', `${needsCall(scope.model, type) ? 'call, ' : ''}enc, ${expr}`)}`];
   throw new Unsupported(`no Go encoding of ${JSON.stringify(type)}`);
 }
 
@@ -503,7 +503,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
   if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goDecode(scope, fieldWire(f), `${target}.${goName(f.name)}`, indent, depth));
   // T-9, GN-6v: a variant, which may hold itself, is decoded by the function of its package.
   const variant = variantOf(scope.model, type);
-  if (variant !== undefined) return [`${t}${target} = decode${variantPackage(scope, variant)}(dec)`];
+  if (variant !== undefined) return [`${t}${target} = ${variantCall(scope, variant, 'decode', 'dec')}`];
   throw new Unsupported(`no Go decoding of ${JSON.stringify(type)}`);
 }
 
@@ -725,11 +725,31 @@ var _ ${goUnitName(scope, callback.unit)} = (*${name})(nil)
   }).join('');
 }
 
-// T-9, GN-6v: the name of a variant for its encode and decode functions, which are unexported, so a package of another
-// module does not reach them.
-function variantPackage(scope: GoScope, variant: Variant): string {
-  if (variant.unit.module !== scope.module) throw new Unsupported(`${variant.unit.id}: a variant of the module ${variant.unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its encode and decode functions are unexported) (GN-6v)`);
-  return goName(variant.unit.name);
+// T-9, GN-6v: the call of the encode or decode function of a variant with its arguments. Those functions are
+// unexported; a package of another module calls the exported Encode<Name> or Decode<Name> of the package of the
+// variant, which binding.Token keeps out of the reach of other code (GN-15a).
+function variantCall(scope: GoScope, variant: Variant, which: 'encode' | 'decode', args: string): string {
+  const name = goName(variant.unit.name);
+  const pkg = reached(scope, variant.unit);
+  if (pkg === undefined) return `${which}${name}(${args})`;
+  return `${pkg}.${which === 'encode' ? 'Encode' : 'Decode'}${name}(binding.Token{}, ${args})`;
+}
+
+// GN-15a: the functions through which another module encodes and decodes a variant of this package.
+function goReachableVariant(scope: GoScope, variant: Variant): string {
+  const name = goName(variant.unit.name);
+  const withCall = needsCall(scope.model, { unit: variant.unit.id });
+  return `
+// Encode${name} encodes a ${name} for a call of another module of the binding (GN-15a).
+func Encode${name}(_ binding.Token, ${withCall ? 'call *binding.Call, ' : ''}enc *binding.Writer, value ${name}) {
+	encode${name}(${withCall ? 'call, ' : ''}enc, value)
+}
+
+// Decode${name} decodes a ${name} for a call of another module of the binding (GN-15a).
+func Decode${name}(_ binding.Token, dec *binding.Reader) ${name} {
+	return decode${name}(dec)
+}
+`;
 }
 
 // T-9, GN-6v: a variant is an interface whose one method is unexported, so that only its case structs implement it,
@@ -958,6 +978,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...model.kept.filter((k) => k.unit.module === module).map((k) => goKeptAlias(scope, k)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
+    ...model.variants.filter((v) => v.unit.module === module && reachedFrom.has(v.unit.id)).map((v) => goReachableVariant(scope, v)),
   ].join('');
   const made = [...(scope.aliasInstances ?? [])].sort((a, b) => model.objects.indexOf(a) - model.objects.indexOf(b));
   const instance = made.length === 0
@@ -3113,7 +3134,7 @@ function importCycle(imports: Map<string, Set<string>>): void {
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
 // model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
-  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.kept.map((k) => k.unit.module)])];
+  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.kept.map((k) => k.unit.module), ...model.variants.map((v) => v.unit.module)])];
   // GN-15a: a first pass finds the units that other modules reach and the modules that each package imports.
   const reachedFrom = new Set<string>();
   const imports = new Map<string, Set<string>>();

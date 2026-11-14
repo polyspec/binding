@@ -4967,6 +4967,18 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false, null]]).object`), 'node');
 });
 
+test('Go reads a record whose callback field is optional and writes no output conversion for it (GN-6aa)', () => {
+  // The record engine_options of template holds { optional: { unit: loader } }; Go wrote out_engine_options for it and
+  // was refused with "no Go output conversion for {"unit":"loader"}".
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const search = sample.units.find((u: { id: string }) => u.id === 'search');
+  search.fields = [search.fields[1], { name: ['lookup'], type: { optional: { unit: 'lookup' } }, default: { literal: null } }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_search\(input: &mut &\[u8\]\) -> Result<polyspec_sample::Search<'static>, Fail> \{/);
+  assert.doesNotMatch(lib, /\nfn out_search\(/);
+});
+
 test('a member with core.failure converts the error of its core as the failure of language code (E-1c, GN-7)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
   const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });
@@ -5077,6 +5089,24 @@ test('Go takes a function type as a boxed Fn over a kept func, which is called b
   for (const name of ['TestGN13eApplyTheFunctionConvertsTheValueKeepsNothingThrown', 'TestGN6zRegistryCallTheKeptFunctionConvertsTheValueReturnsTheErrorOfTheKeptFunctionKeepsNothingThrown']) {
     assert.match(counted, new RegExp(`\\nfunc ${name}\\(t \\*testing\\.T\\) \\{\\n[^]*?binding\\.ThrownCount\\(\\)`), name);
   }
+});
+
+test('a Go package of another module encodes and decodes a variant through Encode and Decode of the package of the variant (GN-15a, GN-6v)', () => {
+  // The contract of template has such a variant: node of the module ast, which the root names. Before, Go refused "a
+  // variant of the module ast in the module (the root) is not generated for Go yet (its encode and decode functions
+  // are unexported) (GN-6v)".
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/variants/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'figure').module = 'shapes';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+  const root = text(out, 'packages/go/zz_generated_variants.go');
+  assert.match(root, /\tshapes\.EncodeFigure\(binding\.Token\{\}, (?:call, )?enc, [a-z_]+\)\n/);
+  assert.match(root, /= shapes\.DecodeFigure\(binding\.Token\{\}, dec\)\n/);
+  const shapes = text(out, 'packages/go/shapes/zz_generated_shapes.go');
+  assert.match(shapes, /\nfunc EncodeFigure\(_ binding\.Token, (?:call \*binding\.Call, )?enc \*binding\.Writer, value Figure\) \{\n\tencodeFigure\((?:call, )?enc, value\)\n\}\n/);
+  assert.match(shapes, /\nfunc DecodeFigure\(_ binding\.Token, dec \*binding\.Reader\) Figure \{\n\treturn decodeFigure\(dec\)\n\}\n/);
+  // A package has the functions only for a variant that another module names.
+  assert.doesNotMatch(text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] }), 'packages/go/zz_generated_variants.go'), /func (?:Encode|Decode)Figure/);
 });
 
 test('Go reads the value alias that a kept func returns through the call of its run (GN-6z, GN-15c)', () => {
