@@ -1,14 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 54d8213a92b5453fa4a09ce4b3edbe0f17a7d229ffc34e1e1d186568dc15ec4f -->
+<!-- source-sha256: 6e5f82fb2c04a67ac8287c0b06afa0f62a655ce6b6a94d6f1a42a32baa11e327 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
-- Python의 값 alias make 함수가 core의 `OutValue`의 level마다 자기 자신을 한 번 불러서, 변환이 쓰는 native stack이 값의
-  깊이에 따라 자랐고, thread의 stack보다 깊은 값은 process를 끝냈을 것이다. 이제 Node와 WASM처럼 heap의 작업 stack을
-  가진 loop로 값을 걷는다(GN-6as). `make test-ts`로 검증했다: make 함수의 시험이 변경 전에는 Python crate에서 실패했다.
+- Python과 PHP의 값 alias make 함수가 core의 `OutValue`의 level마다 자기 자신을 한 번 불러서, 변환이 쓰는 native
+  stack이 값의 깊이에 따라 자랐고, thread의 stack보다 깊은 값은 process를 끝냈을 것이다. 이제 Node와 WASM처럼 heap의
+  작업 stack을 가진 loop로 값을 걷고, PHP array는 마지막 자식이 만들어졌을 때 만든다(GN-6as). `make test-ts`로
+  검증했다: make 함수의 시험이 변경 전에는 Python과 PHP crate에서 실패했다.
   그리고 `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes`, `tests/e2e/consumer`의 `make e2e`로 검증했다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와

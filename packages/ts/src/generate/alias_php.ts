@@ -5,96 +5,111 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, ownedNatives, readAsVariants, refuseForeignReads } from './alias_shared.ts';
+import { type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
+// GN-6as: the next child of a map or an object whose key PHP takes as it is: the key waits in the container, and the
+// value is the child that the walk makes.
+const NEXT_KEPT_KEY = `{
+    let (entry, value) = source.entry(level.handle, level.index);
+    *key = Some(entry);
+    Some(value)
+}`;
+
+// GN-6as: an entry whose value is made goes into its container under the key that waits there.
+const PUT_KEPT_KEY = (insert: string): string => `let Some(key) = key.take() else {
+    return Err(binding_error(BindingError::Internal { detail: String::from("GN-6as: a value of an entry without its key") }));
+};
+${insert}
+level.index = level.index.saturating_add(1);`;
+
+const PUT_PUSHED = (array: string): string => `${array}.push(value).map_err(php_failed)?;
+level.index = level.index.saturating_add(1);`;
+
+// U-7: an array is a value, which is made when its last child is made; the walk leaves it then.
+const CLOSE_ARRAY = `making.entered.remove(&level.handle.raw());
+let mut zval = Zval::new();
+zval.set_hashtable(array);
+Ok(zval)`;
+
+// U-7: the containers that the walk of a value alias fills, and the PHP value that each is when its children are made.
+const ALIAS_FILLS: (Fill & { close: string })[] = [
+  { name: 'Items', doc: 'An array that takes the items of a list.', type: 'ZBox<ZendHashTable>', pattern: 'OutFill::Items(array)', put: PUT_PUSHED('array'), next: 'Some(source.item(level.handle, level.index))', close: CLOSE_ARRAY },
+  { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: 'ZBox<ZendHashTable>', pattern: 'OutFill::Values(array)', put: PUT_PUSHED('array'), next: 'Some(source.entry(level.handle, level.index).1)', close: CLOSE_ARRAY },
+  { name: 'Entries', doc: 'An array that takes the entries of a map or an object, with the key of the entry whose value is made next.', type: 'ZBox<ZendHashTable>, Option<OutValue>', pattern: 'OutFill::Entries(array, key)', put: PUT_KEPT_KEY('php_insert(array, key, value)?;'), nextPattern: 'OutFill::Entries(_, key)', next: NEXT_KEPT_KEY, close: CLOSE_ARRAY },
+  { name: 'Object', doc: 'A stdClass, made before its children, whose properties take the entries of an object, with the key of the entry whose value is made next.', type: 'Zval, *mut ZendObject, Option<OutValue>', pattern: 'OutFill::Object(_, object, key)', closePattern: 'OutFill::Object(zval, ..)', put: PUT_KEPT_KEY('php_property(*object, key, value)?;'), nextPattern: 'OutFill::Object(_, _, key)', next: NEXT_KEPT_KEY, close: 'Ok(zval)' },
+  { name: 'Reference', doc: 'A reference, made before its value, which takes the one value of a reference.', type: 'Zval, *mut ext_php_rs::ffi::zend_reference', pattern: 'OutFill::Reference(_, reference)', closePattern: 'OutFill::Reference(zval, _)', put: 'php_set_reference(*reference, value);', close: 'Ok(zval)' },
+];
+
+// GN-6as: the make function of PHP.
+const PHP_WALK: WalkShape = {
+  generics: '', life: '', anon: '', env: { params: '', args: '' }, value: 'Zval',
+  result: (type) => `Result<${type}, Fail>`, internal: (detail) => `Err(binding_error(BindingError::Internal { detail: ${detail} }))`, language: 'PHP',
+};
+const PHP_MAKING = { name: 'making', type: '&mut PhpMaking' };
+
 // The PHP value of a built-in form, made from the content of the matched OutValue.
-function builtin(alias: ValueAlias, form: string, kind: string): string {
+function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return 'Ok(Zval::new())';
+      return put('Zval::new()');
     case 'bool':
-      return 'bool_out(value)';
+      return leaf('bool_out(value)');
     case 'int':
-      if (kind === 'number') return 'php_literal_int(&value)';
-      return kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())';
+      if (kind === 'number') return leaf('php_literal_int(&value)');
+      return leaf(kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())');
     case 'float':
-      if (kind === 'number') return 'php_literal_float(&value)';
-      if (kind === 'float') return 'float_out(value.value())';
+      if (kind === 'number') return leaf('php_literal_float(&value)');
+      if (kind === 'float') return leaf('float_out(value.value())');
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return `php_literal_float(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
+      return leaf(`php_literal_float(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
     case 'text':
-      return kind === 'bytes' ? 'php_utf8(value.value())' : 'text_out(value)';
+      return leaf(kind === 'bytes' ? 'php_utf8(value.value())' : 'text_out(value)');
     case 'bytes':
-      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
+      return leaf(kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
+      // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
+      const fill = kind === 'list' ? 'Items' : 'Values';
       return `{
-            ${parts.head}
-            let mut array = ZendHashTable::new();
-            php_enter(making, handle)?;
-            for index in 0..len {
-                let item = ${parts.item};
-                array.push(make(item, source, making)?).map_err(php_failed)?;
-            }
-            making.entered.remove(&handle.raw());
-            let mut zval = Zval::new();
-            zval.set_hashtable(array);
-            Ok(zval)
+            ${parts.head === '' ? '' : `${parts.head}\n            `}php_enter(making, handle)?;
+            ${level({ walks: true, fill: `OutFill::${fill}(ZendHashTable::new())` })}
         }`;
     }
     case 'map':
     case 'keyed_map': {
       const parts = container(alias, kind, form);
       return `{
-            ${parts.head}
-            let mut array = ZendHashTable::new();
-            php_enter(making, handle)?;
-            for index in 0..len {
-                let (key, item) = ${parts.entry};
-                let item = make(item, source, making)?;
-                php_insert(&mut array, key, item)?;
-            }
-            making.entered.remove(&handle.raw());
-            let mut zval = Zval::new();
-            zval.set_hashtable(array);
-            Ok(zval)
+            ${parts.head === '' ? '' : `${parts.head}\n            `}php_enter(making, handle)?;
+            ${level({ walks: true, fill: 'OutFill::Entries(ZendHashTable::new(), None)' })}
         }`;
     }
     case 'php_object': {
       const parts = container(alias, kind, 'map');
       return `{
-            ${parts.head}
-            if let Some(object) = making.objects.get(&handle.raw()) {
-                return Ok(php_shared_object(*object));
+            ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(object) = making.objects.get(&handle.raw()) {
+                return ${put('php_shared_object(*object)')};
             }
             let mut zval = ZendObject::new_stdclass().into_zval(false).map_err(php_failed)?;
             let object = php_object_of(&mut zval)?;
             making.objects.insert(handle.raw(), object);
-            for index in 0..len {
-                let (key, item) = ${parts.entry};
-                let item = make(item, source, making)?;
-                php_property(object, key, item)?;
-            }
-            Ok(zval)
+            ${level({ walks: true, fill: 'OutFill::Object(zval, object, None)' })}
         }`;
     }
     case 'php_reference':
       return `{
             if let Some(reference) = making.references.get(&handle.raw()) {
-                return Ok(php_shared_reference(*reference));
+                return ${put('php_shared_reference(*reference)')};
             }
             let (zval, reference) = php_new_reference()?;
             making.references.insert(handle.raw(), reference);
-            let content = make(*value, source, making)?;
-            php_set_reference(reference, content);
-            Ok(zval)
+            ${level({ walks: false, waiting: 'Some(*value)', fill: 'OutFill::Reference(zval, reference)' })}
         }`;
     case 'native':
-      return 'native_object(&native)';
+      return leaf('native_object(&native)');
     default:
       throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -138,44 +153,39 @@ function valueClassPhp(alias: ValueAlias, name: string, core: string, failure: s
   const own = ownerName(alias, alias.unit);
   const call = (member: Member, args: string): string =>
     `php_static(${rustString(`${own}::${langName('php', member.name, 'callable')}`)}, vec![${args}]).map_err(php_thrown)`;
-  const arms = classMakes(alias, 'php').map((make) => {
+  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
+  // instance from them when the last child is made.
+  const fills: Fill[] = [];
+  const closes = new Map<string, string>();
+  const arms = (walk: Walk): string => classMakes(alias, 'php').map((make) => {
     if (make.form === 'content') {
-      if (make.kind === 'null') return `        OutValue::Null => ${call(make.member, '')},`;
+      if (make.kind === 'null') return `        OutValue::Null => ${walk.leaf(call(make.member, ''))},`;
       if (make.kind === 'text16') {
         // B2.81: the UTF-16 code units of the text as an array of integers, unpaired surrogates included, which a PHP
         // string cannot hold.
         return `        OutValue::Text16(value) => {
             let value: Vec<i64> = value.into_iter().map(i64::from).collect();
-            ${call(make.member, '&value')}
+            ${walk.leaf(call(make.member, '&value'))}
         }`;
       }
       const variant = make.kind === 'bool' ? 'Bool' : make.kind === 'number' ? 'Number' : 'Text';
-      return `        OutValue::${variant}(value) => ${call(make.member, '&value')},`;
+      return `        OutValue::${variant}(value) => ${walk.leaf(call(make.member, '&value'))},`;
     }
     if (make.form === 'list') {
-      return `        OutValue::List { handle, len } => {
-            let mut items = ZendHashTable::new();
-            for index in 0..len {
-                let item = source.item(handle, index);
-                items.push(make(item, source)?).map_err(php_failed)?;
-            }
-            let items = items.into_zval(false).map_err(php_failed)?;
-            ${call(make.member, '&items')}
-        }`;
+      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The array of the made items of a list.', type: 'ZBox<ZendHashTable>', pattern: 'OutFill::Items(items)', put: PUT_PUSHED('items'), next: 'Some(source.item(level.handle, level.index))' });
+      closes.set('Items', `let items = items.into_zval(false).map_err(php_failed)?;
+${call(make.member, '&items')}`);
+      return `        OutValue::List { handle, len } => ${walk.level({ walks: true, fill: 'OutFill::Items(ZendHashTable::new())' })},`;
     }
+    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: 'Zval, Option<Zval>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(`php_method(map, ${rustString(langName('php', make.insert.name, 'callable'))}, vec![&key, &value]).map_err(php_thrown)?;`), next: NEXT_ENTRY });
+    closes.set('Entries', call(make.member, '&map'));
     return `        OutValue::Map(value) => {
             let handle = value.handle();
             let len = value.len();
             let map = php_new(${rustString(ownerName(alias, make.map))}).map_err(php_thrown)?;
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(key, source)?;
-                let item = make(item, source)?;
-                php_method(&map, ${rustString(langName('php', make.insert.name, 'callable'))}, vec![&key, &item]).map_err(php_thrown)?;
-            }
-            ${call(make.member, '&map')}
+            ${walk.level({ walks: true, fill: 'OutFill::Entries(map, None)' })}
         }`;
-  });
+  }).join('\n');
   return `
 /// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
 fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
@@ -196,15 +206,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     make_${name}(root, &mut source)
 }
-
-fn make_${name}(out: OutValue, source: &mut dyn OutValues) -> Result<Zval, Fail> {
-    let make = make_${name};
-    match out {
-${arms.join('\n')}
-        other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(PHP_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', '', undefined, { head: '', of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -493,7 +495,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   const label = langName('php', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPhp(alias, name, core, failure);
-  const arms = outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '');
+  const arms = (walk: Walk): string => outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', undefined, 'out_', undefined, walk.leaf).join('\n');
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
@@ -508,15 +510,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let mut making = PhpMaking::default();
     make_${name}(root, &mut source, &mut making)
 }
-
-fn make_${name}(out: OutValue, source: &mut dyn OutValues, making: &mut PhpMaking) -> Result<Zval, Fail> {
-    let make = make_${name};
-    match out.clone() {
-${arms.join('\n')}
-        other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(PHP_WALK, name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PHP_MAKING, { head: '', of: (fill) => ALIAS_FILLS.find((f) => f.name === fill.name)?.close ?? '' })}`;
 }
 
 // B-1: what a PHP value is as a HostValue, one level at a time; the children of an array or a stdClass are asked for

@@ -1040,8 +1040,8 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
   for (const [path, made] of [
-    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
-    // GN-6as: the instance is a value without children, which the walk of Python, Node and WASM puts next.
+    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
+    // GN-6as: the instance is a value without children, which the walk of PHP, Python, Node and WASM puts next.
     ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
@@ -2051,7 +2051,7 @@ test('the make function of a value alias walks the value with a work stack and c
   };
   // The targets whose make function is the walk; the other targets are not generated in this form yet (GN-6as).
   const wasm = 'packages/ts/wasm/generated/lib.rs';
-  const libs = ['packages/ts/generated/lib.rs', wasm, 'packages/python/generated/lib.rs'];
+  const libs = ['packages/ts/generated/lib.rs', wasm, 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs'];
   for (const [sample, inputs] of Object.entries(samples)) {
     const out = generate(inputs);
     const found = libs.filter((path) => out.has(path));
@@ -7240,8 +7240,11 @@ test('PHP makes a stdClass and a reference with their identity, and a case value
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // The make keeps the objects and references that it made under their handles, and makes each before its content.
   assert.match(lib, /struct PhpMaking \{[^}]*objects: std::collections::BTreeMap<u64, \*mut ZendObject>,[^}]*references: std::collections::BTreeMap<u64, \*mut ext_php_rs::ffi::zend_reference>,/);
-  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*php_set_reference\(reference, content\);/);
-  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*php_property\(object, key, item\)\?;/);
+  // GN-6as: the walk enters a reference and a stdClass as levels whose made children go into them.
+  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*waiting: Some\(\*value\), fill: OutFill::Reference\(zval, reference\)/);
+  assert.match(lib, /OutFill::Reference\(_, reference\) => \{\n\s*php_set_reference\(\*reference, value\);/);
+  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*fill: OutFill::Object\(zval, object, None\)/);
+  assert.match(lib, /OutFill::Object\(_, object, key\) => \{\n[^\n]*let Some\(key\) = key\.take\(\) else \{\n[^\n]*\n[^\n]*\n\s*php_property\(\*object, key, value\)\?;/);
   // A property name and an array key are the bytes of the key.
   assert.match(lib, /fn php_property\(object: \*mut ZendObject, key: OutValue, item: Zval\)/);
   assert.match(lib, /OutValue::Bytes\(bytes\) => \{\n\s*let name = ZendStr::new\(bytes\.value\(\), false\);\n\s*array\.insert\(ext_php_rs::types::ArrayKey::ZendString\(&name\), item\)/);
