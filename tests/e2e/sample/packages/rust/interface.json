@@ -229,6 +229,46 @@
       ]
     },
     {
+      "id": "source",
+      "name": [
+        "source"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_sample::Source",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "source.read",
+          "name": [
+            "read"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_sample::Source::read",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "refused_error",
       "name": [
         "refused",
@@ -2298,6 +2338,53 @@
           }
         }
       ]
+    },
+    {
+      "id": "held_source",
+      "name": [
+        "held",
+        "source"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::HeldSource",
+      "final": true,
+      "implements": [
+        {
+          "unit": "source"
+        }
+      ],
+      "members": [
+        {
+          "id": "held_source.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::HeldSource::new"
+        }
+      ]
     }
   ],
   "changes": [],
@@ -2567,6 +2654,11 @@
       "member": "ratio.value",
       "file": "contracts/cases.json",
       "group": "ratio_value"
+    },
+    {
+      "member": "held_source.new",
+      "file": "contracts/cases.json",
+      "group": "held_source_new"
     }
   ]
 }

@@ -49,6 +49,8 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
   const aliasCases = new Map<string, unknown[]>();
   // GN-13e: the key of each case that holds the result of its member, by the row that names the group.
   const resultKeys = new Map<string, Map<unknown, string>>();
+  // GN-13h: the targets of the only of the row that holds a case, for the cases of a row with only.
+  const caseTargets = new Map<unknown, readonly Lang[]>();
   for (const kase of inputs.contract.cases) {
     const file = inputs.caseFiles.get(kase.file) as Record<string, unknown> | undefined;
     const group = file?.[kase.group];
@@ -61,9 +63,10 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
       const keys = resultKeys.get(kase.member) ?? new Map<unknown, string>();
       for (const item of group) keys.set(item, kase.result ?? 'result');
       resultKeys.set(kase.member, keys);
+      if (kase.only !== undefined) for (const item of group) caseTargets.set(item, kase.only.targets);
     }
   }
-  const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys };
+  const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys, caseTargets };
   return model;
 }
 
@@ -115,18 +118,6 @@ export function generate(inputs: Inputs): Files {
     for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
       for (const parameter of (fn.member.parameters ?? []).filter((p) => p.keeps === true)) {
         refusals.refuse(`${fn.member.id}.${parameter.name.join('_')}: a callback that the core keeps is not generated yet for ${target} (GN-6aa)`);
-      }
-    }
-  }
-  // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
-  for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
-    const forTarget = membersFor(model, target);
-    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
-      for (const arg of fn.args) {
-        const library = libraryOf(arg.type);
-        if (library !== undefined && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === (arg.type as { unit: string }).unit)) {
-          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6s)`);
-        }
       }
     }
   }

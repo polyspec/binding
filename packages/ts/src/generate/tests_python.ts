@@ -3,6 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, callsCode, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
 import { internalModule } from './python.ts';
+import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected } from './samples.ts';
@@ -68,6 +69,13 @@ def _same(actual, expected):
     return actual == expected
 `;
 
+// GN-13e, B2.121: _same with a branch that compares two instances of a value class of another repository, or of a map
+// class of its owner, by what the members of its in row read (_read_foreign).
+const pythonSame = (foreign: string[]): string => (foreign.length === 0 ? PYTHON_SAME : PYTHON_SAME.replace(
+  '    return actual == expected\n',
+  `    if isinstance(expected, (${foreign.map((c) => `${c},`).join(' ')})):\n        return _read_foreign(actual) == _read_foreign(expected)\n    return actual == expected\n`,
+));
+
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 const PYTHON_OUTCOME = `
 
@@ -114,10 +122,21 @@ export function pythonTests(model: Model, module: string): string {
     if (unit.module !== '') internalModules.add(internalModule(unit.module));
     return `pkg.${internalModule(unit.module)}.`;
   };
+  // GN-6s, GN-13f: a member of another repository that an instance value names, through the module of its package.
+  const owned = (fn: Fn): string | undefined => {
+    if (fn.library === undefined) return undefined;
+    if (fn.unit.module !== '') throw new Unsupported(`${fn.member.id} of ${fn.library} is in the module ${fn.unit.module}, which a case calls only in the root module (GN-6s, GN-13f)`);
+    foreignModules.add(fn.library);
+    return `foreign_${fn.library.replaceAll('-', '_')}.`;
+  };
   const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
-    errorNew: (unit, kind, message) => `pkg.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`,
+    // GN-6s: an error unit of the owner of a callback unit of another repository, through the module of its package.
+    errorNew: (unit, kind, message, library) => {
+      if (library !== undefined) foreignModules.add(library);
+      return `${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`;
+    },
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
@@ -246,8 +265,9 @@ export function pythonTests(model: Model, module: string): string {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('python', fn.member.name, 'callable');
-    const cls = `${ref(fn.unit)}${langName('python', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `${ref(fn.unit)}${member}(${args})`;
+    const prefix = owned(fn) ?? ref(fn.unit);
+    const cls = `${prefix}${langName('python', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${prefix}${member}(${args})`;
     if (fn.kind === 'constructor') return `${cls}(${args})`;
     if (fn.kind === 'static') return `${cls}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;
@@ -256,8 +276,9 @@ export function pythonTests(model: Model, module: string): string {
   // GN-6ae: the call of the awaited form of a member that waits, a<name>, which gives an awaitable.
   const invokeAwaited = (fn: Fn, args: string, receiver: string): string => {
     const member = `a${langName('python', fn.member.name, 'callable')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
-    if (fn.kind === 'static') return `pkg.${langName('python', fn.unit.name, 'class')}.${member}(${args})`;
+    const prefix = owned(fn) ?? 'pkg.';
+    if (fn.kind === 'function') return `${prefix}${member}(${args})`;
+    if (fn.kind === 'static') return `${prefix}${langName('python', fn.unit.name, 'class')}.${member}(${args})`;
     return `${receiver}.${member}(${args})`;
   };
   // GN-6ae: the function of a function fixture is a function of the module, because a lambda holds no statement: each
@@ -741,6 +762,10 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIsNone(alive())`);
   }
   const usesCasePath = out.some((block) => block.includes('self._case_path('));
+  // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
+  const readers = usesSame ? foreignReaders(model, 'python') : [];
+  const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
+  const foreignRead = pythonForeignRead(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
   // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
   // package of its owner, which the test imports.
   const forms = usesTokens ? tokenForms(model, 'python') : [];
@@ -752,7 +777,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

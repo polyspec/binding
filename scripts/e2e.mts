@@ -32,14 +32,14 @@
 // lint reads the code and runs nothing, so only the tests verify a target, and a target without a test that ran fails.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
+import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints, testEntrySymbol } from './e2e-lint.mts';
+import { bindingLints, deadcodeFindings, goBuildTags } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
-import { consumerFiles, debugSections, goRemote, goWork, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -104,6 +104,9 @@ const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
 const { convert, libraryName } = await import('../packages/ts/src/names.ts');
 const { componentBase, isHost, namedLibraries, place } = await import('../packages/ts/src/generate/packages.ts');
 const { GO_PLATFORMS } = await import('../packages/ts/src/generate/go.ts');
+// GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
+// module are those of `binding release-go-module`.
+const { consumerFiles, debugSections, goRemote, goWork, requiredVersion, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -373,6 +376,7 @@ const phpTool = targets.includes('php') ? need('php', 'php', '.php-version', fil
 const phpunit = targets.includes('php') ? need('php', 'phpunit', 'config/phpunit', file(join(tools, 'phpunit/vendor/bin/phpunit'))) : '';
 const goTool = targets.includes('go') ? need('go', 'go', 'mise.toml', miseWhich('go')) : '';
 const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhich('gofmt')) : '';
+const deadcode = targets.includes('go') ? need('go', 'deadcode', 'mise.toml', miseWhich('deadcode')) : '';
 // BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
 const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
 // llvm-nm reads the static library of go and the extension of php built without features (GN-13b, GN-8a).
@@ -388,6 +392,14 @@ if (targets.includes('wasm')) {
   const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' });
   const installed = libdir.status === 0 && existsSync(libdir.stdout.trim()) && readdirSync(libdir.stdout.trim()).some((name) => name.startsWith('libcore-'));
   need('wasm', 'the Rust target wasm32-unknown-unknown', 'rust-toolchain.toml', installed ? 'installed' : undefined);
+}
+// GN-15g, GN-14f: on Linux the released form also carries the library of musl of the arch of the run, which Cargo
+// builds for the Rust target <arch>-unknown-linux-musl of rust-toolchain.toml.
+const muslTriple = process.platform === 'linux' ? ({ x64: 'x86_64', arm64: 'aarch64' } as Record<string, string>)[process.arch] : undefined;
+if (targets.includes('go') && muslTriple !== undefined) {
+  const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', `${muslTriple}-unknown-linux-musl`], { encoding: 'utf8' });
+  const installed = libdir.status === 0 && existsSync(libdir.stdout.trim()) && readdirSync(libdir.stdout.trim()).some((name) => name.startsWith('libcore-'));
+  need('go', `the Rust target ${muslTriple}-unknown-linux-musl`, 'rust-toolchain.toml', installed ? 'installed' : undefined);
 }
 // The PHP of the machine is wrapped as it is (kit), so its minor is compared with .php-version here.
 if (phpTool !== '') {
@@ -775,7 +787,7 @@ if (targets.includes('go')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const entry = testEntrySymbol(extensionOf(p.contract));
+      const entry = testEntrySymbol(`${extensionOf(p.contract)}_`);
       const leaked = symbols.split('\n').filter((line) => entry.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
@@ -824,6 +836,35 @@ if (targets.includes('go')) {
       if (unformatted !== '') throw new Error(`gofmt would change: ${unformatted.trim().split('\n').join(', ')}`);
       run(goTool, ['vet', ...scoped(), './...'], { cwd: goModule, env: goEnv });
     })) lintOf('go', `gofmt -l and go vet${of}`);
+    // GN-15h: deadcode -test judges the module as the lint of a consuming repository does, untagged and with each build
+    // tag of its files, without the tags of the test features of the run: a generated function that no program and no
+    // test reaches fails that repository, which cannot change a generated file. deadcode exits 0 when it reports one, so
+    // any line that stands fails the step.
+    if (stepOf(['go'], `deadcode -test${of}`, () => {
+      const goFiles = readdirSync(goModule, { recursive: true, encoding: 'utf8' }).filter((path) => path.endsWith('.go'));
+      const tags = goBuildTags(goFiles.map((path) => readFileSync(join(goModule, path), 'utf8')));
+      const env = { ...process.env, ...goEnv, GOFLAGS: '' };
+      const output = (command: string, argv: string[]): string => {
+        process.stdout.write(`$ ${command} ${argv.join(' ')}\n`);
+        const ran = spawnSync(command, argv, { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env });
+        if (ran.error !== undefined) throw ran.error;
+        if (ran.status !== 0) throw new Error(`${command} ${argv.join(' ')} (status ${String(ran.status)}): ${`${ran.stdout}${ran.stderr}`.trim()}`);
+        return `${ran.stdout}${ran.stderr}`;
+      };
+      const files = '{{.Dir}}{{range .GoFiles}}{{"\\t"}}{{.}}{{end}}{{range .CgoFiles}}{{"\\t"}}{{.}}{{end}}{{range .TestGoFiles}}{{"\\t"}}{{.}}{{end}}{{range .XTestGoFiles}}{{"\\t"}}{{.}}{{end}}';
+      const runs = [undefined, ...tags].map((tag) => {
+        const flags = tag === undefined ? [] : [`-tags=${tag}`];
+        const lines = output(deadcode, ['-test', ...flags, './...']).split('\n').filter((line) => line !== '');
+        const compiled = output(goTool, ['list', ...flags, '-f', files, './...']).split('\n').filter((line) => line !== '').flatMap((line) => {
+          const [dir = '', ...names] = line.split('\t');
+          return names.map((name) => join(realpathSync(dir), name));
+        });
+        return { lines, compiled: new Set(compiled) };
+      });
+      const standing = deadcodeFindings(runs, realpathSync(goModule));
+      if (standing.length > 0) throw new Error(`deadcode reports ${standing.length} line${standing.length === 1 ? '' : 's'}: ${standing.join('; ')}`);
+      process.stdout.write(`deadcode -test, untagged${tags.length === 0 ? '' : ` and with ${tags.join(', ')}`}: no function is unreachable\n`);
+    })) lintOf('go', `deadcode -test${of}`);
     // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
     // skipped.
     const what = `the generated tests${goCases && i === 0 ? ' and the contract cases' : ''}${of} on go test`;
@@ -903,15 +944,24 @@ if (targets.includes('go')) {
         // fetched modules reads the generated tests alone.
         const carriedFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/'));
         for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
-        const carriedLibrary = join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`);
-        copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), carriedLibrary);
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
-        const built = statSync(carriedLibrary).size;
-        run(llvmStrip, ['--strip-debug', carriedLibrary]);
-        const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
-        if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
-        process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${platform}: ${String(built)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
+        const carry = (built: string, carriedPlatform: string): void => {
+          const carriedLibrary = join(moduleDir, 'internal/ffi/lib', carriedPlatform, `lib${lib(r.p.contract, 'go')}.a`);
+          copyFileSync(built, carriedLibrary);
+          const size = statSync(carriedLibrary).size;
+          run(llvmStrip, ['--strip-debug', carriedLibrary]);
+          const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+          if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform} holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
+          process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform}: ${String(size)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
+        };
+        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform);
+        // On Linux the library of musl of the arch of the run, which make go-musl-check links on musl.
+        if (muslTriple !== undefined) {
+          const triple = `${muslTriple}-unknown-linux-musl`;
+          run('cargo', ['build', '--release', '--manifest-path', join(r.p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--target', triple]);
+          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`);
+        }
         // The packages that a consumer can import: the directories of the module with a Go file that is no test,
         // outside internal.
         const packages: string[] = [];
@@ -956,6 +1006,9 @@ if (targets.includes('go')) {
       if (failure !== undefined) throw new Error(failure);
       const { counts, packageFailures } = read;
       counted('go', released, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+      // GN-14f: the downloads of the module cache are the layout of a module proxy, so make go-musl-check reads the
+      // same modules, which go.sum of the consumer pins, from <work>/go-release/proxy without Git.
+      if (muslTriple !== undefined) execFileSync('cp', ['-R', join(modcache, 'cache/download'), join(root, 'proxy')]);
     } finally {
       cleanCache();
     }

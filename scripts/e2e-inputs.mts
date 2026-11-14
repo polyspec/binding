@@ -18,7 +18,6 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'scripts/e2e-npm.mts', why: 'the script of the checkout imports it, which names the npm packages that a run packs' },
   { path: 'scripts/e2e-work.mts', why: 'the script of the checkout makes the work directory of the run with it and runs the commands of the run in it' },
   { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
-  { path: 'scripts/go-release.mts', why: 'the script of the checkout imports it, which names the tag and the consumer of the released form of a Go module' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
   { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
   { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },
@@ -36,10 +35,12 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
 
 export const NOT_READ: readonly Input[] = [
   { path: '.gitattributes', why: 'git archive reads the attributes of the tree of the commit, and git diff --name-only names a file whatever its attributes' },
+  { path: '.githooks/commit-msg', why: 'Git runs it before a commit of a checkout where make hooks ran; a run of make e2e does not commit' },
   { path: '.github/actions/bootstrap/action.yml', why: 'GitHub runs it in a job of CI or of the release; a run of make e2e does not start it' },
   { path: '.github/workflows/ci.yml', why: 'GitHub runs it on a push or a manual run; a run of make e2e does not read it' },
   { path: '.github/workflows/release.yml', why: 'GitHub runs it after a successful CI run; a run of make e2e does not read it' },
   { path: 'config/checklist.json', why: 'make docs-check reads it to check the checklists of docs/plans; a run of make e2e does not' },
   { path: 'config/documents.json', why: 'make docs-check and make documents-stamp read it to select the documents; a run of make e2e does not' },
   { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
+  { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
 ];

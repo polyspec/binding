@@ -18,10 +18,51 @@ export function bindingLints(manifest: string, crate: string, features: string):
   ];
 }
 
-// GN-5, GN-17: the line of `llvm-nm --defined-only` that defines a test entry point of the Go static library of a
-// contract. A test entry point is the prefix of the contract, two underscores and the name of the entry; the symbol of
-// a member has a name of the contract after one underscore, so the member echo_x of a class, <prefix>_<unit>__echo_x,
-// is no test entry point, and neither is a symbol of another library whose prefix only starts with this one.
-export function testEntrySymbol(prefix: string): RegExp {
-  return new RegExp(` [A-Z] _?${prefix}__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|thrown_count|number_in)`);
+// GN-15h: the build tags that the go tool sets itself, the platforms, the architectures and the toolchains, which no
+// file of the generated module selects by.
+const GO_SET_TAGS = new Set([
+  'aix', 'android', 'darwin', 'dragonfly', 'freebsd', 'hurd', 'illumos', 'ios', 'js', 'linux', 'nacl', 'netbsd', 'openbsd', 'plan9', 'solaris', 'wasip1', 'windows', 'zos',
+  '386', 'amd64', 'arm', 'arm64', 'loong64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64', 'ppc64le', 'riscv64', 's390x', 'wasm',
+  'unix', 'cgo', 'gc', 'gccgo', 'ignore',
+]);
+
+// GN-15h: the build tags, sorted, that the `//go:build` lines of the Go files `texts` name, except those that the go
+// tool sets itself and go1.N; a file behind such a tag is compiled only by a run with that tag.
+export function goBuildTags(texts: readonly string[]): string[] {
+  const tags = new Set<string>();
+  for (const text of texts) {
+    const line = text.split('\n').find((candidate) => candidate.startsWith('//go:build '));
+    if (line === undefined) continue;
+    for (const tag of line.slice('//go:build '.length).split(/[!&|()\s]+/)) {
+      if (tag !== '' && !GO_SET_TAGS.has(tag) && !/^go1\.\d+$/.test(tag)) tags.add(tag);
+    }
+  }
+  return [...tags].sort();
+}
+
+// One run of `deadcode -test`: its output lines and the absolute paths of the Go files that the run compiles.
+export interface DeadcodeRun {
+  lines: readonly string[];
+  compiled: ReadonlySet<string>;
+}
+
+// A finding of deadcode, with the path of its file relative to the module.
+const UNREACHABLE = /^(.+?\.go):\d+:\d+: unreachable func: /;
+
+// GN-15h: the lines of the runs of deadcode, untagged and with each build tag of the module, that stand: a function is
+// unreachable when every run that compiles its file reports it, because a function that the files of one tag reach is
+// used in a program with that tag; every line that is no finding, such as an error, stands too. `module` is the
+// absolute path of the module, to which the paths of the findings are relative.
+export function deadcodeFindings(runs: readonly DeadcodeRun[], module: string): string[] {
+  const fileOf = (line: string): string | undefined => {
+    const path = UNREACHABLE.exec(line)?.[1];
+    return path === undefined ? undefined : path.startsWith('/') ? path : `${module}/${path}`;
+  };
+  const compiles = runs.map((run) => new Set([...run.compiled, ...run.lines.flatMap((line) => fileOf(line) ?? [])]));
+  const standing = new Set<string>();
+  for (const line of runs.flatMap((run) => run.lines)) {
+    const path = fileOf(line);
+    if (path === undefined || runs.every((run, i) => !(compiles[i]?.has(path) ?? false) || run.lines.includes(line))) standing.add(line);
+  }
+  return [...standing].sort();
 }

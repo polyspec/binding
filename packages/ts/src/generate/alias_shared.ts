@@ -637,7 +637,8 @@ export interface Walk {
 }
 
 // A container of the language that takes made children: its variant of OutFill, how a made child is put, and the next
-// child that the walk makes, which is None for a container that takes the one value of a reference.
+// child that the walk makes, which is None for a container that takes the one value of a reference. `nextPattern`
+// binds the parts of the container that `next` writes, such as the key of an entry that the language takes as it is.
 export interface Fill {
   name: string;
   doc: string;
@@ -645,6 +646,9 @@ export interface Fill {
   pattern: string;
   put: string;
   next?: string;
+  nextPattern?: string;
+  // The pattern that binds the parts of the container that close_level reads, where they are not those that put reads.
+  closePattern?: string;
 }
 
 export const PUT_ENTRY = (set: string): string => `match key.take() {
@@ -713,18 +717,23 @@ ${arms(plain)}
     level: (parts) => `Ok(OutStep::Enter(OutLevel { ${walked ? `handle, ${parts.walks ? 'len' : 'len: 0'}, index: 0, ` : ''}waiting: ${parts.waiting ?? 'None'}, fill: ${parts.fill}${made ? `, made: ${parts.made ?? ''}` : ''} }))`,
   };
   const body = arms(walk);
+  // A fill whose next binds parts of the container is matched by its nextPattern on the container borrowed mutably.
+  const bound = used.some((fill) => fill.nextPattern !== undefined);
   const next = walked
     ? `if level.index >= level.len {
     return None;
 }
 ${used.length === 1
-    ? (used[0]?.next ?? 'None')
-    : `match level.fill {\n${used.map((fill) => `    OutFill::${fill.name}(..) => ${indent(fill.next ?? 'None', 4).trimStart()}${(fill.next ?? '').startsWith('{') ? '' : ','}`).join('\n')}\n}`}`
+    ? `${used[0]?.nextPattern === undefined ? '' : `let ${used[0].nextPattern} = &mut level.fill;\n`}${used[0]?.next ?? 'None'}`
+    : `match ${bound ? '&mut ' : ''}level.fill {\n${used.map((fill) => `    ${fill.nextPattern ?? `OutFill::${fill.name}(..)`} => ${indent(fill.next ?? 'None', 4).trimStart()}${(fill.next ?? '').startsWith('{') ? '' : ','}`).join('\n')}\n}`}`
     : '';
+  // The extra parameter goes to close_level too, named as unused where no container of the level reads it.
+  const closing = close === undefined ? '' : perFill(used, 'level.fill', close.of, (fill) => fill.closePattern ?? fill.pattern.replace(', key)', ', _key)'));
+  const closeKept = kept === undefined ? '' : `, ${new RegExp(`\\b${kept.name}\\b`).test(closing) ? '' : '_'}${kept.name}: ${kept.type}`;
   const closed = close === undefined ? '' : `
-    // GN-6as: the value of a level whose children are all made, which a member of the owner makes from them.
-    fn close_level${generics}(${env.params}level: OutLevel${life}) -> ${result(made_)} {
-${close.head === '' ? '' : `        ${close.head}\n`}${indent(perFill(used, 'level.fill', close.of, (fill) => fill.pattern.replace(', key)', ', _key)')), 8)}
+    // GN-6as: the value of a level whose children are all made${kept === undefined ? ', which a member of the owner makes from them' : ''}.
+    fn close_level${generics}(${env.params}level: OutLevel${life}${closeKept}) -> ${result(made_)} {
+${close.head === '' ? '' : `        ${close.head}\n`}${indent(closing, 8)}
     }`;
   return `
 fn make_${name}${generics}(${env.params}out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(made_)} {
@@ -791,7 +800,7 @@ ${indent(perFill(used, '&mut level.fill', (fill) => fill.put), 8)}
                         levels.push(level);
                         OutStep::Open(child)
                     }
-                    None => OutStep::Put(${made ? 'level.made' : `close_level(${env.args}level)?`}),
+                    None => OutStep::Put(${made ? 'level.made' : `close_level(${env.args}level${kept === undefined ? '' : `, ${kept.name}`})?`}),
                 },
                 None => return ${shape.internal('String::from("GN-6as: the walk has no level to fill")')},
             },

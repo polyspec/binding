@@ -123,6 +123,39 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
     }
 }
 
+/// The value that the source of the sample library, a callback unit of another repository, has for the key (T-3,
+/// GN-6s).
+///
+/// # Errors
+///
+/// The failure of the source.
+pub fn read(
+    source: &mut dyn polyspec_sample::Source,
+    key: &str,
+) -> Result<Option<String>, Failure<polyspec_sample::Error>> {
+    source.read(key)
+}
+
+/// The value that the lookup of the sample library holds for the key, `none` when it holds none, and `kind <kind>` when
+/// the lookup fails with an error of the sample library: an exception of the lookup that is an instance of an error
+/// unit that it recognizes is that error (U-3, GN-6s, GN-6d, B2.173).
+///
+/// # Errors
+///
+/// Any other exception of the lookup, which goes back to the caller as it was thrown.
+pub fn consult(
+    lookup: &mut dyn polyspec_sample::Lookup,
+    key: &str,
+) -> Result<String, Failure<Error>> {
+    match lookup.find(key) {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) => Ok(String::from("none")),
+        Err(Failure::Kind(error)) => Ok(format!("kind {}", error.kind())),
+        Err(Failure::Raised(raised)) => Err(Failure::Raised(raised)),
+        Err(Failure::Callback(error)) => Err(Failure::Callback(error)),
+    }
+}
+
 /// A note (T-9, GN-6v: a variant whose cases hold the data of the sample library, a unit of another repository, as a
 /// field and as the values of a map).
 #[derive(Debug, Clone, PartialEq)]

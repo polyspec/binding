@@ -4,7 +4,8 @@
 // writes as calls of the owner's language API.
 
 import type { Contract, Lang, Member, Type, Unit } from '../contract.ts';
-import { Unsupported, type ValueAlias } from './model.ts';
+import { type Model, Unsupported, type ValueAlias, langName } from './model.ts';
+import { jsString, phpText, pyString } from './text.ts';
 
 // The binding_core::ValueKind of each kind of an in case.
 const VALUE_KIND: Record<string, string> = {
@@ -145,4 +146,132 @@ export function classMakes(alias: ValueAlias, lang: Lang): ClassMake[] {
     if (content && params.length === (row.kind === 'null' ? 0 : 1)) return { kind: row.kind, form: 'content', member, params: params.length };
     throw new Unsupported(`${where}: the ${lang} make ${make} of the kind ${row.kind} is not generated (GN-6x)`);
   });
+}
+
+// GN-13e, B2.121: a result that holds an instance of a value class of another repository is compared with the instance
+// that its case value makes, both read through the members of the in row of the language: the by member names the
+// case, the read member gives the content, and for a read that gives no text the units member gives the UTF-16 code
+// units. The content is read again, so a list of instances and an instance of a map class of the owner, whose
+// iteration gives its entries, are read as far as they go. The read of an instance is [is], [is, content] or
+// [is, null, units].
+export interface ForeignReader {
+  library: string;
+  unit: Unit;
+  row: ClassIn;
+}
+
+export function foreignReaders(model: Model, lang: Lang): ForeignReader[] {
+  return model.aliases
+    .filter((alias) => alias.owner !== undefined && alias.library !== undefined && alias.unit.kind === 'class')
+    .map((alias) => ({ library: alias.library as string, unit: alias.unit, row: classIn(alias, lang) }));
+}
+
+// The map classes of the readers, each once.
+const readerMaps = (readers: ForeignReader[]): { library: string; unit: Unit }[] => {
+  const out: { library: string; unit: Unit }[] = [];
+  for (const reader of readers) {
+    for (const map of reader.row.maps) if (!out.some((m) => m.library === reader.library && m.unit === map.unit)) out.push({ library: reader.library, unit: map.unit });
+  }
+  return out;
+};
+
+
+// Python: _read_foreign, which _same calls on both sides of an instance of a class of the readers.
+export function pythonForeignRead(readers: ForeignReader[], cls: (library: string, unit: Unit) => string): string {
+  if (readers.length === 0) return '';
+  const access = (member: Member): string => `value.${langName('python', member.name, 'callable')}${member.kind === 'property' ? '' : '()'}`;
+  const arms = readers.map((reader) => {
+    const cases = reader.row.cases.map((kase) => {
+      if (kase.read === undefined) return `        if kind == ${pyString(kase.is)}:\n            return (kind,)`;
+      if (kase.units === undefined) return `        if kind == ${pyString(kase.is)}:\n            return (kind, _read_foreign(${access(kase.read)}))`;
+      return `        if kind == ${pyString(kase.is)}:\n            content = ${access(kase.read)}\n            return (kind, content) if content is not None else (kind, None, _read_foreign(${access(kase.units)}))`;
+    });
+    return `    if isinstance(value, ${cls(reader.library, reader.unit)}):
+        kind = ${access(reader.row.by)}
+        kind = getattr(kind, "value", kind)
+${cases.join('\n')}
+        raise AssertionError(f"GN-6x: ${langName('python', reader.unit.name, 'class')} gives the kind {kind!r}, which its in row has no case for")`;
+  });
+  const maps = readerMaps(readers).map((map) => `    if isinstance(value, ${cls(map.library, map.unit)}):
+        return [(_read_foreign(key), _read_foreign(item)) for key, item in value.items()]`);
+  return `
+
+def _read_foreign(value):
+${[...arms, ...maps].join('\n')}
+    if isinstance(value, (list, tuple)):
+        return [_read_foreign(item) for item in value]
+    return value
+`;
+}
+
+// The classes of the readers and of their maps in a language, for the branch of the comparison that reads them.
+export const foreignClassNames = (readers: ForeignReader[], cls: (library: string, unit: Unit) => string): string[] =>
+  [...readers.map((r) => cls(r.library, r.unit)), ...readerMaps(readers).map((m) => cls(m.library, m.unit))];
+
+// Node and WASM: readForeign, which ordered calls on an instance of a class of the readers.
+export function nodeForeignRead(readers: ForeignReader[], lang: 'node' | 'wasm', cls: (library: string, unit: Unit) => string): string {
+  if (readers.length === 0) return '';
+  const access = (member: Member): string => `value.${langName(lang, member.name, 'callable')}${member.kind === 'property' ? '' : '()'}`;
+  const arms = readers.map((reader) => {
+    const cases = reader.row.cases.map((kase) => {
+      if (kase.read === undefined) return `    if (kind === ${jsString(kase.is)}) return [kind];`;
+      if (kase.units === undefined) return `    if (kind === ${jsString(kase.is)}) return [kind, readForeign(${access(kase.read)})];`;
+      return `    if (kind === ${jsString(kase.is)}) {\n      const content = ${access(kase.read)};\n      return content === null || content === undefined ? [kind, null, readForeign(${access(kase.units)})] : [kind, content];\n    }`;
+    });
+    return `  if (value instanceof ${cls(reader.library, reader.unit)}) {
+    const kind = String(${access(reader.row.by)});
+${cases.join('\n')}
+    throw new Error(\`GN-6x: ${langName(lang, reader.unit.name, 'class')} gives the kind \${kind}, which its in row has no case for\`);
+  }`;
+  });
+  const maps = readerMaps(readers).map((map) => `  if (value instanceof ${cls(map.library, map.unit)}) return Array.from(value, ([key, item]) => [readForeign(key), readForeign(item)]);`);
+  return `
+// GN-13e, B2.121: an instance of a value class of another repository, read through the members of its in row.
+function readForeign(value) {
+${[...arms, ...maps].join('\n')}
+  if (Array.isArray(value)) return value.map(readForeign);
+  return value;
+}
+`;
+}
+
+
+// PHP: readForeign, which same calls on an instance of a class of the readers. A property of the owner is a method in
+// PHP (I-3), and the by member gives an enum case, whose value names the case.
+export function phpForeignRead(readers: ForeignReader[], cls: (library: string, unit: Unit) => string): string {
+  if (readers.length === 0) return '';
+  const access = (member: Member): string => `$value->${langName('php', member.name, 'callable')}()`;
+  const arms = readers.map((reader) => {
+    const cases = reader.row.cases.map((kase) => {
+      if (kase.read === undefined) return `            if ($kind === ${phpText(kase.is)}) {\n                return [$kind];\n            }`;
+      if (kase.units === undefined) return `            if ($kind === ${phpText(kase.is)}) {\n                return [$kind, self::readForeign(${access(kase.read)})];\n            }`;
+      return `            if ($kind === ${phpText(kase.is)}) {\n                $content = ${access(kase.read)};\n                return $content === null ? [$kind, null, self::readForeign(${access(kase.units)})] : [$kind, $content];\n            }`;
+    });
+    return `        if ($value instanceof ${cls(reader.library, reader.unit)}) {
+            $kind = ${access(reader.row.by)};
+            $kind = $kind instanceof \\BackedEnum ? $kind->value : $kind;
+${cases.join('\n')}
+            throw new \\LogicException('GN-6x: ${langName('php', reader.unit.name, 'class')} gives a kind which its in row has no case for');
+        }`;
+  });
+  const maps = readerMaps(readers).map((map) => `        if ($value instanceof ${cls(map.library, map.unit)}) {
+            $pairs = [];
+            foreach ($value as $key => $item) {
+                $pairs[] = [self::readForeign($key), self::readForeign($item)];
+            }
+            return $pairs;
+        }`);
+  return `
+
+    /**
+     * GN-13e, B2.121: an instance of a value class of another repository, read through the members of its in row.
+     */
+    private static function readForeign(mixed $value): mixed
+    {
+${[...arms, ...maps].join('\n')}
+        if (\\is_array($value)) {
+            return \\array_map(self::readForeign(...), $value);
+        }
+        return $value;
+    }`;
 }

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bb8bd03c827f482bdff42f87a3431f537ef76be40deadde4e0b6458bcd415079 -->
+<!-- source-sha256: be8c07edd4ff1c1aa0b008505573646c102c146acb8b9e69909512988437c04c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -21,19 +21,217 @@
   `packages/ts`의 `npm test`로 검증했다. 시험 작성기를 바꾸기 전에는 fixture의 생성 시험에 `consumer.pair`의 이름 있는
   실패가 있었다. 실행하지 않은 것: sample의 Rust 소스는 rustfmt로
   형식만 맞췄고 아무것도 그것을 컴파일하지 않았으며, end-to-end 검사는 실행하지 않았다.
-- 다른 레포의 callback unit을 소유 레포의 member가 만드는 인스턴스로 주는 case의 시험은 "<member> is no member that the
-  binding generates"로 실패했다. case가 자기 계약의 member만 읽었기 때문이다. 이제 Python, Node, PHP의 시험은 소유 패키지를
-  거쳐 소유 레포의 member로 그 인스턴스를 만든다: factory와 그 receiver, 인자, `then`의 호출이며, Node는 기다리는 소유
-  member를 await한다(GN-13f, GN-6s, 행 B2.135). 소유 레포가 `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서
-  거부하는 member, 소유 레포의 function이나 internal unit, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의
-  faults는 아직 생성하지 않는다: 각각 그 이유로 실패하는 case 시험이 된다. Go와 WASM은 전과 같이 그 parameter 자체를
-  거부한다. `packages/ts`의 `npm test`로 검증했다: 새 시험은 변경 전에 실패했다. 실행하지 않은 것: 생성된 crate의 빌드와
-  생성된 시험의 실행. 그래서 그런 case의 시험이 어느 언어에서도 통과한 적은 없다.
+- `packages/ts`의 시험이 fixture를 `cp` 도구로 복사했다. `cp -r <dir>/ <root>/`는 macOS에서는 `<dir>`의 내용을 `<root>`에
+  복사하고 Linux에서는 `<dir>` 자체를 `<root>/<dir>`에 복사하므로, CK-65의 시험이 Linux에서 `packages/rust/interface.json`을
+  찾지 못하고 ENOENT로 실패했다. 이제 `generate.test.ts`의 모든 복사는 `node:fs`의 `cpSync`를 쓰고, `copies.test.ts`는
+  `cp` 도구를 실행하는 시험 파일을 실패시킨다(행 B2.180). macOS에서 `packages/ts`의 두 파일을 `node --test`로 돌려
+  검증했다. 새 시험은 변경 전에 실패했고 복사 열세 곳을 이름으로 댔다. 실행하지 않은 것: Linux.
+- 결과가 다른 저장소의 value class instance를 담은 case의 생성된 시험은 "a result that holds an instance of the class
+  value of json has no case value to compare it with"로 실패했으므로, `tests/e2e/relay`의 `carry`와 `passed`의 어떤 case도
+  결과를 적을 수 없었다. 이제 시험은 case 값의 instance를 owner의 out 행으로 만들어 결과와 비교하고, 둘 다 owner의 in 행
+  member로 읽는다: `by` member, 그 case의 `read` member, 그리고 `read`가 주지 않는 텍스트에는 `units` member로 읽고, list와
+  owner의 map class는 항목마다 읽는다. Python `_same`, Node와 WASM `ordered`, PHP `same`, Go `foreignRead`가 결과의 어느
+  자리에서든 instance를 그렇게 읽는다(GN-13e). 이제 `tests/e2e/relay`의 `carry`와 `passed`의 case는 결과를 적는다. 새 시험은
+  변경 전에 실패했다. `make test-ts`와 relay의 `make e2e` 검증은 대기열에 넣었다.
+- 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a-b`의 함수 `c`가 둘 다 Go 정적 라이브러리의 C symbol `polyspec_a_b_c`였으므로,
+  둘을 함께 링크하는 Go program은 그 symbol이 두 번 정의되어 실패했고, 서로를 이름하지 않는 두 라이브러리를 어떤 검사도
+  보지 못했다. 이제 C symbol의 접두는 `polyspec_<repository>_`이므로 symbol의 처음 두 밑줄이 저장소 이름을 끝낸다. 두 함수는
+  `polyspec_a__b_c`와 `polyspec_a_b__c`이고, member가 아닌 symbol은 `polyspec_a___free`처럼 이름 뒤에 밑줄이 셋이다(GN-17).
+  계약의 symbol을 계약이 이름하는 라이브러리의 symbol과 비교하던 CK-79는 폐기했다. 새 시험은 변경 전에
+  실패했다. `make test-ts` 검증은 대기열에 넣었다.
+- Python, PHP, Go의 값 alias make 함수가 core의 `OutValue`의 level마다 자기 자신을 한 번 불러서, 변환이 쓰는 native
+  stack이 값의 깊이에 따라 자랐고, thread의 stack보다 깊은 값은 process를 끝냈을 것이다. 이제 Node와 WASM처럼 heap의
+  작업 stack을 가진 loop로 값을 걷고, PHP array는 마지막 자식이 만들어졌을 때 만들며, Go는 container의 node를 자식보다
+  먼저 쓴다(GN-6as). `make test-ts`로 검증했다: make 함수의 시험이 변경 전에는 Python, PHP, Go crate에서 실패했다.
+  그리고 `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes`, `tests/e2e/consumer`의 `make e2e`로 검증했다.
+- 어떤 target에 없는 동작을 말하는 case를 그 target에서만 뺄 수 없었다. template의 `engine.render`, `engine.render_bound`,
+  `engine.render_json`의 case `load_not_loaded`는 파일을 읽는 로더가 필요한데 WebAssembly에는 그것이 없고, 그 member들은
+  거기서 생성된다. 그 CK-92 보고를 해소하는 길은 member의 `only`뿐이었고, 그러면 그 member의 다른 모든 case도 WASM에서
+  빠졌다. 이제 member를 이름하는 `cases`의 행은 `only`(Q-4)를 가질 수 있다. 그 group의 case는 그 행이 나열한 target의
+  시험에만 들어가고(GN-13h), CK-92는 그 행의 target을 읽으며, `only`가 그 member가 생성되는 target을 하나도 이름하지 않는
+  행은 CK-92로 보고된다. `contract-check.test.ts`의 CK-92 시험과 `generate.test.ts`의 GN-13h 시험으로 확인했다. 그 시험들은
+  변경 전에 실패했다.
+- 끝에서 끝까지 확인은 생성된 Go 모듈을 빌드하고 vet하고 시험했지만 deadcode를 돌리지 않아서, 어떤 program도 시험도
+  닿지 않는 생성 함수가 실행을 통과했고, `deadcode -test`를 돌리는 모듈을 쓰는 저장소의 lint는 그것으로 실패했다. 이제
+  확인은 mise.toml이 고정한 `deadcode -test`(0.52.0)를 모듈에 build tag 없이, 그리고 그 파일들의 build tag마다 돌리고,
+  파일을 컴파일하는 모든 실행이 보고하는 함수로 실패한다(GN-15h). `make test-ts`로 확인했다. 새 시험들은 변경 전에
+  실패했다.
+- Go가 member가 이름하는 다른 module의 variant를 거부했다. 그 encode와 decode 함수가 export되지 않기 때문이다. 그래서
+  root가 이름하는 template의 module `ast`의 `node`가 go를 "a variant of the module ast in the module (the root) is not
+  generated for Go yet (its encode and decode functions are unexported)"로 거부했다. 이제 다른 module이 이름하는 variant의
+  패키지는 `<Class>Handle`처럼 `binding.Token`을 받는 `Encode<Variant>`와 `Decode<Variant>`를 갖고, 다른 module은 그것을
+  부른다. CK-13은 두 이름을 센다(GN-15a, GN-6v). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다.
+- case의 인스턴스 값이 `only`가 case의 member의 target에서 빼는 member를 부르면, 그 target의 시험은 인스턴스를 만들 수
+  없었다. template의 `prepared_render.render`는 wasm에서 생성되는데, 그 case들의 receiver는 `only`가 wasm에서 빼는
+  `engine.prepare`가 만들므로, wasm이 "the case a_render_of_prepare of prepared_render.render: engine.prepare is no member
+  that the binding generates"로 거부되었다. 이제 `binding check`가 그런 member를 case와 target과 함께 보고하고(CK-92),
+  class나 interface 자리의 list, `optional`, map, record의 field 안에 있는 인스턴스 값도 그렇게 보고한다. 예를 들어
+  `engine.render`의 receiver의 record `options` 안의 `fs_loader.new`는 `only`가 wasm에서 뺀다. 계약은 case의 member나
+  그 unit의 `only`로 그것을 해소한다. 생성기는 case를 빼지 않는다. target이 검증하지 않는 것이 보이게 하기 위해서다.
+  `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. template 계약의 `binding check`는
+  `prepared_render.render`의 case마다 CK-92을 보고한다.
+- Go가 callback field가 `optional`인 record를 거부했다. template의 `engine_options`는 `{ "optional": { "unit":
+  "loader" } }`를 가지는데, Go crate가 그것의 `out_engine_options`를 썼고 go가 "no Go output conversion for
+  {"unit":"loader"}"로 거부되었다. 이제 그런 record는 callback field가 `optional`이 아닌 record처럼 들어가기만 하고, 그
+  core type은 GN-6aa의 lifetime을 가진다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- AI 도구의 footer나 정체 줄이 있는 commit 메시지를 거부하는 hook이 없어서, 그런 줄이 확인 없이 push에 닿았다. 이제
+  `.githooks`의 hook `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`로 그것을
+  거부한다. `make hooks`는 `core.hooksPath`를 `.githooks`로 가리키고, `make hooks-check`는 hook이 없는 checkout을
+  실패시키며, `make commit-msg-hook MESSAGE=<file>`은 hook의 검사를 돌린다. `make hooks`, `make hooks-check`, 그리고 AI
+  도구의 co-author trailer가 있는 메시지(`commit-ai-footer`로 실패)와 없는 메시지(통과)에 대한 `make commit-msg-hook`으로
+  확인했다.
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 Go를 거부했다. 그래서 php-serialization의
+  `std_class`의 `in` 행 때문에 hyper의 Go 바인딩이 생성되지 않았고, go.mod는 계약이 받는 callback unit의 라이브러리의 Go
+  module을 요구하지 않았다. Go 바인딩은 그 package를 import한다(GN-6s). 이제 Go는 그런 class가 owner package의 core_type
+  없는 값 class일 때 받는다(GN-6ar). `in` 행은 read가 property의 field나 method를 주는 node 11이고, owner의 keyed map은
+  entry의 map으로 묘사하며, `out` 행은 결과의 node 14로서 owner의 constructor가 내용보다 먼저 빈 keyed map이나 nil 위에
+  만든다. core_type이 있는 class와 bool, 정수, float의 constructor는 이름을 대고 거부한다. go.mod는 callback unit과 그런
+  alias의 라이브러리를 요구한다(GN-15f). 검증: Go 시험이 변경 전에 "the go in row of the class box of sample is not
+  generated yet"로 실패한 `generate.test.ts`의 시험.
+- 소유자의 member를 적은 다른 레포의 callback unit 자리의 case 값(예: `consumer.read`의 source에 있는
+  `{"new": "held_source.new", ...}`)은 생성된 시험이 "held_source.new is no member that the binding generates"로
+  실패했다. 이제 각 target의 시험은 그런 member를 소유 패키지로 부른다(Python은 그 패키지의 module, Node는 npm 패키지,
+  WASM은 그 subpath `./wasm`, PHP는 소유자의 namespace, Go는 그 member의 module에 해당하는 package). receiver와 `then`의
+  호출도 함께 한다. unit을 받는 소유자의 member는 이름을 대고 그 case의 시험을 실패시킨다(GN-6s, GN-13f). sample
+  라이브러리에는 `source`를 구현하는 class `held_source`가 있고 `source`의 `read`는 `&self`를 받으며(GN-6w),
+  `consumer.read`의 case가 그것을 만든다. 검증: 변경 전에 시험이 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.135).
+
+- `errors.recognize`를 적은 다른 레포의 callback unit의 member는 Go와 WASM에서 recognize한 오류와 함께 생성되지
+  않았다. WASM entry는 소유자의 class를 등록하지 않았고, Go dispatch는 이 레포의 바인딩에 없는
+  `binding.Recognize<Unit>`을 적었다. 이제 WASM은 소유 패키지의 subpath `./wasm`의 class를 라이브러리 class 뒤에
+  등록하고, Go dispatch는 소유 Go module의 패키지 `errors`의 타입을 `binding.RecognizeAs`로 찾으므로 소유자의 코어가 그
+  kind를 받는다(U-3, GN-6s, GN-6d). 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 라이브러리의 패키지
+  `errors`는 그 callback member가 recognize하는 오류 unit마다 `Raised<Unit>`을 준다(GN-15d). `tests/e2e/consumer`의 member
+  `consult`는 다섯 target 모두에서 돈다. 검증: Go와 WASM 시험이 변경 전에 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.222).
+
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
+  `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고
+  읽는다(GN-6ar). entry는 owner package의 subpath `./wasm`에서 class를 가져와 GN-6x의 class 뒤에 넘기고, `in` 행은
+  `Symbol.hasInstance`로 인스턴스를 검사해 그 property를 읽으며 한 순회 안에서 인스턴스마다 handle이 하나이고, `out`
+  행은 `Reflect.construct`로 인스턴스를 만들고 reference를 `Reflect.set`으로 채운다. Go는 여전히 그런 행을 이름을 대고
+  거부한다(B2.136-2). 검증: WASM 시험이 변경 전에 "the wasm in row of the class box of sample is not generated yet"로
+  실패한 `generate.test.ts`의 GN-6ar 시험.
+
+- 생성기는 다른 레포의 callback unit을 받는 member에 대해 Go와 WASM을 거부했다. 그래서 session-store의 `store`를 받는
+  `opening_functions.open_page.store`와 `opening_functions.answer_keep_request.store` 때문에 hyper의 Go와 WASM 바인딩이
+  생성되지 않았다. 이제 Go와 WASM은 그런 unit을 PHP, Python, Node처럼 감싼다(GN-6s). trait method는 소유 오류의 실패를
+  돌려주고, WASM은 소유 npm 패키지의 subpath `./wasm`의 타입을 적고, Go는 소유 Go module의 interface를 적고 그 unit을 받는
+  각 package에 그 unit의 dispatch를 쓰며, 그 자리의 Go case 값은 그 interface의 fixture이거나 make member가 돌려주는
+  class의 instance 값이다. `tests/e2e/sample`에 callback unit `source`가, `tests/e2e/consumer`에 그것을 받는 member
+  `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
+  it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
+  `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
+
+- 멤버가 `errors.recognized`를 이름하는 다른 저장소의 callback unit은 `recognized callback errors are not
+  generated yet`로 거부되었다. 이제 PHP, Python, Node에서 그런 callback이 callback을 소유한 library의 인식된 error
+  unit의 instance로 던진 error는 그 kind로 대응된다. 세 번째 library의 unit과, `errors.recognized`가 함수를 이름하지
+  않는 소유자는 이름으로 거부된다(U-3, GN-6s, GN-6d). Go와 WASM은 아직 다른 저장소의 callback unit을 생성하지
+  않는다(GN-6s). 검증: `sample.lookup`의 consumer 시험이 변경 전에 실패한 `make test-ts`, cases `consult`가 lookup의
+  kind `refused`를 주는 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`(B2.173).
+
+- 값 alias, 또는 다른 저장소의 값 alias나 값 class의 parameter와 field가 기본값 `{empty: "object"}`를 가지면
+  `the default {empty: "object"} of the type {"unit":"value","library":"json"} is not generated`로 거부되었다. 이제
+  그것은 `None`으로 생략되고, 각 target의 U-2 테스트는 그 자리에 언어의 빈 객체를 준다(U-2, GN-6i). PHP alias의
+  units는 `Some(Err(_wide)) | None`의 한 alternative에만 `_wide`를 묶었고, `cargo clippy`는 그것을 E0408로 거부해
+  relay의 PHP crate가 build되지 않았다. 이제 그 alternative는 이름을 묶지 않는다. 검증: 두 시험이 변경 전에 실패한
+  `make test-ts`, cases `width`가 통과한 json checkout과의 `make e2e REPO=tests/e2e/relay`(B2.172).
+
+- CI는 끝에서 끝까지 확인을 linux/arm64에서만 실행했고 Go 모듈의 release 형태의 소비자를 musl에서
+  실행하지 않았으므로, release가 싣는 `linux_amd64`, `linux_amd64_musl`,
+  `linux_arm64_musl`의 라이브러리를 링크하고 실행하는 job이 없었다. 이제
+  `.github/workflows/ci.yml`의 job `e2e`의 각 항목은 `make e2e` 뒤에 자기 work
+  디렉터리로 `make go-musl-check`를 실행하고, job `e2e-amd64`는 `ubuntu-26.04`에서
+  `tests/e2e/sample`의 `make e2e`와 `make go-musl-check`를 실행한다. 이 job은
+  `ubuntu-26.04-arm`에서 돌지 않는 유일한 job이고 `ci-passed`가 그것을 기다린다(GN-14g,
+  B2.190). `v1/rust-core` 같은 개발 branch는 그 head의 수동 실행으로 확인한다.
+  `tests/ci-workflow.test.ts`로 검증했다: 바뀐 두 시험이 변경 전에 실패했다.
+- musl의 Go 소비자는 자기 `<GOOS>_<GOARCH>`의 패키지 `binding` 파일을 컴파일하고, GNU C
+  library용으로 빌드된 정적 라이브러리의 링크에서 musl이 정의하지 않는 심볼로 실패했다. Go의 빌드 제약은
+  Linux의 C library를 구분하지 않기 때문이다. 이제 Go 모듈은 플랫폼 `linux_amd64_musl`과
+  `linux_arm64_musl`을 가지며, release가 그 라이브러리를
+  `--target <arch>-unknown-linux-musl`로 빌드하고, 빌드 tag `musl`이 그것을 고른다.
+  musl의 소비자는 `go build -tags musl`로 빌드한다(GN-15g). Linux 플랫폼의 링크 파일은 제약
+  `musl`이나 `!musl`을 가지며, 그 preamble은 다른 C library를 찾으면 Go 모듈, 라이브러리,
+  플랫폼과 해결책을 말하며 `#error`로 cgo의 C 컴파일러를 멈춘다. Linux에서 end-to-end 검사의
+  release 형태는 그 arch의 musl 라이브러리를 싣고, `make go-musl-check WORK=<work>`는
+  Alpine 컨테이너에서 그 소비자와 받은 모듈의 `go test -tags musl`을 실행하므로, musl의 C 컴파일러가
+  각 프로그램을 링크하고 musl이 그것을 실행한다(GN-14f). 컨테이너는 실행이 자기 download로 남긴
+  module proxy에서 모듈을 받으므로 Git은 쓰지 않고, `config/toolchain.json`의 `goMusl`이 그 image를 digest로,
+  Alpine의 `gcc`와 `musl-dev`를 정확한 버전으로 고정한다(`docs/operations/dependencies.md`). `rust-toolchain.toml`은 두 musl
+  target을 적는다. `packages/ts/tests/generate.test.ts`의 GN-15g 시험으로 검증했다: 그
+  시험은 변경 전에 실패했다.
+- 여러 Go 모듈의 정적 라이브러리를 한 프로그램에 링크하는 것은 `darwin_arm64`에서만 확인되었다(GN-15g,
+  GN-14f). linux/arm64(Debian 컨테이너)로 돌린 `tests/e2e/points`와 함께인
+  `tests/e2e/plot`의 `make e2e`는 모든 target을 통과했고, 한 프로그램이 plot과 points의
+  라이브러리를 링크하는 release 형태의 시험 21개가 통과했다. linux/arm64로 돌린
+  `tests/e2e/sample`의 `make e2e`는 모든 target을 통과했고, 생성된 Go 시험 151개와
+  release 형태의 시험 110개가 통과했다. 두 기록 모두 evidence다. 명세는 두 플랫폼을 적고, B2.96은
+  끝났다. darwin/arm64로 돌린 points와 함께인 plot도 모든 target을 통과하므로, job `e2e`의
+  항목 plot은 더 이상 실패하는 target을 기다리지 않는다(B2.98). Node addon의 플랫폼
+  패키지(B2.92)는 변경을 담은 commit에서 돌린 `make e2e REPO=tests/e2e/classes`로
+  확인했다. 그 기록은 evidence이고, 플랫폼 패키지와 패키지를 두 archive로 설치한 target node가 시험
+  110개를 통과했다.
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]`이 정적 라이브러리를 가진 Go 모듈의 commit과 tag를 만든다(GN-19f, GN-15g). 실패한
+  검사를 모두 적고 아무것도 만들지 않는다: `HEAD`가 tag의 commit이 아니다, `go.mod`에 `replace`나 `v0.0.0` require가 있다,
+  `binding generate --target go`가 쓰는 플랫폼의 파일이 work tree에 없다, 라이브러리가 없거나 비었거나 그 플랫폼 object의
+  `ar` archive가 아니거나 시험 진입점이나 debug section을 담는다. 명령은 checkout을 바꾸지 않고 실행의 index로 commit을
+  만들고, 실행의 bare 저장소에서 `GOPROXY=direct`로 tag를 받는 소비자 모듈로 그것을 증명하고, annotated tag
+  `<directory>/vX.Y.Z`를 만들고, recipe가 push할 reference를 출력한다. 명령은 아무것도 push하지 않으며, 같은 commit을
+  가리키는 이전 실행의 tag는 그대로 두고 다른 commit을 가리키는 tag에는 실패한다. 끝에서 끝까지 확인은 tag, 소비자, debug
+  section, 시험 진입점을 같은 모듈(`packages/ts/src/release/go-module.ts`)에서 읽으며, 이 모듈이 `scripts/go-release.mts`를
+  대신한다. Git, Go, rustc, llvm 도구의 대역 프로그램으로 `make test-ts`에서 확인했다. 명령은 실제 도구로 실행하지 않았고,
+  끝에서 끝까지 확인은 import를 바꾼 뒤 실행하지 않았다(B2.142).
+- 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). 표준 도구가 하는 단계는 레포 recipe의 줄이며, asset
+  종류마다의 명령(Go 모듈의 정적 라이브러리, wheel, PHP 확장, npm 플랫폼 패키지), 플랫폼마다의 runner, CI에서의 asset
+  증명을 적는다. 어느 도구도 하지 않는 Go 모듈의 commit과 tag는 명령 `binding release-go-module`이며 그 검사, 소비자
+  증명, 출력을 적는다(B2.141).
+- 생성기 명세는 GN-3c의 release 필드가 없는 패키지를 거부하는 것으로 공용 도구의 규칙을, 플랫폼 패키지와 Go 모듈의
+  commit(GN-15g)을 만드는 것으로 release 도구를 적었다. 공용 도구 0.0.112에는 둘 다 없으므로, 명세는 이제 그 필드를 누가
+  읽는지(napi CLI와 PIE)와, 바인딩의 release 단계가 그것을 가진 레포의 recipe임을 적는다(B2.140).
+- `package.json`과 `package-lock.json`이 `@polyspec/kit`을 0.0.109에서 0.0.112로 고정한다. Makefile의 recipe가 실행하는
+  utility는 모두 그 release에 있고 recipe가 주는 인자를 받는다. binding의 release, 곧 `packages/ts`의 npm archive와
+  `binding_core`의 tag는 0.0.112에 더는 없는 것(플랫폼별 package kind, asset set, Go 모듈의 commit, release의 contract
+  검사)을 쓰지 않는다. 설치한 0.0.112에서 `make docs-check`와 `make release-coverage`로 확인했다(B2.176).
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을
   켜는 root manifest나 `.cargo/config.toml`의 release profile을 보고한다(GN-15i, CK-91). `make test-ts`로 검증했다: 새
   시험이 변경 전에는 실패했다.
+- PHP는 배열이 list인지를 ext-php-rs 0.16.4의 `has_sequential_keys`로 판정했다. 그 iterator는 각 key를
+  `ArrayKey::from_zval`로 읽는데, 이것은 string key를 UTF-8로만 받고 그 밖에는 "Invalid array key!"로 panic한다.
+  그래서 php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351`이 실패했다. 이제 바인딩은 각 key를
+  `next_zval`로 int나 string의 bytes로 읽으며(`sequential_keys`), ext-php-rs의 결함은
+  https://github.com/extphprs/ext-php-rs/issues/848 로 보고했다(U-7, GN-6x, T-2).
+
+- out 행 `bytes`가 UTF-8이 아닌 byte string을 `Uint8Array`로 주는데도 Node와 WASM은 `Uint8Array`를 B-1의 집합 밖
+  값으로 기술했다. 그래서 php-serialization의 그런 값의 왕복(Node 시험 264개와 WASM 시험 264개)이 PHP의 값이 아니라고
+  거부되었다. 이제 Node와 WASM은 `Uint8Array`를 bytes로, 다른 typed array를 집합 밖의 값으로 기술한다(B-1, U-7,
+  GN-18b). describe는 `Uint8Array`를 crate의 import 이름으로 적으므로, 그것을 import하는 crate의 import 검사가 통과한다.
+
+- Go의 GN-13e 시험의 기대 결과를 alias out 행의 Go 형태가 아니라 case의 kind로 썼다. 그래서 php-serialization의 Go
+  시험 267개가 실패했다. 행이 `string`으로 만드는 빈 UTF-8 byte string을 `[]byte{}`로, 행이 `[]any`로 만드는 sequence
+  key의 map을 map으로 기대했고, 반복된 객체의 key를 포함해 keyed map의 key를 case의 kind로 기대했다. 이제 생성기는
+  기대 결과를 행의 Go 형태로 쓴다. 행이 `text`로 만드는 byte string은 `string`, 행이 `list`로 만드는 map은 `[]any`,
+  행이 `keyed_map`으로 만드는 map은 `*KeyedMap[any]`이며, key는 그 keyed map이 text를 받고 그 bytes가 UTF-8일 때만
+  text다(GN-13e).
+
+- Node와 WASM은 case의 정수 값 float를 숫자로 주었고, binding은 그것을 int로 기술한다. 그래서 php-serialization의
+  시험 `serialize float_1e15`가 `d:` 대신 `i:`를 냈다. 이제 alias의 out 행이 값 class의 인스턴스
+  (`php_float.constructor`)로 만드는 float case 값은 그 인스턴스다(GN-13).
+
+- Go는 모든 결과를 `reflect.DeepEqual`로 비교했는데, 이것은 NaN을 자기 자신과 다르다고 본다. 그래서
+  php-serialization의 시험 `unserialize float_nan`이 실패했다. 이제 case가 NaN을 담은 결과는 시험 파일의 `sameValue`로
+  비교한다. 이것은 NaN이 NaN과 같다는 점만 `reflect.DeepEqual`과 다르다(GN-13e). Go는 case의 음의 0을 Go 상수 0인
+  `-0`으로 썼으므로 `serialize float_negative_zero`가 `d:-0;` 대신 `d:0;`을 냈다. 이제 그것은
+  `math.Copysign(0, -1)`이다(G-5, GN-13).
+
+- member가 주는 UTF-16 단위를 읽는 PHP reader가 `Some(Err(_wide)) | None`과 일치시켰다. 이 or-pattern은 한 갈래에서만
+  `_wide`를 묶으므로, relay의 PHP crate의 `cargo clippy`가 E0408로 실패했다. 이제 reader는 단위마다 `Result`를 주고
+  그것들을 하나로 모은다(GN-6x).
+
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
   `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이

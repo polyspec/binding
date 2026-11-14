@@ -12,8 +12,9 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps } from './go_rust.ts';
+import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
+import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -122,6 +123,11 @@ export interface GoScope {
   reaches?: Set<string>;
   // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
   foreignImports?: Map<string, string>;
+  // GN-6s, GN-15d: the import paths of the packages errors of other repositories, each with the name that the import
+  // gives it, because its package name errors is that of the standard package.
+  foreignErrors?: Map<string, string>;
+  // GN-6s: the callback units of other repositories that the package encodes, each with a dispatch of the package.
+  foreignCallbacks?: Set<CallbackUnit>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesJson?: boolean;
@@ -135,7 +141,10 @@ function goUnitName(scope: GoScope, unit: Unit): string {
 }
 
 export const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
-  const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+  const library = libraryOf(type);
+  // GN-6s: a callback unit of another repository, which a parameter takes.
+  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
+  const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
 
@@ -211,7 +220,7 @@ export function goType(scope: GoScope, type: Type): string {
   const object = objectUnit(scope.model, type);
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
-  if (callback !== undefined) return goUnitName(scope, callback.unit);
+  if (callback !== undefined) return callback.library === undefined ? goUnitName(scope, callback.unit) : foreignCallbackType(scope, callback);
   const iface = interfaceOf(scope.model, type);
   if (iface !== undefined) return interfacePackage(scope, iface);
   const library = libraryOf(type);
@@ -422,7 +431,9 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   // U-3: a callback is the call and its index in it; a nil interface is kind invalid_callback.
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) {
-    const pkg = reached(scope, callback.unit);
+    // GN-6s: the dispatch of a callback unit of another repository is a function of this package.
+    if (callback.library !== undefined) (scope.foreignCallbacks ??= new Set()).add(callback);
+    const pkg = callback.library === undefined ? reached(scope, callback.unit) : undefined;
     const dispatch = pkg === undefined ? `dispatch${goName(callback.unit.name)}(${expr})` : `${pkg}.Dispatch${goName(callback.unit.name)}(binding.Token{}, ${expr})`;
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, ${dispatch})`, `${t}}`];
   }
@@ -434,7 +445,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   // T-9, GN-6v: a variant, which may hold itself, is encoded by the function of its package.
   const variant = variantOf(scope.model, type);
   // A variant that holds a value alias or a callback passes the call of the member on (GN-6v).
-  if (variant !== undefined) return [`${t}encode${variantPackage(scope, variant)}(${needsCall(scope.model, type) ? 'call, ' : ''}enc, ${expr})`];
+  if (variant !== undefined) return [`${t}${variantCall(scope, variant, 'encode', `${needsCall(scope.model, type) ? 'call, ' : ''}enc, ${expr}`)}`];
   throw new Unsupported(`no Go encoding of ${JSON.stringify(type)}`);
 }
 
@@ -503,7 +514,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
   if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goDecode(scope, fieldWire(f), `${target}.${goName(f.name)}`, indent, depth));
   // T-9, GN-6v: a variant, which may hold itself, is decoded by the function of its package.
   const variant = variantOf(scope.model, type);
-  if (variant !== undefined) return [`${t}${target} = decode${variantPackage(scope, variant)}(dec)`];
+  if (variant !== undefined) return [`${t}${target} = ${variantCall(scope, variant, 'decode', 'dec')}`];
   throw new Unsupported(`no Go decoding of ${JSON.stringify(type)}`);
 }
 
@@ -725,11 +736,31 @@ var _ ${goUnitName(scope, callback.unit)} = (*${name})(nil)
   }).join('');
 }
 
-// T-9, GN-6v: the name of a variant for its encode and decode functions, which are unexported, so a package of another
-// module does not reach them.
-function variantPackage(scope: GoScope, variant: Variant): string {
-  if (variant.unit.module !== scope.module) throw new Unsupported(`${variant.unit.id}: a variant of the module ${variant.unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its encode and decode functions are unexported) (GN-6v)`);
-  return goName(variant.unit.name);
+// T-9, GN-6v: the call of the encode or decode function of a variant with its arguments. Those functions are
+// unexported; a package of another module calls the exported Encode<Name> or Decode<Name> of the package of the
+// variant, which binding.Token keeps out of the reach of other code (GN-15a).
+function variantCall(scope: GoScope, variant: Variant, which: 'encode' | 'decode', args: string): string {
+  const name = goName(variant.unit.name);
+  const pkg = reached(scope, variant.unit);
+  if (pkg === undefined) return `${which}${name}(${args})`;
+  return `${pkg}.${which === 'encode' ? 'Encode' : 'Decode'}${name}(binding.Token{}, ${args})`;
+}
+
+// GN-15a: the functions through which another module encodes and decodes a variant of this package.
+function goReachableVariant(scope: GoScope, variant: Variant): string {
+  const name = goName(variant.unit.name);
+  const withCall = needsCall(scope.model, { unit: variant.unit.id });
+  return `
+// Encode${name} encodes a ${name} for a call of another module of the binding (GN-15a).
+func Encode${name}(_ binding.Token, ${withCall ? 'call *binding.Call, ' : ''}enc *binding.Writer, value ${name}) {
+	encode${name}(${withCall ? 'call, ' : ''}enc, value)
+}
+
+// Decode${name} decodes a ${name} for a call of another module of the binding (GN-15a).
+func Decode${name}(_ binding.Token, dec *binding.Reader) ${name} {
+	return decode${name}(dec)
+}
+`;
 }
 
 // T-9, GN-6v: a variant is an interface whose one method is unexported, so that only its case structs implement it,
@@ -830,9 +861,34 @@ func (this *${name}) handle() uint64 {
 `;
 }
 
-// U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
-function goCallback(scope: GoScope, cb: CallbackUnit): string {
-  const name = goName(cb.unit.name);
+// GN-6s: a callback unit of another repository is the Go interface of the package of its module in the Go module of that
+// repository, which go.mod requires; a user implements that interface.
+function foreignCallbackType(scope: GoScope, cb: CallbackUnit): string {
+  const owner = cb.library === undefined ? undefined : scope.model.foreign.get(cb.library);
+  if (owner === undefined || cb.library === undefined) throw new Unsupported(`${cb.unit.id}: the contract of the library of the callback unit is not found (GN-6s)`);
+  const pkg = goPackage(owner, cb.unit.module);
+  if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${cb.library}.${cb.unit.id}: the Go package ${pkg} of the callback unit has the name of a package of ${scope.model.contract.library} (GN-6s)`);
+  (scope.foreignImports ??= new Map()).set(goImport(owner, cb.unit.module), pkg);
+  return `${pkg}.${goName(cb.unit.name)}`;
+}
+
+// U-3, GN-6d: the error units of the library that its callback members recognize, each once.
+const goRecognizedUnits = (model: Model): ErrorUnit[] => [...new Set(model.callbacks.flatMap((c) => c.members.flatMap((m) => m.recognized?.units ?? [])))];
+
+// GN-6s: whether a member of a callback unit of another repository recognizes an error unit of its owner.
+const recognizesOwner = (model: Model): boolean => model.foreignCallbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
+
+// GN-6s, GN-15d: the name of the package errors of the Go module of another repository, which the package imports.
+export function ownerErrors(scope: GoScope, library: string): string {
+  const owner = scope.model.foreign.get(library);
+  if (owner === undefined) throw new Unsupported(`${library}: the contract of the library is not found (GN-6s)`);
+  const name = `${goPackage(owner, '')}errors`;
+  (scope.foreignErrors ??= new Map()).set(goImport(owner, 'errors'), name);
+  return name;
+}
+
+// U-3: the methods of a callback unit in Go and the cases of its dispatch, one per member.
+function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: CallbackMember; method: string; params: string; signature: string }[]; cases: string[] } {
   const methods = cb.members.map((m) => {
     const method = langName('go', m.member.name, 'callable');
     const params = m.params.map((p) => `${goParam(p.name, scope.model)} ${goType(scope, p.type)}`).join(', ');
@@ -848,7 +904,7 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
     lines.push('\t\t\tif err := dec.Finish(); err != nil {', '\t\t\t\treturn err', '\t\t\t}');
     const args = m.params.map((p) => goParam(p.name, scope.model)).join(', ');
     // U-3, GN-6d: an error of a unit that the member recognizes goes to the core with its kind and its message.
-    const failed = (m.recognized?.units ?? []).reduce((err, u) => `binding.Recognize${goName(u.unit.name)}(${err})`, 'err');
+    const failed = (m.recognized?.units ?? []).reduce((err, u) => (cb.library === undefined ? `binding.Recognize${goName(u.unit.name)}(${err})` : `binding.RecognizeAs[*${ownerErrors(scope, cb.library)}.${goName(u.unit.name)}](${err})`), 'err');
     if (m.returns === 'none' && m.recognized === undefined) {
       lines.push(`\t\t\treturn object.${method}(${args})`);
     } else if (m.returns === 'none') {
@@ -859,6 +915,13 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
     }
     return lines.join('\n');
   });
+  return { methods, cases };
+}
+
+// U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
+function goCallback(scope: GoScope, cb: CallbackUnit): string {
+  const name = goName(cb.unit.name);
+  const { methods, cases } = callbackCases(scope, cb);
   return `
 // ${name} is the callback interface ${cb.unit.id} (U-3): Go code implements it, and the core calls its methods during
 // the call that takes it, on the goroutine of that call. An error that a method returns ends that call, which returns
@@ -867,8 +930,16 @@ type ${name} interface {
 ${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
 }
 
-// dispatch${name} runs a member of a ${name} for the core (U-3).
-func dispatch${name}(object ${name}) binding.Callback {
+${goDispatch(scope, cb, cases)}`;
+}
+
+// U-3: the dispatch of a callback, which runs a member of the object for the core with the decoded arguments.
+function goDispatch(scope: GoScope, cb: CallbackUnit, cases: string[]): string {
+  const name = goName(cb.unit.name);
+  const type = cb.library === undefined ? name : foreignCallbackType(scope, cb);
+  return `
+// dispatch${name} runs a member of a ${type} for the core (U-3${cb.library === undefined ? '' : ', GN-6s'}).
+func dispatch${name}(object ${type}) binding.Callback {
 	return func(call *binding.Call, member uint32, dec *binding.Reader, enc *binding.Writer) error {
 		switch member {
 ${cases.join('\n')}
@@ -958,7 +1029,8 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...model.kept.filter((k) => k.unit.module === module).map((k) => goKeptAlias(scope, k)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
-  ].join('');
+    ...model.variants.filter((v) => v.unit.module === module && reachedFrom.has(v.unit.id)).map((v) => goReachableVariant(scope, v)),
+  ].join('') + [...(scope.foreignCallbacks ?? [])].map((cb) => goDispatch(scope, cb, callbackCases(scope, cb).cases)).join('');
   const made = [...(scope.aliasInstances ?? [])].sort((a, b) => model.objects.indexOf(a) - model.objects.indexOf(b));
   const instance = made.length === 0
     ? ''
@@ -1008,7 +1080,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
   const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
-  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`)];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`), ...[...(scope.foreignErrors ?? new Map<string, string>())].map(([path, name]) => `${name} "${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
@@ -1442,8 +1514,9 @@ func (e *${name}) Status() (int, bool) { return e.status, e.hasStatus }
 // Errno is the OS error number of an I/O failure, when there is one (B-4).
 func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
 `).join('');
-  const recognizedUnits = [...new Set(model.callbacks.flatMap((c) => c.members.flatMap((m) => m.recognized?.units ?? [])))];
-  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 ? '' : `
+  const recognizedUnits = goRecognizedUnits(model);
+  const ownerRecognizes = recognizesOwner(model);
+  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 && !ownerRecognizes ? '' : `
 // recognized is an error of an error unit that a callback member recognizes (U-3, GN-6d): the core takes its kind and
 // its message, and the call keeps the error itself.
 type recognized struct {
@@ -1479,7 +1552,20 @@ func Recognize${goName(u.unit.name)}(err error) error {
 	}
 	return err
 }
-`).join('')}`);
+`).join('')}${!ownerRecognizes ? '' : `
+// RecognizeAs is err as an error that the core recognizes when it is a T, an error unit of the owner of a callback unit
+// of another repository, and err otherwise (U-3, GN-6s).
+func RecognizeAs[T interface {
+	error
+	Kind() string
+}](err error) error {
+	var unit T
+	if errors.As(err, &unit) {
+		return &recognized{err: err, kind: unit.Kind(), message: unit.Error()}
+	}
+	return err
+}
+`}`);
   const classCases = model.errorUnits.map((u, i) => `\tcase ${i + 1}:\n\t\tif category != ${CATEGORIES.indexOf(u.category)} {\n\t\t\treturn Malformed()\n\t\t}\n\t\treturn finished(make${goName(u.unit.name)}(&${categoryType(model, u.category)}{f}, properties), properties)`).join('\n');
   const back = callsBack(model);
   const others = [
@@ -1487,7 +1573,7 @@ func Recognize${goName(u.unit.name)}(err error) error {
     ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1772,7 +1858,7 @@ type Call struct {
 	handle    cgo.Handle
 	held      []held
 	callbacks []Callback
-	raised    []error${keptReads(model).length === 0 ? '' : `
+	raised    []error${keptReads(model).length === 0 && rowReads(model).length === 0 ? '' : `
 	seen      map[any]uint64`}${keeps(model) ? '\n\tkept      []Kept\n\tunbound   bool' : ''}
 }
 
@@ -1828,7 +1914,10 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 	}
 	if c.describeOwn(enc, value) {
 		return
-	}
+	}${rowReads(model).length === 0 ? '' : `
+	if c.describeRow(enc, value) {
+		return
+	}`}
 	switch value.Kind() {
 	case reflect.Bool:
 		enc.bytes = append(enc.bytes, 1)
@@ -1934,7 +2023,7 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}${goDescribeOwn(model)}// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
+${goValueClassCall(model)}${goDescribeOwn(model)}${goDescribeRows(model)}// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
 // of the C ABI returned and the member panics with the same value.
 type panicked struct{ value any }
 
@@ -1961,7 +2050,7 @@ func (c *Call) run(callback uint64, member uint32, args []byte) (status int32, o
 	return 0, enc.Done()
 }
 
-func (c *Call) raise(err error) (int32, []byte) {${model.callbacks.some((cb) => cb.members.some((m) => m.recognized !== undefined)) ? `
+func (c *Call) raise(err error) (int32, []byte) {${[...model.callbacks, ...model.foreignCallbacks].some((cb) => cb.members.some((m) => m.recognized !== undefined)) ? `
 	if r, ok := err.(*recognized); ok {
 		// U-3, GN-6d: 2, the index of the error, its kind and its message, which the core takes as its kind.
 		c.raised = append(c.raised, r.err)
@@ -2272,6 +2361,8 @@ function valueClassImports(model: Model): string[] {
     for (const map of classIn(alias, 'go').maps) paths.add(ownerType(owner, map.unit).path);
     for (const make of classMakes(alias, 'go')) if (make.form === 'map') paths.add(ownerType(owner, make.map).path);
   }
+  // GN-6ar: the packages of the classes that the rows of a value alias of another repository name.
+  for (const c of foreignRowClasses(model, 'go')) paths.add(ownerType(c.owner, c.unit).path);
   return [...paths].map((path) => goString(path));
 }
 
@@ -2322,7 +2413,7 @@ ${cases}	}
 	return false
 }
 
-${reads.length === 0 ? '' : `// describeKept writes node 11: an instance of a value class without core_type, the number of the kind of its in row
+${reads.length === 0 && rowReads(model).length === 0 ? '' : `// describeKept writes node 11: an instance of a value class without core_type, the number of the kind of its in row
 // and the handle under which the question read gives its kept value; one pointer has one handle in a call, so the
 // core sees one object at each of its places (GN-6af, U-7 (d)).
 func (c *Call) describeKept(enc *Writer, kind byte, instance any, read func() (any, error)) {
@@ -2339,6 +2430,139 @@ func (c *Call) describeKept(enc *Writer, kind byte, instance any, read func() (a
 }
 
 ${valueClasses(model).length > 0 ? '' : raiseIn(model)}`}`;
+}
+
+// GN-6ar, GN-15c: the description of an instance of a class of the owner that an in row of a value alias of another
+// repository names, a value class without core_type of the package of the owner: node 11 with the kind of the row and
+// one handle per pointer of a call, whose property the question read gives (describeKept); and the keyed map of the
+// owner, which such an instance keeps, as a map of its entries in their order. Every package of the owner names the
+// one KeyedMap of its package binding, so the switch has one case of it per owner.
+function goDescribeRows(model: Model): string {
+  const rows = rowReads(model);
+  if (rows.length === 0) return '';
+  const cases = rows.map((row) => {
+    const kind = GO_VALUE_KINDS.indexOf(row.variant.replace('ValueKind::', ''));
+    if (kind < 0) throw new Unsupported(`${row.alias.unit.id}: the kind ${row.variant} of the go in row of the class ${row.unit.id} of ${row.library} is not generated (GN-15c)`);
+    const field = goName(row.read.name);
+    return `	case *${ownerType(row.owner, row.unit).name}:
+		if found == nil {
+			return false
+		}
+		c.describeKept(enc, ${kind}, found, func() (any, error) { return found.${row.read.writable === true ? field : `${field}()`}, nil })
+		return true
+`;
+  });
+  const maps = new Map<string, string>();
+  for (const row of rows) {
+    const returns = row.read.returns;
+    if (typeof returns === 'object' && 'keyed_map' in returns && !maps.has(row.library)) maps.set(row.library, ownerType(row.owner, row.unit).pkg);
+  }
+  const mapCases = [...maps.values()].map((pkg) => `	case *${pkg}.KeyedMap[any]:
+		if found == nil {
+			return false
+		}
+		var pairs [][2]reflect.Value
+		for _, key := range found.Keys() {
+			item, _ := found.Get(key)
+			var described any
+			if integer, isInt := key.Int(); isInt {
+				described = integer
+			} else if bytes, isBytes := key.Bytes(); isBytes {
+				described = bytes
+			} else {
+				described, _ = key.Text()
+			}
+			pairs = append(pairs, [2]reflect.Value{reflect.ValueOf(described), reflect.ValueOf(item)})
+		}
+		enc.bytes = append(enc.bytes, 8)
+		enc.Uint(c.hold(held{entries: pairs}))
+		enc.Uint(uint64(len(pairs)))
+		return true
+`);
+  return `// describeRow describes an instance of a class of another repository that an in row of a value alias names, by
+// its row, and the keyed map that such an instance keeps (GN-6ar).
+func (c *Call) describeRow(enc *Writer, value reflect.Value) bool {
+	if !value.CanInterface() {
+		return false
+	}
+	switch found := value.Interface().(type) {
+${[...cases, ...mapCases].join('')}	}
+	return false
+}
+
+`;
+}
+
+// GN-6ar, GN-15c: the decoder of node 14 of a result, an instance of a class of the owner of a value alias of another
+// repository: the position of the class, then the entries of its keyed map or the value of its reference. The
+// constructor of the owner makes the instance on the empty map or on nil, and the instance is remembered before its
+// content, so node 8 of a later place gives the same pointer.
+function goForeignRows(model: Model): string {
+  const classes = foreignRowClasses(model, 'go');
+  if (classes.length === 0) return '';
+  const makes = new Map<string, ForeignMake>();
+  for (const alias of model.aliases.filter((a) => a.library !== undefined && a.owner === undefined)) {
+    for (const row of alias.unit.out ?? []) {
+      const make = row.make['go'];
+      if (typeof make !== 'string' || !make.includes('.')) continue;
+      const made = foreignMakeOf(model, alias, 'go', make, row.kind);
+      makes.set(`${made.library} ${made.unit.id}`, made);
+    }
+  }
+  const arms = classes.map((c, position) => {
+    const made = makes.get(`${c.library} ${c.unit.id}`);
+    if (made === undefined) return '';
+    const type = ownerType(c.owner, c.unit);
+    const failed = `		if err != nil {
+			r.fail("GN-6ar: the constructor of ${type.name}: " + err.Error())
+			return nil
+		}`;
+    if (made.holds === 'value') {
+      return `	case ${position}:
+		kept, err := ${type.pkg}.New${goName(c.unit.name)}(nil)
+${failed}
+		*made = append(*made, kept)
+		kept.${goName(made.set?.name ?? [])} = r.value(made, instance)
+		return kept
+`;
+    }
+    return `	case ${position}:
+		entries := &${type.pkg}.KeyedMap[any]{}
+		kept, err := ${type.pkg}.New${goName(c.unit.name)}(entries)
+${failed}
+		*made = append(*made, kept)
+		for at, n := 0, r.Len(); at < n; at++ {
+			var key ${type.pkg}.Key
+			switch found := r.value(made, instance).(type) {
+			case int64:
+				key = ${type.pkg}.IntKey(found)
+			case string:
+				key = ${type.pkg}.TextKey(found)
+			case []byte:
+				key = ${type.pkg}.BytesKey(found)
+			default:
+				r.fail("GN-6ar: a key of the entries of ${type.name} that is no integer, byte string or text")
+				return nil
+			}
+			entries.Set(key, r.value(made, instance))
+		}
+		return kept
+`;
+  }).join('');
+  return `
+// foreign makes an instance of a class of another repository from node 14 of a result (GN-6ar): the number of the
+// class, then the entries of its keyed map or the value of its reference.
+func (r *Reader) foreign(made *[]any, instance func(class uint64, handle uint64) any) any {
+	class := r.Uint()
+	if r.failed {
+		return nil
+	}
+	switch class {
+${arms}	}
+	r.failed = true
+	return nil
+}
+`;
 }
 
 // GN-6x, GN-6af: node 12 of a description, the error that a read of a value class returned. GN-6z: the call of the
@@ -2656,7 +2880,10 @@ func (r *Reader) fail(problem string) {
 // the class, then the value that it keeps or the entries of its keyed map. The struct is made and remembered before
 // its content, so node 8 of a later place gives the same pointer.
 function goValue(model: Model): string {
-  if (model.kept.length === 0) return GO_VALUE;
+  // GN-6ar: node 14, an instance of a class of the owner of a value alias of another repository.
+  const rows = goForeignRows(model);
+  const value = rows === '' ? GO_VALUE : `${GO_VALUE.replace('\tcase 255:\n', '\tcase 14:\n\t\treturn r.foreign(made, instance)\n\tcase 255:\n')}${rows}`;
+  if (model.kept.length === 0) return value;
   const arms = model.kept.map((kept, position) => {
     const name = goName(kept.unit.name);
     const [field, ...more] = kept.fields;
@@ -2695,7 +2922,7 @@ function goValue(model: Model): string {
     }
     return '';
   }).join('');
-  return `${GO_VALUE.replace('\tcase 255:\n', '\tcase 12:\n\t\treturn r.kept(made, instance)\n\tcase 255:\n')}
+  return `${value.replace('\tcase 255:\n', '\tcase 12:\n\t\treturn r.kept(made, instance)\n\tcase 255:\n')}
 // kept makes an instance of a value class without core_type from node 12 of a result (GN-6af): the number of the
 // class, then the value that it keeps or the entries of its keyed map.
 func (r *Reader) kept(made *[]any, instance func(class uint64, handle uint64) any) any {
@@ -2950,6 +3177,12 @@ type ${name} = binding.${name}
 `).join('')}${model.errorUnits.map((u) => `
 // ${goName(u.unit.name)} is the error unit ${u.unit.id} (E-2).
 type ${goName(u.unit.name)} = binding.${goName(u.unit.name)}
+`).join('')}${goRecognizedUnits(model).map((u) => `
+// Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: the error that Go code
+// of another module, which implements a callback unit of ${model.contract.library}, returns for the core to recognize (GN-15d, GN-6s).
+func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
+	return binding.Raised${goName(u.unit.name)}(kind, message)
+}
 `).join('')}`;
 }
 
@@ -3078,6 +3311,13 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
       check(cb.unit.module, m.returns);
     }
   }
+  // GN-6s: the dispatch of a callback unit of another repository is in the package of each member that takes it.
+  for (const cb of model.foreignCallbacks) {
+    for (const m of cb.members) {
+      for (const p of m.params) check('', p.type);
+      check('', m.returns);
+    }
+  }
   // GN-15c: a value class without core_type is a struct of package binding, beside the types of that package.
   const taken = new Set([...BINDING_TYPES, ...goErrorTypes(model.contract).map(([, name]) => name), ...model.errorUnits.map((u) => goName(u.unit.name))]);
   for (const kept of model.kept) {
@@ -3113,7 +3353,7 @@ function importCycle(imports: Map<string, Set<string>>): void {
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
 // model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
-  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.kept.map((k) => k.unit.module)])];
+  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.kept.map((k) => k.unit.module), ...model.variants.map((v) => v.unit.module)])];
   // GN-15a: a first pass finds the units that other modules reach and the modules that each package imports.
   const reachedFrom = new Set<string>();
   const imports = new Map<string, Set<string>>();
@@ -3144,29 +3384,48 @@ export function go(model: Model, files: Files): void {
   }
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
   for (const platform of GO_PLATFORMS) {
-    files.set(`${BINDING}/zz_generated_link_${platform}.go`, goLink(model, platform));
+    files.set(`${BINDING}/zz_generated_link_${goLinkFile(platform)}.go`, goLink(model, platform));
     files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
   }
   keepGoHelpers(files, `${BINDING}/zz_generated_binding.go`);
 }
 
-// GN-15g: the platforms of a Go module, <GOOS>_<GOARCH> of the platforms of a release (GN-3c).
-export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'darwin_arm64'] as const;
+// GN-15g: the platforms of a Go module: <GOOS>_<GOARCH> of the platforms of a release (GN-3c), whose Linux library is
+// built for the GNU C library, and linux_<arch>_musl, whose library is built for musl and which the build tag musl selects.
+export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'linux_amd64_musl', 'linux_arm64_musl', 'darwin_arm64'] as const;
 
-// GN-15g: the file of package binding that Go compiles for one platform alone, by its name. Its directive names the
-// directory of the static library of that platform inside the Go module (${SRCDIR} is the directory of the file, also
-// in the module cache), so a module that is fetched at its tag links the library that it carries; a checkout, whose
-// directory holds no library, names the directory of its build by CGO_LDFLAGS, which the linker searches first. It
-// imports the package of the directory, because go mod vendor copies only the directories of imported packages.
+// The name of the link file of a platform after zz_generated_link_: Go compiles a file whose name ends in
+// _<GOOS>_<GOARCH> for that platform alone, so the file of linux_<arch>_musl is musl_linux_<arch>.
+const goLinkFile = (platform: string): string => (platform.endsWith('_musl') ? `musl_${platform.slice(0, -'_musl'.length)}` : platform);
+
+// GN-15g: the file of package binding that Go compiles for one platform alone, by its name, and on Linux by the build
+// tag musl. Its directive names the directory of the static library of that platform inside the Go module (${SRCDIR}
+// is the directory of the file, also in the module cache), so a module that is fetched at its tag links the library
+// that it carries; a checkout, whose directory holds no library, names the directory of its build by CGO_LDFLAGS,
+// which the linker searches first. It imports the package of the directory, because go mod vendor copies only the
+// directories of imported packages. On Linux the preamble stops the C compiler of cgo by name when it finds the other
+// C library, before a link that would fail on undefined symbols: a build constraint of Go does not tell the C library
+// apart, so the consumer chooses it by the tag.
 function goLink(model: Model, platform: string): string {
+  const module = goModule(model.contract);
+  const linux = platform.startsWith('linux_');
+  const musl = platform.endsWith('_musl');
+  const build = linux ? `//go:build ${musl ? 'musl' : '!musl'}\n\n` : '';
+  const check = linux
+    ? `// #include <stdlib.h>
+// #${musl ? 'ifdef' : 'ifndef'} __GLIBC__
+// #error "the Go module ${module} links lib${staticLib(model.contract)}.a of ${platform}, which is built for ${musl ? 'musl' : 'the GNU C library'}, and the C compiler of cgo finds ${musl ? 'the GNU C library' : 'another C library'}: ${musl ? 'build without the tag musl' : 'build with go build -tags musl'} (GN-15g)"
+// #endif
+`
+    : '';
   return `${goHeader()}
 
-package binding
+${build}package binding
 
 // #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}
-import "C"
+${check}import "C"
 
-import _ "${goModule(model.contract)}/internal/ffi/lib/${platform}"
+import _ "${module}/internal/ffi/lib/${platform}"
 `;
 }
 
@@ -3174,7 +3433,7 @@ import _ "${goModule(model.contract)}/internal/ffi/lib/${platform}"
 function goLibraryPackage(model: Model, platform: string): string {
   return `${goHeader()}
 
-// Package ${platform} is the directory of the static library lib${staticLib(model.contract)}.a of ${platform.replace('_', '/')}, which a release of
+// Package ${platform} is the directory of the static library lib${staticLib(model.contract)}.a of ${platform.replace('_', '/').replace('_musl', ' with musl')}, which a release of
 // the Go module puts beside this file (GN-15g); package binding imports it, so go mod vendor copies the library.
 package ${platform}
 `;

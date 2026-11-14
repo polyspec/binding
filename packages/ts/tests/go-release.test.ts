@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consumerFiles, debugSections, goRemote, goWork, requiredVersion } from '../../../scripts/go-release.mts';
+import { consumerFiles, debugSections, goRemote, goWork, requiredVersion } from '../src/release/go-module.ts';
 
 test('the tag of a Go module is its directory in the repository and its version (GN-15g)', () => {
   assert.deepEqual(goRemote('github.com/polyspec/sample/packages/go', 'v0.0.1'), { owner: 'polyspec', repository: 'sample', directory: 'packages/go', tag: 'packages/go/v0.0.1' });

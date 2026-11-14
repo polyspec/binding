@@ -22,7 +22,7 @@ contract that passes the schema and the package names (CK-1, CK-18). A check tha
 that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
 another binding behind a finding of the contract.
 
-`binding check <interface.json> --release` also runs the check of a release, CK-70. The tool that builds a release
+`binding check <interface.json> --release` also runs the check of a release, CK-70. The recipe of a release (generator GN-19g)
 passes the option; a check without it does not run CK-70, because a development checkout holds the development forms
 that a release may not hold.
 
@@ -121,7 +121,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-13** Go names (E-7, P-2): an error unit's Go name is not a category error type (`ValueError`, `TypeError`,
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
   `functions` units, the `New<Unit>` constructors, the functions `<Class><Member>` of static members, and the functions
-  `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` that another module reaches a unit through (GN-15a)
+  `<Class>Handle`, `<Class>FromHandle`, `Dispatch<Callback>`, `Encode<Variant>` and `Decode<Variant>` that another module reaches a
+  unit through (GN-15a)
   are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
 - **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`, the folders of hand-written Go code,
@@ -239,14 +240,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   generates no such class: that is the rule of the target and no state of the generator, so a class of either origin
   never names PHP. The finding names the unit and each such target. Why: the generator refuses the
   unit for such a target, and a contract error is reported by the check before the generator runs.
-- **CK-79** The C symbols of two libraries (generator GN-17): for the target `go`, no C symbol of this contract is a
-  C symbol of a library that the contract names. The prefix of a symbol is `polyspec_<library>` and one underscore
-  follows it, so the function `b_c` of the library `a` and the function `c` of the library `a_b` are both
-  `polyspec_a_b_c`, and a Go program links the static libraries of both. The finding names the symbol, the member
-  of this contract and the member of the other library, and the remedy: rename one of the two. The check compares this
-  contract with the contracts that it reads, the libraries that the contract names and those that they name. It does
-  not see two libraries of which neither names the other: a Go program that links both is checked by no contract
-  (not implemented, task B2.125).
+- **CK-79** Retired (B2.125). It compared the C symbols of the target `go` of a contract with those of the
+  libraries that the contract names, because a symbol had one underscore after `polyspec_<library>`, and it saw no
+  two libraries of which neither names the other. The symbol of generator GN-17 has two underscores after the name of
+  its library, which holds no two in a row, so the symbols of two libraries differ and no check compares them. The
+  id names no other check.
 - **CK-80** A function with the name of a C type of the C ABI (generator GN-17): for the target `go`, no function of
   the root module is named `buffer`, because its symbol `<prefix>_buffer` is the C type of the result of every call of
   the C ABI. The finding names the function and the symbol.
@@ -262,6 +260,16 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   GN-6z), so `keeps` at a parameter that holds only functions is reported too. Why: the attribute changes the lifetime
   that the generator writes for the callback, and at a parameter without a callback it would state a lifetime of
   nothing, which a reader takes for a rule of the member.
+- **CK-92** The members that the instance values of a case call are generated where the member of the case is
+  (generator GN-13f): each member that a `new`, a `from` or a call of `then` of an instance value of the case names,
+  also inside the receiver or an argument of another and inside a list, an `optional`, a map or a field of a record at
+  the place of a class or an interface, is generated for every target of the contract that the `only` of the unit
+  and of the member of the case and the `only` of its row of `cases` (generator GN-13h) keep. A member that an `only`
+  keeps out of such a target is reported with the case, the member and the targets; the contract resolves it by an
+  `only` without those targets of the member of the case, of its unit, or of the row of `cases` that holds the case.
+  A row whose `only` names no target where its member is generated is reported too. Why: the test of a case is
+  generated for each target of its member and its row, and a test that cannot make its instance in a target would
+  either refuse the target or leave the case out silently, so that what was not verified there would not show.
 - **CK-91** The release profile of the Go static library (generator GN-15i): for a contract with the target `go`,
   `binding check` reports `[profile.release]` of the root manifest or of `.cargo/config.toml` of the repository that
   sets `lto` to any value but `false` or `"off"`, with the file and the value, because a Go program then cannot link

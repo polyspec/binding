@@ -125,6 +125,46 @@ pub trait Lookup {
     fn find(&mut self, key: &str) -> Result<Option<String>, Failure<Error>>;
 }
 
+/// A source of values by key that recognizes no error, which language code implements and the consumer library takes
+/// as a callback unit of another repository (GN-6s).
+pub trait Source {
+    /// The value of a key, or `None` when it has none.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the implementation.
+    fn read(&self, key: &str) -> Result<Option<String>, Failure<Error>>;
+}
+
+/// One key and its value, a source that the sample library implements, which a case of the consumer library makes
+/// through the package of the sample library at a place of the source (GN-6w, GN-6s, GN-13f).
+#[derive(Debug)]
+pub struct HeldSource {
+    key: String,
+    value: String,
+}
+
+impl HeldSource {
+    /// A source that holds the value of one key.
+    #[must_use]
+    pub fn new(key: &str, value: &str) -> Self {
+        Self {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        }
+    }
+}
+
+impl Source for HeldSource {
+    fn read(&self, key: &str) -> Result<Option<String>, Failure<Error>> {
+        if key == self.key {
+            Ok(Some(self.value.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 /// The value of a key, which the lookup must hold.
 ///
 /// # Errors

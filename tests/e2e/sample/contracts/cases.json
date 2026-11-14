@@ -1527,5 +1527,12 @@
       "value": 0.5,
       "result": 0.5
     }
+  ],
+  "held_source_new": [
+    {
+      "id": "a_held_source_holds_one_key",
+      "key": "a",
+      "value": "1"
+    }
   ]
 }

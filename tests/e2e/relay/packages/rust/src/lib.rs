@@ -42,3 +42,13 @@ pub fn count(packet: &Packet) -> u64 {
             .fold(0, |count: u64, _value| count.saturating_add(1)),
     }
 }
+
+/// The number of the members of an object, and 0 for a value of another kind; a value that the caller leaves out is
+/// the empty object (U-2 `{empty: "object"}`, B2.172).
+#[must_use]
+pub fn width(value: Option<&Value>) -> u64 {
+    match value.map(Value::members) {
+        Some(Ok(members)) => members.len(),
+        Some(Err(_)) | None => 0,
+    }
+}
