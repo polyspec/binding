@@ -220,6 +220,15 @@ the design ids are those of the binding design.
   `impl` blocks is kept with the type of the block that it is of, or with its trait when the block is of a type of the
   code; and a group stays when an item of it is named from outside the Rust code that is read, because it is `pub`,
   has an ABI (`extern "C" fn`) or carries an attribute of a macro, or when it declares no name.
+  The generated Rust calls none of the methods that the `clippy.toml` of a repository disallows, because each turns an
+  error or an absence into a plausible value: `Result::ok`, and `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`,
+  `map_or` and `map_or_else` of a `Result` or an `Option`. It matches the value (`match`, `let ... else`) or passes the
+  error on with `?`, and an arm that gives nothing or a fixed value carries a comment that states why that is the
+  meaning: a poisoned lock or a borrowed table that keeps what it holds until the cleanup of its thread, an exception
+  whose kind cannot be read and so is no recognized one, a handle beyond `usize` that names no position. The count of
+  a test entry point that does not fit the integer of the language is an error, not the largest integer. No allow
+  covers such a call, because an allow would hide the next one; the allow of `clippy::disallowed_methods` stays only
+  on the module that holds the expansion of a macro of a dependency, which the generator does not write.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
@@ -1575,7 +1584,10 @@ the design ids are those of the binding design.
   `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the
   error of its category, for an alias of another repository by the E-1 of its owner. A core value leaves as the Go
   value of the first `out` row of a built-in form: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`,
-  `map[string]any`, or `*KeyedMap[any]`. A row that makes the value by a member (GN-6e) gives the instance of the
+  `map[string]any`, or `*KeyedMap[any]`. Package binding describes an integer of any Go integer type, and a `*big.Int`:
+  one in `int64` as an integer, and one beyond it (a `uint64` above `math.MaxInt64`, a `*big.Int` outside `int64`)
+  as its decimal text, which the core reads as `HostValue::Number`, the token that Python and JavaScript describe for
+  such an integer. A row that makes the value by a member (GN-6e) gives the instance of the
   class: the C ABI writes the number of the class in the contract and the handle of the value, and the package of the
   module of the class makes the instance by that number, because `internal/binding` does not import that package. A
   member of another module that gives such a value is refused by name, because only the package of the class makes
@@ -1938,7 +1950,9 @@ the design ids are those of the binding design.
   value or fill its map, in an expression that names each instance (an assignment expression of a tuple in Python, an
   arrow function in Node and WASM), so every place of an id holds the same instance and a cycle is made. A repeated
   object is made from the outermost in, each object filled after it is made, so no constructor judges the objects
-  inside it again; PHP makes it from the innermost out with `(object)` casts. A case-test entry point (GN-5) describes
+  inside it again; PHP makes it from the innermost out with `(object)` casts. The host of the PHP case-test entry
+  points has the methods that reserve and fill an object with an id only when a case has such an object, because the
+  lints deny dead code (GN-4). A case-test entry point (GN-5) describes
   the later place of an id by the identity of the first, which the core does not read again. A case whose argument has no form in the
   language of a target, so that no call of that language can give it, runs through an entry point of the feature
   `case-test` of that target (GN-5), beside `panic-test` and `fault-test`: the entry point makes the argument in the
@@ -1952,7 +1966,9 @@ the design ids are those of the binding design.
   reference that is no place of an array or of a property (the value itself, or the value of a reference), and an
   integer outside 64 bits, which PHP has no form of, given as the decimal token that Python and JavaScript describe
   for it (`HostValue::Number`), each given as host values to the `in` function of its alias, the value of a case of a
-  member and the value of a case of the alias alike; Go (the argument of a kind that the Go type of the parameter does not
+  member and the value of a case of the alias alike; Go gives an integer outside `int64` and `uint64` as a
+  `*big.Int` (GN-15c), which the generated test makes from the decimal token of the case and package binding describes
+  as that token, so the case runs as a call and needs no entry point; Go (the argument of a kind that the Go type of the parameter does not
   hold, such as a text for an `int64`) is generated by the Go generator and refused by name until then; Python, Node
   and WASM have no such case yet.
 - **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; of B-5c, the tests of a call that

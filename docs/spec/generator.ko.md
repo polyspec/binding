@@ -174,6 +174,14 @@
   남는다. `impl` 블록의 묶음은 그 블록이 속한 타입과 함께 남고, 블록이 코드의 타입에 속하면 그 trait과 함께 남는다.
   묶음의 item이 읽는 Rust 코드 밖에서 이름으로 불리면 그 묶음은 남는다. `pub`이거나, ABI를 갖거나(`extern "C" fn`),
   macro의 attribute를 가진 경우다. 이름을 선언하지 않는 묶음도 남는다.
+  생성 Rust는 레포의 `clippy.toml`이 금하는 method를 하나도 부르지 않는다. 그 method는 모두 오류나 부재를 그럴듯한 값으로
+  바꾸기 때문이다: `Result::ok`, 그리고 `Result`와 `Option`의 `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`,
+  `map_or`, `map_or_else`다. 생성 코드는 값을 match하거나(`match`, `let ... else`) `?`로 오류를 넘긴다. 아무것도 주지
+  않거나 고정 값을 주는 arm에는 그것이 맞는 의미인 이유를 적은 주석이 붙는다: 독이 든 lock이나 빌린 table은 가진 것을
+  그 스레드의 cleanup까지 지닌다, kind를 읽을 수 없는 예외는 인식된 예외가 아니다, `usize`를 넘는 handle은 어떤 위치도
+  가리키지 않는다. 시험 진입점의 개수가 그 언어의 정수에 맞지 않으면 가장 큰 정수가 아니라 오류다. 그런 호출을 allow로
+  덮지 않는다. allow는 다음 호출을 숨기기 때문이다. `clippy::disallowed_methods`의 allow는 생성기가 쓰지 않는, 의존성
+  macro의 펼침을 담은 module에만 남는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는
@@ -1299,6 +1307,9 @@
   Go 값을 읽으므로(종류, 항목, `fmt.Sprint` 순서의 map key) 코어의 `in` 함수가 복사 없이 값을 돈다. `in` 함수의 kind는 그
   category의 오류이며, 다른 레포의 alias는 소유 레포의 E-1을 따른다. 코어 값은 내장 형태인 첫 `out` 행의 Go 값으로
   나간다: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`, `map[string]any`, `*KeyedMap[any]`.
+  package binding은 모든 Go 정수 타입의 정수와 `*big.Int`를 기술한다. `int64` 안의 것은 정수로, 그 밖의 것(`math.MaxInt64`를
+  넘는 `uint64`, `int64` 밖의 `*big.Int`)은 10진 text로 기술하며, 코어는 그것을 `HostValue::Number`로 읽는다. Python과
+  JavaScript가 그런 정수에 기술하는 token과 같다.
   member로 값을 만드는 행(GN-6e)은 class의 인스턴스를 준다. C ABI는 계약 안 class의 번호와 값의 handle을 적고, class의
   module 패키지가 그 번호로 인스턴스를 만든다. `internal/binding`은 그 패키지를 import하지 않기 때문이다. 그런 값을
   주는 다른 module의 member는 이름으로 거부한다. 그 class의 패키지만 인스턴스를 만들기 때문이다. `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
@@ -1581,7 +1592,7 @@
   인스턴스 하나를 내용 없이 만든 뒤 그 값을 정하거나 그 map을 채우며, 이것을 각 인스턴스에 이름을 붙이는 식(Python은
   tuple의 대입식, Node와 WASM은 화살표 함수) 안에서 한다. 그래서 같은 id의 모든 자리가 같은 인스턴스를 가지고 순환도
   만들어진다. 되풀이되는 객체는 바깥 객체부터 만들고 각 객체를 만든 뒤에 채우므로, 어떤 생성자도 그 안의 객체를 다시
-  판정하지 않는다. PHP는 `(object)` 변환으로 가장 안쪽부터 만든다. case-test 진입점(GN-5)은 id의 뒤 자리를 첫 자리의
+  판정하지 않는다. PHP는 `(object)` 변환으로 가장 안쪽부터 만든다. PHP case-test 진입점의 host는 id가 있는 object가 case에 있을 때만 그 object를 예약하고 채우는 method를 갖는다. lint가 죽은 코드를 금하기 때문이다(GN-4). case-test 진입점(GN-5)은 id의 뒤 자리를 첫 자리의
   동일성으로 기술하며, 코어는 그것을 다시 읽지 않는다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
   언어의 어떤 호출로도 줄 수 없는 case는, `panic-test`, `fault-test`와 나란한 그 target의 feature `case-test`(GN-5)의
   진입점으로 실행한다. 진입점은 인자를 바인딩 자신의 인코딩, 곧 바인딩이 기술하는 host 값(B-1)이나 Go C ABI의 값
@@ -1592,7 +1603,9 @@
   그 feature 없이 빌드한 결과에는 진입점이 없다(종단 검사가 `llvm-nm`으로 심볼을 읽는다). 지금까지: PHP에서는 배열이나
   property의 자리가 아닌 reference(값 자체, 또는 reference의 값)와, PHP에 꼴이 없는 64비트 밖의 정수를 Python과
   JavaScript가 그것에 기술하는 10진 token(`HostValue::Number`)으로, 각각 host 값으로 만들어 그 alias의 `in` 함수에
-  준다. member case의 값에도 alias case의 값에도 그렇게 한다. Go(예:
+  준다. member case의 값에도 alias case의 값에도 그렇게 한다. Go는 `int64`와 `uint64` 밖의 정수를 `*big.Int`로
+  준다(GN-15c). 생성 시험이 case의 10진 token으로 그것을 만들고 package binding이 그 token으로 기술하므로, 그 case는
+  호출로 돌고 진입점이 필요 없다. Go(예:
   `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
   거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
