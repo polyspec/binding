@@ -841,10 +841,12 @@ the design ids are those of the binding design.
   14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
   owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
   (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
-  that names one is refused by name too. The generated tests of Python and Node write a case value of the kind of
+  that names one is refused by name too. The generated tests of Python, Node and Go write a case value of the kind of
   such a row as an instance of the class of the owner, and read a result by the classes of the owner, both through
-  the package of the owner, which the test imports (GN-13, GN-13e). The fixture of the end-to-end check is
-  `tests/e2e/sample` with `tests/e2e/consumer`: the alias `data` of the sample makes a map whose keys are the indexes
+  the package of the owner, which the test imports (GN-13, GN-13e). Go makes the instance by `New<Class>` of the
+  package of the owner on nil and then sets its entries or its writable property, and compares a result by
+  `reflect.DeepEqual` and by the places of the pointers of the classes of this repository and of the owner. The
+  fixture of the end-to-end check is `tests/e2e/sample` with `tests/e2e/consumer`: the alias `data` of the sample makes a map whose keys are the indexes
   of its entries as the class `box` and a reference as the class `cell`, and reads an instance of the class `ratio`
   as its float in Node and WASM; the cases of `consumer.pair` pass a reference and such a map both ways. No row makes
   an instance of `ratio`, because the row of the kind float would then change every float of the fixture, so the

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bbb8e3de512eb57be3acb6c0e2141143ed53240a9b207291a5845c22f4a15065 -->
+<!-- source-sha256: 62f9d2be34dbe7f2a92845394884cc9fb8743e62037753d8790b8a90a96bf5bb -->
 # 생성기
 
 [English](generator.md)
@@ -682,9 +682,11 @@
   14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
   property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
   PHP에는 그런
-  class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. Python과 Node의 생성 시험은 그런
-  행의 kind인 case 값을 owner의 class의 인스턴스로 쓰고 결과를 owner의 class로 읽으며, 둘 다 시험이 import하는 owner의
-  package를 거친다(GN-13, GN-13e). end-to-end 검사의 fixture는 `tests/e2e/sample`과 `tests/e2e/consumer`다: sample의
+  class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. Python, Node, Go의 생성 시험은
+  그런 행의 kind인 case 값을 owner의 class의 인스턴스로 쓰고 결과를 owner의 class로 읽으며, 둘 다 시험이 import하는
+  owner의 package를 거친다(GN-13, GN-13e). Go는 owner의 package의 `New<Class>`로 nil 위에 인스턴스를 만든 다음 그
+  entry나 쓰기 가능한 property를 설정하고, 결과를 `reflect.DeepEqual`과 이 저장소와 owner의 class의 pointer가 놓인
+  자리로 비교한다. end-to-end 검사의 fixture는 `tests/e2e/sample`과 `tests/e2e/consumer`다: sample의
   alias `data`는 key가 entry의 index인 map을 class `box`로, reference를 class `cell`로 만들고, Node와 WASM에서 class
   `ratio`의 인스턴스를 그 float로 읽는다. `consumer.pair`의 case는 reference와 그런 map을 양방향으로 넘긴다. `ratio`의
   인스턴스를 만드는 행은 없다. kind float의 행이 fixture의 모든 float를 바꾸기 때문이며, 그래서 float를 받는 constructor는

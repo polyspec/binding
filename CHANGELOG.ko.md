@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 442fd0207d08ea0f4ba6ce4f509facb6a2e62a730590ac1fa826284cc75c8ed2 -->
+<!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 다른 저장소의 값 alias의 case에 대한 생성된 Go 시험은 case의 reference나 object를 owner의 `core_type`이 없는
+  value class의 인스턴스로, owner의 package의 `New<Class>`를 nil로 호출해 만들고, 결과를 그 class의 pointer가 놓인
+  자리로도 비교한다(GN-6ar, GN-6af, GN-13). 시험은 그 class를 class가 없는 consumer의 계약에서 찾았으므로
+  `consumer.pair`의 `a_reference_of_the_owner_twice` 시험이 `0 value classes keep one value (GN-6af)`로 실패했다.
+  검증: 변경 전에 실패한 `node --test packages/ts/tests/generate.test.ts`의 consumer 시험.
 
 - lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
   member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성
