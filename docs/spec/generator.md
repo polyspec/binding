@@ -1931,8 +1931,8 @@ the design ids are those of the binding design.
   target of WASM has no errno (`binding_core::errno::value` gives none, and an arming that names a symbol is refused,
   GN-8a), so the WASM test arms the faults of a case and of a call of `then` without their `errno` and requires no
   errno where the case names a symbol; a number is compared as it is. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
-  `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the class of the
-  kind's category and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
+  `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the exact class of the
+  kind, the class of the error unit that its row names or else of its category (E-2), and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
   one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the

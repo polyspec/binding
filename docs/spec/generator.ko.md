@@ -1576,7 +1576,7 @@
   `then` 호출의 fault를 `errno` 없이 장전하고, case가 기호를 적은 자리에서는 errno가 없어야 한다고 요구한다. 수는
   그대로 비교한다. `in_raises`를 가진 값 alias에는
   feature `codec-test`에서 그 `in` 함수만 실행하는 진입점이 있다. alias의 case마다(CK-22) 그 case의 `value`로 그것을
-  불러 kind의 category 클래스와 kind를 확인한다. parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
+  불러 kind의 정확한 클래스와 kind를 확인한다. 그 클래스는 kind의 행이 적은 error unit의 클래스이고, 없으면 category의 클래스다(E-2). parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
