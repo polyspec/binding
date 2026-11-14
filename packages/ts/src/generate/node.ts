@@ -1374,8 +1374,9 @@ fn thrown_again(exception: &Owned) -> Fail {
 /// U-3, GN-6ab: the failure of a callback. A machine goes on after the call, and a core may answer the Raised and
 /// return a value; an exception that stays pending fails every later call of Node-API and ends the call with it, so
 /// the exception is taken out of the environment
-/// and held under the key of its Raised; failure_error throws the held value again.
-fn kept(env: &Env, failure: ${failure}) -> ${failure} {
+/// and held under the key of its Raised; failure_error throws the held value again. The failure is of any core error,
+/// because a callback unit of another repository fails with the error of its owner (GN-6s).
+fn kept<E>(env: &Env, failure: binding_core::Failure<E>) -> binding_core::Failure<E> {
     let binding_core::Failure::Raised(raised) = &failure else {
         return failure;
     };
