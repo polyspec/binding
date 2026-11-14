@@ -7398,6 +7398,15 @@ test('the count and the position of a handle convert with let-else, whose else a
 // a plausible value; generated code matches the Result or the Option instead.
 const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
 
+test('the PHP reader of UTF-16 units binds no name in one alternative of an or-pattern alone, which Rust refuses as E0408 (GN-6x, B2.81)', () => {
+  const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
+  const php = [...out.keys()].filter((p) => p.endsWith('.rs')).map((p) => text(out, p)).find((t) => /\bfn php_units\b/.test(t));
+  assert.ok(php !== undefined, 'the relay sample writes php_units');
+  const body = php.slice(php.indexOf('fn php_units'), php.indexOf('\n}\n', php.indexOf('fn php_units')));
+  assert.doesNotMatch(body, /\(\w+\)\)? \| None/);
+  assert.match(body, /match unit\.long\(\) \{\n {8}Some\(long\) => u16::try_from\(long\)\.map_err\(\|_wide\| refused\(\)\),\n {8}None => Err\(refused\(\)\),\n {4}\}\)\n {8}\.collect::<Result<Vec<u16>, Fail>>\(\)/);
+});
+
 test('no generated Rust calls a method that the clippy.toml of a repository disallows: Result::ok, unwrap_or and map_or of a Result or an Option (GN-4, R-1)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const own = (library: string): Map<string, string | Buffer> =>
