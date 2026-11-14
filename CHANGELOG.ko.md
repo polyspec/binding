@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+- case의 receiver를 만드는 호출에서 `optional`, callback, 생성된 interface의 자리에 온 인스턴스 값이 거부되었다. 자리의
+  class를 `{"unit"}` 타입에서만 읽었기 때문이다. 그래서 template의 `engine.render` case의 receiver는 `engine.new`가
+  `optional<loader>` 타입의 field `loader`를 `map_loader`의 인스턴스 값으로 받아 만드는데, php, python, node가
+  "engine.new.loader: map_loader.new gives {"unit":"map_loader"}, not the class  (G-5, GN-13f)"로 거부되었다. 이제 그런
+  자리의 인스턴스는 case 인자의 자리에서처럼 만든다. `optional` 안의 class, 또는 callback이나 interface를 구현한 class다
+  (GN-13f, GN-6w, GN-6ap). `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- 자기 생성자나 static member는 만들지 않고 함수가 만드는 class에 placeholder가 없었다. template에는 함수 `bind`만 만드는
+  `bound_map`이 있고, php, python, node, wasm이 `engine.render_bound.assign`과 `engine.prepare_bound.assign`에서 "no
+  placeholder for {"unit":"bound_map"} is written yet (G-5)"로 거부되었다. 이제 그런 class의 placeholder는 모든 target에서
+  그것을 돌려주는 첫 함수, 그다음 다른 class의 첫 static member가 placeholder 인자로 만드는 인스턴스다(G-5, GN-13f). Go는
+  같은 class를 "no placeholder of the class ..., which has no constructor or static member that makes it (T-5)"로 거부했고,
+  이제 같은 member를 쓴다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- Go가 결과에 값 alias를 담은 함수 타입을 거부했다. template의 `engine.register.host_function`,
+  `engine.register_class.host_function`, `engine.new.functions`는 `template_value`를 돌려준다. static library는 값 alias를
+  그것을 인코드한 호출을 통해 읽는데, 보관된 func는 어느 호출 안에서도 실행되지 않았다. 이제 보관된 func는 package
+  `binding`의 자기 호출 안에서 실행되고, 결과는 그 호출의 handle로 시작한다. static library는 그 호출을 통해 결과를 읽으므로
+  alias는 다른 target처럼 `in` 함수로 변환되고, 그다음 export `<prefix>__go_end`로 호출을 끝낸다. 그 호출에서 value class를
+  읽다 난 오류는 호출 0 아래 어느 호출의 것도 아닌 table에 보관한다. member가 그 호출이 끝난 뒤에 그 오류를 돌려주기
+  때문이다(GN-6z, GN-15c). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다.
 - 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
   field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
   field를 이름하는데 field는 더해지지 않았다. 이제 바꾸기는 struct의 끝만 이름하고, 생성기는 host에 더하는 부분이

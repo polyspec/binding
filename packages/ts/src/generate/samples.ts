@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -141,9 +141,10 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     const empty = alias === undefined ? undefined : classMakes(alias, ctx.target ?? ctx.lang).find((m) => m.form === 'content' && m.params === 0);
     if (empty !== undefined) return ownerCall(ctx, ctx.foreignClass(type.library, unit), empty.member, '');
   }
-  // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
+  // T-5, GN-13f: an instance of a class, made by its first factory whose arguments are placeholders, or by the first
+  // function or static member of another class that returns it.
   const object = model.objects.find((o) => o.unit === unit);
-  const factory = object?.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === unit));
+  const factory = object === undefined ? undefined : makerOf(model, object);
   if (factory !== undefined && ctx.objectNew !== undefined) {
     return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
   }
@@ -1290,6 +1291,17 @@ export interface MadeForm {
   left: (local: string, what: string) => string;
 }
 
+// GN-13f: the instance of an instance value at a place of a type: the class of the place, also inside an `optional`, or
+// a class that implements the callback or the generated interface of the place (GN-6w, GN-6ap).
+function instanceAt(model: Model, type: Type, value: unknown, where: string): Receiver {
+  const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  const unit = unitOf(model, inner);
+  if (unit?.origin === 'callback' && libraryOf(inner) === undefined) return implementerInstance(model, unit, value);
+  const iface = interfaceOf(model, inner);
+  if (iface !== undefined) return interfaceInstance(model, iface, value);
+  return instanceOf(model, unit?.id ?? '', value, where);
+}
+
 // G-5 (GN-13f): the statements that make an instance and the expression that names it. Every instance that the value
 // makes, the receivers and the results that a pick reads from, is a local of the test, so none is reclaimed before the
 // test ends; a plain receiver is one expression.
@@ -1300,10 +1312,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
   const argsText = (fn: Fn, args: ReadonlyMap<Arg, unknown>): string =>
     callArgs(model, form.ctx, fn, (arg) => {
       const raw = args.get(arg);
-      if (isInstanceValue(raw)) {
-        const unit = typeof arg.type === 'object' && 'unit' in arg.type ? arg.type.unit : '';
-        return make(instanceOf(model, unit, raw, `${fn.member.id}.${arg.name.join('_')}`));
-      }
+      if (isInstanceValue(raw)) return make(instanceAt(model, arg.type, raw, `${fn.member.id}.${arg.name.join('_')}`));
       return caseValue(model, form.ctx, arg, args);
     });
   const make = (r: Receiver): string => {

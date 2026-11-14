@@ -439,13 +439,20 @@
   스레드에서든 handle을 지운다. C ABI가 읽기 전에 실패한 호출의 func는 그 호출만 갖고, 호출은 끝난다. 함수는 export
   `<prefix>__go_function`으로 func를 부른다. 그 export는 호출의 handle이 아니라 `Native`의 handle을 받는다. 코어가
   보관한 함수를 나중의 호출에서, 또는 자기 스레드에서 부르기 때문이다. export는 인자를 디코드하고 func를 부르고 결과를
-  인코드한다. func가 돌려준 `error`와 panic의 값은 package `binding`의 mutex 뒤의 table에 보관한다. export는 호출이
+  인코드한다. export는 어떤 member도 만들지 않은 package `binding`의 자기 호출 안에서 func를 실행하고, 결과는 그 호출의
+  handle로 시작한다. C ABI는 결과의 값 alias를 그 호출을 통해 읽고(GN-15c), 이는 callback의 결과를 member의 호출을 통해
+  읽는 것과 같다. 결과의 func는 `<prefix>__go_keep`으로 읽고, 그다음 export `<prefix>__go_end`로 그 호출을 끝낸다. 실패한
+  실행은 package `binding`에서 자기 호출을 끝낸다. 그래서 보관된 함수의 결과는 다른 target의 함수 결과처럼 그 alias의
+  `in` 함수로 변환된다. 그 호출을 읽는 동안 value class owner의 member가 돌려준 오류(node 12, GN-15c)는 다음에 적는 어느
+  호출의 것도 아닌 table에 보관하고, node 12는 호출 0과 그 key를 이름한다. 함수가 실행된 호출의 member가 실행의 호출이
+  끝난 뒤에 그 오류를 돌려주기 때문이다. func가 돌려준 `error`와 panic의 값은 package `binding`의 mutex 뒤의 table에 보관한다. export는 호출이
   callback의 panic을 recover하듯(GN-15b) 그 panic을 recover한다. 그 table은 어느 호출의 table도 아니며, key는 table의
   count이고, `Raised`가 그 key를 이름한다. 함수가 실행된 호출의 member는 항목을 꺼내어 같은 error 값을 돌려주거나, C
   ABI의 호출이 돌아온 뒤 같은 값으로 panic한다. 어떤 member도 돌려주지 않은 `Raised`의 마지막 drop은 어느 스레드에서든
   export `<prefix>__go_release_raised`로 항목을 지운다. `thrown-count-test`의 진입점은 그런 `Raised`를 다른 것과 같이
-  센다. 결과가 값 alias, callback, 함수를 담은 함수 타입은 Go에서 이름으로 거부한다(G-4). C ABI는 그런 결과를 호출을
-  통해 읽는데(GN-15c), 보관된 함수는 어느 호출 안에서도 실행되지 않기 때문이다. 함수 타입을 받는 member의 Go 시험은 nil
+  센다. 호출 0과 key를 이름하는 바인딩 실패의 `Raised`도 마지막 drop이 같이 항목을 지운다. 함수 타입의 결과는
+  C ABI가 결과를 읽으면 끝나는 실행의 호출의 callback을 담지 않는다. callback unit과 machine의 함수(GN-6ae)는 어느 타입의
+  결과도 아니기 때문이다(T-2). 함수 타입을 받는 member의 Go 시험은 nil
   func에 kind `invalid_argument_type`을 요구한다. case의 함수 값은 case의 행으로 답하고 어떤 행도 답하지 않는 호출을
   기록하는 func이며, 시험은 그런 호출이 없기를 요구한다. 함수 값에 행이 있는 case는 코어가 그 호출에서 func를 부름을
   보이므로, 시험은 그 case의 인자로 func가 돌려준 error가 그 호출의 error와 같은 값이고 func의 panic이 그 호출의
@@ -1510,8 +1517,11 @@
   시험을 갖는다(GN-13e). 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
   내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
-  없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지
-  않는다. 타입 `cancel`의 값은 호출 전에 발동한
+  없는 값(receiver 없는 어떤 member도 만들지 않는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을
+  대지 않는 예외로 끝나지 않는다. class의 placeholder는 그 class를 돌려주는 첫 생성자나 static member가 만드는 인스턴스이고,
+  그런 member가 없는 class에서는 그 class를 돌려주는 첫 함수, 그다음 다른 class의 첫 static member가 만드는 인스턴스다. 어느
+  것이든 인자는 placeholder다. GN-13f의 `new`가 class를 돌려주는 어떤 member든 이름하기 때문이다(template의 `bind`가
+  `bound_map`을 만든다). method는 쓰지 않는다. 먼저 자기 class의 인스턴스가 있어야 하기 때문이다. 타입 `cancel`의 값은 호출 전에 발동한
   취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 생성된 테스트는 GN-6aq가 말하는 대로 그것을 준다. 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. case는 `map<T>`를 entry의 객체로 주거나 key가 text인 `[key, value]`의 배열로 준다. JSON의 객체는 정수인 key를 다른 key보다 먼저 주므로, 순서가 뜻을 갖는 case는 배열로 주고 시험은 그 순서로 entry를 만든다. 다른 꼴의 entry는 이름을 대고 거부하며(G-4), `binding check`는 두 꼴의 항목을 모두 판단한다(CK-64). class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나

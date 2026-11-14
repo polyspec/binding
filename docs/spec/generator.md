@@ -544,15 +544,24 @@ the design ids are those of the binding design.
   any thread; a func of a call that fails before the C ABI reads it is held by the call alone, which ends. The
   function calls the func through the export `<prefix>__go_function`, which takes the handle of the `Native` and
   not the handle of a call, because the core calls a kept function in a later call or on a thread of its own; the
-  export decodes the arguments, calls the func and encodes its result. The `error` that the func returns, and the
+  export decodes the arguments, calls the func and encodes its result. The export runs the func in a call of package
+  `binding` of its own, which no member made, and the result starts with the handle of that call: the C ABI reads a
+  value alias of the result through that call (GN-15c), as it reads the result of a callback through the call of the
+  member, and a func of the result through `<prefix>__go_keep`, and then ends the call through the export
+  `<prefix>__go_end`; a run that fails ends its call in package `binding`. So the result of a kept function converts as
+  the result of the function of the other targets does, by the `in` function of its alias. An error that a member of
+  the owner of a value class returns while that call is read (node 12, GN-15c) is kept in the table of no call
+  described next, and node 12 names the call 0 and its key, because the member in whose call the function ran returns that
+  error after the call of the run ended. The `error` that the func returns, and the
   value of a panic, which the export recovers as a call recovers the panic of a callback (GN-15b), are kept in a
   table of package `binding` behind a mutex, which is the table of no call, under a key that is a count of the
   table, and the `Raised` names that key: the member in whose call the function ran takes the entry out and returns
   the same error value, or panics with the same value after the call of the C ABI returned, and the last drop of a
   `Raised` that no member returned removes the entry through the export `<prefix>__go_release_raised`, on any
-  thread. The entry point of `thrown-count-test` counts such a `Raised` as any other. A function type whose result
-  holds a value alias, a callback or a function is refused by name for Go (G-4), because the C ABI reads such a
-  result through a call (GN-15c), and a kept function runs in no call. The Go test of a member that takes a function
+  thread, and so does the last drop of a `Raised` of a failure of the binding that names the call 0 and a key. The
+  entry point of `thrown-count-test` counts such a `Raised` as any other. A result of a function type holds no
+  callback of the call of the run, which ends once the C ABI read the result: a callback unit and the function of a
+  machine (GN-6ae) are no result of any type (T-2). The Go test of a member that takes a function
   type requires kind `invalid_argument_type` for a nil func; a function value of a case is a func that answers by
   the rows of the case and records a call that no row answers, which the test requires to be none; with the
   arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
@@ -1846,8 +1855,12 @@ the design ids are those of the binding design.
   value to be compared with, and its case has a test that fails with that reason (GN-13e). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
-  (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
-  refusal of the target by name, and the generator ends with no exception that names no item.
+  (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class that no member without
+  a receiver makes, is a refusal of the target by name, and the generator ends with no exception that names no item.
+  The placeholder of a class is the instance that the first constructor or static member of the class that returns it
+  makes, or, for a class without one, the first function and then the first static member of another class that
+  returns it, each with placeholder arguments, as `new` of GN-13f names any member that returns the class (template
+  `bind`, which makes `bound_map`). A method is not taken, because it needs an instance of its own class first.
   A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
   `{"cancel": "open"}`, one that does not fire (CK-22), which the generated test gives as GN-6aq states.
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list

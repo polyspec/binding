@@ -1181,6 +1181,14 @@ function assignLocks(contract: Contract, units: Map<string, Unit>, objects: Obje
 export const factoryOf = (model: Model, object: ObjectClass): Fn | undefined =>
   object.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
 
+// G-5, GN-13f: the member that makes the placeholder instance of a class: its own factory, or else the first function,
+// then the first static member of another class, that returns the class. A member without a receiver is one call of
+// placeholder arguments; a method would need an instance of its own class first.
+export const makerOf = (model: Model, object: ObjectClass): Fn | undefined =>
+  factoryOf(model, object) ??
+  model.functions.find((fn) => unitOf(model, fn.returns) === object.unit) ??
+  model.objects.flatMap((o) => o.members).find((m) => m.kind === 'static' && unitOf(model, m.returns) === object.unit);
+
 // GN-6h, B-5c: a class whose instance the poison test gives: a class with a write place that the target makes.
 export const poisoned = (model: Model, object: ObjectClass): boolean => object.lock?.writes === true && factoryOf(model, object) !== undefined;
 
