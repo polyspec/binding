@@ -114,3 +114,9 @@ rules of this repository.
   shallow, and a fact that a reader needs belongs in the sentence itself.
   Enforced by: `npm test` in `packages/ts`, whose `tests/tracked-commits.test.ts` fails a token of a commit name in a
   tracked file.
+- Own: A commit message holds no footer and no identity line of an AI tool, such as a co-author trailer. The hook
+  `commit-msg` of `.githooks` refuses such a message before the commit exists, through the rules `commit-ai-footer` and
+  `commit-ai-identity` of `check-commits` of kit (`make commit-msg-hook`); `make hooks` points `core.hooksPath` of a
+  checkout, and so of its worktrees, at `.githooks`, and a checkout runs it once. Why: a push publishes what a commit
+  holds, and a commit that was pushed is not written again.
+  Enforced by: the hook `commit-msg` in a checkout where `make hooks` ran; `make hooks-check` fails a checkout without it.

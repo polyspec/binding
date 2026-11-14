@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- No hook refused a commit message with the footer or the identity line of an AI tool, so such a line reached a push
+  unchecked. The hook `commit-msg` of `.githooks` now refuses it through the rules `commit-ai-footer` and
+  `commit-ai-identity` of `check-commits` of kit; `make hooks` points `core.hooksPath` at `.githooks`, `make hooks-check`
+  fails a checkout without it, and `make commit-msg-hook MESSAGE=<file>` runs the check of the hook. Verified by `make
+  hooks`, `make hooks-check`, and `make commit-msg-hook` on a message with a co-author trailer of an AI tool, which
+  failed with `commit-ai-footer`, and on one without, which passed.
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the

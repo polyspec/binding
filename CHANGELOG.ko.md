@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- AI 도구의 footer나 정체 줄이 있는 commit 메시지를 거부하는 hook이 없어서, 그런 줄이 확인 없이 push에 닿았다. 이제
+  `.githooks`의 hook `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`로 그것을
+  거부한다. `make hooks`는 `core.hooksPath`를 `.githooks`로 가리키고, `make hooks-check`는 hook이 없는 checkout을
+  실패시키며, `make commit-msg-hook MESSAGE=<file>`은 hook의 검사를 돌린다. `make hooks`, `make hooks-check`, 그리고 AI
+  도구의 co-author trailer가 있는 메시지(`commit-ai-footer`로 실패)와 없는 메시지(통과)에 대한 `make commit-msg-hook`으로
+  확인했다.
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
   `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이
