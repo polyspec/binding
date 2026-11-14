@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## 0.0.4
+
 - `release-npm`은 `npm pack --dry-run --json`의 목록을 `devEngines`가 고정한 npm의 형식, 곧 패키지 이름을 키로 하는
   객체로 읽는다(GN-19e). recipe는 `JSON.parse(...)[0].files`를 읽었고 npm 12.2.0은 `{"<name>": {"files": [...]}}`를
   쓰므로, job `assets / npm`이 `release-npm`에서 `TypeError: Cannot read properties of undefined (reading 'files')`로

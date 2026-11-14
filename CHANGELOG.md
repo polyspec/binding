@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.4
+
 - `release-npm` reads the list of `npm pack --dry-run --json` in the form of the npm that `devEngines` pins, an
   object keyed by the name of the package (GN-19e). The recipe read `JSON.parse(...)[0].files`, and npm 12.2.0 writes
   `{"<name>": {"files": [...]}}`, so the job `assets / npm` failed at `release-npm` with `TypeError: Cannot read
