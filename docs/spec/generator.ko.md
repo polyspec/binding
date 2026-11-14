@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 860af2412a7f15ad3ce49ff62a7d6208c9280e27a8e156c091e377eb5d2e9b21 -->
+<!-- source-sha256: 67053f970b472392c99c646554ccbe4eeba5a0dda8fd2c67e36fb9e3c252d95f -->
 # 생성기
 
 [English](generator.md)
@@ -761,6 +761,13 @@
   `Result<Infallible, E>`를 돌려주는 코어를 부른다. 생성 코드는 실패를 돌려주고, 변형이 없는 그 값을 갈래 없는 match로
   받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
   거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
+  `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
+  parameter가 없고(첫 parameter가 아닌 cancel을 Go가 거부하는 GN-6aq는 Go에 그 parameter가 있을 때만 적용된다),
+  그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
+  가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는
+  `only`의 target에만 case다. 다른 target은 그 값을 넘길 수 없기 때문이다. 이유: Python과 Node만 줄 수 있는 member의
+  cancellation처럼 한 언어에 형태가 없는 parameter는, 그렇지 않으면 그 언어가 그 parameter 없이 부를 수 있는 member나
+  target 전체를 거부하게 된다.
 - **GN-6i** 기본값이 있는 parameter와 record parameter의 field(U-2, T-4)는 생략할 수 있다. 그 코어 parameter나 field는
   `Option<T>`이고, 바인딩은 생략된 값에 `None`을 넘기며 어떤 값도 채우지 않는다. 그래서 값은 코어만 정한다(B-1). 빌린
   형태는 text가 `Option<&str>`, latin1·bytes·source가 `Option<&[u8]>`, list가 `Option<&[T]>`, map이 `Option<&Map>`이고 수와

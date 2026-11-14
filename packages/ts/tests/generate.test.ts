@@ -8927,6 +8927,49 @@ test('a parameter of the type cancel binds the cancellation of each language to 
   assert.throws(() => generate({ contract: returned, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['node'] }), /the type cancel is generated as a parameter only \(T-1, GN-6aq\)/);
 });
 
+// Q-4, GN-6aq, B2.253: a parameter with only is a parameter of the targets that it lists alone. A member of a file store
+// takes a cancellation that only Python and Node give, after its other parameters; Go, which passes a context first,
+// PHP and WASM have no such parameter, and their binding gives the core the parameter as left out.
+test('a parameter with only is a parameter of the targets that it lists alone, and the others give the core None (Q-4, GN-6aq, B2.253)', () => {
+  const classes = (): any => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const halted = contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted');
+    halted.parameters = [
+      { name: ['label'], type: 'text', required: true },
+      { name: ['cancel'], type: { optional: 'cancel' }, required: true, only: { targets: ['python', 'node'], reason: 'B-5' } },
+    ];
+    return contract;
+  };
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'));
+  cases.halted = [
+    { id: 'a_cancellation_that_fired_is_halted', label: 'x', cancel: { cancel: 'fired' }, result: true },
+    { id: 'no_cancellation_is_not_halted', label: 'x', result: false },
+  ];
+  const caseFiles = new Map([['contracts/cases.json', cases]]);
+  const out = generate({ contract: classes(), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles });
+  // The targets of the only take the parameter.
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function halted\(label: string, cancel: AbortSignal \| null\): boolean;/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let \(trigger, cancel\) = binding_core::cancel_pair\(\);/);
+  // Go has no ctx and no context, and its core call gives None; a case that gives the cancellation is no case of Go.
+  const go = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(go, /\nfunc Halted\(label string\) \(bool, error\) \{/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTests, /NoCancellationIsNotHalted/);
+  assert.doesNotMatch(goTests, /ACancellationThatFiredIsHalted/);
+  // WASM and PHP have no such parameter either.
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function halted\(label: string\): boolean;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  const stubPath = [...out.keys()].find((path) => path.startsWith('packages/php-ext/generated/') && path.endsWith('.stub.php')) ?? '';
+  assert.match(text(out, stubPath), /function halted\(mixed \$label\): bool/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  // G-4: a parameter with only that cannot be left out has no value in the other targets, so it is refused by name.
+  const required = classes();
+  const cancel = required.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters[1];
+  cancel.type = 'cancel';
+  assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: the parameter cancel has only, which needs a default or an optional type, because the targets without it give the core the parameter as left out \(Q-4, U-2\)/);
+});
+
 // The repositories of the end-to-end check, generated for the five targets as the run of make e2e generates them.
 const e2eGenerated = (): Map<string, Map<string, string | Buffer>> => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));

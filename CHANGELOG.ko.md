@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
+<!-- source-sha256: 47efbf448cfb3b2ff72a116e676854af5a30a011ee4a24b8d223bcd5e1d1d1ed -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
@@ -13,6 +13,13 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `only`(Q-4)가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target에는 그 parameter가 없고, 그
+  바인딩은 코어에 `None`을 주며, 그 parameter에 값을 주는 case는 그 target의 case가 아니다. 기본값이나 `optional`
+  타입이 없는 `only` parameter는 이름을 대고 거부한다. 생성기는 parameter의 `only`를 읽지 않았으므로, 다른 parameter
+  뒤에서 Python과 Node만 받는 cancel이 Go의 parameter가 되어 cancel이 첫 parameter라는 Go의 규칙이 Go target 전체를
+  거부했고, PHP와 WASM의 parameter도 되었다. 검증: 그런 parameter의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
 
 - 종료했고 부모를 기다리는 프로세스의 시험은 실패를 보고하고 끝난다(HR-84, HR-87). 그 단언은 `cat`의 입력을 끝내기
   전에 돌았으므로 단언 하나가 실패하면 `cat`, 그 pipe, 시험 파일이 계속 돌았고, Linux에서 `unit-ts`는 18분 동안 출력이

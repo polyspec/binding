@@ -935,7 +935,14 @@ the design ids are those of the binding design.
   code returns the failure and matches the value, which has no variant, without an arm; the declarations say `never`
   in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
   with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
-  the tests of every other target.
+  the tests of every other target. A parameter with `only` is a parameter of the targets that it lists alone: every
+  other target has no such parameter in its signature, its declarations and its rules of place (a cancel that is not
+  the first parameter is refused for Go by GN-6aq only where Go has it), and its binding gives the core the parameter
+  as left out (`None`). The parameter therefore has a default or an `optional` type, whose core parameter is an
+  `Option`; one without either is refused by name (G-4). A case that gives the parameter a value is a case of the
+  targets of the `only` alone, because another target cannot pass that value. Why: a parameter that one language has
+  no form of, such as the cancellation of a member that only Python and Node can give, would otherwise refuse the
+  whole member, or the whole target, where the language could call it without that parameter.
 - **GN-6i** A parameter, or a field of a record parameter, with a default (U-2, T-4) may be left out. Its core
   parameter or field is `Option<T>`, and the binding passes `None` for a value that was left out and fills no value
   in, so the core alone decides the value (B-1). The borrowed forms are `Option<&str>` for text, `Option<&[u8]>` for

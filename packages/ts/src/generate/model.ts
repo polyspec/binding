@@ -125,6 +125,10 @@ export interface Fn {
   reaches?: true;
   // GN-6ab: a member with wait async_driver that reaches language code, whose core path returns a state machine.
   machine?: true;
+  // Q-4, B2.253: the parameters of the core call in their order, when a parameter with only is no parameter of the
+  // language (absent), which the core call gives as left out (None).
+  coreParams?: Parameter[];
+  absent?: Parameter[];
 }
 
 // U-1 kind class, origin generated: a language class that holds a core value (T-5).
@@ -1637,14 +1641,18 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
   const held = places(model, fn);
   // GN-6ab: a state machine owns its arguments, so the core takes each by value, a class by the clone of its value.
+  // Q-4, B2.253: a parameter with only that the language does not have is left out of the core call.
+  const order = fn.coreParams ?? fn.params;
+  const absent = (p: Parameter): boolean => fn.absent?.includes(p) === true;
   if (fn.machine === true) {
-    const owned = fn.params.map((p) => (held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
+    const owned = order.map((p) => (absent(p) ? 'None' : held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
     if (fn.receiver === undefined) return owned;
     // GN-6ae: the receiver is a clone of the value of the instance, a handle whose clones share one state.
     // GN-6h: the receiver of a class with a lock is the borrow of the value that its guard holds.
     return [held.some((h) => h.param === undefined) ? `Clone::clone(${RECEIVER_GUARD})` : `Clone::clone(&*${receiver})`, ...owned];
   }
-  const args = fn.params.map((p) => {
+  const args = order.map((p) => {
+    if (absent(p)) return 'None';
     // GN-6aa: a record that holds a callback moves into the core.
     if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && unitOf(model, a.type)?.origin === 'callback') ? rustField(p.name) : `&${rustField(p.name)}`;
     // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
@@ -1799,21 +1807,58 @@ export function membersFor(model: Model, lang: Lang): Model {
   const has = (fn: Fn): boolean =>
     unitHas(fn.unit) && (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json') &&
     !(fn.special === 'primitive' && lang !== 'node' && lang !== 'wasm');
+  // Q-4, B2.253: a parameter whose only names other targets is no parameter of the language. The core call gives it as
+  // left out, so it has a default or an optional type; a case that gives it a value is no case of the language.
+  const absentOf = (fn: Fn): Parameter[] => fn.params.filter((p) => {
+    const declared = (fn.member.parameters ?? []).find((q) => sameName(q.name, p.name));
+    return declared?.only !== undefined && !declared.only.targets.includes(lang);
+  });
+  const without = (fn: Fn): Fn => {
+    const absent = absentOf(fn);
+    if (absent.length === 0) return fn;
+    for (const p of absent) {
+      if (p.default === undefined && !(typeof p.type === 'object' && 'optional' in p.type)) {
+        throw new Unsupported(`${fn.member.id}: the parameter ${p.name.join('_')} has only, which needs a default or an optional type, because the targets without it give the core the parameter as left out (Q-4, U-2)`);
+      }
+    }
+    const gone = (name: Name): boolean => absent.some((p) => sameName(p.name, name));
+    const recordGone = fn.record !== undefined && gone(fn.record.param.name);
+    const { record, ...rest } = fn;
+    return {
+      ...rest,
+      ...(record === undefined || recordGone ? {} : { record }),
+      params: fn.params.filter((p) => !gone(p.name)),
+      args: fn.args.filter((a) => (a.field ? !recordGone : !gone(a.name))),
+      coreParams: fn.params,
+      absent,
+    };
+  };
+  const absentKeys = new Map<string, string[]>();
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
+    const absent = absentOf(fn);
+    if (absent.length > 0) absentKeys.set(fn.member.id, absent.map((p) => langName('python', p.name, 'variable')));
+  }
+  const caseOfLang = (id: string, item: unknown): boolean => {
+    if (!(model.caseTargets?.get(item)?.includes(lang) ?? true)) return false;
+    const keys = absentKeys.get(id);
+    return keys === undefined || typeof item !== 'object' || item === null || !keys.some((key) => Object.hasOwn(item, key));
+  };
   return {
     ...model,
-    functions: model.functions.filter(has),
+    functions: model.functions.filter(has).map(without),
     constants: model.constants.filter((c) => unitHas(c.unit)),
     enums: model.enums.filter(unitHas),
     records: model.records.filter(unitHas),
     resultRecords: model.resultRecords.filter(unitHas),
-    objects: model.objects.filter((o) => unitHas(o.unit)).map((o) => ({ ...o, members: o.members.filter(has) })),
+    objects: model.objects.filter((o) => unitHas(o.unit)).map((o) => ({ ...o, members: o.members.filter(has).map(without) })),
     kept: model.kept.filter((k) => unitHas(k.unit)),
     callbacks: model.callbacks.filter((c) => unitHas(c.unit)),
     interfaces: model.interfaces.filter(unitHas),
     aliases: model.aliases.filter((a) => unitHas(a.unit)),
     errorUnits: model.errorUnits.filter((u) => unitHas(u.unit)),
     // GN-13h: a case of a row with only is a case of the targets that the only lists alone.
-    cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => model.caseTargets?.get(item)?.includes(lang) ?? true)])),
+    // Q-4, B2.253: a case that gives a parameter that the language does not have is no case of the language.
+    cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => caseOfLang(id, item))])),
   };
 }
 

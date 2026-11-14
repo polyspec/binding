@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A parameter with `only` (Q-4) is a parameter of the targets that it lists alone. The other targets have no such
+  parameter, their binding gives the core `None` for it, and a case that gives it a value is no case of theirs; a
+  parameter with `only` without a default or an `optional` type is refused by name. The generator read no `only` of a
+  parameter, so a cancel that only Python and Node take after another parameter was a parameter of Go, whose rule
+  that a cancel is the first parameter refused the whole Go target, and of PHP and WASM. Verified by
+  `node --test packages/ts/tests/generate.test.ts`, whose test of such a parameter failed before the change.
+
 - The test of a process that has exited and waits for its parent reports its failure and ends (HR-84, HR-87). Its
   assertions ran before the input of `cat` was ended, so a failed one left `cat`, its pipes and the test file
   running, and `unit-ts` gave no output for 18 minutes on Linux. The process exits now only after the shell has
