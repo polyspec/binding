@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 49975823ba5cf391cc89fb76647be76858af06a46d1c0c8727382c00403da8cf -->
+<!-- source-sha256: e6924e753d8b8572a74681234258b67c3e2e2164df21f619ec6e7eb450902137 -->
 # 생성기
 
 [English](generator.md)
@@ -1116,7 +1116,12 @@
   package의 interface), 사용자는 그 타입을 구현한다. Go는 이 레포의 callback unit의 dispatch를 그 unit의 package에 쓰듯이, member의
   인자를 decode하고 Go 값의 method를 부르는 그 unit의 dispatch를 그 unit을 받는 member가 있는 각 package에 쓴다. 그 자리의 case 값은
   소유 타입의 method를 가진 callback fixture이거나, make member가 돌려주는 class가 주는 instance 값이며, 이 레포의 case와 같다(G-5,
-  GN-6aa, GN-13f). 그런 unit의 이름은
+  GN-6aa, GN-13f). 그런 instance 값이 적는 member(그 `new`나 `from`, 그 `receiver`와 `then`의 member)는 이 계약의 member이고,
+  이 계약에 그 id의 member가 없으면 소유자 계약의 member다. 시험은 소유자의 member를 언어 코드가 부르듯이 소유 패키지로
+  부른다(Python은 소유 패키지의 module, Node는 그 npm 패키지, WASM은 그 패키지의 subpath `./wasm`, PHP는 소유자의 namespace,
+  Go는 소유 Go module 안에서 그 member의 module에 해당하는 package). 그 member가 주는 class는 그 unit을 구현한다(GN-6w).
+  그런 member의 parameter는 unit을 담지 않는 타입이다. 시험은 case 값을 이 레포의 계약으로 읽기 때문이다. unit을 받는
+  member는 이름을 대고 거부되고, 그 case의 시험은 실패한다(G-4, GN-13e). 그런 unit의 이름은
   이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 그런 unit의 member가 `errors.recognize`에 소유자의 오류 unit을 적으면, 그 member는 소유자의 계약으로 GN-6d대로
   언어 코드의 예외나 Go method가 돌려준 오류를 읽는다. class는 소유 패키지의 것이다(Python은 module `<소유 root>._errors`,
   Node는 entry가 소유 npm 패키지에서 require하여 라이브러리 class 뒤에 등록하는 class, WASM은 entry가 그 패키지의 subpath
@@ -1127,9 +1132,7 @@
   unit의 fixture의 raise 행(GN-13)은 소유자 class의 인스턴스를 던지고, Go에서는 소유자 패키지 `errors`의
   `Raised<Unit>(kind, message)`를 돌려준다. 이름을 대고 거부하는 것(G-4): 세 번째 라이브러리의 오류
   unit, `errors.recognized`가 없는 소유자, 둘 이상의 kind를 가진 recognize한 variant. 이유: 소유자의 오류가 무슨 뜻인지는 소유자의
-  코어가 정하고, 그 계약이 class와 오류를 만드는 함수를 적으므로 이 레포의 바인딩은 소유자의 소스를 읽지 않는다. 아직 생성하지
-  않으며 각각 이름을 대고 거부하는 것(G-4): 소유 레포의 member가 만드는 case 값(그
-  member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
+  코어가 정하고, 그 계약이 class와 오류를 만드는 함수를 적으므로 이 레포의 바인딩은 소유자의 소스를 읽지 않는다. PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
 - **GN-6ab** 언어 코드에 닿는(GN-6q: parameter의 타입이나 receiver의 class가 언어 코드를 지닌다) `wait: async_driver`

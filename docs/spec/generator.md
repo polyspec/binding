@@ -1349,7 +1349,14 @@ the design ids are those of the binding design.
   of a member and calls the method of the Go value, in each package whose members take the unit, as it writes the
   dispatch of a callback unit of this repository in the package of that unit. A case value at its place is a fixture
   of the callback, whose type has the methods of the owning type, or an instance value, which the class that its make
-  member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). The name of such a unit differs from the
+  member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). A member that such an instance value
+  names (its `new` or `from`, and the members of its `receiver` and of its `then`) is a member of this contract or,
+  when this contract has no member of that id, a member of the owner's contract: the test calls a member of the owner
+  through the owner's package as language code calls it (Python the module of the owner's package, Node its npm
+  package, WASM the subpath `./wasm` of that package, PHP the namespace of the owner, Go the package of the member's
+  module in the owner's Go module), and the class that the member gives implements the unit (GN-6w). A parameter of
+  such a member is of a type that holds no unit, because the test reads a case value with the contract of this
+  repository; a member that takes a unit is refused by name, which fails the test of its case (G-4, GN-13e). The name of such a unit differs from the
   name of every unit of this contract, which the generator refuses by name otherwise (G-4). A member of such a unit
   whose `errors.recognize` names error units of its owner reads an exception of language code, or the error that a
   Go method returns, as GN-6d states, with the contract of the owner: the classes are those of the owner's package
@@ -1365,8 +1372,7 @@ the design ids are those of the binding design.
   Refused by name (G-4): an error unit of a third library, an owner without
   `errors.recognized`, and a recognized variant of two or more kinds. Why: the owner's core decides what its error
   means, and its contract names the classes and the function that makes the error, so the binding of this repository
-  reads no source of the owner. Not generated yet, each refused by name (G-4): a case value that a member
-  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
+  reads no source of the owner.
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
   native object of another binding lives in another module, so the binding of this repository can reach it only
