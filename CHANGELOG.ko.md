@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b950b107d595762f831bba5fbf14e1111343c9c76d58702c17905d2c9fdac45a -->
+<!-- source-sha256: c84e0e9026006b655dabe049549128cf6e6318f3869727af8e9ffd116bb5018a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -20,6 +20,11 @@
   relay의 PHP crate가 build되지 않았다. 이제 그 alternative는 이름을 묶지 않는다. 검증: 두 시험이 변경 전에 실패한
   `make test-ts`, cases `width`가 통과한 json checkout과의 `make e2e REPO=tests/e2e/relay`(B2.172).
 
+- 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
+  symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
+  `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을
+  켜는 root manifest나 `.cargo/config.toml`의 release profile을 보고한다(GN-15i, CK-91). `make test-ts`로 검증했다: 새
+  시험이 변경 전에는 실패했다.
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
   `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이
