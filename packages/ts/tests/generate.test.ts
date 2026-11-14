@@ -7166,6 +7166,31 @@ test('a result of a value alias is compared by the texts of its places in pre-or
   assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
 });
 
+test('a Go expected result of a repeated object gives its key the key form of the keyed map of the value class (GN-13e, GN-6af)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const only = { targets: ['go'], reason: 'the test of GN-13e' };
+  sample.units.push({
+    id: 'bag', name: ['bag'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+    members: [
+      { id: 'bag.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['int', 'text', 'bytes'] }, default: { empty: 'map' } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_bag' },
+      { id: 'bag.entries', name: ['entries'], kind: 'property', visibility: 'public', returns: { keyed_map: { unit: 'data' }, key: ['int', 'text', 'bytes'] }, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'object', make: { php: 'php_object', python: 'null', node: 'null', go: 'bag.constructor', wasm: 'null' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [{ id: 'repeated', value: { kind: 'text', value: 'x' }, result: { kind: 'object', repeat: 2, key: { hex: '6b' }, value: { kind: 'null' } } }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const start = go.indexOf('func TestGN13eSameRepeated(');
+  assert.ok(start >= 0, go);
+  const body = go.slice(start, go.indexOf('\n}\n', start));
+  assert.match(body, /\.Entries\.Set\(binding\.TextKey\("k"\), next\)/);
+  assert.match(body, /\.Entries\.Set\(binding\.TextKey\("k"\), nil\)/);
+  assert.doesNotMatch(body, /BytesKey/);
+});
+
 test('a float case value that the out row of its alias gives as an instance of a value class is that instance in Node and WASM, and else a number (GN-13)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   sample.units.push({
