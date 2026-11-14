@@ -7191,6 +7191,28 @@ test('a Go expected result of a repeated object gives its key the key form of th
   assert.doesNotMatch(body, /BytesKey/);
 });
 
+test('Go compares a result whose case holds a NaN by sameValue, in which a NaN equals a NaN, and makes a negative zero at run time (GN-13e, G-5)', () => {
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'not_a_number', value: { kind: 'text', value: 'x' }, result: { kind: 'list', value: [{ kind: 'float', value: { float: 'nan' } }] } },
+    { id: 'negative_zero', value: { kind: 'float', value: -0 }, result: { kind: 'float', value: 1.5 } },
+  ];
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const body = (name: string): string => {
+    const start = go.indexOf(`func TestGN13e${name}(`);
+    assert.ok(start >= 0, `${name}\n${go}`);
+    return go.slice(start, go.indexOf('\n}\n', start));
+  };
+  assert.match(body('SameNotANumber'), /want := \(any\)\(\[\]any\{math\.NaN\(\)\}\); !sameValue\(value0, want\) \{/);
+  assert.match(body('SameNegativeZero'), /Same\(math\.Copysign\(0, -1\)\)/);
+  assert.match(body('SameNegativeZero'), /!reflect\.DeepEqual\(value0, want\)/);
+  assert.match(go, /\nfunc sameValue\(got, want any\) bool \{\n\treturn sameReflected\(reflect\.ValueOf\(got\), reflect\.ValueOf\(want\), map\[\[3\]uintptr\]bool\{\}\)\n\}/);
+  assert.match(go, /case reflect\.Float32, reflect\.Float64:\n\t\treturn a\.Float\(\) == b\.Float\(\) \|\| \(math\.IsNaN\(a\.Float\(\)\) && math\.IsNaN\(b\.Float\(\)\)\)/);
+});
+
 test('a float case value that the out row of its alias gives as an instance of a value class is that instance in Node and WASM, and else a number (GN-13)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   sample.units.push({
