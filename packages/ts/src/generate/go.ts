@@ -979,7 +979,6 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
 type ${name} interface {
 ${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
 }
-
 ${goDispatch(scope, cb, cases)}`;
 }
 

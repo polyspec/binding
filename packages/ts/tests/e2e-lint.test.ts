@@ -54,6 +54,8 @@ test('the build tags of the generated Go module are those of its //go:build line
   ];
   assert.deepEqual(goBuildTags(files), ['polyspec_codec_test', 'polyspec_panic_test']);
   assert.deepEqual(goBuildTags(['package sample\n']), []);
+  // GN-15g: the tag musl selects the C library, which only a machine of musl builds (make go-musl-check).
+  assert.deepEqual(goBuildTags(['//go:build musl\n\npackage binding\n', '//go:build !musl\n\npackage binding\n']), []);
 });
 
 test('a function stands as unreachable when every run of deadcode that compiles its file reports it, and any other line stands (GN-15h)', () => {

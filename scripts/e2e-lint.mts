@@ -26,6 +26,11 @@ const GO_SET_TAGS = new Set([
   'unix', 'cgo', 'gc', 'gccgo', 'ignore',
 ]);
 
+// GN-15g, GN-15h: the tag that selects the C library of a platform. The file of linux_<arch>_musl refuses to compile
+// under the GNU C library, so only a machine of musl builds it, and make go-musl-check builds and tests the module with
+// it there; a run on another machine judges the module without it.
+const LIBC_TAGS = new Set(['musl']);
+
 // GN-15h: the build tags, sorted, that the `//go:build` lines of the Go files `texts` name, except those that the go
 // tool sets itself and go1.N; a file behind such a tag is compiled only by a run with that tag.
 export function goBuildTags(texts: readonly string[]): string[] {
@@ -34,7 +39,7 @@ export function goBuildTags(texts: readonly string[]): string[] {
     const line = text.split('\n').find((candidate) => candidate.startsWith('//go:build '));
     if (line === undefined) continue;
     for (const tag of line.slice('//go:build '.length).split(/[!&|()\s]+/)) {
-      if (tag !== '' && !GO_SET_TAGS.has(tag) && !/^go1\.\d+$/.test(tag)) tags.add(tag);
+      if (tag !== '' && !GO_SET_TAGS.has(tag) && !LIBC_TAGS.has(tag) && !/^go1\.\d+$/.test(tag)) tags.add(tag);
     }
   }
   return [...tags].sort();
