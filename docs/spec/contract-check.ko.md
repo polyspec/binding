@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: e2ed3da0cc04ba3bff16265fde6dd8f57b10ec1bd28774594cd80ef13128d435 -->
+<!-- source-sha256: 6f031521bc420601ad208a5c61c88ae2576b63ebffdf26851c77d63626e13049 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -224,6 +224,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   함수를 가질 수 있기 때문이다(생성기 GN-6z). 그래서 함수만 담은 parameter의 `keeps`도 보고한다. 이유: 그 속성은 생성기가
   callback에 적는 lifetime을 바꾸며, callback이 없는 parameter에서는 아무것의 lifetime도 아닌 것을 적게 되고, 읽는 사람은
   그것을 member의 규칙으로 받아들인다.
+- **CK-91** Go 정적 라이브러리의 release profile(생성기 GN-15i): target `go`가 있는 계약에 대해 `binding check`는
+  레포의 root manifest나 `.cargo/config.toml`의 `[profile.release]`가 `lto`를 `false`나 `"off"`가 아닌 값으로 정하면 그
+  파일과 값을 보고한다. 그러면 Go program이 그 정적 라이브러리를 다른 레포의 정적 라이브러리와 링크할 수 없기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

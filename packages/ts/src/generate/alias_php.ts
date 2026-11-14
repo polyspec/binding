@@ -211,6 +211,7 @@ ${arms.join('\n')}
 // member gives (B2.89), or the content.
 function readAs(kase: ReadCase): string {
   if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.kind === 'List') return 'ReadAs::Items';
   if (kase.units === undefined) return 'ReadAs::Content';
   return `ReadAs::TextOr(${rustString(langName('php', kase.units.name, 'callable'))})`;
 }
@@ -230,10 +231,15 @@ function valueClassesPhpHostAll(model: Model): string {
       return `            ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     return [`    if php_instance(value, ${rustString(own)}) {
-        // I-3: a property of the owner is a method in PHP; a backed enum case gives its value.
+        // I-3: a property of the owner is a method in PHP; a backed enum case gives its value. The value is read from
+        // the table of the properties of the case: get_property of ext-php-rs fetches a property for writing, which
+        // PHP refuses for the readonly value of an enum case.
         let by = php_method(value, ${rustString(langName('php', row.by.name, 'callable'))}, vec![]).map_err(php_thrown)?;
         let by: String = match by.object() {
-            Some(case) => case.get_property::<String>("value").map_err(php_failed)?,
+            Some(case) => match case.get_properties().map_err(php_failed)?.get("value").map(Zval::dereference).and_then(Zval::string) {
+                Some(text) => text,
+                None => return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6x: the kind of ${own} is an enum case without a text value`)}) })),
+            },
             None => match by.string() {
                 Some(text) => text,
                 None => return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6x: the kind of ${own} is no enum case`)}) })),
@@ -354,6 +360,24 @@ impl PhpHost<'_> {
         scalar.describe(&value)
     }
 
+    /*Items{*/
+    /// B2.156: the content of a case of the kind list, an array whose keys are 0 to n-1 in order, as a list of its
+    /// values: the walk of the owner reads the kind that the case names, and a PHP array is described as one only here.
+    fn describe_items(&mut self, content: Zval, read: &str) -> Result<HostValue, Fail> {
+        let Some(array) = content.array().filter(|array| array.has_sequential_keys()) else {
+            return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array that is a list") }));
+        };
+        let mut entries = Vec::new();
+        let mut iterator = array.iter();
+        while let Some((key, item)) = iterator.next_zval() {
+            entries.push((key, item.shallow_clone()));
+        }
+        let len = handle_count(entries.len());
+        self.owned.push(entries);
+        Ok(HostValue::List { handle: Handle::new(HOST_OWNED | handle_count(self.owned.len() - 1)), len })
+    }
+    /*}Items*/
+
     /// GN-6x: the item or the entry of a value that the host owns, its key described as an owned value.
     fn owned_entry(&mut self, handle: Handle, index: u64) -> Result<Option<(HostValue, HostValue)>, binding_core::Raised> {
         if handle.raw() & HOST_OWNED == 0 {
@@ -397,6 +421,9 @@ impl PhpHost<'_> {
             /*Content{*/
             ReadAs::Content => self.describe_owned(content),
             /*}Content*/
+            /*Items{*/
+            ReadAs::Items => self.describe_items(content, read),
+            /*}Items*/
         }
     }
 }
@@ -406,7 +433,11 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
     let Some(array) = content.array() else {
         return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
     };
-    array.values().map(|unit| unit.long().and_then(|unit| u16::try_from(unit).ok()))
+    // A unit that is no integer of 0 to 0xffff is None, which the collect gives as kind internal.
+    array.values().map(|unit| match unit.long().map(u16::try_from) {
+        Some(Ok(unit)) => Some(unit),
+        Some(Err(_wide)) | None => None,
+    })
         .collect::<Option<Vec<u16>>>()
         .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))
 }
@@ -426,6 +457,10 @@ enum ReadAs {
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str),
     /*}TextOr*/
+    /*Items{*/
+    /// The items of a case of the kind list, an array that is a list (B2.156).
+    Items,
+    /*}Items*/
 }
 `;
 }
@@ -436,7 +471,7 @@ export function phpHost(model: Model): string {
   refuseForeignReads(model, 'php');
   if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
   const host = PHP_HOST
-    .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
+    .replace("    marked: u64,\n}", "    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
     .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
     .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
     .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")
@@ -444,6 +479,11 @@ export function phpHost(model: Model): string {
         self.read_value(value).map_err(|fail| raised(Thrown::Binding(fail)))
     }
 `);
+  // Each change above replaces a text of PHP_HOST; a text that PHP_HOST no longer has would leave the host without that
+  // part, which only the compiler of the generated crate would report.
+  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', 'php_value_class(value, &mut self.values, &mut self.owned)', 'self.owned_entry(list, index)', 'self.read_value(value)']) {
+    if (!host.includes(part)) throw new Error(`GN-6x: the PHP host of a value class of another repository has no ${part.trim()}`);
+  }
   return host + valueClassesPhpHost(model);
 }
 
@@ -715,14 +755,24 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     }
 }
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.
@@ -853,9 +903,11 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
     if (record['kind'] === 'object' && record['id'] !== undefined && Array.isArray(record['value'])) objects.set(String(record['id']), record['value'].length);
     for (const inner of Object.values(record)) scan(inner);
   };
+  let reserves = false;
   const entries = tests.map((t, i) => {
     objects = new Map();
     scan(t.value);
+    if (objects.size > 0) reserves = true;
     const reserved = [...objects.keys()].map((id) => `let object_${id} = host.reserve();\n            `).join('');
     const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
     return `
@@ -877,10 +929,12 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
   const registers = tests.map((_t, i) => `
         #[cfg(feature = "case-test")]
         let module = module.function(wrap_function!(case_test_${i}));`).join('');
-  return { entries: `${CASE_HOST}${entries}`, registers };
+  return { entries: `${caseHost(reserves)}${entries}`, registers };
 }
 
-const CASE_HOST = `
+// GN-4, GN-13: the host of the case-test entry points; reserve and fill are written only when a case has an object
+// with an id, because no other case calls them and the lints deny dead code.
+const caseHost = (reserves: boolean): string => `
     /// GN-13: the entries of the arrays and the objects that a case-test entry point made, under their handles.
     #[cfg(feature = "case-test")]
     #[derive(Default)]
@@ -894,7 +948,7 @@ const CASE_HOST = `
             self.held.push(entries);
             Handle::new(handle_count(self.held.len() - 1))
         }
-
+${!reserves ? '' : `
         /// G-5: the handle of an object with an id, before its properties are made.
         fn reserve(&mut self) -> Handle {
             self.hold(Vec::new())
@@ -905,7 +959,7 @@ const CASE_HOST = `
                 *held = entries;
             }
         }
-
+`}
         fn entry(&self, handle: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
             match self.held.get(handle_position(handle.raw())).and_then(|entries| entries.get(handle_position(index))) {
                 Some(entry) => Ok(entry.clone()),

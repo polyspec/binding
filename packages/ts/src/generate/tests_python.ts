@@ -387,7 +387,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${name}_${argName}_gives_the_kind_of_${langName('python', refusedValue.kase.alias.unit.name, 'variable')}(self) -> None:
         with self.assertRaises(pkg.${cls(refusedValue.kase.category)}) as caught:
             ${call(new Map([[arg, refusedValue.value]]))}
-        self.assertIs(type(caught.exception), pkg.${cls(refusedValue.kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(refusedValue.kase)})
         self.assertEqual(caught.exception.kind, ${pyString(refusedValue.kase.kind)})`);
       }
       const text = textKind(arg.type);
@@ -445,8 +445,11 @@ export function pythonTests(model: Model, module: string): string {
         continue;
       }
       const receiverMade = receiverOfCase(kase.receiver);
-      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
-      const heldReceiver = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      // GN-13f: the receiver is made before the block that expects the failure, so a receiver that cannot be made fails
+      // the test: a receiver that no line made yet is held. GN-6ae: a case with after holds its receiver, which the
+      // calls of after observe.
+      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
+      const heldReceiver = kase.faults === undefined && receiverMade.expr !== '' && (kase.after !== undefined || (receiverMade.lines === '' && kase.receiverFails === undefined));
       if (heldReceiver) receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
       const receiver = heldReceiver ? 'receiver' : receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
@@ -714,7 +717,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
-        self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(kase)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
   // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.

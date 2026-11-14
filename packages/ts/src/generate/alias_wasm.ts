@@ -6,48 +6,63 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, readAsVariants, readValue, refuseForeignReads, valueReads } from './alias_shared.ts';
+import { type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, readAsVariants, readValue, refuseForeignReads, valueReads, walkRust } from './alias_shared.ts';
 import { foreignClasses } from './alias_node.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
+// GN-6as: the containers that the walk of a value alias fills.
+const PUT_INDEXED = `array.set(js_index(level.index)?, value);
+level.index = level.index.saturating_add(1);`;
+
+const ALIAS_FILLS: Fill[] = [
+  { name: 'Items', doc: 'An array that takes the items of a list.', type: 'Array', pattern: 'OutFill::Items(array)', put: PUT_INDEXED, next: 'Some(source.item(level.handle, level.index))' },
+  { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: 'Array', pattern: 'OutFill::Values(array)', put: PUT_INDEXED, next: 'Some(source.entry(level.handle, level.index).1)' },
+  { name: 'Entries', doc: 'A Map that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: 'js_sys::Map, Option<JsValue>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('map.set(&key, &value);'), next: NEXT_ENTRY },
+  { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, name, &value, true)?;' },
+];
+
+// GN-6as: the make function of WASM.
+const WASM_WALK: WalkShape = {
+  generics: '', life: '', anon: '', env: { params: '', args: '' }, value: 'JsValue',
+  result: (type) => `Result<${type}, Fail>`, internal: (detail) => `Err(binding_error(BindingError::Internal { detail: ${detail} }))`, language: 'JavaScript',
+};
+const WASM_MADE = { name: 'made', type: '&mut BTreeMap<u64, JsValue>' };
+
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
-function builtin(alias: ValueAlias, form: string, kind: string): string {
+function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return 'Ok(JsValue::NULL)';
+      return put('JsValue::NULL');
     case 'bool':
-      return 'bool_out(value)';
+      return leaf('bool_out(value)');
     case 'int':
-      if (kind === 'number') return 'js_literal_number(&value)';
-      return kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())';
+      if (kind === 'number') return leaf('js_literal_number(&value)');
+      return leaf(kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())');
     case 'bigint':
-      if (kind === 'number') return 'js_literal_bigint(&value)';
-      return kind === 'int64' ? 'js_bigint(value)' : 'js_bigint(value.value())';
+      if (kind === 'number') return leaf('js_literal_bigint(&value)');
+      return leaf(kind === 'int64' ? 'js_bigint(value)' : 'js_bigint(value.value())');
     case 'float':
-      if (kind === 'number') return 'js_literal_number(&value)';
-      if (kind === 'float') return 'float_out(value.value())';
+      if (kind === 'number') return leaf('js_literal_number(&value)');
+      if (kind === 'float') return leaf('float_out(value.value())');
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return `js_literal_number(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
+      return leaf(`js_literal_number(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
     case 'text':
-      return kind === 'bytes' ? 'js_utf8(value.value())' : 'text_out(value)';
+      return leaf(kind === 'bytes' ? 'js_utf8(value.value())' : 'text_out(value)');
     case 'bytes':
-      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
+      return leaf(kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
+      // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
+      const fill = kind === 'list' ? 'Items' : 'Values';
       return `{
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return Ok(OutStep::Put(made.clone()));
             }
             let array = Array::new_with_length(js_index(len)?);
             made.insert(handle.raw(), array.clone().into());
-            for index in 0..len {
-                let item = ${parts.item};
-                let item = make(item, source, made)?;
-                array.set(js_index(index)?, item);
-            }
-            Ok(array.into())
+            ${level({ walks: true, fill: `OutFill::${fill}(array.clone())`, made: 'array.into()' })}
         }`;
     }
     case 'map':
@@ -55,21 +70,15 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
       const parts = container(alias, kind, form);
       return `{
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return Ok(OutStep::Put(made.clone()));
             }
             let map = js_sys::Map::new();
             made.insert(handle.raw(), map.clone().into());
-            for index in 0..len {
-                let (key, item) = ${parts.entry};
-                let key = make(key, source, made)?;
-                let item = make(item, source, made)?;
-                map.set(&key, &item);
-            }
-            Ok(map.into())
+            ${level({ walks: true, fill: 'OutFill::Entries(map.clone(), None)', made: 'map.into()' })}
         }`;
     }
     case 'native':
-      return 'native_object(&native)';
+      return leaf('native_object(&native)');
     default:
       throw new Unsupported(`${alias.unit.id}: the WASM form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -96,44 +105,42 @@ function jsCall(member: Member, object: string, args: string[]): string {
 function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
   const label = langName('wasm', alias.unit.name, 'class');
   const own = classIndex(model, alias.unit);
-  const arms = classMakes(alias, 'wasm').map((make) => {
+  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
+  // instance from them when the last child is made.
+  const fills: Fill[] = [];
+  const closes = new Map<string, string>();
+  const arms = (walk: Walk): string => classMakes(alias, 'wasm').map((make) => {
     if (make.form === 'content') {
-      if (make.kind === 'null') return `        OutValue::Null => Ok(${jsCall(make.member, '&class', [])}),`;
+      if (make.kind === 'null') return `        OutValue::Null => ${walk.put(jsCall(make.member, '&class', []))},`;
       if (make.kind === 'text16') {
         // B2.81: the UTF-16 code units of the text as an array of numbers, unpaired surrogates included.
         return `        OutValue::Text16(value) => {
             let units: js_sys::Array = value.into_iter().map(JsValue::from).collect();
-            Ok(${jsCall(make.member, '&class', ['&JsValue::from(units)'])})
+            ${walk.put(jsCall(make.member, '&class', ['&JsValue::from(units)']))}
         }`;
       }
       const [variant, arg] = make.kind === 'bool' ? ['Bool', '&JsValue::from_bool(value)'] : [make.kind === 'number' ? 'Number' : 'Text', '&JsValue::from_str(&value)'];
-      return `        OutValue::${variant}(value) => Ok(${jsCall(make.member, '&class', [arg])}),`;
+      return `        OutValue::${variant}(value) => ${walk.put(jsCall(make.member, '&class', [arg]))},`;
     }
     if (make.form === 'list') {
-      return `        OutValue::List { handle, len } => {
-            let items = Array::new();
-            for index in 0..len {
-                let item = source.item(handle, index);
-                items.push(&make(item, source)?);
-            }
-            Ok(${jsCall(make.member, '&class', ['&items'])})
-        }`;
+      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The array of the made items of a list.', type: 'Array', pattern: 'OutFill::Items(items)', put: 'items.push(&value);\nlevel.index = level.index.saturating_add(1);', next: 'Some(source.item(level.handle, level.index))' });
+      closes.set('Items', `Ok(${jsCall(make.member, '&class', ['&items'])})`);
+      return `        OutValue::List { handle, len } => ${walk.level({ walks: true, fill: 'OutFill::Items(Array::new())' })},`;
     }
+    const insert = `let insert: Function = Reflect::get(map, &JsValue::from_str(${rustString(langName('wasm', make.insert.name, 'callable'))})).and_then(JsCast::dyn_into).map_err(js_fail)?;
+        insert.call2(map, &key, &value).map_err(js_fail)?;`;
+    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: 'JsValue, Option<JsValue>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(insert), next: NEXT_ENTRY });
+    closes.set('Entries', `Ok(${jsCall(make.member, '&class', ['&map'])})`);
     return `        OutValue::Map(value) => {
             let handle = value.handle();
             let len = value.len();
             let map_class: Function = foreign_class(${classIndex(model, make.map)}).map_err(js_fail)?;
             let map = Reflect::construct(&map_class, &Array::new()).map_err(js_fail)?;
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(key, source)?;
-                let item = make(item, source)?;
-                let insert: Function = Reflect::get(&map, &JsValue::from_str(${rustString(langName('wasm', make.insert.name, 'callable'))})).and_then(JsCast::dyn_into).map_err(js_fail)?;
-                insert.call2(&map, &key, &item).map_err(js_fail)?;
-            }
-            Ok(${jsCall(make.member, '&class', ['&map'])})
+            ${walk.level({ walks: true, fill: 'OutFill::Entries(map, None)' })}
         }`;
-  });
+  }).join('\n');
+  const ownClass = `let class: JsValue = foreign_class(${own}).map_err(js_fail)?.into();`;
+  const opened = /&class\b/.test(arms({ put: (value) => value, leaf: (made) => made, level: () => '' })) ? ownClass : '';
   return `
 /// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
@@ -151,16 +158,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     make_${name}(root, &mut source)
 }
-
-fn make_${name}(out: OutValue, source: &mut dyn OutValues) -> Result<JsValue, Fail> {
-    let make = make_${name};
-    let class: JsValue = foreign_class(${own}).map_err(js_fail)?.into();
-    match out {
-${arms.join('\n')}
-        other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(WASM_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -343,7 +341,7 @@ export function aliasWasm(model: Model, alias: ValueAlias): string {
   const label = langName('wasm', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassWasm(model, alias, name, core, failure);
-  const arms = outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', (kept, field, holds, head) => keptMakeWasm(model, kept, field, holds, head));
+  const arms = (walk: Walk): string => outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', (kept, field, holds, head) => keptMakeWasm(model, kept, field, holds, head, walk), 'out_', undefined, walk.leaf).join('\n');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &JsValue, _subject: &str) -> Result<${core}, Fail> {
@@ -358,15 +356,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
     let mut made = BTreeMap::new();
     make_${name}(root, &mut source, &mut made)
 }
-
-fn make_${name}(out: OutValue, source: &mut dyn OutValues, made: &mut BTreeMap<u64, JsValue>) -> Result<JsValue, Fail> {
-    let make = make_${name};
-    match out.clone() {
-${arms.join('\n')}
-        other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),
-    }
-}
-`;
+${walkRust(WASM_WALK, name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', WASM_MADE)}`;
 }
 
 // B-1: what a JavaScript value is as a HostValue, one level at a time, by the rule of Node (GN-6e); the children of a
@@ -590,14 +580,24 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on wasm32).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 
 /// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again.
@@ -772,38 +772,30 @@ fn value_define(object: &Object, name: &str, value: &JsValue, writable: bool) ->
 
 // GN-6af: an instance of a value class without core_type made from the content of an out row, before the content, as
 // the object of its handle.
-function keptMakeWasm(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string {
+function keptMakeWasm(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string, { level }: Walk): string {
   const position = model.kept.indexOf(kept);
   const name = rustString(langName('wasm', field.name, 'variable'));
   if (holds === 'value') {
     if (!field.writable) throw new Unsupported(`${kept.unit.id}: a reference makes an instance of a value class whose property keeps the value it holds, which is writable (GN-6af)`);
     return `{
             if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return Ok(OutStep::Put(made.clone()));
             }
             let instance = value_instance(${position})?;
             value_define(&instance, ${name}, &JsValue::NULL, true)?;
             made.insert(handle.raw(), instance.clone().into());
-            let content = make(*value, source, made)?;
-            value_define(&instance, ${name}, &content, true)?;
-            Ok(instance.into())
+            ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Defined(instance.clone(), ${name})`, made: 'instance.into()' })}
         }`;
   }
   return `{
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
-                return Ok(made.clone());
+                return Ok(OutStep::Put(made.clone()));
             }
             let instance = value_instance(${position})?;
             let map = js_sys::Map::new();
             value_define(&instance, ${name}, &map, ${String(field.writable)})?;
             made.insert(handle.raw(), instance.clone().into());
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                let key = make(key, source, made)?;
-                let item = make(item, source, made)?;
-                map.set(&key, &item);
-            }
-            Ok(instance.into())
+            ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance.into()' })}
         }`;
 }
 
@@ -891,7 +883,11 @@ impl NativeObject for WasmNative {}
 
 impl Drop for WasmNative {
     fn drop(&mut self) {
-        let released = NATIVE.try_with(|native| native.try_borrow_mut().ok().and_then(|mut native| native.values.remove(&self.key)));
+        let released = NATIVE.try_with(|native| match native.try_borrow_mut() {
+            Ok(mut native) => native.values.remove(&self.key),
+            // A table that is borrowed at this drop keeps the value; no Native names its key again.
+            Err(_borrowed) => None,
+        });
         // The value is released after the table is no longer borrowed.
         drop(released);
     }

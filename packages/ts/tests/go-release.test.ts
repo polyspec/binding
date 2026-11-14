@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consumerFiles, debugSections, goRemote, requiredVersion } from '../src/release/go-module.ts';
+import { consumerFiles, debugSections, goRemote, goWork, requiredVersion } from '../src/release/go-module.ts';
 
 test('the tag of a Go module is its directory in the repository and its version (GN-15g)', () => {
   assert.deepEqual(goRemote('github.com/polyspec/sample/packages/go', 'v0.0.1'), { owner: 'polyspec', repository: 'sample', directory: 'packages/go', tag: 'packages/go/v0.0.1' });
@@ -63,4 +63,19 @@ test('the debug sections that llvm-size names in a static library are found by t
   // A section of size 0 holds nothing; each other debug section is named once.
   assert.deepEqual(debugSections(sizes), ['.debug_line', '.zdebug_abbrev', '__debug_info']);
   assert.deepEqual(debugSections('a.o   (ex x.a):\nsection   size   addr\n__text   12   0\n__eh_frame   8   12\nTotal   20\n'), []);
+});
+
+test('the go.work of the run uses the Go module of the copy and the module of each dependency that its go.mod requires without a replace (GN-14d, GN-15f)', () => {
+  const goMod = 'module github.com/polyspec/negotiation/packages/go\n\ngo 1.25.0\n\nrequire (\n\tgithub.com/polyspec/media-type/packages/go v0.0.0\n\tgithub.com/polyspec/points/packages/go v0.0.0\n)\n\nreplace github.com/polyspec/points/packages/go => ../../points/packages/go\n';
+  const deps = [
+    { module: 'github.com/polyspec/media-type/packages/go', dir: '/w/media-type/packages/go' },
+    { module: 'github.com/polyspec/points/packages/go', dir: '/w/points/packages/go' },
+    { module: 'github.com/polyspec/other/packages/go', dir: '/w/other/packages/go' },
+  ];
+  // A branch dependency is v0.0.0 without a replace, which the development link resolves; the run resolves it to the
+  // copy of the dependency. A replaced module and a module that go.mod does not require stay out.
+  assert.equal(goWork(goMod, '/w/negotiation/packages/go', deps), 'go 1.25.0\n\nuse (\n\t/w/negotiation/packages/go\n\t/w/media-type/packages/go\n)\n');
+  // A module that requires no dependency in the development form needs no go.work.
+  assert.equal(goWork(goMod, '/w/negotiation/packages/go', deps.slice(1)), undefined);
+  assert.throws(() => goWork('module m\n\nrequire github.com/polyspec/media-type/packages/go v0.0.0\n', '/w/m', deps), /names no Go version/);
 });

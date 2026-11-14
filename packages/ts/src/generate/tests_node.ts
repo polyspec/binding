@@ -190,6 +190,7 @@ export function nodeTests(model: Model): string {
     return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  ctx.functionMember = 'call';
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
@@ -322,7 +323,7 @@ test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
       if (refusedValue !== undefined) {
         out.push(`
 test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${cls(refusedValue.kase.category)} && error.kind === ${jsString(refusedValue.kase.kind)});
+  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${exactClass(refusedValue.kase)} && error.kind === ${jsString(refusedValue.kase.kind)});
 });`);
       }
       const text = textKind(arg.type);
@@ -365,7 +366,11 @@ test('B-4: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
-      const receiverMade = kase.faults === undefined ? heldReceiver(receiverOfCase(kase.receiver), kase.after) : receiverOfCase(kase.receiver);
+      // GN-13f: the receiver is made before the call that must throw, so a receiver that cannot be made fails the test: a
+      // receiver that no line made yet is held.
+      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
+      const receiverBuilt = receiverOfCase(kase.receiver);
+      const receiverMade = kase.faults === undefined ? heldReceiver(receiverBuilt, kase.after ?? (receiverBuilt.lines === '' && kase.receiverFails === undefined ? [] : undefined)) : receiverBuilt;
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
@@ -595,7 +600,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
     usesAddon = true;
     out.push(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
-  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
+  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
   // GN-6m: a block may hold several tests, each of which awaits when its call does.

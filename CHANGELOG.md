@@ -31,7 +31,149 @@
   Makefile runs is in that release and takes the arguments that the recipe gives. The release of binding, the npm
   archive of `packages/ts` and the tag of `binding_core`, uses nothing that 0.0.112 no longer holds: the per-platform
   package kinds, the asset sets, the commit of a Go module and the contract check of a release. Verified with
-  `make docs-check` and `make release-coverage` on the installed 0.0.112 (B2.139).
+  `make docs-check` and `make release-coverage` on the installed 0.0.112 (B2.176).
+- A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
+  built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
+  library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
+  library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
+  `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
+  change.
+- The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
+  `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
+  not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
+  walk of `tests/e2e/kept` failed before the change, by `make e2e REPO=tests/e2e/kept`, every target passed, and by
+  `make e2e` of the php-serialization checkout, whose `cargo clippy` of every crate passes; its PHP test
+  `serialize int_min` of B2.162 also passes there.
+
+- The generated Rust called `Result::ok` and `Result::unwrap_or`, which the `clippy.toml` of a repository disallows
+  because each turns an error into a plausible value, so `cargo clippy -D warnings` of the PHP, Python, Node and WASM
+  crates of php-serialization failed before any test: the tables of the owners and of what was thrown read a lock or
+  a borrow with `.ok()`, `handle_count`, `handle_position` and the count entry points converted with `unwrap_or`, and
+  the readers of a recognized exception read each property with `.ok()?`. Each now matches the value or passes the
+  error with `?`, and each arm that gives nothing or a fixed value states why in a comment; a count of a test entry
+  point that does not fit its integer is an error, and Go and WASM give the count as it is (GN-4). The PHP host of
+  the case-test entry points held `reserve` and `fill` also when no case has an object with an id, which the lints
+  deny as dead code; the generator now writes them only for such a case (GN-13). Go refused the generation of every
+  target for the case `an_integer_below_64_bits_is_refused`, whose integer -9223372036854775809 has no Go integer
+  type; the generated test now gives it as a `*big.Int`, which package binding describes as its decimal text, the
+  token that the other targets give (GN-15c, G-5); the codec test of
+  package binding also ordered `"testing"` after the other imports, which `gofmt -l` reported. Verified by
+  `make test-ts` (575 passed): the tests of the disallowed methods, of the host of case-test and of the `*big.Int`
+  failed before the change; by `make e2e REPO=tests/e2e/sample`, every target passed; and by `make e2e` of the
+  php-serialization checkout, whose `cargo clippy` of every crate now passes, whose Python target passes, and whose
+  other targets fail on the defects of B2.163 to B2.166.
+
+- The U-7 tests of a value alias required the class of the category of a kind also when the row of the kind names an
+  error unit, so the 7 U-7 tests of each target of php-serialization, whose kinds all have the class `FormatError`,
+  failed although the binding raised that class. They now require the class of the error unit, as the tests of a
+  member do (U-7, E-2). Verified by `make test-ts`, whose test of such a kind failed before the change, and by
+  `make e2e` of the php-serialization checkout, in which the U-7 tests of PHP and Python pass.
+
+- PHP read the least int of a case, `-9223372036854775808` in the source of a test, as the negation of the float
+  9223372036854775808, so the test `serialize int_min` of php-serialization gave `d:-9.223372036854776E+18;`. The
+  generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
+
+
+- The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
+  `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key
+  `lines`, and the tests made the receiver before the block that expects the failure, so the test failed at making
+  it. When the factory of the receiver raises the kind that the case expects, and the case has neither `faults` nor
+  `after`, the test now expects the failure from making the receiver or from the call, and Go takes the error of the
+  factory as the error of the case (GN-13f). Verified by `make test-ts`: the new test failed before the change.
+- The Go steps of the end-to-end check failed for a repository whose core depends on a repository of `DEPS` by a
+  branch: `go vet` gave "missing go.sum entry for module providing package
+  github.com/polyspec/http-media-type/packages/go/media_type", because the scaffold writes that dependency as a
+  require of `v0.0.0` without a `replace`, which a development checkout resolves through its untracked `go.work`, and
+  the run gave no `go.work`. The run now writes a `go.work` of its work directory that uses the Go module of the copy
+  and the Go module of the copy of each such dependency and gives it as `GOWORK`, or `GOWORK=off` without one
+  (GN-14d). Verified by `make test-ts`: the new test failed before the change.
+- A PHP member that takes a value class of another repository failed with "value_in: a description that no in row
+  of value gives" for a value with an array: the read member of the case of the kind `list`, `value.items`, gives a
+  PHP array, which the generated host described as a PHP array, while the walk of the owner reads the kind that the
+  case names, a list. The generated test "carry a document of every kind" of `tests/e2e/relay` failed. The host now
+  describes that array as a list of its values (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- The Go tests of the end-to-end check ran the tests of the repository beside the generated tests: `go test ./...`
+  of the Go module read every test file, so `packages/go/tests/cases_test.go` of a repository, which reads the path
+  of its case file from `HTTP_MEDIA_TYPE_CASES`, failed three tests with "open : no such file or directory", while
+  the other targets run their generated tests and the contract cases alone. `go vet` and `go test` of the run now
+  read the files `zz_generated*_test.go` and the contract cases that the run copied, an overlay treats every other
+  test file of the module as absent, and the source of the released form leaves the same files out (GN-14h).
+  Verified by `make test-ts`: the new test failed before the change. And by `make e2e` of the
+  http-media-type checkout, which passed on the five targets.
+- A PHP member that takes a value class of another repository whose kind is a backed enum failed with "Cannot
+  indirectly modify readonly property": the generated crate read the value of the enum case with `get_property` of
+  ext-php-rs, which fetches a property for writing, and PHP refuses that for the readonly `value` of an enum case, so
+  the 12 generated PHP tests of `tests/e2e/relay` that give `carry` a value failed. The crate now reads the value
+  from the table of the properties of the case (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- A value at the depth limit of a contract ended the process in Node and trapped in WASM: the function that makes
+  the value of the language from the value of the core, `make_<name>`, called itself once for each level, so a
+  value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node and the WASM
+  function now walk the value in a loop with a work stack on the heap: it holds one level for each container whose
+  children are not all made, and names no make function (GN-6as). Not generated in this form yet: the make functions
+  of Python, PHP and Go. Verified by `make test-ts`: the new test failed before the change.
+- The receiver of a case of a method was made from a key that holds an argument of the method. A case of `get_units`
+  with the keys `members` and `units` beside the factories `from_units(units)`, `null()` and `object(members)` got its
+  receiver from `from_units` with the `units` of the call: the Go test failed at making the receiver, and the tests
+  of the other targets made the receiver inside the block that expects the failure, so the failure of making it
+  passed as the failure of the call. A key of a parameter of the member of the case now gives no parameter of a
+  factory, a factory that takes no key of the case makes the receiver only when no factory that takes a key does, and
+  the Python, Node, WASM and PHP test of a case that raises makes the receiver as a local before the call that must
+  fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change; and by `make
+  e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- An instance value at a place of an `optional`, a callback or a generated interface in a call that makes the
+  receiver of a case was refused: the class of the place was read from a `{"unit"}` type alone, so the receiver of a
+  case of `engine.render` of template, which `engine.new` makes with the field `loader` of type `optional<loader>` as
+  an instance value of `map_loader`, refused php, python and node with "engine.new.loader: map_loader.new gives
+  {"unit":"map_loader"}, not the class  (G-5, GN-13f)". The instance is now made at such a place as at the place of
+  an argument of the case: the class inside the `optional`, or a class that implements the callback or the interface
+  (GN-13f, GN-6w, GN-6ap). Verified by `make test-ts`: the new test failed before the change.
+- A class that no constructor or static member of its own makes, but a function does, had no placeholder: template
+  has `bound_map`, which only the function `bind` makes, and php, python, node and wasm were refused with "no
+  placeholder for {"unit":"bound_map"} is written yet (G-5)" at `engine.render_bound.assign` and
+  `engine.prepare_bound.assign`. The placeholder of such a class is now the instance that the first function, then the
+  first static member of another class, that returns it makes, with placeholder arguments, in every target (G-5,
+  GN-13f). Go refused the same class with "no placeholder of the class ..., which has no constructor or static member
+  that makes it (T-5)" and takes the same member now. Verified by `make test-ts`: the new test failed before the
+  change.
+- Go refused a function type whose result holds a value alias, such as `engine.register.host_function`,
+  `engine.register_class.host_function` and `engine.new.functions` of template, which return `template_value`: the
+  static library reads a value alias through the call that encoded it, and a kept func ran in no call. A kept func
+  now runs in a call of package `binding` of its own, whose handle starts its result; the static library reads the
+  result through that call, so the alias converts by its `in` function as in the other targets, and then ends the
+  call through the export `<prefix>__go_end`. An error of a read of a value class in that call is kept in the table
+  of no call under the call 0, because the member returns it after that call ended (GN-6z, GN-15c). Verified by
+  `make test-ts`: the new tests failed before the change; and by `make e2e` of `tests/e2e/functions`, whose kept
+  funcs now run in a call of their own, at the merge of the change: php, python, node, go and wasm passed, with
+  `evidence: true`. Not run: a kept func with a value alias result end to end, which no contract of `tests/e2e` has.
+- The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
+  `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
+  contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`
+  also when no generated code called them. `deadcode -test` of the repository that consumes the module reported each
+  of them as unreachable, and that repository cannot change a generated file. The generator now writes a helper of
+  the package only when the Go code of the generation uses it, and drops the import `math` with the helpers that
+  alone used it (GN-15h). A method of a class of the contract with the name of such a method, such as `Key`, keeps
+  no helper. Verified by `make test-ts`: the tests of a contract without a `keyed_map<T>` and of a class member named
+  `Key` failed before the change, and the test of a contract with a `keyed_map<T>` keeps its helpers; by
+  `make e2e REPO=tests/e2e/shapes`, which has keyed maps, and by `make e2e` of the fsm checkout, every target passed;
+  and in the fsm checkout `deadcode` and `golangci-lint` of its Go module report nothing.
+
+- The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
+  the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
+  the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields
+  were not added while the code named them. The replacement now names the end of the struct alone, and the generator
+  fails when a part that it adds to the host is not in it. Verified by `make test-ts`: the test of the host of such a
+  crate failed before the change. Not run: the compiler, by `make e2e` of `tests/e2e/relay`.
+- A function value inside a case value, such as the function that a step of the receiver of a case of
+  `registry.call` of `tests/e2e/functions` registers, was written as a fixture whose rows named the member
+  `__call__` in every language. That is the member of the Python fixture; the Node, WASM and PHP fixture has the
+  member `call`, so it knew no row of the call that it got and failed the generated test as a call that the case
+  does not expect. The rows now name the member of the fixture of each language (GN-6z, GN-13). Verified by
+  `make test-ts`: the new test failed before the change. Not run: the generated tests, by `make e2e` of
+  `tests/e2e/functions`.
 - A PHP member whose core drops the `Raised` of a function and answers by a value, as `store.attempt` of
   `tests/e2e/sample` does, returned its value and PHP threw the exception of the function all the same: ext-php-rs
   reports a call whose code threw as an error and leaves the exception pending in the engine, and the generated crate

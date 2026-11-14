@@ -202,10 +202,10 @@ const THROWN_COUNT = (layout: PhpLayout): string => `/// GN-6ae: the entry point
 #[cfg(feature = "thrown-count-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\thrownCount`)})]
-pub fn thrown_count() -> i64 {
+pub fn thrown_count() -> Result<i64, PhpException> {
     release_dropped();
     let count = THROWN.with_borrow(|map| map.len());
-    i64::try_from(count).unwrap_or(i64::MAX)
+    i64::try_from(count).map_err(|_wide| PhpException::from_message(format!("GN-6ae: the count {count} is beyond an int")))
 }
 `;
 
@@ -218,9 +218,13 @@ const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6u: the entry point 
 #[cfg(feature = "native-count-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\nativeCount`)})]
-pub fn native_count() -> i64 {
-    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
-    i64::try_from(count).unwrap_or(i64::MAX)
+pub fn native_count() -> Result<i64, PhpException> {
+    // A thread without a table holds no reference.
+    let count = OWNED.with_borrow(|owned| match owned {
+        Some(owned) => owned.values.len(),
+        None => 0,
+    });
+    i64::try_from(count).map_err(|_wide| PhpException::from_message(format!("GN-6u: the count {count} is beyond an int")))
 }
 `;
 
@@ -956,16 +960,28 @@ ${recognizing}`;
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
 fn kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
+    // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
+    // thrown.
+    let Ok(found) = read_kind_of_recognized(exception, classes) else {
+        return None;
+    };
+    found
+}
+/// U-3: what kind_of_recognized gives, or the error of ext-php-rs that reading a property met.
+fn read_kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Result<Option<(String, String)>, ext_php_rs::error::Error> {
     for index in classes {
-        let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
+        let Some(class) = CLASSES.get(*index).and_then(OnceLock::get) else {
+            return Ok(None);
+        };
+        let class = class.0;
         if exception.instance_of(class) {
             let scope = category_scope(class);
-            let kind = with_scope(scope, || exception.get_property::<String>("kind")).ok()?;
-            let message = with_scope(scope, || exception.get_property::<String>("message")).ok()?;
-            return Some((kind, message));
+            let kind = with_scope(scope, || exception.get_property::<String>("kind"))?;
+            let message = with_scope(scope, || exception.get_property::<String>("message"))?;
+            return Ok(Some((kind, message)));
         }
     }
-    None
+    Ok(None)
 }
 `;
 
