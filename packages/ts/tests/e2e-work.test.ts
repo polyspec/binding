@@ -3,10 +3,11 @@
 // has exited (HR-87); a run never writes into the checkout because no directory was named.
 
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import type { Readable } from 'node:stream';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { runIn, workOf } from '../../../scripts/e2e-work.mts';
@@ -14,6 +15,59 @@ import { runIn, workOf } from '../../../scripts/e2e-work.mts';
 const root = new URL('../../../', import.meta.url).pathname;
 const module = new URL('../../../scripts/e2e-work.mts', import.meta.url).href;
 const inside = (parent: string, path: string): boolean => !relative(realpathSync(parent), realpathSync(path)).startsWith('..');
+
+// A process has ended when no process has its pid, when it is exiting, or when it has exited and only its parent has
+// yet to read its status. A process closes its files while it exits, so the end of a pipe that it held comes before
+// its exit is complete; and a signal to the group of a command stops a process and its parent together, so an exited
+// process whose parent has exited is a child of the init process of the system, which reads its status when it runs.
+// No process of the run can await either step, because the run is not the parent of every process of its command, and
+// the process holds no file, pipe or port during them and runs no code of its own. kill(pid, 0) succeeds in both, so
+// it does not tell whether the process has ended. macOS names both in the state of ps: E for a process that is
+// exiting, Z for one whose status is not read. Linux names the second Z or X in /proc/<pid>/stat and the first by the
+// flag PF_EXITING (0x4) of the field flags of that file.
+const ended = (pid: number): { ended: boolean; state: string } => {
+  if (process.platform === 'linux') {
+    let stat: string;
+    try {
+      stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ended: true, state: '' };
+      throw error;
+    }
+    // The fields after the name of the command, which is in parentheses and can hold a space: state ... flags.
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const [state = '', flags = ''] = [fields[0], fields[6]];
+    assert.match(flags, /^\d+$/, stat);
+    return { ended: state === 'Z' || state === 'X' || (Number(flags) & 0x4) !== 0, state: `${state} flags ${flags}` };
+  }
+  assert.equal(process.platform, 'darwin', 'the test reads the state of a process on Linux and macOS');
+  const ps = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
+  // ps exits with 1 when no process has the pid.
+  assert.ok(ps.error === undefined && (ps.status === 0 || ps.status === 1), `ps -o stat= -p ${String(pid)}: ${String(ps.error ?? ps.status)} ${ps.stderr}`);
+  const state = ps.stdout.trim();
+  return { ended: state === '' || state.startsWith('Z') || state.includes('E'), state };
+};
+
+test('a process that has exited and waits for its parent to read its status has ended, which kill(pid, 0) does not tell (HR-87)', async () => {
+  // sh starts a process that exits at once and then becomes cat, which never reads the status of that process. The
+  // process holds the pipe of fd 3 and sh closes it, so the pipe ends when the process has exited.
+  const parent = spawn('sh', ['-c', 'sh -c "exit 0" & echo $!; exec 3>&-; exec cat'], { stdio: ['pipe', 'pipe', 'inherit', 'pipe'] });
+  const closed = once(parent, 'close');
+  const held = parent.stdio[3] as Readable;
+  const exited = once(held, 'end');
+  held.resume();
+  const { stdin, stdout } = parent;
+  assert.ok(stdin !== null && stdout !== null);
+  const [line] = (await once(stdout.setEncoding('utf8'), 'data')) as [string];
+  await exited;
+  const pid = Number(line.trim());
+  assert.ok(Number.isInteger(pid) && pid > 0, line);
+  assert.doesNotThrow(() => process.kill(pid, 0));
+  const { ended: done, state } = ended(pid);
+  assert.ok(done, `the process that has exited is in state ${state}`);
+  stdin.end();
+  await closed;
+});
 
 test('a run without a work directory, or with an empty one, makes its own outside the checkout (GN-14)', () => {
   for (const given of [undefined, '']) {
@@ -101,8 +155,11 @@ process.exitCode = await runIn(work, [{ command: process.execPath, argv: ['-e', 
     assert.equal(status, signal === 'SIGINT' ? 130 : 143);
     assert.ok(!existsSync(work), `${work} is left`);
     assert.doesNotMatch(printed, /^later$/m, 'a command ran after the signal');
+    // The run awaited the pipe that both processes held, which ends when both have exited; the inner process, whose
+    // parent the signal stopped with it, can still wait for the init process to read its status.
     for (const name of ['outer', 'inner']) {
-      assert.throws(() => process.kill(Number(found(name)), 0), { code: 'ESRCH' }, `the ${name} process outlives the run`);
+      const { ended: done, state } = ended(Number(found(name)));
+      assert.ok(done, `the ${name} process outlives the run in state ${state}`);
     }
   });
 }
