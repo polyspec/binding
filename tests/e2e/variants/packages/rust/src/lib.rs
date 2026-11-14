@@ -167,7 +167,7 @@ impl Tail for Ribbon {
 /// # Errors
 ///
 /// The failure of the tail.
-pub fn tail_of(tail: &mut dyn Tail, count: u64) -> Result<Vec<u8>, Failure<Error>> {
+pub fn tail_of(tail: &dyn Tail, count: u64) -> Result<Vec<u8>, Failure<Error>> {
     tail.last(count)
 }
 
@@ -199,8 +199,8 @@ mod tests {
 
     #[test]
     fn a_ribbon_is_a_tail() {
-        let mut ribbon = Ribbon::new(b"abc");
+        let ribbon = Ribbon::new(b"abc");
         assert_eq!(ribbon.size(), 3);
-        assert!(matches!(tail_of(&mut ribbon, 2), Ok(bytes) if bytes == b"bc"));
+        assert!(matches!(tail_of(&ribbon, 2), Ok(bytes) if bytes == b"bc"));
     }
 }

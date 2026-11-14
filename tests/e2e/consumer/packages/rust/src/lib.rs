@@ -131,7 +131,7 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
 /// An exception of the source, which goes back to the caller as it was thrown. The source recognizes no error unit, so
 /// no kind of the sample library comes back; a function of this library fails with the errors of this library alone.
 pub fn read(
-    source: &mut dyn polyspec_sample::Source,
+    source: &dyn polyspec_sample::Source,
     key: &str,
 ) -> Result<Option<String>, Failure<Error>> {
     match source.read(key) {

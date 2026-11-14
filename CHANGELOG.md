@@ -30,6 +30,17 @@
   parameter, so a cancel that only Python and Node take after another parameter was a parameter of Go, whose rule
   that a cancel is the first parameter refused the whole Go target, and of PHP and WASM. Verified by
   `node --test packages/ts/tests/generate.test.ts`, whose test of such a parameter failed before the change.
+## 0.0.1
+
+- A core takes a callback as `&dyn` of its trait when no member of the unit takes `&mut self` (U-3, B2.252).
+  `variants.tail_of` and `consumer.read` took `&mut dyn` of traits whose members take `&self`, and the `&` that the
+  binding passes failed with E0308 in their five binding crates. The step of the consumer on musl runs only after a
+  successful end-to-end step, which writes the work directory that it reads (HR-86); after a failed step it failed on
+  the missing directory and hid the cause. Verified by `make test-ts`.
+- A callback parameter without keeps is passed to the core as `&` when no member of its unit takes `&mut self`, and
+  as `&mut` otherwise (U-3, GN-6d). Every target passed `&mut { feed }` to `sample.ask`, whose core takes
+  `&dyn Feed`, and `clippy::unnecessary_mut_passed` refused the five binding crates of the sample. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
 
 - The test of a process that has exited and waits for its parent reports its failure and ends (HR-84, HR-87). Its
   assertions ran before the input of `cat` was ended, so a failed one left `cat`, its pipes and the test file
@@ -90,6 +101,20 @@
   objects of earlier tests between the counts, and `same` of the sample failed with `0 !== 15` when it released the
   `Index` objects whose kept callbacks the table held. The test now takes the glue module before the first count.
   Verified by `node --test packages/ts/tests/generate.test.ts`; `make e2e REPO=tests/e2e/sample` is queued.
+- The Go binding gave the core a raised error, not its kind, when a member of a kept callback returned an error that
+  the member recognizes: the run of the kept func kept the recognized value as an error of status 1. It now gives
+  status 2 with the key of the wrapped error, its kind and its message, the kept wrapper makes the core error of the
+  kind and removes the entry, and any other kind is the same error for the caller (U-3, GN-6d, GN-6aa). `feed.get`
+  of the sample recognizes `refused_error`, with a case of `index.get` and one of `sample.ask`. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
+
+- A callback unit that one parameter lends and another keeps did not compile in Node, PHP and WASM when its trait
+  requires `Send` and `Sync`: the struct of a call, which holds a napi `Object`, a PHP `Zval` or a `JsValue`,
+  implemented the trait for the parameter that lends. These targets now convert every value of a kept unit through
+  its kept wrapper, which holds only a `Native`; Go and Python keep the struct of a call, which is `Send` and `Sync`
+  there (GN-6d, GN-6aa). The sample lends its feed in `sample.ask`, whose cases the end-to-end check runs. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
+
 - Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
   its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the
   generated tests of the callback's exception and of a result of another type are now generated only for a member
@@ -1939,17 +1964,6 @@
   and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6z). Node, PHP and WASM
   refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
   function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
-- A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
-  with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
-  polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
-  `core`, and its core path returns a state machine without I/O, `binding_core::machine::Machine`, whose steps are an
-  I/O future that touches no language code, a call of language code and the result. PHP drives the machine on the
-  calling thread, Python `<name>` drives it with each wait outside the GIL and `a<name>` runs `<name>` in
-  `asyncio.to_thread`, and Node returns a `Driven` object that the JavaScript entry advances, each call on the
-  JavaScript thread and each wait on the tokio runtime of napi. `binding check` reports such a member without
-  `machine` and `machine` on any other member (CK-68); the generator refuses a method with `machine`, whose machine
-  would borrow its receiver, and Go and WASM refuse it with every member with `async_driver` (GN-6ab). Verified by
-  `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
 - A WASM member with
   `wait: async_driver` whose receiver or parameter is a class bound the borrows of its guards outside its future, which
   does not own them; the future now owns the guards and binds the borrows inside it, as the Node future does (GN-6h,

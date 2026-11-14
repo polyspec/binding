@@ -544,7 +544,9 @@ the design ids are those of the binding design.
   the package of this contract would be another type, which a function of the repository of the record refuses, so
   one value could not pass through both packages.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
-  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
+  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut dyn` of its trait when a member of the unit takes `&mut self`, and as
+  `&dyn` otherwise, which the binding passes as `&mut` and `&` (B2.252); a `&mut` where the core takes `&` is refused by
+  `clippy::unnecessary_mut_passed`.
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner` on Node and PHP, kind `wrong_thread`), goes to the core
@@ -564,7 +566,14 @@ the design ids are those of the binding design.
   borrows for a call, and Go, whose kept wrapper calls a kept func, has neither the struct nor `in_<unit>`. Why: a
   trait that the core keeps is usually `Send + Sync`, which the struct of a call, holding a value of the environment
   of the language, is not, and code that no member reaches is dead code. Python keeps the trait implementation,
-  because it holds the object as a `Py<PyAny>` with or without `keeps`.
+  because it holds the object as a `Py<PyAny>` with or without `keeps`. A unit that a parameter with `keeps` holds
+  and a parameter without it lends (`sample.ask` of the end-to-end sample) has no trait implementation on that
+  struct in Node, PHP and WASM either: these targets convert each of its values through the kept wrapper
+  (`kept_<unit>`), at a place without `keeps` too, where the value is the kept wrapper itself (`KeptCbFeed`) or its
+  box with the lifetime of the call. Go keeps the struct of a call and its trait implementation at a place without
+  `keeps`, because that struct holds two numbers and a thread id, which are `Send` and `Sync`. Why: the generator
+  reads no Rust, so it cannot tell whether a kept trait requires `Send` and `Sync`, and a trait that requires them
+  does not take the struct of a call at any place, while the kept wrapper holds only a `Native`.
 - **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
@@ -639,6 +648,14 @@ the design ids are those of the binding design.
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`,
   each a `Raised` whose `Native` holds its `BindingError`. The wrapper holds only the `Native`, so it is `Send` and
   `Sync`, and a trait that requires them takes it. Python holds the object as a `Py<PyAny>` with or without `keeps`.
+  A member of a kept callback that recognizes an error unit (U-3) gives the core the kind of such an error in every
+  target, as the member of a callback of a call does (GN-6d): Node, PHP and WASM call the member of the struct of the
+  call, which recognizes it, and in Go the run of the kept func gives status 2 with the key under which the table of
+  no call holds the error that the recognized value wraps, its kind and its message; a kind of the unit is the core
+  error of the kind and removes the entry through `<prefix>__go_release_raised`, and any other kind goes back to the
+  caller as the same error. Why: whether the core keeps a callback is no part of how its error is classified, so a
+  kept callback that gave its error back unclassified would make the core see a raised error where the contract
+  names a kind (the case `a_kept_source_that_raises_a_recognized_error_refuses_the_key_in_a_later_call` of `index.get`).
   The end-to-end sample keeps a list of callbacks in an instance of a class and calls them in a later call
   (the class `index` of `tests/e2e/sample`). A callback parameter with `keeps` that is no item of a list or an
   `optional` moves into the core as its box, by value (`index.single`). A record parameter with `keeps` is made from

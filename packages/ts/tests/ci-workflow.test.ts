@@ -84,9 +84,16 @@ test('a job of a matrix runs every step after its first past a failed step (AGEN
     assert.ok(job.includes('      fail-fast: false'), `the matrix of ${name} cancels its other entries after a failure`);
     const all = steps(job);
     assert.ok(all.length > 1, `the job ${name} has no steps`);
-    for (const step of all.slice(1)) assert.ok(step.some((l) => l.trim() === 'if: ${{ !cancelled() }}'), `a step of ${name} after the first does not run past a failed step: ${step[0] ?? ''}`);
+    for (const step of all.slice(1)) assert.ok(step.some((l) => l.trim() === runsPast(step)), `a step of ${name} after the first does not run past a failed step, or runs past a failed step whose output it reads: ${step[0] ?? ''}`);
   }
 });
+
+// HR-86: a step after the first runs past a failed step, except the consumer on musl (make go-musl-check), which reads
+// the work directory of the step e2e and runs only when that step succeeded: after a failed e2e it could only fail on a
+// missing directory, and its failure would hide the cause (B2.256).
+function runsPast(step: string[]): string {
+  return step.some((l) => l.includes('run: make go-musl-check')) ? "if: ${{ steps.e2e.outcome == 'success' }}" : 'if: ${{ !cancelled() }}';
+}
 
 test('the job e2e runs the end-to-end check of every repository of tests/e2e that waits for no other repository and uploads its record (GN-14, GN-14f, GN-14g)', () => {
   const job = jobs().get('e2e');
@@ -138,7 +145,7 @@ test('the job e2e-amd64 runs the end-to-end check of the sample and its consumer
   const all = steps(job);
   const runs = all.flatMap((step) => step.map((l) => /^\s+(?:- )?run: (.*)$/.exec(l)?.[1]).filter((r) => r !== undefined));
   assert.deepEqual(runs, ['make install-tools', 'make e2e REPO=tests/e2e/sample WORK=${{ runner.temp }}/e2e', 'make go-musl-check WORK=${{ runner.temp }}/e2e']);
-  for (const step of all.slice(1)) assert.ok(step.some((l) => l.trim() === 'if: ${{ !cancelled() }}'), `a step of e2e-amd64 after the first does not run past a failed step: ${step[0] ?? ''}`);
+  for (const step of all.slice(1)) assert.ok(step.some((l) => l.trim() === runsPast(step)), `a step of e2e-amd64 after the first does not run past a failed step, or runs past a failed step whose output it reads: ${step[0] ?? ''}`);
   const upload = all.find((step) => step.some((l) => l.includes('uses: actions/upload-artifact@')));
   assert.ok(upload?.some((l) => l.trim() === 'path: var/report/e2e/') === true, 'the job e2e-amd64 does not upload var/report/e2e/');
 });

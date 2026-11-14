@@ -336,6 +336,10 @@ export interface Model {
   callbackLife?: string;
   // GN-6aa: the conversions of a parameter with keeps, whose callbacks a target holds as a Native of their owner.
   keptCallbacks?: boolean;
+  // GN-6aa: in Node, PHP and WASM, the ids of the callback units that a parameter with keeps holds, which every place
+  // converts through the kept wrapper, because the trait that the core keeps may require Send and Sync, which the
+  // struct of a call of these targets is not.
+  keptUnits?: ReadonlySet<string>;
   // T-3: the records of other repositories that this contract's types name, in the order they are first named.
   foreignRecords: ForeignRecord[];
   // The contracts of the libraries that the contract names (T-3).
@@ -1392,8 +1396,9 @@ export function rustType(model: Model, type: Type, inside = false): string {
   if ('unit' in type) {
     const unit = unitOf(model, type);
     // U-3: a callback is the generated struct that implements the core trait over the language object.
-    // GN-6aa: a callback that the core keeps moves into it as the box, at any place.
-    if (unit?.origin === 'callback') return inside || model.keptCallbacks === true ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
+    // GN-6aa: a callback that the core keeps moves into it as the box, at any place; a callback of a kept unit that a
+    // parameter without keeps lends is the kept wrapper in Node, PHP and WASM.
+    if (unit?.origin === 'callback') return inside || model.keptCallbacks === true ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `${libraryOf(type) === undefined && model.keptUnits?.has(unit.id) === true ? 'Kept' : ''}Cb${convert(unit.name, 'rust', 'class')}`;
     if (unit?.core_type === undefined) throw new Unsupported(`${type.unit} has no core_type`);
     // GN-6aa: the core type of a record with a callback field has one lifetime, which the binding writes.
     if (unit.kind === 'record' && (unit.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type))) return `${unit.core_type}<${model.callbackLife ?? "'static"}>`;
@@ -1412,8 +1417,13 @@ export function coreArg(model: Model, type: Type, variable: string): string {
   if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
   if (typeof type === 'object' && !('unit' in type) && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), type)) return variable;
-  // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
-  if (unitOf(model, type)?.origin === 'callback') return `&mut { ${variable} }`;
+  // U-3, T-1: the core takes a callback as &mut dyn of its trait when a member of the unit takes &mut self, and as &dyn
+  // otherwise, where clippy::unnecessary_mut_passed refuses a &mut; the block moves the struct into a temporary.
+  const callback = unitOf(model, type);
+  if (callback?.origin === 'callback') {
+    const members = [...model.callbacks, ...model.foreignCallbacks].find((c) => c.unit === callback)?.members ?? [];
+    return `&${members.some((m) => m.receiver === '&mut self') ? 'mut ' : ''}{ ${variable} }`;
+  }
   if (typeof type === 'object' && 'optional' in type) {
     const inner = type.optional;
     if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;
@@ -1529,7 +1539,9 @@ export function takenCallbacks(model: Model): CallbackUnit[] {
 // GN-6d, GN-6aa: the callback units of takenCallbacks whose values enter a member at a place without keeps, where the
 // struct of the call is the box of the core trait: a parameter without keeps, also through a list, an optional, a map,
 // a tuple or a record. A unit that enters parameters with keeps only is called through the kept wrapper (kept_<unit>),
-// so the struct of the call implements no trait, which a kept trait may require to be Send and Sync.
+// so the struct of the call implements no trait, which a kept trait may require to be Send and Sync. In Node, PHP and
+// WASM a unit of keptUnits is called through the kept wrapper at a place without keeps as well, so it is no lent unit
+// there.
 export function lentCallbacks(model: Model): CallbackUnit[] {
   const found = new Set<Unit>();
   const seen = new Set<string>();
@@ -1548,8 +1560,21 @@ export function lentCallbacks(model: Model): CallbackUnit[] {
     }
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.filter((p) => p.keeps !== true).forEach((p) => visit(p.type));
-  return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
+  return [...model.callbacks.filter((c) => found.has(c.unit) && model.keptUnits?.has(c.unit.id) !== true), ...model.foreignCallbacks];
 }
+
+// GN-6aa: the conversion of a callback of a unit at a place of a model: through the kept wrapper (kept_<unit>) at a
+// parameter with keeps, and in Node, PHP and WASM at every place of a unit that a parameter with keeps holds.
+export const convertsKept = (model: Model, type: Type, unit: Unit): boolean =>
+  libraryOf(type) === undefined && (model.keptCallbacks === true || model.keptUnits?.has(unit.id) === true);
+
+// U-3: the name of the struct of a call of a callback unit, which the kept wrapper of a kept unit borrows for a call.
+export const callStruct = (model: Model, cb: CallbackUnit): string =>
+  rustType({ ...model, keptUnits: new Set<string>() }, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
+
+// U-3, GN-6d, GN-6aa: whether a member of a callback that a parameter with keeps holds recognizes an error unit, so
+// that Go gives the core its kind from a kept func as from a callback of a call.
+export const keptRecognizes = (model: Model): boolean => keptCallbacks(model).some((cb) => cb.members.some((m) => m.recognized !== undefined));
 
 // GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
 export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
@@ -1924,7 +1949,11 @@ export function membersFor(model: Model, lang: Lang): Model {
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
   const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
-  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })), callbackLife: lang === 'node' ? "'env" : "'static" };
+  const members = membersFor(model, lang);
+  // GN-6aa: Node, PHP and WASM call a kept unit through its kept wrapper at every place; the struct of a call of Python
+  // holds a Py<PyAny>, which is Send and Sync.
+  const keptUnits = lang === 'node' || lang === 'php' || lang === 'wasm' ? { keptUnits: new Set(keptCallbacks(members).map((c) => c.unit.id)) } : {};
+  return { ...members, classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })), callbackLife: lang === 'node' ? "'env" : "'static", ...keptUnits };
 }
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
