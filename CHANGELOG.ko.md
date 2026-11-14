@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 21397d5337397e003bd518c242a967be5e2737efceadcf42363fe7dd01363076 -->
+<!-- source-sha256: 03f5c18e189c0e2f7a5a2df6b84c2e4861a3b55f5f6fdd6d01d5df8d0d36fc16 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -48,6 +48,28 @@
   case의 Python, Node, WASM, PHP 시험은 Go 시험처럼 실패해야 하는 호출 앞에서 receiver를 지역 변수로 만든다(GN-13f).
   `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다. 값 class의 레포를 준 `tests/e2e/relay`의 `make e2e`로도
   검증했고, 다섯 target에서 통과했다.
+- case의 receiver를 만드는 호출에서 `optional`, callback, 생성된 interface의 자리에 온 인스턴스 값이 거부되었다. 자리의
+  class를 `{"unit"}` 타입에서만 읽었기 때문이다. 그래서 template의 `engine.render` case의 receiver는 `engine.new`가
+  `optional<loader>` 타입의 field `loader`를 `map_loader`의 인스턴스 값으로 받아 만드는데, php, python, node가
+  "engine.new.loader: map_loader.new gives {"unit":"map_loader"}, not the class  (G-5, GN-13f)"로 거부되었다. 이제 그런
+  자리의 인스턴스는 case 인자의 자리에서처럼 만든다. `optional` 안의 class, 또는 callback이나 interface를 구현한 class다
+  (GN-13f, GN-6w, GN-6ap). `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- 자기 생성자나 static member는 만들지 않고 함수가 만드는 class에 placeholder가 없었다. template에는 함수 `bind`만 만드는
+  `bound_map`이 있고, php, python, node, wasm이 `engine.render_bound.assign`과 `engine.prepare_bound.assign`에서 "no
+  placeholder for {"unit":"bound_map"} is written yet (G-5)"로 거부되었다. 이제 그런 class의 placeholder는 모든 target에서
+  그것을 돌려주는 첫 함수, 그다음 다른 class의 첫 static member가 placeholder 인자로 만드는 인스턴스다(G-5, GN-13f). Go는
+  같은 class를 "no placeholder of the class ..., which has no constructor or static member that makes it (T-5)"로 거부했고,
+  이제 같은 member를 쓴다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- Go가 결과에 값 alias를 담은 함수 타입을 거부했다. template의 `engine.register.host_function`,
+  `engine.register_class.host_function`, `engine.new.functions`는 `template_value`를 돌려준다. static library는 값 alias를
+  그것을 인코드한 호출을 통해 읽는데, 보관된 func는 어느 호출 안에서도 실행되지 않았다. 이제 보관된 func는 package
+  `binding`의 자기 호출 안에서 실행되고, 결과는 그 호출의 handle로 시작한다. static library는 그 호출을 통해 결과를 읽으므로
+  alias는 다른 target처럼 `in` 함수로 변환되고, 그다음 export `<prefix>__go_end`로 호출을 끝낸다. 그 호출에서 value class를
+  읽다 난 오류는 호출 0 아래 어느 호출의 것도 아닌 table에 보관한다. member가 그 호출이 끝난 뒤에 그 오류를 돌려주기
+  때문이다(GN-6z, GN-15c). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. 보관된 func가 이제 자기
+  호출 안에서 실행되는 `tests/e2e/functions`의 `make e2e`도 이 변경의 merge에서 php, python, node, go, wasm 모두 통과했고
+  `evidence: true`다. 실행하지 않은 것: 결과가 값 alias인 보관된 func의 끝에서 끝까지 확인. `tests/e2e`의 어느 계약에도
+  그런 함수가 없다.
 - 모든 계약의 Go 패키지 `internal/binding`이 모든 타입의 도우미를 담았다. `keyed_map<T>`가 없는 계약에도 keyed-map
   도우미(`Key`, `IntKey`, `BytesKey`, `TextKey`, `Key`와 `KeyedMap`의 method, `Writer.Key`, `Reader.Key`)를 담았고,
   생성 코드가 부르지 않을 때에도 method `Writer.Bool`, `Writer.Tag`, `Writer.Bytes`, `Reader.Float`를 담았다. 모듈을

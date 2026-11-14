@@ -55,6 +55,31 @@
   the Python, Node, WASM and PHP test of a case that raises makes the receiver as a local before the call that must
   fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change; and by `make
   e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- An instance value at a place of an `optional`, a callback or a generated interface in a call that makes the
+  receiver of a case was refused: the class of the place was read from a `{"unit"}` type alone, so the receiver of a
+  case of `engine.render` of template, which `engine.new` makes with the field `loader` of type `optional<loader>` as
+  an instance value of `map_loader`, refused php, python and node with "engine.new.loader: map_loader.new gives
+  {"unit":"map_loader"}, not the class  (G-5, GN-13f)". The instance is now made at such a place as at the place of
+  an argument of the case: the class inside the `optional`, or a class that implements the callback or the interface
+  (GN-13f, GN-6w, GN-6ap). Verified by `make test-ts`: the new test failed before the change.
+- A class that no constructor or static member of its own makes, but a function does, had no placeholder: template
+  has `bound_map`, which only the function `bind` makes, and php, python, node and wasm were refused with "no
+  placeholder for {"unit":"bound_map"} is written yet (G-5)" at `engine.render_bound.assign` and
+  `engine.prepare_bound.assign`. The placeholder of such a class is now the instance that the first function, then the
+  first static member of another class, that returns it makes, with placeholder arguments, in every target (G-5,
+  GN-13f). Go refused the same class with "no placeholder of the class ..., which has no constructor or static member
+  that makes it (T-5)" and takes the same member now. Verified by `make test-ts`: the new test failed before the
+  change.
+- Go refused a function type whose result holds a value alias, such as `engine.register.host_function`,
+  `engine.register_class.host_function` and `engine.new.functions` of template, which return `template_value`: the
+  static library reads a value alias through the call that encoded it, and a kept func ran in no call. A kept func
+  now runs in a call of package `binding` of its own, whose handle starts its result; the static library reads the
+  result through that call, so the alias converts by its `in` function as in the other targets, and then ends the
+  call through the export `<prefix>__go_end`. An error of a read of a value class in that call is kept in the table
+  of no call under the call 0, because the member returns it after that call ended (GN-6z, GN-15c). Verified by
+  `make test-ts`: the new tests failed before the change; and by `make e2e` of `tests/e2e/functions`, whose kept
+  funcs now run in a call of their own, at the merge of the change: php, python, node, go and wasm passed, with
+  `evidence: true`. Not run: a kept func with a value alias result end to end, which no contract of `tests/e2e` has.
 - The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
   `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
   contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`

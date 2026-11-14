@@ -361,7 +361,7 @@ impl PhpHost<'_> {
     }
 
     /*Items{*/
-    /// B2.151: the content of a case of the kind list, an array whose keys are 0 to n-1 in order, as a list of its
+    /// B2.156: the content of a case of the kind list, an array whose keys are 0 to n-1 in order, as a list of its
     /// values: the walk of the owner reads the kind that the case names, and a PHP array is described as one only here.
     fn describe_items(&mut self, content: Zval, read: &str) -> Result<HostValue, Fail> {
         let Some(array) = content.array().filter(|array| array.has_sequential_keys()) else {
@@ -454,7 +454,7 @@ enum ReadAs {
     TextOr(&'static str),
     /*}TextOr*/
     /*Items{*/
-    /// The items of a case of the kind list, an array that is a list (B2.151).
+    /// The items of a case of the kind list, an array that is a list (B2.156).
     Items,
     /*}Items*/
 }

@@ -23,7 +23,7 @@ import {
   goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerType,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
   nativeRoundTrip,
   callsCode,
   machineFunction,
@@ -574,8 +574,9 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   }
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
-    const factory = factoryOf(v.model, object);
-    if (factory === undefined) throw new Unsupported(`no placeholder of the class ${object.unit.id}, which has no constructor or static member that makes it (T-5)`);
+    // T-5, GN-13f: its own factory, or else a function or a static member of another class that returns it.
+    const factory = makerOf(v.model, object);
+    if (factory === undefined) throw new Unsupported(`no placeholder of the class ${object.unit.id}, which no constructor, static member or function makes (T-5, GN-13f)`);
     return b.bind(invoke(v, factory, callArgs(v, b, factory, (a) => (a.default === undefined ? placeholder(v, b, a.type, rich) : undefined)), ''), 1, 'GN-13f')[0] ?? '';
   }
   // GN-6v: the first case of a variant, its fields placeholders.
