@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -141,9 +141,10 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     const empty = alias === undefined ? undefined : classMakes(alias, ctx.target ?? ctx.lang).find((m) => m.form === 'content' && m.params === 0);
     if (empty !== undefined) return ownerCall(ctx, ctx.foreignClass(type.library, unit), empty.member, '');
   }
-  // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
+  // T-5, GN-13f: an instance of a class, made by its first factory whose arguments are placeholders, or by the first
+  // function or static member of another class that returns it.
   const object = model.objects.find((o) => o.unit === unit);
-  const factory = object?.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === unit));
+  const factory = object === undefined ? undefined : makerOf(model, object);
   if (factory !== undefined && ctx.objectNew !== undefined) {
     return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
   }
@@ -1125,6 +1126,17 @@ export interface RaisingCase {
   receiver?: Receiver;
   // GN-6ae: the calls that observe the receiver after the call of the case.
   after?: After[];
+  // GN-13f: the factory that makes the receiver from the keys of the case raises the kind that the case expects, so the
+  // failure of the case is the failure of making the receiver or of the call; never with faults or after.
+  receiverFails?: true;
+}
+
+// GN-13f: whether the factory of a receiver that the keys of a case give may raise the kind of the case: a variant of
+// its raises whose row of errors.kinds gives that kind. A receiver of an instance value is made by its own steps.
+function receiverMayRaise(model: Model, receiver: Receiver | undefined, record: Record<string, unknown>, kind: string): boolean {
+  if (receiver === undefined || record['receiver'] !== undefined || receiver.on !== undefined || receiver.pick !== undefined || receiver.then !== undefined) return false;
+  const raises = receiver.factory.member.raises ?? [];
+  return model.contract.errors.kinds.some((row) => row.library === undefined && raises.includes(row.variant) && kindsOf(row).includes(kind));
 }
 
 // GN-6ae (CK-22): a call of `after` of a case: a method of the class of the receiver, its arguments and its result.
@@ -1291,6 +1303,17 @@ export interface MadeForm {
   left: (local: string, what: string) => string;
 }
 
+// GN-13f: the instance of an instance value at a place of a type: the class of the place, also inside an `optional`, or
+// a class that implements the callback or the generated interface of the place (GN-6w, GN-6ap).
+function instanceAt(model: Model, type: Type, value: unknown, where: string): Receiver {
+  const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  const unit = unitOf(model, inner);
+  if (unit?.origin === 'callback' && libraryOf(inner) === undefined) return implementerInstance(model, unit, value);
+  const iface = interfaceOf(model, inner);
+  if (iface !== undefined) return interfaceInstance(model, iface, value);
+  return instanceOf(model, unit?.id ?? '', value, where);
+}
+
 // G-5 (GN-13f): the statements that make an instance and the expression that names it. Every instance that the value
 // makes, the receivers and the results that a pick reads from, is a local of the test, so none is reclaimed before the
 // test ends; a plain receiver is one expression.
@@ -1301,10 +1324,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
   const argsText = (fn: Fn, args: ReadonlyMap<Arg, unknown>): string =>
     callArgs(model, form.ctx, fn, (arg) => {
       const raw = args.get(arg);
-      if (isInstanceValue(raw)) {
-        const unit = typeof arg.type === 'object' && 'unit' in arg.type ? arg.type.unit : '';
-        return make(instanceOf(model, unit, raw, `${fn.member.id}.${arg.name.join('_')}`));
-      }
+      if (isInstanceValue(raw)) return make(instanceAt(model, arg.type, raw, `${fn.member.id}.${arg.name.join('_')}`));
       return caseValue(model, form.ctx, arg, args);
     });
   const make = (r: Receiver): string => {
@@ -1357,20 +1377,34 @@ export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknow
   return args;
 }
 
-// T-5: the factory of a class unit whose parameters a case gives: a static member or the constructor that returns the
-// class, the first in contract order.
-export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>): Receiver | undefined {
+// GN-13f: the keys of a case that hold the arguments of a member: the key of each parameter, and the key of the record
+// whose fields are its parameters.
+function argumentKeys(fn: Fn): Set<string> {
+  return new Set(fn.args.map((arg) => langName('python', arg.field && fn.record !== undefined ? fn.record.param.name : arg.name, 'variable')));
+}
+
+// T-5, GN-13f: the factory of a class unit whose parameters a case gives: a static member or the constructor that
+// returns the class, the first in contract order. `of` is the member whose case the record is: a key of one of its
+// parameters holds an argument of that member, so it gives no parameter of a factory; and a factory that takes no key
+// of the case fits every case, so it is the factory only when no factory that takes a key is.
+export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn = fn): Receiver | undefined {
   if (fn.receiver === undefined) return undefined;
   // GN-13f: a case that gives its receiver as an instance value.
   if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);
+  const taken = argumentKeys(of);
+  const given = Object.fromEntries(Object.entries(record).filter(([key]) => !taken.has(key)));
+  let bare: Receiver | undefined;
   for (const factory of classMembers(model, fn.unit)) {
     const returns = factory.returns;
     const makes = typeof returns === 'object' && 'unit' in returns && returns.unit === fn.unit.id && returns.library === undefined;
     if (factory.receiver !== undefined || !makes) continue;
-    const args = argsOf(factory, record);
-    if (args !== undefined) return { factory, args };
+    // A case of the factory itself gives the arguments of the factory.
+    const args = argsOf(factory, factory === of ? record : given);
+    if (args === undefined) continue;
+    if (args.size > 0) return { factory, args };
+    bare ??= { factory, args };
   }
-  return undefined;
+  return bare;
 }
 
 // An instance for the tests of a method that need any valid receiver: the factory arguments of the first case of the
@@ -1380,7 +1414,7 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
       if (record['raises'] !== undefined) continue;
-      const found = receiverOf(model, fn, record);
+      const found = receiverOf(model, fn, record, member);
       // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
       if (found !== undefined && !armsFaults(found)) return found;
     }
@@ -1507,7 +1541,9 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     if (faults !== undefined && model.faults.length === 0) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
     // GN-5: a point of another library is armed as a point of the contract is, by the arming of the member: its core
     // is linked into the binding crate, whose fault-test turns on the points of that core.
-    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
+    // A case that arms faults or holds after makes its receiver first, as the faults and the calls of after need it.
+    const fails = faults === undefined && record['after'] === undefined && receiverMayRaise(model, receiver, record, raises.kind);
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...(fails ? { receiverFails: true as const } : {}) });
   }
   return out;
 }

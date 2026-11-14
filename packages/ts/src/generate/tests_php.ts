@@ -420,8 +420,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const receiverMade = receiverOfCase(kase.receiver);
-      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
-      const held = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      // GN-13f: the receiver is made before the block that expects the failure, so a receiver that cannot be made fails
+      // the test: a receiver that no line made yet is held. GN-6ae: a case with after holds its receiver, which the
+      // calls of after observe.
+      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
+      const held = kase.faults === undefined && receiverMade.expr !== '' && (kase.after !== undefined || (receiverMade.lines === '' && kase.receiverFails === undefined));
       if (held) receiverMade.lines += `\n        $receiver = ${receiverMade.expr};`;
       const made_ = held ? '$receiver' : receiverMade.expr;
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];

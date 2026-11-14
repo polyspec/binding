@@ -366,7 +366,11 @@ test('B-4: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
-      const receiverMade = kase.faults === undefined ? heldReceiver(receiverOfCase(kase.receiver), kase.after) : receiverOfCase(kase.receiver);
+      // GN-13f: the receiver is made before the call that must throw, so a receiver that cannot be made fails the test: a
+      // receiver that no line made yet is held.
+      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
+      const receiverBuilt = receiverOfCase(kase.receiver);
+      const receiverMade = kase.faults === undefined ? heldReceiver(receiverBuilt, kase.after ?? (receiverBuilt.lines === '' && kase.receiverFails === undefined ? [] : undefined)) : receiverBuilt;
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.

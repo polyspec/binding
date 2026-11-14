@@ -51,7 +51,7 @@ const CONTENT: Record<string, { type: string; arg: string }> = {
 // U-7, T-5: an out row that names a member makes an instance of a class of this contract: the content of the kind is the
 // one argument of the core path of the class's constructor or static factory, which cannot fail, and the value it gives
 // leaves as the class's instance (out_<class>, whose first arguments are `env`).
-function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter): string {
+function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter, leaf: (made: string) => string = (made) => made): string {
   if (alias.library !== undefined) {
     // GN-6ar: the class is of the owner of the alias, whose constructor the language of the target calls.
     if (foreignMake === undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
@@ -81,13 +81,14 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
     throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes ${factory.params.map((p) => (typeof p.type === 'string' ? p.type : JSON.stringify(p.type))).join(', ') || 'no parameter'}, not the content of the kind (U-7)`);
   }
   if (factory.fallible || factory.failure) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} can fail, which a make by a member is not generated for yet (U-7)`);
-  return `${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${content.arg}))`;
+  return leaf(`${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${content.arg}))`);
 }
 
 // The match arms of the make function of one language: a row per kind, or a row per `when` of the kind. `env` is the
 // first arguments of the out function of a class in the language, for a row that makes an instance by a member, and
-// `instance` the prefix of the name of that function.
-export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter): string[] {
+// `instance` the prefix of the name of that function. `leaf` writes what an arm gives for the instance of a class that
+// a member of this contract made, where the arms of a language give another type than the made value (GN-6as).
+export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter, leaf?: (made: string) => string): string[] {
   const rows = (alias.unit.out ?? []).filter((row) => row.make[lang] !== undefined);
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
@@ -99,7 +100,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
       if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake);
+      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake, leaf);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;
@@ -607,9 +608,195 @@ fn take_thrown(raised: &binding_core::Raised) -> Option<Thrown> {
 // read has their arms: a variant that no case constructs is dead code, which the lints deny. The text of a host marks
 // the arm and the variant of each name, and a name that the text constructs nowhere else is left out with them.
 export function readAsVariants(host: string): string {
-  return ['Content', 'Units', 'TextOr', 'Bool', 'Int', 'Float'].reduce((text, variant) => {
+  return ['Content', 'Units', 'TextOr', 'Items', 'Bool', 'Int', 'Float'].reduce((text, variant) => {
     const marked = new RegExp(`[ \\t]*/\\*${variant}\\{\\*/\\n([\\s\\S]*?\\n)[ \\t]*/\\*\\}${variant}\\*/\\n`, 'g');
     const constructed = text.replace(marked, '').includes(`ReadAs::${variant}`);
     return text.replace(marked, constructed ? '$1' : '');
   }, host);
+}
+
+// GN-6as: a make function walks the OutValue of the core in a loop with a work stack, and never calls itself. The items
+// of the walk are items of the make function, so they share no name with an item of the crate: OutLevel, a container
+// whose children are made next; OutFill, the container of the language that takes them; and OutStep, what the walk does next.
+// An arm of the match of an OutValue gives an OutStep: Put for a value without children, and Enter for a container.
+export interface LevelParts {
+  // Whether the children are read from the source by the handle of the container, one for each index below its length.
+  walks: boolean;
+  // The OutValue that is made first: the one value of a reference.
+  waiting?: string;
+  fill: string;
+  // The value of the language that the container is, where it is made before its children.
+  made?: string;
+}
+
+export interface Walk {
+  // What an arm gives for a made value, and for the Result of a made value.
+  put: (value: string) => string;
+  leaf: (made: string) => string;
+  level: (parts: LevelParts) => string;
+}
+
+// A container of the language that takes made children: its variant of OutFill, how a made child is put, and the next
+// child that the walk makes, which is None for a container that takes the one value of a reference.
+export interface Fill {
+  name: string;
+  doc: string;
+  type: string;
+  pattern: string;
+  put: string;
+  next?: string;
+}
+
+export const PUT_ENTRY = (set: string): string => `match key.take() {
+    Some(key) => {
+        ${set}
+        level.index = level.index.saturating_add(1);
+    }
+    None => *key = Some(value),
+}`;
+
+export const NEXT_ENTRY = `{
+    let (key, value) = source.entry(level.handle, level.index);
+    level.waiting = Some(value);
+    Some(key)
+}`;
+
+const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
+
+// One statement for each variant of OutFill: a match, or a let where OutFill has one variant, whose match clippy
+// refuses as a match of one arm that cannot fail.
+const perFill = (fills: Fill[], on: string, body: (fill: Fill) => string, pattern: (fill: Fill) => string = (fill) => fill.pattern): string => {
+  const [only, ...more] = fills;
+  if (only !== undefined && more.length === 0) return `let ${pattern(only)} = ${on};\n${body(only)}`;
+  return `match ${on} {\n${fills.map((fill) => `    ${pattern(fill)} => {\n${indent(body(fill), 8)}\n    }`).join('\n')}\n}`;
+};
+
+// GN-6as: how the make function of a language is written: its generic parameters, the type arguments of the items of
+// the walk, the first parameters and arguments of the language, the type of a made value, the Result of a type, the
+// failure of kind internal with a detail, and the name of the language for the comments.
+export interface WalkShape {
+  generics: string;
+  life: string;
+  anon: string;
+  env: { params: string; args: string };
+  value: string;
+  result: (type: string) => string;
+  internal: (detail: string) => string;
+  language: string;
+}
+
+// GN-6as: the make function of a value alias: the items of the walk, the function that opens one OutValue by the arms of
+// the alias, and the loop. `arms` writes the arms with the Walk that they give their steps through; `kept` is the
+// extra parameter of the function, the made containers by their handles, with which the arms read the OutValue again
+// for a `when`; and `close` writes the value of a container that a member makes from its made children, for each variant.
+export function walkRust(shape: WalkShape, name: string, fills: Fill[], arms: (walk: Walk) => string, tail: string, opened: string, kept?: { name: string; type: string }, close?: { head: string; of: (fill: Fill) => string }): string {
+  const { generics, life, anon, env, value: made_, result } = shape;
+  const plain: Walk = { put: (value) => `Ok(${value})`, leaf: (made) => made, level: () => '' };
+  const probe = arms({ put: (value) => `Ok(OutStep::Put(${value}))`, leaf: (made) => `${made}.map(OutStep::Put)`, level: (parts) => `OutStep::Enter(${parts.fill})` });
+  const used = fills.filter((fill) => probe.includes(`OutFill::${fill.name}(`));
+  if (used.length === 0) {
+    // No row makes a container, so the value has no children and the function has no walk.
+    return `
+fn make_${name}${generics}(${env.params}out: OutValue, _source: &mut dyn OutValues${kept === undefined ? '' : `, _${kept.name}: ${kept.type}`}) -> ${result(made_)} {
+${opened === '' ? '' : `    ${opened}\n`}    match out${kept === undefined ? '' : '.clone()'} {
+${arms(plain)}
+        ${tail}
+    }
+}
+`;
+  }
+  const walked = used.some((fill) => fill.next !== undefined);
+  const made = close === undefined;
+  const walk: Walk = {
+    put: (value) => `Ok(OutStep::Put(${value}))`,
+    leaf: (result) => `${result}.map(OutStep::Put)`,
+    level: (parts) => `Ok(OutStep::Enter(OutLevel { ${walked ? `handle, ${parts.walks ? 'len' : 'len: 0'}, index: 0, ` : ''}waiting: ${parts.waiting ?? 'None'}, fill: ${parts.fill}${made ? `, made: ${parts.made ?? ''}` : ''} }))`,
+  };
+  const body = arms(walk);
+  const next = walked
+    ? `if level.index >= level.len {
+    return None;
+}
+${used.length === 1
+    ? (used[0]?.next ?? 'None')
+    : `match level.fill {\n${used.map((fill) => `    OutFill::${fill.name}(..) => ${indent(fill.next ?? 'None', 4).trimStart()}${(fill.next ?? '').startsWith('{') ? '' : ','}`).join('\n')}\n}`}`
+    : '';
+  const closed = close === undefined ? '' : `
+    // GN-6as: the value of a level whose children are all made, which a member of the owner makes from them.
+    fn close_level${generics}(${env.params}level: OutLevel${life}) -> ${result(made_)} {
+${close.head === '' ? '' : `        ${close.head}\n`}${indent(perFill(used, 'level.fill', close.of, (fill) => fill.pattern.replace(', key)', ', _key)')), 8)}
+    }`;
+  return `
+fn make_${name}${generics}(${env.params}out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(made_)} {
+    // GN-6as: a container whose children are made next: an entry of the work stack of the walk.${walked ? ' The children are\n    // read from the source by the handle, one for each index below the length.' : ''} waiting is the value that
+    // is made first: the value of the entry whose key was made, or the one value of a reference.
+    struct OutLevel${life} {${walked ? `
+        handle: Handle,
+        len: u64,
+        index: u64,` : ''}
+        waiting: Option<OutValue>,
+        fill: OutFill${life},${made ? `
+        made: ${made_},` : ''}
+    }
+    // GN-6as: the container of ${shape.language} that takes the made children of a level.
+    enum OutFill${life} {
+${used.map((fill) => `        // ${fill.doc}\n        ${fill.name}(${fill.type}),`).join('\n')}
+    }
+    // GN-6as: what the walk does next: it opens a value, enters a container, puts a made value into the level that
+    // waits for it, or asks the innermost level for its next child.
+    enum OutStep${life} {
+        Open(OutValue),
+        Enter(OutLevel${life}),
+        Put(${made_}),
+        Next,
+    }
+    // GN-6as: one value: a value without children is made, and a container is entered before its children are made.
+    fn open_level${generics}(${env.params}out: OutValue${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(`OutStep${life}`)} {
+${opened === '' ? '' : `        ${opened}\n`}        match out${kept === undefined ? '' : '.clone()'} {
+${indent(body, 4)}
+            ${tail}
+        }
+    }
+    // GN-6as: the next child of a level that the walk makes, or None when every child is made.
+    fn next_child(level: &mut OutLevel${anon}${walked ? ', source: &mut dyn OutValues' : ''}) -> Option<OutValue> {
+${walked ? `        if let Some(waiting) = level.waiting.take() {
+            return Some(waiting);
+        }
+${indent(next, 8)}` : '        level.waiting.take()'}
+    }
+    // GN-6as: a made child goes into the container of the level that waits for it.
+    fn put_child${generics}(level: &mut OutLevel${life}, value: ${made_}) -> ${result('()')} {
+${indent(perFill(used, '&mut level.fill', (fill) => fill.put), 8)}
+        Ok(())
+    }${closed}
+    let mut levels: Vec<OutLevel${life}> = Vec::new();
+    let mut step = OutStep::Open(out);
+    loop {
+        step = match step {
+            OutStep::Open(out) => open_level(${env.args}out${kept === undefined ? '' : `, ${kept.name}`})?,
+            OutStep::Enter(level) => {
+                levels.push(level);
+                OutStep::Next
+            }
+            OutStep::Put(value) => match levels.last_mut() {
+                Some(level) => {
+                    put_child(level, value)?;
+                    OutStep::Next
+                }
+                None => return Ok(value),
+            },
+            OutStep::Next => match levels.pop() {
+                Some(mut level) => match next_child(&mut level${walked ? ', source' : ''}) {
+                    Some(child) => {
+                        levels.push(level);
+                        OutStep::Open(child)
+                    }
+                    None => OutStep::Put(${made ? 'level.made' : `close_level(${env.args}level)?`}),
+                },
+                None => return ${shape.internal('String::from("GN-6as: the walk has no level to fill")')},
+            },
+        };
+    }
+}
+`;
 }

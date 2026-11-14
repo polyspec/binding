@@ -553,15 +553,24 @@ the design ids are those of the binding design.
   any thread; a func of a call that fails before the C ABI reads it is held by the call alone, which ends. The
   function calls the func through the export `<prefix>__go_function`, which takes the handle of the `Native` and
   not the handle of a call, because the core calls a kept function in a later call or on a thread of its own; the
-  export decodes the arguments, calls the func and encodes its result. The `error` that the func returns, and the
+  export decodes the arguments, calls the func and encodes its result. The export runs the func in a call of package
+  `binding` of its own, which no member made, and the result starts with the handle of that call: the C ABI reads a
+  value alias of the result through that call (GN-15c), as it reads the result of a callback through the call of the
+  member, and a func of the result through `<prefix>__go_keep`, and then ends the call through the export
+  `<prefix>__go_end`; a run that fails ends its call in package `binding`. So the result of a kept function converts as
+  the result of the function of the other targets does, by the `in` function of its alias. An error that a member of
+  the owner of a value class returns while that call is read (node 12, GN-15c) is kept in the table of no call
+  described next, and node 12 names the call 0 and its key, because the member in whose call the function ran returns that
+  error after the call of the run ended. The `error` that the func returns, and the
   value of a panic, which the export recovers as a call recovers the panic of a callback (GN-15b), are kept in a
   table of package `binding` behind a mutex, which is the table of no call, under a key that is a count of the
   table, and the `Raised` names that key: the member in whose call the function ran takes the entry out and returns
   the same error value, or panics with the same value after the call of the C ABI returned, and the last drop of a
   `Raised` that no member returned removes the entry through the export `<prefix>__go_release_raised`, on any
-  thread. The entry point of `thrown-count-test` counts such a `Raised` as any other. A function type whose result
-  holds a value alias, a callback or a function is refused by name for Go (G-4), because the C ABI reads such a
-  result through a call (GN-15c), and a kept function runs in no call. The Go test of a member that takes a function
+  thread, and so does the last drop of a `Raised` of a failure of the binding that names the call 0 and a key. The
+  entry point of `thrown-count-test` counts such a `Raised` as any other. A result of a function type holds no
+  callback of the call of the run, which ends once the C ABI read the result: a callback unit and the function of a
+  machine (GN-6ae) are no result of any type (T-2). The Go test of a member that takes a function
   type requires kind `invalid_argument_type` for a nil func; a function value of a case is a func that answers by
   the rows of the case and records a call that no row answers, which the test requires to be none; with the
   arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
@@ -777,6 +786,21 @@ the design ids are those of the binding design.
   instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
   language is the only form in which a user of both packages can pass an instance from one to the other.
+- **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
+  of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
+  `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
+  with a work stack on the heap and never calls itself or a conversion of the alias. The stack holds one level for
+  each container whose children are not all made: the handle of the container, its length and the index of its next
+  child, the container of the language that takes the made children, and, for an entry of a map, the made key until
+  its value is made. A container that a later position may name again (U-7 (d)) is made and kept under its handle
+  before its children, so a cycle is made as before; an instance that a member of the owner makes from its made
+  children (GN-6x) is made when its last child is made. The children are asked for in the order of the value, each
+  entry once, its key made before its value. The binding describes a value of the language one level at a time
+  (B-1), so the walk of an incoming value is the loop of the `in` function of the core, and the binding adds no level
+  of its own to it. Why: a value within the depth limit that a contract states has the same result on the five
+  targets; the binding cannot enlarge the stack of a host, such as the main thread of Node or the stack of a WASM
+  module; and a larger stack only moves the depth at which the process ends. Generated for Node and WASM. Not
+  generated yet: the make functions of Python, PHP and Go, which still call themselves once for each level.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a
@@ -786,7 +810,9 @@ the design ids are those of the binding design.
   the `by` member of the `in` row of its language through the language API of the owner, and describes the instance as
   `HostValue::Value` with the kind of the case whose `is` is the result, without opening it. `HostValues::read` of its
   handle calls the `read` member of that case and describes the result one level at a time: a list as a list, each
-  item again by these rules; an instance of a generated class of the owner whose `iterate` member yields `{key,
+  item again by these rules (in PHP the array that the `read` member of a case of the kind `list` gives, whose keys
+  are 0 to n-1 in order, as `HostValue::List` and not as a PHP array, because the walk of the owner reads the kind
+  that the case names); an instance of a generated class of the owner whose `iterate` member yields `{key,
   value}` as a map of the entries of that iteration, a snapshot taken when the map is described (GN-6f); an instance
   of the value class again as `HostValue::Value`; a text or a bool as the `HostValue` of that kind; and for a case of
   the kind `text16`, whose `read` member gives a list of `uint`, the UTF-16 code units of a text as
@@ -1870,8 +1896,12 @@ the design ids are those of the binding design.
   value to be compared with, and its case has a test that fails with that reason (GN-13e). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
-  (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
-  refusal of the target by name, and the generator ends with no exception that names no item.
+  (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class that no member without
+  a receiver makes, is a refusal of the target by name, and the generator ends with no exception that names no item.
+  The placeholder of a class is the instance that the first constructor or static member of the class that returns it
+  makes, or, for a class without one, the first function and then the first static member of another class that
+  returns it, each with placeholder arguments, as `new` of GN-13f names any member that returns the class (template
+  `bind`, which makes `bound_map`). A method is not taken, because it needs an instance of its own class first.
   A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
   `{"cancel": "open"}`, one that does not fire (CK-22), which the generated test gives as GN-6aq states.
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
@@ -2046,6 +2076,19 @@ the design ids are those of the binding design.
   that returns the class: a constructor, a static member, a function, or a method of any class; `from` names a member
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
+  Among its own keys a case gives the arguments of the first factory, in contract order, whose every parameter has a
+  key that is no key of a parameter of the member of the case: such a key holds an argument of that member, as `units`
+  of a case of a method `get_units` does beside a factory `from_units`, and a receiver made from it is another value
+  than the case names. A factory that takes no key of the case fits every case, so it makes the receiver only when no
+  factory that takes a key does. The test of a case that raises makes the receiver as a local before the call that
+  must fail: a receiver that cannot be made fails the test, and its failure is not taken for the failure that the
+  case expects. When the factory that makes the receiver from the keys of the case raises a variant whose row of
+  `errors.kinds` gives the kind that the case expects, and the case has neither `faults` nor `after`, the failure of
+  the case is the failure of making the receiver or of the call: the test expects it from both, and Go takes the
+  error of the factory as the error of the case and calls the member only on a receiver that it made. Why: a group
+  of cases that both the factory and a member of its class run, such as the invalid fields of a parser and its
+  property, names the failure of the parse for both, and the runner of the repository makes the receiver and calls
+  the member as one step.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
   a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not
@@ -2240,8 +2283,13 @@ the design ids are those of the binding design.
   package of the platform is packed from the built addon and installed with the package of the library from their
   tarballs without the optional packages of other platforms (T-2), and the runners get the settings that the
   generated tests need: the test features of each crate (GN-5, GN-13b), `CGO_LDFLAGS` with the directory of the
-  static library, `GOFLAGS` with the tags of those features and `GOTOOLCHAIN=local` for Go, `--expose-gc` for WASM
-  (GN-18a), and `CASES` with the case file. Where `tests/e2e/<library>` holds `bench.mjs`, `bench.py` or `bench.php`,
+  static library, `GOFLAGS` with the tags of those features, `GOTOOLCHAIN=local` and `GOWORK` for Go, `--expose-gc` for WASM
+  (GN-18a), and `CASES` with the case file. `GOWORK` names a `go.work` of the work directory that uses the Go module of
+  the copy and the Go module of the copy of each repository of `DEPS` that its `go.mod` requires at `v0.0.0` without a
+  `replace`, the development form of GN-15f, and the run prints the modules that it uses; with no such dependency
+  `GOWORK` is `off`, so no `go.work` of a directory above the copy is read. Why: a development checkout resolves that
+  form through its untracked `go.work`, which no copy holds, and the run resolves every dependency of every target to
+  the packages of the copies of `DEPS`. Where `tests/e2e/<library>` holds `bench.mjs`, `bench.py` or `bench.php`,
   the run measures with each after the cases of Node, Python or PHP and gives it `BENCH_REPORT`, the file
   `var/report/bench/<library>-<language>.json` of the checkout (ignored), where it writes the median of a fixed number of
   runs of each measurement with the load average when it was taken; a measurement prints a `WARNING` above its limit
@@ -2274,6 +2322,17 @@ the design ids are those of the binding design.
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. Why: the generated tests
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
+- **GN-14h** On each target the run tests what the generator writes and the contract cases of `tests/e2e/<library>`,
+  and no test of the repository: unittest discovers `packages/python/generated/tests` and the case runners, `node
+  --test` runs `generated.test.mjs` of Node and of WASM and the case runners, PHPUnit runs
+  `packages/php-ext/generated/tests` and `CasesTest.php`, and `go vet` and `go test` of the Go module read the files
+  `zz_generated*_test.go` (GN-13b) and the `tests/cases_test.go` that the run copied. Every other test file of the Go
+  module is a test of the repository; an overlay of `go vet` and `go test` (`-overlay`, a file of the work directory)
+  treats each as absent and the run prints their paths, so no file of the copy changes. The source of the released
+  form (GN-14f) leaves the same files out. The test of the core (GN-14) is a step of every target and stays. Why: a
+  test of the repository reads inputs that the runner of the repository gives, such as the path of its case file in
+  an environment variable, which the run does not know, and one target that runs more than the others gives another
+  result for the same contract.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on

@@ -34,6 +34,81 @@
   generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
 
 
+- The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
+  `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key
+  `lines`, and the tests made the receiver before the block that expects the failure, so the test failed at making
+  it. When the factory of the receiver raises the kind that the case expects, and the case has neither `faults` nor
+  `after`, the test now expects the failure from making the receiver or from the call, and Go takes the error of the
+  factory as the error of the case (GN-13f). Verified by `make test-ts`: the new test failed before the change.
+- The Go steps of the end-to-end check failed for a repository whose core depends on a repository of `DEPS` by a
+  branch: `go vet` gave "missing go.sum entry for module providing package
+  github.com/polyspec/http-media-type/packages/go/media_type", because the scaffold writes that dependency as a
+  require of `v0.0.0` without a `replace`, which a development checkout resolves through its untracked `go.work`, and
+  the run gave no `go.work`. The run now writes a `go.work` of its work directory that uses the Go module of the copy
+  and the Go module of the copy of each such dependency and gives it as `GOWORK`, or `GOWORK=off` without one
+  (GN-14d). Verified by `make test-ts`: the new test failed before the change.
+- A PHP member that takes a value class of another repository failed with "value_in: a description that no in row
+  of value gives" for a value with an array: the read member of the case of the kind `list`, `value.items`, gives a
+  PHP array, which the generated host described as a PHP array, while the walk of the owner reads the kind that the
+  case names, a list. The generated test "carry a document of every kind" of `tests/e2e/relay` failed. The host now
+  describes that array as a list of its values (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- The Go tests of the end-to-end check ran the tests of the repository beside the generated tests: `go test ./...`
+  of the Go module read every test file, so `packages/go/tests/cases_test.go` of a repository, which reads the path
+  of its case file from `HTTP_MEDIA_TYPE_CASES`, failed three tests with "open : no such file or directory", while
+  the other targets run their generated tests and the contract cases alone. `go vet` and `go test` of the run now
+  read the files `zz_generated*_test.go` and the contract cases that the run copied, an overlay treats every other
+  test file of the module as absent, and the source of the released form leaves the same files out (GN-14h).
+  Verified by `make test-ts`: the new test failed before the change. And by `make e2e` of the
+  http-media-type checkout, which passed on the five targets.
+- A PHP member that takes a value class of another repository whose kind is a backed enum failed with "Cannot
+  indirectly modify readonly property": the generated crate read the value of the enum case with `get_property` of
+  ext-php-rs, which fetches a property for writing, and PHP refuses that for the readonly `value` of an enum case, so
+  the 12 generated PHP tests of `tests/e2e/relay` that give `carry` a value failed. The crate now reads the value
+  from the table of the properties of the case (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- A value at the depth limit of a contract ended the process in Node and trapped in WASM: the function that makes
+  the value of the language from the value of the core, `make_<name>`, called itself once for each level, so a
+  value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node and the WASM
+  function now walk the value in a loop with a work stack on the heap: it holds one level for each container whose
+  children are not all made, and names no make function (GN-6as). Not generated in this form yet: the make functions
+  of Python, PHP and Go. Verified by `make test-ts`: the new test failed before the change.
+- The receiver of a case of a method was made from a key that holds an argument of the method. A case of `get_units`
+  with the keys `members` and `units` beside the factories `from_units(units)`, `null()` and `object(members)` got its
+  receiver from `from_units` with the `units` of the call: the Go test failed at making the receiver, and the tests
+  of the other targets made the receiver inside the block that expects the failure, so the failure of making it
+  passed as the failure of the call. A key of a parameter of the member of the case now gives no parameter of a
+  factory, a factory that takes no key of the case makes the receiver only when no factory that takes a key does, and
+  the Python, Node, WASM and PHP test of a case that raises makes the receiver as a local before the call that must
+  fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change; and by `make
+  e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
+- An instance value at a place of an `optional`, a callback or a generated interface in a call that makes the
+  receiver of a case was refused: the class of the place was read from a `{"unit"}` type alone, so the receiver of a
+  case of `engine.render` of template, which `engine.new` makes with the field `loader` of type `optional<loader>` as
+  an instance value of `map_loader`, refused php, python and node with "engine.new.loader: map_loader.new gives
+  {"unit":"map_loader"}, not the class  (G-5, GN-13f)". The instance is now made at such a place as at the place of
+  an argument of the case: the class inside the `optional`, or a class that implements the callback or the interface
+  (GN-13f, GN-6w, GN-6ap). Verified by `make test-ts`: the new test failed before the change.
+- A class that no constructor or static member of its own makes, but a function does, had no placeholder: template
+  has `bound_map`, which only the function `bind` makes, and php, python, node and wasm were refused with "no
+  placeholder for {"unit":"bound_map"} is written yet (G-5)" at `engine.render_bound.assign` and
+  `engine.prepare_bound.assign`. The placeholder of such a class is now the instance that the first function, then the
+  first static member of another class, that returns it makes, with placeholder arguments, in every target (G-5,
+  GN-13f). Go refused the same class with "no placeholder of the class ..., which has no constructor or static member
+  that makes it (T-5)" and takes the same member now. Verified by `make test-ts`: the new test failed before the
+  change.
+- Go refused a function type whose result holds a value alias, such as `engine.register.host_function`,
+  `engine.register_class.host_function` and `engine.new.functions` of template, which return `template_value`: the
+  static library reads a value alias through the call that encoded it, and a kept func ran in no call. A kept func
+  now runs in a call of package `binding` of its own, whose handle starts its result; the static library reads the
+  result through that call, so the alias converts by its `in` function as in the other targets, and then ends the
+  call through the export `<prefix>__go_end`. An error of a read of a value class in that call is kept in the table
+  of no call under the call 0, because the member returns it after that call ended (GN-6z, GN-15c). Verified by
+  `make test-ts`: the new tests failed before the change; and by `make e2e` of `tests/e2e/functions`, whose kept
+  funcs now run in a call of their own, at the merge of the change: php, python, node, go and wasm passed, with
+  `evidence: true`. Not run: a kept func with a value alias result end to end, which no contract of `tests/e2e` has.
 - The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
   `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
   contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`

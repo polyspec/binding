@@ -33,6 +33,23 @@ export function requiredVersion(goMod: string, module: string): string | undefin
   return undefined;
 }
 
+// GN-14d, GN-15f: the go.work of the run. A dependency line of the core in the development form (a branch, a commit, a
+// range) gives a require of v0.0.0 and no replace in go.mod, which a development checkout resolves through its
+// untracked go.work; the run resolves it in the same way, to the Go module of the copy of that repository in the run,
+// as the other targets install the packages of the copies of DEPS. A module that go.mod replaces is resolved by the
+// replace, and Go refuses a workspace module that go.mod also replaces, so it stays out. No such dependency: no file.
+export function goWork(goMod: string, own: string, deps: readonly { module: string; dir: string }[]): string | undefined {
+  const replaced = (module: string): boolean => goMod.split('\n').some((line) => {
+    const words = line.trim().split(/\s+/);
+    return words[words[0] === 'replace' ? 1 : 0] === module && words.includes('=>');
+  });
+  const used = deps.filter((d) => requiredVersion(goMod, d.module) === 'v0.0.0' && !replaced(d.module)).map((d) => d.dir);
+  if (used.length === 0) return undefined;
+  const version = /^go (\S+)$/m.exec(goMod)?.[1];
+  if (version === undefined) throw new Error('the go.mod of the Go module names no Go version, which its go.work needs (GN-15)');
+  return `go ${version}\n\nuse (\n${[own, ...used].map((dir) => `\t${dir}\n`).join('')})\n`;
+}
+
 export interface Required {
   module: string;
   version: string;

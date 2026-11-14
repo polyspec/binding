@@ -39,8 +39,8 @@ import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints, testEntrySymbol } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
-import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
-import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
+import { consumerFiles, debugSections, goRemote, goWork, requiredVersion, type Required } from './go-release.mts';
+import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -766,6 +766,7 @@ if (targets.includes('go')) {
     const goModule = at(p, 'packages/go');
     const crate = p.contract.core.crate;
     const goEnv = goEnvOf(p);
+    const goWorkFile = join(work, `go-${p.contract.library}.work`);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
     // GN-13b, GN-6u, GN-6ae: panic-test, codec-test, native-count-test and thrown-count-test are for tests only; the library built without features
     // has no test entry point.
@@ -788,23 +789,48 @@ if (targets.includes('go')) {
         const module = (d.contract.packages['go'] as { module: string }).module;
         if (new RegExp(`^require ${module.replaceAll('.', '\\.')} |^\\t${module.replaceAll('.', '\\.')} `, 'm').test(goMod)) run('cargo', ['build', '--manifest-path', join(d.copy, 'Cargo.toml'), '-p', `${d.contract.core.crate}-go`, '--features', testFeatures(d, 'go')]);
       }
+      // GN-14d: a dependency in the development form resolves to the Go module of its copy through the go.work of the
+      // run, as the untracked go.work of a development checkout resolves it; without one, no go.work of a directory
+      // above the copy is read.
+      const workspace = goWork(goMod, goModule, dependencies.filter((d) => d.contract.targets.includes('go')).map((d) => ({ module: (d.contract.packages['go'] as { module: string }).module, dir: at(d, 'packages/go') })));
+      rmSync(goWorkFile, { force: true });
+      rmSync(`${goWorkFile}.sum`, { force: true });
+      if (workspace === undefined) goEnv['GOWORK'] = 'off';
+      else {
+        writeFileSync(goWorkFile, workspace);
+        goEnv['GOWORK'] = goWorkFile;
+        process.stdout.write(`the go.work of the run (GOWORK, GN-14d) uses ${workspace.split('\n').filter((line) => line.startsWith('\t')).map((line) => line.trim()).join(', ')}\n`);
+      }
       if (goCases && i === 0) {
         mkdirSync(join(goModule, 'tests'), { recursive: true });
         copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
       }
     });
+    // GN-14h: go vet and go test read the generated tests and the contract cases alone; the overlay treats every other
+    // test file of the module as absent and changes no file of the copy.
+    const scopeOverlay = join(work, `go-overlay-${p.contract.library}.json`);
+    const scoped = (): string[] => {
+      const files = (readdirSync(goModule, { recursive: true, encoding: 'utf8' })).map((path) => path.split('\\').join('/'));
+      const scope = goTestScope(goModule, files, goCases && i === 0);
+      rmSync(scopeOverlay, { force: true });
+      if (scope.overlay === undefined) return [];
+      process.stdout.write(`the tests of the repository that go vet and go test of the run leave out (GN-14h): ${scope.dropped.join(', ')}\n`);
+      writeFileSync(scopeOverlay, scope.overlay);
+      return [`-overlay=${scopeOverlay}`];
+    };
     if (stepOf(['go'], `gofmt -l and go vet${of}`, () => {
       process.stdout.write('$ gofmt -l .\n');
       const unformatted = execFileSync(gofmt, ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
       if (unformatted !== '') throw new Error(`gofmt would change: ${unformatted.trim().split('\n').join(', ')}`);
-      run(goTool, ['vet', './...'], { cwd: goModule, env: goEnv });
+      run(goTool, ['vet', ...scoped(), './...'], { cwd: goModule, env: goEnv });
     })) lintOf('go', `gofmt -l and go vet${of}`);
     // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
     // skipped.
     const what = `the generated tests${goCases && i === 0 ? ' and the contract cases' : ''}${of} on go test`;
     stepOf(['go'], what, () => {
-      process.stdout.write(`$ ${goTool} test -json -count=1 ./...\n`);
-      const goTest = spawnSync(goTool, ['test', '-json', '-count=1', './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
+      const overlay = scoped();
+      process.stdout.write(`$ ${goTool} test -json -count=1 ${[...overlay, './...'].join(' ')}\n`);
+      const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...overlay, './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
       const read = readGoTestEvents(goTest.stdout);
       process.stdout.write(read.printed);
       process.stdout.write(goTest.stderr);
@@ -872,8 +898,11 @@ if (targets.includes('go')) {
         const moduleDir = join(source.dir, r.remote.directory);
         mkdirSync(dirname(moduleDir), { recursive: true });
         execFileSync('cp', ['-R', goModule, moduleDir]);
-        // The contract cases of the run are no file of the repository: the run copied them into the module (GN-14).
-        rmSync(join(moduleDir, 'tests/cases_test.go'), { force: true });
+        // The contract cases of the run are no file of the repository: the run copied them into the module (GN-14). The
+        // tests of the repository are left out as the tests of the copy leave them out (GN-14h), so go test of the
+        // fetched modules reads the generated tests alone.
+        const carriedFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/'));
+        for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
         const carriedLibrary = join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`);
         copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), carriedLibrary);
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
