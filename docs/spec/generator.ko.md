@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0e90936581a2b65411073cd862c1de830fd5368e8be3b46d56ca9806470504b7 -->
+<!-- source-sha256: 4b627342f3668896522d9746794fe4f012acfaed4577cceb3142f3dfec3ad7cb -->
 # 생성기
 
 [English](generator.md)
@@ -1418,8 +1418,8 @@
   실패한다.
   여러 라이브러리의 Go 모듈을 import하는 프로그램(GN-15f)은 각각의 정적 라이브러리를 링크하고, 각 라이브러리는
   `binding_core`와 Rust 표준 라이브러리의 사본을 따로 담는다. end-to-end 검사가 그런 프로그램을 release 형태로 실행
-  플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다. 그 검사는 `darwin_arm64`에서만
-  실행되었다. 사본들이 Linux에서 링크된다는 것은 아직 확인하지 않았다.
+  플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다. 그 검사는 `darwin_arm64`와
+  `linux_arm64`에서 실행되었다.
 - **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
   `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을

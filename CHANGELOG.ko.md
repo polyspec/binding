@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4cc2f2ee7d12eb7964fe582b52423b76d2294df96cf45591796097ea52e41f2f -->
+<!-- source-sha256: b0fc8ba555c9f470345a0d99d269607243d6fb9a81f40959c3bbe49689ea6b50 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 여러 Go 모듈의 정적 라이브러리를 한 프로그램에 링크하는 것은 `darwin_arm64`에서만 확인되었다(GN-15g,
+  GN-14f). linux/arm64(Debian 컨테이너)로 돌린 `tests/e2e/points`와 함께인
+  `tests/e2e/plot`의 `make e2e`는 모든 target을 통과했고, 한 프로그램이 plot과 points의
+  라이브러리를 링크하는 release 형태의 시험 21개가 통과했다. linux/arm64로 돌린
+  `tests/e2e/sample`의 `make e2e`는 모든 target을 통과했고, 생성된 Go 시험 151개와
+  release 형태의 시험 110개가 통과했다. 두 기록 모두 evidence다. 명세는 두 플랫폼을 적고, B2.96은
+  끝났다. darwin/arm64로 돌린 points와 함께인 plot도 모든 target을 통과하므로, job `e2e`의
+  항목 plot은 더 이상 실패하는 target을 기다리지 않는다(B2.98). Node addon의 플랫폼
+  패키지(B2.92)는 변경을 담은 commit에서 돌린 `make e2e REPO=tests/e2e/classes`로
+  확인했다. 그 기록은 evidence이고, 플랫폼 패키지와 패키지를 두 archive로 설치한 target node가 시험
+  110개를 통과했다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

@@ -1725,7 +1725,7 @@ the design ids are those of the binding design.
   A program that imports the Go modules of several libraries (GN-15f) links the static library of each, and each
   holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
   a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
-  one program. It has run on `darwin_arm64` alone: that the copies link on Linux is not verified yet.
+  one program. It has run on `darwin_arm64` and on `linux_arm64`.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`

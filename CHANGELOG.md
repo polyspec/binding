@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The link of the static libraries of several Go modules in one program was verified on `darwin_arm64` alone (GN-15g,
+  GN-14f). `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on linux/arm64 (a Debian container) passed every
+  target, with 21 tests of the released form, in which one program links the libraries of plot and of points;
+  `make e2e` of `tests/e2e/sample` on linux/arm64 passed every target, with 151 generated Go tests and 110 tests of
+  the released form. Both records are evidence. The specification states the two platforms, and B2.96 is done. The run
+  of plot with points on darwin/arm64 also passes every target, so the entry plot of the job `e2e` no longer waits for
+  a failing target (B2.98). The platform packages of the Node addon (B2.92) are verified by
+  `make e2e REPO=tests/e2e/classes` of a commit that holds the change, whose record is evidence and whose target node
+  passed 110 tests with the platform package and the package installed as two archives.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
