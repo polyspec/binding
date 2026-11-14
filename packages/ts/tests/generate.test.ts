@@ -8062,3 +8062,23 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.match(text(variants(), 'packages/go/zz_generated_variants.go'), /\nfunc encodeFigure\(enc \*binding\.Writer, value Figure\) \{/);
 });
 
+test('a parameter of the type cancel binds the cancellation of each language to a binding_core::Cancel (T-1, GN-6aq)', { todo: 'B2.111: the type cancel is not generated yet' }, () => {
+  // classes.halted takes cancel: cancel and gives whether the cancellation fired before the core returned.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  contract.units.find((u: any) => u.id === 'classes').members.push({ id: 'classes.halted', name: ['halted'], kind: 'function', visibility: 'public', parameters: [{ name: ['cancel'], type: 'cancel', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_classes::halted' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'))]]) });
+  // Every crate makes the pair, keeps the trigger and gives the core the Cancel.
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.match(text(out, path), /binding_core::cancel_pair\(\)/, path);
+  }
+  // Node and WASM take an AbortSignal: aborted fires at once, and otherwise a listener of abort with once fires it.
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function halted\(cancel: AbortSignal\): boolean;/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /"aborted"[\s\S]*"addEventListener"[\s\S]*"once"/);
+  // Python takes a future: cancelled() fires at once, and otherwise a done callback fires it when it is cancelled.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /"cancelled"[\s\S]*"add_done_callback"/);
+  // PHP takes an instance of the generated final class Cancellation of the root namespace.
+  assert.match(text(out, 'packages/php-ext/generated/stubs.php'), /final class Cancellation\s*\{[\s\S]*public function cancel\(\): void[\s\S]*public function isCancelled\(\): bool/);
+  // Go takes the context as the first parameter ctx, and context.AfterFunc fires the trigger.
+  assert.match(text(out, 'packages/go/zz_generated_classes.go'), /func Halted\(ctx context\.Context\) \(bool, error\)/);
+  assert.match(text(out, 'packages/go/zz_generated_classes.go'), /context\.AfterFunc\(ctx, /);
+});
