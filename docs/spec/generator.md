@@ -801,8 +801,9 @@ the design ids are those of the binding design.
   targets; the binding cannot enlarge the stack of a host, such as the main thread of Node or the stack of a WASM
   module; and a larger stack only moves the depth at which the process ends. PHP makes an array, which is a value,
   when its last child is made, and keeps the key of an entry of an array or of a stdClass as the `OutValue` that it
-  is until the value of the entry is made. Generated for Node, WASM, Python and PHP. Not generated yet: the make
-  function of Go, which still calls itself once for each level.
+  is until the value of the entry is made. Go writes the node of a container before its children, in the order in
+  which package binding reads the nodes, so a level of Go holds no container of the language: it names which
+  children of the container are written next. Generated for the five targets.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a

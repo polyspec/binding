@@ -1288,100 +1288,204 @@ ${failureFn}${natives}${hosts}${callbackCall}${passingRust(model)}${keptFuncsRus
 
 // ---- value aliases (U-7) ----
 
+// GN-6as: the make function of Go writes the nodes of a value in the order in which package binding reads them, the node
+// of a container before its children, so its walk needs no value of a child to make its container: a level of the
+// work stack is a container whose children are written next. The children of a level: the items of a list, the values
+// of the entries of a map or an object (U-7 (c)), the key and the value of each entry, or the one value of a reference.
+type GoChildren = 'Items' | 'Values' | 'Entries' | 'Value';
+
+const GO_CHILDREN: { name: GoChildren; doc: string; next?: string }[] = [
+  { name: 'Items', doc: 'The items of a list.', next: 'Some(source.item(level.handle, index))' },
+  { name: 'Values', doc: 'The values of the entries of a map or an object (U-7 (c)).', next: 'Some(source.entry(level.handle, index).1)' },
+  { name: 'Entries', doc: 'The key and the value of each entry of a map or an object.', next: `{
+    let (key, value) = source.entry(level.handle, index);
+    level.waiting = Some(value);
+    Some(key)
+}` },
+  { name: 'Value', doc: 'The one value of a reference.' },
+];
+
+// GN-6as: how an arm of the make function of Go ends: `end` is what an arm gives after it wrote its node, None in the
+// walk, and nothing in a make function without a container; `ret` returns from the arm early; `level` gives the level
+// of a container whose children are written next.
+interface GoWalk {
+  end: string;
+  ret: string;
+  level: (children: GoChildren, waiting?: string) => string;
+}
+
+// GN-6as: the arm of statements that write a node, which ends as the walk ends an arm.
+const goArm = (walk: GoWalk, ...lines: string[]): string => {
+  if (walk.end === '' && lines.length === 1) return (lines[0] ?? '').replace(/;$/, '');
+  return `{\n${[...lines, walk.end].filter((line) => line !== '').map((line) => `            ${line}`).join('\n')}\n        }`;
+};
+
+// GN-6as: the make function of a value alias of Go: the arms of one OutValue, and the loop over the levels whose
+// children are not all written. `kept` is the extra parameter of the function, the containers written before by their
+// handles, with which the arms read the OutValue again for a when.
+function goMake(name: string, arms: (walk: GoWalk) => string, tail: (walk: GoWalk) => string, kept?: { name: string; type: string }): string {
+  const plain: GoWalk = { end: '', ret: 'return;', level: () => '' };
+  const used = GO_CHILDREN.filter((children) => arms({ end: 'None', ret: 'return None;', level: (c) => `OutChildren::${c}` }).includes(`OutChildren::${children.name}`));
+  if (used.length === 0) {
+    // No row makes a container, so the value has no children and the function has no walk.
+    return `
+fn make_${name}(output: &mut Vec<u8>, out: OutValue, _source: &mut dyn OutValues${kept === undefined ? '' : `, _${kept.name}: ${kept.type}`}) {
+    match out${kept === undefined ? '' : '.clone()'} {
+${arms(plain)}
+        ${tail(plain)}
+    }
+}
+`;
+  }
+  const walked = used.some((children) => children.next !== undefined);
+  const many = used.length > 1;
+  const walk: GoWalk = {
+    end: 'None',
+    ret: 'return None;',
+    level: (children, waiting) => `Some(OutLevel { ${walked ? `handle, ${children === 'Value' ? 'len: 0' : 'len'}, index: 0, ` : ''}waiting: ${waiting ?? 'None'}${many ? `, children: OutChildren::${children}` : ''} })`,
+  };
+  const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
+  const child = (children: { next?: string }): string => children.next ?? 'None';
+  const next = !walked ? '        level.waiting.take()' : `        if let Some(waiting) = level.waiting.take() {
+            return Some(waiting);
+        }
+        if level.index >= level.len {
+            return None;
+        }
+        let index = level.index;
+        level.index = level.index.saturating_add(1);
+${indent(many ? `match level.children {\n${used.map((children) => `    OutChildren::${children.name} => ${indent(child(children), 4).trimStart()}${child(children).startsWith('{') ? '' : ','}`).join('\n')}\n}` : child(used[0] ?? {}), 8)}`;
+  return `
+fn make_${name}(output: &mut Vec<u8>, out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) {
+    // GN-6as: a container whose node is written and whose children are written next: an entry of the work stack of the
+    // walk.${walked ? ' The children are read from the source by the handle, one for each index below the length.' : ''} waiting
+    // is the child that is written first: the value of the entry whose key was written, or the one value of a reference.
+    struct OutLevel {${walked ? `
+        handle: Handle,
+        len: u64,
+        index: u64,` : ''}
+        waiting: Option<OutValue>,${many ? `
+        children: OutChildren,` : ''}
+    }${many ? `
+    // GN-6as: which children of a container are written.
+    enum OutChildren {
+${used.map((children) => `        // ${children.doc}\n        ${children.name},`).join('\n')}
+    }` : ''}
+    // GN-6as: one value: its node is written, and a container gives the level whose children are written next.
+    fn open_level(output: &mut Vec<u8>, out: OutValue${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> Option<OutLevel> {
+        match out${kept === undefined ? '' : '.clone()'} {
+${indent(arms(walk), 4)}
+            ${tail(walk)}
+        }
+    }
+    // GN-6as: the next child of a level that the walk writes, or None when every child is written.
+    fn next_child(level: &mut OutLevel${walked ? ', source: &mut dyn OutValues' : ''}) -> Option<OutValue> {
+${next}
+    }
+    let mut levels: Vec<OutLevel> = Vec::new();
+    let mut next = Some(out);
+    loop {
+        if let Some(out) = next.take() {
+            levels.extend(open_level(output, out${kept === undefined ? '' : `, ${kept.name}`}));
+        }
+        let Some(level) = levels.last_mut() else {
+            return;
+        };
+        next = next_child(level${walked ? ', source' : ''});
+        if next.is_none() {
+            levels.pop();
+        }
+    }
+}
+`;
+}
+
 // The Go form of a built-in make form, written from the content of the matched OutValue (the nodes of package binding:
 // 0 nil, 1 bool, 2 int64, 3 float64, 4 string, 5 []byte, 6 []any, 7 map[string]any, 8 a container made before, 9
 // *KeyedMap[any], 10 an instance of a class that a member makes, 11 the func of a Native by a new cgo.Handle, 255 no Go
 // form).
-function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string): string {
+function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string, walk: GoWalk): string {
   switch (form) {
     case 'null':
-      return 'output.push(0)';
+      return goArm(walk, 'output.push(0);');
     case 'bool':
-      return '{\n            output.push(1);\n            bool_out(output, value);\n        }';
+      return goArm(walk, 'output.push(1);', 'bool_out(output, value);');
     case 'int':
-      if (kind === 'int') return '{\n            output.push(2);\n            int_out(output, value.value());\n        }';
-      if (kind === 'int64') return '{\n            output.push(2);\n            int_out(output, value);\n        }';
+      if (kind === 'int') return goArm(walk, 'output.push(2);', 'int_out(output, value.value());');
+      if (kind === 'int64') return goArm(walk, 'output.push(2);', 'int_out(output, value);');
       break;
     case 'float':
-      if (kind === 'float') return '{\n            output.push(3);\n            float_out(output, value.value());\n        }';
+      if (kind === 'float') return goArm(walk, 'output.push(3);', 'float_out(output, value.value());');
       if (kind === 'int' || kind === 'int64' || kind === 'number') {
         const text = kind === 'int' ? 'value.value().to_string()' : kind === 'int64' ? 'value.to_string()' : 'value';
         // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-        return `match ${text}.parse::<f64>() {
+        return goArm(walk, `match ${text}.parse::<f64>() {
             Ok(float) => {
                 output.push(3);
                 float_out(output, float);
             }
             Err(_never) => no_form_out(output, "U-7: an integer that is no number"),
-        }`;
+        }`);
       }
       break;
     case 'text':
-      if (kind === 'text') return '{\n            output.push(4);\n            text_out(output, value);\n        }';
+      if (kind === 'text') return goArm(walk, 'output.push(4);', 'text_out(output, value);');
       if (kind === 'bytes') {
-        return `match std::str::from_utf8(value.value()) {
+        return goArm(walk, `match std::str::from_utf8(value.value()) {
             Ok(text) => {
                 output.push(4);
                 text_out(output, text);
             }
             Err(_bytes) => no_form_out(output, "U-7: text of bytes that are not UTF-8"),
-        }`;
+        }`);
       }
       break;
     case 'bytes':
-      if (kind === 'bytes') return '{\n            output.push(5);\n            bytes_out(output, value.value());\n        }';
-      if (kind === 'text') return '{\n            output.push(5);\n            bytes_out(output, value.as_bytes());\n        }';
+      if (kind === 'bytes') return goArm(walk, 'output.push(5);', 'bytes_out(output, value.value());');
+      if (kind === 'text') return goArm(walk, 'output.push(5);', 'bytes_out(output, value.as_bytes());');
       break;
     case 'list': {
       const parts = container(alias, kind, form);
+      // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
       return `{
-            ${parts.head}
-            if let Some(index) = made.get(&handle.raw()) {
+            ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(index) = made.get(&handle.raw()) {
                 output.push(8);
                 write_length(output, *index);
-                return;
+                ${walk.ret}
             }
             made.insert(handle.raw(), made.len());
             output.push(6);
             uint_out(output, len);
-            for index in 0..len {
-                let item = ${parts.item};
-                make(output, item, source, made);
-            }
+            ${walk.level(kind === 'list' ? 'Items' : 'Values')}
         }`;
     }
     case 'map':
     case 'keyed_map': {
       const parts = container(alias, kind, form);
       return `{
-            ${parts.head}
-            if let Some(index) = made.get(&handle.raw()) {
+            ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(index) = made.get(&handle.raw()) {
                 output.push(8);
                 write_length(output, *index);
-                return;
+                ${walk.ret}
             }
             made.insert(handle.raw(), made.len());
             output.push(${form === 'map' ? 7 : 9});
             uint_out(output, len);
-            for index in 0..len {
-                let (key, item) = ${parts.entry};
-                make(output, key, source, made);
-                make(output, item, source, made);
-            }
+            ${walk.level('Entries')}
         }`;
     }
     case 'native':
       // GN-6u: the bytes outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes. The
       // node is 13: 11 is an instance of a value class of another repository (GN-6x) and 12 one of a value class without
       // core_type (GN-6af), and the decoder of Go is one switch.
-      return `match native.downcast::<GoNative>() {
+      return goArm(walk, `match native.downcast::<GoNative>() {
             Some(object) => {
                 output.push(13);
                 // SAFETY: the handle is the cgo.Handle of the Native, which is alive while the Native is.
                 write_length(output, give(unsafe { ${prefix(model)}__go_native(object.handle) }));
             }
             None => no_form_out(output, "GN-6u: a native value that no Go func entered as"),
-        }`;
+        }`);
     default:
       break;
   }
@@ -1396,13 +1500,13 @@ export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
 
 // GN-6af, GN-15c: an instance of a value class without core_type leaves as node 12 with the number of the class and
 // its content; the handle is marked before the content, so a later place of it is node 8, the same pointer in Go.
-function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string {
+function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string, walk: GoWalk): string {
   const position = model.kept.indexOf(kept);
   if (holds === 'value' && !field.writable) throw new Unsupported(`${kept.unit.id}: a reference makes an instance of a value class whose property keeps the value it holds, which is writable (GN-6af)`);
   const first = `${head === '' ? '' : `${head}\n            `}if let Some(index) = made.get(&handle.raw()) {
                 output.push(8);
                 write_length(output, *index);
-                return;
+                ${walk.ret}
             }
             made.insert(handle.raw(), made.len());
             output.push(12);
@@ -1410,17 +1514,13 @@ function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'ent
   if (holds === 'value') {
     return `{
             ${first}
-            make(output, *value, source, made);
+            ${walk.level('Value', 'Some(*value)')}
         }`;
   }
   return `{
             ${first}
             uint_out(output, len);
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                make(output, key, source, made);
-                make(output, item, source, made);
-            }
+            ${walk.level('Entries')}
         }`;
 }
 
@@ -1466,7 +1566,7 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   // GN-6ar: Go does not generate a class row of a value alias of another repository yet.
   if (alias.library !== undefined) refuseForeignReads(model, 'go');
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'no_form_out(output, "U-7: no out row takes the value")', 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head), 'alias_out_');
+  const arms = (walk: GoWalk): string => outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind, walk), `no_form_out(output, "U-7: no out row takes the value")${walk.end === '' ? '' : `;\n            ${walk.end}`}`, 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head, walk), 'alias_out_', undefined, (made) => goArm(walk, `${made};`)).join('\n');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1483,15 +1583,7 @@ fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
     make_${name}(output, root, &mut source, &mut made);
 }
 
-/// U-7: one value of the alias and its children; a container that the core gave before is the same Go value.
-fn make_${name}(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues, made: &mut BTreeMap<u64, usize>) {
-    let make = make_${name};
-    match out.clone() {
-${arms.join('\n')}
-        other => no_form_out(output, &format!("U-7: no out row of the kind {}", other.kind().as_str())),
-    }
-}
-`;
+/// U-7: one value of the alias and its children; a container that the core gave before is the same Go value.${goMake(name, arms, (walk) => `other => ${goArm(walk, 'no_form_out(output, &format!("U-7: no out row of the kind {}", other.kind().as_str()));')},`, { name: 'made', type: '&mut BTreeMap<u64, usize>' })}`;
 }
 
 // GN-6x, GN-15c: a value class of another repository: an instance enters as HostValue::Value, which the owner's in
@@ -1500,24 +1592,22 @@ ${arms.join('\n')}
 function valueClassRust(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
   const number = valueClasses(model).indexOf(alias);
   const head = (row: number): string => `            output.push(11);\n            uint_out(output, ${number}_u64);\n            uint_out(output, ${row}_u64);`;
-  const arms = classMakes(alias, 'go').map((make, row) => {
+  const arms = (walk: GoWalk): string => classMakes(alias, 'go').map((make, row) => {
+    const lines = [...head(row).split('\n').map((line) => line.trim())];
     if (make.form === 'content') {
-      if (make.kind === 'null') return `        OutValue::Null => {\n${head(row)}\n        }`;
-      if (make.kind === 'bool') return `        OutValue::Bool(value) => {\n${head(row)}\n            bool_out(output, value);\n        }`;
+      if (make.kind === 'null') return `        OutValue::Null => ${goArm(walk, ...lines)},`;
+      if (make.kind === 'bool') return `        OutValue::Bool(value) => ${goArm(walk, ...lines, 'bool_out(output, value);')},`;
       if (make.kind === 'text16') {
         // B2.81: the UTF-16 code units of the text, unpaired surrogates included, as a list of integers.
-        return `        OutValue::Text16(value) => {\n${head(row)}\n            list_out(output, value, |output, unit| uint_out(output, u64::from(unit)));\n        }`;
+        return `        OutValue::Text16(value) => ${goArm(walk, ...lines, 'list_out(output, value, |output, unit| uint_out(output, u64::from(unit)));')},`;
       }
-      return `        OutValue::${make.kind === 'number' ? 'Number' : 'Text'}(value) => {\n${head(row)}\n            text_out(output, value);\n        }`;
+      return `        OutValue::${make.kind === 'number' ? 'Number' : 'Text'}(value) => ${goArm(walk, ...lines, 'text_out(output, value);')},`;
     }
     if (make.form === 'list') {
       return `        OutValue::List { handle, len } => {
 ${head(row)}
             uint_out(output, len);
-            for index in 0..len {
-                let item = source.item(handle, index);
-                make(output, item, source);
-            }
+            ${walk.level('Items')}
         }`;
     }
     return `        OutValue::Map(value) => {
@@ -1525,13 +1615,9 @@ ${head(row)}
             let handle = value.handle();
             let len = value.len();
             uint_out(output, len);
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                make(output, key, source);
-                make(output, item, source);
-            }
+            ${walk.level('Entries')}
         }`;
-  });
+  }).join('\n');
   return `
 /// GN-6x: an instance of ${goName(alias.unit.name)} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1546,15 +1632,7 @@ fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     make_${name}(output, root, &mut source);
 }
-
-fn make_${name}(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues) {
-    let make = make_${name};
-    match out {
-${arms.join('\n')}
-        other => no_form_out(output, &format!("GN-6x: no out row of the kind {}", other.kind().as_str())),
-    }
-}
-`;
+${goMake(name, arms, (walk) => `other => ${goArm(walk, 'no_form_out(output, &format!("GN-6x: no out row of the kind {}", other.kind().as_str()));')},`)}`;
 }
 
 // U-7 (a'): the failure of the in of a value alias of another repository, in the class of its category here.

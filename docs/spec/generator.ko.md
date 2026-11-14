@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 3b3f01a4ab2826b0c9c6f8f20b4be27fb74d52916fe08da7b6a52fb96ef141c5 -->
+<!-- source-sha256: 385b67ad6c554c241bcf4b61db1ef2463fe07f5f4540d87da4fd1d6b061c2536 -->
 # 생성기
 
 [English](generator.md)
@@ -652,8 +652,9 @@
   거기에 자기 level을 더하지 않는다. 이유: 계약이 말하는 깊이 한계 안의 값은 다섯 대상에서 같은 결과를 가진다. binding은
   Node의 main thread나 WASM module의 stack 같은 host의 stack을 키울 수 없다. 더 큰 stack은 process가 끝나는 깊이를
   옮길 뿐이다. PHP는 값인 array를 마지막 자식이 만들어졌을 때 만들고, array나 stdClass의 entry의 key는 그 entry의
-  값이 만들어질 때까지 그대로의 `OutValue`로 둔다. Node, WASM, Python, PHP에 생성된다. 아직 생성되지 않는 것: Go의
-  make 함수. 이것은 아직 level마다 자기 자신을 한 번 부른다.
+  값이 만들어질 때까지 그대로의 `OutValue`로 둔다. Go는 package binding이 node를 읽는 순서대로 container의 node를
+  자식보다 먼저 쓰므로, Go의 level은 언어의 container를 담지 않고 그 container의 어떤 자식을 다음에 쓰는지를 이름한다.
+  다섯 대상 모두에 생성된다.
 - **GN-6x** 다른 레포의 값 class(T-3, U-1)는 다른 레포의 값 alias(GN-6k)와 같은 방식으로 주고받는다.
   이때 owner가 그 class에 `core: {in, out}`으로 적은 두 함수와 `core_type`에 적은 코어 타입을
   쓴다(CK-8). 그것이 없는 다른 레포의 값 class는 이름으로 거절한다(G-4). 생성 코드가 그 인스턴스의 묘사를 직접 코어
