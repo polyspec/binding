@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -1026,7 +1026,7 @@ ${checks}
     Ok(${struct} { object: value.clone() })
 }
 
-impl ${cb.unit.core ?? ''} for ${struct} {${methods}
+${lentCallbacks(model).includes(cb) ? `impl ${cb.unit.core ?? ''} for ${struct} {` : `impl ${struct} {`}${methods}
 }
 ${recognizing}`;
 }
@@ -1048,7 +1048,7 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
     fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
         let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object };
-        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
     }`;
   }).join('\n');
   return `

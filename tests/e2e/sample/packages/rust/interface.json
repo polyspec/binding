@@ -2102,7 +2102,8 @@
           "wait": "none",
           "core": {
             "path": "polyspec_sample::Index::get",
-            "receiver": "&self"
+            "receiver": "&self",
+            "failure": true
           }
         }
       ]

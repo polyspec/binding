@@ -1775,7 +1775,7 @@ test('a value alias of another repository whose rows name a class of its owner m
   assert.match(lib, /let map = js_new_map\(env\)\.map_err\(internal\)\?;\n +let class = foreign_class\(env, 0\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(map\.to_unknown\(\),\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);/);
   assert.match(lib, /let class = foreign_class\(env, 1\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(null_out\(env\)\?,\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);\n +let object: Object<'env> = unsafe \{ instance\.cast\(\) \}\.map_err\(internal\)\?;\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), fill: OutFill::Property\(object, "value"\), made: instance \}\)\)/);
   // GN-6as: the made value of the reference goes into the writable property of the level that waits for it.
-  assert.match(lib, /OutFill::Property\(object, name\) => \{\n +object\.set_named_property\(\*name, value\)\.map_err\(js_fail\)\?;/);
+  assert.match(lib, /OutFill::Property\(object, name\) => \{\n +object\.set_named_property\(name, value\)\.map_err\(js_fail\)\?;/);
   assert.match(lib, /\n {4}if classes\.len\(\) != 3 \{\n/);
   // GN-3e: package.json names the npm package of the owner, whose classes the entry hands over.
   assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/ts/package.json')), /"@polyspec\/sample": "\*"/);
@@ -1847,7 +1847,7 @@ test('Go makes and reads the class of a row of a value alias of another reposito
   assert.match(binding, /\n\t\tkept, err := sample\.NewCell\(nil\)\n[\s\S]*?\n\t\tkept\.Value = r\.value\(made, instance\)\n/);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 0u64\);\n +uint_out\(output, len\);/);
-  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 1u64\);\n +make\(output, \*value, source, made\);/);
+  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 1u64\);\n +Some\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), children: OutChildren::Value \}\)/);
   // GN-15f: go.mod requires the Go module of the owner, whose package the binding imports.
   assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
   // G-4: a class with core_type in a Go row is refused by name.
@@ -8320,7 +8320,7 @@ test('a callback of a parameter with keeps is held as a Native in Node, PHP and 
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(env, item, "sources"\)\.map\(/);
   assert.match(node, /pub struct KeptCbFeed \{\n    native: Native,\n\}/);
-  assert.match(node, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_env\(&self\.native, "Feed\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?polyspec_sample::Feed::get\(&borrowed, key\)/);
+  assert.match(node, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_env\(&self\.native, "Feed\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?CbFeed::get\(&borrowed, key\)/);
   // A parameter without keeps keeps the box of the call.
   assert.match(node, /let lookups: Vec<Box<dyn polyspec_sample::Lookup \+ 'env>> = /);
   // PHP: the wrapper holds a Native and checks its thread before it borrows the object.
@@ -8773,4 +8773,127 @@ test('a parameter of the type cancel binds the cancellation of each language to 
   const returned = classes();
   returned.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').returns = 'cancel';
   assert.throws(() => generate({ contract: returned, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['node'] }), /the type cancel is generated as a parameter only \(T-1, GN-6aq\)/);
+});
+
+// The repositories of the end-to-end check, generated for the five targets as the run of make e2e generates them.
+const e2eGenerated = (): Map<string, Map<string, string | Buffer>> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const five = ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[];
+  const consumer = consumerFixture();
+  return new Map([
+    ['sample', generateTargets({ contract: read('sample/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('sample/contracts/cases.json')]]), targets: five })],
+    ['classes', generateTargets({ contract: read('classes/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('classes/contracts/cases.json')]]), targets: five })],
+    ['consumer', generateTargets({ contract: consumer.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: consumer.caseFiles, foreign: consumer.foreign, targets: five })],
+  ]);
+};
+
+test('no Rust name that the generator joins from a contract name holds a raw identifier inside it (GN-6, B2.226)', () => {
+  // The unit box of the sample is the raw identifier r#box; check_r#box is no Rust token, so the crate does not parse.
+  for (const [repo, out] of e2eGenerated()) {
+    for (const [path, content] of out) {
+      if (!path.endsWith('.rs')) continue;
+      const joined = String(content).split('\n').filter((line) => /[A-Za-z0-9_]r#[A-Za-z_]/.test(line));
+      assert.deepEqual(joined, [], `${repo} ${path}`);
+    }
+  }
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  assert.match(text(sample, 'packages/ts/generated/lib.rs'), /\npub fn check_box<'env>\(env: &'env Env, entries: Unknown<'env>\) -> napi::Result<\(\)> \{/);
+});
+
+test('a callback unit whose values enter only parameters with keeps has no trait implementation on the struct of a call in Node, PHP and WASM, and no struct in Go (GN-6d, GN-6aa, B2.227)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const borrowing: [string, RegExp, RegExp][] = [
+    ['packages/ts/generated/lib.rs', /\nimpl<'env> CbFeed<'env> \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
+    ['packages/php-ext/generated/lib.rs', /\nimpl CbFeed \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
+    ['packages/ts/wasm/generated/lib.rs', /\nimpl CbFeed \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
+  ];
+  for (const [path, inherent, call] of borrowing) {
+    const lib = text(sample, path);
+    assert.doesNotMatch(lib, /polyspec_sample::Feed for CbFeed\b/, path);
+    assert.match(lib, inherent, path);
+    assert.match(lib, call, path);
+    assert.match(lib, /polyspec_sample::Feed for KeptCbFeed \{/, path);
+    // lookup enters a parameter without keeps, so its struct implements the trait.
+    assert.match(lib, /polyspec_sample::Lookup for CbLookup\b/, path);
+  }
+  const go = text(sample, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.doesNotMatch(go, /struct CbFeed\b/);
+  assert.doesNotMatch(go, /\bfn in_feed\b/);
+  assert.match(go, /impl polyspec_sample::Feed for KeptCbFeed \{/);
+  assert.match(go, /impl polyspec_sample::Lookup for CbLookup \{/);
+  // Python holds a Py<PyAny>, which a trait with Send and Sync takes, so its kept conversion boxes the struct.
+  assert.match(text(sample, 'packages/python/generated/lib.rs'), /impl polyspec_sample::Feed for CbFeed \{/);
+});
+
+test('a parameter with keeps does not make the core path of its member return a Result, and core.failure does (GN-7, CK-21, B2.228)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const libs = ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs', 'packages/python/generated/lib.rs'];
+  for (const path of libs) {
+    const lib = text(sample, path);
+    for (const member of ['new', 'single', 'supplied']) {
+      assert.match(lib, new RegExp(`polyspec_sample::Index::${member}\\((sources|source|supply)\\)`), `${path} ${member}`);
+      assert.doesNotMatch(lib, new RegExp(`match with_faults\\("index\\.${member}", [^\\n]*\\{\\n\\s*Ok\\(value\\) => value,`), `${path} ${member}`);
+    }
+    assert.match(lib, /match with_faults\("index\.get", [^\n]*\{\n\s*Ok\(value\) => value,\n\s*Err\(error\) => return Err\(failure_error\((py, )?error\)\),/, path);
+  }
+  // CK-21: core.failure true stands on a member that takes a callback with keeps, and false or result false on such a
+  // member is not refused, because the parameter with keeps is no call of language code during the call.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const index = contract.units.find((u: any) => u.id === 'index');
+  const single = index.members.find((m: any) => m.id === 'index.single');
+  single.core = { path: single.core, result: false, failure: false };
+  const root = mkdtempSync(join(tmpdir(), 'binding-keeps-'));
+  try {
+    cpSync(fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), root, { recursive: true });
+    writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract, null, 2));
+    const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json')], { encoding: 'utf8' });
+    assert.doesNotMatch(String(run.stdout) + String(run.stderr), /CK-21[^\n]*index\.(single|get)/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Go reads a callback parameter without keeps as the struct of the call, not as a box (GN-6aa, B2.229)', () => {
+  const generated = e2eGenerated();
+  const cases: [string, RegExp][] = [
+    ['sample', /let lookup: CbLookup = in_lookup\(&mut input, "lookup"\)\?;/],
+    ['classes', /let guide: CbGuide = in_guide\(&mut input, "guide"\)\?;/],
+    ['consumer', /let holder: CbHolder = in_holder\(&mut input, "holder"\)\?;/],
+  ];
+  for (const [repo, read] of cases) {
+    const go = text(generated.get(repo) ?? new Map(), 'packages/go/internal/ffi/generated/lib.rs');
+    assert.match(go, read, repo);
+    assert.doesNotMatch(go, /let [a-z_]+: Cb[A-Za-z]+ = [^\n]*\.map\(\|callback\| -> Box</, repo);
+  }
+});
+
+test('Go writes node 14 of a class of another repository in the walk of the make function of a value alias (GN-6ar, GN-6as, B2.230)', () => {
+  const go = text(e2eGenerated().get('consumer') ?? new Map(), 'packages/go/internal/ffi/generated/lib.rs');
+  const open = /\n\s*fn open_level\([^\n]*\) -> Option<OutLevel> \{\n([\s\S]*?)\n\s*\/\/ GN-6as: the next child/g;
+  let found = 0;
+  for (const match of go.matchAll(open)) {
+    found += 1;
+    const body = match[1] ?? '';
+    assert.doesNotMatch(body, /\bmake\(output, /);
+    assert.doesNotMatch(body, /\breturn;/);
+  }
+  assert.ok(found > 0, 'the consumer has a make function with a walk');
+  assert.match(go, /output\.push\(14\);\n\s*uint_out\(output, \d+u64\);\n\s*uint_out\(output, len\);\n\s*Some\(OutLevel \{/);
+});
+
+test('the generated crates call the API of the napi release that the workspace pins, and name items of the module entry by their path (GN-6aq, GN-6ar, B2.231)', () => {
+  const generated = e2eGenerated();
+  for (const [repo, out] of generated) {
+    for (const path of ['packages/ts/generated/lib.rs']) {
+      const lib = text(out, path);
+      // napi 3 has no Env::create_object; Object::new makes an object.
+      assert.doesNotMatch(lib, /\.create_object\(\)/, `${repo} ${path}`);
+      // clippy::explicit_auto_deref: the name of a property is passed as the reference it is.
+      assert.doesNotMatch(lib, /set_named_property\(\*name, /, `${repo} ${path}`);
+    }
+  }
+  const classes = generated.get('classes') ?? new Map();
+  assert.match(text(classes, 'packages/ts/generated/lib.rs'), /let mut options = Object::new\(&env\)\.map_err\(internal\)\?;/);
+  // PHP: the class Cancellation is an item of the module entry, which cancel_in of the crate root names by its path.
+  assert.match(text(classes, 'packages/php-ext/generated/lib.rs'), /<&entry::PhpCancellation as FromZval>::from_zval\(value\)/);
 });

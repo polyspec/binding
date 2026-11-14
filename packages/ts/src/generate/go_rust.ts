@@ -18,6 +18,7 @@ import {
   takesFunction, cancelsAny,
   holdsCallback,
   takenCallbacks,
+  lentCallbacks,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -808,7 +809,10 @@ function argumentLines(model: Model, fn: Fn): string[] {
         lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => rustField(f.name)).join(', ')} };`);
         continue;
       }
-      lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${boxed(typed, parameter.type, convertIn(typed, parameter.type, '&mut input', subject))}?;`);
+      // GN-6aa: a callback parameter with keeps moves into the core as its box; one without keeps is the struct of the
+      // call, which the core borrows.
+      const read = convertIn(typed, parameter.type, '&mut input', subject);
+      lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${typed === model ? read : boxed(typed, parameter.type, read)}?;`);
       // GN-6ac, GN-6ad: the core call chooses the core's own type, which IntoCore narrows to; a list is then a Vec of
       // the core's items, whose slice the core borrows.
       if (narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
@@ -1102,6 +1106,9 @@ fn ${recognizedFn(cb, m)}(call: u64, bytes: &[u8]) -> ${failure} {
     }
 }
 `).join('');
+  // GN-6aa: the kept wrapper calls a kept func, so a unit that enters parameters with keeps only has no struct of a call.
+  const kept = keptCallbacks(model).includes(cb) ? keptCallbackRust(model, cb) : '';
+  if (!lentCallbacks(model).includes(cb)) return kept;
   return `
 /// U-3: ${goType}, a callback that Go code implements; the core calls it through ${cb.unit.core ?? ''}.
 struct ${struct} {
@@ -1121,7 +1128,7 @@ fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${struct}, Fail> {
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-${recognizing}${keptCallbacks(model).includes(cb) ? keptCallbackRust(model, cb) : ''}`;
+${recognizing}${kept}`;
 }
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of the cgo.Handle of a kept func of package binding,
@@ -1661,32 +1668,29 @@ function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'ent
 // GN-6ar, GN-15c: node 14, an instance of a class of the owner of a value alias of another repository that an out row
 // makes: the position of the class in foreignRowClasses, then the entries of its keyed map or the value of its
 // reference, which the Go decoder gives the instance after its constructor made it, as node 12 does (keptMakeGo).
-function foreignMakeGo(model: Model, make: ForeignMake, kind: string, head: string): string {
+function foreignMakeGo(model: Model, make: ForeignMake, kind: string, head: string, walk: GoWalk): string {
   if (make.holds === 'content') throw new Unsupported(`the go make ${make.unit.id}.constructor of the kind ${kind} of ${make.library} is not generated yet: a constructor of a class of another repository takes the keyed map of an object or a map, or the value of a reference, in Go (GN-6ar)`);
   rowReads(model);
   const position = foreignRowClasses(model, 'go').findIndex((c) => c.library === make.library && c.unit.id === make.unit.id);
   const first = `${head === '' ? '' : `${head}\n            `}if let Some(index) = made.get(&handle.raw()) {
                 output.push(8);
                 write_length(output, *index);
-                return;
+                ${walk.ret}
             }
             made.insert(handle.raw(), made.len());
             output.push(14);
             uint_out(output, ${position}u64);`;
+  // GN-6as: the children are written by the walk of the make function, as those of node 12 are (keptMakeGo).
   if (make.holds === 'value') {
     return `{
             ${first}
-            make(output, *value, source, made);
+            ${walk.level('Value', 'Some(*value)')}
         }`;
   }
   return `{
             ${first}
             uint_out(output, len);
-            for index in 0..len {
-                let (key, item) = source.entry(handle, index);
-                make(output, key, source, made);
-                make(output, item, source, made);
-            }
+            ${walk.level('Entries')}
         }`;
 }
 
@@ -1730,7 +1734,7 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassRust(model, alias, name, core, failure);
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = (walk: GoWalk): string => outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind, walk), `no_form_out(output, "U-7: no out row takes the value")${walk.end === '' ? '' : `;\n            ${walk.end}`}`, 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head, walk), 'alias_out_', (make, kind, head) => foreignMakeGo(model, make, kind, head), (made) => goArm(walk, `${made};`)).join('\n');
+  const arms = (walk: GoWalk): string => outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind, walk), `no_form_out(output, "U-7: no out row takes the value")${walk.end === '' ? '' : `;\n            ${walk.end}`}`, 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head, walk), 'alias_out_', (make, kind, head) => foreignMakeGo(model, make, kind, head, walk), (made) => goArm(walk, `${made};`)).join('\n');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {

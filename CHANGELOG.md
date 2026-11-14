@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- The generated crates of the end-to-end repositories did not compile once the lanes met. The Node crate of the
+  sample named the check function of the value class `box` `check_r#box`, which is no Rust token (GN-6); it is now
+  `check_box`. The sample unit `feed`, whose trait is `Send + Sync` and whose values enter only parameters with
+  `keeps`, had a trait implementation on the struct of a call, which holds a napi `Object` or a PHP `Zval` (E0277),
+  and a Go struct that nothing calls; that struct now has inherent methods, which the kept wrapper calls, and Go has
+  none (GN-6d, GN-6aa). A parameter with `keeps` made `index.new`, `index.single` and `index.supplied` return a
+  `Result` that their core does not return, while `index.get`, which calls the kept feeds, was called without one
+  (E0308); a parameter with `keeps` no longer counts, `index.get` states `core.failure: true`, and CK-21 follows
+  (GN-7). Go boxed a callback parameter without `keeps` into a variable of its struct (E0308), and wrote node 14 of
+  a class of another repository with the recursive `make` inside the walk (E0434, E0069, E0425); both are written as
+  GN-6aa and GN-6as state. Node `cancel_in` now makes its options by `Object::new` of napi 3 (E0599), PHP `cancel_in`
+  names `entry::PhpCancellation` (E0425), and the Node fill of a property passes `name` (clippy
+  `explicit_auto_deref`). Verified by `node --test packages/ts/tests/generate.test.ts` and
+  `node --test packages/ts/tests/contract-check.test.ts`; the crates are verified by `make e2e` of sample, classes
+  and consumer.
 - A callback unit that no member of its contract takes still had a wrapper and a conversion in the crate of its
   owner: the end-to-end sample declares `source`, which only its class `held_source` implements and only the consumer
   takes, and its Python, Node, Go and WASM crates held `in_source` and `CbSource`, which `cargo clippy -D warnings`

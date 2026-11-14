@@ -19,7 +19,7 @@ const ALIAS_FILLS: Fill[] = [
   { name: 'Values', doc: 'An array that takes the values of the entries of a map or an object (U-7 (c)).', type: "Array<'env>", pattern: 'OutFill::Values(array)', put: PUT_INDEXED('array'), next: 'Some(source.entry(level.handle, level.index).1)' },
   { name: 'Entries', doc: 'A Map that takes the entries of a map or an object, with the made key of the entry whose value is made next.', type: "Object<'env>, Option<Unknown<'env>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY('js_map_set(*map, key, value).map_err(internal)?;'), next: NEXT_ENTRY },
   { name: 'Defined', doc: 'GN-6af: an instance of a value class, whose property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Defined(instance, name)', put: 'value_define(instance, name, value, true)?;' },
-  { name: 'Property', doc: 'GN-6ar: an instance of a class of another repository, whose writable property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Property(object, name)', put: 'object.set_named_property(*name, value).map_err(js_fail)?;' },
+  { name: 'Property', doc: 'GN-6ar: an instance of a class of another repository, whose writable property takes the value of a reference.', type: "Object<'env>, &'static str", pattern: 'OutFill::Property(object, name)', put: 'object.set_named_property(name, value).map_err(js_fail)?;' },
 ];
 
 // GN-6as: the make function of Node.
@@ -974,7 +974,7 @@ export function keptCheckNode(kept: KeptClass): string {
   return `
 /// GN-6af: judges the arguments of the constructor of ${js}, which the class of the entry keeps.
 #[napi(js_name = ${rustString(`__check${js}`)})]
-pub fn check_${rustField(kept.unit.name)}<'env>(env: &'env Env${params}) -> napi::Result<()> {
+pub fn check_${rustField(kept.unit.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<()> {
     guard(|| {
         let mut host = JsHost::new(env);
 ${lines.join('\n')}

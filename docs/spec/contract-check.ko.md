@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: cede067f75dd0c413d63049f3267c3da4390fe98e8b97fbdd4343fd2959b93b8 -->
+<!-- source-sha256: 46cf0c58ccbd93dcc310539ae14871a98fb40054270228dc7b2089dbb8d7c653 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -135,11 +135,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   검사가 읽지 않는다. release가 Go tag의 commit에 그것들을 더한다(GN-15g).
 - **CK-21** 코어의 빌드, exclusive member, 코어 경로의 결과(I-1, U-6, E-1c): `core.features`는 target만 가리킨다.
   `exclusive`는 generated class의 receiver `&self` member에만 둔다. `core.result`가 `false`인 member는 `raises`가 없고
-  callback이나 함수를 담은 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의 실패를 둘
-  자리도 없기 때문이다. `core.result`가 없으면, `raises`가 이 계약 자신의 코어 오류 variant를 가리키거나 parameter가
-  callback이나 함수일 때 코어 경로가 `Result`를 돌려준다. `core.result`가 코어와 맞는지는 생성 crate를 컴파일러가
-  판정하며(I-2) 이 검사는 판정하지 않는다. `core.failure: true`는 receiver unit이 언어 코드를 가진(GN-6h) member에만 둔다.
-  다른 member는 실패할 수 있는 언어 코드에 닿지 않기 때문이다. callback이나 함수를 담은 parameter가 있는 member에는
+  callback이나 함수를 담은 `keeps` 없는 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의
+  실패를 둘 자리도 없기 때문이다. `core.result`가 없으면, `raises`가 이 계약 자신의 코어 오류 variant를 가리키거나
+  `keeps`가 없는 parameter가 callback이나 함수일 때 코어 경로가 `Result`를 돌려준다(생성기 GN-7). `core.result`가 코어와
+  맞는지는 생성 crate를 컴파일러가 판정하며(I-2) 이 검사는 판정하지 않는다. `core.failure: true`는 receiver unit이 언어
+  코드를 가진(GN-6h) member나, `keeps`가 있어도 callback이나 함수를 담은 parameter가 있는 member에만 둔다. 다른 member는
+  실패할 수 있는 언어 코드에 닿지 않기 때문이다. callback이나 함수를 담은 `keeps` 없는 parameter가 있는 member에는
   `core.failure: false`를 두지 않고, `core.result: false`인 member에는 `core.failure: true`를 두지 않는다. 언어 코드의
   실패는 `Result` 안의 `Failure<E>`로 돌아오기 때문이다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).

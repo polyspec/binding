@@ -596,7 +596,10 @@ export function collectModel(
     const isForeignCallback = (type: Type): boolean => typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallbacks.some((c) => c.unit.id === type.unit && c.library === type.library);
     // E-1c: a member that calls language code, a callback or a function (GN-6z, GN-6ae), fails with the core error or with
     // what that code raised.
-    const takesCallback = args.some((a) => holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type));
+    // GN-7: a parameter with keeps (GN-6aa) does not count, because the core keeps that value for a later call; the
+    // fields of a record parameter with keeps are kept with it.
+    const keptArg = (a: Arg): boolean => (a.field ? record?.param.keeps === true : (member.parameters ?? []).some((p) => p.name.join('_') === a.name.join('_') && p.keeps === true));
+    const takesCallback = args.some((a) => !keptArg(a) && (holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type)));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -1516,6 +1519,31 @@ export function takenCallbacks(model: Model): CallbackUnit[] {
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const record of model.records) (record.fields ?? []).forEach((f) => visit(f.type));
+  return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
+}
+
+// GN-6d, GN-6aa: the callback units of takenCallbacks whose values enter a member at a place without keeps, where the
+// struct of the call is the box of the core trait: a parameter without keeps, also through a list, an optional, a map,
+// a tuple or a record. A unit that enters parameters with keeps only is called through the kept wrapper (kept_<unit>),
+// so the struct of the call implements no trait, which a kept trait may require to be Send and Sync.
+export function lentCallbacks(model: Model): CallbackUnit[] {
+  const found = new Set<Unit>();
+  const seen = new Set<string>();
+  const visit = (type: Type | undefined): void => {
+    if (type === undefined || typeof type === 'string') return;
+    if ('list' in type) return visit(type.list);
+    if ('optional' in type) return visit(type.optional);
+    if ('map' in type) return visit(type.map);
+    if ('keyed_map' in type) return visit(type.keyed_map);
+    if ('tuple' in type) return type.tuple.forEach(visit);
+    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+    if (unit?.origin === 'callback') found.add(unit);
+    if (unit?.kind === 'record' && !seen.has(unit.id)) {
+      seen.add(unit.id);
+      (unit.fields ?? []).forEach((f) => visit(f.type));
+    }
+  };
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.filter((p) => p.keeps !== true).forEach((p) => visit(p.type));
   return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
 }
 

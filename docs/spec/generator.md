@@ -370,7 +370,9 @@ the design ids are those of the binding design.
   int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
   for the integer and a reference to it; `usize` and `isize` widen as GN-6ac states); a parameter is converted into
   the type of the table and then into the core's own type (GN-6ac). A contract name that is a Rust keyword
-  is a raw identifier (`r#type`).
+  is a raw identifier (`r#type`). A name that the generator joins from a contract name and a prefix or a suffix
+  (`check_box`, `in_type`) holds the name without `r#`, because the joined name is no keyword and `r#` inside a name
+  is no Rust token (unit `box` of the end-to-end sample).
 - **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
@@ -547,7 +549,13 @@ the design ids are those of the binding design.
   A unit that only a class implements (GN-6w), or that only another repository takes (GN-6s), keeps its declaration,
   which a user and the other repository name, and has no wrapper in the crate. Why: no code of the crate would call
   that wrapper, and the build of the crate refuses dead code (`clippy -D warnings`); the class calls the trait
-  method on its held value, and the other repository wraps the unit in its own crate.
+  method on its held value, and the other repository wraps the unit in its own crate. A unit whose values enter
+  only parameters with `keeps` (GN-6aa) has no trait implementation on that struct in Node, PHP and WASM: the
+  methods of the struct are its own (`impl CbFeed { fn get(…) }`), which the kept wrapper calls on the struct that it
+  borrows for a call, and Go, whose kept wrapper calls a kept func, has neither the struct nor `in_<unit>`. Why: a
+  trait that the core keeps is usually `Send + Sync`, which the struct of a call, holding a value of the environment
+  of the language, is not, and code that no member reaches is dead code. Python keeps the trait implementation,
+  because it holds the object as a `Py<PyAny>` with or without `keeps`.
 - **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
@@ -984,10 +992,13 @@ the design ids are those of the binding design.
   in that directory. An empty path, an absolute path and a path with a part `..` are refused by name (G-4), because
   they would leave the directory of the test: the test of the case fails with that reason in every target (GN-13e).
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
-  does when `raises` names a variant of the contract's own core error or the member takes a callback. The error of
-  such a path is `binding_core::Failure<E>`, a kind or what language code raised, when `core.failure` is true, and
-  without it when a parameter holds a callback or a function; `core.failure: true` names a member that calls language
-  code that its receiver keeps (template `engine.render`), whose error the generated code converts as that of a member
+  does when `raises` names a variant of the contract's own core error or a parameter without `keeps` holds a callback
+  or a function. The error of such a path is `binding_core::Failure<E>`, a kind or what language code raised, when
+  `core.failure` is true, and without it when a parameter without `keeps` holds a callback or a function. A parameter
+  with `keeps` (GN-6aa) does not count, because the core keeps that value for a later call (`index.new` of the
+  end-to-end sample returns the index itself); a member that calls such a value during the call states
+  `core.failure: true`. `core.failure: true` names a member that calls language
+  code that its receiver keeps (template `engine.render`, sample `index.get`), whose error the generated code converts as that of a member
   that takes a callback (GN-6d, GN-6z). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
   `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose

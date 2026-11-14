@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks } from './model.ts';
+import { DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -258,7 +258,7 @@ fn path_in(value: &Zval, subject: &str) -> Result<std::path::PathBuf, Fail> {
 /// T-1 cancel, GN-6aq: an instance of the class Cancellation of the extension, as the Cancel of a pair whose trigger
 /// fires when the instance is cancelled: at once when it was cancelled before the call, and otherwise by its cancel().
 fn cancel_in(value: &Zval, subject: &str) -> Result<binding_core::Cancel, Fail> {
-    let Some(cancellation) = <&PhpCancellation as FromZval>::from_zval(value) else { return Err(type_error(subject, "Cancellation")) };
+    let Some(cancellation) = <&entry::PhpCancellation as FromZval>::from_zval(value) else { return Err(type_error(subject, "Cancellation")) };
     let (trigger, cancel) = binding_core::cancel_pair();
     let mut state = cancellation.state();
     if state.cancelled {
@@ -1054,7 +1054,7 @@ ${checks}
     Ok(${struct} { object: value.shallow_clone()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
-impl ${cb.unit.core ?? ''} for ${struct} {${methods}
+${lentCallbacks(model).includes(cb) ? `impl ${cb.unit.core ?? ''} for ${struct} {` : `impl ${struct} {`}${methods}
 }
 ${recognizing}`;
 }
@@ -1084,7 +1084,7 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
         }
         let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ', owner: std::thread::current().id()' : ''} };
-        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
     }`;
   }).join('\n');
   return `

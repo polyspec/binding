@@ -1,11 +1,24 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 95536098d977487f4dada6c50c6036c4bbe48c657ee3408394e53869836f3ae9 -->
+<!-- source-sha256: 3604a871c593ba557635e97dae8ad320228eda987cb203de86e32e9889897fac -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 저장소의 생성 crate는 lane들이 합쳐진 뒤 컴파일되지 않았다. sample의 Node crate는 value class `box`의
+  check 함수를 Rust token이 아닌 `check_r#box`로 이름했다(GN-6). 이제 `check_box`다. trait가 `Send + Sync`이고 값이
+  `keeps`가 있는 parameter에만 들어가는 sample unit `feed`는 napi `Object`나 PHP `Zval`을 갖는 호출의 struct에 trait
+  구현을 가졌고(E0277), Go에는 아무도 부르지 않는 struct가 있었다. 이제 그 struct는 보관되는 wrapper가 부르는 자기
+  method를 갖고, Go에는 struct가 없다(GN-6d, GN-6aa). `keeps`가 있는 parameter 때문에 `index.new`, `index.single`,
+  `index.supplied`는 코어가 돌려주지 않는 `Result`를 돌려주는 것으로 생성되었고, 보관된 feed를 부르는 `index.get`은
+  그것 없이 불렸다(E0308). 이제 `keeps`가 있는 parameter는 세지 않고, `index.get`은 `core.failure: true`를 적으며, CK-21도
+  그에 따른다(GN-7). Go는 `keeps`가 없는 callback parameter를 그 struct의 변수에 box로 넣었고(E0308), 다른 저장소
+  class의 node 14를 walk 안에서 재귀 `make`로 썼다(E0434, E0069, E0425). 둘 다 GN-6aa와 GN-6as대로 쓴다. Node
+  `cancel_in`은 이제 napi 3의 `Object::new`로 options를 만들고(E0599), PHP `cancel_in`은 `entry::PhpCancellation`을
+  이름하며(E0425), Node의 property 채우기는 `name`을 넘긴다(clippy `explicit_auto_deref`).
+  `node --test packages/ts/tests/generate.test.ts`와 `node --test packages/ts/tests/contract-check.test.ts`로 확인했고,
+  crate는 sample, classes, consumer의 `make e2e`로 확인한다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
   `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과

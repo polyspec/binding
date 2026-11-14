@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b4cad5df41673a323feec67bcbaddf928f2d7eb799e76027791bd8be1cf6fb7b -->
+<!-- source-sha256: 5977b5ea464d6d70f7cb67ddf65b9d2e534b6ea4de8e3c61dd5d213dfbe471d5 -->
 # 생성기
 
 [English](generator.md)
@@ -299,7 +299,7 @@
   unit으로 묶는다(`let (): () = …`): 그 자리에서 다른 것을 돌려주는 코어는 `Result`를 포함해 컴파일되지 않으므로 그 `Err`가
   버려지지 않고(E-1c), unit 패턴은 lint가 거부하는 쓰지 않는 변수를 남기지 않는다. 정수 반환(uint, int,
   int64)은 더 좁은 Rust 정수여도 되며 생성 코드가 `From`으로 넓힌다(정수와 그 참조에 대한 trait `WideUint`, `WideInt`.
-  `usize`와 `isize`는 GN-6ac대로 넓힌다). parameter는 표의 타입으로 바꾼 뒤 코어 자신의 타입으로 바꾼다(GN-6ac). Rust 키워드인 계약 이름은 raw identifier(`r#type`)다.
+  `usize`와 `isize`는 GN-6ac대로 넓힌다). parameter는 표의 타입으로 바꾼 뒤 코어 자신의 타입으로 바꾼다(GN-6ac). Rust 키워드인 계약 이름은 raw identifier(`r#type`)다. 생성기가 계약 이름에 접두사나 접미사를 붙여 만드는 이름(`check_box`, `in_type`)은 `r#` 없는 이름을 담는다. 붙인 이름은 키워드가 아니고, 이름 안의 `r#`은 Rust token이 아니기 때문이다(end-to-end sample의 unit `box`).
 - **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
@@ -440,7 +440,11 @@
   tuple의 항목으로. class만 구현하거나(GN-6w) 다른 저장소만 받는(GN-6s) unit은 사용자와 다른 저장소가 이름하는 선언을
   유지하고, crate에 wrapper를 두지 않는다. 이유: crate의 어떤 코드도 그 wrapper를 부르지 않고, crate의 빌드는 죽은 코드를
   거부한다(`clippy -D warnings`). class는 자기가 가진 값에서 trait method를 부르고, 다른 저장소는 자기 crate에서 그 unit을
-  감싼다.
+  감싼다. 값이 `keeps`가 있는 parameter(GN-6aa)에만 들어가는 unit은 Node, PHP, WASM에서 그 struct에 trait 구현이 없다. struct의
+  method는 그 struct 자신의 것(`impl CbFeed { fn get(…) }`)이고, 보관되는 wrapper가 호출마다 빌리는 struct에서 그것을 부른다.
+  보관되는 wrapper가 kept func를 부르는 Go는 struct도 `in_<unit>`도 두지 않는다. 이유: 코어가 보관하는 trait는 보통
+  `Send + Sync`인데 언어 환경의 값을 갖는 호출의 struct는 그렇지 않고, 어떤 member도 닿지 않는 코드는 죽은 코드다. Python은
+  `keeps`와 상관없이 객체를 `Py<PyAny>`로 가지므로 trait 구현을 유지한다.
 - **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
@@ -804,9 +808,12 @@
   디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
   거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e).
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
-  코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 그런 경로의 오류는 `core.failure`가 참이면, 그리고
-  그것이 없으면 parameter가 callback이나 함수를 담을 때 kind 또는 언어 코드가 던진 것인 `binding_core::Failure<E>`다.
-  `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template `engine.render`)를 가리키며, 생성 코드는 그
+  코어 오류 variant를 가리키거나 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 돌려준다. 그런 경로의 오류는
+  `core.failure`가 참이면, 그리고 그것이 없으면 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 kind 또는 언어
+  코드가 던진 것인 `binding_core::Failure<E>`다. `keeps`가 있는 parameter(GN-6aa)는 세지 않는다. 코어는 그 값을 나중 호출을
+  위해 보관하기 때문이다(end-to-end sample의 `index.new`는 index 자체를 돌려준다). 호출 동안 그런 값을 부르는 member는
+  `core.failure: true`를 적는다. `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template
+  `engine.render`, sample `index.get`)를 가리키며, 생성 코드는 그
   오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6z). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는
   `core.result`는 컴파일되지 않는다(I-2). `errors.kinds`가 코어 오류를 가리키지 않는 계약의 `core.result: true`는 이름을
