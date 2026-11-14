@@ -924,9 +924,11 @@ const failRest = (model: Model): string => `${carriesThrown(model) ? ', thrown: 
 // always called on that thread, and thread owner needs no check.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  // GN-6s: a callback unit of another repository is the trait of its core, whose methods return the failure of the core
+  // error of that repository.
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const jsName = langName('wasm', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('wasm', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -1074,7 +1076,7 @@ fn raised(error: Thrown) -> binding_core::Raised {
     binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { key }))
 }
 ${!keepsThrown(model) && !passesAny(model) ? '' : `
-fn thrown(error: Thrown) -> ${failure} {
+fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     binding_core::Failure::Raised(raised(error))
 }
 `}
@@ -1224,7 +1226,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
@@ -1447,6 +1449,11 @@ function tsType(model: Model, type: Type, input: boolean): string {
   // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
   if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
+  // GN-6s: a callback unit of another repository is the interface that the WASM subpath of its package declares.
+  const library = libraryOf(type);
+  if (unit?.origin === 'callback' && library !== undefined) {
+    return `import(${JSON.stringify(`${(model.foreign.get(library)?.packages['node'] as { package: string }).package}/wasm`)}).${langName('wasm', unit.name, 'class')}`;
+  }
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;

@@ -1,10 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 03f5c18e189c0e2f7a5a2df6b84c2e4861a3b55f5f6fdd6d01d5df8d0d36fc16 -->
+<!-- source-sha256: 4386ea0b14f20bee8f89e6771f00493e2e7e8990ce11e873003fe2cc726ce678 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 생성기는 다른 레포의 callback unit을 받는 member에 대해 Go와 WASM을 거부했다. 그래서 session-store의 `store`를 받는
+  `opening_functions.open_page.store`와 `opening_functions.answer_keep_request.store` 때문에 hyper의 Go와 WASM 바인딩이
+  생성되지 않았다. 이제 Go와 WASM은 그런 unit을 PHP, Python, Node처럼 감싼다(GN-6s). trait method는 소유 오류의 실패를
+  돌려주고, WASM은 소유 npm 패키지의 subpath `./wasm`의 타입을 적고, Go는 소유 Go module의 interface를 적고 그 unit을 받는
+  각 package에 그 unit의 dispatch를 쓰며, 그 자리의 Go case 값은 그 interface의 fixture이거나 make member가 돌려주는
+  class의 instance 값이다. `tests/e2e/sample`에 callback unit `source`가, `tests/e2e/consumer`에 그것을 받는 member
+  `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
+  it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
+  `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
 
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는

@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
+import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
@@ -122,6 +122,8 @@ export interface GoScope {
   reaches?: Set<string>;
   // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
   foreignImports?: Map<string, string>;
+  // GN-6s: the callback units of other repositories that the package encodes, each with a dispatch of the package.
+  foreignCallbacks?: Set<CallbackUnit>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesJson?: boolean;
@@ -135,7 +137,10 @@ function goUnitName(scope: GoScope, unit: Unit): string {
 }
 
 export const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
-  const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+  const library = libraryOf(type);
+  // GN-6s: a callback unit of another repository, which a parameter takes.
+  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
+  const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
 
@@ -211,7 +216,7 @@ export function goType(scope: GoScope, type: Type): string {
   const object = objectUnit(scope.model, type);
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
-  if (callback !== undefined) return goUnitName(scope, callback.unit);
+  if (callback !== undefined) return callback.library === undefined ? goUnitName(scope, callback.unit) : foreignCallbackType(scope, callback);
   const iface = interfaceOf(scope.model, type);
   if (iface !== undefined) return interfacePackage(scope, iface);
   const library = libraryOf(type);
@@ -422,7 +427,9 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   // U-3: a callback is the call and its index in it; a nil interface is kind invalid_callback.
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) {
-    const pkg = reached(scope, callback.unit);
+    // GN-6s: the dispatch of a callback unit of another repository is a function of this package.
+    if (callback.library !== undefined) (scope.foreignCallbacks ??= new Set()).add(callback);
+    const pkg = callback.library === undefined ? reached(scope, callback.unit) : undefined;
     const dispatch = pkg === undefined ? `dispatch${goName(callback.unit.name)}(${expr})` : `${pkg}.Dispatch${goName(callback.unit.name)}(binding.Token{}, ${expr})`;
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, ${dispatch})`, `${t}}`];
   }
@@ -830,9 +837,19 @@ func (this *${name}) handle() uint64 {
 `;
 }
 
-// U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
-function goCallback(scope: GoScope, cb: CallbackUnit): string {
-  const name = goName(cb.unit.name);
+// GN-6s: a callback unit of another repository is the Go interface of the package of its module in the Go module of that
+// repository, which go.mod requires; a user implements that interface.
+function foreignCallbackType(scope: GoScope, cb: CallbackUnit): string {
+  const owner = cb.library === undefined ? undefined : scope.model.foreign.get(cb.library);
+  if (owner === undefined || cb.library === undefined) throw new Unsupported(`${cb.unit.id}: the contract of the library of the callback unit is not found (GN-6s)`);
+  const pkg = goPackage(owner, cb.unit.module);
+  if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${cb.library}.${cb.unit.id}: the Go package ${pkg} of the callback unit has the name of a package of ${scope.model.contract.library} (GN-6s)`);
+  (scope.foreignImports ??= new Map()).set(goImport(owner, cb.unit.module), pkg);
+  return `${pkg}.${goName(cb.unit.name)}`;
+}
+
+// U-3: the methods of a callback unit in Go and the cases of its dispatch, one per member.
+function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: CallbackMember; method: string; params: string; signature: string }[]; cases: string[] } {
   const methods = cb.members.map((m) => {
     const method = langName('go', m.member.name, 'callable');
     const params = m.params.map((p) => `${goParam(p.name, scope.model)} ${goType(scope, p.type)}`).join(', ');
@@ -859,6 +876,13 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
     }
     return lines.join('\n');
   });
+  return { methods, cases };
+}
+
+// U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
+function goCallback(scope: GoScope, cb: CallbackUnit): string {
+  const name = goName(cb.unit.name);
+  const { methods, cases } = callbackCases(scope, cb);
   return `
 // ${name} is the callback interface ${cb.unit.id} (U-3): Go code implements it, and the core calls its methods during
 // the call that takes it, on the goroutine of that call. An error that a method returns ends that call, which returns
@@ -867,8 +891,16 @@ type ${name} interface {
 ${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
 }
 
-// dispatch${name} runs a member of a ${name} for the core (U-3).
-func dispatch${name}(object ${name}) binding.Callback {
+${goDispatch(scope, cb, cases)}`;
+}
+
+// U-3: the dispatch of a callback, which runs a member of the object for the core with the decoded arguments.
+function goDispatch(scope: GoScope, cb: CallbackUnit, cases: string[]): string {
+  const name = goName(cb.unit.name);
+  const type = cb.library === undefined ? name : foreignCallbackType(scope, cb);
+  return `
+// dispatch${name} runs a member of a ${type} for the core (U-3${cb.library === undefined ? '' : ', GN-6s'}).
+func dispatch${name}(object ${type}) binding.Callback {
 	return func(call *binding.Call, member uint32, dec *binding.Reader, enc *binding.Writer) error {
 		switch member {
 ${cases.join('\n')}
@@ -958,7 +990,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...model.kept.filter((k) => k.unit.module === module).map((k) => goKeptAlias(scope, k)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
-  ].join('');
+  ].join('') + [...(scope.foreignCallbacks ?? [])].map((cb) => goDispatch(scope, cb, callbackCases(scope, cb).cases)).join('');
   const made = [...(scope.aliasInstances ?? [])].sort((a, b) => model.objects.indexOf(a) - model.objects.indexOf(b));
   const instance = made.length === 0
     ? ''
@@ -3076,6 +3108,13 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
     for (const m of cb.members) {
       for (const p of m.params) check(cb.unit.module, p.type);
       check(cb.unit.module, m.returns);
+    }
+  }
+  // GN-6s: the dispatch of a callback unit of another repository is in the package of each member that takes it.
+  for (const cb of model.foreignCallbacks) {
+    for (const m of cb.members) {
+      for (const p of m.params) check('', p.type);
+      check('', m.returns);
     }
   }
   // GN-15c: a value class without core_type is a struct of package binding, beside the types of that package.

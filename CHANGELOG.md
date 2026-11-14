@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- The generator refused Go and WASM for a member that takes a callback unit of another repository, so the Go and
+  WASM bindings of hyper were not generated for `opening_functions.open_page.store` and
+  `opening_functions.answer_keep_request.store`, which take `store` of session-store. Go and WASM now wrap such a unit
+  as PHP, Python and Node do (GN-6s): the trait methods return the failure of the owner's error, WASM names the type of
+  the subpath `./wasm` of the owning npm package, Go names the interface of the owning Go module and writes the
+  dispatch of the unit in each package that takes it, and a Go case value at its place is a fixture of that interface
+  or an instance value of the class that its make member returns. `tests/e2e/sample` has the callback unit `source`,
+  and `tests/e2e/consumer` the member `read`, which takes it. Verified by the tests of `generate.test.ts`, whose Go
+  case test failed before the change with "a case value of source is an instance value of no class that implements
+  it", and by `generate` of the hyper checkout, which names no callback unit; `make e2e REPO=tests/e2e/consumer` is
+  queued.
+
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the

@@ -53,16 +53,22 @@ export const releaseSymbol = (model: Model, unit: Unit): string => `${prefix(mod
 export const classLabel = (object: ObjectClass): string => goName(object.unit.name);
 
 const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
+  const library = libraryOf(type);
+  // GN-6s: a callback unit of another repository, which a parameter takes.
+  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
   const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
+
+// U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
+const allCallbacks = (model: Model): CallbackUnit[] => [...model.callbacks, ...model.foreignCallbacks];
 
 // GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a model has such a member.
 const passesFn = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
 export const passes = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passesFn);
 
 // Whether the core runs Go code through the trampoline of the callbacks: a callback unit (U-3), or a func (GN-6ae).
-export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || passes(model);
+export const runsGo = (model: Model): boolean => allCallbacks(model).length > 0 || passes(model);
 
 // GN-6z: whether a member takes a function type that the core may keep, whose func package binding holds under a
 // cgo.Handle and runs by that handle, in no call.
@@ -972,9 +978,11 @@ function traitParam(model: Model, type: Type): string {
 // callback in it) and implements the core trait; each member calls into Go, which runs the method of the object.
 function callbackRust(model: Model, cb: CallbackUnit, index: number): string {
   const plain = plainName(cb.unit);
-  const struct = rustType(model, { unit: cb.unit.id });
+  // GN-6s: a callback unit of another repository is the trait of its core, whose methods return the failure of the core
+  // error of that repository.
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const goType = goName(cb.unit.name);
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m, memberIndex) => {
     const method = langName('go', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -1779,7 +1787,7 @@ function entries(model: Model): string {
 
 // The Rust helpers that the contract's functions use.
 function rustUsed(model: Model): string {
-  const code = `${entries(model)}${model.callbacks.map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}`;
+  const code = `${entries(model)}${allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}`;
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
@@ -1847,7 +1855,7 @@ function tupleReaders(model: Model): string {
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const unit of [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))]) for (const f of unit.fields ?? []) visit(f.type);
-  for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
+  for (const cb of allCallbacks(model)) for (const m of cb.members) visit(m.returns);
   return [...arities].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
     return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
@@ -1871,7 +1879,7 @@ const testEntryUses = (model: Model): Record<string, string> => ({
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = entries(model);
-  const callbacks = model.callbacks.map((c, i) => callbackRust(model, c, i)).join('');
+  const callbacks = allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('');
   const used = rustUsed(model);
   const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}`;
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
