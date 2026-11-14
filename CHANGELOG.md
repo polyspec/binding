@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The test of a process that has exited and waits for its parent reports its failure and ends (HR-84, HR-87). Its
+  assertions ran before the input of `cat` was ended, so a failed one left `cat`, its pipes and the test file
+  running, and `unit-ts` gave no output for 18 minutes on Linux. The process exits now only after the shell has
+  become `cat`, which a shell that reads the status of a finished job before then could otherwise take away, and the
+  test ends `cat` and the process and awaits their pipes in `finally`. Verified by
+  `node --test packages/ts/tests/e2e-work.test.ts`, whose test of a failing check of the scene failed before the
+  change.
+
 - The end-to-end check runs `tsc --strict` on the declarations of each package where npm installed it, with
   `--module nodenext` in the directory of the installed packages (GN-14, GN-6s). It read the declarations in the copy
   of the repository, beside which no `node_modules` holds a package, so the declarations of the consumer, which name
