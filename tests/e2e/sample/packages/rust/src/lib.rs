@@ -385,6 +385,16 @@ pub fn maybe(
     }
 }
 
+/// The value of a key in a feed that the core calls during the call only, although `Feed` requires `Send` and `Sync`
+/// because an index keeps it (GN-6aa: a callback unit that one parameter lends and another keeps).
+///
+/// # Errors
+///
+/// The failure of the feed.
+pub fn ask(feed: &dyn Feed, key: &str) -> Result<Option<String>, Failure<Error>> {
+    feed.get(key)
+}
+
 /// A search for the value of a key (GN-6aa: a record with a callback field, whose type has one lifetime).
 pub struct Search<'a> {
     /// The lookup that holds the value.

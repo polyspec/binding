@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 860af2412a7f15ad3ce49ff62a7d6208c9280e27a8e156c091e377eb5d2e9b21 -->
+<!-- source-sha256: 38b17e257bf0d43cd433b9ab5c35c655bb69ab3ac295e38acf631b5fae375c9c -->
 # 생성기
 
 [English](generator.md)
@@ -453,7 +453,13 @@
   method는 그 struct 자신의 것(`impl CbFeed { fn get(…) }`)이고, 보관되는 wrapper가 호출마다 빌리는 struct에서 그것을 부른다.
   보관되는 wrapper가 kept func를 부르는 Go는 struct도 `in_<unit>`도 두지 않는다. 이유: 코어가 보관하는 trait는 보통
   `Send + Sync`인데 언어 환경의 값을 갖는 호출의 struct는 그렇지 않고, 어떤 member도 닿지 않는 코드는 죽은 코드다. Python은
-  `keeps`와 상관없이 객체를 `Py<PyAny>`로 가지므로 trait 구현을 유지한다.
+  `keeps`와 상관없이 객체를 `Py<PyAny>`로 가지므로 trait 구현을 유지한다. `keeps`가 있는 parameter가 갖고 `keeps`가 없는
+  parameter가 빌려주는 unit(end-to-end sample의 `sample.ask`)도 Node, PHP, WASM에서 그 struct에 trait 구현이 없다. 이 대상들은
+  그 unit의 값을 `keeps`가 없는 자리에서도 모두 보관되는 wrapper(`kept_<unit>`)로 바꾸고, 그 자리의 값은 보관되는
+  wrapper 자체(`KeptCbFeed`)이거나 호출의 수명을 가진 그 box다. Go는 `keeps`가 없는 자리에서 호출의 struct와 그 trait
+  구현을 유지한다. 그 struct는 두 수와 스레드 id를 가지며, 이것들은 `Send`이고 `Sync`이기 때문이다. 이유: 생성기는 Rust를
+  읽지 않으므로 보관되는 trait가 `Send`와 `Sync`를 요구하는지 알 수 없고, 그것을 요구하는 trait는 어느 자리에서도 호출의
+  struct를 받지 않지만, 보관되는 wrapper는 `Native`만 갖는다.
 - **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
@@ -514,7 +520,13 @@
   func의 `cgo.Handle`을 묻는다(`Call.Keep`). owner 스레드에서 member를 부르면 GN-6d대로 바꾸고, 다른 스레드에서 부르면 kind
   `wrong_thread`, owner의 정리(Node의 env, PHP의 request) 뒤에 부르면 kind `internal`이며, 각각 그 `BindingError`를 담은
   `Native`의 `Raised`다. wrapper는 `Native`만 가지므로 `Send`이고 `Sync`이며, 그것을 요구하는 trait도 그것을 받는다.
-  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
+  Python은 `keeps`와 상관없이 객체를 `Py<PyAny>`로 갖는다. error unit을 인식하는(U-3) 보관되는 callback의 member는 모든
+  대상에서 호출의 callback의 member처럼(GN-6d) 그런 오류의 kind를 코어에 준다. Node, PHP, WASM은 그것을 인식하는 호출의
+  struct의 member를 부르고, Go에서 kept func의 실행은 status 2와 함께, 인식된 값이 감싼 오류를 호출 없는 table이 갖는 key,
+  그 kind와 message를 준다. 그 unit의 kind는 그 kind의 코어 오류이고 `<prefix>__go_release_raised`로 항목을 지우며, 다른
+  kind는 같은 오류로 호출자에게 돌아간다. 이유: 코어가 callback을 보관하는지는 그 오류의 분류와 상관이 없으므로, 오류를
+  분류하지 않고 돌려주는 보관된 callback은 계약이 kind를 이름하는 곳에서 코어가 던져진 오류를 보게 한다(`index.get`의 case
+  `a_kept_source_that_raises_a_recognized_error_refuses_the_key_in_a_later_call`). end-to-end sample은 callback의 list를 클래스 인스턴스에 두고
   나중 호출에서 부른다(`tests/e2e/sample`의 클래스 `index`). list나 `optional`의 항목이 아닌 `keeps`가 있는 callback
   parameter는 그 box로 값째 core에 들어간다(`index.single`). `keeps`가 있는 record parameter는 보관되는 callback의 변환으로
   field들에서 만들어지고, 그 core 타입은 `'static`이다(`index.supplied`). Go는 그 record의 field를 record의 reader가 아니라

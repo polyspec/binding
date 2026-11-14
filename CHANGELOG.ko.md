@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8540798e98ab940bd6f90ae8ec48763efbe02458a7b019dac60b40a6dbb5c81f -->
+<!-- source-sha256: 3261341ead0f018ac1821993665f1d19faa29b2257453b739f78471c758032c4 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
 <!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
 <!-- source-sha256: 1cda4ea7cc33fcb3b583842303a4f7b8ab35a24e4cc8744884e86fdb0ddbad2f -->
+<!-- source-sha256: fd683a72223968f3a964ee00f87e0987592634c898553223329a794644eed15e -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -58,6 +59,18 @@
   표가 보관한 callback을 가진 `Index` 객체가 해제되면 sample의 `same`이 `0 !== 15`로 실패했다. 이제 시험은 첫 셈 전에
   glue module을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했고, `make e2e REPO=tests/e2e/sample`은
   대기열에 있다.
+- 보관되는 callback의 member가 자기가 인식하는 오류를 돌려주면 Go binding은 그 kind가 아니라 던져진 오류를 코어에
+  주었다. kept func의 실행이 인식된 값을 status 1의 오류로 가졌기 때문이다. 이제 그것은 감싼 오류의 key, 그 kind와
+  message와 함께 status 2를 주고, 보관되는 wrapper는 그 kind의 코어 오류를 만들고 항목을 지우며, 다른 kind는 호출자에게
+  같은 오류다(U-3, GN-6d, GN-6aa). sample의 `feed.get`은 `refused_error`를 인식하고, `index.get`과 `sample.ask`의 case가
+  하나씩 있다. `node --test packages/ts/tests/generate.test.ts`로 검증했다.
+
+- 한 parameter가 빌려주고 다른 parameter가 보관하는 callback unit은 그 trait가 `Send`와 `Sync`를 요구하면 Node, PHP,
+  WASM에서 컴파일되지 않았다. napi `Object`, PHP `Zval`, `JsValue`를 갖는 호출의 struct가 빌려주는 parameter를 위해 그
+  trait를 구현했기 때문이다. 이제 이 대상들은 보관되는 unit의 모든 값을 `Native`만 갖는 보관되는 wrapper로 바꾸고, Go와
+  Python은 그곳에서 `Send`이고 `Sync`인 호출의 struct를 유지한다(GN-6d, GN-6aa). sample은 `sample.ask`에서 feed를
+  빌려주고, end-to-end 검사가 그 case를 실행한다. `node --test packages/ts/tests/generate.test.ts`로 검증했다.
+
 - lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
   member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성
   시험은 이제 코어 경로가 callback의 실패를 돌려주는 member에만 생성된다(K-2). Go crate는 함수 타입을 받는 계약에만

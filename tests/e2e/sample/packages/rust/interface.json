@@ -264,6 +264,14 @@
           "core": {
             "path": "polyspec_sample::Feed::get",
             "receiver": "&self"
+          },
+          "errors": {
+            "recognize": [
+              {
+                "unit": "refused_error"
+              }
+            ],
+            "reason": "U-3"
           }
         }
       ]
@@ -806,6 +814,41 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::maybe",
+          "optional_reason": "U-3"
+        },
+        {
+          "id": "sample.ask",
+          "name": [
+            "ask"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "feed"
+              ],
+              "type": {
+                "unit": "feed"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [
+            "polyspec_sample::Error::Refused"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::ask",
           "optional_reason": "U-3"
         },
         {
@@ -2098,7 +2141,9 @@
             "optional": "text"
           },
           "optional_reason": "U-3",
-          "raises": [],
+          "raises": [
+            "polyspec_sample::Error::Refused"
+          ],
           "wait": "none",
           "core": {
             "path": "polyspec_sample::Index::get",
@@ -2792,6 +2837,11 @@
       "member": "sample.maybe",
       "file": "contracts/cases.json",
       "group": "maybe"
+    },
+    {
+      "member": "sample.ask",
+      "file": "contracts/cases.json",
+      "group": "ask"
     },
     {
       "member": "sample.seek",

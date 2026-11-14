@@ -8484,7 +8484,7 @@ test('a callback of a parameter with keeps is held as a Native in Node, PHP and 
   assert.match(wasm, /fn kept_feed\(value: &JsValue, subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
   // Go: the callback is a kept func of the call that reads the number of the member first.
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchFeed\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_ran\(&self\.native, &args\)/);
   // Python holds the object as a Py<PyAny> with or without keeps.
   assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = /);
 });
@@ -8952,8 +8952,20 @@ test('no Rust name that the generator joins from a contract name holds a raw ide
   assert.match(text(sample, 'packages/ts/generated/lib.rs'), /\npub fn check_box<'env>\(env: &'env Env, entries: Unknown<'env>\) -> napi::Result<\(\)> \{/);
 });
 
+// The sample without sample.ask, the one parameter that lends a feed (B2.242), so that feed enters only parameters with
+// keeps.
+const keptOnlySample = (): Map<string, string | Buffer> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = read('sample/packages/rust/interface.json');
+  const cases = read('sample/contracts/cases.json');
+  for (const unit of contract.units) if (unit.members !== undefined) unit.members = unit.members.filter((m: any) => m.id !== 'sample.ask');
+  contract.cases = contract.cases.filter((row: any) => row.member !== 'sample.ask');
+  delete cases.ask;
+  return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+};
+
 test('a callback unit whose values enter only parameters with keeps has no trait implementation on the struct of a call in Node, PHP and WASM, and no struct in Go (GN-6d, GN-6aa, B2.227)', () => {
-  const sample = e2eGenerated().get('sample') ?? new Map();
+  const sample = keptOnlySample();
   const borrowing: [string, RegExp, RegExp][] = [
     ['packages/ts/generated/lib.rs', /\nimpl<'env> CbFeed<'env> \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
     ['packages/php-ext/generated/lib.rs', /\nimpl CbFeed \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
@@ -9138,4 +9150,53 @@ test('a Go test of each end-to-end repository calls every function of its Go pac
     const uncalled = functions.filter((name) => !new RegExp(`(?<![\\w.])${name}\\(`).test(all));
     assert.deepEqual(uncalled, [], repo);
   }
+});
+
+test('a callback unit that one parameter lends and another keeps is called through its kept wrapper at every place in Node, PHP and WASM, so a trait with Send and Sync takes it (GN-6d, GN-6aa, B2.242)', () => {
+  // Feed of the sample requires Send and Sync; sample.ask lends a feed for its call, and the index keeps its feeds.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const libs: [string, RegExp][] = [
+    ['packages/ts/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(env, feed, "feed"\)\?;/],
+    ['packages/php-ext/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(feed, "feed"\)\?;/],
+    ['packages/ts/wasm/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(&feed, "feed"\)\?;/],
+  ];
+  for (const [path, read] of libs) {
+    const lib = text(sample, path);
+    assert.match(lib, read, path);
+    // The struct of a call holds a value of the environment of the language, which is neither Send nor Sync.
+    assert.doesNotMatch(lib, /polyspec_sample::Feed for CbFeed\b/, path);
+    assert.match(lib, /polyspec_sample::Feed for KeptCbFeed \{/, path);
+    assert.match(lib, /polyspec_sample::ask\(&mut \{ feed \}/, path);
+    // lookup is never kept, so its struct of a call still implements its trait.
+    assert.match(lib, /polyspec_sample::Lookup for CbLookup\b/, path);
+  }
+  // Go and Python: the struct of a call is Send and Sync (two numbers and a thread, a Py<PyAny>), so it implements the trait.
+  const go = text(sample, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /let feed: CbFeed = in_feed\(&mut input, "feed"\)\?;/);
+  assert.match(go, /impl polyspec_sample::Feed for CbFeed \{/);
+  assert.match(text(sample, 'packages/python/generated/lib.rs'), /impl polyspec_sample::Feed for CbFeed \{/);
+  // The cases of sample.ask call the lent feed in each target.
+  assert.match(text(sample, 'packages/ts/generated/tests/generated.test.mjs'), /a_lent_feed_gives_its_value/);
+});
+
+test('Go gives the core the kind of an error that a member of a kept callback recognizes, as a callback of the call does (U-3, GN-6d, GN-6aa, B2.243)', () => {
+  // feed.get of the sample recognizes refused_error, and the index calls its kept feeds in a later call.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const binding = text(sample, 'packages/go/internal/binding/zz_generated_binding.go');
+  // The run of a kept func holds the error that the recognized wraps and gives 2, its key, its kind and its message.
+  assert.match(binding, /func keepRaised\(err error\) \(int32, \[\]byte\) \{\n\tif r, ok := err\.\(\*recognized\); ok \{\n\t\tenc := NewWriter\(\)\n\t\tenc\.Uint\(holdRaised\(r\.err\)\)\n\t\tenc\.Text\(r\.kind\)\n\t\tenc\.Text\(r\.message\)\n\t\treturn 2, enc\.Done\(\)\n\t\}/);
+  const go = text(sample, 'packages/go/internal/ffi/generated/lib.rs');
+  // The kept wrapper reads status 2 and makes the core error of the kind, as recognized_feed_get does for the call.
+  assert.match(go, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?match kept_ran\(&self\.native, &args\)\? \{\n\s+KeptRan::Ran\(run, bytes\) => \(run, bytes\),\n\s+KeptRan::Recognized\(key, kind, message\) => return Err\(kept_recognized_feed_get\(key, kind, message\)\),/);
+  assert.match(go, /fn kept_recognized_feed_get\(key: u64, kind: String, message: String\) -> binding_core::Failure<polyspec_sample::Error> \{\n\s+let core = match kind\.as_str\(\) \{\n\s+"refused" => Some\(polyspec_sample::Error::recognized\(polyspec_sample::Error::Refused, &message\)\),/);
+  // A kind that the core takes removes the error from the table; any other is the same error for the caller.
+  assert.match(go, /Some\(core\) => \{\n\s+\/\/ SAFETY:[^\n]*\n\s+unsafe \{ [a-z_]+__go_release_raised\(key\) \};\n\s+binding_core::Failure::Kind\(core\)\n\s+\}\n\s+None => thrown\(Thrown::Kept \{ key \}\)\.into\(\),/);
+  // The sample keeps no function type and no callback member that recognizes nothing, so kept_called is dead code there.
+  assert.doesNotMatch(go, /\bfn kept_called\b/);
+  // The other targets call the member of the struct of the call, which recognizes the error.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(sample, path), /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?CbFeed::get\(&borrowed, key\)/, path);
+    assert.match(text(sample, path), /fn recognized_feed_get\(/, path);
+  }
+  assert.match(text(sample, 'packages/go/zz_generated_test.go'), /AKeptSourceThatRaisesARecognizedErrorRefusesTheKeyInALaterCall/);
 });

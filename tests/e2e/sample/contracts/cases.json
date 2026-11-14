@@ -1153,6 +1153,50 @@
       "result": null
     }
   ],
+  "ask": [
+    {
+      "id": "a_lent_feed_gives_its_value",
+      "feed": {
+        "callback": {
+          "feed.get": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "b"
+            }
+          ]
+        }
+      },
+      "key": "a",
+      "result": "b"
+    },
+    {
+      "id": "a_lent_feed_that_raises_a_recognized_error_refuses_the_key",
+      "feed": {
+        "callback": {
+          "feed.get": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "refused"
+              }
+            }
+          ]
+        }
+      },
+      "key": "a",
+      "raises": {
+        "kind": "refused",
+        "status": null,
+        "category": "value",
+        "message": "the lookup refused the key"
+      }
+    }
+  ],
   "seek": [
     {
       "id": "the_lookup_of_the_search_gives_the_value",
@@ -1607,6 +1651,33 @@
       ],
       "key": "a",
       "result": null
+    },
+    {
+      "id": "a_kept_source_that_raises_a_recognized_error_refuses_the_key_in_a_later_call",
+      "sources": [
+        {
+          "callback": {
+            "feed.get": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "raise": {
+                  "error": "refused_error",
+                  "kind": "refused"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "key": "a",
+      "raises": {
+        "kind": "refused",
+        "status": null,
+        "category": "value",
+        "message": "the lookup refused the key"
+      }
     },
     {
       "id": "a_source_kept_alone_gives_its_value_in_a_later_call",
