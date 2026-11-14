@@ -599,6 +599,35 @@ test('the Go package binding holds the keyed-map helpers that a keyed_map<T> of 
   assert.match(returned, /^type KeyedMap\[T any\] struct/m);
 });
 
+// T-5, GN-6h: the conversion out_<class> is written wherever the code names it, also as the function that list_out
+// takes for a list of instances inside a tuple, so every crate that names it defines it.
+test('every crate that names the out conversion of a class defines it, also for a list of instances in a tuple (T-5, GN-6h)', () => {
+  const files = { list: { tuple: ['text', { list: { unit: 'badge' } }] } };
+  // The class badge is given only inside a tuple of a list: as the field of a record that a function returns, or as
+  // the result of a function.
+  for (const place of ['field', 'result']) {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+    contract.cases = [];
+    contract.units.push(
+      { id: 'badge', name: ['badge'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::Badge', final: true, members: [
+        { id: 'badge.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['name'], type: 'text', required: true }], raises: [], wait: 'none', core: 'polyspec_classes::Badge::new' },
+        { id: 'badge.name', name: ['name'], kind: 'property', visibility: 'public', parameters: [], returns: 'text', raises: [], wait: 'none', core: { path: 'polyspec_classes::Badge::name', receiver: '&self' } },
+      ] },
+      { id: 'bundle', name: ['bundle'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::Bundle', fields: [{ name: ['files'], type: files, required: true }] },
+    );
+    const join = contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.join');
+    join.returns = place === 'field' ? { unit: 'bundle' } : files;
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map() });
+    const crates = [...out].filter(([path]) => path.endsWith('/lib.rs')).map(([path, t]) => [path, String(t)] as const);
+    assert.ok(crates.length >= 5, crates.map(([path]) => path).join(', '));
+    for (const [path, rust] of crates) {
+      const code = rust.replace(/\/\/[^\n]*/g, '');
+      assert.ok(/\bout_badge\b/.test(code), `${place}: ${path} names no out_badge`);
+      assert.ok(/\bfn out_badge\b/.test(code), `${place}: ${path} names out_badge and defines no fn out_badge`);
+    }
+  }
+});
+
 // GN-15h: a deadcode or unused lint that runs without a build tag reaches no code of a file behind a tag, so each
 // helper that package binding holds untagged is called by the untagged Go code of the generation, and a helper that
 // only the files of build tags call is written in a file behind those tags.

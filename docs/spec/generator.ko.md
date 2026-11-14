@@ -378,7 +378,9 @@
   이름으로 내보내는 napi 클래스, PHP는 final 플래그를 단 `php_class`. 메서드와 property는 가진 값을 receiver로 코어 경로를 부르고,
   클래스를 돌려주는 static member나 생성자는 값을 감싼다. 클래스의 결과는 코어가 소유한 값으로 주든 빌린 값으로 주든 새 인스턴스다(accessor는
   `&T`를, optional이나 list의 항목은 그 둘 중 하나의 참조를 준다): 변환 `out_<class>`는 `impl CoreForm<T>`를 받아 소유한 값은 그대로 두고
-  빌린 값은 복제하므로, 인스턴스는 코어를 빌리지 않는다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
+  빌린 값은 복제하므로, 인스턴스는 코어를 빌리지 않는다. crate는 그 코드가 `out_<class>`를 적을 때 그것을 쓴다. 클래스를
+  주는 호출이나 record, variant, alias의 변환이 적을 때이고, tuple 안 list의 변환이 받는 함수(`list_out(py, items,
+  out_<class>)`)로 적을 때도 그렇다. 그 밖에는 쓰지 않는데, lint가 dead code를 거부하기 때문이다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
   property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을
   하는 `<name>`을 정의한다. 진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다.

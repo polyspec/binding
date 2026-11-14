@@ -1274,14 +1274,15 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPython(model, a)),
     model.aliases.length > 0 ? pythonHost(model) : '',
   ].join('\n');
-  // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
-  // a class that no member returns has none (the lints deny dead code).
+  // The conversion out of a class is written when the code names it: a call that gives the class, a record, a
+  // variant or an alias that holds it, also as the function that list_out takes (`list_out(py, items, out_<class>)`).
+  // The constructor wraps the value itself, so a class that no code gives has none (the lints deny dead code).
   // GN-6z: a function that the core may keep; the function parameter of a member with machine has its own helper (GN-6ae).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
   const recognizes = takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
   const rest = takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + passingRust(model, layout) + foreignFailurePython(model);
-  const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
-  const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\(`).test(draft);
+  const draft = (functions + enums + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest).replace(/\/\/[^\n]*/g, '');
+  const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\b`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + model.kept.map((k) => keptPython(moduleOf(layout, k.unit.module), k)).join('') + rest;
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {

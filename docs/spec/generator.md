@@ -469,7 +469,10 @@ the design ids are those of the binding design.
   property calls the core path with the held value as its receiver; a static member or the constructor that returns
   the class wraps the value. A result of the class is a new instance whether the core gives it owned or borrowed (an
   accessor gives `&T`, and an item of an optional or a list a reference to either): the conversion `out_<class>` takes
-  `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. `constructible: false` leaves no constructor (PHP declares it private). A property is a
+  `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. A
+  crate writes `out_<class>` when its code names it: a call, or the conversion of a record, a variant or an alias, that
+  gives the class, also as the function that a list conversion takes (`list_out(py, items, out_<class>)`) for a list
+  inside a tuple, and no other time, because the lints deny dead code. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
   declarations, and the entry defines `<name>` over it with the checks of G-7. The entry writes that function as a

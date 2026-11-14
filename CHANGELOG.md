@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The Python crate writes the conversion `out_<class>` wherever its code names it (T-5, GN-6b). It was written only
+  when the code of the functions and the classes called `out_<class>(`, so a class that only a field
+  `list<tuple<text, list<class>>>` of a returned record gives got `list_out(py, part_1, out_<class>)` in the
+  conversion of the record and no definition, and the crate failed with E0425. Verified by
+  `node --test packages/ts/tests/generate.test.ts`, whose test of the class in a tuple of a record field failed before
+  the change with `packages/python/generated/lib.rs names out_badge and defines no fn out_badge`. (B2.265)
+
 - A helper of the Go package `binding` that only files behind a build tag call is written behind those tags, in
   `zz_generated_<tags>_helpers.go` (GN-15h). The helpers were kept by the uses in every generated Go file, so a
   contract that takes a float and no integer kept `Writer.Int`, which only the number test of the codec behind

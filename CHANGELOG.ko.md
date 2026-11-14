@@ -19,6 +19,12 @@
 
 ## Unreleased
 
+- Python crate는 그 코드가 변환 `out_<class>`를 적는 모든 곳에서 그것을 쓴다(T-5, GN-6b). 변환은 함수와 클래스의
+  코드가 `out_<class>(`를 부를 때만 쓰였으므로, 돌려주는 record의 field `list<tuple<text, list<class>>>`만 주는
+  클래스는 record 변환에서 `list_out(py, part_1, out_<class>)`을 받고 정의는 받지 못해 crate가 E0425로 실패했다.
+  `node --test packages/ts/tests/generate.test.ts`로 확인했고, record field의 tuple 안 클래스 시험은 변경 전에
+  `packages/python/generated/lib.rs names out_badge and defines no fn out_badge`로 실패했다. (B2.265)
+
 - build tag 뒤의 파일만 부르는 Go 패키지 `binding`의 도우미는 그 tag 뒤의 `zz_generated_<tags>_helpers.go`에
   쓴다(GN-15h). 도우미는 모든 생성 Go 파일의 쓰임으로 남았으므로, 실수를 받고 정수를 받지 않는 계약은
   `polyspec_codec_test` 뒤의 codec 숫자 시험만 부르는 `Writer.Int`를 `zz_generated_binding.go`에 남겼고, tag 없는
