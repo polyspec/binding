@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 88e9731a80815a97d85e2a7a2e3b0d253fc1915c24f9efed6cf6699dca05cccc -->
+<!-- source-sha256: 6cf28f93db3a8dabf0993f286f445a92c61dc029879a33edf6fbb4d0a9982337 -->
 # 생성기
 
 [English](generator.md)
@@ -622,23 +622,23 @@
 - **GN-6ar** 다른 레포의 값 alias의 행은 owner의 class를 이름할 수 있다(U-1, GN-6af). `make`가 owner의 public class의
   public constructor인 `out` 행과, 언어 타입이 그런 class인 `in` 행이다. 바인딩은 다른 레포의 값 class의 member를
   부르듯이(GN-6x) owner package의 언어 API로 인스턴스를 만들고 읽으며, owner 바인딩의 native 객체를 꺼내지 않는다.
-  Python은 owner package의 module에서 class를 읽고, Node addon의 JavaScript entry는 module이 로드될 때 GN-6x의 class
-  뒤에 그 class들을 넘겨준다. 나갈 때: constructor는 parameter가 하나다. 행의 kind의 bool, 정수, float은 그대로
-  넘긴다(Node는 bool과 float). 그 alias의 keyed map은 kind `object`나 `map`의 entry를 언어의 새 map(`dict`, `Map`)으로
+  Python은 owner package의 module에서 class를 읽고, Node addon과 WASM module의 JavaScript entry는 module이 로드될 때
+  GN-6x의 class 뒤에 그 class들을 넘겨준다. WASM은 class의 `Symbol.hasInstance`로 인스턴스를 검사하고 `Reflect.construct`로
+  만든다. 나갈 때: constructor는 parameter가 하나다. 행의 kind의 bool, 정수, float은 그대로
+  넘긴다(Node와 WASM은 bool과 float). 그 alias의 keyed map은 kind `object`나 `map`의 entry를 언어의 새 map(`dict`, `Map`)으로
   받고, 인스턴스는 그 map을 그대로 보관하므로(GN-6af) 바인딩은 빈 map으로 인스턴스를 만든 다음 만든 entry를 그 map에
   넣는다. alias 자체는 kind `reference`의 값을 받는다. 바인딩은 언어의 null로 인스턴스를 만들고, parameter와 이름이 같은
-  그 class의 writable property로 만든 값을 넣는다. 그래서 object와 reference는 내용보다 먼저 만들어지고 자기 handle의
+  그 class의 writable property에 언어의 대입처럼 만든 값을 넣는다(WASM은 `Reflect.set`). 그래서 object와 reference는 내용보다 먼저 만들어지고 자기 handle의
   모든 자리에서 같은 인스턴스이며(U-7 (d)), 그것을 지나는 순환이 만들어진다. 들어올 때: 그 class의 인스턴스는 행의 한
   case(`when` 없음)의 kind를 가진 `HostValue::Value`이고, `HostValues`의 `read`는 그 case가 이름한 public property를
   준다. 타입이 bool, 정수, float인 property는 그 타입의 `HostValue`다. JavaScript의 number만으로는 정수와 float을
   구별할 수 없기 때문이다. 그 밖의 property는 언어의 규칙으로 다시 묘사한다. property를 다시 묘사하는 인스턴스는 코어의
-  한 번의 순회 안에서 handle이 하나다(Python은 주소로, Node는 순회의 `Map`으로). bool이나 수를 가진 인스턴스는 값이므로
+  한 번의 순회 안에서 handle이 하나다(Python은 주소로, Node와 WASM은 순회의 `Map`으로). bool이나 수를 가진 인스턴스는 값이므로
   그럴 필요가 없다. 타입의 이름이 `only`가 그 target에서 뺀 class(GN-6af)의 이름인 행은 거기서 언어의 타입을 이름한다.
   PHP의 `reference`가 그렇다. `package.json`은 owner의 npm package를 적는다(GN-3e). 이름을 대고 거부하는 것(G-4):
   public constructor가 아닌 member, 다른 parameter를 받는 constructor, 그런 writable property가 없는 class의 reference,
   case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. 아직 생성하지 않고 이름을 대고
-  거부하는 것(G-4): WASM과 Go의 꼴. WASM module에는 행의 class에 대한 인스턴스 검사와 constructor 호출이 아직 없고,
-  GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
+  거부하는 것(G-4): Go의 꼴. GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는

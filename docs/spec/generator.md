@@ -764,26 +764,27 @@ the design ids are those of the binding design.
   a class. The binding makes and reads the instance through the language API of the owner's package, as it calls the
   members of a value class of another repository (GN-6x), and never takes the native object of the owner's binding
   out: Python reads the class from the module of the owner's package, and the JavaScript entry of the Node addon
-  hands the classes over when the module loads, after the classes of GN-6x. Out: the constructor has one parameter. A
-  bool, an integer or a float of the kind of the row is passed to it (Node: a bool or a float); a keyed map of the
+  and of the WASM module hands the classes over when the module loads, after the classes of GN-6x; WASM checks an
+  instance by the `Symbol.hasInstance` of the class and makes one by `Reflect.construct`. Out: the constructor has one parameter. A
+  bool, an integer or a float of the kind of the row is passed to it (Node and WASM: a bool or a float); a keyed map of the
   alias takes the entries of the kind `object` or `map` as a new map of the language (a `dict`, a `Map`), which the
   instance keeps (GN-6af), so the binding makes the instance on the empty map and then gives the map each made entry;
   the alias itself takes the value of the kind `reference`: the binding makes the instance on the null of the
-  language and sets the made value through the writable property of the class that has the name of the parameter.
+  language and sets the made value through the writable property of the class that has the name of the parameter,
+  as an assignment of the language does (WASM: `Reflect.set`).
   An object and a reference are therefore made before their content and are the same instance at every position of
   their handle (U-7 (d)), so a cycle through them is made. In: an instance of the class is `HostValue::Value` with
   the kind of the one case of the row, which has no `when`, and `read` of `HostValues` gives the public property that
   the case names: a property of the type bool, an integer or float is the `HostValue` of that type, because a number
   of JavaScript alone does not tell an integer from a float, and any other property is described again by the rules
   of the language. An instance whose property is described again has one handle within one walk of the core (Python
-  by its address, Node by a `Map` of the walk); an instance that holds a bool or a number is a value and needs none.
+  by its address, Node and WASM by a `Map` of the walk); an instance that holds a bool or a number is a value and needs none.
   A row whose type has the name of a class that `only` leaves out for the target (GN-6af) names the type of the
   language there, as the `reference` of PHP does. `package.json` names the npm package of the owner (GN-3e). Refused
   by name (G-4): a member that is no public constructor, a constructor with another parameter, a reference whose
   class has no such writable property, an `in` row with several cases or a `when`, and a `read` that is no public
-  property of the class. Not generated yet, refused by name (G-4): the WASM and Go forms, because the WASM module has
-  no instance check and constructor call for a class of a row yet and the Go call of GN-15c has no node that makes an
-  instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
+  property of the class. Not generated yet, refused by name (G-4): the Go form, because the Go call of GN-15c has no
+  node that makes an instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
   language is the only form in which a user of both packages can pass an instance from one to the other.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
