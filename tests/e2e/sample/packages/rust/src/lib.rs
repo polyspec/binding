@@ -444,14 +444,16 @@ mod tests {
             handle: Handle::new(0),
             len: 1,
         };
-        assert!(matches!(
-            data_from_host(&mut Lists { cycle: true }, list()),
-            Err(Failure::Kind(Error::Unsupported { what })) if what == "a container cycle"
-        ));
-        assert!(matches!(
-            data_from_host(&mut Lists { cycle: false }, list()),
-            Err(Failure::Kind(Error::Unsupported { what })) if what == "a value nested too deep"
-        ));
+        let cycle = data_from_host(&mut Lists { cycle: true }, list());
+        assert!(
+            matches!(&cycle, Err(Failure::Kind(Error::Unsupported { what })) if what == "a container cycle"),
+            "expected a container cycle, got {cycle:?}"
+        );
+        let deep = data_from_host(&mut Lists { cycle: false }, list());
+        assert!(
+            matches!(&deep, Err(Failure::Kind(Error::Unsupported { what })) if what == "a value nested too deep"),
+            "expected excessive depth, got {deep:?}"
+        );
     }
 
     struct Fixed;
@@ -565,19 +567,52 @@ const MAX_DEPTH: usize = 64;
 ///
 /// Kind `unsupported` for a value that is not data, and the exception that the language raised.
 pub fn data_from_host(host: &mut dyn HostValues, value: HostValue) -> Result<Data, Failure<Error>> {
-    data_at(host, value, 0)
+    data_at(host, value, 0, &mut Vec::new())
 }
 
 fn data_at(
     host: &mut dyn HostValues,
     value: HostValue,
     depth: usize,
+    open: &mut Vec<Handle>,
 ) -> Result<Data, Failure<Error>> {
     if depth > MAX_DEPTH {
         return Err(Failure::Kind(Error::Unsupported {
             what: String::from("a value nested too deep"),
         }));
     }
+    let handle = match &value {
+        HostValue::List { handle, .. }
+        | HostValue::PhpArray { handle, .. }
+        | HostValue::Map { handle, .. }
+        | HostValue::PlainObject { handle, .. }
+        | HostValue::StdClass { handle, .. }
+        | HostValue::Value {
+            kind: ValueKind::Map | ValueKind::Reference,
+            handle,
+        } => Some(*handle),
+        _other => None,
+    };
+    if let Some(handle) = handle {
+        if open.contains(&handle) {
+            return Err(unsupported("a container cycle"));
+        }
+        open.push(handle);
+    }
+    let result = data_value_at(host, value, depth, open);
+    if handle.is_some() {
+        let _closed = open.pop();
+    }
+    result
+}
+
+/// The content of a host value whose container handle is open during its children's conversion.
+fn data_value_at(
+    host: &mut dyn HostValues,
+    value: HostValue,
+    depth: usize,
+    open: &mut Vec<Handle>,
+) -> Result<Data, Failure<Error>> {
     match value {
         HostValue::Null => Ok(Data::Null),
         HostValue::Bool(value) => Ok(Data::Bool(value)),
@@ -624,7 +659,7 @@ fn data_at(
             let mut items = Vec::new();
             for index in 0..len {
                 let item = host.item(handle, index).map_err(Failure::Raised)?;
-                items.push(data_at(host, item, depth + 1)?);
+                items.push(data_at(host, item, depth + 1, open)?);
             }
             Ok(Data::List(items))
         }
@@ -636,7 +671,7 @@ fn data_at(
         }
         | HostValue::PlainObject { handle, len, .. }
         | HostValue::StdClass { handle, len } => {
-            Ok(Data::Map(entries_at(host, handle, len, depth)?))
+            Ok(Data::Map(entries_at(host, handle, len, depth, open)?))
         }
         // GN-6af, GN-6ar: an instance of box gives its entries, a map of the language, when it is read.
         HostValue::Value {
@@ -650,7 +685,7 @@ fn data_at(
             else {
                 return Err(unsupported("a box whose entries are no map"));
             };
-            Ok(Data::Map(entries_at(host, entries, len, depth)?))
+            Ok(Data::Map(entries_at(host, entries, len, depth, open)?))
         }
         // GN-6af, GN-6ar: an instance of cell gives its value when it is read, and PHP gives the target of a reference.
         HostValue::Value {
@@ -658,9 +693,9 @@ fn data_at(
             handle,
         } => {
             let held = host.read(handle).map_err(Failure::Raised)?;
-            reference_to(host, held, depth)
+            reference_to(host, held, depth, open)
         }
-        HostValue::PhpReference { target, .. } => reference_to(host, *target, depth),
+        HostValue::PhpReference { target, .. } => reference_to(host, *target, depth, open),
         // GN-6ar: an instance of ratio gives its float when it is read.
         HostValue::Value {
             kind: ValueKind::Float,
@@ -689,14 +724,15 @@ fn entries_at(
     handle: Handle,
     len: u64,
     depth: usize,
+    open: &mut Vec<Handle>,
 ) -> Result<Vec<(String, Data)>, Failure<Error>> {
     let mut entries = Vec::new();
     for index in 0..len {
         let (key, value) = host.entry(handle, index).map_err(Failure::Raised)?;
-        let Data::Text(key) = data_at(host, key, depth + 1)? else {
+        let Data::Text(key) = data_at(host, key, depth + 1, open)? else {
             return Err(unsupported("a key that is no text"));
         };
-        entries.push((key, data_at(host, value, depth + 1)?));
+        entries.push((key, data_at(host, value, depth + 1, open)?));
     }
     Ok(entries)
 }
@@ -706,8 +742,9 @@ fn reference_to(
     host: &mut dyn HostValues,
     held: HostValue,
     depth: usize,
+    open: &mut Vec<Handle>,
 ) -> Result<Data, Failure<Error>> {
-    let held = data_at(host, held, depth + 1)?;
+    let held = data_at(host, held, depth + 1, open)?;
     if matches!(held, Data::Reference(_)) {
         return Err(unsupported("a reference that holds a reference"));
     }
@@ -731,7 +768,7 @@ pub fn check_box(
         let Key::Text(_name) = key else {
             return Err(unsupported("a key that is no text"));
         };
-        data_at(host, value, 1)?;
+        data_at(host, value, 1, &mut Vec::new())?;
     }
     Ok(())
 }
@@ -748,7 +785,7 @@ pub fn check_cell(
     let Some(value) = value else {
         return Ok(());
     };
-    reference_to(host, value, 0).map(|_reference| ())
+    reference_to(host, value, 0, &mut Vec::new()).map(|_reference| ())
 }
 
 /// A float that a class of the language holds (GN-6ar): the class ratio.

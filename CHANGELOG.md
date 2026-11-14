@@ -5,8 +5,10 @@
 
 ## Unreleased
 
-- The sample fixture adds native host-container checks for cycles, acyclic depth, sharing and repeated Map
-  iteration (GN-6at, B2.270-1). Its core currently reaches the depth limit on a cycle, which these checks expose.
+- The sample fixture distinguishes open host-container handles from excessive acyclic depth and accepts sharing
+  outside the open path (GN-6at, B2.270-1). Its native checks cover cycles, depth, sharing and repeated Map
+  iteration; previously a cycle reached the depth limit. The core regression failed on that distinction before
+  open-handle tracking was added.
 
 - Incoming Python lists and dicts and JavaScript Arrays, Maps and plain objects keep one description and handle
   throughout a host-value walk (GN-6at, B2.270). Repeated containers previously received fresh handles, so a core

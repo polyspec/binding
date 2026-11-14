@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 411203f3f00c579355fc35e5473a7a9dfd345287ae235d0c2fe40dc86c25c7f9 -->
+<!-- source-sha256: 81ed2e6eddad883e84ed4416aa4cce9fa883d928c7545b4d5f21b43ade0e5592 -->
 # 생성기
 
 [English](generator.md)
@@ -635,10 +635,10 @@
   다른 container는 다른 handle을 유지한다. 순회가 끝날 때까지 원본 container를 보유해서 수거된 container의
   identity가 재사용되지 않게 한다. core가 handle로 공유 container와 순환을 식별하고, 반복 위치에서 iterator나
   property 목록을 다시 읽지 않기 위해서다. 순환의 허용 여부와 거부할 error kind는 여전히 core가 정한다.
-  sample fixture는 이미 열린 container handle을 kind `unsupported`, 설명 `a container cycle`로 거부해야 한다.
+  sample fixture는 이미 열린 container handle을 kind `unsupported`, 설명 `a container cycle`로 거부한다.
   다른 handle이 깊이 제한을 넘으면 `a value nested too deep`이며, 현재 열린 경로 밖의 공유 container는 허용한다.
-  native Python, JavaScript, PHP 시험이 이를 구별하고, JavaScript Map을 공유하면 iterator를 한 번 읽어야 한다.
-  이 fixture 검증은 아직 구현되지 않았다(B2.270-1).
+  native Python, JavaScript, PHP 시험이 이를 구별하고, JavaScript Map을 공유하면 iterator를 한 번 읽어야 한다
+  (B2.270-1).
 - **GN-6u** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
   - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
     `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다. crate의 `build.rs`가 그 cfg를 선언한다

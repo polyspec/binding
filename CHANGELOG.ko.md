@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8aeb85638b11e54631343b93bdc421bc4e9b69a4f3c55ac76027205315352d0f -->
+<!-- source-sha256: 6e717b6acd734482021340f40aafaa04f1eed0794eeeeac2f1fe8d20fd6d204f -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -19,8 +19,9 @@
 
 ## Unreleased
 
-- sample fixture가 순환과 비순환 깊이, 공유, Map 반복 순회를 확인하는 native host-container 시험을 더한다
-  (GN-6at, B2.270-1). 현재 core는 순환에서도 깊이 제한에 닿으며, 이 시험은 그 동작을 드러낸다.
+- sample fixture가 열린 host-container handle과 과도한 비순환 깊이를 구별하고, 열린 경로 밖의 공유를 허용한다
+  (GN-6at, B2.270-1). native 시험은 순환, 깊이, 공유, Map 반복 순회를 확인한다. 이전에는 순환도 깊이 제한에
+  닿았고, 열린 handle 추적을 더하기 전에 core 회귀 시험이 그 구별에서 실패했다.
 
 - 들어오는 Python list와 dict, JavaScript Array, Map, plain object가 host-value 순회 동안 description과
   handle 하나를 유지한다(GN-6at, B2.270). 이전에는 반복 container가 새 handle을 받아 core가 순환을 식별하지

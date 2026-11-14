@@ -784,11 +784,10 @@ the design ids are those of the binding design.
   cannot be reused after a container is collected. This lets the core recognize shared containers and cycles by
   their handles, and avoids reading an iterator or property list again at a repeated position. The core still
   decides whether a cycle is accepted and which error kind rejects it.
-  The sample fixture must reject an already open container handle with kind `unsupported` and the description
+  The sample fixture rejects an already open container handle with kind `unsupported` and the description
   `a container cycle`, while distinct handles beyond its depth limit give `a value nested too deep`; a shared
   container outside the current open path is accepted. Native tests exercise those distinctions in Python,
-  JavaScript and PHP, and require one iterator read when a JavaScript Map is shared. This fixture proof is not
-  implemented yet (B2.270-1).
+  JavaScript and PHP, and require one iterator read when a JavaScript Map is shared (B2.270-1).
 - **GN-6u** What a `Native` (B-1) holds, and what its last drop does, by target:
   - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
     so the crate does not compile with `pyo3_disable_reference_pool`. The `build.rs` of the crate declares that cfg
