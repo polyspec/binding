@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
@@ -86,7 +86,7 @@ test('the fixture names the five targets, and the generator refuses a target by 
   const root = mkdtempSync(join(tmpdir(), 'binding-v-'));
   const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
     contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['bytes', 'text'] } };
@@ -145,7 +145,7 @@ test('a contract that fails the check is not generated', () => {
   const out = mkdtempSync(join(tmpdir(), 'binding-d-'));
   try {
     const root = mkdtempSync(join(tmpdir(), 'binding-e-'));
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
     contract.packages.python.module = 'polyspec_sample';
@@ -160,7 +160,7 @@ test('a contract that fails the check is not generated', () => {
 test('check compares the tracked binding packages with what scaffold writes (L-2)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-f-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-19 is missing/);
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
@@ -209,7 +209,7 @@ test('an integer return widens a narrower Rust integer with From (T-1)', () => {
 test('a core with fault injection points has itself as a dev-dependency with fault-test, so cargo test without flags arms them (CK-65, GN-5)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-s-'));
   try {
-    execFileSync('cp', ['-r', fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), `${root}/`]);
+    cpSync(fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
     const manifestPath = join(root, 'packages/rust/Cargo.toml');
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
@@ -250,7 +250,7 @@ test('a closure that only calls a function is the function (clippy redundant_clo
 test('check runs CK-19 and CK-20 past the findings of the contract and names a check that cannot run', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-k-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const contractPath = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
     // CK-22: no member names its cases; the repository has no scaffolded package and no Cargo.lock.
@@ -274,7 +274,7 @@ test('check runs CK-19 and CK-20 past the findings of the contract and names a c
 test('check refuses a binding_core of another version or commit than the CLI (CK-20)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-g-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
@@ -301,7 +301,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
   assert.deepEqual([...dirs].sort(), ['packages/server/go/errors', 'packages/server/go/internal', 'packages/server/go/zz_generated_sample.go', 'packages/server/go/zz_generated_test.go', 'packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
   const root = mkdtempSync(join(tmpdir(), 'binding-h-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     execFileSync('mkdir', ['-p', join(root, 'packages/server')]);
     execFileSync('mv', [join(root, 'packages/rust'), join(root, 'packages/server/rust')]);
     const path = join(root, 'packages/server/rust/interface.json');
@@ -321,7 +321,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
 test('Go: the C ABI, the packages and their tests are generated, and a generation removes old zz_generated files (GN-15)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-go-'));
   try {
-    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    cpSync(fixture, root, { recursive: true });
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
     // T-2: a tuple of two types inside a list is a struct of its parts, and a tuple of one type an array.
@@ -611,7 +611,7 @@ test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM
 // A temporary copy of the fixture repository whose contract `change` edits.
 function fixtureCopy(change: (contract: any) => void): { root: string; contract: string } {
   const root = mkdtempSync(join(tmpdir(), 'binding-j-'));
-  execFileSync('cp', ['-r', `${fixture}.`, root]);
+  cpSync(fixture, root, { recursive: true });
   const contract = join(root, 'packages/rust/interface.json');
   const parsed = JSON.parse(readFileSync(contract, 'utf8'));
   change(parsed);
@@ -1310,7 +1310,7 @@ test('Go: an integer above the safe integers is a literal, which gofmt keeps at 
 test('binding scaffold reads the contract of a path dependency and writes its Go module in go.mod (GN-15f)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
   try {
-    for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+    for (const repository of ['points', 'plot']) cpSync(new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, join(root, repository), { recursive: true });
     execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
   } finally {
@@ -1322,7 +1322,7 @@ test('binding scaffold reads the contract of a path dependency and writes its Go
 // as Cargo names the checkout of a git dependency.
 const plotCopy = (): { root: string; env: NodeJS.ProcessEnv } => {
   const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
-  for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  for (const repository of ['points', 'plot']) cpSync(new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, join(root, repository), { recursive: true });
   execFileSync('mkdir', ['-p', join(root, 'bin')]);
   const metadata = JSON.stringify({ packages: [{ name: 'polyspec-points', manifest_path: join(root, 'points/packages/rust/Cargo.toml') }] });
   writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
@@ -1468,7 +1468,7 @@ test('a tracked package that scaffold cannot write is named, and the other packa
 // every package of the resolution of a workspace.
 const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
   const root = mkdtempSync(join(tmpdir(), 'binding-three-'));
-  for (const repository of ['consumer', 'sample', 'points']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  for (const repository of ['consumer', 'sample', 'points']) cpSync(new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, join(root, repository), { recursive: true });
   const edit = (path: string, change: (json: any) => void): void => {
     const json = JSON.parse(readFileSync(join(root, path), 'utf8'));
     change(json);
@@ -1579,7 +1579,7 @@ test('generate refuses the Go target alone, with its sentence, when a library wh
 test('a failure that a case file causes is a refused target with its sentence and no stack trace (GN-1c)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-sentence-'));
   try {
-    execFileSync('cp', ['-r', new URL('../../../tests/e2e/sample', import.meta.url).pathname, root]);
+    cpSync(new URL('../../../tests/e2e/sample', import.meta.url).pathname, join(root, 'sample'), { recursive: true });
     // A value {"host"} outside its closed table, which the generator reads when it writes the case of an alias.
     const casesPath = join(root, 'sample/contracts/cases.json');
     const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
