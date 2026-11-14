@@ -17,6 +17,7 @@ import {
   interfaceOf, implementorsOf,
   takesFunction, cancelsAny,
   holdsCallback,
+  takenCallbacks,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -2020,7 +2021,7 @@ function entries(model: Model): string {
 
 // The Rust helpers that the contract's functions use.
 function rustUsed(model: Model): string {
-  const code = `${entries(model)}${allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}`;
+  const code = `${entries(model)}${takenCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}`;
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
@@ -2098,7 +2099,7 @@ function tupleReaders(model: Model): string {
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const unit of [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))]) for (const f of unit.fields ?? []) visit(f.type);
-  for (const cb of allCallbacks(model)) for (const m of cb.members) visit(m.returns);
+  for (const cb of takenCallbacks(model)) for (const m of cb.members) visit(m.returns);
   return [...arities].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
     return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
@@ -2122,7 +2123,7 @@ const testEntryUses = (model: Model): Record<string, string> => ({
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = entries(model);
-  const callbacks = allCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('');
+  const callbacks = takenCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('');
   const used = rustUsed(model);
   const all = `${used}${functions}${callbacks}${callBackRust(model)}${coreErrorRust(model)}${cancelsRust(model)}`;
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');

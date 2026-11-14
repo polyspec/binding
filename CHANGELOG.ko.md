@@ -1,20 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 63f130ee0452bc3b52c0208eb0782bd97805fbbc8b4d5384d0142a14d1f59508 -->
-<!-- source-sha256: 651fea8fdff554ce860ae3b775dc1d526f762649bc804fbe8435c5a4a0ec56e7 -->
-<!-- source-sha256: 15045cf7af4db5d55565035f398ce578be4d3436d1c836d6e23143a004fad289 -->
-<!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
-<!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
-<!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
-<!-- source-sha256: efe6277ecf0ce7c597df382db781325e49d9d095c68ee100c8b56fec8a7a64ab -->
-<!-- source-sha256: 6bf280bae124bfcfde95ef351791eaf40865908ae3f63b59c3767399d290f664 -->
-<!-- source-sha256: a8953e363e9f2b17de3ec5bb25620db653449a4aeb5138c1cc8b0f0009c40683 -->
-<!-- source-sha256: be8c07edd4ff1c1aa0b008505573646c102c146acb8b9e69909512988437c04c -->
+<!-- source-sha256: 95536098d977487f4dada6c50c6036c4bbe48c657ee3408394e53869836f3ae9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
+  `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진
+  `in_source`와 `CbSource`를 `cargo clippy -D warnings`가 죽은 코드로 거부했다. 이제 crate는 callback unit의 wrapper, 변환과
+  trait 구현을 그 unit의 값이 계약의 member에 들어갈 때만 쓴다(GN-6d). `node --test packages/ts/tests/generate.test.ts`로
+  확인했다.
 - end-to-end sample에는 GN-6aa의 보관되는 callback을 위한 callback unit `source`(`source.get`, trait `Source`)가 있었는데,
   sample의 다른 unit이 그 이름을 쓴다. 이제 그것은 `feed`(`feed.get`, trait `Feed: Send + Sync`)이고, `index.new`,
   `index.single`, `index.supplied`가 그것을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.
