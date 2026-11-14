@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: d1109d77dec97935d3942002588b707ec26654da866b2598c7adccef9979e53c -->
+<!-- source-sha256: 7f0e001c734e1990ac38ccb740909093b03414f119798833a609f08258c514b2 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -72,4 +72,4 @@
 | B2.165 | Node와 WASM은 case의 정수 값 float를 숫자가 아니라 그 out 행이 만드는 인스턴스(`php_float.constructor`)로 준다(GN-13e). 숫자는 코어에게 int이므로 php-serialization의 `serialize float_1e15`가 `d:` 대신 `i:`를 냈다. 그것은 두 target 각각에서 다른 값을 비교하는 시험 74개 가운데 하나다 | `packages/ts/src/generate/samples.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.166 | PHP는 key가 UTF-8이 아닌 byte string인 배열을 만든다(U-7, GN-6x). 확장의 make가 ext-php-rs의 "Invalid array key!"로 실패하며, php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351` 4개가 그렇다 | `packages/ts/src/generate/alias_php.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.167 | Node와 WASM의 값 alias walk는 값 class의 property 이름을 명시 deref 없이 넘긴다(GN-6as, GN-6af). `value_define(instance, *name, ...)`이 php-serialization의 Node와 WASM crate의 `cargo clippy -D warnings`를 `explicit_auto_deref`로 실패시켰다 | `packages/ts/src/generate/alias_node.ts`, `alias_wasm.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/kept`; 모든 crate의 `cargo clippy`가 통과하는 php-serialization checkout의 `make e2e` | [o] |
-| B2.170 | Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을 켜는 release profile을 보고한다(GN-15i, CK-91). http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가, 두 레포가 `[profile.release]`에 `lto = true`를 두어 중복 symbol로 실패했다 | `packages/ts/src/cli.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; http-media-type과 http-negotiation checkout의 `binding check`가 CK-91을 보고 | [~] |
+| B2.170 | Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을 켜는 release profile을 보고한다(GN-15i, CK-91). http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가, 두 레포가 `[profile.release]`에 `lto = true`를 두어 중복 symbol로 실패했다 | `packages/ts/src/cli.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; http-media-type과 http-negotiation checkout의 `binding check`가 CK-91을 보고 | [o] |
