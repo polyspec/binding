@@ -7236,6 +7236,24 @@ test('the PHP host of the case-test entry points has reserve and fill only when 
   assert.match(withObject, /fn fill\(&mut self, handle: Handle, entries: Vec<\(HostValue, HostValue\)>\) \{/);
 });
 
+test('a U-7 test of a kind of a value alias whose row names an error unit requires the class of that unit, in every target (U-7, E-2, B-4)', () => {
+  const out = sampleWith((c) => { c.errors.kinds.find((k: any) => k.variant === 'polyspec_sample::Error::Unsupported').class = 'refused_error'; });
+  const php = text(out, phpTests);
+  assert.match(php, /public function testU7DataInBytesThatAreNoTextAreNotData\(\): void\n {4}\{\n(?: {8}[^\n]*\n)*? {12}self::assertSame\(\\Polyspec\\Sample\\RefusedError::class, \$error::class\);/);
+  assert.match(php, /GivesTheKindOfData\(\): void\n {4}\{\n(?: {8}[^\n]*\n)*? {12}self::assertSame\(\\Polyspec\\Sample\\RefusedError::class, \$error::class\);/);
+  const python = text(out, pythonTests);
+  assert.match(python, /def test_u7_data_in_bytes_that_are_no_text_are_not_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
+  assert.match(python, /_gives_the_kind_of_data\(self\) -> None:\n(?: {8}[^\n]*\n)*? {8}self\.assertIs\(type\(caught\.exception\), pkg\.RefusedError\)/);
+  for (const js of [text(out, nodeTests), text(sampleWith((c) => { c.errors.kinds.find((k: any) => k.variant === 'polyspec_sample::Error::Unsupported').class = 'refused_error'; }, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
+    assert.match(js, /__aliasInData\([^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
+    assert.match(js, /gives the kind of data in [^\n]*\n[^\n]*\(error\) => error\.constructor === pkg\.RefusedError && error\.kind === 'unsupported'\);/);
+    assert.doesNotMatch(js, /\(error\) => error\.constructor === pkg\.SampleValueError && error\.kind === 'unsupported'/);
+  }
+  const codec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(codec, /if failure, ok := err\.\(\*RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /if failure, ok := err\.\(\*liberrors\.RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{\n\t+t\.Fatalf\("U-7: /);
+});
+
 test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {
   const raises = { kind: 'unsupported', status: null, category: 'value' };
   const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
