@@ -1970,7 +1970,10 @@ the design ids are those of the binding design.
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
-  `-9223372036854775808` as the negation of a float. A value of the language that is no value of the value type is `{"host": <sort>}`
+  `-9223372036854775808` as the negation of a float. A `float` whose out row of the alias in the language makes an
+  instance of a value class (`<unit>.constructor`, such as a Node integral float, which a `number` would carry as an
+  `int`) is that instance made from the number, because the binding takes back the form that it gives. A value of the
+  language that is no value of the value type is `{"host": <sort>}`
   of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
   `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
   `datetime.date(1970, 1, 1)`, which the test imports, Node and WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`,

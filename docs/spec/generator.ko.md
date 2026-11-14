@@ -1607,7 +1607,9 @@
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
-  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
+  만드는(`<unit>.constructor`) `float`은 그 수로 만든 그 인스턴스다(`number`가 `int`로 실어 나를 Node의 정수 float이
+  그렇다). binding은 자기가 주는 형태를 다시 받기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
   표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
   Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
   `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
