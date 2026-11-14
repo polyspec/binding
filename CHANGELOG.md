@@ -17,20 +17,23 @@
   PHP array, which the generated host described as a PHP array, while the walk of the owner reads the kind that the
   case names, a list. The generated test "carry a document of every kind" of `tests/e2e/relay` failed. The host now
   describes that array as a list of its values (GN-6x). Verified by `make test-ts`: the new test failed before the
-  change.
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
 - The Go tests of the end-to-end check ran the tests of the repository beside the generated tests: `go test ./...`
   of the Go module read every test file, so `packages/go/tests/cases_test.go` of a repository, which reads the path
   of its case file from `HTTP_MEDIA_TYPE_CASES`, failed three tests with "open : no such file or directory", while
   the other targets run their generated tests and the contract cases alone. `go vet` and `go test` of the run now
   read the files `zz_generated*_test.go` and the contract cases that the run copied, an overlay treats every other
   test file of the module as absent, and the source of the released form leaves the same files out (GN-14h).
-  Verified by `make test-ts`: the new test failed before the change.
+  Verified by `make test-ts`: the new test failed before the change. And by `make e2e` of the
+  http-media-type checkout, which passed on the five targets.
 - A PHP member that takes a value class of another repository whose kind is a backed enum failed with "Cannot
   indirectly modify readonly property": the generated crate read the value of the enum case with `get_property` of
   ext-php-rs, which fetches a property for writing, and PHP refuses that for the readonly `value` of an enum case, so
   the 12 generated PHP tests of `tests/e2e/relay` that give `carry` a value failed. The crate now reads the value
   from the table of the properties of the case (GN-6x). Verified by `make test-ts`: the new test failed before the
-  change.
+  change;
+  and by `make e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
 - A value at the depth limit of a contract ended the process in Node and trapped in WASM: the function that makes
   the value of the language from the value of the core, `make_<name>`, called itself once for each level, so a
   value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node and the WASM
@@ -44,8 +47,8 @@
   passed as the failure of the call. A key of a parameter of the member of the case now gives no parameter of a
   factory, a factory that takes no key of the case makes the receiver only when no factory that takes a key does, and
   the Python, Node, WASM and PHP test of a case that raises makes the receiver as a local before the call that must
-  fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change. Not run: the
-  generated tests, by `make e2e` of `tests/e2e/relay` with the repository of its value class.
+  fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change; and by `make
+  e2e` of `tests/e2e/relay` with the repository of its value class, which passed on the five targets.
 - The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
   the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
   the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields

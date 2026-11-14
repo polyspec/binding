@@ -17,17 +17,19 @@
   묘사했고, owner의 walk는 case가 적은 kind인 list를 읽는다. `tests/e2e/relay`의 생성된 시험 "carry a document of
   every kind"가 실패했다. 이제 host는 그 배열을 그 값들의 list로 묘사한다(GN-6x). `make test-ts`로 검증했다: 새 시험이
   변경 전에는 실패했다.
+  값 class의 레포를 준 `tests/e2e/relay`의 `make e2e`로도 검증했고, 다섯 target에서 통과했다.
 - end-to-end check의 Go 시험이 생성된 시험 옆에서 레포의 시험도 실행했다. Go module의 `go test ./...`가 모든 시험 파일을
   읽었으므로, case 파일의 경로를 `HTTP_MEDIA_TYPE_CASES`에서 읽는 레포의 `packages/go/tests/cases_test.go`가 시험 3개를
   "open : no such file or directory"로 실패했다. 다른 target은 생성된 시험과 계약 case만 실행한다. 이제 실행의 `go vet`과
   `go test`는 파일 `zz_generated*_test.go`와 실행이 복사한 계약 case를 읽고, overlay가 module의 다른 시험 파일을 모두
   없는 것으로 다루며, 배포 형태의 원본도 같은 파일을 뺀다(GN-14h). `make test-ts`로 검증했다: 새 시험이 변경 전에는
-  실패했다.
+  실패했다. http-media-type checkout의 `make e2e`로도 검증했고, 다섯 target에서 통과했다.
 - kind가 backed enum인 다른 레포의 값 class를 받는 PHP member가 "Cannot indirectly modify readonly property"로 실패했다.
   생성된 crate가 enum case의 값을 ext-php-rs의 `get_property`로 읽었는데, 이것은 property를 쓰기용으로 가져오고 PHP는
   enum case의 readonly `value`에 그것을 거부한다. 그래서 `carry`에 값을 주는 `tests/e2e/relay`의 생성된 PHP 시험 12개가
   실패했다. 이제 crate는 case의 property 표에서 값을 읽는다(GN-6x). `make test-ts`로 검증했다: 새 시험이 변경 전에는
   실패했다.
+  값 class의 레포를 준 `tests/e2e/relay`의 `make e2e`로도 검증했고, 다섯 target에서 통과했다.
 - 계약의 깊이 한계에 있는 값이 Node에서 process를 끝내고 WASM에서 trap을 냈다. core의 값에서 언어의 값을 만드는 함수
   `make_<name>`이 level마다 자기 자신을 한 번 불러서, 256단계로 중첩된 `tests/e2e/relay`의 값이 host가 주는 것보다 많은
   native stack을 썼다. 이제 Node와 WASM의 함수는 heap의 작업 stack을 가진 loop로 값을 걷는다. 자식이 다 만들어지지 않은
@@ -39,8 +41,8 @@
   만들어서, receiver를 만드는 실패가 호출의 실패로 통과했다. 이제 case의 member의 parameter 키는 factory의 parameter를
   주지 않고, case의 키를 하나도 받지 않는 factory는 키를 받는 factory가 없을 때만 receiver를 만들며, raises가 있는
   case의 Python, Node, WASM, PHP 시험은 Go 시험처럼 실패해야 하는 호출 앞에서 receiver를 지역 변수로 만든다(GN-13f).
-  `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다. 실행하지 않은 것: 생성된 시험. 값 class의 레포를 준
-  `tests/e2e/relay`의 `make e2e`가 실행한다.
+  `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다. 값 class의 레포를 준 `tests/e2e/relay`의 `make e2e`로도
+  검증했고, 다섯 target에서 통과했다.
 - 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
   field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
   field를 이름하는데 field는 더해지지 않았다. 이제 바꾸기는 struct의 끝만 이름하고, 생성기는 host에 더하는 부분이
