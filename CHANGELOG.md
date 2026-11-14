@@ -138,6 +138,36 @@
   build; the alternative now binds no name. Verified by `make test-ts`, whose tests of both failed before the
   change, and by `make e2e REPO=tests/e2e/relay` with the json checkout, whose cases `width` pass (B2.172).
 
+- CI ran the end-to-end check on linux/arm64 alone and never ran the consumer of the released form of a Go module on
+  musl, so the libraries of `linux_amd64`, `linux_amd64_musl` and `linux_arm64_musl` that a release carries were
+  linked and run by no job. Each entry of the job `e2e` of `.github/workflows/ci.yml` now runs `make go-musl-check` on
+  its work directory after `make e2e`, and the job `e2e-amd64` runs `make e2e` of `tests/e2e/sample` and
+  `make go-musl-check` on `ubuntu-26.04`, the one job that does not run on `ubuntu-26.04-arm`; `ci-passed` needs it
+  (GN-14g, B2.190). A development branch such as `v1/rust-core` is checked by a manual run of its head. Verified by
+  `tests/ci-workflow.test.ts`, whose two changed tests failed before the change.
+- A Go consumer on musl compiled the file of package `binding` of its `<GOOS>_<GOARCH>` and failed to link the static
+  library, which is built for the GNU C library, on symbols that musl does not define: a build constraint of Go does
+  not tell the C library of a Linux apart. A Go module now has the platforms `linux_amd64_musl` and
+  `linux_arm64_musl`, whose library a release builds with `--target <arch>-unknown-linux-musl`, and the build tag
+  `musl` selects them: a consumer on musl builds with `go build -tags musl` (GN-15g). The link file of a Linux
+  platform has the constraint `musl` or `!musl`, and its preamble stops the C compiler of cgo with `#error` when it
+  finds the other C library, naming the Go module, the library, the platform and the remedy. On Linux the released
+  form of the end-to-end check carries the library of musl of its arch, and `make go-musl-check WORK=<work>` runs
+  `go test -tags musl` of its consumer and of the fetched modules in an Alpine container, so a C compiler of musl
+  links each program and musl runs it (GN-14f). The container takes the modules from a module proxy that the run
+  keeps of its downloads, so no Git takes part, and `goMusl` of `config/toolchain.json` pins its image by digest and
+  `gcc` and `musl-dev` of Alpine by their exact versions (`docs/operations/dependencies.md`). `rust-toolchain.toml`
+  lists the two musl targets. Verified by the test
+  of GN-15g of `packages/ts/tests/generate.test.ts`, which failed before the change.
+- The link of the static libraries of several Go modules in one program was verified on `darwin_arm64` alone (GN-15g,
+  GN-14f). `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on linux/arm64 (a Debian container) passed every
+  target, with 21 tests of the released form, in which one program links the libraries of plot and of points;
+  `make e2e` of `tests/e2e/sample` on linux/arm64 passed every target, with 151 generated Go tests and 110 tests of
+  the released form. Both records are evidence. The specification states the two platforms, and B2.96 is done. The run
+  of plot with points on darwin/arm64 also passes every target, so the entry plot of the job `e2e` no longer waits for
+  a failing target (B2.98). The platform packages of the Node addon (B2.92) are verified by
+  `make e2e REPO=tests/e2e/classes` of a commit that holds the change, whose record is evidence and whose target node
+  passed 110 tests with the platform package and the package installed as two archives.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static

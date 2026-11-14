@@ -5,6 +5,7 @@
 <!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
 <!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
 <!-- source-sha256: efe6277ecf0ce7c597df382db781325e49d9d095c68ee100c8b56fec8a7a64ab -->
+<!-- source-sha256: 6bf280bae124bfcfde95ef351791eaf40865908ae3f63b59c3767399d290f664 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -128,6 +129,41 @@
   relay의 PHP crate가 build되지 않았다. 이제 그 alternative는 이름을 묶지 않는다. 검증: 두 시험이 변경 전에 실패한
   `make test-ts`, cases `width`가 통과한 json checkout과의 `make e2e REPO=tests/e2e/relay`(B2.172).
 
+- CI는 끝에서 끝까지 확인을 linux/arm64에서만 실행했고 Go 모듈의 release 형태의 소비자를 musl에서
+  실행하지 않았으므로, release가 싣는 `linux_amd64`, `linux_amd64_musl`,
+  `linux_arm64_musl`의 라이브러리를 링크하고 실행하는 job이 없었다. 이제
+  `.github/workflows/ci.yml`의 job `e2e`의 각 항목은 `make e2e` 뒤에 자기 work
+  디렉터리로 `make go-musl-check`를 실행하고, job `e2e-amd64`는 `ubuntu-26.04`에서
+  `tests/e2e/sample`의 `make e2e`와 `make go-musl-check`를 실행한다. 이 job은
+  `ubuntu-26.04-arm`에서 돌지 않는 유일한 job이고 `ci-passed`가 그것을 기다린다(GN-14g,
+  B2.190). `v1/rust-core` 같은 개발 branch는 그 head의 수동 실행으로 확인한다.
+  `tests/ci-workflow.test.ts`로 검증했다: 바뀐 두 시험이 변경 전에 실패했다.
+- musl의 Go 소비자는 자기 `<GOOS>_<GOARCH>`의 패키지 `binding` 파일을 컴파일하고, GNU C
+  library용으로 빌드된 정적 라이브러리의 링크에서 musl이 정의하지 않는 심볼로 실패했다. Go의 빌드 제약은
+  Linux의 C library를 구분하지 않기 때문이다. 이제 Go 모듈은 플랫폼 `linux_amd64_musl`과
+  `linux_arm64_musl`을 가지며, release가 그 라이브러리를
+  `--target <arch>-unknown-linux-musl`로 빌드하고, 빌드 tag `musl`이 그것을 고른다.
+  musl의 소비자는 `go build -tags musl`로 빌드한다(GN-15g). Linux 플랫폼의 링크 파일은 제약
+  `musl`이나 `!musl`을 가지며, 그 preamble은 다른 C library를 찾으면 Go 모듈, 라이브러리,
+  플랫폼과 해결책을 말하며 `#error`로 cgo의 C 컴파일러를 멈춘다. Linux에서 end-to-end 검사의
+  release 형태는 그 arch의 musl 라이브러리를 싣고, `make go-musl-check WORK=<work>`는
+  Alpine 컨테이너에서 그 소비자와 받은 모듈의 `go test -tags musl`을 실행하므로, musl의 C 컴파일러가
+  각 프로그램을 링크하고 musl이 그것을 실행한다(GN-14f). 컨테이너는 실행이 자기 download로 남긴
+  module proxy에서 모듈을 받으므로 Git은 쓰지 않고, `config/toolchain.json`의 `goMusl`이 그 image를 digest로,
+  Alpine의 `gcc`와 `musl-dev`를 정확한 버전으로 고정한다(`docs/operations/dependencies.md`). `rust-toolchain.toml`은 두 musl
+  target을 적는다. `packages/ts/tests/generate.test.ts`의 GN-15g 시험으로 검증했다: 그
+  시험은 변경 전에 실패했다.
+- 여러 Go 모듈의 정적 라이브러리를 한 프로그램에 링크하는 것은 `darwin_arm64`에서만 확인되었다(GN-15g,
+  GN-14f). linux/arm64(Debian 컨테이너)로 돌린 `tests/e2e/points`와 함께인
+  `tests/e2e/plot`의 `make e2e`는 모든 target을 통과했고, 한 프로그램이 plot과 points의
+  라이브러리를 링크하는 release 형태의 시험 21개가 통과했다. linux/arm64로 돌린
+  `tests/e2e/sample`의 `make e2e`는 모든 target을 통과했고, 생성된 Go 시험 151개와
+  release 형태의 시험 110개가 통과했다. 두 기록 모두 evidence다. 명세는 두 플랫폼을 적고, B2.96은
+  끝났다. darwin/arm64로 돌린 points와 함께인 plot도 모든 target을 통과하므로, job `e2e`의
+  항목 plot은 더 이상 실패하는 target을 기다리지 않는다(B2.98). Node addon의 플랫폼
+  패키지(B2.92)는 변경을 담은 commit에서 돌린 `make e2e REPO=tests/e2e/classes`로
+  확인했다. 그 기록은 evidence이고, 플랫폼 패키지와 패키지를 두 archive로 설치한 target node가 시험
+  110개를 통과했다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

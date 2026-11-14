@@ -1,4 +1,5 @@
-// AGENTS.md: the rules of .github/workflows/ci.yml, read from its text. Every job runs on ubuntu-26.04-arm, pins each
+// AGENTS.md: the rules of .github/workflows/ci.yml, read from its text. Every job runs on ubuntu-26.04-arm (e2e-amd64 on
+// ubuntu-26.04), pins each
 // action by its commit, sets no timeout-minutes and runs every command of a step as one make target; a job of a matrix
 // runs every step after its first past a failed step; the job e2e runs the end-to-end check of every repository of
 // tests/e2e with the repositories that its core depends on, and uploads its record; a repository whose core depends on
@@ -59,12 +60,13 @@ function notInCi(): { contract: string; reason: string; until: string }[] {
   return list.contracts;
 }
 
-test('every job runs on ubuntu-26.04-arm, pins its actions by commit, has no time limit and runs one make target per step (AGENTS)', () => {
+test('every job runs on ubuntu-26.04-arm, except e2e-amd64 on ubuntu-26.04, pins its actions by commit, has no time limit and runs one make target per step (AGENTS, GN-14g)', () => {
   const all = jobs();
   assert.ok(all.size > 0, 'the workflow has no job');
   assert.ok(!workflow.includes('timeout-minutes'), 'the workflow sets timeout-minutes');
   for (const [name, job] of all) {
-    assert.deepEqual(job.filter((l) => /^\s+runs-on:/.test(l)).map((l) => l.trim()), ['runs-on: ubuntu-26.04-arm'], `the job ${name} does not run on ubuntu-26.04-arm alone`);
+    const runner = name === 'e2e-amd64' ? 'ubuntu-26.04' : 'ubuntu-26.04-arm';
+    assert.deepEqual(job.filter((l) => /^\s+runs-on:/.test(l)).map((l) => l.trim()), [`runs-on: ${runner}`], `the job ${name} does not run on ${runner} alone`);
     for (const line of job) {
       const uses = /^\s+(?:- )?uses: (\S+)/.exec(line)?.[1];
       if (uses !== undefined && !uses.startsWith('./')) assert.match(uses, /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/, `the job ${name} does not pin ${uses} by its commit`);
@@ -120,11 +122,25 @@ test('the job e2e runs the end-to-end check of every repository of tests/e2e tha
   }
   const all = steps(job);
   const runs = all.flatMap((step) => step.map((l) => /^\s+(?:- )?run: (.*)$/.exec(l)?.[1]).filter((r) => r !== undefined));
-  assert.deepEqual(runs, ['make install-tools', 'make e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}" WORK=${{ runner.temp }}/e2e']);
+  // GN-14g, GN-15g: the released form of each Go module also links and runs on musl, in a container of the runner.
+  assert.deepEqual(runs, ['make install-tools', 'make e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}" WORK=${{ runner.temp }}/e2e', 'make go-musl-check WORK=${{ runner.temp }}/e2e']);
   const upload = all.find((step) => step.some((l) => l.includes('uses: actions/upload-artifact@')));
   assert.ok(upload !== undefined, 'the job e2e uploads no artifact');
   assert.ok(upload.some((l) => l.trim() === 'path: var/report/e2e/'), 'the job e2e does not upload var/report/e2e/');
   assert.ok(upload.some((l) => l.trim() === 'if-no-files-found: error'), 'the job e2e passes without a record');
+});
+
+// GN-14g: a release carries the libraries of linux_amd64 and linux_amd64_musl, which only an amd64 machine links and
+// runs, so one job runs the sample and its consumer on musl there.
+test('the job e2e-amd64 runs the end-to-end check of the sample and its consumer on musl on linux/amd64 (GN-14g, GN-15g)', () => {
+  const job = jobs().get('e2e-amd64');
+  assert.ok(job !== undefined, 'the workflow has no job e2e-amd64');
+  const all = steps(job);
+  const runs = all.flatMap((step) => step.map((l) => /^\s+(?:- )?run: (.*)$/.exec(l)?.[1]).filter((r) => r !== undefined));
+  assert.deepEqual(runs, ['make install-tools', 'make e2e REPO=tests/e2e/sample WORK=${{ runner.temp }}/e2e', 'make go-musl-check WORK=${{ runner.temp }}/e2e']);
+  for (const step of all.slice(1)) assert.ok(step.some((l) => l.trim() === 'if: ${{ !cancelled() }}'), `a step of e2e-amd64 after the first does not run past a failed step: ${step[0] ?? ''}`);
+  const upload = all.find((step) => step.some((l) => l.includes('uses: actions/upload-artifact@')));
+  assert.ok(upload?.some((l) => l.trim() === 'path: var/report/e2e/') === true, 'the job e2e-amd64 does not upload var/report/e2e/');
 });
 
 test('ci-passed needs every other job and runs after a failed one (AGENTS)', () => {

@@ -1750,14 +1750,26 @@ the design ids are those of the binding design.
   (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-15g** The static library of the Go module (B-8, L-1, K-3): the platforms of a Go module are `linux_amd64`
-  and `linux_arm64`, whose library is built for the GNU C library, and `darwin_arm64`, the `<GOOS>_<GOARCH>` of the
-  platforms of GN-3c. musl is not supported: a build constraint of Go does not tell the C library of a Linux apart,
-  so a consumer on musl compiles the file of its `<GOOS>_<GOARCH>` and its link of the library of the GNU C library
-  fails. For each platform
-  `binding generate` writes two files. `internal/binding/zz_generated_link_<platform>.go`, which Go compiles for that
-  platform alone by its name, holds the directive `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and imports the
-  package `internal/ffi/lib/<platform>`; `internal/ffi/lib/<platform>/zz_generated_lib.go` is the one file of that
-  package. The library of a platform is `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`, beside that
+  and `linux_arm64`, whose library is built for the GNU C library (`<arch>-unknown-linux-gnu`), `linux_amd64_musl`
+  and `linux_arm64_musl`, whose library is built for musl (`<arch>-unknown-linux-musl`), and `darwin_arm64`; the
+  platforms without `_musl` are the `<GOOS>_<GOARCH>` of the platforms of GN-3c. A library of the GNU C library does
+  not link with musl, which does not define some of the symbols that it names, so a Linux machine of each C library
+  needs a library of its own. A build constraint of Go does not tell the C library of a Linux apart, so the build tag
+  `musl` selects the library of musl: a consumer on musl builds with `go build -tags musl` (and `go test -tags musl`),
+  and a consumer on the GNU C library builds without it. Why a tag and not another way: Go reads no fact of the C
+  library before it compiles, and a cgo directive is no C preprocessor line, so no file can name the directory of a
+  library by the C library that the C compiler finds; the tag is the one choice that a consumer gives Go.
+  For each platform `binding generate` writes two files. `internal/binding/zz_generated_link_<file>.go` holds the
+  directive `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and imports the package `internal/ffi/lib/<platform>`;
+  `<file>` is the platform, except `musl_linux_<arch>` for `linux_<arch>_musl`, so Go compiles each file for its
+  `<GOOS>_<GOARCH>` alone by its name. The file of `linux_<arch>` has the constraint `//go:build !musl` and the file of
+  `linux_<arch>_musl` the constraint `//go:build musl`, so a build compiles one of them. The preamble of each Linux
+  file checks the C library that the C compiler of cgo finds, before the link: the file of the GNU C library includes
+  `<stdlib.h>` and stops the C compiler with `#error` when `__GLIBC__` is not defined, with a message that names the
+  Go module, the library, the platform and the remedy `go build -tags musl`; the file of musl stops it when
+  `__GLIBC__` is defined, with the remedy to build without the tag `musl`. So a consumer that gives the wrong tag gets
+  that message in place of the undefined symbols of a link. `internal/ffi/lib/<platform>/zz_generated_lib.go` is the
+  one file of that package. The library of a platform is `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`, beside that
   file. Why the directory is a package that the binding imports: `go mod vendor` copies only the directories of the
   packages that a build imports, so a consumer that vendors its modules gets the library of every platform, and the
   directory of the directive exists in a tree without a library. No tracked tree holds a library or a generated
@@ -1765,7 +1777,10 @@ the design ids are those of the binding design.
   before the directory of the directive.
   A release carries the Go module, because Go fetches a module as the source of a tag. From the commit of the tag
   `vX.Y.Z` the release tooling writes the files of `binding generate` for the target go, builds the crate
-  `polyspec-<repository>-go` for each platform with the release profile and without a feature, removes the debug
+  `polyspec-<repository>-go` for each platform with the release profile and without a feature (the library of
+  `linux_<arch>_musl` with `--target <arch>-unknown-linux-musl` on the Linux machine of that arch, whose Rust
+  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so no C compiler of musl
+  takes part), removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
   sections of the Rust standard library), and creates one
@@ -1780,7 +1795,7 @@ the design ids are those of the binding design.
   A program that imports the Go modules of several libraries (GN-15f) links the static library of each, and each
   holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
   a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
-  one program. It has run on `darwin_arm64` alone: that the copies link on Linux is not verified yet.
+  one program. It has run on `darwin_arm64` and on `linux_arm64`.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
@@ -2421,6 +2436,17 @@ the design ids are those of the binding design.
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. Why: the generated tests
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
+  On Linux the commit also carries the library of musl of the arch of the run in `internal/ffi/lib/linux_<arch>_musl`,
+  built with `--target <arch>-unknown-linux-musl` and stripped as the other, and the run keeps the consumer of the
+  step and the downloads of its module cache, the layout of a module proxy, in `<work>/go-release`.
+  `make go-musl-check WORK=<work>` then runs the consumer on musl: in a container of the Alpine image of `goMusl` of
+  `config/toolchain.json`, with the Go of `mise.lock` checked by its sha256 and `gcc` and `musl-dev` of Alpine at the
+  exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
+  every package of the fetched modules with that proxy as `GOPROXY`, and fails unless a test ran and none failed. The
+  modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
+  the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.
+  Why a container: the end-to-end check runs on a machine of the GNU C library, and only a program that a C compiler
+  of musl links and a musl machine runs shows that the library of musl links and runs.
 - **GN-14h** On each target the run tests what the generator writes and the contract cases of `tests/e2e/<library>`,
   and no test of the repository: unittest discovers `packages/python/generated/tests` and the case runners, `node
   --test` runs `generated.test.mjs` of Node and of WASM and the case runners, PHPUnit runs
@@ -2444,3 +2470,10 @@ the design ids are those of the binding design.
   its dependency as `DEPS`, before a commit is pushed or merged. Why: a job cannot check out a repository at a
   release that does not exist, an entry that names a missing directory fails for a reason that is no defect of the
   commit, and a contract that is silently left out of the job would look checked.
+  After the end-to-end check each entry of the job `e2e` runs `make go-musl-check` on its work directory, so the
+  released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g). The job `e2e-amd64`
+  runs `make e2e` of `tests/e2e/sample` and then `make go-musl-check` on `ubuntu-26.04`, the one job that does not
+  run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only
+  an amd64 machine links and runs them. The workflow runs on the push of `main` and on a manual run; a development
+  branch such as `v1/rust-core` is checked by a manual run of its head (`gh workflow run ci.yml --ref <branch>`),
+  because a run on every push of that branch would start the whole suite for each merge of a lane.

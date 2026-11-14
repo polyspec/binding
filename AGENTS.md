@@ -65,11 +65,13 @@ rules of this repository.
   `typecheck-ts`, `unit-ts` and `release-coverage`, and `rust` runs `test-rust-features`, `test-rust-plain`,
   `clippy-rust-features`, `clippy-rust`, `fmt-rust` and `fmt-e2e`, so the jobs run every target of `make check` once. Each job runs
   them with `make ci-targets`, which runs every target to its end and writes the report `var/ci/<name>/`, and the last
-  job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, pin every action by its
+  job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, except `e2e-amd64` on
+  `ubuntu-26.04` (GN-14g), pin every action by its
   commit, set no `timeout-minutes` and run every command of a step as one make target, and `.github/actions/bootstrap` is
   the bootstrap of every job. The job `e2e` runs the end-to-end check of each repository of `tests/e2e`, one entry of its
   matrix per repository with the repositories that its core depends on (`DEPS`), installs every tool with
-  `make install-tools`, runs in a work directory outside the checkout and uploads the record `var/report/e2e/`; an entry
+  `make install-tools`, runs in a work directory outside the checkout, then runs `make go-musl-check` on it and uploads
+  the record `var/report/e2e/`; the job `e2e-amd64` does the same for `tests/e2e/sample` on linux/amd64; an entry
   whose run fails stays in the matrix. A contract of `tests/e2e` whose core depends on a repository that is not in
   `tests/e2e` has no entry until a tracked file of the contract names a release tag of that repository, and
   `tests/e2e/not-in-ci.json` lists it with its reason and the condition that ends it (GN-14g). The end-to-end check of another repository is no job of the workflow: it needs a
