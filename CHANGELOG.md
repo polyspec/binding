@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A record of another library that is an argument or the result of a function type has the conversions of the module
+  of its library (GN-4c, GN-6z, B2.260). A contract whose record of another library only a function-typed parameter
+  named got a call of `library_<library>::out_<record>` in the crate of every target and no definition of it, so the
+  crate did not compile. Verified by `node --test packages/ts/tests/generate.test.ts`.
+- The npm archive of a release passes CK-20 for a Cargo.lock that pins `polyspec-binding-core` by the tag of its
+  version, and the contracts of other libraries are read with `cargo metadata --locked --offline` (CK-20, GN-15f,
+  B2.261). The archive carries no commit, so CK-20 refused every Git source of the core, also the tag of its own
+  release, with an unknown commit; `cargo metadata` without `--locked` could write the Cargo.lock of the repository and
+  read the network. Verified by `node --test packages/ts/tests/commit.test.ts packages/ts/tests/generate.test.ts`.
+
 ## 0.0.1
 
 - A core takes a callback as `&dyn` of its trait when no member of the unit takes `&mut self` (U-3, B2.252).

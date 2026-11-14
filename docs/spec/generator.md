@@ -583,7 +583,10 @@ the design ids are those of the binding design.
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
   is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
-  the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
+  the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
+  return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`
+  of the module `library_<library>` (GN-4c), which the crate defines as it does for a parameter of a member: a crate
+  calls only the conversions that it defines. Python holds the callable in the function and declares
   the parameter as `collections.abc.Callable`. Node, PHP and WASM hold a language value that belongs to one thread and
   one environment, so the function holds it as a `Native` (GN-6u) and declares the parameter as a function type
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
@@ -1812,7 +1815,9 @@ the design ids are those of the binding design.
   Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
   targets are generated (GN-1c), as `scaffold` names the Go module alone as not written (GN-3e). `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
-  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`.
+  of that path, which needs no Cargo, and the contract of any other dependency is found through
+  `cargo metadata --locked --offline`, which reads the `Cargo.lock` of the repository as it is and never writes it, and
+  reads only the crates that the machine fetched, so a command of binding depends on no network.
   `cargo metadata` resolves the workspace, so it fails where Cargo cannot resolve it: without network for a Git
   dependency that the machine has not fetched, or for a manifest that names a crate that no longer exists. `scaffold`
   then names the Go module as not written (GN-3e), with the status of Cargo and the instruction to run the install

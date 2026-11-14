@@ -1019,6 +1019,31 @@ export function collectModel(
   }
   const result = new Set<string>();
   const foreignRecords: ForeignRecord[] = [];
+  const foreignRecord = (library: string, id: string): void => {
+    const owner = foreign.get(library);
+    const unit = owner?.units.find((u) => u.id === id);
+    if (owner !== undefined && unit?.kind === 'record' && !foreignRecords.some((r) => r.library === library && r.unit.id === unit.id)) {
+      foreignRecords.push({ library, contract: owner, unit });
+    }
+  };
+  // GN-4c, GN-6z: the arguments of a function type leave the core and its result enters it, each through the
+  // conversions of its type, so a record of another library that only a function type names has the conversions of
+  // the module of its library too.
+  const functionParts = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return functionParts(type.list);
+    if ('map' in type) return functionParts(type.map);
+    if ('keyed_map' in type) return functionParts(type.keyed_map);
+    if ('optional' in type) return functionParts(type.optional);
+    if ('tuple' in type) return type.tuple.forEach(functionParts);
+    if ('function' in type) {
+      type.function.parameters.forEach(functionParts);
+      const returns = type.function.returns;
+      if (typeof returns === 'object' && !('passthrough' in returns)) functionParts(returns);
+      return;
+    }
+    if ('unit' in type && type.library !== undefined) foreignRecord(type.library, type.unit);
+  };
   const visit = (type: Type): void => {
     if (typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
@@ -1027,6 +1052,7 @@ export function collectModel(
     if ('keyed_map' in type) return visit(type.keyed_map);
     if ('optional' in type) return visit(type.optional);
     if ('tuple' in type) return type.tuple.forEach(visit);
+    if ('function' in type) return functionParts(type);
     if ('unit' in type && type.library === undefined) {
       const unit = units.get(type.unit);
       if (unit?.kind === 'record' && !result.has(unit.id)) {
@@ -1039,14 +1065,7 @@ export function collectModel(
         for (const kase of unit.cases ?? []) for (const field of kase.fields) visit(field.type);
       }
     }
-    if ('unit' in type && type.library !== undefined) {
-      const library = type.library;
-      const owner = foreign.get(library);
-      const unit = owner?.units.find((u) => u.id === type.unit);
-      if (owner !== undefined && unit?.kind === 'record' && !foreignRecords.some((r) => r.library === library && r.unit.id === unit.id)) {
-        foreignRecords.push({ library, contract: owner, unit });
-      }
-    }
+    if ('unit' in type && type.library !== undefined) foreignRecord(type.library, type.unit);
   };
   for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
     visit(fn.returns);

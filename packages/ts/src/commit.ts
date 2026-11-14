@@ -27,3 +27,18 @@ export function ownCommit(packageDir: string): string | undefined {
   }
   return undefined;
 }
+
+// CK-20: what a Git source of polyspec-binding-core in a Cargo.lock (`git+<url>?<reference>#<commit>`) differs in from
+// the running binding of the version `version` and the commit `mine`, or undefined when it names this binding. A
+// binding that knows its commit compares it with the commit of the source. A binding that knows no commit is the
+// archive of a release, the one form that carries no commit, and a release of the version X.Y.Z is the annotated tag
+// vX.Y.Z, which no step moves, so a source that names the tag of its version names it.
+export function gitPinDiffers(source: string, version: string, mine: string | undefined): string | undefined {
+  const hash = source.lastIndexOf('#');
+  const commit = source.slice(hash + 1);
+  if (mine !== undefined) return mine === commit ? undefined : `Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine}`;
+  const query = source.slice(0, hash < 0 ? undefined : hash).split('?')[1] ?? '';
+  const tag = new URLSearchParams(query).get('tag');
+  if (tag === `v${version}`) return undefined;
+  return `Cargo.lock pins polyspec-binding-core at the commit ${commit}${tag === null ? '' : ` of the tag ${tag}`}, and this binding knows no commit of its own; as the archive of the release ${version} it is the tag v${version}`;
+}
