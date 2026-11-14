@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: dab7c1315086fce9cf0438aefbb337eb4cff96e5abb175e39aba52f1a085b211 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
+<!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
@@ -42,6 +43,13 @@
   `node --test packages/ts/tests/generate.test.ts`.
 ## 0.0.1
 
+- 계약 case는 `files`를 가질 수 있다. 생성된 시험은 case의 값을 만들기 전에 그 파일을 시험의 디렉터리에 쓴다(G-5,
+  GN-13i). 각 파일은 상대 경로에서 text나 `{"hex": ...}`로 간다. Python, Node, PHP, Go, WASM이 그것을 쓰고, WASM은
+  시험을 실행하는 Node.js의 `node:fs`로 쓴다. 다른 형식의 `files`는 그 case의 시험을 이름으로 실패시킨다.
+  polyspec/session-store의 파일 저장소는 저장된 session 파일이 주어진 바이트를 담을 때만 kind `record`와
+  `record_not_array`를 내는데, 생성기에는 호출 전에 파일을 쓰는 형식이 없었다. `node --test
+  packages/ts/tests/generate.test.ts`로 확인했고, case의 파일을 보는 그 시험은 변경 전에 실패했다. `tests/e2e`의 어떤
+  저장소에도 파일을 읽는 member가 없으므로 end-to-end 증거는 session-store를 기다린다.
 - 코어는 unit의 어떤 member도 `&mut self`를 받지 않으면 callback을 그 trait의 `&dyn`으로 받는다(U-3, B2.252).
   `variants.tail_of`와 `consumer.read`는 member가 `&self`를 받는 trait의 `&mut dyn`을 받았고, 바인딩이 넘기는 `&`가
   그 다섯 binding crate에서 E0308로 실패했다. musl의 consumer 단계는 그것이 읽는 work 디렉터리를 쓰는 end-to-end

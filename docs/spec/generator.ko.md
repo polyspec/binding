@@ -847,7 +847,8 @@
   `tempfile.TemporaryDirectory`, Node는 `mkdtempSync`와 `afterEach`, PHP는 `sys_get_temp_dir()` 아래 디렉터리와
   `tearDown`, Go는 `t.TempDir()`을 쓴다. 한 시험의 입력과 기대 결과는 같은 디렉터리에서 풀리므로, 경로를 내는 결과는 그
   디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
-  거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e).
+  거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e). case는 값을 만들기 전에 자기 파일을 같은
+  디렉터리에 쓴다(GN-13i).
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
   코어 오류 variant를 가리키거나 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 돌려준다. 그런 경로의 오류는
   `core.failure`가 참이면, 그리고 그것이 없으면 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 kind 또는 언어
@@ -1947,6 +1948,23 @@
   동작을 말할 수 있다. 예를 들어 파일을 읽는 로더가 필요한 render는 파일 시스템이 없는 WebAssembly에 없지만 member
   자체는 거기서 생성된다. 그 행은 그 동작이 있는 target에만 case를 남긴다. member의 `only`를 쓰면 그 member의 다른 모든
   case도 그 target에서 빠지기 때문이다.
+- **GN-13i** case는 `files`를 가질 수 있다. 그 시험이 case의 어떤 값을 만들기 전에 쓰는 파일이다. `files`는 `path`의 case
+  값 형식(GN-6y)인 상대 경로에서 파일의 바이트로 가는 object다. 바이트는 그 UTF-8을 뜻하는 text이거나, 바이트를 적는
+  방식대로 `{"hex": ...}`다(GN-13). case의 B-4, GN-6ae, GN-6m, GN-6z, GN-13e 시험은 object의 순서대로 각 파일을 GN-6y의 시험
+  디렉터리 안에 쓴다. 경로의 디렉터리를 먼저 만들고, 파일은 mode 0600으로, 디렉터리는 0700으로 만들며, case의 receiver,
+  인자, fixture를 만들기 전에 쓴다. 디렉터리는 GN-6y가 말하는 대로 시험과 함께 지운다. `path`의 case 값은 case의 파일
+  하나나 디렉터리 자체(`.`)를 이름하므로, 저장된 파일을 읽는 member는 case의 바이트를 읽는다. 각 target은 상대 경로와
+  바이트의 hex를 시험 파일의 helper에 준다. Python은 `self._case_file`, Node는 `caseFile`, PHP는 `$this->caseFile`, Go는
+  `caseFile(t, ...)`이고, WASM은 시험을 실행하는 Node.js의 `node:fs`로 쓰는 `caseFile`이며(GN-13c), 그 디렉터리는 Node처럼
+  `afterEach`가 지운다. WASM의 코어에는 파일 시스템이 없으므로(`wasm32-unknown-unknown`), 코어가 파일을 읽는 member는
+  `wasm`이 없는 `only`를 가진다(Q-4, GN-6y). 그래도 WASM은 자기가 실행하는 모든 case의 파일을 써서, case가 각 target에서
+  같은 뜻을 가지게 한다. 다른 형식의 `files`, GN-6y가 거부하는 경로, text도 `{"hex": ...}`도 아닌 내용은 모든 target에서
+  그 case의 시험을 그 이유로 실패시키고, 다른 시험은 쓴다(G-4, GN-13e). 아무 receiver나 필요한 시험(B-2, B-3, G-7)은
+  `files`가 있는 case에서 receiver를 가져오지 않는다. 그 시험은 파일을 쓰지 않기 때문이다. `files`가 있는 hook(N-4)의
+  case는 이름으로 거부한다. hook의 시험은 파일을 쓰지 않기 때문이다. `case-test`의 진입점(GN-13)으로 실행하는 case는
+  파일을 쓰지 않는다. 그 진입점은 변환 하나만 실행하기 때문이다. 이유: 주어진 바이트를 담은 저장 파일은 인자처럼 case의
+  입력이고, fault injection point는 시스템의 조건을 흉내 낸다(G-5). point가 파일 대신 준 바이트는 어떤 저장 파일도 지나지
+  않는 경로를 실행하므로, case가 바이트를 가지고 시험이 그것을 member가 읽는 곳에 쓴다.
 
 ## 끝에서 끝까지 확인
 

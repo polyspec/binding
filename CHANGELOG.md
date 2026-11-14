@@ -32,6 +32,14 @@
   `node --test packages/ts/tests/generate.test.ts`, whose test of such a parameter failed before the change.
 ## 0.0.1
 
+- A contract case can have `files`, the files that its generated test writes into the directory of the test before
+  it makes the values of the case (G-5, GN-13i). Each is a relative path to a text or `{"hex": ...}`; Python, Node,
+  PHP, Go and WASM write it, WASM with `node:fs` of the Node.js that runs its tests, and `files` of another form fails
+  the test of the case by name. The store of files of polyspec/session-store gives the kinds `record` and
+  `record_not_array` only when a stored session file holds given bytes, and the generator had no form that writes a
+  file before a call. Verified by `node --test packages/ts/tests/generate.test.ts`, whose test of the files of a case
+  failed before the change; no repository of `tests/e2e` has a member that reads a file, so the end-to-end evidence
+  waits for session-store.
 - A core takes a callback as `&dyn` of its trait when no member of the unit takes `&mut self` (U-3, B2.252).
   `variants.tail_of` and `consumer.read` took `&mut dyn` of traits whose members take `&self`, and the `&` that the
   binding passes failed with E0308 in their five binding crates. The step of the consumer on musl runs only after a

@@ -173,6 +173,33 @@ export function casePathOf(value: unknown): string {
   return value;
 }
 
+// GN-13i: the files of a case, which its test writes into the directory of the test before it makes the values of the
+// case: an object from a relative path in the form of a case value of a path (GN-6y) to its bytes, a text for its UTF-8
+// or {"hex": ...}. Each file is given as its path and the lower-case hex of its bytes, which every target decodes.
+export interface CaseFile {
+  path: string;
+  hex: string;
+}
+export function caseFilesOf(raw: unknown): CaseFile[] {
+  if (raw === undefined) return [];
+  const refused = (): never => {
+    throw new Unsupported(`files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${shown(raw)}`);
+  };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return refused();
+  return Object.entries(raw as Record<string, unknown>).map(([path, content]): CaseFile => {
+    try {
+      casePathOf(path);
+    } catch (error) {
+      if (error instanceof Unsupported) return refused();
+      throw error;
+    }
+    if (typeof content === 'string') return { path, hex: Buffer.from(content, 'utf8').toString('hex') };
+    const hex = typeof content === 'object' && content !== null && Object.keys(content).length === 1 ? (content as { hex?: unknown }).hex : undefined;
+    if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) return refused();
+    return { path, hex };
+  });
+}
+
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
 // and a tuple a tuple in Python.
 // GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
@@ -1209,6 +1236,8 @@ export interface RaisingCase {
   raises: { kind: string; status: number | null; category: string; errno?: unknown };
   // G-5: the faults that the case arms before its call, as the JSON text that the arming entry point takes.
   faults?: string;
+  // GN-13i: the files of the case as the case gives them, which caseRefusal judges and caseFilesOf reads.
+  files?: unknown;
   // The instance that a method or property is called on, made by a static member or the constructor (T-5).
   receiver?: Receiver;
   // GN-6ae: the calls that observe the receiver after the call of the case.
@@ -1546,7 +1575,8 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
   for (const member of classMembers(model, fn.unit)) {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
-      if (record['raises'] !== undefined) continue;
+      // GN-13i: a test that needs any receiver writes no files, so it takes none of a case that gives files.
+      if (record['raises'] !== undefined || record['files'] !== undefined) continue;
       const found = receiverOf(model, fn, record, member);
       // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
       if (found !== undefined && !armsFaults(found)) return found;
@@ -1563,6 +1593,7 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     if (record['raises'] !== undefined) continue;
+    hookWithoutFiles(fn, record);
     const receiver = receiverOf(model, fn, record);
     const result = record['result'];
     if (receiver === undefined || typeof result !== 'string') {
@@ -1573,16 +1604,22 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
   return out;
 }
 
+// GN-13i: the tests of a hook (N-4) write no files, so a case of a hook that gives files is refused by name (G-4).
+function hookWithoutFiles(fn: Fn, record: Record<string, unknown>): void {
+  if (record['files'] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives files, which the test of a hook does not write (N-4, GN-13i)`);
+}
+
 // G-4, GN-13e: the reason why the generator cannot write the receiver or an argument of a case in the
 // language, which the test of the case fails with, so that one value that is not written yet fails its own test by
 // name and the other tests of the target run; undefined when every value of the case is written.
-export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
+export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; files?: unknown }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
   // A row of a callback fixture that is not generated yet refuses the target (G-4), as the emitters read the fixtures.
   const fixed = new Set(fixturesOf(model, fn, kase.id, kase.args).map((fixture) => fixture.arg));
   // The probe writes no steps of a deep value (GN-13e), which the test of the case writes when it makes the value.
   const steps = ctx.steps;
   ctx.steps = undefined;
   try {
+    caseFilesOf(kase.files);
     receiver(kase.receiver);
     for (const arg of fn.args) if (!fixed.has(arg)) caseValue(model, ctx, arg, kase.args);
     return undefined;
@@ -1610,8 +1647,8 @@ function afterOf(model: Model, fn: Fn, record: Record<string, unknown>): { after
 
 // GN-6ae: the cases that expect the exception of the language that a function fixture of the case raises
 // (raises: "callback"), with the arguments, the receiver and the calls of after.
-export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[] }[] {
-  const out: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[] }[] = [];
+export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown }[] {
+  const out: { id: string; args: Map<Arg, unknown>; receiver?: Receiver; after?: After[]; files?: unknown }[] = [];
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     if (record['raises'] !== 'callback') continue;
@@ -1619,10 +1656,13 @@ export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg
     const args = argsOf(fn, record);
     const receiver = receiverOf(model, fn, record);
     if (args === undefined || (fn.receiver !== undefined && receiver === undefined)) throw new Unsupported(`the case ${id} of ${fn.member.id} gives ${args === undefined ? 'not every parameter' : `no arguments of a factory of ${fn.unit.id}`} (G-5)`);
-    out.push({ id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
+    out.push({ id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...filesOf(record) });
   }
   return out;
 }
+
+// GN-13i: the files of a case as the case gives them, absent when it gives none.
+const filesOf = (record: Record<string, unknown>): { files?: unknown } => (record['files'] === undefined ? {} : { files: record['files'] });
 
 // GN-13d: a parameter with a default for which an explicit null is a refused value: every default but {literal: null},
 // whose declared value is that null.
@@ -1637,6 +1677,7 @@ export function primitiveCases(model: Model, ctx: Context, fn: Fn): { id: string
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     if (record['raises'] !== undefined) continue;
+    hookWithoutFiles(fn, record);
     const receiver = receiverOf(model, fn, record);
     if (receiver === undefined) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, N-4)`);
     out.push({ id: String(record['id']), receiver, result: 'result' in record ? fromJson(model, ctx, fn.returns, record['result'], true) : undefined });
@@ -1676,7 +1717,7 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     // is linked into the binding crate, whose fault-test turns on the points of that core.
     // A case that arms faults or holds after makes its receiver first, as the faults and the calls of after need it.
     const fails = faults === undefined && record['after'] === undefined && receiverMayRaise(model, receiver, record, raises.kind);
-    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...(fails ? { receiverFails: true as const } : {}) });
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...filesOf(record), ...(fails ? { receiverFails: true as const } : {}) });
   }
   return out;
 }
@@ -1692,6 +1733,8 @@ export interface ResultCase {
   refused?: string;
   // GN-6ae: the calls that observe the receiver after the call of the case.
   after?: After[];
+  // GN-13i: the files of the case as the case gives them.
+  files?: unknown;
 }
 
 // GN-13e: whether the language compares a result of the type with the value of a case: a class has no case value
@@ -1744,7 +1787,7 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
       out.push({ id, args, refused: `the case ${id} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)` });
       continue;
     }
-    const base = { id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) };
+    const base = { id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...filesOf(record) };
     if (!(key in record)) {
       out.push(base);
       continue;

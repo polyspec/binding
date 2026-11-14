@@ -6,7 +6,7 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -85,6 +85,25 @@ const PHP_CASE_PATH = `
         $this->caseDir = null;
     }
 `;
+
+// GN-13i: a file of a case, written inside the directory of the test with the directories of its path before the values
+// of the case are made; its bytes are given as hex.
+const PHP_CASE_FILE = `
+    private function caseFile(string $relative, string $content): void
+    {
+        $path = $this->casePath($relative);
+        $bytes = hex2bin($content);
+        if (!is_dir(dirname($path)) && !mkdir(dirname($path), 0700, true)) {
+            self::fail('G-5: the directory of the file ' . $relative . ' of the case is not made');
+        }
+        if ($bytes === false || file_put_contents($path, $bytes) !== strlen($bytes) || !chmod($path, 0600)) {
+            self::fail('G-5: the file ' . $relative . ' of the case is not written');
+        }
+    }
+`;
+
+// GN-13i: the lines that write the files of a case, first in the body of its test.
+const caseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n        $this->caseFile(${phpText(file.path)}, ${phpText(file.hex)});`).join('');
 
 export function phpTests(model: Model, layout: PhpLayout): string {
   checkCaseNames(model, casePascal, true);
@@ -455,7 +474,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       methods.push(`
     public function testB4${name}${id}(): void
-    {${receiverMade.lines}${before}${arming}
+    {${caseFileLines(kase.files)}${receiverMade.lines}${before}${arming}
         try {
             ${call};
             self::fail('no error');
@@ -485,7 +504,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       usesRaised = true;
       methods.push(`
     public function testGn6ae${name}${id}(): void
-    {${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
+    {${caseFileLines(kase.files)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
         self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});
         try {
             ${call};
@@ -554,7 +573,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
-    {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
+    {${caseFileLines(kase.files)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -774,7 +793,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${methods.some((m) => m.includes('$this->casePath(')) ? PHP_CASE_PATH : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
+{${methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}

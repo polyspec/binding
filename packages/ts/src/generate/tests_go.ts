@@ -31,7 +31,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf,
 } from './samples.ts';
 
 interface Values {
@@ -773,6 +773,12 @@ function made(v: Values, b: Body, r: Receiver): string {
 
 // GN-13e: the receiver and the arguments of a case, or the reason that fails its test by name when a value of the case
 // is not written; the other tests of the target are written.
+// GN-13i: the lines that write the files of a case, first in the body of its test; files of another form are refused by
+// name (G-4), which written gives as the reason of the test of the case.
+function writeFiles(b: Body, files: unknown): void {
+  b.lines.push(...caseFilesOf(files).map((file) => `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})`));
+}
+
 function written<T>(fn: Fn, id: string, write: () => T): T | string {
   try {
     return write();
@@ -1240,6 +1246,7 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
     // member is called only on a receiver that was made.
     let making: string | undefined;
     const call = written(fn, kase.id, () => {
+      writeFiles(b, kase.files);
       let receiver = '';
       if (kase.receiver !== undefined && kase.receiverFails === true && goResultCount(kase.receiver.factory) === 1) {
         const factory = kase.receiver.factory;
@@ -1281,6 +1288,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
   for (const kase of callbackCases(model, fn)) {
     const b = new Body();
     const call = written(fn, kase.id, () => {
+      writeFiles(b, kase.files);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args)) };
     });
@@ -1313,6 +1321,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
     const later = (end: (returns: Type) => string): { lines: string[]; call: string; armed: boolean } | string => {
       const b = new Body();
       return written(fn, kase.id, () => {
+        writeFiles(b, kase.files);
         v.keptEnd = end;
         let receiver: string;
         try {
@@ -1356,6 +1365,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     const call = written(fn, kase.id, () => {
+      writeFiles(b, kase.files);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
     });
@@ -1717,6 +1727,27 @@ func casePath(t *testing.T, relative string) string {
 }
 `;
 
+// GN-13i: a file of a case, written inside the directory of the test t with the directories of its path before the values
+// of the case are made; its bytes are given as hex.
+const CASE_FILE = `
+// caseFile writes the file of a case, whose bytes content gives as hex, at its relative path inside the directory of the
+// test t.
+func caseFile(t *testing.T, relative string, content string) {
+	t.Helper()
+	data, err := hex.DecodeString(content)
+	if err != nil {
+		t.Fatalf("G-5: the file %s of the case: %v", relative, err)
+	}
+	path := casePath(t, relative)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("G-5: the file %s of the case: %v", relative, err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("G-5: the file %s of the case: %v", relative, err)
+	}
+}
+`;
+
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
@@ -1907,7 +1938,7 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['context', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['context', 'encoding/hex', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   std.sort();
   const own = [
@@ -1973,7 +2004,8 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
     ...(/\bsameValue\(/.test(all) ? [SAME_VALUE] : []),
     ...(out.warns === true ? [WARNINGS] : []),
-    ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
+    ...(/\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),
+    ...(/\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),
