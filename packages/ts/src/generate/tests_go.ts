@@ -29,7 +29,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm,
 } from './samples.ts';
 
 interface Values {
@@ -42,6 +42,8 @@ interface Values {
   // GN-6z: the statement that ends every func of a function type that the values of a test give, in the place of its
   // fixture: the test of the error or of the panic of a func that the core kept in an earlier call.
   keptEnd?: (returns: Type) => string;
+  // GN-13e: the value is the expected result of a case, which takes the forms of the Go out rows of an alias.
+  result?: boolean;
 }
 
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
@@ -131,6 +133,14 @@ const goKey = (key: unknown): string => caseKey(key, (kind, raw) => {
   return `binding.BytesKey(${hexBytes(raw, 'bytes')})`;
 });
 
+// GN-13e: a key of an expected result in the form that the keyed map of the out row gives it.
+const goOutKey = (key: unknown, keys: readonly string[]): string => {
+  const form = outKeyForm(key, keys);
+  if (form.kind === 'int') return `binding.IntKey(${form.value})`;
+  if (form.kind === 'text') return `binding.TextKey(${goString(form.value.toString('utf8'))})`;
+  return `binding.BytesKey(${hexBytes({ hex: form.value.toString('hex') }, 'bytes')})`;
+};
+
 // A map or a keyed map of a test: a local that statements fill, because gofmt keeps a function literal on one line
 // only while it is short. sink takes the statements, and each of sets is the arguments of one Set.
 function mapLocal(b: Body, sink: string[], type: string, sets: string[]): string {
@@ -157,7 +167,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
   if ('function' in type) return machineFunction(type) ? functionValue(v, b, type.function, json) : keptFunctionValue(v, b, type.function, json);
-  if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough');
+  if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough', v.result === true);
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
@@ -178,7 +188,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   const alias = aliasOf(v.model, type);
   // GN-6x, GN-13b: a value of a value class of another repository is an instance of the owner's class.
   if (alias?.library !== undefined && alias.unit.kind === 'class') return foreignMade(v, b, alias, json);
-  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`);
+  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
   if (implemented !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
@@ -305,8 +315,8 @@ const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', o
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string): string {
-  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map() };
+function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false): string {
+  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result };
   const text = aliasPart(model, unit, json, where, making);
   // GN-13: the instances of the value classes are made first and then filled, as statements of the test, so every
   // place of an id is the same pointer and a cycle is made.
@@ -322,12 +332,21 @@ interface Making {
   fills: string[];
   references: Map<number, string>;
   objects: Map<number, string>;
+  // GN-13e: the value is the expected result of a case, made by the Go out rows of the alias.
+  result: boolean;
 }
 
 // The id of a reference or of an object of a case value (G-5).
 function idOf(raw: unknown, where: string): number {
   if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) throw new Error(`an id of ${where} is a number of at least 0, not ${JSON.stringify(raw)}`);
   return raw;
+}
+
+// GN-13e: the entries of an expected result that an out row makes a *KeyedMap[any], whose keys take the forms of the
+// row.
+function outMap(model: Model, unit: Unit | undefined, entries: [unknown, unknown][], keys: readonly string[], where: string, making: Making): string {
+  const sets = entries.map(([key, item]) => `${goOutKey(key, keys)}, ${aliasPart(model, unit, item, where, making)}`);
+  return mapLocal(making.b, making.fills, 'binding.KeyedMap[any]', sets);
 }
 
 function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: string, making: Making): string {
@@ -340,6 +359,15 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   const held = record['value'];
   if (kind === 'null') return 'nil';
   if (kind === 'bool') return String(held === true);
+  // GN-13e: an expected result takes the Go form of the out row of the alias that makes the value: a byte string that
+  // a row makes a text is a string, a map that a row makes a list is a []any, and a key of a keyed map is a text only
+  // where the map takes texts and the bytes are UTF-8.
+  const form = making.result && unit?.out !== undefined && (kind === 'text' || kind === 'bytes' || kind === 'list' || kind === 'map') ? aliasOutForm(unit, 'go', kind, record) : undefined;
+  if ((kind === 'bytes' && form === 'text') || (kind === 'text' && form === 'bytes')) {
+    const { bytes, utf8 } = caseValueBytes(held);
+    if (form === 'bytes') return hexBytes({ hex: bytes.toString('hex') }, 'bytes');
+    return utf8 ? goString(bytes.toString('utf8')) : textValue({ hex: bytes.toString('hex') });
+  }
   if (kind === 'text') return textValue(held);
   if (kind === 'bytes') return hexBytes(held, 'bytes');
   if (kind === 'float') {
@@ -367,7 +395,11 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     making.fills.push(`var ${local} any = ${inner}`, `for range ${repeat} {`, `\t${local} = []any{${local}}`, '}');
     return local;
   }
+  const keyedForm = typeof form === 'object' && form !== null && 'keyed_map' in form ? (form as { keyed_map: { key: string[] } }).keyed_map.key : undefined;
+  if (kind === 'list' && Array.isArray(held) && keyedForm !== undefined) return outMap(model, unit, held.map((item, i) => [{ int: i }, item]), keyedForm, where, making);
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
+  if (kind === 'map' && Array.isArray(held) && form === 'list') return `[]any{${(held as [unknown, unknown][]).map(([, item]) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
+  if (kind === 'map' && Array.isArray(held) && keyedForm !== undefined) return outMap(model, unit, held as [unknown, unknown][], keyedForm, where, making);
   if (kind === 'map' && Array.isArray(held)) {
     const entries = held as [unknown, unknown][];
     const keyed = (unit?.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
@@ -403,7 +435,8 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     const filled = (local: string): string => {
       making.made.push(`${local} := ${construct(cls)}`);
       if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${JSON.stringify(held)}`);
-      for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${goKey(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
+      const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(model, cls.unit.id)) : goKey(entryKey));
+      for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${keyOf(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
       return local;
     };
     if (record['id'] !== undefined) {
@@ -1157,7 +1190,14 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       try {
         compared = parts.flatMap((type, i) => {
           const given = parts.length === 1 ? kase.expected?.value : (kase.expected?.value as unknown[] | undefined)?.[i];
-          const want = value(v, b, type, given ?? null);
+          // GN-13e: the expected result takes the forms of the Go out rows of an alias.
+          v.result = true;
+          let want: string;
+          try {
+            want = value(v, b, type, given ?? null);
+          } finally {
+            v.result = false;
+          }
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
           const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
           return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want)${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];

@@ -650,9 +650,54 @@ function isUtf8(bytes: Buffer): boolean {
 
 const SAFE = 2n ** 53n - 1n;
 
+// GN-13e: whether a case value of the kind holds the predicate of an out row of the alias.
+function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>, predicate: string): boolean {
+  const held = node['value'];
+  switch (predicate) {
+    case 'utf8':
+      return kind === 'text' || isUtf8(caseBytes(held));
+    case 'safe_integer':
+      return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
+    case 'integral_float': {
+      const number = caseNumber(held);
+      return Number.isFinite(number) && Number.isInteger(number);
+    }
+    case 'sequence_keys':
+      return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+    default:
+      throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
+  }
+}
+
+// GN-13e: the form in a language of the out row of the alias that makes a case value of the kind: the row of the kind
+// whose predicate the value holds, or else its row without a predicate. A case value of the kind list or text is the
+// map or the bytes of an alias whose out rows have no row of the kind.
+export function aliasOutForm(alias: Unit, lang: string, kind: string, node: Record<string, unknown>): unknown {
+  const rows = alias.out ?? [];
+  const own = rows.filter((r) => r.kind === kind);
+  const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
+  const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holdsPredicate(alias, kind, node, r.when.predicate) === r.when.is)
+    ?? candidates.find((r) => r.when === undefined || r.when === 'else');
+  if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
+  return (matched.make as Record<string, unknown>)[lang];
+}
+
+// GN-13e: the form of a key of a case in a keyed map whose keys have the forms keys: an int key is an int; a text or a
+// byte string is a text when the map takes texts and the bytes are UTF-8, and else bytes.
+export function outKeyForm(key: unknown, keys: readonly string[]): { kind: 'int'; value: string } | { kind: 'text' | 'bytes'; value: Buffer } {
+  if (typeof key === 'object' && key !== null && 'int' in key) return { kind: 'int', value: String((key as { int: unknown }).int) };
+  const bytes = caseBytes(key);
+  return { kind: keys.includes('text') && isUtf8(bytes) ? 'text' : 'bytes', value: bytes };
+}
+
+// GN-13e: the bytes of a text or bytes case value, and whether they are UTF-8.
+export const caseValueBytes = (raw: unknown): { bytes: Buffer; utf8: boolean } => {
+  const bytes = caseBytes(raw);
+  return { bytes, utf8: isUtf8(bytes) };
+};
+
 // The tokens of a case value of an alias in a language (GN-13e).
 export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown): string[] {
-  const rows = alias.out ?? [];
   const kept = aliasKept(model, lang, alias);
   const out: string[] = [];
   class Key {
@@ -679,32 +724,7 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
     return textToken(bytes, keys.includes('text') && isUtf8(bytes));
   };
   const keyed = (make: unknown): readonly string[] => (typeof make === 'object' && make !== null && 'keyed_map' in make ? (make as { keyed_map: { key: string[] } }).keyed_map.key : ['int', 'text', 'bytes']);
-  const holds = (kind: string, node: Record<string, unknown>, predicate: string): boolean => {
-    const held = node['value'];
-    switch (predicate) {
-      case 'utf8':
-        return kind === 'text' || isUtf8(caseBytes(held));
-      case 'safe_integer':
-        return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
-      case 'integral_float': {
-        const number = caseNumber(held);
-        return Number.isFinite(number) && Number.isInteger(number);
-      }
-      case 'sequence_keys':
-        return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
-      default:
-        throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
-    }
-  };
-  // A case value of the kind list or text is the map or the bytes of an alias whose out rows have no row of the kind.
-  const formOf = (kind: string, node: Record<string, unknown>): unknown => {
-    const own = rows.filter((r) => r.kind === kind);
-    const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
-    const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holds(kind, node, r.when.predicate) === r.when.is)
-      ?? candidates.find((r) => r.when === undefined || r.when === 'else');
-    if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
-    return matched.make[lang];
-  };
+  const formOf = (kind: string, node: Record<string, unknown>): unknown => aliasOutForm(alias, lang, kind, node);
   const keptOfForm = (form: unknown): TokenForm | undefined => (typeof form === 'string' && form.endsWith('.constructor') ? kept.find((k) => `${k.unit}.constructor` === form) : undefined);
   while (stack.length > 0) {
     const item = stack.pop();
@@ -805,7 +825,7 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
 }
 
 // The key forms of the keyed map that the one field of a value class keeps.
-function keyedField(model: Model, unit: string): readonly string[] {
+export function keyedField(model: Model, unit: string): readonly string[] {
   const type = model.contract.units.find((u) => u.id === unit)?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
   return typeof type === 'object' && 'keyed_map' in type ? type.key : ['int', 'text', 'bytes'];
 }
