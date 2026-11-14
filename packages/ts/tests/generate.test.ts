@@ -1276,8 +1276,20 @@ test('a generated test gives an object through a native row and back, and counts
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /def test_gn6u_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
+  // Node lets the event loop turn once before the first count and counts synchronously from there: napi runs the
+  // finalizers of the objects of earlier tests, whose Natives the owner table holds, in a SetImmediate.
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.match(node, /test\('GN-6u: same gives back the same object and releases it', async \(\) => \{\n  pkg\.same\(new Subject\(\)\);\n  const before = addon\(\)\.__nativeCount\(\);\n  const subject = new Subject\(\);\n  assert\.equal\(pkg\.same\(subject\), subject\);\n  await new Promise\(setImmediate\);\n  pkg\.same\(new Subject\(\)\);\n  assert\.equal\(addon\(\)\.__nativeCount\(\), before\);\n\}\);/);
+  const nodeTest = /test\('GN-6u: same gives back the same object and releases it', async \(\) => \{\n[^]*?\n\}\);/.exec(node)?.[0] ?? '';
+  assert.equal(nodeTest, `test('GN-6u: same gives back the same object and releases it', async () => {
+  pkg.same(new Subject());
+  await new Promise(setImmediate);
+  const before = addon().__nativeCount();
+  const subject = new Subject();
+  assert.equal(pkg.same(subject), subject);
+  pkg.same(new Subject());
+  assert.equal(addon().__nativeCount(), before);
+});`);
+  assert.equal(nodeTest.split('const before')[1]?.includes('await'), false);
   // WASM drops a Native at once, so the test runs from the first count to the second without an await: no
   // FinalizationRegistry callback of an object of another test runs between the two counts.
   const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');

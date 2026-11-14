@@ -782,13 +782,15 @@ the design ids are those of the binding design.
     `Native` of a failure of the binding on another thread (GN-6z) holds the `BindingError` itself, which the drop
     discards.
   - The round trip and the release are tested where a value alias has a `native` row in the target and a function
-    takes that alias as its one parameter and returns it: after one warm-up call, the test counts what the binding
-    holds, gives that function a new instance of a class of the test, checks that the result is the same object,
-    drops it, makes one more call, which empties the release queue (Node first lets the event loop turn once), and
-    counts again, which must give the first count. WASM drops a `Native` at once, so its test takes the glue module
-    before the first count and awaits nothing until the second: an await between the counts lets the
-    `FinalizationRegistry` release objects of earlier tests, whose Natives the table holds, and the count would then
-    belong to those objects. The count is the number of live references of the subject
+    takes that alias as its one parameter and returns it: after one warm-up call (in Node followed by one turn of the
+    event loop), the test counts what the binding holds, gives that function a new instance of a class of the test,
+    checks that the result is the same object, drops it, makes one more call, which empties the release queue, and
+    counts again, which must give the first count. The test awaits nothing from the first count to the second, because
+    an await there lets the engine release objects of earlier tests, whose Natives the table holds, and the count
+    would then belong to those objects: Node runs the napi finalizers of wrapped objects in a `SetImmediate`, and WASM
+    runs its `FinalizationRegistry` between tasks. A `Native` that the subject entered as is dropped on the owner
+    thread in the call, which releases it at once, so no turn is needed between the counts; WASM takes its glue module
+    before the first count. The count is the number of live references of the subject
     (`sys.getrefcount`) in Python, with a weak reference that is dead after the subject is deleted, and the entry point
     of `native-count-test` in the other targets: the entries of the owner table in Node, PHP and WASM, the live
     `cgo.Handle` of the Natives in Go, where a func is not comparable, so the test checks the count only. The bytes of an `out` outlive the
