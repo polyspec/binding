@@ -11,8 +11,11 @@
   also when no generated code called them. `deadcode -test` of the repository that consumes the module reported each
   of them as unreachable, and that repository cannot change a generated file. The generator now writes a helper of
   the package only when the Go code of the generation uses it, and drops the import `math` with the helpers that
-  alone used it (GN-15h). Verified by `make test-ts`: the test of a contract without a `keyed_map<T>` failed before
-  the change, and the test of a contract with one keeps its helpers.
+  alone used it (GN-15h). A method of a class of the contract with the name of such a method, such as `Key`, keeps
+  no helper. Verified by `make test-ts`: the tests of a contract without a `keyed_map<T>` and of a class member named
+  `Key` failed before the change, and the test of a contract with a `keyed_map<T>` keeps its helpers; by
+  `make e2e REPO=tests/e2e/shapes`, which has keyed maps, and by `make e2e` of the fsm checkout, every target passed;
+  and in the fsm checkout `deadcode` and `golangci-lint` of its Go module report nothing.
 
 - The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
   the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of

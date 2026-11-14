@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: cbf8e30238f1f731b830b66e8b12eaa56121a1afdfea9b784005f380aa1e2e02 -->
+<!-- source-sha256: ee773c048b2a27b16f90ff6ccea84f6013e3c308cc8687d204aa24844336af09 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -11,8 +11,11 @@
   생성 코드가 부르지 않을 때에도 method `Writer.Bool`, `Writer.Tag`, `Writer.Bytes`, `Reader.Float`를 담았다. 모듈을
   쓰는 저장소의 `deadcode -test`가 그 각각을 닿지 않는 함수로 보고했고, 그 저장소는 생성 파일을 고칠 수 없다. 이제
   생성기는 패키지의 도우미를 생성된 Go 코드가 쓸 때만 쓰고, 빠진 도우미만 쓰던 import `math`를 함께 뺀다(GN-15h).
-  `make test-ts`로 검증했다: `keyed_map<T>`가 없는 계약의 시험이 변경 전에는 실패했고, `keyed_map<T>`가 있는 계약의
-  시험은 그 도우미가 남는 것을 확인한다.
+  `Key` 같은 그런 method의 이름을 가진 계약의 class의 method는 도우미를 남기지 않는다. `make test-ts`로 검증했다:
+  `keyed_map<T>`가 없는 계약의 시험과 이름이 `Key`인 class member의 시험이 변경 전에는 실패했고, `keyed_map<T>`가
+  있는 계약의 시험은 그 도우미가 남는 것을 확인한다. keyed map이 있는 `make e2e REPO=tests/e2e/shapes`와 fsm
+  checkout의 `make e2e`에서 모든 target이 통과했고, fsm checkout에서 그 Go 모듈의 `deadcode`와 `golangci-lint`는
+  아무것도 보고하지 않는다.
 
 - 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
   field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
