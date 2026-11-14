@@ -9125,3 +9125,17 @@ test('the hand-written contract cases of the consumer run every pair case, a ref
     assert.doesNotMatch(source, /\bplain\(/, name);
   }
 });
+
+test('a Go test of each end-to-end repository calls every function of its Go package, so deadcode finds none of the internal binding unreachable (GN-13e, B2.248)', () => {
+  for (const [repo, out] of e2eGenerated()) {
+    const tests = [...out].filter(([path]) => /^packages\/go\/[^/]+_test\.go$/.test(path)).map(([, content]) => String(content)).join('\n');
+    const hand = new URL(`../../../tests/e2e/${repo}/cases_test.go`, import.meta.url);
+    const all = tests + (existsSync(hand) ? readFileSync(hand, 'utf8') : '');
+    const root = [...out].filter(([path]) => /^packages\/go\/zz_generated_[^/]+\.go$/.test(path) && !path.endsWith('_test.go')).map(([, content]) => String(content)).join('\n');
+    // A function of a member encodes its arguments for the function of the same name of package binding (B-8).
+    const functions = [...root.matchAll(/^func ([A-Z]\w*)\(/gm)].map((m) => m[1] ?? '').filter((name) => root.includes(`binding.${name}(enc.Done())`));
+    assert.ok(functions.length > 0, repo);
+    const uncalled = functions.filter((name) => !new RegExp(`(?<![\\w.])${name}\\(`).test(all));
+    assert.deepEqual(uncalled, [], repo);
+  }
+});

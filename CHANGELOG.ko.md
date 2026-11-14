@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 7401af85d3b8ecf82bb8e08ebb704b5b888a46f66e24c8d89c4caef778a96344 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
+<!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
 <!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
@@ -24,6 +25,10 @@
   libclang 22를 읽고 bindgen은 `PATH`의 clang인 clang 21의 header를 받았다. libclang 22에는 clang 21의 x86 header가 부르는
   builtin `__builtin_ia32_sqrt*`가 없으므로, job `e2e-amd64`의 PHP 대상이 `cargo clippy`에서 실패했다.
   `node --test packages/ts/tests/e2e-llvm.test.ts`로 확인했고, job `e2e-amd64`는 다음 push에서 돈다.
+- sample 레포는 `shout`의 case를 가진다. 어떤 생성 Go 시험도 함수 `Shout`을 부르지 않아 `deadcode -test`가 내부
+  바인딩의 `Shout`을 닿지 않는 함수로 찾았고, sample의 Go 대상이 실패했다(GN-13e). 단위 시험은 sample, classes,
+  consumer에 대해 Go 시험이 member의 모든 함수를 부를 것을 요구한다.
+
 - consumer의 손으로 쓴 계약 case는 kind `reference`의 case 값을 읽고 모든 pair case를 실행한다. 그 kind를 몰라서
   case `a_reference_of_the_owner_twice`가 Node와 WASM에서 실패했다. Node, WASM, Python, Go는 reference를 id마다
   하나인 owner의 class `Cell`의 인스턴스로 만들고, PHP는 그 id의 자리들이 함께 가진 reference로 만든다. 각 시험은
