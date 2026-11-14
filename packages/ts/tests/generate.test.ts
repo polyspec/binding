@@ -4260,6 +4260,63 @@ test('a path is the bytes of an OS path in every place, and each target judges i
   }
 });
 
+test('a case writes its files into the directory of its test before its values are made, in every target (G-5, GN-13i)', () => {
+  // shapes.joined takes a path, which leaves out WASM (CK-15); shapes.length is generated for WASM too.
+  const { contract, caseFiles } = shapes();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.joined[0].files = { 'a/b': 'stored\n', c: { hex: '00ff' } };
+  cases.length[0].files = { held: 'x' };
+  // The case that raises writes its files too.
+  cases.length[1].files = { held: { hex: '' } };
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+  const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
+  // The bytes of a file are the UTF-8 of its text or the bytes of its hex, given to the helper as hex.
+  const stored = Buffer.from('stored\n').toString('hex');
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, new RegExp(`def test_gn13e_joined_a_name_in_a_directory\\(self\\) -> None:\\n        self\\._case_file\\("a/b", "${stored}"\\)\\n        self\\._case_file\\("c", "00ff"\\)\\n`));
+  assert.match(python, /def test_b4_length_a_source_without_a_byte_is_empty\(self\) -> None:\n        self\._case_file\("held", ""\)\n/);
+  assert.match(python, /def _case_file\(self, relative: str, content: str\) -> None:/);
+  assert.match(python, /^import os$/m);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, new RegExp(`test\\('GN-13e: joined a_name_in_a_directory', \\(\\) => \\{\\n  caseFile\\('a/b', '${stored}'\\);\\n  caseFile\\('c', '00ff'\\);\\n`));
+  assert.match(node, /function caseFile\(relative, content\) \{/);
+  assert.match(node, /import \{ mkdirSync, mkdtempSync, rmSync, writeFileSync \} from 'node:fs';/);
+  assert.match(node, /afterEach\(/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, new RegExp(`function testGn13eJoinedANameInADirectory\\(\\): void\\n    \\{\\n        \\$this->caseFile\\("a/b", "${stored}"\\);\\n        \\$this->caseFile\\("c", "00ff"\\);\\n`));
+  assert.match(php, /private function caseFile\(string \$relative, string \$content\): void/);
+  assert.match(php, /protected function tearDown\(\): void/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, new RegExp(`func TestGN13eJoinedANameInADirectory\\(t \\*testing\\.T\\) \\{\\n\\tcaseFile\\(t, "a/b", "${stored}"\\)\\n\\tcaseFile\\(t, "c", "00ff"\\)\\n`));
+  assert.match(go, /func caseFile\(t \*testing\.T, relative string, content string\) \{/);
+  assert.match(go, /"encoding\/hex"/);
+  // WASM: the runner of the tests is Node.js, whose node:fs writes the files, and the directory is removed after each test.
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasm, /test\('GN-13e: length three_characters', \(\) => \{\n  caseFile\('held', '78'\);\n/);
+  assert.match(wasm, /test\('B-4: length a_source_without_a_byte_is_empty', \(\) => \{\n  caseFile\('held', ''\);\n/);
+  assert.match(wasm, /function caseFile\(relative, content\) \{/);
+  assert.match(wasm, /afterEach\(\(\) => \{\n  if \(caseDir !== undefined\) rmSync\(caseDir, \{ recursive: true, force: true \}\);/);
+  // A case without files writes none.
+  assert.doesNotMatch(text(shaped(), 'packages/python/generated/tests/test_generated.py'), /_case_file/);
+  // G-4, GN-13e: files that are no object of relative paths and bytes fail the test of the case by name in every target.
+  for (const bad of [[], { '../a': 'x' }, { a: 1 }, { a: { hex: 'F' } }]) {
+    const { contract: refusedContract, caseFiles: refusedFiles } = shapes();
+    const kase = (refusedFiles.get('contracts/cases.json') as any).length[0];
+    kase.files = bad;
+    const refusedOut = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles });
+    const refusedWasm = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles, targets: ['wasm'] });
+    const reason = `the case ${kase.id} of shapes.length: files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
+    const written: [Map<string, string | Buffer>, string, string][] = [
+      [refusedOut, 'packages/python/generated/tests/test_generated.py', `self.fail(${JSON.stringify(reason)})`],
+      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
+      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${JSON.stringify(reason)})`],
+      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${JSON.stringify(reason)})`],
+      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
+    ];
+    for (const [files, path, fails] of written) assert.ok(text(files, path).includes(fails), `${path}: ${JSON.stringify(bad)}`);
+  }
+});
+
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
   const out = shaped();
   const errors = text(out, 'packages/python/generated/python/polyspec/shapes/_errors.py');
