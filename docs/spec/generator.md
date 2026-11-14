@@ -544,7 +544,9 @@ the design ids are those of the binding design.
   the package of this contract would be another type, which a function of the repository of the record refuses, so
   one value could not pass through both packages.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
-  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
+  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut dyn` of its trait when a member of the unit takes `&mut self`, and as
+  `&dyn` otherwise, which the binding passes as `&mut` and `&` (B2.252); a `&mut` where the core takes `&` is refused by
+  `clippy::unnecessary_mut_passed`.
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner` on Node and PHP, kind `wrong_thread`), goes to the core

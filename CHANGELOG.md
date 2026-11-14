@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A callback parameter without keeps is passed to the core as `&` when no member of its unit takes `&mut self`, and
+  as `&mut` otherwise (U-3, GN-6d). Every target passed `&mut { feed }` to `sample.ask`, whose core takes
+  `&dyn Feed`, and `clippy::unnecessary_mut_passed` refused the five binding crates of the sample. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
+
 - The test of a process that has exited and waits for its parent reports its failure and ends (HR-84, HR-87). Its
   assertions ran before the input of `cat` was ended, so a failed one left `cat`, its pipes and the test file
   running, and `unit-ts` gave no output for 18 minutes on Linux. The process exits now only after the shell has

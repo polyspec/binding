@@ -9166,7 +9166,7 @@ test('a callback unit that one parameter lends and another keeps is called throu
     // The struct of a call holds a value of the environment of the language, which is neither Send nor Sync.
     assert.doesNotMatch(lib, /polyspec_sample::Feed for CbFeed\b/, path);
     assert.match(lib, /polyspec_sample::Feed for KeptCbFeed \{/, path);
-    assert.match(lib, /polyspec_sample::ask\(&mut \{ feed \}/, path);
+    assert.match(lib, /polyspec_sample::ask\(&\{ feed \}/, path);
     // lookup is never kept, so its struct of a call still implements its trait.
     assert.match(lib, /polyspec_sample::Lookup for CbLookup\b/, path);
   }
@@ -9199,4 +9199,16 @@ test('Go gives the core the kind of an error that a member of a kept callback re
     assert.match(text(sample, path), /fn recognized_feed_get\(/, path);
   }
   assert.match(text(sample, 'packages/go/zz_generated_test.go'), /AKeptSourceThatRaisesARecognizedErrorRefusesTheKeyInALaterCall/);
+});
+
+test('a callback parameter without keeps passes the core a shared borrow when no member of its unit takes &mut self, and a mutable one otherwise (U-3, T-1, B2.252)', () => {
+  // feed.get of the sample takes &self, so sample.ask takes &dyn Feed, which clippy::unnecessary_mut_passed refuses
+  // to take a &mut; lookup.find takes &mut self, so sample.resolve takes &mut dyn Lookup.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs', 'packages/python/generated/lib.rs']) {
+    const lib = text(sample, path);
+    assert.match(lib, /polyspec_sample::ask\(&\{ feed \}, /, path);
+    assert.doesNotMatch(lib, /polyspec_sample::ask\(&mut /, path);
+    assert.match(lib, /polyspec_sample::resolve\(&mut \{ lookup \}, /, path);
+  }
 });

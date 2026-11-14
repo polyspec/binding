@@ -1413,8 +1413,13 @@ export function coreArg(model: Model, type: Type, variable: string): string {
   if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
   if (typeof type === 'object' && !('unit' in type) && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), type)) return variable;
-  // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
-  if (unitOf(model, type)?.origin === 'callback') return `&mut { ${variable} }`;
+  // U-3, T-1: the core takes a callback as &mut dyn of its trait when a member of the unit takes &mut self, and as &dyn
+  // otherwise, where clippy::unnecessary_mut_passed refuses a &mut; the block moves the struct into a temporary.
+  const callback = unitOf(model, type);
+  if (callback?.origin === 'callback') {
+    const members = [...model.callbacks, ...model.foreignCallbacks].find((c) => c.unit === callback)?.members ?? [];
+    return `&${members.some((m) => m.receiver === '&mut self') ? 'mut ' : ''}{ ${variable} }`;
+  }
   if (typeof type === 'object' && 'optional' in type) {
     const inner = type.optional;
     if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;

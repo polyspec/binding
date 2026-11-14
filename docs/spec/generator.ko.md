@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 38b17e257bf0d43cd433b9ab5c35c655bb69ab3ac295e38acf631b5fae375c9c -->
+<!-- source-sha256: 1ffe76c3095d332f0d80c5b6697fef290ac1b20ac52d89a56033736ae1a78819 -->
 # 생성기
 
 [English](generator.md)
@@ -438,7 +438,8 @@
   패키지에 그 record의 두 번째 클래스가 있으면 그것은 다른 타입이고, record를 가진 레포의 함수가 그것을 거부하므로, 한
   값이 두 패키지를 함께 지날 수 없다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
-  `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
+  `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 unit의 member가 `&mut self`를 받으면 그 trait의 `&mut dyn`으로, 아니면 `&dyn`으로 받고, binding은 그것을
+  `&mut`와 `&`로 넘긴다(B2.252). 코어가 `&`를 받는 곳의 `&mut`는 `clippy::unnecessary_mut_passed`가 거부한다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
   바인딩의 실패(다른 타입의 결과, Node와 PHP에서 `thread: owner`에 다른 스레드가 한 호출인 kind `wrong_thread`)는 바인딩 표의 그것을
   가리키는 `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은

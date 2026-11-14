@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bf776d8db05d0ca578b38ad15442b8588ca1154ec8aa5b4aa00572a33b8ae67b -->
+<!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
@@ -15,6 +15,11 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- keeps가 없는 callback parameter는 그 unit의 어떤 member도 `&mut self`를 받지 않으면 `&`로, 아니면 `&mut`로 코어에
+  넘어간다(U-3, GN-6d). 모든 대상이 코어가 `&dyn Feed`를 받는 `sample.ask`에 `&mut { feed }`를 넘겼고,
+  `clippy::unnecessary_mut_passed`가 sample의 다섯 binding crate를 거부했다.
+  `node --test packages/ts/tests/generate.test.ts`로 검증했다.
 
 - 종료했고 부모를 기다리는 프로세스의 시험은 실패를 보고하고 끝난다(HR-84, HR-87). 그 단언은 `cat`의 입력을 끝내기
   전에 돌았으므로 단언 하나가 실패하면 `cat`, 그 pipe, 시험 파일이 계속 돌았고, Linux에서 `unit-ts`는 18분 동안 출력이
