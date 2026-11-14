@@ -1676,7 +1676,11 @@
   자리의 동일성과 각 순환을 비교한다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
   거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
   준다. 이것은 결과를 alias의 `in` 함수로 받아 그 코어 값을 `out` 함수로 돌려주며, 시험은 같은 텍스트를 요구한다. 그래서
-  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. Go는 값 alias를 담은 결과를 `reflect.DeepEqual`로 비교하며,
+  생성기는 기대값을 같은 out 행의 Go 형태로 쓴다. 결과가 case의 kind가 아니라 그 형태를 가지기 때문이다. 행이 `text`를
+  만드는 byte string은 `string`이고(행이 `bytes`를 만드는 text는 `[]byte`), 행이 `list`를 만드는 map은 그 값들의
+  `[]any`이며, 행이 `keyed_map`을 만드는 map이나 list는 `*KeyedMap[any]`다. 그 keyed map의 key와 값 class field의
+  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
   내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
   시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
   PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고

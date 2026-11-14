@@ -2057,7 +2057,12 @@ the design ids are those of the binding design.
   alias (U-1): the test gives the result to `_alias_round_<alias>` (Python), `__aliasRound<Alias>` (Node, WASM) or
   `Internal\aliasRound<Alias>` (PHP), which takes it by the `in` function of the alias and gives the core value back
   by its `out` function, and requires the same texts, so each form that the `out` rows make enters again as the same
-  value. A case whose result
+  value. Go compares a result that holds a value alias with `reflect.DeepEqual`, and the generator writes the expected
+  value by the Go forms of the same out rows, because the result takes those forms and not the kinds of the case: a
+  byte string whose row makes `text` is a `string` (a text whose row makes `bytes` is a `[]byte`), a map whose row
+  makes `list` is a `[]any` of its values, and a map or a list whose row makes `keyed_map` is a `*KeyedMap[any]`. A
+  key of that keyed map, or of the keyed map of the field of a value class, is a text only where the keyed map takes
+  texts and the bytes of the key are UTF-8, and else bytes. A case whose result
   has no case form (a class, a result of `none`), whose value alias has no out row that makes the built-in form of
   its kind in the language or a form of the texts, or that gives no argument of a parameter or of the factory of its
   receiver fails its test with that reason, so the case is never left out.
