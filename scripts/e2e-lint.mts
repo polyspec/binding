@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 // GN-14, GN-5: the lints of one binding crate in the end-to-end check. The crate is linted with the test features of
 // its manifest, which the tests of the run build, and without a feature, which a release builds: an import or a helper
 // whose only users are entry points of a test feature is unused in the second build alone, and the lints of the
@@ -16,6 +18,14 @@ export function bindingLints(manifest: string, crate: string, features: string):
     { what: 'with its test features', argv: clippy(['--features', features]) },
     { what: 'without features', argv: clippy([]) },
   ];
+}
+
+// GN-14, GN-6s: the arguments of tsc --strict of the declarations of a package, `declarations` relative to the package:
+// the declarations where npm installed the package in `nodeDir`, beside the packages that it depends on, which they
+// import (the interface of a callback unit of another repository), resolved by the exports of their manifests as Node
+// resolves them (--module nodenext), so a subpath such as ./wasm is found as a consumer finds it.
+export function declarationCheck(nodeDir: string, npm: string, declarations: string): string[] {
+  return ['--noEmit', '--strict', '--module', 'nodenext', join(nodeDir, 'node_modules', npm, declarations)];
 }
 
 // GN-15h: the build tags that the go tool sets itself, the platforms, the architectures and the toolchains, which no

@@ -37,7 +37,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints, deadcodeFindings, goBuildTags } from './e2e-lint.mts';
+import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
@@ -1015,14 +1015,19 @@ if (targets.includes('go')) {
   });
 }
 
+// GN-14, GN-6s: tsc --strict reads the declarations of each package where npm installed it, beside the packages that
+// they import (the interface of a callback unit of another repository), and not in the copy, beside which no
+// node_modules holds them; it runs in the directory of the installed packages, which holds no tsconfig.json.
+const installedDeclarations = (p: Prepared, path: string): string[] =>
+  declarationCheck(nodeDir, (p.contract.packages['node'] as { package: string }).package, relative(packageDir(p, 'ts'), at(p, path)));
 if (targets.includes('node') && installed) {
   if (stepOf(['node'], 'tsc --strict of the declarations', () => {
-    for (const p of mainsOf('node')) run(tsc, ['--noEmit', '--strict', at(p, 'packages/ts/generated/index.d.ts')]);
+    for (const p of mainsOf('node')) run(tsc, installedDeclarations(p, 'packages/ts/generated/index.d.ts'), { cwd: nodeDir });
   })) lintOf('node', 'tsc --strict of the declarations');
 }
 if (targets.includes('wasm') && installed) {
   if (stepOf(['wasm'], 'tsc --strict of the declarations', () => {
-    for (const p of mainsOf('wasm')) run(tsc, ['--noEmit', '--strict', at(p, 'packages/ts/wasm/generated/index.d.ts')]);
+    for (const p of mainsOf('wasm')) run(tsc, installedDeclarations(p, 'packages/ts/wasm/generated/index.d.ts'), { cwd: nodeDir });
   })) lintOf('wasm', 'tsc --strict of the declarations');
 }
 

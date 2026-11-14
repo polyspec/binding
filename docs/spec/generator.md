@@ -2422,7 +2422,10 @@ the design ids are those of the binding design.
   such as the collector of GN-18a, gets it from the check and fails without it. Why: a target that did not run is not
   verified while the run would look passed, and a result of a tool that the checkout does not pin cannot be repeated.
   The run ends with what it did for each target, a lint apart from the tests: the lint of the crates on the host, `php
-  -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
+  -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target. `tsc --strict`
+  reads the declarations of each package where npm installed it, with `--module nodenext` in the directory of the
+  installed packages, because the declarations import the packages that the package depends on (GN-6s), which only
+  that directory holds, by the exports of their manifests (`@polyspec/sample/wasm`); a run of PHPUnit
   counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
   that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
   test is named and fails the run, because it verifies nothing. A package that does not build ends the events of its

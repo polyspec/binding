@@ -3,9 +3,12 @@
 // entry points of a feature, which the lints of the workspace deny in the build that a release makes.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { bindingLints, deadcodeFindings, goBuildTags } from '../../../scripts/e2e-lint.mts';
+import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags } from '../../../scripts/e2e-lint.mts';
 import { testEntrySymbol } from '../src/release/go-module.ts';
 
 test('each binding crate is linted with its test features and without a feature, both with -D warnings (GN-14, GN-5)', () => {
@@ -84,4 +87,31 @@ test('the end-to-end check runs deadcode -test on the generated Go module, untag
   assert.match(script, /lintOf\('go', `deadcode -test\$\{of\}`\)/);
   const mise = String(readFileSync(new URL('../../../mise.toml', import.meta.url)));
   assert.match(mise, /^"go:golang\.org\/x\/tools\/cmd\/deadcode" = "\d+\.\d+\.\d+"$/m);
+});
+
+// GN-14, GN-6s, B2.249: tsc --strict reads the declarations of each package where npm installed it, beside the packages
+// that it depends on, and resolves their entries by the exports of their manifests: the declarations of the consumer
+// name the interface of a callback unit of the sample by import("@polyspec/sample") and import("@polyspec/sample/wasm"),
+// which no node_modules beside the copy of the repository holds.
+test('tsc --strict reads the installed declarations of a package, which import the packages that it depends on (GN-14, GN-6s, B2.249)', (t) => {
+  const tsc = new URL('../node_modules/.bin/tsc', import.meta.url).pathname;
+  const nodeDir = mkdtempSync(join(tmpdir(), 'binding-declarations-'));
+  t.after(() => rmSync(nodeDir, { recursive: true, force: true }));
+  const write = (path: string, text: string): void => {
+    mkdirSync(dirname(join(nodeDir, path)), { recursive: true });
+    writeFileSync(join(nodeDir, path), text);
+  };
+  const exports = { '.': { types: './generated/index.d.ts', import: './generated/index.mjs' }, './wasm': { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' } };
+  write('node_modules/@polyspec/sample/package.json', JSON.stringify({ name: '@polyspec/sample', version: '0.0.0', type: 'module', exports }));
+  for (const path of ['generated/index.d.ts', 'wasm/generated/index.d.ts']) write(`node_modules/@polyspec/sample/${path}`, 'export interface Source {\n  read(key: string): string | null;\n}\n');
+  write('node_modules/@polyspec/consumer/package.json', JSON.stringify({ name: '@polyspec/consumer', version: '0.0.0', type: 'module', exports, dependencies: { '@polyspec/sample': '0.0.0' } }));
+  write('node_modules/@polyspec/consumer/generated/index.d.ts', 'export declare function read(source: import("@polyspec/sample").Source, key: string): string | null;\n');
+  write('node_modules/@polyspec/consumer/wasm/generated/index.d.ts', 'export declare function read(source: import("@polyspec/sample/wasm").Source, key: string): string | null;\n');
+  for (const declarations of ['generated/index.d.ts', 'wasm/generated/index.d.ts']) {
+    const check = declarationCheck(nodeDir, '@polyspec/consumer', declarations);
+    assert.equal(check.at(-1), join(nodeDir, 'node_modules/@polyspec/consumer', declarations));
+    assert.deepEqual(check.slice(0, 2), ['--noEmit', '--strict']);
+    const ran = spawnSync(tsc, check, { cwd: nodeDir, encoding: 'utf8' });
+    assert.equal(ran.status, 0, `tsc ${check.join(' ')}:\n${ran.stdout}${ran.stderr}`);
+  }
 });

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 84d3a3f47633799751f4ad0bf63bde170b3638e05f4c2b7cf62cc24b008ae794 -->
+<!-- source-sha256: 6b18ac02562ede33894691337334c7bcc5b9586d51fe8c3e056bc28c4370bcff -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
 <!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
@@ -11,6 +11,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 끝에서 끝까지 확인은 `tsc --strict`를 npm이 각 패키지를 설치한 자리의 선언에, 설치한 패키지들의 디렉터리에서
+  `--module nodenext`로 돌린다(GN-14, GN-6s). 확인은 레포 사본의 선언을 읽었고 그 옆의 `node_modules`에는 패키지가
+  없었으므로, sample의 callback unit을 `import("@polyspec/sample")`와 `import("@polyspec/sample/wasm")`로 이름하는
+  consumer의 선언이 Node와 WASM에서 TS2307로 실패했다. 검증: 설치한 consumer와 sample에 그 확인을 돌리며 변경 전에
+  실패한 `node --test packages/ts/tests/e2e-lint.test.ts`.
 
 - consumer의 손으로 쓴 계약 case는 kind `reference`의 case 값을 읽고 모든 pair case를 실행한다. 그 kind를 몰라서
   case `a_reference_of_the_owner_twice`가 Node와 WASM에서 실패했다. Node, WASM, Python, Go는 reference를 id마다

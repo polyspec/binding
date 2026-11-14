@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The end-to-end check runs `tsc --strict` on the declarations of each package where npm installed it, with
+  `--module nodenext` in the directory of the installed packages (GN-14, GN-6s). It read the declarations in the copy
+  of the repository, beside which no `node_modules` holds a package, so the declarations of the consumer, which name
+  the callback units of the sample by `import("@polyspec/sample")` and `import("@polyspec/sample/wasm")`, failed with
+  TS2307 in Node and WASM. Verified by `node --test packages/ts/tests/e2e-lint.test.ts`, which runs the check on an
+  installed consumer and sample and failed before the change.
+
 - The hand-written contract cases of the consumer read a case value of the kind `reference` and run every pair case,
   where they did not know the kind and the case `a_reference_of_the_owner_twice` failed in Node and WASM. Node, WASM,
   Python and Go make a reference as an instance of the class `Cell` of the owner, one per id, and PHP as a reference

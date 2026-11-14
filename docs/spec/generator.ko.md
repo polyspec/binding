@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e32623a2d4d113e41ca48fea1402bc74e75833642500d2fe611293d3e47444c1 -->
+<!-- source-sha256: 2054600b1dd09c947ea4ffe5560dd02d9d7ff134ed0a301c7a6da5320ab0a400 -->
 # 생성기
 
 [English](generator.md)
@@ -1953,7 +1953,9 @@
   runner의 설정이 필요한 시험(GN-18a의 collector 등)은 확인이 그 설정을 주며 설정이 없으면 실패한다. 이유: 돌지 않은 target은
   검증되지 않았는데 결과는 통과로 보이고, checkout이 고정하지 않은 도구의 결과는 되풀이할 수 없다. 실행은 target마다 한 일을
   lint와 시험으로 갈라 적고 끝난다. host에서의 crate lint, `php -l`, `gofmt -l`, `go vet`, `llvm-nm`, `tsc`는 코드를 읽을
-  뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, `go test`는 `-json`으로 실행해 그 사건에서
+  뿐 실행하지 않으므로 어느 target도 검증하지 않는다. `tsc --strict`는 각 패키지의 선언을 npm이 그 패키지를 설치한
+  자리에서, 설치한 패키지들의 디렉터리에서 `--module nodenext`로 읽는다. 선언은 패키지가 의존하는 패키지(GN-6s)를 그
+  manifest의 exports로(`@polyspec/sample/wasm`) import하고, 그 패키지들은 그 디렉터리에만 있기 때문이다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, `go test`는 `-json`으로 실행해 그 사건에서
   통과·실패·건너뜀 시험을 세며, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. 건너뛴 Go 시험은 이름을 적고 실행을
   실패시킨다. 아무것도 검증하지 않기 때문이다. 빌드되지 않는 패키지는 그 빌드의 사건을 `build-output`과 `build-fail`로
   끝낸다. 실행은 그 출력을 적고 그것을 패키지 실패의 원인으로 이름한다. link 오류는 거기에서만 보이기 때문이다. macOS에서 PHP
