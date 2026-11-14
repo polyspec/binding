@@ -2388,6 +2388,8 @@ test('a callback unit of another repository recognizes the error units of its ow
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /if classes\.len\(\) != 8 \{/);
   assert.match(node, /let core = recognized_kind\(env, exception, &\[7\]\)/);
+  // The failure of the callback is that of the owner, so the failure that kept keeps is of any core error.
+  assert.match(node, /\nfn kept<E>\(env: &Env, failure: binding_core::Failure<E>\) -> binding_core::Failure<E> \{/);
   assert.match(node, kinds);
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /\nconst recognized_sample = require\('@polyspec\/sample'\);\naddon\.__register\(\[[^\]]*AbsentError, recognized_sample\.RefusedError\]\);/);
   // PHP finds the class by its name and reads it in the scope of the class of its category.
@@ -6633,7 +6635,7 @@ test('Node takes the exception of a callback that a machine owns out of the envi
   const lib = text(scopedSample(['node']), 'packages/ts/generated/lib.rs');
   const ownedImpl = lib.slice(lib.indexOf('impl polyspec_sample::Lookup for OwnedCbLookup'));
   assert.match(ownedImpl.slice(0, ownedImpl.indexOf('\n}\n')), /let mut borrowed = CbLookup \{ object, env: &env[^}]*\};\n\s+polyspec_sample::Lookup::[a-z_]+\(&(?:mut )?borrowed[^\n]*\)\.map_err\(\|failure\| kept\(&env, failure\)\)\n/);
-  assert.match(lib, /fn kept\(env: &Env, failure: binding_core::Failure<polyspec_sample::Error>\) -> binding_core::Failure<polyspec_sample::Error> \{\n {4}let binding_core::Failure::Raised\(raised\) = &failure else \{\n {8}return failure;\n {4}\};/);
+  assert.match(lib, /fn kept<E>\(env: &Env, failure: binding_core::Failure<E>\) -> binding_core::Failure<E> \{\n {4}let binding_core::Failure::Raised\(raised\) = &failure else \{\n {8}return failure;\n {4}\};/);
   // GN-6u: the Raised names the entry of the table by the key of its ThrownKey.
   assert.match(lib, /let Some\(key\) = raised\.native\(\)\.downcast::<ThrownKey>\(\)\.map\(\|thrown\| thrown\.key\) else \{\n {8}return failure;\n {4}\};\n {4}let pending = THROWN\.with_borrow\(\|map\| matches!\(map\.get\(&key\), Some\(Thrown::Js\(error\)\) if error\.status == napi::Status::PendingException\)\);/);
   assert.match(lib, /napi::sys::napi_get_and_clear_last_exception\(env\.raw\(\), &mut exception\) \} == napi::sys::Status::napi_ok \{\n[^\n]*\n {8}match Owned::boxed\(env, unsafe \{ Unknown::from_raw_unchecked\(env\.raw\(\), exception\) \}\) \{\n {12}Ok\(held\) => Thrown::Held\(held\),/);
@@ -6650,7 +6652,7 @@ test('Node takes the exception of a callback that a machine owns out of the envi
   assert.match(alone, /\n {4}fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{/);
   assert.match(alone, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
   assert.match(alone, /\nfn thrown_again\(exception: &Owned\) -> Fail \{/);
-  assert.match(alone, /\nfn kept\(env: &Env, /);
+  assert.match(alone, /\nfn kept<E>\(env: &Env, /);
 });
 
 test('a Raised of the Node and WASM crates is released by its last drop, and no call or machine keeps a list of them (U-3, GN-6u, GN-6ae)', () => {
@@ -7932,7 +7934,7 @@ test('Node takes the exception of every callback out of the environment where it
     contract.cases = contract.cases.filter((k: any) => k.member === undefined || kept.has(k.member));
   }), 'packages/ts/generated/lib.rs');
   assert.doesNotMatch(plain, /struct Driven/);
-  assert.match(plain, /\nfn kept\(env: &Env, failure: /);
+  assert.match(plain, /\nfn kept<E>\(env: &Env, failure: /);
   assert.match(plain, /\n {4}Held\(Owned\),\n/);
   assert.match(plain, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
   assert.match(plain, /\.map_err\(\|failure\| kept\(self\.env, failure\)\)/);
