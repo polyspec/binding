@@ -1744,10 +1744,6 @@ test('a value alias of another repository whose rows name a class of its owner m
   const php = classRowsSample();
   php.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ php: 'cell', cases: [{ kind: 'reference', read: 'builtin' }] });
   assert.match(text(generate({ contract: php.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: php.caseFiles, foreign: php.foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs'), /fn in_data\(/);
-  // Go does not generate the rows yet and refuses them by name.
-  const go = classRowsSample();
-  go.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
-  assert.throws(() => generate({ contract: go.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: go.caseFiles, foreign: go.foreign, targets: ['go'] }), /data: (the go in row of the class box of sample is not generated yet \(GN-6ar\)|a go make by a member \((box|ratio|cell)\.constructor\) is not generated yet)/);
   // A make that is no constructor of a class of the owner, and a constructor that takes another content, are named.
   const refused = (change: (data: any, owner: any) => void): (() => unknown) => () => {
     const parts = classRowsSample();
@@ -1759,6 +1755,37 @@ test('a value alias of another repository whose rows name a class of its owner m
   assert.throws(refused((data) => { data.out[0].make.python = 'tag.new'; }), /data: the python make tag\.new of the kind null takes text, which is not generated: a constructor of a class of another repository takes a bool, an integer or a float of its kind, the keyed map of an object or a map, or the value of a reference \(GN-6ar\)/);
   assert.throws(refused((_data, owner) => { owner.units.find((u: any) => u.id === 'cell').members[1].writable = false; }), /data: the python make cell\.constructor of the kind reference needs a writable property of cell with the name of the parameter/);
   assert.throws(refused((data) => { data.in.find((row: any) => row.python === 'box').cases[0].read = 'box.none'; }), /data: the python in row of the class box of sample reads box\.none, which is no public property of the class \(GN-6ar\)/);
+});
+
+test('Go makes and reads the class of a row of a value alias of another repository, a value class without core_type of the package of its owner (GN-6ar, GN-15c, GN-15f)', () => {
+  const parts = classRowsSample();
+  parts.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  const { contract, caseFiles, foreign } = parts;
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /\n\t"github\.com\/polyspec\/sample\/packages\/go"\n/);
+  // In: an instance of the owner's class is node 11 with the kind of its row, whose read gives the field of its
+  // writable property, and the keyed map of the owner is a map of its entries.
+  assert.match(binding, /\n\tif c\.describeRow\(enc, value\) \{\n\t\treturn\n\t\}\n/);
+  assert.match(binding, /\n\tcase \*sample\.Box:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tc\.describeKept\(enc, \d+, found, func\(\) \(any, error\) \{ return found\.Entries, nil \}\)\n\t\treturn true\n/);
+  assert.match(binding, /\n\tcase \*sample\.Cell:\n[\s\S]*?return found\.Value, nil/);
+  assert.match(binding, /\n\tcase \*sample\.KeyedMap\[any\]:\n[\s\S]*?if integer, isInt := key\.Int\(\); isInt \{/);
+  assert.match(binding, /\n\tseen +map\[any\]uint64\n/);
+  // Out: node 13 is made by the constructor of the owner on an empty keyed map or on nil, then filled.
+  assert.match(binding, /\n\tcase 13:\n\t\treturn r\.foreign\(made, instance\)\n/);
+  assert.match(binding, /\n\t\tentries := &sample\.KeyedMap\[any\]\{\}\n\t\tkept, err := sample\.NewBox\(entries\)\n/);
+  assert.match(binding, /\n\t\tkept, err := sample\.NewCell\(nil\)\n[\s\S]*?\n\t\tkept\.Value = r\.value\(made, instance\)\n/);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\n {12}output\.push\(13\);\n {12}uint_out\(output, 0u64\);\n {12}uint_out\(output, len\);/);
+  assert.match(lib, /\n {12}output\.push\(13\);\n {12}uint_out\(output, 1u64\);\n {12}make\(output, \*value, source, made\);/);
+  // GN-15f: go.mod requires the Go module of the owner, whose package the binding imports.
+  assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
+  // G-4: a class with core_type in a Go row is refused by name.
+  const cored = classRowsSample();
+  cored.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  cored.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ go: 'ratio', cases: [{ kind: 'float', read: 'ratio.value' }] });
+  cored.foreign.get('sample').units.find((u: any) => u.id === 'ratio').only = undefined;
+  assert.throws(() => generate({ contract: cored.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: cored.caseFiles, foreign: cored.foreign, targets: ['go'] }), /the go row of the class ratio of sample names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner \(GN-6ar, GN-6af\)/);
 });
 
 test('WASM makes and reads the class of a row of a value alias of another repository as Node does (GN-6ar, GN-6k)', () => {
