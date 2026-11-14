@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3261341ead0f018ac1821993665f1d19faa29b2257453b739f78471c758032c4 -->
+<!-- source-sha256: bf776d8db05d0ca578b38ad15442b8588ca1154ec8aa5b4aa00572a33b8ae67b -->
 <!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
@@ -1682,16 +1682,6 @@
   예외는 `Raised`로 코어에 간다(GN-6z). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
   거부한다. callback member와 함수 타입은 빌린 parameter의 규칙 하나를 함께 쓴다(T-1). `packages/ts`의 `npm test`로
   확인했다.
-- 콜백을 받는 함수처럼 언어 코드에 닿는 `wait: async_driver` member는 "a member with wait async_driver that reaches
-  language code is not generated"로 거부되었다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
-  부르게 되기 때문이다. 이제 그런 member는 `core`에 `"machine": true`를 적고, 그 코어 경로는 I/O 없는 state machine인
-  `binding_core::machine::Machine`을 돌려준다. 그 단계는 언어 코드에 닿지 않는 I/O future, 언어 코드의 call, 결과다.
-  PHP는 호출 스레드에서 machine을 돌리고, Python `<name>`은 각 기다림을 GIL 밖에서 하며 machine을 돌리고 `a<name>`은
-  `<name>`을 `asyncio.to_thread`에서 돌린다. Node는 JavaScript 진입이 진행시키는 `Driven` 객체를 돌려주며, 각 call은
-  JavaScript 스레드에서, 각 기다림은 napi의 tokio runtime에서 한다. `binding check`는 `machine`이 없는 그런 member와 다른
-  member의 `machine`을 보고한다(CK-68). 생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method를 거부하고, Go와
-  WASM은 `async_driver`인 모든 member와 함께 이를 거부한다(GN-6ab). `make test-ts`와 `make test-rust`로 확인했고,
-  `tests/machine.rs`는 `drive`와 `Driving`으로 machine을 돌린다.
 - receiver나 parameter가 class인 `wait: async_driver`
   WASM member는 guard의 참조를 future 밖에서 묶었는데, future는 그 guard를 소유하지 않는다. 이제 Node의 future처럼 future가
   guard를 소유하고 참조를 그 안에서 묶는다(GN-6h, GN-6n). case의 함수 값의 행은 값이 넷이고 callback fixture의 행은
