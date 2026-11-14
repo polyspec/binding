@@ -1559,6 +1559,48 @@ describe('CK-93 a case that gives a parameter or a field that an only keeps out 
   });
 });
 
+describe('CK-95 the services of the test run (GN-13j)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  // shapes.repeat runs against the service store, in a row of cases without wasm, because the WASM core has no socket.
+  const run = (change: (contract: any, cases: any) => void = () => undefined): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    const cases = read('contracts/cases.json');
+    contract.services = [{ id: 'store', address: 'SHAPES_STORE', state: 'SHAPES_STORE_STATE', reason: 'G-5' }];
+    cases.served = [{ id: 'twice_from_the_service', text: { service: 'address' }, times: 2, separator: { service: 'scope' }, service: { id: 'store', setup: { keys: [] }, check: { keys: [] } }, result: 'a-a' }];
+    contract.cases.push({ member: 'shapes.repeat', file: 'contracts/cases.json', group: 'served', only: { targets: ['php', 'python', 'node', 'go'], reason: 'G-5' } });
+    change(contract, cases);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const ck95 = (found: Finding[]): string[] => found.filter((f) => f.check === 'CK-95').map((f) => f.message);
+  test('a contract that declares its service and a case that runs against it has no finding', () => {
+    assert.deepEqual(run().filter((f) => f.check === 'CK-95' || f.check === 'CK-1'), []);
+  });
+  test('a service declared twice', () => {
+    assert.deepEqual(ck95(run((contract) => { contract.services.push({ ...contract.services[0] }); })), ['the service store is declared twice (GN-13j)']);
+  });
+  test('a case whose service is of another form or is not declared', () => {
+    assert.deepEqual(ck95(run((_c, cases) => { cases.served[0].service = 'store'; })), ['the case twice_from_the_service of shapes.repeat: service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not "store"']);
+    assert.deepEqual(ck95(run((_c, cases) => { cases.served[0].service = { id: 'other' }; })), ['the case twice_from_the_service of shapes.repeat: the service other is not one of services of the contract (GN-13j)']);
+  });
+  test('a state of a service without state, and a change of a case without service', () => {
+    const found = ck95(run((contract, cases) => {
+      delete contract.services[0].state;
+      cases.buffer_size[0].receiver = { new: 'buffer.new', args: { start: 'ab' }, then: [{ call: 'buffer.append', args: { source: 'c' }, service: {} }] };
+      delete cases.buffer_size[0].start;
+    }));
+    assert.deepEqual(found, [
+      'the case the_size_of_a_text_source of buffer.size: a call of then changes the service, but the case has no service (GN-13j)',
+      'the case twice_from_the_service of shapes.repeat: the service store has no state, so the case gives no setup, check or service of a call of then (GN-13j)',
+    ]);
+  });
+  test('a value of a service in a case without service', () => {
+    assert.deepEqual(ck95(run((_c, cases) => { delete cases.served[0].service; })), ['the case twice_from_the_service of shapes.repeat: a case value {"service": "address"} stands in a case without service (GN-13j)']);
+  });
+  test('a row of a case with a service that holds for WASM', () => {
+    assert.deepEqual(ck95(run((contract) => { delete contract.cases.at(-1).only; })), ['the row of shapes.repeat holds the case twice_from_the_service, which runs against the service store, for wasm, whose core has no socket; give the row an only without wasm (GN-13h, GN-13j)']);
+  });
+});
+
 describe('CK-92 the members that the instance values of a case call (GN-13f, Q-4)', () => {
   // The contract of template has such a case: prepared_render.render is generated for every target, and the receivers
   // of its cases are made by engine.prepare, whose only keeps it out of wasm, so the wasm test could not make them.

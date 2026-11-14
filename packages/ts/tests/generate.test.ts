@@ -12,7 +12,8 @@ import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
-import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
+import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
+import { goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, hostRequirements, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
@@ -4393,6 +4394,96 @@ test('a case writes its files into the directory of its test before its values a
       [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
     ];
     for (const [files, path, fails] of written) assert.ok(text(files, path).includes(fails), `${path}: ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a case runs against a service of the test run: its address, its scope and the program of its state, in every target (G-5, GN-13j)', () => {
+  const store = { id: 'store', address: 'SHAPES_STORE', state: 'SHAPES_STORE_STATE', reason: 'G-5' };
+  const served = (change: (contract: any, cases: any) => void = () => undefined): { out: Map<string, string | Buffer>; wasm: Map<string, string | Buffer> } => {
+    const { contract, caseFiles } = shapes();
+    contract.services = [store];
+    const cases = caseFiles.get('contracts/cases.json') as any;
+    // shapes.repeat takes texts: the address of the service and the scope of the case.
+    Object.assign(cases.repeat[0], { text: { service: 'address' }, separator: { service: 'scope' }, service: { id: 'store', setup: { keys: [['k', 'v']] }, check: { keys: [] } } });
+    // The case that raises reads the address too, and gives no state.
+    Object.assign(cases.repeat[2], { text: { service: 'address' }, service: { id: 'store' } });
+    // A call of then changes the state of the service after it.
+    Object.assign(cases.buffer_size[0], { receiver: { new: 'buffer.new', args: { start: 'ab' }, then: [{ call: 'buffer.append', args: { source: 'c' }, service: { held: true } }] }, service: { id: 'store' } });
+    delete cases.buffer_size[0].start;
+    change(contract, cases);
+    return {
+      out: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles }),
+      wasm: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] }),
+    };
+  };
+  const { out, wasm } = served();
+  const setup = JSON.stringify({ keys: [['k', 'v']] });
+  const check = JSON.stringify({ keys: [] });
+  const held = JSON.stringify({ held: true });
+  const scope = (target: string, member: string, id: string): string => `${target}:${member}:${id}:`;
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const pyScope = pyString(scope('python', 'shapes.repeat', 'twice_with_a_separator'));
+  assert.ok(python.includes(`def test_gn13e_repeat_twice_with_a_separator(self) -> None:\n        _service_address("store", "SHAPES_STORE")\n        _service_state("store", "SHAPES_STORE_STATE", "setup", ${pyScope}, ${pyString(setup)})\n`), python);
+  assert.ok(python.includes(`_service_state("store", "SHAPES_STORE_STATE", "check", ${pyScope}, ${pyString(check)})`));
+  assert.ok(python.split(pyScope).length >= 4, 'the scope is the text of the separator too');
+  assert.match(python, /def test_b4_repeat_more_than_the_most\(self\) -> None:\n {8}_service_address\("store", "SHAPES_STORE"\)\n(?! {8}_service_state)/);
+  assert.ok(python.includes(`_service_state("store", "SHAPES_STORE_STATE", "change", ${pyString(scope('python', 'buffer.size', 'the_size_of_a_text_source'))}, ${pyString(held)})`));
+  assert.match(python, /^def _service_address\(service: str, variable: str\) -> str:/m);
+  assert.match(python, /^def _service_state\(service: str, variable: str, step: str, scope: str, value: str\) -> None:/m);
+  assert.match(python, /subprocess\.run\(\[program, step, scope\]/);
+  assert.match(python, /^import subprocess$/m);
+  // U-2 takes the values of the first case without its lines, so it takes none of a case with a service.
+  const u2 = python.slice(python.indexOf('def test_u2_repeat_'), python.indexOf('\n    def ', python.indexOf('def test_u2_repeat_') + 1));
+  assert.ok(u2.length > 0 && !u2.includes('_service'), u2);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const jsScope = jsString(scope('node', 'shapes.repeat', 'twice_with_a_separator'));
+  assert.ok(node.includes(`test('GN-13e: repeat twice_with_a_separator', () => {\n  serviceAddress('store', 'SHAPES_STORE');\n  serviceState('store', 'SHAPES_STORE_STATE', 'setup', ${jsScope}, ${jsString(setup)});\n`), node);
+  assert.ok(node.includes(`serviceState('store', 'SHAPES_STORE_STATE', 'check', ${jsScope}, ${jsString(check)});`));
+  assert.ok(node.includes(`serviceState('store', 'SHAPES_STORE_STATE', 'change', ${jsString(scope('node', 'buffer.size', 'the_size_of_a_text_source'))}, ${jsString(held)});`));
+  assert.match(node, /^function serviceAddress\(service, variable\) \{/m);
+  assert.match(node, /^function serviceState\(service, variable, step, scope, value\) \{/m);
+  assert.match(node, /^import \{ spawnSync \} from 'node:child_process';$/m);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const phpScope = phpText(scope('php', 'shapes.repeat', 'twice_with_a_separator'));
+  assert.ok(php.includes(`function testGn13eRepeatTwiceWithASeparator(): void\n    {\n        self::serviceAddress(${phpText('store')}, ${phpText('SHAPES_STORE')});\n        self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('setup')}, ${phpScope}, ${phpText(setup)});\n`), php);
+  assert.ok(php.includes(`self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('check')}, ${phpScope}, ${phpText(check)});`));
+  assert.ok(php.includes(`self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('change')}, ${phpText(scope('php', 'buffer.size', 'the_size_of_a_text_source'))}, ${phpText(held)});`));
+  assert.match(php, /private static function serviceAddress\(string \$service, string \$variable\): string/);
+  assert.match(php, /private static function serviceState\(string \$service, string \$variable, string \$step, string \$scope, string \$value\): void/);
+  assert.match(php, /proc_open\(\[\$program, \$step, \$scope\]/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const goScope = goString(scope('go', 'shapes.repeat', 'twice_with_a_separator'));
+  assert.ok(go.includes(`func TestGN13eRepeatTwiceWithASeparator(t *testing.T) {\n\tserviceAddress(t, "store", "SHAPES_STORE")\n\tserviceState(t, "store", "SHAPES_STORE_STATE", "setup", ${goScope}, ${goString(setup)})\n`), go);
+  assert.ok(go.includes(`serviceState(t, "store", "SHAPES_STORE_STATE", "check", ${goScope}, ${goString(check)})`));
+  assert.ok(go.includes(`serviceState(t, "store", "SHAPES_STORE_STATE", "change", ${goString(scope('go', 'buffer.size', 'the_size_of_a_text_source'))}, ${goString(held)})`));
+  assert.ok(go.includes('serviceAddress(t, "store", "SHAPES_STORE")'));
+  assert.match(go, /^func serviceAddress\(t \*testing\.T, service string, variable string\) string \{/m);
+  assert.match(go, /^func serviceState\(t \*testing\.T, service string, variable string, step string, scope string, value string\) \{/m);
+  assert.match(go, /"os\/exec"/);
+  // WASM: the core has no socket, so the test of a case with a service fails by name.
+  const wasmTests = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  const noSocket = 'the core of WASM has no socket, so it reaches no service; the row of the case in cases has an only without wasm (GN-13j)';
+  assert.ok(wasmTests.includes(`assert.fail(${jsString(`the case twice_with_a_separator of shapes.repeat: ${noSocket}`)})`), wasmTests);
+  assert.ok(wasmTests.includes(`assert.fail(${jsString(`the case more_than_the_most of shapes.repeat: ${noSocket}`)})`));
+  // A case without a service runs none of its lines.
+  assert.doesNotMatch(text(shaped(), 'packages/python/generated/tests/test_generated.py'), /_service_/);
+  // G-4, GN-13e: a service that the case cannot run fails the test of the case by name in every target.
+  const refused: [string, (contract: any, cases: any) => void][] = [
+    ['service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not "store"', (_c, cases) => { cases.repeat[2].service = 'store'; }],
+    ['the service other is not one of services of the contract (GN-13j)', (_c, cases) => { cases.repeat[2].service = { id: 'other' }; }],
+    ['the service store has no state, so the case gives no setup, check or service of a call of then (GN-13j)', (contract, cases) => { delete contract.services[0].state; cases.repeat[2].service = { id: 'store', setup: {} }; }],
+    ['a case value {"service": "address"} stands in a case without service (GN-13j)', (_c, cases) => { delete cases.repeat[2].service; }],
+  ];
+  for (const [message, change] of refused) {
+    const { out: refusedOut } = served(change);
+    const reason = `the case more_than_the_most of shapes.repeat: ${message}`;
+    const written: [string, string][] = [
+      ['packages/python/generated/tests/test_generated.py', `self.fail(${pyString(reason)})`],
+      ['packages/ts/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+      ['packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${phpText(reason)})`],
+      ['packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
+    ];
+    for (const [path, fails] of written) assert.ok(text(refusedOut, path).includes(fails), `${path}: ${message}\n${text(refusedOut, path).split('\n').filter((line) => line.includes('more_than_the_most') || line.includes('fail(')).join('\n')}`);
   }
 });
 
