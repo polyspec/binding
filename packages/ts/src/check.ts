@@ -1113,6 +1113,7 @@ class Checker {
       // GN-15a: the functions through which another module reaches a class or a callback.
       if (unit.kind === 'class') for (const name of [`${typeName}Handle`, `${typeName}FromHandle`]) declare(unit.module, name, path);
       if (unit.kind === 'interface' && unit.origin === 'callback') declare(unit.module, `Dispatch${typeName}`, path);
+      if (unit.kind === 'variant') for (const name of [`Encode${typeName}`, `Decode${typeName}`]) declare(unit.module, name, path);
       // T-5: a static member is the function <Class><Member> of the package.
       for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
         if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
@@ -1473,9 +1474,13 @@ class Checker {
       }
       const kinds = raised.get(row.member) ?? new Set<string>();
       this.caseFixtures(row.member, group, `/cases/${i}`);
+      // CK-92, GN-13h: an only of the row names a target where its member is generated.
+      if (row.only !== undefined && this.members.has(row.member) && !row.only.targets.some((lang) => this.targetsOf(row.member).includes(lang))) {
+        this.report('CK-92', `/cases/${i}`, `the row of ${row.member} names in only ${row.only.targets.join(', ')}, where ${row.member} is not generated (GN-13h, Q-4)`);
+      }
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
-        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`);
+        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         this.caseScope(row.member, record, `/cases/${i}`);
@@ -1545,11 +1550,14 @@ class Checker {
   // The receiver of a method is an instance value or, without the key receiver, the arguments of a factory of its
   // class among the keys of the case.
   // Gives what the calls of then of the instance values of the case arm (GN-13f).
-  caseInstances(memberId: string, record: Record<string, unknown>, path: string): ThenFaults {
+  // `rowTargets`: the targets of the only of the row of cases that holds the case (GN-13h), when it has one.
+  caseInstances(memberId: string, record: Record<string, unknown>, path: string, rowTargets?: readonly string[]): ThenFaults {
     const armed: ThenFaults = { fills: new Set<string>(), broken: new Set<string>(), any: false };
     const found = this.members.get(memberId);
     if (found === undefined) return armed;
     this.armedThen = armed;
+    const named = new Set<string>();
+    this.namedThen = named;
     const where = `the case ${String(record['id'])} of ${memberId}`;
     const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5, GN-13f)`);
     const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
@@ -1559,8 +1567,29 @@ class Checker {
     }
     this.instanceArgs(found.member, record, report, 'the case');
     this.armedThen = undefined;
+    this.namedThen = undefined;
+    // CK-92: the test of the case is generated for each target of its member and of its row, so every member that its
+    // instance values call is generated there too; only that keeps such a member out of a target keeps the member of
+    // the case, or the row of the case, out too.
+    const own = this.targetsOf(memberId).filter((lang) => rowTargets === undefined || rowTargets.includes(lang));
+    for (const id of named) {
+      const missing = own.filter((lang) => !this.targetsOf(id).includes(lang));
+      if (missing.length > 0) {
+        this.report('CK-92', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId}, its unit or the row of the case an only without ${missing.join(', ')} (Q-4, GN-13f, GN-13h)`);
+      }
+    }
     return armed;
   }
+
+  // Q-4: the targets that generate a member: the targets of the contract that the only of its unit and its own only keep.
+  targetsOf(memberId: string): Lang[] {
+    const found = this.members.get(memberId);
+    const keeps = (only: { targets: readonly string[] } | undefined, lang: string): boolean => only === undefined || only.targets.includes(lang);
+    return this.contract.targets.filter((lang) => found !== undefined && keeps(found.unit.only, lang) && keeps(found.member.only, lang));
+  }
+
+  // CK-92: the members that the instance values of the case that caseInstances reads call, or undefined.
+  private namedThen: Set<string> | undefined;
 
   // GN-13f: what the calls of then of the instance values of the case that caseInstances reads arm, or undefined.
   private armedThen: ThenFaults | undefined;
@@ -1631,7 +1660,41 @@ class Checker {
       const value = given[key];
       const unit = typeof parameter.type === 'object' && 'unit' in parameter.type && parameter.type.library === undefined ? this.units.get(parameter.type.unit)?.value : undefined;
       if (unit?.kind === 'class' && typeof value === 'object' && value !== null && !Array.isArray(value)) this.instanceValue(unit.id, value, report, `${key} of ${what}`);
+      else this.namedIn(parameter.type, value);
     }
+  }
+
+  // CK-92: the members that the instance values inside a value call: an instance value at the place of a class or an
+  // interface in a list, an optional, a map or a field of a record, and the instance values of its own arguments. The
+  // value itself is judged where its place is (instanceValue, codeValue).
+  private namedIn(type: Type, value: unknown): void {
+    if (this.namedThen === undefined || typeof type === 'string' || typeof value !== 'object' || value === null) return;
+    if ('optional' in type) return this.namedIn(type.optional, value);
+    if ('list' in type) {
+      if (Array.isArray(value)) for (const item of value) this.namedIn(type.list, item);
+      return;
+    }
+    if (Array.isArray(value)) return;
+    const record = value as Record<string, unknown>;
+    if ('map' in type) {
+      for (const item of Object.values(record)) this.namedIn(type.map, item);
+      return;
+    }
+    if (!('unit' in type) || type.library !== undefined) return;
+    const unit = this.units.get(type.unit)?.value;
+    if (unit?.kind === 'record') {
+      for (const field of unit.fields ?? []) this.namedIn(field.type, record[convert(field.name, 'python', 'variable')]);
+      return;
+    }
+    if (unit?.kind !== 'class' && unit?.kind !== 'interface') return;
+    const id = record['new'] ?? record['from'];
+    const found = typeof id === 'string' ? this.members.get(id) : undefined;
+    if (found === undefined) return;
+    this.namedThen.add(found.member.id);
+    if (found.unit.kind === 'class' && record['receiver'] !== undefined) this.namedIn({ unit: found.unit.id }, record['receiver']);
+    const args = record['args'];
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) return;
+    for (const parameter of found.member.parameters ?? []) this.namedIn(parameter.type, (args as Record<string, unknown>)[convert(parameter.name, 'python', 'variable')]);
   }
 
   // G-5 (GN-13f): an instance of the class unit `unitId`:
@@ -1648,6 +1711,7 @@ class Checker {
     const found = typeof id === 'string' ? this.members.get(id) : undefined;
     if (found === undefined) return report(`${what} names ${String(id)}, which is no member`);
     const { member } = found;
+    this.namedThen?.add(member.id);
     const method = typeof member.core === 'object' && member.core.receiver !== undefined;
     // The type that the member gives, then each step of pick into it.
     let at: Type | undefined = member.returns === undefined || member.returns === 'self' ? { unit: found.unit.id } : member.returns;
@@ -1715,6 +1779,7 @@ class Checker {
         report(`then ${i} of ${what} calls ${String(call['call'])}, which is no method of ${unitId}`);
         continue;
       }
+      this.namedThen?.add(step.member.id);
       // The faults that the call arms for itself alone, in the form of the faults of a case.
       const faults = call['faults'] === undefined ? undefined : this.faultsOf(call['faults'], (message) => report(`the faults of then ${i} of ${what}: ${message}`));
       if (faults !== undefined && this.armedThen !== undefined) {

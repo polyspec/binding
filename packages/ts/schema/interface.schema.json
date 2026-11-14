@@ -1985,8 +1985,17 @@
             "alias"
           ],
           "not": {
-            "required": [
-              "result"
+            "anyOf": [
+              {
+                "required": [
+                  "result"
+                ]
+              },
+              {
+                "required": [
+                  "only"
+                ]
+              }
             ]
           }
         }
@@ -2009,6 +2018,9 @@
           "description": "The key of a case of the group that holds the result of the member (G-5, GN-13e); result when the row names none. Only a row with member has it.",
           "type": "string",
           "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+        },
+        "only": {
+          "$ref": "#/$defs/only"
         }
       }
     },

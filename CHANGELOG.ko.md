@@ -25,6 +25,42 @@
   작업 stack을 가진 loop로 값을 걷고, PHP array는 마지막 자식이 만들어졌을 때 만들며, Go는 container의 node를 자식보다
   먼저 쓴다(GN-6as). `make test-ts`로 검증했다: make 함수의 시험이 변경 전에는 Python, PHP, Go crate에서 실패했다.
   그리고 `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes`, `tests/e2e/consumer`의 `make e2e`로 검증했다.
+- 어떤 target에 없는 동작을 말하는 case를 그 target에서만 뺄 수 없었다. template의 `engine.render`, `engine.render_bound`,
+  `engine.render_json`의 case `load_not_loaded`는 파일을 읽는 로더가 필요한데 WebAssembly에는 그것이 없고, 그 member들은
+  거기서 생성된다. 그 CK-92 보고를 해소하는 길은 member의 `only`뿐이었고, 그러면 그 member의 다른 모든 case도 WASM에서
+  빠졌다. 이제 member를 이름하는 `cases`의 행은 `only`(Q-4)를 가질 수 있다. 그 group의 case는 그 행이 나열한 target의
+  시험에만 들어가고(GN-13h), CK-92는 그 행의 target을 읽으며, `only`가 그 member가 생성되는 target을 하나도 이름하지 않는
+  행은 CK-92로 보고된다. `contract-check.test.ts`의 CK-92 시험과 `generate.test.ts`의 GN-13h 시험으로 확인했다. 그 시험들은
+  변경 전에 실패했다.
+- 끝에서 끝까지 확인은 생성된 Go 모듈을 빌드하고 vet하고 시험했지만 deadcode를 돌리지 않아서, 어떤 program도 시험도
+  닿지 않는 생성 함수가 실행을 통과했고, `deadcode -test`를 돌리는 모듈을 쓰는 저장소의 lint는 그것으로 실패했다. 이제
+  확인은 mise.toml이 고정한 `deadcode -test`(0.52.0)를 모듈에 build tag 없이, 그리고 그 파일들의 build tag마다 돌리고,
+  파일을 컴파일하는 모든 실행이 보고하는 함수로 실패한다(GN-15h). `make test-ts`로 확인했다. 새 시험들은 변경 전에
+  실패했다.
+- Go가 member가 이름하는 다른 module의 variant를 거부했다. 그 encode와 decode 함수가 export되지 않기 때문이다. 그래서
+  root가 이름하는 template의 module `ast`의 `node`가 go를 "a variant of the module ast in the module (the root) is not
+  generated for Go yet (its encode and decode functions are unexported)"로 거부했다. 이제 다른 module이 이름하는 variant의
+  패키지는 `<Class>Handle`처럼 `binding.Token`을 받는 `Encode<Variant>`와 `Decode<Variant>`를 갖고, 다른 module은 그것을
+  부른다. CK-13은 두 이름을 센다(GN-15a, GN-6v). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다.
+- case의 인스턴스 값이 `only`가 case의 member의 target에서 빼는 member를 부르면, 그 target의 시험은 인스턴스를 만들 수
+  없었다. template의 `prepared_render.render`는 wasm에서 생성되는데, 그 case들의 receiver는 `only`가 wasm에서 빼는
+  `engine.prepare`가 만들므로, wasm이 "the case a_render_of_prepare of prepared_render.render: engine.prepare is no member
+  that the binding generates"로 거부되었다. 이제 `binding check`가 그런 member를 case와 target과 함께 보고하고(CK-92),
+  class나 interface 자리의 list, `optional`, map, record의 field 안에 있는 인스턴스 값도 그렇게 보고한다. 예를 들어
+  `engine.render`의 receiver의 record `options` 안의 `fs_loader.new`는 `only`가 wasm에서 뺀다. 계약은 case의 member나
+  그 unit의 `only`로 그것을 해소한다. 생성기는 case를 빼지 않는다. target이 검증하지 않는 것이 보이게 하기 위해서다.
+  `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. template 계약의 `binding check`는
+  `prepared_render.render`의 case마다 CK-92을 보고한다.
+- Go가 callback field가 `optional`인 record를 거부했다. template의 `engine_options`는 `{ "optional": { "unit":
+  "loader" } }`를 가지는데, Go crate가 그것의 `out_engine_options`를 썼고 go가 "no Go output conversion for
+  {"unit":"loader"}"로 거부되었다. 이제 그런 record는 callback field가 `optional`이 아닌 record처럼 들어가기만 하고, 그
+  core type은 GN-6aa의 lifetime을 가진다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했다.
+- AI 도구의 footer나 정체 줄이 있는 commit 메시지를 거부하는 hook이 없어서, 그런 줄이 확인 없이 push에 닿았다. 이제
+  `.githooks`의 hook `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`로 그것을
+  거부한다. `make hooks`는 `core.hooksPath`를 `.githooks`로 가리키고, `make hooks-check`는 hook이 없는 checkout을
+  실패시키며, `make commit-msg-hook MESSAGE=<file>`은 hook의 검사를 돌린다. `make hooks`, `make hooks-check`, 그리고 AI
+  도구의 co-author trailer가 있는 메시지(`commit-ai-footer`로 실패)와 없는 메시지(통과)에 대한 `make commit-msg-hook`으로
+  확인했다.
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
   `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을

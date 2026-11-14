@@ -107,7 +107,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-13** Go 이름(E-7, P-2): 오류 unit의 Go 이름은 category 오류 타입(`ValueError`, `TypeError`, `IoError`, `StoreError`,
   `BusyError`, `InternalError`)이 아니다. 한 Go 패키지(module) 안에서 타입 이름, `functions` unit의 함수, `New<Unit>` 생성자,
   static member의 함수 `<Class><Member>`, 다른 module이 unit에 닿는 함수 `<Class>Handle`, `<Class>FromHandle`,
-  `Dispatch<Callback>`(GN-15a)은 서로 다르다. host unit은 세지 않는다. 그 Go 코드는 별도 패키지이기 때문이다(L-1).
+  `Dispatch<Callback>`, `Encode<Variant>`, `Decode<Variant>`(GN-15a)은 서로 다르다. host unit은 세지 않는다. 그 Go 코드는 별도 패키지이기 때문이다(L-1).
 - **CK-14** module(L-1): module의 첫 마디는 손으로 쓰는 Go 코드의 폴더인 `host`나 `tests`가 아니고, Go 바인딩의 C ABI
   층 폴더인 `internal`도 아니다(GN-15). 빈 module은 패키지의 루트다(P-2).
 - **CK-15** WASM(Q-4): `wasm`이 target이면, parameter·반환·yields에 `path`가 있거나(record·variant 안 포함) wait가
@@ -221,6 +221,14 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   함수를 가질 수 있기 때문이다(생성기 GN-6z). 그래서 함수만 담은 parameter의 `keeps`도 보고한다. 이유: 그 속성은 생성기가
   callback에 적는 lifetime을 바꾸며, callback이 없는 parameter에서는 아무것의 lifetime도 아닌 것을 적게 되고, 읽는 사람은
   그것을 member의 규칙으로 받아들인다.
+- **CK-92** case의 인스턴스 값이 부르는 member는 case의 member가 생성되는 곳에서 생성된다(생성기 GN-13f). case의 인스턴스
+  값의 `new`, `from`, `then`의 호출이 이름하는 각 member는, 다른 인스턴스 값의 receiver나 인자 안에 있어도, class나
+  interface 자리의 list, `optional`, map, record의 field 안에 있어도, case의 member와 그 unit의 `only`, 그리고 그 case가
+  있는 `cases` 행의 `only`(생성기 GN-13h)가 남기는 계약의 모든 target에서 생성된다. `only`가 그런 target에서 빼는
+  member는 case, member, target과 함께 보고된다. 계약은 case의 member, 그 unit, 또는 그 case가 있는 `cases` 행에 그
+  target이 없는 `only`를 주어 해소한다. `only`가 그 member가 생성되는 target을 하나도 이름하지 않는 행도 보고된다. 이유:
+  case의 시험은 그 member와 그 행의 target마다 생성되는데, 한 target에서 인스턴스를 만들 수 없는 시험은 그 target을
+  거부하거나 case를 조용히 빼게 되고, 그러면 그곳에서 무엇이 검증되지 않았는지가 보이지 않는다.
 - **CK-91** Go 정적 라이브러리의 release profile(생성기 GN-15i): target `go`가 있는 계약에 대해 `binding check`는
   레포의 root manifest나 `.cargo/config.toml`의 `[profile.release]`가 `lto`를 `false`나 `"off"`가 아닌 값으로 정하면 그
   파일과 값을 보고한다. 그러면 Go program이 그 정적 라이브러리를 다른 레포의 정적 라이브러리와 링크할 수 없기 때문이다.

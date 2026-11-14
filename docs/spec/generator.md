@@ -1593,10 +1593,11 @@ the design ids are those of the binding design.
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
   panics with the error of the core because `fmt.Stringer` has no error result. A member of another module reaches a
-  class or a callback unit through functions of its package whose first parameter is `binding.Token` of
+  class, a callback unit or a variant through functions of its package whose first parameter is `binding.Token` of
   `internal/binding`, a type that only the packages of the Go module can name: `<Class>Handle` gives the handle of an
   instance, `<Class>FromHandle` makes the instance of a handle, and `Dispatch<Callback>` gives the dispatch of a Go
-  value of the callback. A package has them only for a unit that another module names, and CK-13 counts their names.
+  value of the callback, and `Encode<Variant>` and `Decode<Variant>` encode and decode a value of the variant (GN-6v),
+  whose own functions are unexported. A package has them only for a unit that another module names, and CK-13 counts their names.
   Modules whose packages would import each other are refused by name, because Go refuses an import cycle. A to_json is `MarshalJSON` of `json.Marshaler`,
   which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
   `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
@@ -1744,7 +1745,11 @@ the design ids are those of the binding design.
   value is a method of another type, such as a member of a class of the contract (`made0.Key`) or of a
   `reflect.Value` (`v.Float`), and no use of a helper. Why: a function that no main package and no test reaches fails the
   deadcode and unused lints of the repository that consumes the module, and that repository cannot change a generated
-  file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper.
+  file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper. The end-to-end check (GN-14) runs the
+  `deadcode -test` that mise.toml pins on the generated Go module, untagged and with each tag that the `//go:build`
+  lines of its files name, without the tags of the test features of the run, and fails on a function that every run
+  compiling its file reports and on any line that is no finding, because the lint of a consuming repository judges
+  the module the same way.
 - **GN-15i** The Go static library is built without link-time optimization: `[profile.release]` of the root manifest
   and of `.cargo/config.toml` of a repository with the target `go` turns on no `lto` (absent, `false` or `"off"`),
   and `binding check` reports any other value (CK-91). Why: LTO puts the standard library and `binding_core` into the
@@ -2194,6 +2199,13 @@ the design ids are those of the binding design.
   an alias (GN-18b), with `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
+- **GN-13h** A row of `cases` that names a member may have `only` (Q-4): the cases of its group are generated, as tests
+  and as values that another test reads, only for the targets that it lists, and the tests of every other target
+  leave them out; a row without `only` holds for every target of its member. A row with `only` names at least one
+  target where its member is generated. Why: a case may state a behaviour that a target does not have, such as a
+  render that needs a loader that reads files, which WebAssembly has no file system for, while the member itself is
+  generated there; the row keeps the case for the targets that have the behaviour, instead of an `only` of the member
+  that would leave every other case of the member out of that target too.
 
 ## End-to-end check
 

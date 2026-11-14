@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bindingLints, testEntrySymbol } from '../../../scripts/e2e-lint.mts';
+import { bindingLints, deadcodeFindings, goBuildTags, testEntrySymbol } from '../../../scripts/e2e-lint.mts';
 
 test('each binding crate is linted with its test features and without a feature, both with -D warnings (GN-14, GN-5)', () => {
   const lints = bindingLints('/copy/Cargo.toml', 'polyspec-sample-node', 'panic-test,codec-test');
@@ -43,4 +43,42 @@ test('a test entry point of the Go static library is the prefix of its contract,
   const script = String(readFileSync(new URL('../../../scripts/e2e.mts', import.meta.url)));
   assert.match(script, /testEntrySymbol\(`\$\{extensionOf\(p\.contract\)\}_`\)/);
   assert.doesNotMatch(script, /polyspec_\[a-z0-9_\]\*__/);
+});
+
+test('the build tags of the generated Go module are those of its //go:build lines that the go tool does not set (GN-15h)', () => {
+  const files = [
+    '//go:build polyspec_panic_test\n\npackage sample\n',
+    '//go:build !polyspec_codec_test && (linux || darwin) && go1.24 && cgo\n\npackage sample\n',
+    'package sample\n// //go:build polyspec_not_a_line\n',
+  ];
+  assert.deepEqual(goBuildTags(files), ['polyspec_codec_test', 'polyspec_panic_test']);
+  assert.deepEqual(goBuildTags(['package sample\n']), []);
+});
+
+test('a function stands as unreachable when every run of deadcode that compiles its file reports it, and any other line stands (GN-15h)', () => {
+  const module = '/work/copy/packages/go';
+  const a = `${module}/zz_generated_sample.go`;
+  const b = `${module}/zz_generated_panic_test.go`;
+  // helper is unreachable untagged and with the tag; held is reached by the file of the tag, which only that run
+  // compiles; probe is in that file, which the untagged run does not compile, so the tagged run alone judges it.
+  const untagged = { lines: ['zz_generated_sample.go:10:6: unreachable func: helper', 'zz_generated_sample.go:20:6: unreachable func: held'], compiled: new Set([a]) };
+  const tagged = { lines: ['zz_generated_sample.go:10:6: unreachable func: helper', 'zz_generated_panic_test.go:5:6: unreachable func: probe'], compiled: new Set([a, b]) };
+  assert.deepEqual(deadcodeFindings([untagged, tagged], module), [
+    'zz_generated_panic_test.go:5:6: unreachable func: probe',
+    'zz_generated_sample.go:10:6: unreachable func: helper',
+  ]);
+  // A line that is no finding, such as an error of the loading of the packages, fails the step too.
+  assert.deepEqual(deadcodeFindings([{ lines: ['deadcode: packages contain errors'], compiled: new Set() }], module), ['deadcode: packages contain errors']);
+  assert.deepEqual(deadcodeFindings([{ lines: [], compiled: new Set([a]) }], module), []);
+});
+
+test('the end-to-end check runs deadcode -test on the generated Go module, untagged and with each of its build tags, and names it in the outcome of go (GN-15h)', () => {
+  const script = String(readFileSync(new URL('../../../scripts/e2e.mts', import.meta.url)));
+  assert.match(script, /const tags = goBuildTags\(/);
+  assert.match(script, /\[undefined, \.\.\.tags\]\.map\(/);
+  assert.match(script, /output\(deadcode, \['-test', \.\.\.flags, '\.\/\.\.\.'\]\)/);
+  assert.match(script, /deadcodeFindings\(runs, /);
+  assert.match(script, /lintOf\('go', `deadcode -test\$\{of\}`\)/);
+  const mise = String(readFileSync(new URL('../../../mise.toml', import.meta.url)));
+  assert.match(mise, /^"go:golang\.org\/x\/tools\/cmd\/deadcode" = "\d+\.\d+\.\d+"$/m);
 });

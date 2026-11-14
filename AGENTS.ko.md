@@ -103,3 +103,9 @@
   어느 명령으로, 어느 입력에서 검증했는지 적는다. 이유: commit 이름은 그것을 찾아보지 않는 독자에게 아무것도 말하지 않고,
   다시 쓰이거나 얕은 history에서는 남지 않으며, 독자에게 필요한 사실은 문장 자체에 있어야 한다.
   Enforced by: `packages/ts`의 `npm test`, 그 `tests/tracked-commits.test.ts`가 추적 파일 안의 commit 이름 토큰을 실패시킨다.
+- Own: commit 메시지에는 co-author trailer 같은 AI 도구의 footer나 정체를 밝히는 줄이 없다. `.githooks`의 hook
+  `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`(`make commit-msg-hook`)로 그런
+  메시지를 commit이 생기기 전에 거부한다. `make hooks`는 checkout의 `core.hooksPath`를, 따라서 그 worktree들의 것도
+  `.githooks`로 가리키고, checkout마다 한 번 돌린다. 이유: push는 commit이 담은 것을 공개하고, push된 commit은 다시 쓰지
+  않는다.
+  Enforced by: `make hooks`를 돌린 checkout의 hook `commit-msg`. `make hooks-check`는 hook이 없는 checkout을 실패시킨다.

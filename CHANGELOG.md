@@ -27,6 +27,45 @@
   and WASM do; a PHP array is made when its last child is made, and Go writes the node of a container before its
   children (GN-6as). Verified by `make test-ts`, whose test of the make functions failed for the Python, the PHP and
   the Go crate before the change, and by `make e2e` of `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes` and `tests/e2e/consumer`.
+- A case that states a behaviour that a target does not have could not be kept out of that target alone: the cases
+  `load_not_loaded` of `engine.render`, `engine.render_bound` and `engine.render_json` of template need a loader that
+  reads files, which WebAssembly has not, while those members are generated there, and the only resolution of their
+  CK-92 findings was an `only` of the member, which left every other case of the member out of WASM too. A row of
+  `cases` that names a member now takes `only` (Q-4): the cases of its group are tests of the targets that it lists
+  alone (GN-13h), CK-92 reads the targets of the row, and a row whose `only` names no target where its member is
+  generated is a CK-92 finding. Verified by the tests of CK-92 in `contract-check.test.ts` and the GN-13h test of
+  `generate.test.ts`, which failed before the change.
+- The end-to-end check built, vetted and tested the generated Go module but ran no deadcode, so a generated function
+  that no program and no test reaches passed the run, while the lint of a consuming repository, which runs `deadcode
+  -test`, failed on it. The check now runs the `deadcode -test` that mise.toml pins (0.52.0) on the module, untagged and
+  with each build tag of its files, and fails on a function that every run compiling its file reports (GN-15h).
+  Verified by `make test-ts`: the new tests failed before the change.
+- Go refused a variant of another module that a member names: its encode and decode functions are unexported, so
+  `node` of the module `ast` of template, which the root names, refused go with "a variant of the module ast in the
+  module (the root) is not generated for Go yet (its encode and decode functions are unexported)". The package of a
+  variant that another module names now has `Encode<Variant>` and `Decode<Variant>`, which take `binding.Token` as
+  `<Class>Handle` does, and the other module calls them; CK-13 counts the two names (GN-15a, GN-6v). Verified by `make
+  test-ts`: the new tests failed before the change.
+- A case whose instance values call a member that an `only` keeps out of a target of the member of the case had a
+  test that could not make its instance there: `prepared_render.render` of template is generated for wasm, and the
+  receivers of its cases are made by `engine.prepare`, which `only` keeps out of wasm, so wasm was refused with "the
+  case a_render_of_prepare of prepared_render.render: engine.prepare is no member that the binding generates".
+  `binding check` now reports such a member with the case and the targets (CK-92), also for an instance value inside a
+  list, an `optional`, a map or a field of a record at the place of a class or an interface, such as `fs_loader.new`
+  in the record `options` of the receiver of `engine.render`, which `only` keeps out of wasm, and the contract
+  resolves it by an `only` of the member of the case or of its unit; the generator leaves no case out, so that what a
+  target does not verify shows. Verified by `make test-ts`: the new tests failed before the change; `binding check` of
+  the template contract reports CK-92 for each case of `prepared_render.render`.
+- Go refused a record whose callback field is optional: `engine_options` of template holds `{ "optional": { "unit":
+  "loader" } }`, the Go crate wrote `out_engine_options` for it, and go was refused with "no Go output conversion for
+  {"unit":"loader"}". Such a record only enters, as one whose callback field is not optional, and its core type has
+  the lifetime of GN-6aa. Verified by `make test-ts`: the new test failed before the change.
+- No hook refused a commit message with the footer or the identity line of an AI tool, so such a line reached a push
+  unchecked. The hook `commit-msg` of `.githooks` now refuses it through the rules `commit-ai-footer` and
+  `commit-ai-identity` of `check-commits` of kit; `make hooks` points `core.hooksPath` at `.githooks`, `make hooks-check`
+  fails a checkout without it, and `make commit-msg-hook MESSAGE=<file>` runs the check of the hook. Verified by `make
+  hooks`, `make hooks-check`, and `make commit-msg-hook` on a message with a co-author trailer of an AI tool, which
+  failed with `commit-ai-footer`, and on one without, which passed.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
