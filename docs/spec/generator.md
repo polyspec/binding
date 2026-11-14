@@ -2345,16 +2345,16 @@ the design ids are those of the binding design.
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
   On Linux the commit also carries the library of musl of the arch of the run in `internal/ffi/lib/linux_<arch>_musl`,
-  built with `--target <arch>-unknown-linux-musl` and stripped as the other, and the run keeps the repositories, the
-  configuration of Git and the consumer of the step in `<work>/go-release`. `make go-musl-check WORK=<work> [RUN_WORK=<path>]`
-  then runs the consumer on musl: in a container of the Alpine image that `scripts/go-musl.sh` pins by its digest, with
-  the Go of `mise.lock` checked by its sha256 and the C compiler and Git of Alpine, it runs `go test -tags musl` of the
-  consumer and of every package of the fetched modules with the paths of the run, and fails unless a test ran and
-  none failed. The container runs on the machine of the Docker of `DOCKER_HOST`, which holds the work directory at
-  `WORK`, mounts it at `RUN_WORK`, the path of the directory in the run (`WORK` by default), because the
-  configuration of Git names the repositories by that path, and has a name that starts with `polyspec-`. Why a container: the end-to-end check runs on a machine of the GNU C
-  library, and only a program that a C compiler of musl links and a musl machine runs shows that the library of musl
-  links and runs.
+  built with `--target <arch>-unknown-linux-musl` and stripped as the other, and the run keeps the consumer of the
+  step and the downloads of its module cache, the layout of a module proxy, in `<work>/go-release`.
+  `make go-musl-check WORK=<work>` then runs the consumer on musl: in a container of the Alpine image of `goMusl` of
+  `config/toolchain.json`, with the Go of `mise.lock` checked by its sha256 and `gcc` and `musl-dev` of Alpine at the
+  exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
+  every package of the fetched modules with that proxy as `GOPROXY`, and fails unless a test ran and none failed. The
+  modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
+  the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.
+  Why a container: the end-to-end check runs on a machine of the GNU C library, and only a program that a C compiler
+  of musl links and a musl machine runs shows that the library of musl links and runs.
 - **GN-14h** On each target the run tests what the generator writes and the contract cases of `tests/e2e/<library>`,
   and no test of the repository: unittest discovers `packages/python/generated/tests` and the case runners, `node
   --test` runs `generated.test.mjs` of Node and of WASM and the case runners, PHPUnit runs

@@ -75,12 +75,11 @@ e2e: ## Run the end-to-end check of the generator: REPO=<checkout> [WORK=<direct
 	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO)$(if $(WORK), --work $(WORK))$(foreach dep,$(DEPS), --dep $(dep))
 
 # GN-14f, GN-15g: the consumer of the released form of a Go module on musl. WORK is the work directory of a run of make e2e
-# on Linux on the machine of DOCKER_HOST, and RUN_WORK its path in that run (WORK by default); scripts/go-musl.sh runs
-# go test -tags musl of its consumer in an Alpine container there. It downloads the Go of mise.lock; ONLINE.
-RUN_WORK ?= $(WORK)
+# on Linux on the machine of DOCKER_HOST; scripts/go-musl.sh runs go test -tags musl of its consumer in an Alpine
+# container there. It downloads the Go of mise.lock and the packages of Alpine of config/toolchain.json; ONLINE.
 .PHONY: go-musl-check
-go-musl-check: ## Run the consumer of the released Go module of a Linux e2e run on musl: WORK=<work> [RUN_WORK=<path in the run>]
-	$(ONLINE) sh scripts/go-musl.sh "$(WORK)" "$(RUN_WORK)" "$(CURDIR)/mise.lock"
+go-musl-check: ## Run the consumer of the released Go module of a Linux e2e run on musl: WORK=<work directory on the machine of DOCKER_HOST>
+	$(ONLINE) sh scripts/go-musl.sh "$(WORK)" "$(CURDIR)/mise.lock" "$(CURDIR)/config/toolchain.json"
 
 # The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
 # check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.

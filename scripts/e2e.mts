@@ -973,6 +973,9 @@ if (targets.includes('go')) {
       if (failure !== undefined) throw new Error(failure);
       const { counts, packageFailures } = read;
       counted('go', released, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+      // GN-14f: the downloads of the module cache are the layout of a module proxy, so make go-musl-check reads the
+      // same modules, which go.sum of the consumer pins, from <work>/go-release/proxy without Git.
+      if (muslTriple !== undefined) execFileSync('cp', ['-R', join(modcache, 'cache/download'), join(root, 'proxy')]);
     } finally {
       cleanCache();
     }

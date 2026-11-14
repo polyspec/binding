@@ -14,7 +14,10 @@
   finds the other C library, naming the Go module, the library, the platform and the remedy. On Linux the released
   form of the end-to-end check carries the library of musl of its arch, and `make go-musl-check WORK=<work>` runs
   `go test -tags musl` of its consumer and of the fetched modules in an Alpine container, so a C compiler of musl
-  links each program and musl runs it (GN-14f). `rust-toolchain.toml` lists the two musl targets. Verified by the test
+  links each program and musl runs it (GN-14f). The container takes the modules from a module proxy that the run
+  keeps of its downloads, so no Git takes part, and `goMusl` of `config/toolchain.json` pins its image by digest and
+  `gcc` and `musl-dev` of Alpine by their exact versions (`docs/operations/dependencies.md`). `rust-toolchain.toml`
+  lists the two musl targets. Verified by the test
   of GN-15g of `packages/ts/tests/generate.test.ts`, which failed before the change.
 - The link of the static libraries of several Go modules in one program was verified on `darwin_arm64` alone (GN-15g,
   GN-14f). `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on linux/arm64 (a Debian container) passed every

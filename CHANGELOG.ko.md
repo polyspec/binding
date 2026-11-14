@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2aefb80c6bdac99e7f714f282ace56e94e9ace7f7b6daab5763ea2823bdb0d85 -->
+<!-- source-sha256: 719defd2f3a2d80648525cdda61ceef7cb16914e8e6e6da287e00862f733f780 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -16,7 +16,9 @@
   플랫폼과 해결책을 말하며 `#error`로 cgo의 C 컴파일러를 멈춘다. Linux에서 end-to-end 검사의
   release 형태는 그 arch의 musl 라이브러리를 싣고, `make go-musl-check WORK=<work>`는
   Alpine 컨테이너에서 그 소비자와 받은 모듈의 `go test -tags musl`을 실행하므로, musl의 C 컴파일러가
-  각 프로그램을 링크하고 musl이 그것을 실행한다(GN-14f). `rust-toolchain.toml`은 두 musl
+  각 프로그램을 링크하고 musl이 그것을 실행한다(GN-14f). 컨테이너는 실행이 자기 download로 남긴
+  module proxy에서 모듈을 받으므로 Git은 쓰지 않고, `config/toolchain.json`의 `goMusl`이 그 image를 digest로,
+  Alpine의 `gcc`와 `musl-dev`를 정확한 버전으로 고정한다(`docs/operations/dependencies.md`). `rust-toolchain.toml`은 두 musl
   target을 적는다. `packages/ts/tests/generate.test.ts`의 GN-15g 시험으로 검증했다: 그
   시험은 변경 전에 실패했다.
 - 여러 Go 모듈의 정적 라이브러리를 한 프로그램에 링크하는 것은 `darwin_arm64`에서만 확인되었다(GN-15g,

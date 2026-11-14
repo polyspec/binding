@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bbc81ba94e07e108cae72a8af4abab0c9b17b53420a104c5a3fe1c6791ecaedb -->
+<!-- source-sha256: 52574f3877352ba2b5b341dc014b6777188e1a4f3cba7e838d5ed122b54cd505 -->
 # 생성기
 
 [English](generator.md)
@@ -1898,15 +1898,15 @@
   단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
   링크하므로, tag로 받은 모듈이 자기가 실은 라이브러리를 링크한다는 것은 이 단계만 보인다.
   Linux에서는 commit이 실행 arch의 musl 라이브러리도 `internal/ffi/lib/linux_<arch>_musl`에 싣는다. 그 라이브러리는
-  `--target <arch>-unknown-linux-musl`로 빌드하고 다른 것처럼 debug section을 뗀다. 실행은 이 단계의 레포들, Git 설정,
-  소비자를 `<work>/go-release`에 남긴다. 그다음 `make go-musl-check WORK=<work> [RUN_WORK=<path>]`가 소비자를 musl에서
-  실행한다. `scripts/go-musl.sh`가 digest로 고정한 Alpine image의 컨테이너에서, sha256으로 확인한 `mise.lock`의 Go와
-  Alpine의 C 컴파일러와 Git으로, 실행의 경로를 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고,
-  시험이 하나도 실행되지 않거나 하나라도 실패하면 실패한다. 컨테이너는 `DOCKER_HOST`의 Docker가 있는 기계에서 돌고,
-  그 기계는 작업 디렉터리를 `WORK`에 가지며, 그것을 실행 안의 디렉터리 경로인 `RUN_WORK`(기본은 `WORK`)에 mount한다.
-  Git 설정이 그 경로로 레포를 가리키기 때문이다. 컨테이너 이름은 `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end
-  검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고 musl 기계가 실행한 프로그램만이 musl의 라이브러리가
-  링크되고 실행된다는 것을 보인다.
+  `--target <arch>-unknown-linux-musl`로 빌드하고 다른 것처럼 debug section을 뗀다. 실행은 이 단계의 소비자와, module
+  proxy의 배치인 모듈 cache의 download를 `<work>/go-release`에 남긴다. 그다음 `make go-musl-check WORK=<work>`가
+  소비자를 musl에서 실행한다. `config/toolchain.json`의 `goMusl`의 Alpine image 컨테이너에서, sha256으로 확인한
+  `mise.lock`의 Go와 `goMusl`의 정확한 버전인 Alpine의 `gcc`와 `musl-dev`로(`docs/operations/dependencies.md`), 그
+  proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, 시험이 하나도 실행되지
+  않거나 하나라도 실패하면 실패한다. 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
+  `DOCKER_HOST`의 Docker가 있는 기계에서 돌고, 그 기계는 작업 디렉터리를 `WORK`에 가지며, 컨테이너 이름은
+  `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end 검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고
+  musl 기계가 실행한 프로그램만이 musl의 라이브러리가 링크되고 실행된다는 것을 보인다.
 - **GN-14h** 실행은 각 target에서 생성기가 쓰는 것과 `tests/e2e/<library>`의 계약 case를 시험하고, 레포의 시험은
   실행하지 않는다. unittest는 `packages/python/generated/tests`와 case runner를 찾고, `node --test`는 Node와 WASM의
   `generated.test.mjs`와 case runner를 실행하며, PHPUnit은 `packages/php-ext/generated/tests`와 `CasesTest.php`를

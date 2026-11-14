@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer, the wasm-bindgen CLI and maturin of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs.",
+  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer, the wasm-bindgen CLI and maturin of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs. goMusl is the Alpine image and the exact packages of its C compiler with which make go-musl-check links and runs the consumer of the released form of a Go module on musl (GN-14f, GN-15g); docs/operations/dependencies.md states why they are pinned and when the pin ends.",
   "phpunit": {
     "version": "13.4.6"
   },
@@ -11,5 +11,10 @@
       "linux-x64": "58063fdda315c29ff7504daf8f2414462d6a52e4de2243c3ce23f849975a4ab5",
       "linux-arm64": "b67f4ad5e35199b14362aa64d065977f8513a2046430179c2ab42262914a73b0"
     }
+  },
+  "goMusl": {
+    "image": "alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f",
+    "gcc": "14.2.0-r6",
+    "musl-dev": "1.2.5-r13"
   }
 }
