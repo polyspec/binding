@@ -263,7 +263,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   GN-6z), so `keeps` at a parameter that holds only functions is reported too. Why: the attribute changes the lifetime
   that the generator writes for the callback, and at a parameter without a callback it would state a lifetime of
   nothing, which a reader takes for a rule of the member.
-- **CK-91** The members that the instance values of a case call are generated where the member of the case is
+- **CK-92** The members that the instance values of a case call are generated where the member of the case is
   (generator GN-13f): each member that a `new`, a `from` or a call of `then` of an instance value of the case names,
   also inside the receiver or an argument of another and inside a list, an `optional`, a map or a field of a record at
   the place of a class or an interface, is generated for every target of the contract that the `only` of
@@ -272,6 +272,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   without those targets. Why: the test of a case is generated for each target of its member, and a test that cannot
   make its instance in a target would either refuse the target or leave the case out silently, so that what was not
   verified there would not show.
+- **CK-91** The release profile of the Go static library (generator GN-15i): for a contract with the target `go`,
+  `binding check` reports `[profile.release]` of the root manifest or of `.cargo/config.toml` of the repository that
+  sets `lto` to any value but `false` or `"off"`, with the file and the value, because a Go program then cannot link
+  that static library with the static library of another repository.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

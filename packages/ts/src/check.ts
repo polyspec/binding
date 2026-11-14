@@ -1591,13 +1591,13 @@ class Checker {
     this.instanceArgs(found.member, record, report, 'the case');
     this.armedThen = undefined;
     this.namedThen = undefined;
-    // CK-91: the test of the case is generated for each target of its member, so every member that its instance values
+    // CK-92: the test of the case is generated for each target of its member, so every member that its instance values
     // call is generated there too; only that keeps such a member out of a target keeps the member of the case out too.
     const own = this.targetsOf(memberId);
     for (const id of named) {
       const missing = own.filter((lang) => !this.targetsOf(id).includes(lang));
       if (missing.length > 0) {
-        this.report('CK-91', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId} or its unit an only without ${missing.join(', ')} (Q-4, GN-13f)`);
+        this.report('CK-92', path, `${where}: its instance values call ${id}, which is not generated for ${missing.join(', ')}, where ${memberId} is; give ${memberId} or its unit an only without ${missing.join(', ')} (Q-4, GN-13f)`);
       }
     }
     return armed;
@@ -1610,7 +1610,7 @@ class Checker {
     return this.contract.targets.filter((lang) => found !== undefined && keeps(found.unit.only, lang) && keeps(found.member.only, lang));
   }
 
-  // CK-91: the members that the instance values of the case that caseInstances reads call, or undefined.
+  // CK-92: the members that the instance values of the case that caseInstances reads call, or undefined.
   private namedThen: Set<string> | undefined;
 
   // GN-13f: what the calls of then of the instance values of the case that caseInstances reads arm, or undefined.
@@ -1686,7 +1686,7 @@ class Checker {
     }
   }
 
-  // CK-91: the members that the instance values inside a value call: an instance value at the place of a class or an
+  // CK-92: the members that the instance values inside a value call: an instance value at the place of a class or an
   // interface in a list, an optional, a map or a field of a record, and the instance values of its own arguments. The
   // value itself is judged where its place is (instanceValue, codeValue).
   private namedIn(type: Type, value: unknown): void {

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 015db5fb5394f0e5a2094b1b224f8a6050da0e08f4e7823bd1d00bf028ec97fd -->
+<!-- source-sha256: 0e90936581a2b65411073cd862c1de830fd5368e8be3b46d56ca9806470504b7 -->
 # 생성기
 
 [English](generator.md)
@@ -1432,6 +1432,12 @@
   `reflect.Value`의 method(`v.Float`)이고, 도우미의 쓰임이 아니다. 이유: 어떤 main
   패키지도 어떤 시험도 닿지 않는 함수는 모듈을 쓰는 저장소의 deadcode·unused lint를 실패시키고, 그 저장소는 생성
   파일을 고칠 수 없다. 그러므로 `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않는다.
+- **GN-15i** Go 정적 라이브러리는 link-time optimization 없이 빌드한다. target `go`가 있는 레포의 root manifest와
+  `.cargo/config.toml`의 `[profile.release]`는 `lto`를 켜지 않으며(없음, `false`, `"off"`), `binding check`는 다른 값을
+  보고한다(CK-91). 이유: LTO는 표준 라이브러리와 `binding_core`를 정적 라이브러리의 한 object에 넣으므로, 두 레포의 정적
+  라이브러리를 링크하는 Go program(다른 레포의 타입을 이름하는 계약이 만든다, GN-15f)이 `rust_eh_personality` 같은 중복
+  symbol로 실패한다. LTO가 없으면 각 사본은 자기 archive의 member이고 linker는 없는 symbol이 있을 때만 그것을 가져오므로,
+  사본들이 한 program에서 링크된다(GN-14f).
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은

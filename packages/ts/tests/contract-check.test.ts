@@ -1534,7 +1534,7 @@ test('CK-13 counts Encode<Variant> and Decode<Variant>, through which another Go
   assert.ok(found.some((f) => f.check === 'CK-13' && /declares EncodeFigure twice/.test(f.message)), JSON.stringify(found.map((f) => `${f.check} ${f.message}`)));
 });
 
-describe('CK-91 the members that the instance values of a case call (GN-13f, Q-4)', () => {
+describe('CK-92 the members that the instance values of a case call (GN-13f, Q-4)', () => {
   // The contract of template has such a case: prepared_render.render is generated for every target, and the receivers
   // of its cases are made by engine.prepare, whose only keeps it out of wasm, so the wasm test could not make them.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
@@ -1547,13 +1547,13 @@ describe('CK-91 the members that the instance values of a case call (GN-13f, Q-4
   const tag = (contract: any): any => contract.units.find((u: any) => u.id === 'tag');
   test('a member that an instance value calls and that only keeps out of a target of the member of the case', () => {
     const found = run((contract) => { tag(contract).members.find((m: any) => m.id === 'tag.gate').only = outOfWasm; });
-    assert.ok(found.some((f) => f.check === 'CK-91' && /^the case an_open_gate_lets_its_tag_pass of gate\.enter: its instance values call tag\.gate, which is not generated for wasm, where gate\.enter is; give gate\.enter or its unit an only without wasm \(Q-4, GN-13f\)$/.test(f.message)), JSON.stringify(found));
+    assert.ok(found.some((f) => f.check === 'CK-92' && /^the case an_open_gate_lets_its_tag_pass of gate\.enter: its instance values call tag\.gate, which is not generated for wasm, where gate\.enter is; give gate\.enter or its unit an only without wasm \(Q-4, GN-13f\)$/.test(f.message)), JSON.stringify(found));
   });
   test('a member that an instance value inside a list, an optional or a record of an argument calls', () => {
     // The contract of template gives fs_loader.new inside the record options of the receiver of engine.render, and only
     // keeps fs_loader out of wasm; the check read no instance value below a parameter of a class type.
     const found = run((contract) => { tag(contract).members.find((m: any) => m.id === 'tag.repeat').only = outOfWasm; });
-    assert.ok(found.some((f) => f.check === 'CK-91' && /^the case the_names_of_the_tags_by_commas of classes\.join: its instance values call tag\.repeat, which is not generated for wasm, where classes\.join is;/.test(f.message)), JSON.stringify(found));
+    assert.ok(found.some((f) => f.check === 'CK-92' && /^the case the_names_of_the_tags_by_commas of classes\.join: its instance values call tag\.repeat, which is not generated for wasm, where classes\.join is;/.test(f.message)), JSON.stringify(found));
   });
   test('the same only on the unit of the member of the case resolves it', () => {
     const found = run((contract) => {
@@ -1564,7 +1564,7 @@ describe('CK-91 the members that the instance values of a case call (GN-13f, Q-4
         contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).only = outOfWasm;
       }
     });
-    assert.deepEqual(found.filter((f) => f.check === 'CK-91'), []);
+    assert.deepEqual(found.filter((f) => f.check === 'CK-92'), []);
   });
 });
 

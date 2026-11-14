@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 03f5c18e189c0e2f7a5a2df6b84c2e4861a3b55f5f6fdd6d01d5df8d0d36fc16 -->
+<!-- source-sha256: 4cc2f2ee7d12eb7964fe582b52423b76d2294df96cf45591796097ea52e41f2f -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -14,12 +14,12 @@
 - case의 인스턴스 값이 `only`가 case의 member의 target에서 빼는 member를 부르면, 그 target의 시험은 인스턴스를 만들 수
   없었다. template의 `prepared_render.render`는 wasm에서 생성되는데, 그 case들의 receiver는 `only`가 wasm에서 빼는
   `engine.prepare`가 만들므로, wasm이 "the case a_render_of_prepare of prepared_render.render: engine.prepare is no member
-  that the binding generates"로 거부되었다. 이제 `binding check`가 그런 member를 case와 target과 함께 보고하고(CK-91),
+  that the binding generates"로 거부되었다. 이제 `binding check`가 그런 member를 case와 target과 함께 보고하고(CK-92),
   class나 interface 자리의 list, `optional`, map, record의 field 안에 있는 인스턴스 값도 그렇게 보고한다. 예를 들어
   `engine.render`의 receiver의 record `options` 안의 `fs_loader.new`는 `only`가 wasm에서 뺀다. 계약은 case의 member나
   그 unit의 `only`로 그것을 해소한다. 생성기는 case를 빼지 않는다. target이 검증하지 않는 것이 보이게 하기 위해서다.
   `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. template 계약의 `binding check`는
-  `prepared_render.render`의 case마다 CK-91을 보고한다.
+  `prepared_render.render`의 case마다 CK-92을 보고한다.
 - Go가 callback field가 `optional`인 record를 거부했다. template의 `engine_options`는 `{ "optional": { "unit":
   "loader" } }`를 가지는데, Go crate가 그것의 `out_engine_options`를 썼고 go가 "no Go output conversion for
   {"unit":"loader"}"로 거부되었다. 이제 그런 record는 callback field가 `optional`이 아닌 record처럼 들어가기만 하고, 그
@@ -30,6 +30,11 @@
   실패시키며, `make commit-msg-hook MESSAGE=<file>`은 hook의 검사를 돌린다. `make hooks`, `make hooks-check`, 그리고 AI
   도구의 co-author trailer가 있는 메시지(`commit-ai-footer`로 실패)와 없는 메시지(통과)에 대한 `make commit-msg-hook`으로
   확인했다.
+- 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
+  symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와
+  `std::panicking::EMPTY_PANIC`의 중복으로 실패했다. 이제 Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을
+  켜는 root manifest나 `.cargo/config.toml`의 release profile을 보고한다(GN-15i, CK-91). `make test-ts`로 검증했다: 새
+  시험이 변경 전에는 실패했다.
 - Node와 WASM의 값 alias walk가 값 class의 property 이름을 `*name`으로 넘겼고, `cargo clippy -D warnings`는 그것을
   `explicit_auto_deref`로 거부한다. 그래서 php-serialization의 Node와 WASM crate가 lint를 통과하지 못했다. 이제 walk는
   `name`을 넘긴다(GN-6as, GN-6af). 검증: `tests/e2e/kept`의 walk 시험이 변경 전에 실패한 `make test-ts`, 모든 target이

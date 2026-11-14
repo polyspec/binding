@@ -1739,6 +1739,13 @@ the design ids are those of the binding design.
   `reflect.Value` (`v.Float`), and no use of a helper. Why: a function that no main package and no test reaches fails the
   deadcode and unused lints of the repository that consumes the module, and that repository cannot change a generated
   file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper.
+- **GN-15i** The Go static library is built without link-time optimization: `[profile.release]` of the root manifest
+  and of `.cargo/config.toml` of a repository with the target `go` turns on no `lto` (absent, `false` or `"off"`),
+  and `binding check` reports any other value (CK-91). Why: LTO puts the standard library and `binding_core` into the
+  one object of the static library, so a Go program that links the static libraries of two repositories, which a
+  contract that names the types of another repository makes (GN-15f), fails with duplicate symbols such as
+  `rust_eh_personality`; without LTO each copy is a member of its own archive, which the linker takes only when a
+  symbol is missing, and the copies link in one program (GN-14f).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`

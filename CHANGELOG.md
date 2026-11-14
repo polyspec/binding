@@ -15,12 +15,12 @@
   test that could not make its instance there: `prepared_render.render` of template is generated for wasm, and the
   receivers of its cases are made by `engine.prepare`, which `only` keeps out of wasm, so wasm was refused with "the
   case a_render_of_prepare of prepared_render.render: engine.prepare is no member that the binding generates".
-  `binding check` now reports such a member with the case and the targets (CK-91), also for an instance value inside a
+  `binding check` now reports such a member with the case and the targets (CK-92), also for an instance value inside a
   list, an `optional`, a map or a field of a record at the place of a class or an interface, such as `fs_loader.new`
   in the record `options` of the receiver of `engine.render`, which `only` keeps out of wasm, and the contract
   resolves it by an `only` of the member of the case or of its unit; the generator leaves no case out, so that what a
   target does not verify shows. Verified by `make test-ts`: the new tests failed before the change; `binding check` of
-  the template contract reports CK-91 for each case of `prepared_render.render`.
+  the template contract reports CK-92 for each case of `prepared_render.render`.
 - Go refused a record whose callback field is optional: `engine_options` of template holds `{ "optional": { "unit":
   "loader" } }`, the Go crate wrote `out_engine_options` for it, and go was refused with "no Go output conversion for
   {"unit":"loader"}". Such a record only enters, as one whose callback field is not optional, and its core type has
@@ -31,6 +31,12 @@
   fails a checkout without it, and `make commit-msg-hook MESSAGE=<file>` runs the check of the hook. Verified by `make
   hooks`, `make hooks-check`, and `make commit-msg-hook` on a message with a co-author trailer of an AI tool, which
   failed with `commit-ai-footer`, and on one without, which passed.
+- A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
+  built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
+  library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
+  library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
+  `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
+  change.
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
