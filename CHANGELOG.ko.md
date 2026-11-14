@@ -1,11 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b752338b803f1d08396cc27b67fb2812aba64da9f7c9b66b29f1e2c122e01375 -->
+<!-- source-sha256: 52a11d6830d6e3612d508a8f01919db71e55ee903db153babb7e86bfd1fa22b2 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end sample에는 GN-6aa의 보관되는 callback을 위한 callback unit `source`(`source.get`, trait `Source`)가 있었는데,
+  sample의 다른 unit이 그 이름을 쓴다. 이제 그것은 `feed`(`feed.get`, trait `Feed: Send + Sync`)이고, `index.new`,
+  `index.single`, `index.supplied`가 그것을 받는다. `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - Node, PHP, WASM, Go는 record parameter의 `keeps: true`와 list나 `optional`의 항목이 아닌 callback parameter의
   `keeps: true`를 거부했다(GN-6aa). 그래서 호출 뒤에 callback 하나나 callback의 record를 갖는 core는 그 target들에서
   binding이 없었다. 이제 callback은 그 box로 core에 들어가고, record는 보관되는 callback의 변환으로 field들에서 만들어지며

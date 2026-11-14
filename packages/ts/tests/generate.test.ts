@@ -6272,7 +6272,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6285,7 +6285,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -6299,7 +6299,7 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'source', 'index']);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'feed', 'index']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -7704,23 +7704,23 @@ test('a callback of a parameter with keeps is held as a Native in Node, PHP and 
   const out = sampleOf();
   // Node: the box is 'static, the wrapper holds a Native and borrows the object in the env of its owner for a call.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = list_in\(sources, "sources", \|item\| kept_source\(env, item, "sources"\)\.map\(/);
-  assert.match(node, /pub struct KeptCbSource \{\n    native: Native,\n\}/);
-  assert.match(node, /impl polyspec_sample::Source for KeptCbSource \{[\s\S]*?native_env\(&self\.native, "Source\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?polyspec_sample::Source::get\(&borrowed, key\)/);
+  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(env, item, "sources"\)\.map\(/);
+  assert.match(node, /pub struct KeptCbFeed \{\n    native: Native,\n\}/);
+  assert.match(node, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_env\(&self\.native, "Feed\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?polyspec_sample::Feed::get\(&borrowed, key\)/);
   // A parameter without keeps keeps the box of the call.
   assert.match(node, /let lookups: Vec<Box<dyn polyspec_sample::Lookup \+ 'env>> = /);
   // PHP: the wrapper holds a Native and checks its thread before it borrows the object.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = list_in\(sources, "sources", \|item\| kept_source\(item, "sources"\)/);
-  assert.match(php, /impl polyspec_sample::Source for KeptCbSource \{[\s\S]*?native_thread\(&self\.native, "Source::get\(\)"\)[\s\S]*?thrown_elsewhere\(error\)/);
+  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(item, "sources"\)/);
+  assert.match(php, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_thread\(&self\.native, "Feed::get\(\)"\)[\s\S]*?thrown_elsewhere\(error\)/);
   // WASM: the wrapper holds a Native of the one thread of the module.
   const wasm = text(sampleOf(undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /fn kept_source\(value: &JsValue, subject: &str\) -> Result<KeptCbSource, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
+  assert.match(wasm, /fn kept_feed\(value: &JsValue, subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?wasm_native\(&checked\.object\)/);
   // Go: the callback is a kept func of the call that reads the number of the member first.
-  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchSource\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_source\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbSource, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /call\.Keep\(enc, func\(call \*binding\.Call, dec \*binding\.Reader, enc \*binding\.Writer\) error \{\n\t*return dispatchFeed\([^)]*\)\(call, uint32\(dec\.Uint\(\)\), dec, enc\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn kept_feed\(input: &mut &\[u8\], subject: &str\) -> Result<KeptCbFeed, Fail> \{[\s\S]*?__go_keep\(call, function\)[\s\S]*?uint_out\(output, 0_u64\);[\s\S]*?kept_called\(&self\.native, &args\)/);
   // Python holds the object as a Py<PyAny> with or without keeps.
-  assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Source \+ 'static>> = /);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = /);
 });
 
 test('a callback parameter with keeps that is no item of a list or an optional moves into the core as its box (GN-6aa)', () => {
@@ -7728,11 +7728,11 @@ test('a callback parameter with keeps that is no item of a list or an optional m
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
-  const box = "Box<dyn polyspec_sample::Source \\+ 'static>";
+  const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
   const libs: [string, RegExp][] = [
-    ['packages/ts/generated/lib.rs', new RegExp(`let source: ${box} = kept_source\\(env, source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
-    ['packages/php-ext/generated/lib.rs', new RegExp(`let source: ${box} = kept_source\\(source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
-    ['packages/go/internal/ffi/generated/lib.rs', new RegExp(`let source: ${box} = kept_source\\(&mut input, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/ts/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(env, source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/php-ext/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/go/internal/ffi/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(&mut input, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
   ];
   for (const [path, line] of libs) {
     const lib = text(out, path);
@@ -7741,7 +7741,7 @@ test('a callback parameter with keeps that is no item of a list or an optional m
     assert.match(lib, /polyspec_sample::Index::single\(source\)/, path);
   }
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, new RegExp(`let source: ${box} = kept_source\\(&source, "source"\\)\\.map\\(`));
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&source, "source"\\)\\.map\\(`));
   assert.match(wasm, /polyspec_sample::Index::single\(source\)/);
   // A callback parameter without keeps is still the struct of the call, which the core borrows.
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /&mut \{ lookup \}/);
@@ -7754,11 +7754,11 @@ test('a record parameter with keeps holds the callbacks of its fields as Natives
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
-  const box = "Box<dyn polyspec_sample::Source \\+ 'static>";
+  const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
   const libs: [string, string][] = [
-    ['packages/ts/generated/lib.rs', 'kept_source\\(env, member\\(supply, "source", "supply"\\)\\?, "source"\\)'],
-    ['packages/php-ext/generated/lib.rs', 'kept_source\\(source, "source"\\)'],
-    ['packages/go/internal/ffi/generated/lib.rs', 'kept_source\\(&mut input, "Source"\\)'],
+    ['packages/ts/generated/lib.rs', 'kept_feed\\(env, member\\(supply, "source", "supply"\\)\\?, "source"\\)'],
+    ['packages/php-ext/generated/lib.rs', 'kept_feed\\(source, "source"\\)'],
+    ['packages/go/internal/ffi/generated/lib.rs', 'kept_feed\\(&mut input, "Source"\\)'],
   ];
   for (const [path, read] of libs) {
     const lib = text(out, path);
@@ -7767,10 +7767,10 @@ test('a record parameter with keeps holds the callbacks of its fields as Natives
     assert.match(lib, /polyspec_sample::Index::supplied\(supply\)/, path);
   }
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, new RegExp(`let source: ${box} = kept_source\\(&member\\(&supply, "source", "supply"\\)\\?, "source"\\)\\.map\\(`));
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&member\\(&supply, "source", "supply"\\)\\?, "source"\\)\\.map\\(`));
   assert.match(wasm, /let supply: polyspec_sample::Supply<'static> = polyspec_sample::Supply \{ source, label \};/);
   // Go keeps the func of the field in the call.
-  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func IndexSupplied\(supply Supply\)[\s\S]*?call\.Keep\(enc, func[\s\S]*?dispatchSource\(supply\.Source\)/);
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func IndexSupplied\(supply Supply\)[\s\S]*?call\.Keep\(enc, func[\s\S]*?dispatchFeed\(supply\.Source\)/);
   // The case of index.get calls the source that index.supplied kept.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /a_source_kept_in_a_supply_gives_its_value_in_a_later_call/);
 });

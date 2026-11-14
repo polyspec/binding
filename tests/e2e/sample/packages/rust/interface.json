@@ -229,19 +229,19 @@
       ]
     },
     {
-      "id": "source",
+      "id": "feed",
       "name": [
-        "source"
+        "feed"
       ],
       "module": "",
       "kind": "interface",
       "visibility": "public",
       "origin": "callback",
-      "core": "polyspec_sample::Source",
+      "core": "polyspec_sample::Feed",
       "thread": "owner",
       "members": [
         {
-          "id": "source.get",
+          "id": "feed.get",
           "name": [
             "get"
           ],
@@ -262,7 +262,7 @@
           "optional_reason": "U-3",
           "async_allowed": false,
           "core": {
-            "path": "polyspec_sample::Source::get",
+            "path": "polyspec_sample::Feed::get",
             "receiver": "&self"
           }
         }
@@ -1647,7 +1647,7 @@
             "source"
           ],
           "type": {
-            "unit": "source"
+            "unit": "feed"
           },
           "required": true
         },
@@ -1686,7 +1686,7 @@
               ],
               "type": {
                 "list": {
-                  "unit": "source"
+                  "unit": "feed"
                 }
               },
               "required": true,
@@ -1710,7 +1710,7 @@
                 "source"
               ],
               "type": {
-                "unit": "source"
+                "unit": "feed"
               },
               "required": true,
               "keeps": true

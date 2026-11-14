@@ -268,9 +268,9 @@ pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Fa
     }))
 }
 
-/// A source of values that the core keeps after the call that gave it (GN-6aa: a callback of a parameter with
+/// A feed of values that the core keeps after the call that gave it (GN-6aa: a callback of a parameter with
 /// `keeps`, which any thread may hold).
-pub trait Source: Send + Sync {
+pub trait Feed: Send + Sync {
     /// The value of a key, or `None` when it has none.
     ///
     /// # Errors
@@ -282,26 +282,26 @@ pub trait Source: Send + Sync {
 /// A source with a label, which an index keeps with the record that holds it (GN-6aa: `keeps` on a record).
 pub struct Supply<'a> {
     /// The source of the supply.
-    pub source: Box<dyn Source + 'a>,
+    pub source: Box<dyn Feed + 'a>,
     /// The label of the supply.
     pub label: String,
 }
 
 /// The sources that an index keeps from its construction on, which a later call asks in order (GN-6aa: `keeps`).
 pub struct Index {
-    sources: Vec<Box<dyn Source>>,
+    sources: Vec<Box<dyn Feed>>,
 }
 
 impl Index {
     /// An index that keeps the sources.
     #[must_use]
-    pub fn new(sources: Vec<Box<dyn Source>>) -> Self {
+    pub fn new(sources: Vec<Box<dyn Feed>>) -> Self {
         Self { sources }
     }
 
     /// An index that keeps one source.
     #[must_use]
-    pub fn single(source: Box<dyn Source>) -> Self {
+    pub fn single(source: Box<dyn Feed>) -> Self {
         Self { sources: vec![source] }
     }
 

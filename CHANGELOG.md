@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- The end-to-end sample had a callback unit `source` (`source.get`, trait `Source`) for the kept callbacks of GN-6aa, a
+  name that another unit of the sample needs. It is now `feed` (`feed.get`, trait `Feed: Send + Sync`), and
+  `index.new`, `index.single` and `index.supplied` take it. Verified by `node --test packages/ts/tests/generate.test.ts`.
 - Node, PHP, WASM and Go refused `keeps: true` on a record parameter and on a callback parameter that is no item of a
   list or an `optional` (GN-6aa), so a core that keeps one callback, or a record of callbacks, after the call had no
   binding in those targets. The callback now moves into the core as its box, and the record is made from its fields
