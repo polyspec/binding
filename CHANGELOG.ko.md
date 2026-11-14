@@ -16,6 +16,11 @@
 
 ## Unreleased
 
+- 코어는 unit의 어떤 member도 `&mut self`를 받지 않으면 callback을 그 trait의 `&dyn`으로 받는다(U-3, B2.252).
+  `variants.tail_of`와 `consumer.read`는 member가 `&self`를 받는 trait의 `&mut dyn`을 받았고, 바인딩이 넘기는 `&`가
+  그 다섯 binding crate에서 E0308로 실패했다. musl의 consumer 단계는 그것이 읽는 work 디렉터리를 쓰는 end-to-end
+  단계가 성공한 뒤에만 실행한다(HR-86). 실패한 단계 뒤에서 그것은 없는 디렉터리로 실패하여 원인을 가렸다.
+  `make test-ts`로 검증했다.
 - keeps가 없는 callback parameter는 그 unit의 어떤 member도 `&mut self`를 받지 않으면 `&`로, 아니면 `&mut`로 코어에
   넘어간다(U-3, GN-6d). 모든 대상이 코어가 `&dyn Feed`를 받는 `sample.ask`에 `&mut { feed }`를 넘겼고,
   `clippy::unnecessary_mut_passed`가 sample의 다섯 binding crate를 거부했다.

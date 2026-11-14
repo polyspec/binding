@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A core takes a callback as `&dyn` of its trait when no member of the unit takes `&mut self` (U-3, B2.252).
+  `variants.tail_of` and `consumer.read` took `&mut dyn` of traits whose members take `&self`, and the `&` that the
+  binding passes failed with E0308 in their five binding crates. The step of the consumer on musl runs only after a
+  successful end-to-end step, which writes the work directory that it reads (HR-86); after a failed step it failed on
+  the missing directory and hid the cause. Verified by `make test-ts`.
 - A callback parameter without keeps is passed to the core as `&` when no member of its unit takes `&mut self`, and
   as `&mut` otherwise (U-3, GN-6d). Every target passed `&mut { feed }` to `sample.ask`, whose core takes
   `&dyn Feed`, and `clippy::unnecessary_mut_passed` refused the five binding crates of the sample. Verified by
