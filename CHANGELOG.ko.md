@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 77213e35257853913353cfd8d1d9be50ad6bb5005960a28e01e1678370e8fd94 -->
+<!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -11,6 +11,8 @@
   export만 부르는 각 함수를 보고했다. 이제 패키지 `binding`은 각 export를 빈 변수의 initializer에 적는다. 어떤 코드도
   `*KeyedMap[any]`를 만들 수 없는 계약에서 `KeyedMap`, `Key`와 그 생성자를 남기던 `describeOwn`의 그 case는 타입이
   `keyed_map<T>`를 이름하거나 계약에 값 alias가 있을 때만 쓰고, `ThrownCount`는 그것을 부르는 시험과 함께일 때만 쓴다.
+  `functions`와 `kept`의 어떤 export도 `run`을 부르지 않았으므로, `Call`의 method `host`, `run`, `raise`는 그것을 부르는
+  export와 함께일 때만, 타입 `panicked`는 `run`이나 보관된 func가 그것을 만들 때만 쓴다.
   `node --test packages/ts/tests/generate.test.ts`로 확인했다.
 - 계약의 어떤 member도 받지 않는 callback unit이 소유자의 crate에 wrapper와 변환을 여전히 가졌다. 끝에서 끝까지 확인의 sample은
   `source`를 선언하는데, 그것은 class `held_source`만 구현하고 consumer만 받으므로, Python, Node, Go, WASM crate가 가진

@@ -2040,7 +2040,7 @@ func (c *Call) hold(value held) uint64 {
 	return uint64(len(c.held))
 }
 
-// host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
+${model.aliases.length === 0 ? '' : `// host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
 // of a map (op 1)${!readsValues(model) ? '' : ', or the content of an instance of a value class (op 2, GN-6x, GN-6af)'}.
 func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	if handle == 0 || handle > uint64(len(c.held)) {
@@ -2092,14 +2092,14 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}${goDescribeOwn(model)}${goDescribeRows(model)}// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
+`}${goValueClassCall(model)}${goDescribeOwn(model)}${goDescribeRows(model)}${!makesPanicked(model) ? '' : `// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
 // of the C ABI returned and the member panics with the same value.
 type panicked struct{ value any }
 
 // Error is the text of the value of the panic.
 func (p *panicked) Error() string { return fmt.Sprint(p.value) }
 
-// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
+`}${!runsGo(model) ? '' : `// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
 // index, the kind and the message of an error that the member recognizes (U-3). A panic of the callback is recovered
 // here, because a panic that unwinds through the frames of the static library skips the destructors of the core, its
 // guards and its locks: it is the error of the call, whose value the member panics with again (GN-15b).
@@ -2135,7 +2135,7 @@ func (c *Call) raise(err error) (int32, []byte) {${[...model.callbacks, ...model
 	return 1, enc.Done()
 }
 
-// callOf is the call of a handle that the static library gave back.
+`}// callOf is the call of a handle that the static library gave back.
 func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*Call) }
 
 // raisedError is the error that a callback of the call returned (U-3). A panic of the callback (GN-15b) is not returned:
@@ -2154,10 +2154,10 @@ func raisedError(call, index uint64) error {${!keeps(model) ? '' : `
 	c := callOf(call)
 	if index >= uint64(len(c.raised)) {
 		return Malformed()
-	}
+	}${!makesPanicked(model) ? '' : `
 	if p, ok := c.raised[index].(*panicked); ok {
 		panic(p.value)
-	}
+	}`}
 	return c.raised[index]
 }
 
@@ -2452,6 +2452,11 @@ function describesKeyedMap(model: Model): boolean {
     || [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))].some((unit) => (unit.fields ?? []).some((f) => named(f.type)))
     || [...model.callbacks, ...model.foreignCallbacks].some((cb) => cb.members.some((m) => m.params.some((p) => named(p.type)) || named(m.returns)));
 }
+
+// GN-15b, GN-15h: whether a call makes a panicked: run recovers the panic of a callback or of a func of a member with
+// machine (U-3, GN-6ae), which the export __go_callback runs, and keepRaised that of a kept func (GN-6z). Otherwise no
+// Go code of the static library runs Go code that panics, and the type is not written.
+const makesPanicked = (model: Model): boolean => runsGo(model) || keeps(model);
 
 // GN-15c: whether describeOwn has a case: a *KeyedMap[any] or a pointer to a value class without core_type.
 const describesOwn = (model: Model): boolean => describesKeyedMap(model) || keptReads(model).some((r) => r.kept !== undefined);
