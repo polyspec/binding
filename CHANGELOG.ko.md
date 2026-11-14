@@ -19,11 +19,6 @@
 
 ## Unreleased
 
-## 0.0.2
-
-- end-to-end 실행은 binding check 전에 사본의 Cargo.lock에 있는 모든 package를 받는다(GN-15f). check는 B2.261부터
-  crate를 오프라인으로 읽는데, 코어의 build는 자기 package만 받았으므로 `tests/e2e/consumer`와 `tests/e2e/plot`의
-  check가 모든 대상에서 package를 받지 못해 실패했다. CI job `e2e (consumer)`와 `e2e (plot)`으로 검증했다.
 - binding은 바인딩을 가진 레포의 release recipe를 쓴다(GN-19h). `binding release-recipes`는 `packages/release.mk`
   (component는 `packages/<component>/release.mk`)를 쓴다. 그것은 레포의 Makefile이 include하고 추적되지 않는 make
   파일이며, 계약의 target에 대해 `release-go-static`, `release-wheel`, `release-php-ext`, `release-npm-platform`,
@@ -39,6 +34,11 @@
   적고, GN-19a의 runner는 `ubuntu-26.04`의 것이다. `node --test packages/ts/tests/release-recipes.test.ts`로 검증했다. 그
   테스트는 각 recipe를 make와 그 도구의 대역으로 실행하며 변경 전에 실패했다. `make typecheck-ts`로도 검증했다.
 
+## 0.0.2
+
+- end-to-end 실행은 binding check 전에 사본의 Cargo.lock에 있는 모든 package를 받는다(GN-15f). check는 B2.261부터
+  crate를 오프라인으로 읽는데, 코어의 build는 자기 package만 받았으므로 `tests/e2e/consumer`와 `tests/e2e/plot`의
+  check가 모든 대상에서 package를 받지 못해 실패했다. CI job `e2e (consumer)`와 `e2e (plot)`으로 검증했다.
 - Go는 `cancel` 타입 parameter나 그 `optional`의 `context.Context`를 그 parameter가 계약의 어느 자리에 있든 함수의 첫
   인자로 받는다(GN-6aq). 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에 준다. 취소가 첫
   parameter가 아닌 member는 Go에서 거부되었으므로, cookie 다음에 optional 취소를 받는 파일 저장소의 member에는 Go
