@@ -1118,14 +1118,17 @@
   소유 타입의 method를 가진 callback fixture이거나, make member가 돌려주는 class가 주는 instance 값이며, 이 레포의 case와 같다(G-5,
   GN-6aa, GN-13f). 그런 unit의 이름은
   이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고 거부한다(G-4). 그런 unit의 member가 `errors.recognize`에 소유자의 오류 unit을 적으면, 그 member는 소유자의 계약으로 GN-6d대로
-  언어 코드의 예외를 읽는다. class는 소유 패키지의 것이다(Python은 module `<소유 root>._errors`, Node는 entry가 소유 npm
-  패키지에서 require하여 라이브러리 class 뒤에 등록하는 class, PHP는 소유 namespace의 class이며 이름으로 찾고 소유자의
-  category class의 scope에서 읽는다). kind는 class가 recognize한 unit이거나 그것을 확장하는 소유자 `errors.kinds`의 행이고,
+  언어 코드의 예외나 Go method가 돌려준 오류를 읽는다. class는 소유 패키지의 것이다(Python은 module `<소유 root>._errors`,
+  Node는 entry가 소유 npm 패키지에서 require하여 라이브러리 class 뒤에 등록하는 class, WASM은 entry가 그 패키지의 subpath
+  `./wasm`에서 import하여 라이브러리 class 뒤에 등록하는 class, PHP는 소유 namespace의 class이며 이름으로 찾고 소유자의
+  category class의 scope에서 읽는다. Go는 소유 Go module의 패키지 `errors`의 타입이며, dispatch가 그것을 이름
+  `<소유 package>errors`로 import하고 `binding.RecognizeAs`를 거쳐 `errors.As`로 찾는다). kind는 class가 recognize한 unit이거나 그것을 확장하는 소유자 `errors.kinds`의 행이고,
   코어 오류는 그 행의 variant에 대한 소유자의 `errors.recognized`이며 trait method가 그것을 `Failure::Kind`로 돌려준다. 그런
-  unit의 fixture의 raise 행(GN-13)은 소유자 class의 인스턴스를 던진다. 이름을 대고 거부하는 것(G-4): 세 번째 라이브러리의 오류
+  unit의 fixture의 raise 행(GN-13)은 소유자 class의 인스턴스를 던지고, Go에서는 소유자 패키지 `errors`의
+  `Raised<Unit>(kind, message)`를 돌려준다. 이름을 대고 거부하는 것(G-4): 세 번째 라이브러리의 오류
   unit, `errors.recognized`가 없는 소유자, 둘 이상의 kind를 가진 recognize한 variant. 이유: 소유자의 오류가 무슨 뜻인지는 소유자의
   코어가 정하고, 그 계약이 class와 오류를 만드는 함수를 적으므로 이 레포의 바인딩은 소유자의 소스를 읽지 않는다. 아직 생성하지
-  않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM에서 recognize한 오류, 소유 레포의 member가 만드는 case 값(그
+  않으며 각각 이름을 대고 거부하는 것(G-4): 소유 레포의 member가 만드는 case 값(그
   member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
@@ -1392,7 +1395,10 @@
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
-  그 struct로 만든다.
+  그 struct로 만든다. 라이브러리의 callback unit의 member가 recognize하는 오류 unit마다 패키지 `errors`에는
+  `internal/binding`의 `Raised<Unit>`을 주는 `Raised<Unit>(kind, message)`도 있다. 그 callback unit을 다른 레포의
+  callback unit으로(GN-6s) 구현하는 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 소유자의 코어가
+  recognize하는 오류를 이 함수로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
   `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이

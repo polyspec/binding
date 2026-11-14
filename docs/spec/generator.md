@@ -1350,17 +1350,22 @@ the design ids are those of the binding design.
   dispatch of a callback unit of this repository in the package of that unit. A case value at its place is a fixture
   of the callback, whose type has the methods of the owning type, or an instance value, which the class that its make
   member returns gives, as in a case of this repository (G-5, GN-6aa, GN-13f). The name of such a unit differs from the
-  name of every unit of this contract, which the generator refuses by name otherwise (G-4). A member of such a unit whose `errors.recognize` names error units of its owner reads an
-  exception of language code as GN-6d states, with the contract of the owner: the classes are those of the owner's
-  package (Python the module `<owner root>._errors`, Node the classes that the entry requires from the owner's npm
-  package and registers after the library classes, PHP the classes of the owner's namespace, found by name and read
-  in the scope of the owner's category class), the kinds are the rows of the owner's `errors.kinds` whose class is a
+  name of every unit of this contract, which the generator refuses by name otherwise (G-4). A member of such a unit
+  whose `errors.recognize` names error units of its owner reads an exception of language code, or the error that a
+  Go method returns, as GN-6d states, with the contract of the owner: the classes are those of the owner's package
+  (Python the module `<owner root>._errors`; Node the classes that the entry requires from the owner's npm package
+  and registers after the library classes; WASM the classes that the entry imports from the subpath `./wasm` of that
+  package and registers after the library classes; PHP the classes of the owner's namespace, found by name and read
+  in the scope of the owner's category class; Go the types of the package `errors` of the owner's Go module, which
+  the dispatch imports under the name `<owner package>errors` and finds with `errors.As` through
+  `binding.RecognizeAs`), the kinds are the rows of the owner's `errors.kinds` whose class is a
   recognized unit or extends one, and the core error is the owner's `errors.recognized` on the variant of the row,
   which the trait method returns as `Failure::Kind`. A raise row of a fixture of such a unit (GN-13) throws an
-  instance of the owner's class. Refused by name (G-4): an error unit of a third library, an owner without
+  instance of the owner's class; in Go it returns `Raised<Unit>(kind, message)` of the owner's package `errors`.
+  Refused by name (G-4): an error unit of a third library, an owner without
   `errors.recognized`, and a recognized variant of two or more kinds. Why: the owner's core decides what its error
   means, and its contract names the classes and the function that makes the error, so the binding of this repository
-  reads no source of the owner. Not generated yet, each refused by name (G-4): the recognized errors in Go and WASM; a case value that a member
+  reads no source of the owner. Not generated yet, each refused by name (G-4): a case value that a member
   of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
@@ -1689,7 +1694,11 @@ the design ids are those of the binding design.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
-  the C ABI read from the core error. A kind whose row names the unit is created as that struct.
+  the C ABI read from the core error. A kind whose row names the unit is created as that struct. For each error unit
+  that a member of a callback unit of the library recognizes, package `errors` also has `Raised<Unit>(kind,
+  message)`, which gives `Raised<Unit>` of `internal/binding`, because Go code of another module, which implements
+  that callback unit as a callback unit of another repository (GN-6s), cannot import `internal/binding` and makes the
+  error that the owner's core recognizes through this function.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
