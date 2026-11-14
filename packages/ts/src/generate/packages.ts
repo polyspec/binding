@@ -597,7 +597,11 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
     if (unit === '') continue;
     const owner = foreign.get(library);
     if (owner === undefined) throw new Refused(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
+    // GN-6s: a callback unit, whose interface the Go binding takes from that package. GN-6ar: a value alias whose Go
+    // rows name a class of its owner, which the Go binding makes and reads.
+    const goRows = (u: Unit): boolean => u.kind === 'alias' && ((u.out ?? []).some((row) => { const make = row.make['go']; return typeof make === 'string' && make.includes('.'); })
+      || (u.in ?? []).some((row) => owner.units.some((c) => c.kind === 'class' && c.id === row['go'])));
+    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value') || u.origin === 'callback' || goRows(u)))) found.add(library);
   }
   return [...found].sort();
 }

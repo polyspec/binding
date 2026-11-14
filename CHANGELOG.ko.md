@@ -1,10 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1516dad216a64d599cf44647b50864b5714e339668cf31a18fd6e0d079e99203 -->
+<!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 Go를 거부했다. 그래서 php-serialization의
+  `std_class`의 `in` 행 때문에 hyper의 Go 바인딩이 생성되지 않았고, go.mod는 계약이 받는 callback unit의 라이브러리의 Go
+  module을 요구하지 않았다. Go 바인딩은 그 package를 import한다(GN-6s). 이제 Go는 그런 class가 owner package의 core_type
+  없는 값 class일 때 받는다(GN-6ar). `in` 행은 read가 property의 field나 method를 주는 node 11이고, owner의 keyed map은
+  entry의 map으로 묘사하며, `out` 행은 결과의 node 14로서 owner의 constructor가 내용보다 먼저 빈 keyed map이나 nil 위에
+  만든다. core_type이 있는 class와 bool, 정수, float의 constructor는 이름을 대고 거부한다. go.mod는 callback unit과 그런
+  alias의 라이브러리를 요구한다(GN-15f). 검증: Go 시험이 변경 전에 "the go in row of the class box of sample is not
+  generated yet"로 실패한 `generate.test.ts`의 시험.
 
 - 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
   `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고

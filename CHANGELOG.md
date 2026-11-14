@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The generator refused Go for a value alias of another repository whose rows name a class of its owner, so the Go
+  binding of hyper was not generated for the `in` row of `std_class` of php-serialization, and go.mod did not require
+  the Go module of a library whose callback unit the contract takes, whose package the Go binding imports (GN-6s).
+  Go now takes such a class when it is a value class without core_type of the owner's package (GN-6ar): an `in` row
+  is node 11 whose read gives the field or the method of the property, the owner's keyed map is described as a map
+  of its entries, and an `out` row is node 14 of the result, which the owner's constructor makes on an empty keyed
+  map or on nil before its content; a class with core_type and a constructor of a bool, an integer or a float are
+  refused by name. go.mod requires the library of a callback unit and of such an alias (GN-15f). Verified by the
+  tests of `generate.test.ts`, whose Go test failed before the change with "the go in row of the class box of
+  sample is not generated yet".
+
 - The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
   WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
   reads such a class as Node does (GN-6ar): the entry imports the classes from the subpath `./wasm` of the owner's

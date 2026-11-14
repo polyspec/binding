@@ -1255,9 +1255,16 @@ test('Go: a record of another repository is the struct of its Go module, which g
   for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }, { git: 'https://github.com/polyspec/points.git', branch: 'main', tag: 'v0.1.2' }]) {
     assert.match(goMod(spec), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n$`), JSON.stringify(spec));
   }
-  // A library whose records the contract does not name is not required: the consumer names only a value alias.
+  // A library whose records the contract does not name is not required: without its member read, the consumer names
+  // only a value alias of sample, whose Go rows name no class.
   const consumer = consumerSample();
-  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+  const aliasOnly = structuredClone(consumer.contract);
+  const holder = aliasOnly.units.find((u: any) => u.id === 'consumer');
+  holder.members = holder.members.filter((m: any) => m.id !== 'consumer.read');
+  aliasOnly.cases = aliasOnly.cases.filter((c: any) => c.member !== 'consumer.read');
+  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, aliasOnly, consumer.foreign), /require/);
+  // GN-6s: the member read takes the callback unit source of sample, whose interface the Go binding imports.
+  assert.match(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
 });
 
 test('pyproject.toml names another library at the version of a release form, and alone for a development form (GN-3e)', () => {
@@ -1524,7 +1531,9 @@ test('the contract of a library that only a unit of another library names is rea
       assert.match(tracked(manifest), /\npolyspec-points = \{ path = "(\.\.\/)+points\/packages\/rust" \}\n/, manifest);
     }
     assert.match(tracked('python/pyproject.toml'), /\ndependencies = \["polyspec-points", "polyspec-sample"\]\n/);
-    assert.match(tracked('go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+    // GN-6s: the consumer takes the callback unit lookup of sample, whose interface the Go binding imports too.
+    assert.match(tracked('go/go.mod'), /\nrequire \(\n\tgithub\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\tgithub\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n\)\n/);
+    assert.match(tracked('go/go.mod'), /\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n/);
     // A unit that the third library does not have is a finding of the check, with the libraries on the way.
     const pointsPath = join(root, 'points/packages/rust/interface.json');
     const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
@@ -1771,13 +1780,13 @@ test('Go makes and reads the class of a row of a value alias of another reposito
   assert.match(binding, /\n\tcase \*sample\.Cell:\n[\s\S]*?return found\.Value, nil/);
   assert.match(binding, /\n\tcase \*sample\.KeyedMap\[any\]:\n[\s\S]*?if integer, isInt := key\.Int\(\); isInt \{/);
   assert.match(binding, /\n\tseen +map\[any\]uint64\n/);
-  // Out: node 13 is made by the constructor of the owner on an empty keyed map or on nil, then filled.
-  assert.match(binding, /\n\tcase 13:\n\t\treturn r\.foreign\(made, instance\)\n/);
+  // Out: node 14 is made by the constructor of the owner on an empty keyed map or on nil, then filled.
+  assert.match(binding, /\n\tcase 14:\n\t\treturn r\.foreign\(made, instance\)\n/);
   assert.match(binding, /\n\t\tentries := &sample\.KeyedMap\[any\]\{\}\n\t\tkept, err := sample\.NewBox\(entries\)\n/);
   assert.match(binding, /\n\t\tkept, err := sample\.NewCell\(nil\)\n[\s\S]*?\n\t\tkept\.Value = r\.value\(made, instance\)\n/);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(lib, /\n {12}output\.push\(13\);\n {12}uint_out\(output, 0u64\);\n {12}uint_out\(output, len\);/);
-  assert.match(lib, /\n {12}output\.push\(13\);\n {12}uint_out\(output, 1u64\);\n {12}make\(output, \*value, source, made\);/);
+  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 0u64\);\n +uint_out\(output, len\);/);
+  assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 1u64\);\n +make\(output, \*value, source, made\);/);
   // GN-15f: go.mod requires the Go module of the owner, whose package the binding imports.
   assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
   // G-4: a class with core_type in a Go row is refused by name.
