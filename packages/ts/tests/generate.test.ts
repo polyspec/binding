@@ -8918,13 +8918,116 @@ test('a parameter of the type cancel binds the cancellation of each language to 
   assert.match(binding, /func Cancel\(enc \*Writer, ctx context\.Context\) func\(\) \{[\s\S]*?runtime\.AddCleanup\(held, [\s\S]*?context\.AfterFunc\(ctx, func\(\) \{ held\.fire\(\) \}\)/);
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /fn cancel_in\(input: &mut &\[u8\]\) -> Result<binding_core::Cancel, Fail> \{/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /\n\t"context"\n[\s\S]*func cancellation\(cancelled bool\) context\.Context \{[\s\S]*Halted\(cancellation\(true\)\)/);
-  // Go refuses a cancel that is not the first parameter, and every target refuses the type at another place.
-  const second = classes();
-  second.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters.unshift({ name: ['label'], type: 'text', required: true });
-  assert.throws(() => generate({ contract: second, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: a parameter of the type cancel is generated for Go as the first parameter ctx only \(GN-6aq\)/);
+  // Every target refuses the type at another place than a parameter.
   const returned = classes();
   returned.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').returns = 'cancel';
   assert.throws(() => generate({ contract: returned, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['node'] }), /the type cancel is generated as a parameter only \(T-1, GN-6aq\)/);
+});
+
+// GN-6aq, B2.257: Go takes the context as the first argument wherever the cancel stands in the contract, an optional
+// one too, and the core takes it at its place in the contract. A member of a file store takes a cookie and then an
+// optional cancellation.
+test('Go takes the context of a cancel at any place of the contract as its first argument, and the core takes it at its place (GN-6aq, B2.257)', () => {
+  const classes = (): any => JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'));
+  for (const kase of cases.halted) kase.label = 'a';
+  const caseFiles = new Map([['contracts/cases.json', cases]]);
+  for (const optional of [false, true]) {
+    const contract = classes();
+    const halted = contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted');
+    if (optional) halted.parameters[0] = { name: ['cancel'], type: { optional: 'cancel' }, default: { literal: null } };
+    halted.parameters.unshift({ name: ['label'], type: 'text', required: true });
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] });
+    const goClasses = text(out, 'packages/go/zz_generated_classes.go');
+    // The signature puts ctx first; the encoding, which the core reads, keeps the order of the contract.
+    assert.match(goClasses, /func Halted\(ctx context\.Context, label string\) \(bool, error\) \{[\s\S]*?enc\.Text\(label\)[\s\S]*?binding\.Cancel\(enc, ctx\)/, String(optional));
+    assert.match(text(out, 'packages/go/zz_generated_test.go'), /Halted\(cancellation\(true\), "a"\)/, String(optional));
+    assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /let label: String = text_in\(&mut input, "label"\)\?;\n\s*let cancel: (?:Option<)?binding_core::Cancel>? = [\s\S]*?polyspec_classes::halted\(&label, cancel\)/, String(optional));
+  }
+  // Go takes one context, so a member with two cancellations is refused for Go by name.
+  const two = classes();
+  two.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters.push({ name: ['other'], type: 'cancel', required: true });
+  assert.throws(() => generate({ contract: two, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: a member with more than one parameter of the type cancel is not generated for Go, which takes one context as its first argument \(GN-6aq\)/);
+});
+
+// Q-4, GN-6aq, B2.253: a parameter with only is a parameter of the targets that it lists alone. A member of a file store
+// takes a cancellation that only Python and Node give, after its other parameters; Go, which passes a context first,
+// PHP and WASM have no such parameter, and their binding gives the core the parameter as left out.
+test('a parameter with only is a parameter of the targets that it lists alone, and the others give the core None (Q-4, GN-6aq, B2.253)', () => {
+  const classes = (): any => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const halted = contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted');
+    halted.parameters = [
+      { name: ['label'], type: 'text', required: true },
+      { name: ['cancel'], type: { optional: 'cancel' }, required: true, only: { targets: ['python', 'node'], reason: 'B-5' } },
+    ];
+    return contract;
+  };
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'));
+  cases.halted = [
+    { id: 'a_cancellation_that_fired_is_halted', label: 'x', cancel: { cancel: 'fired' }, result: true },
+    { id: 'no_cancellation_is_not_halted', label: 'x', result: false },
+  ];
+  const caseFiles = new Map([['contracts/cases.json', cases]]);
+  const out = generate({ contract: classes(), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles });
+  // The targets of the only take the parameter.
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function halted\(label: string, cancel: AbortSignal \| null\): boolean;/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let \(trigger, cancel\) = binding_core::cancel_pair\(\);/);
+  // Go has no ctx and no context, and its core call gives None; a case that gives the cancellation is no case of Go.
+  const go = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(go, /\nfunc Halted\(label string\) \(bool, error\) \{/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTests, /NoCancellationIsNotHalted/);
+  assert.doesNotMatch(goTests, /ACancellationThatFiredIsHalted/);
+  // WASM and PHP have no such parameter either.
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function halted\(label: string\): boolean;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  const stubPath = [...out.keys()].find((path) => path.startsWith('packages/php-ext/generated/') && path.endsWith('.stub.php')) ?? '';
+  assert.match(text(out, stubPath), /function halted\(mixed \$label\): bool/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /polyspec_classes::halted\(&label, None\)/);
+  // G-4: a parameter with only that cannot be left out has no value in the other targets, so it is refused by name.
+  const required = classes();
+  const cancel = required.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.halted').parameters[1];
+  cancel.type = 'cancel';
+  assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: the parameter cancel has only, which needs a default or an optional type, because the targets without it give the core the parameter as left out \(Q-4, U-2\)/);
+});
+
+// Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
+// end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
+// binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
+test('a field with only is a field of the record of the targets that it lists alone, and the others give the core None (Q-4, B2.254)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const points = (): any => {
+    const contract = read('points/packages/rust/interface.json');
+    contract.units.find((u: any) => u.id === 'point').fields.push({ name: ['z'], type: { optional: 'int' }, default: { literal: null }, reason: 'a depth that only Python and Node give', only: { targets: ['python', 'node'], reason: 'B-5' } });
+    return contract;
+  };
+  const cases = read('points/contracts/cases.json');
+  cases.shift.push({ id: 'a_point_with_a_depth_moves', point: { x: 1, y: 2, z: 7 }, by: 3, result: { x: 4, y: 5, z: 7 } });
+  const caseFiles = new Map([['contracts/cases.json', cases]]);
+  const out = generate({ contract: points(), version: '0.0.0', coreLib: 'polyspec_points', caseFiles });
+  // The targets of the only take the field.
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /\bz\?: number \| null\b|\bz\?: bigint \| number \| null\b|\breadonly z\b|\bz: /);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_points::Point \{ x, y, z \}/);
+  // Go, PHP and WASM build the core struct with None for the field and have no case that gives it.
+  for (const path of ['packages/go/internal/ffi/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_points::Point \{ x, y, z: None \}/, path);
+  }
+  const goPoint = /\ntype Point struct \{\n([\s\S]*?)\n\}/.exec(text(out, 'packages/go/zz_generated_points.go'))?.[1] ?? '';
+  assert.match(goPoint, /\bX\b/);
+  assert.doesNotMatch(goPoint, /\bZ\b/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /APointWithADepthMoves/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /a_point_with_a_depth_moves/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /a_point_with_a_depth_moves/);
+  // G-4: a field with only that cannot be left out has no value in the other targets, so it is refused by name.
+  const required = points();
+  const z = required.units.find((u: any) => u.id === 'point').fields.at(-1);
+  z.type = 'int';
+  z.required = true;
+  delete z.reason;
+  delete z.default;
+  assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_points', caseFiles, targets: ['go'] }), /point: the field z has only, which needs a default or an optional type, because the targets without it give the core the field as left out \(Q-4, U-2\)/);
 });
 
 // The repositories of the end-to-end check, generated for the five targets as the run of make e2e generates them.

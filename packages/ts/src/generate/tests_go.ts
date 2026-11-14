@@ -22,6 +22,7 @@ import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
+  goOrder,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
@@ -694,10 +695,11 @@ function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
   return `${receiver}.${name}(${args.join(', ')})`;
 }
 
-// The arguments of a call in the order of the parameters, a record parameter as its struct of fields. given gives the
-// value of an argument, or undefined for an argument with a default that the call leaves out (nil, U-2).
+// The arguments of a call in the order of the Go arguments (GN-6aq: the context first), a record parameter as its
+// struct of fields. given gives the value of an argument, or undefined for an argument with a default that the call
+// leaves out (nil, U-2).
 function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | undefined): string[] {
-  return fn.params.map((p) => {
+  return goOrder(fn.params).map((p) => {
     if (fn.record !== undefined && p === fn.record.param) {
       const unit = fn.record.unit;
       const fields = (unit.fields ?? []).map((f) => {

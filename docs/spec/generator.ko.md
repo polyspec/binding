@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1ffe76c3095d332f0d80c5b6697fef290ac1b20ac52d89a56033736ae1a78819 -->
+<!-- source-sha256: 9bf175384bfba985f029a5c0c899a29f1bb8e37bb314f8a6ba1bc3b82e77beba -->
 # 생성기
 
 [English](generator.md)
@@ -590,8 +590,9 @@
     취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
     `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
     취소한다.
-  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). 이 타입의 parameter가 첫
-    parameter가 아닌 member는 Go에 대해 이름으로 거절한다. Go는 context를 맨 앞에 넘기기 때문이다. binding은
+  - Go: `context.Context`. 그 parameter가 계약의 어느 자리에 있든 함수의 첫 인자 `ctx`다(`optional`은 nil `ctx`).
+    Go는 context를 맨 앞에 넘기기 때문이다. 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에
+    준다. 이 타입의 parameter가 둘 이상인 member는 Go에 대해 이름으로 거절한다. Go는 context 하나를 받기 때문이다. binding은
     `ctx.Err()`를 읽고, 아니면 `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를
     발화시킨다. 기다리거나 polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때
     놓인다(`runtime.AddCleanup`): context는 `context.AfterFunc`의 func를 실행할 때까지 쥐고, `context.Background()`처럼
@@ -774,6 +775,18 @@
   `Result<Infallible, E>`를 돌려주는 코어를 부른다. 생성 코드는 실패를 돌려주고, 변형이 없는 그 값을 갈래 없는 match로
   받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
   거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
+  `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
+  parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
+  가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는
+  `only`의 target에만 case다. 다른 target은 그 값을 넘길 수 없기 때문이다. 이유: Python과 Node만 줄 수 있는 member의
+  cancellation처럼 한 언어에 형태가 없는 parameter는, 그렇지 않으면 그 언어가 그 parameter 없이 부를 수 있는 member나
+  target 전체를 거부하게 된다. `only`가 있는 record의 field도 같이 그것이 적은 target에만 있는 field다. 다른 target은
+  class, 선언, record 읽기에 그 field가 없고, 그 바인딩은 코어에 그 field를 생략된 것(`None`)으로 준다. 그래서 그 field는
+  기본값이나 `optional` 타입을 가진다. 둘 다 없는 field와 variant case의 field에 있는 `only`는 이름을 대고 거부한다(G-4).
+  `only`가 있는 parameter나 field에 값을 주는 case는 다른 target의 시험에서 빠지므로 그 시험은 그대로 빌드되고, 계약
+  검사는 그 case의 `cases` 행이 그 target이 없는 `only`를 가질 때까지 그 case를 보고한다(CK-93, GN-13h). 이유: case는
+  계약을 읽는 사람이 보는 그 행의 `only`로만 target에서 빠진다. 생성기가 스스로 뺀 case는 어떤 target의 시험이 그것을
+  잃었다는 사실을 숨기며, CK-92는 인스턴스 값이 부르는 member에 대해 이미 그것을 보고한다.
 - **GN-6i** 기본값이 있는 parameter와 record parameter의 field(U-2, T-4)는 생략할 수 있다. 그 코어 parameter나 field는
   `Option<T>`이고, 바인딩은 생략된 값에 `None`을 넘기며 어떤 값도 채우지 않는다. 그래서 값은 코어만 정한다(B-1). 빌린
   형태는 text가 `Option<&str>`, latin1·bytes·source가 `Option<&[u8]>`, list가 `Option<&[T]>`, map이 `Option<&Map>`이고 수와

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 4667f975234461276682da05524c9b52aefac929090b70c3a91f097d17bbd896 -->
+<!-- source-sha256: 304c752e06ce1b15da87c6a593f83e7585af1cc94ca2ca4e006a5f29088d16ef -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -234,6 +234,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   target이 없는 `only`를 주어 해소한다. `only`가 그 member가 생성되는 target을 하나도 이름하지 않는 행도 보고된다. 이유:
   case의 시험은 그 member와 그 행의 target마다 생성되는데, 한 target에서 인스턴스를 만들 수 없는 시험은 그 target을
   거부하거나 case를 조용히 빼게 되고, 그러면 그곳에서 무엇이 검증되지 않았는지가 보이지 않는다.
+- **CK-93** case는 `only`가 case의 target에서 빼는 parameter나 field를 주지 않는다(생성기 GN-6g, GN-13h): 각 case에서,
+  case가 값을 주는 member의 `only`가 있는 parameter와, case의 값이 주는 record의 `only`가 있는 field는(list, `optional`,
+  map, keyed map, tuple 안에 있어도) case가 생성되는 모든 target, 곧 그 `cases` 행의 `only`가 남기는 member의 target을
+  나열한다. 그렇지 않은 parameter나 field는 case와 그 `only`가 빼는 target과 함께 보고된다. 계약은 그 case가 있는
+  `cases` 행에 `only`를 주어 해소한다. 이유: 다른 target에는 그 parameter나 field가 없어 그 값을 넘길 수 없으므로
+  생성기는 그 case를 그 시험에서 뺀다. 행은 CK-92가 인스턴스 값이 부르는 member에 대해 요구하듯 그 뺌을 계약을 읽는
+  사람이 보는 곳에 적는다.
 - **CK-91** Go 정적 라이브러리의 release profile(생성기 GN-15i): target `go`가 있는 계약에 대해 `binding check`는
   레포의 root manifest나 `.cargo/config.toml`의 `[profile.release]`가 `lto`를 `false`나 `"off"`가 아닌 값으로 정하면 그
   파일과 값을 보고한다. 그러면 Go program이 그 정적 라이브러리를 다른 레포의 정적 라이브러리와 링크할 수 없기 때문이다.

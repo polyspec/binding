@@ -1,4 +1,5 @@
 <!-- doc-id: changelog -->
+<!-- source-sha256: dab7c1315086fce9cf0438aefbb337eb4cff96e5abb175e39aba52f1a085b211 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
@@ -16,6 +17,29 @@
 
 ## Unreleased
 
+- Go는 `cancel` 타입 parameter나 그 `optional`의 `context.Context`를 그 parameter가 계약의 어느 자리에 있든 함수의 첫
+  인자로 받는다(GN-6aq). 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에 준다. 취소가 첫
+  parameter가 아닌 member는 Go에서 거부되었으므로, cookie 다음에 optional 취소를 받는 파일 저장소의 member에는 Go
+  함수가 없었다. 그런 parameter가 둘인 member는 Go에서 이름을 대고 거부한다. 검증: 그런 member의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
+
+- `only`(Q-4)가 있는 record의 field는 `only`가 있는 parameter와 같이 그것이 적은 target에만 있는 field다. 다른
+  target에는 그 field가 없고, 그 바인딩은 코어에 `None`을 주며, 그 field에 값을 주는 case는 그 target의 case가 아니다.
+  기본값이나 `optional` 타입이 없는 그런 field와 variant case의 field에 있는 `only`는 이름을 대고 거부한다. 생성기는
+  field의 `only`를 읽지 않았으므로 그 field는 모든 target의 field였다. 검증: 그런 field의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
+
+- `binding check`는 case가 생성되는 target을 `only`가 빼는 parameter나 record의 field에 값을 주는 case를, 그 case가
+  있는 `cases` 행이 그 target이 없는 `only`를 가질 때까지 보고한다(CK-93, GN-13h). 생성기는 그런 case를 그 target의
+  시험에서 스스로 뺐고, 계약을 읽는 사람은 그것을 보지 못했다. 검증: CK-93의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/contract-check.test.ts`.
+
+- `only`(Q-4)가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target에는 그 parameter가 없고, 그
+  바인딩은 코어에 `None`을 주며, 그 parameter에 값을 주는 case는 그 target의 case가 아니다. 기본값이나 `optional`
+  타입이 없는 `only` parameter는 이름을 대고 거부한다. 생성기는 parameter의 `only`를 읽지 않았으므로, 다른 parameter
+  뒤에서 Python과 Node만 받는 cancel이 Go의 parameter가 되어 cancel이 첫 parameter라는 Go의 규칙이 Go target 전체를
+  거부했고, PHP와 WASM의 parameter도 되었다. 검증: 그런 parameter의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
 ## 0.0.1
 
 - 코어는 unit의 어떤 member도 `&mut self`를 받지 않으면 callback을 그 trait의 `&dyn`으로 받는다(U-3, B2.252).

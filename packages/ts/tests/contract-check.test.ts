@@ -1527,6 +1527,38 @@ test('CK-13 counts Encode<Variant> and Decode<Variant>, through which another Go
   assert.ok(found.some((f) => f.check === 'CK-13' && /declares EncodeFigure twice/.test(f.message)), JSON.stringify(found.map((f) => `${f.check} ${f.message}`)));
 });
 
+describe('CK-93 a case that gives a parameter or a field that an only keeps out of a target of the case (Q-4, GN-13h, B2.255)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (contract: any, cases: any) => void): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    const cases = read('contracts/cases.json');
+    change(contract, cases);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-93');
+  };
+  const two = { targets: ['python', 'node'], reason: 'Q-4' };
+  const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  test('a case that gives a parameter with only, in a row that keeps the case in the other targets', () => {
+    const found = run((contract) => { member(contract, 'classes.read').parameters[0].only = two; });
+    assert.ok(found.some((f) => /^the case a_name_is_read of classes\.read: it gives the parameter name, which only keeps out of php, go, where the case is generated; hold the case in a row of cases whose only names python, node alone \(Q-4, GN-13h\)$/.test(f.message)), JSON.stringify(found));
+  });
+  test('a case that gives a field with only of a record of a parameter', () => {
+    const found = run((contract, cases) => {
+      const unit = contract.units.find((u: any) => u.members?.some((m: any) => m.id === 'classes.read'));
+      contract.units.push({ id: 'spot', name: ['spot'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::Spot', fields: [{ name: ['name'], type: 'text', required: true }, { name: ['depth'], type: { optional: 'int' }, default: { literal: null }, reason: 'T-4', only: two }] });
+      unit.members.find((m: any) => m.id === 'classes.read').parameters[0].type = { list: { unit: 'spot' } };
+      cases.read[0].name = [{ name: 'a' }, { name: 'b', depth: 1 }];
+    });
+    assert.ok(found.some((f) => /^the case a_name_is_read of classes\.read: it gives the field depth of spot, which only keeps out of php, go,/.test(f.message)), JSON.stringify(found));
+  });
+  test('the only of the row of cases that holds the case resolves it (GN-13h)', () => {
+    const found = run((contract) => {
+      member(contract, 'classes.read').parameters[0].only = two;
+      contract.cases.find((r: any) => r.member === 'classes.read').only = two;
+    });
+    assert.deepEqual(found, []);
+  });
+});
+
 describe('CK-92 the members that the instance values of a case call (GN-13f, Q-4)', () => {
   // The contract of template has such a case: prepared_render.render is generated for every target, and the receivers
   // of its cases are made by engine.prepare, whose only keeps it out of wasm, so the wasm test could not make them.
