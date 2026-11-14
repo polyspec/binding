@@ -471,7 +471,7 @@ impl JsHost {
         if js_sys::ArrayBuffer::is_view(value) && !instance_of(value, &global, "DataView")? {
             // B-1: a Uint8Array is the bytes that the out row bytes makes, so a value that the binding gave enters again;
             // a typed array of another element type is outside the set.
-            if let Some(bytes) = value.dyn_ref::<js_sys::Uint8Array>() {
+            if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
                 return Ok(HostValue::Bytes(bytes.to_vec()));
             }
             return Ok(HostValue::Other { type_name: constructor_name(value)?, handle: self.mark() });
