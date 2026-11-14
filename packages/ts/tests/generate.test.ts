@@ -2094,6 +2094,41 @@ test('a value class of another repository inside a list is made by the same memb
   assert.match(go, /\tmade0, failure1 := json\.ValueString\("a"\)\n[^]*?\tmade2, failure3 := json\.ValueNull\(\)\n[^]*?\tmade4, failure5 := json\.ValueBoolean\(true\)\n[^]*?Gather\(\[\]\*json\.Value\{made0, made2, made4\}\)/);
 });
 
+// B2.172: {empty: "object"} of a value class of another repository and of a value alias is left out as None, and the
+// U-2 test gives the empty object of the language in its place in the five targets.
+test('a parameter of a value type with the default {empty: "object"} is None when it is left out, and its U-2 test gives the empty object (U-2, GN-6i, GN-13d)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units[0].members.push({ id: 'relay.size', name: ['size'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', default: { empty: 'object' } }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_relay::size' });
+  contract.cases.push({ member: 'relay.size', file: 'contracts/size.json', group: 'size' });
+  caseFiles.set('contracts/size.json', { size: [{ id: 'a_text', value: { kind: 'text', value: 'a' }, result: 1 }] });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  // The core takes Option, None when the value is left out.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let value: Option<polyspec_json::Value> = default_in\(&value, [^\n]*\n\s+let result = polyspec_relay::size\(value\.as_ref\(\)\);/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_relay::size\(value\.as_ref\(\)\)/);
+  // The declarations: null in PHP, which a value class does not take as an array.
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_relay.stub.php'), /function size\(mixed \$value = null\): int \{\}/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/relay/_native.pyi'), /def size\(value: object = \.\.\.\) -> int: \.\.\./);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function size\(value\?: unknown\): number;/);
+  // U-2: the empty object is the instance that the out row of the kind map makes from an empty map.
+  assert.match(text(out, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\(lambda filled: \(foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)\),/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(text(out, RELAY_TESTS[target]), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(\(\(\) => \{ const filled = new foreign_json\.OrderedMap\(\); return foreign_json\.Value\.object\(filled\); \}\)\(\)\)\)/, target);
+  }
+  assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\size\(\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)\)/);
+  assert.match(text(out, RELAY_TESTS.go), /func TestU2SizeWithoutValueIsTheCallWithItsDefault\(t \*testing\.T\) \{\n\tvalue0, err0 := Size\(nil\)\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueObject\(made0\)\n[^]*?\tvalue1, err1 := Size\(made2\)\n/);
+  // A value alias: the empty map of the language.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
+  const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  assert.match(text(own, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\{\}\)\),/);
+  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
+  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(\[\]\)\),/);
+  assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
+  // Any other {empty} of a value type stays refused by name.
+  for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'list' };
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /sample\.size\.value: the default \{empty: "list"\} of the type \{"unit":"data"\} is not generated \(U-2\)/);
+});
+
 test('a library without kinds that takes a value class of another repository calls no conversion of a core error that it does not have (E-1c, GN-6x)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
