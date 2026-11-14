@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
+  built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
+  library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
+  library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
+  `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
+  change.
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the

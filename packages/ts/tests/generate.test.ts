@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
@@ -663,6 +663,41 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   // L-2a: the extension of a host package has the same build script in native/ of the host library.
   const host = trackedPackages({ ...contract, packages: { ...contract.packages, php: { ...contract.packages.php, host: true } } }, '0.0.0');
   assert.equal(host.get('packages/php/native/build.rs'), PHP_BUILD);
+});
+
+test('the release profile of a repository with the target go does not turn on LTO, and one that does is a finding (GN-15i, CK-91)', () => {
+  const { root, contract: path } = fixtureCopy(() => {});
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    const check = (): string => String(spawnSync(process.execPath, [cli, 'check', path], { encoding: 'utf8' }).stderr);
+    assert.doesNotMatch(check(), /CK-91/);
+    const manifest = join(root, 'Cargo.toml');
+    // LTO puts the standard library into the one object of the static library, so two of them do not link in one program.
+    for (const lto of ['true', '"fat"', '"thin"']) {
+      writeFileSync(manifest, `[workspace]\nmembers = ["packages/rust"]\n\n[profile.release]\nlto = ${lto}\ncodegen-units = 1\n`);
+      assert.match(check(), new RegExp(`${manifest.replaceAll('/', '\\/')}: CK-91 \\[profile\\.release\\] turns on LTO \\(lto = ${lto.replaceAll('"', '\\"')}\\)`), lto);
+    }
+    for (const lto of ['false', '"off"']) {
+      writeFileSync(manifest, `[workspace]\nmembers = ["packages/rust"]\n\n[profile.release]\nlto = ${lto}\n`);
+      assert.doesNotMatch(check(), /CK-91/, lto);
+    }
+    // The configuration of Cargo in the repository sets a profile too.
+    writeFileSync(manifest, '[workspace]\nmembers = ["packages/rust"]\n');
+    mkdirSync(join(root, '.cargo'));
+    writeFileSync(join(root, '.cargo/config.toml'), '[profile.release]\nlto = true\n');
+    assert.match(check(), /\.cargo\/config\.toml: CK-91 \[profile\.release\] turns on LTO/);
+    // A contract without the target go has no Go static library.
+    const other = fixtureCopy((c) => { c.targets = ['php', 'python', 'node', 'wasm']; });
+    try {
+      execFileSync(process.execPath, [cli, 'scaffold', '--root', other.root]);
+      writeFileSync(join(other.root, 'Cargo.toml'), '[workspace]\nmembers = ["packages/rust"]\n\n[profile.release]\nlto = true\n');
+      assert.doesNotMatch(String(spawnSync(process.execPath, [cli, 'check', other.contract], { encoding: 'utf8' }).stderr), /CK-91/);
+    } finally {
+      rmSync(other.root, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('every scaffolded manifest carries the licence of the core, and a core without one is a finding (GN-3f, CK-71)', () => {
