@@ -2091,7 +2091,11 @@ the design ids are those of the binding design.
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's
   core judges every value (B-1), so a refused result has the alias's kind and this test is not generated; its other
-  arguments are placeholders whose lists have one item.
+  arguments are placeholders whose lists have one item. The tests of the raised exception and of the result of
+  another type are generated only for a member whose core path gives back the failure of the callback (GN-7,
+  `core.failure`), because only such a member calls the callback during the call: a member that takes the callback
+  by a parameter with `keeps` and fails in no other way keeps it for a later member, so the call returns before the
+  callback runs.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3604a871c593ba557635e97dae8ad320228eda987cb203de86e32e9889897fac -->
+<!-- source-sha256: 442fd0207d08ea0f4ba6ce4f509facb6a2e62a730590ac1fa826284cc75c8ed2 -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,15 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
+  member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성
+  시험은 이제 코어 경로가 callback의 실패를 돌려주는 member에만 생성된다(K-2). Go crate는 함수 타입을 받는 계약에만
+  `kept_function_in`을 쓰며, sample과 consumer는 그것을 받지 않는다(GN-6z). Node `cancel_in`은
+  `clippy::type_complexity`가 요구하는 대로 `addEventListener`의 타입을 alias로 이름한다(GN-6aq). Python은 keeps가
+  있는 callback parameter를 호출의 struct 대신 그 box로 코어에 옮긴다(GN-6aa). classes 레포는 `shout`의 case를
+  가져서 Go 시험이 내보낸 모든 함수를 부르고, consumer의 손으로 쓴 시험은 reference node를 가진 pair case를
+  건너뛴다(GN-6ar).
 
 - end-to-end 저장소의 생성 crate는 lane들이 합쳐진 뒤 컴파일되지 않았다. sample의 Node crate는 value class `box`의
   check 함수를 Rust token이 아닌 `check_r#box`로 이름했다(GN-6). 이제 `check_box`다. trait가 `Send + Sync`이고 값이

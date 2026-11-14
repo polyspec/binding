@@ -625,13 +625,13 @@ export function pythonTests(model: Model, module: string): string {
     def test_k2_${name}_refuses_a_callback_without_its_members(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${with_({ missing: true })}
-        self.assertEqual(caught.exception.kind, "invalid_callback")
+        self.assertEqual(caught.exception.kind, "invalid_callback")${!fn.failure ? '' : `
 
     def test_k2_${name}_lets_the_exception_of_a_callback_through(self) -> None:
         raised = LookupError("raised by the callback")
         with self.assertRaises(LookupError) as caught:
             ${with_({ raise: 'raised' })}
-        self.assertIs(caught.exception, raised)${judgesCallbackResult(model, cbUnit) ? `
+        self.assertIs(caught.exception, raised)`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
 
     def test_k2_${name}_refuses_a_callback_result_of_another_type(self) -> None:
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:

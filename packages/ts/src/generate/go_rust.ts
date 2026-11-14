@@ -858,7 +858,8 @@ ${decode}
 function keptFuncsRust(model: Model): string {
   if (!keeps(model)) return '';
   const p = prefix(model);
-  return `
+  // GN-6aa: a contract that keeps callbacks and takes no function type reads its kept funcs by kept_<unit> alone.
+  return `${!takesFunction(model) ? '' : `
 /// GN-6z: a func enters as the call and its index among the funcs of the call that the core may keep. Package binding
 /// gives the cgo.Handle under which it holds the func from then on, which the function holds as a Native (GN-6u), so a
 /// func that the C ABI does not read is held by its call alone. A nil func is kind invalid_argument_type.
@@ -875,7 +876,7 @@ fn kept_function_in(input: &mut &[u8], subject: &str) -> Result<Native, Fail> {
     }
     Ok(go_native(handle))
 }
-
+`}
 /// GN-6z: the call of package binding in which a kept func ran, through which its result is read (a value alias by the
 /// questions of GoHost); its drop ends the call, once the result was read.
 struct KeptRun {

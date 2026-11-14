@@ -35,7 +35,17 @@
       "text": "a,c"
     }
   ],
-  "shout": [],
+  "shout": [
+    {
+      "id": "a_tag_is_shouted",
+      "tag": {
+        "new": "tag.new",
+        "args": {
+          "name": "a"
+        }
+      }
+    }
+  ],
   "tag_new": [
     {
       "id": "a_tag_holds_its_name",

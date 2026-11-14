@@ -185,7 +185,10 @@ fn cancel_in(value: Unknown<'_>, subject: &str) -> Result<binding_core::Cancel, 
         .map_err(internal)?;
     let mut options = Object::new(&env).map_err(internal)?;
     options.set_named_property("once", true).map_err(internal)?;
-    let listen: Function<'_, FnArgs<(&str, Function<'_, (), ()>, Object<'_>)>, Unknown<'_>> = signal.get_named_property("addEventListener").map_err(internal)?;
+    // clippy::type_complexity: the method addEventListener, which takes the name of the event, the listener and the
+    // options, is named by an alias.
+    type AddListener<'a> = Function<'a, FnArgs<(&'a str, Function<'a, (), ()>, Object<'a>)>, Unknown<'a>>;
+    let listen: AddListener<'_> = signal.get_named_property("addEventListener").map_err(internal)?;
     listen.apply(signal, FnArgs::from(("abort", listener, options))).map_err(internal)?;
     Ok(cancel)
 }

@@ -58,6 +58,26 @@ final class CasesTest extends TestCase
         };
     }
 
+    /**
+     * GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
+     * tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only.
+     */
+    private static function plain(array $given): bool
+    {
+        if ($given['kind'] === 'reference') {
+            return false;
+        }
+        if (!is_array($given['value'])) {
+            return true;
+        }
+        foreach ($given['value'] as $item) {
+            if (!self::plain(array_is_list($item) && count($item) === 2 && is_array($item[1]) ? $item[1] : $item)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public function testMeasureAndPair(): void
     {
         $cases = self::cases();
@@ -66,7 +86,7 @@ final class CasesTest extends TestCase
         foreach ($cases['measure'] as $case) {
             self::assertSame($case['result'], Consumer\measure(self::value($case['value'])), $case['id']);
         }
-        foreach ($cases['pair'] as $case) {
+        foreach (array_filter($cases['pair'], static fn (array $case): bool => self::plain($case['value'])) as $case) {
             self::assertSame(self::value($case['result']), Consumer\pair(self::value($case['value'])), $case['id']);
         }
     }

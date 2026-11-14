@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
+  its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the
+  generated tests of the callback's exception and of a result of another type are now generated only for a member
+  whose core path gives back the failure of the callback (K-2). The Go crate writes `kept_function_in` only for a
+  contract that takes a function type, which the sample and the consumer do not (GN-6z). Node `cancel_in` names the
+  type of `addEventListener` by an alias, which `clippy::type_complexity` requires (GN-6aq). Python moves a callback
+  parameter with keeps into the core as its box, where it passed the struct of the call (GN-6aa). The classes
+  repository has a case of `shout`, so a Go test calls every exported function, and the hand-written tests of the
+  consumer skip a pair case that holds a reference node (GN-6ar).
+
 - The generated crates of the end-to-end repositories did not compile once the lanes met. The Node crate of the
   sample named the check function of the value class `box` `check_r#box`, which is no Rust token (GN-6); it is now
   `check_box`. The sample unit `feed`, whose trait is `Send + Sync` and whose values enter only parameters with

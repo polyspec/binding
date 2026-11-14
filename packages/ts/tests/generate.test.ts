@@ -9007,3 +9007,49 @@ test('the generated crates call the API of the napi release that the workspace p
   // PHP: the class Cancellation is an item of the module entry, which cancel_in of the crate root names by its path.
   assert.match(text(classes, 'packages/php-ext/generated/lib.rs'), /<&entry::PhpCancellation as FromZval>::from_zval\(value\)/);
 });
+
+test('a member that keeps its callback has the K-2 tests of a raised exception and of a result of another type only when its core path gives back the failure of the callback (K-2, GN-7, B2.234)', () => {
+  // Index.single and Index.supplied keep their callback for Index.get, so the call returns before the callback runs.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const files: [string, RegExp, RegExp, RegExp][] = [
+    ['packages/ts/generated/tests/generated.test.mjs', /K-2: Index\.(single|supplied) (lets the exception|refuses a callback result)/, /K-2: resolve lets the exception of a callback through/, /K-2: Index\.single refuses a callback without its members/],
+    ['packages/ts/wasm/generated/tests/generated.test.mjs', /K-2: Index\.(single|supplied) (lets the exception|refuses a callback result)/, /K-2: resolve lets the exception of a callback through/, /K-2: Index\.single refuses a callback without its members/],
+    ['packages/php-ext/generated/tests/GeneratedTest.php', /testK2Index(Single|Supplied)(LetsTheException|RefusesACallbackResult)/, /testK2resolveLetsTheExceptionOfACallbackThrough/, /testK2IndexSingleRefusesACallbackWithoutItsMembers/],
+    ['packages/python/generated/tests/test_generated.py', /test_k2_index_(single|supplied)_(lets_the_exception|refuses_a_callback_result)/, /test_k2_resolve_lets_the_exception_of_a_callback_through/, /test_k2_index_single_refuses_a_callback_without_its_members/],
+    ['packages/go/zz_generated_test.go', /TestK2Index(Single|Supplied)LetsTheError|TestU3Index(Single|Supplied)Panics/, /TestK2ResolveLetsTheErrorOfLookupThrough/, /TestK2IndexSingleRefusesANilSource/],
+  ];
+  for (const [path, absent, kept, refused] of files) {
+    const lib = text(sample, path);
+    assert.doesNotMatch(lib, absent, path);
+    assert.match(lib, kept, path);
+    assert.match(lib, refused, path);
+  }
+});
+
+test('Go writes kept_function_in only for a contract that takes a function type (GN-6aa, GN-6z, B2.235)', () => {
+  const generated = e2eGenerated();
+  for (const repo of ['sample', 'consumer']) {
+    const go = text(generated.get(repo) ?? new Map(), 'packages/go/internal/ffi/generated/lib.rs');
+    assert.doesNotMatch(go, /\bfn kept_function_in\b/, repo);
+  }
+  // The sample keeps callbacks, whose kept funcs are still read and run.
+  assert.match(text(generated.get('sample') ?? new Map(), 'packages/go/internal/ffi/generated/lib.rs'), /\bstruct KeptRun\b/);
+});
+
+test('Node names the function type of addEventListener in cancel_in by an alias (GN-6aq, B2.236)', () => {
+  const lib = text(e2eGenerated().get('classes') ?? new Map(), 'packages/ts/generated/lib.rs');
+  // clippy::type_complexity refuses the type of the function written at the let.
+  assert.doesNotMatch(lib, /let listen: Function</);
+  assert.match(lib, /type AddListener<'a> = Function<'a, FnArgs<\(&'a str, Function<'a, \(\), \(\)>, Object<'a>\)>, Unknown<'a>>;\n\s*let listen: AddListener<'_> = /);
+});
+
+test('every public function of the classes repository is called by a Go test, so deadcode finds none of its exports unused (GN-13e, B2.237)', () => {
+  const go = text(e2eGenerated().get('classes') ?? new Map(), 'packages/go/zz_generated_test.go');
+  assert.match(go, /func TestGN13eShoutATagIsShouted\(t \*testing\.T\) \{[\s\S]*?\bShout\(/);
+});
+
+test('Python moves a callback parameter with keeps into the core as its box (GN-6aa, B2.238)', () => {
+  const python = text(e2eGenerated().get('sample') ?? new Map(), 'packages/python/generated/lib.rs');
+  assert.match(python, /let source: Box<dyn polyspec_sample::Feed[^\n]*> = in_feed\([^\n]*\)[^\n]*\.map\(/);
+  assert.doesNotMatch(python, /let source: CbFeed = /);
+});

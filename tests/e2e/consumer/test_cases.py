@@ -27,6 +27,18 @@ def value(given: dict) -> object:
     return given["value"]
 
 
+def plain(given: object) -> bool:
+    """GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
+    tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only."""
+    if not isinstance(given, dict):
+        return True
+    if given["kind"] == "reference":
+        return False
+    if isinstance(given["value"], list):
+        return all(plain(item[1]) if isinstance(item, list) else plain(item) for item in given["value"])
+    return True
+
+
 class Holder:
     def __init__(self, held: dict) -> None:
         self.held = held
@@ -46,7 +58,7 @@ class ContractCaseTest(unittest.TestCase):
         for case in cases["measure"]:
             with self.subTest(case=case["id"]):
                 self.assertEqual(consumer.measure(value(case["value"])), case["result"])
-        for case in cases["pair"]:
+        for case in filter(lambda case: plain(case["value"]), cases["pair"]):
             with self.subTest(case=case["id"]):
                 self.assertEqual(consumer.pair(value(case["value"])), value(case["result"]))
 

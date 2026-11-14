@@ -487,12 +487,12 @@ test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}
       out.push(`
 test('K-2: ${name} refuses a callback without its members', () => {
   assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
-});
+});${!fn.failure ? '' : `
 
 test('K-2: ${name} lets the exception of a callback through', () => {
   const raised = new Error('raised by the callback');
   assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
-});${judgesCallbackResult(model, cbUnit) ? `
+});`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
 
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));

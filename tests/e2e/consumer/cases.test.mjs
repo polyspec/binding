@@ -16,6 +16,10 @@ function value(given) {
   return given.value;
 }
 
+// GN-6ar: a case value with a node of kind reference is an instance of a class of the owner, which the generated
+// tests (GN-13e) make and compare by its tokens; these tests read the plain data of the alias only.
+const plain = (given) => given.kind !== 'reference' && (!Array.isArray(given.value) || given.value.every((item) => (Array.isArray(item) ? plain(item[1]) : plain(item))));
+
 const holder = (held) => ({
   get: (key) => (held.has(key) ? held.get(key) : null),
   set: (key, item) => void held.set(key, item),
@@ -24,7 +28,7 @@ const holder = (held) => ({
 test('measure and pair take and give data', () => {
   assert.ok(cases.measure.length > 0 && cases.pair.length > 0);
   for (const kase of cases.measure) assert.equal(consumer.measure(value(kase.value)), kase.result, kase.id);
-  for (const kase of cases.pair) assert.deepEqual(consumer.pair(value(kase.value)), value(kase.result), kase.id);
+  for (const kase of cases.pair.filter((kase) => plain(kase.value))) assert.deepEqual(consumer.pair(value(kase.value)), value(kase.result), kase.id);
 });
 
 test('the holder gives and takes data', () => {

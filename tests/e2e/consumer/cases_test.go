@@ -96,6 +96,32 @@ func value(t *testing.T, of given) any {
 	return held
 }
 
+// plain reports whether a case value holds no node of kind reference (GN-6ar): such a node is an instance of a class
+// of the owner, which the generated tests (GN-13e) make; these tests read the plain data of the alias only.
+func plain(of given) bool {
+	if of.Kind == "reference" {
+		return false
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(of.Value, &items) != nil {
+		return true
+	}
+	for _, item := range items {
+		var entry [2]json.RawMessage
+		var inner given
+		if json.Unmarshal(item, &entry) == nil {
+			if json.Unmarshal(entry[1], &inner) == nil && !plain(inner) {
+				return false
+			}
+			continue
+		}
+		if json.Unmarshal(item, &inner) == nil && !plain(inner) {
+			return false
+		}
+	}
+	return true
+}
+
 // holder is a holder of data by key, as Go code implements it.
 type holder struct {
 	held map[string]any
@@ -126,6 +152,9 @@ func TestMeasureAndPair(t *testing.T) {
 		}
 	}
 	for _, c := range all.Pair {
+		if !plain(c.Value) {
+			continue
+		}
 		got, err := consumer.Pair(value(t, c.Value))
 		if want := value(t, c.Result); err != nil || !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: %#v, %v, want %#v", c.ID, got, err, want)

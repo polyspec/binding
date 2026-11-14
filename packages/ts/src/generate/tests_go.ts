@@ -1075,6 +1075,10 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     if (callback !== undefined) {
       out.callbacks.add(callback);
       single('K-2', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_callback', 'K-2'), true);
+    }
+    // K-2: the error and the panic of a callback reach the caller of a member that calls it during the call: a callback
+    // with keeps is kept for a later member, unless the member names core.failure (GN-7).
+    if (callback !== undefined && fn.failure) {
       const b = new Body();
       const receiver = sample === undefined ? '' : made(v, b, sample);
       const args = callArgs(v, b, fn, (a) => (a === arg ? `raising${goName(callback.unit.name)}{err: raised}` : a.default === undefined ? placeholder(v, b, a.type, true) : undefined));

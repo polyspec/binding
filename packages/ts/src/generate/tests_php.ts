@@ -572,7 +572,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         } catch (${cls('type')} $error) {
             self::assertSame('invalid_callback', $error->kind());
         }
-    }
+    }${!fn.failure ? '' : `
 
     public function testK2${name}LetsTheExceptionOfACallbackThrough(): void
     {
@@ -583,7 +583,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         } catch (\\LogicException $error) {
             self::assertSame($raised, $error);
         }
-    }${judgesCallbackResult(model, cbUnit) ? `
+    }`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
 
     public function testK2${name}RefusesACallbackResultOfAnotherType(): void
     {

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d8ca74d1dd337bc3f2780523a86dfdba550f00ec1d61eff18deafe3847512221 -->
+<!-- source-sha256: bbb8e3de512eb57be3acb6c0e2141143ed53240a9b207291a5845c22f4a15065 -->
 # 생성기
 
 [English](generator.md)
@@ -1700,7 +1700,10 @@
   생성자와 property의 case를 실행한다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
-  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.
+  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 던진
+  예외와 다른 타입의 결과 시험은 코어 경로가 callback의 실패를 돌려주는 member(GN-7, `core.failure`)에만 생성한다. 그런 member만 호출
+  중에 callback을 부르기 때문이다. `keeps`가 있는 parameter로 callback을 받고 다른 방식으로 실패하지 않는 member는
+  그것을 나중 member를 위해 보관하므로, callback이 실행되기 전에 호출이 돌아온다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.
   case는 callback parameter를 fixture로 준다:
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만

@@ -607,9 +607,11 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(...functionClosure(model, arg.type, variable, subject));
       continue;
     }
-    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
+    // GN-6aa: a callback parameter with keeps moves into the core as its box, as a callback field of a record does.
+    const keptDirect = !arg.field && unitOf(model, arg.type)?.origin === 'callback' && fn.params.some((p) => p.keeps === true && p.name.join('_') === arg.name.join('_'));
+    const converted = arg.default === undefined ? (arg.field || keptDirect ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
     lines.push(held === undefined
-      ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
+      ? `        let ${variable}: ${keptDirect ? rustType(model, arg.type, true) : argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);
     if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(variable, subject, '|error| binding_error(py, error)')}`);
   }
