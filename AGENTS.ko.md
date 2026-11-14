@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: c6c993f7c3cdd1aace62f379b467c518287cf62aff495d3410d9870b79003d4c -->
+<!-- source-sha256: 5e19a2bffcc076e380db43aa82ba8d7787d7934ec6022bdb3c64d9c0b653d5a8 -->
 # 개발
 
 [English](AGENTS.md)
@@ -60,11 +60,13 @@
   `unit-ts`, `release-coverage`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
   `clippy-rust`, `fmt-rust`, `fmt-e2e`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
   `make ci-targets`로 실행한다. `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
-  `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고, 모든 action을 commit으로
+  `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고(`e2e-amd64`만
+  `ubuntu-26.04`에서 돈다, GN-14g), 모든 action을 commit으로
   고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은
   모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
   하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. 이 job은 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
-  work 디렉터리에서 실행하며, 기록 `var/report/e2e/`를 upload한다. 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
+  work 디렉터리에서 실행한 뒤 그것으로 `make go-musl-check`를 실행하고, 기록 `var/report/e2e/`를 upload한다. job
+  `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다. 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
   없는 레포에 의존하는 `tests/e2e`의 계약은 그 계약의 추적되는 파일이 그 레포의 release tag를 적을 때까지 항목이 없고,
   `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적는다(GN-14g). 다른 레포의
   끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 그 레포의 checkout이 필요하고, 위의 규칙이 commit을 push하거나
@@ -103,3 +105,9 @@
   어느 명령으로, 어느 입력에서 검증했는지 적는다. 이유: commit 이름은 그것을 찾아보지 않는 독자에게 아무것도 말하지 않고,
   다시 쓰이거나 얕은 history에서는 남지 않으며, 독자에게 필요한 사실은 문장 자체에 있어야 한다.
   Enforced by: `packages/ts`의 `npm test`, 그 `tests/tracked-commits.test.ts`가 추적 파일 안의 commit 이름 토큰을 실패시킨다.
+- Own: commit 메시지에는 co-author trailer 같은 AI 도구의 footer나 정체를 밝히는 줄이 없다. `.githooks`의 hook
+  `commit-msg`가 kit의 `check-commits`의 규칙 `commit-ai-footer`와 `commit-ai-identity`(`make commit-msg-hook`)로 그런
+  메시지를 commit이 생기기 전에 거부한다. `make hooks`는 checkout의 `core.hooksPath`를, 따라서 그 worktree들의 것도
+  `.githooks`로 가리키고, checkout마다 한 번 돌린다. 이유: push는 commit이 담은 것을 공개하고, push된 commit은 다시 쓰지
+  않는다.
+  Enforced by: `make hooks`를 돌린 checkout의 hook `commit-msg`. `make hooks-check`는 hook이 없는 checkout을 실패시킨다.

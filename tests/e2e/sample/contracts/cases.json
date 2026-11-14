@@ -1374,6 +1374,13 @@
       ]
     }
   ],
+  "held_source_new": [
+    {
+      "id": "a_held_source_holds_one_key",
+      "key": "a",
+      "value": "1"
+    }
+  ],
   "index_new": [
     {
       "id": "an_index_keeps_its_sources",

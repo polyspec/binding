@@ -72,6 +72,57 @@
     }
   ],
   "copy": [],
+  "read": [
+    {
+      "id": "a_source_of_another_repository_that_holds_the_key_gives_its_value",
+      "source": {
+        "callback": {
+          "source.read": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "source.read",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_held_source_of_the_sample_library_gives_its_value",
+      "source": {
+        "new": "held_source.new",
+        "args": {
+          "key": "a",
+          "value": "1"
+        }
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_held_source_of_the_sample_library_has_no_other_key",
+      "source": {
+        "new": "held_source.new",
+        "args": {
+          "key": "a",
+          "value": "1"
+        }
+      },
+      "key": "b",
+      "result": null
+    }
+  ],
   "turned": [
     {
       "id": "a_blank_stays_blank",
@@ -175,6 +226,61 @@
         }
       ],
       "result": 3
+    }
+  ],
+  "consult": [
+    {
+      "id": "a_held_key_is_its_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "x"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "x"
+    },
+    {
+      "id": "a_refused_key_is_the_kind_of_the_lookup",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "refused"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "kind refused"
     }
   ]
 }

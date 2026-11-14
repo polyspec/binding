@@ -4,10 +4,10 @@
 // U+00FF).
 
 import type { Lang, Name, Type } from '../contract.ts';
-import type { Member, Unit } from '../contract.ts';
+import type { Contract, Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -27,7 +27,8 @@ export interface Context {
   // form of the case as a record, when the language gives none of its own.
   variantNew?: (variant: Variant, kase: VariantCase, fields: string[]) => string;
   // GN-13: how the generated test makes an instance of an error unit with a kind and a message, as language code does.
-  errorNew?: (unit: Unit, kind: string, message: string) => string;
+  // GN-6s: an error unit of the owner of a callback unit of another repository names that library.
+  errorNew?: (unit: Unit, kind: string, message: string, library?: string) => string;
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
@@ -287,14 +288,14 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   const unit = unitOf(model, type);
   const alias = aliasOf(model, type);
   // GN-6x, GN-13: a value of a value class of another repository is an instance of the owner's class, which the
-  // members of its out rows make; a result that holds one is read through the members of the owner, not compared here.
+  // members of its out rows make; a result that holds one is compared with that instance, both read through the
+  // members of the in row of the owner (GN-13e, B2.121).
   if (alias?.library !== undefined && alias.unit.kind === 'class') {
-    if (out) throw new Unsupported(`a result that holds an instance of the class ${alias.unit.id} of ${alias.library} has no case value to compare it with: the instance is read through the members of its owner (GN-6x)`);
     return foreignClassValue(model, ctx, alias, alias.library, value, `the class ${alias.unit.id} of ${alias.library}`);
   }
   if (alias !== undefined) {
     if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
-    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
+    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, unit);
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
@@ -343,11 +344,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if (unit?.origin === 'callback' && ctx.fixtureNew !== undefined && typeof value === 'object' && value !== null && 'callback' in value) {
     return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(model, unit, value, 'a case value')));
   }
-  if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) {
-    const made = memberById(model, String((value as Record<string, unknown>)['new']))?.returns;
-    const of = typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
-    return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
-  }
+  if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) return ctx.instanceNew(callbackInstance(model, unit, libraryOf(type), value));
   // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
   if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
@@ -559,8 +556,9 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
   const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
     // GN-13e: a result of a value alias is compared by the tokens of its places, which name the form of each place.
+    // A value class of another repository is compared as the instance that its case value makes (B2.121).
     const alias = kept ? undefined : aliasOf(model, fn.returns);
-    if (alias !== undefined && alias.unit.out !== undefined) {
+    if (alias !== undefined && alias.unit.out !== undefined && !(alias.library !== undefined && alias.unit.kind === 'class')) {
       const tokens = JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value));
       return alias.inRaises.length > 0 ? { tokens, round: alias.unit.name } : { tokens };
     }
@@ -668,9 +666,54 @@ function isUtf8(bytes: Buffer): boolean {
 
 const SAFE = 2n ** 53n - 1n;
 
+// GN-13e: whether a case value of the kind holds the predicate of an out row of the alias.
+function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>, predicate: string): boolean {
+  const held = node['value'];
+  switch (predicate) {
+    case 'utf8':
+      return kind === 'text' || isUtf8(caseBytes(held));
+    case 'safe_integer':
+      return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
+    case 'integral_float': {
+      const number = caseNumber(held);
+      return Number.isFinite(number) && Number.isInteger(number);
+    }
+    case 'sequence_keys':
+      return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+    default:
+      throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
+  }
+}
+
+// GN-13e: the form in a language of the out row of the alias that makes a case value of the kind: the row of the kind
+// whose predicate the value holds, or else its row without a predicate. A case value of the kind list or text is the
+// map or the bytes of an alias whose out rows have no row of the kind.
+export function aliasOutForm(alias: Unit, lang: string, kind: string, node: Record<string, unknown>): unknown {
+  const rows = alias.out ?? [];
+  const own = rows.filter((r) => r.kind === kind);
+  const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
+  const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holdsPredicate(alias, kind, node, r.when.predicate) === r.when.is)
+    ?? candidates.find((r) => r.when === undefined || r.when === 'else');
+  if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
+  return (matched.make as Record<string, unknown>)[lang];
+}
+
+// GN-13e: the form of a key of a case in a keyed map whose keys have the forms keys: an int key is an int; a text or a
+// byte string is a text when the map takes texts and the bytes are UTF-8, and else bytes.
+export function outKeyForm(key: unknown, keys: readonly string[]): { kind: 'int'; value: string } | { kind: 'text' | 'bytes'; value: Buffer } {
+  if (typeof key === 'object' && key !== null && 'int' in key) return { kind: 'int', value: String((key as { int: unknown }).int) };
+  const bytes = caseBytes(key);
+  return { kind: keys.includes('text') && isUtf8(bytes) ? 'text' : 'bytes', value: bytes };
+}
+
+// GN-13e: the bytes of a text or bytes case value, and whether they are UTF-8.
+export const caseValueBytes = (raw: unknown): { bytes: Buffer; utf8: boolean } => {
+  const bytes = caseBytes(raw);
+  return { bytes, utf8: isUtf8(bytes) };
+};
+
 // The tokens of a case value of an alias in a language (GN-13e).
 export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown): string[] {
-  const rows = alias.out ?? [];
   const kept = aliasKept(model, lang, alias);
   const out: string[] = [];
   class Key {
@@ -697,32 +740,7 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
     return textToken(bytes, keys.includes('text') && isUtf8(bytes));
   };
   const keyed = (make: unknown): readonly string[] => (typeof make === 'object' && make !== null && 'keyed_map' in make ? (make as { keyed_map: { key: string[] } }).keyed_map.key : ['int', 'text', 'bytes']);
-  const holds = (kind: string, node: Record<string, unknown>, predicate: string): boolean => {
-    const held = node['value'];
-    switch (predicate) {
-      case 'utf8':
-        return kind === 'text' || isUtf8(caseBytes(held));
-      case 'safe_integer':
-        return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
-      case 'integral_float': {
-        const number = caseNumber(held);
-        return Number.isFinite(number) && Number.isInteger(number);
-      }
-      case 'sequence_keys':
-        return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
-      default:
-        throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
-    }
-  };
-  // A case value of the kind list or text is the map or the bytes of an alias whose out rows have no row of the kind.
-  const formOf = (kind: string, node: Record<string, unknown>): unknown => {
-    const own = rows.filter((r) => r.kind === kind);
-    const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
-    const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holds(kind, node, r.when.predicate) === r.when.is)
-      ?? candidates.find((r) => r.when === undefined || r.when === 'else');
-    if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
-    return matched.make[lang];
-  };
+  const formOf = (kind: string, node: Record<string, unknown>): unknown => aliasOutForm(alias, lang, kind, node);
   const keptOfForm = (form: unknown): TokenForm | undefined => (typeof form === 'string' && form.endsWith('.constructor') ? kept.find((k) => `${k.unit}.constructor` === form) : undefined);
   while (stack.length > 0) {
     const item = stack.pop();
@@ -823,7 +841,7 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
 }
 
 // The key forms of the keyed map that the one field of a value class keeps.
-function keyedField(model: Model, unit: string): readonly string[] {
+export function keyedField(model: Model, unit: string): readonly string[] {
   const type = model.contract.units.find((u) => u.id === unit)?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
   return typeof type === 'object' && 'keyed_map' in type ? type.key : ['int', 'text', 'bytes'];
 }
@@ -835,10 +853,10 @@ function keyedField(model: Model, unit: string): readonly string[] {
 // content, then filled, in an expression that names it: a closure in PHP, whose references are variables that the
 // places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
 // every place of an id holds the same instance and a later place inside the first makes a cycle.
-function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+function valueFromJson(model: Model, ctx: Context, value: unknown, where: string, alias?: Unit): string {
   const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
   if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
-  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
+  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set(), alias };
   const value_ = valueOf(model, ctx, value, where, making, false);
   if (making.made.length === 0 && making.fills.length === 0) return value_;
   if (ctx.lang === 'python') return `(${[...making.made, ...making.fills, value_].join(', ')})[-1]`;
@@ -862,6 +880,8 @@ interface Making {
   fills: string[];
   references: Set<number>;
   objects: Set<number>;
+  // GN-13: the value alias of the case value, whose out rows name the form of a float.
+  alias: Unit | undefined;
 }
 
 // The id of a reference or of an object of a case value (G-5).
@@ -886,6 +906,11 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   if (kind === 'bytes') return fromJson(model, ctx, 'bytes', held);
   if (kind === 'float') {
     const float = fromJson(model, ctx, 'float', held);
+    // GN-13: a float that the out row of its alias gives as an instance of a value class (a Node integral float, which a
+    // number would give as an int) is that instance, the form that the binding gives and takes back as the float.
+    const form = making.alias !== undefined && lang !== 'php' && (making.alias.out ?? []).some((row) => row.kind === 'float') ? aliasOutForm(making.alias, ctx.target ?? lang, 'float', record) : undefined;
+    const cls = typeof form === 'string' && form.endsWith('.constructor') ? model.contract.units.find((u) => `${u.id}.constructor` === form) : undefined;
+    if (cls !== undefined) return lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(float(${float}))` : `new pkg.${langName('node', cls.name, 'class')}(${float})`;
     return lang === 'python' ? `float(${float})` : lang === 'php' ? `(float) ${float}` : float;
   }
   if (kind === 'int') {
@@ -1263,6 +1288,50 @@ export function implementerInstance(model: Model, callback: Unit, value: unknown
   return instanceOf(model, implementer.unit.id, value, where);
 }
 
+// GN-6s, GN-13f: the model of the contract of another repository, whose members an instance value at a place of a
+// callback unit of that repository names; each of its members names the library, so a test calls it through the
+// package of that library.
+const ownerModels = new WeakMap<Contract, Model>();
+function ownerModel(model: Model, library: string): Model {
+  const owner = model.foreign.get(library);
+  if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6s, GN-13f)`);
+  const kept = ownerModels.get(owner);
+  if (kept !== undefined) return kept;
+  let built: Model;
+  try {
+    built = buildModel(owner, '0.0.0', owner.library, new Map(), model.foreign);
+  } catch (error) {
+    throw new Unsupported(`the contract of ${library} gives no members to a case: ${error instanceof Error ? error.message : String(error)} (GN-6s, GN-13f)`);
+  }
+  for (const fn of [...built.functions, ...built.objects.flatMap((o) => o.members)]) fn.library = library;
+  ownerModels.set(owner, built);
+  return built;
+}
+
+// GN-13f, GN-6s: the instance of an instance value at a place of a callback unit: the class that its make member
+// gives, a member of this contract or, when this contract has none of that id, of the owner of a callback unit of
+// another repository, whose members take no unit, because the test reads a case value with this contract.
+export function callbackInstance(model: Model, unit: Unit, library: string | undefined, value: unknown): Receiver {
+  const where = `a case value of ${unit.id}`;
+  const id = String((value as Record<string, unknown>)['new'] ?? (value as Record<string, unknown>)['from']);
+  const of = (m: Model): string => {
+    const made = memberById(m, id)?.returns;
+    return typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
+  };
+  if (library === undefined || memberById(model, id) !== undefined) return instanceOf(model, of(model), value, where);
+  const owner = ownerModel(model, library);
+  const receiver = instanceOf(owner, of(owner), value, where);
+  const takesUnit = (type: unknown): boolean => typeof type === 'object' && type !== null && ('unit' in type || Object.values(type).some(takesUnit));
+  const check = (r: Receiver): void => {
+    for (const fn of [r.factory, ...(r.then ?? []).map((step) => step.fn)]) {
+      if (fn.params.some((p) => takesUnit(p.type))) throw new Unsupported(`${where}: ${fn.member.id} of ${library} takes a unit, which a case value of this repository does not give (G-4, GN-6s, GN-13f)`);
+    }
+    if (r.on !== undefined) check(r.on);
+  };
+  check(receiver);
+  return receiver;
+}
+
 // GN-13f, GN-6ap: the instance of an instance value at the place of a generated interface, of the first class of the
 // target that implements the interface and that the factory of the value makes; a value that no such class makes is
 // not written, which fails the test of its case by name (GN-13e).
@@ -1337,6 +1406,7 @@ function instanceAt(model: Model, type: Type, value: unknown, where: string): Re
   const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
   const unit = unitOf(model, inner);
   if (unit?.origin === 'callback' && libraryOf(inner) === undefined) return implementerInstance(model, unit, value);
+  if (unit?.origin === 'callback') return callbackInstance(model, unit, libraryOf(inner), value);
   const iface = interfaceOf(model, inner);
   if (iface !== undefined) return interfaceInstance(model, iface, value);
   return instanceOf(model, unit?.id ?? '', value, where);
@@ -1708,7 +1778,7 @@ export interface Fixture {
   unit: Unit;
   // The rows of each member of the callback unit, by its position in the unit: the arguments in parameter order, the
   // result and whether the row is used once, each a case value.
-  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string } }[];
+  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string; library?: string } }[];
   // The calls that the core makes in order, when the case names them.
   calls?: { member: number; args: unknown[] }[];
 }
@@ -1736,6 +1806,8 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
 export function fixtureOf(model: Model, unit: Unit, given: unknown, where: string): Omit<Fixture, 'arg'> {
   const value = given as { callback: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] };
   const members = unit.members ?? [];
+  // GN-6s: the library of a callback unit of another repository, whose own error units its rows raise.
+  const library = model.foreignCallbacks.find((c) => c.unit === unit || (c.library !== undefined && c.unit.id === unit.id && model.foreign.get(c.library)?.units.includes(unit) === true))?.library;
   const position = (memberId: string): number => {
     const found = members.findIndex((m) => m.id === memberId);
     if (found < 0) throw new Unsupported(`${where} names ${memberId}, which is no member of ${unit.id} (G-5)`);
@@ -1754,9 +1826,10 @@ export function fixtureOf(model: Model, unit: Unit, given: unknown, where: strin
       if (row['async'] === true) throw new Unsupported(`${where}: an async row of a callback fixture is not generated yet`);
       // GN-13: a raise row throws an instance of its error unit with its kind, which the member recognizes (U-3).
       const raise = row['raise'] as { error: string; kind: string } | undefined;
-      const raised = raise === undefined ? undefined : model.errorUnits.find((u) => u.unit.id === raise.error)?.unit;
+      // GN-6s: a row of a callback unit of another repository raises an error unit of that repository.
+      const raised = raise === undefined ? undefined : library === undefined ? model.errorUnits.find((u) => u.unit.id === raise.error)?.unit : model.foreign.get(library)?.units.find((u) => u.id === raise.error && u.kind === 'error');
       if (raise !== undefined && raised === undefined) throw new Unsupported(`${where}: the raise row names ${raise.error}, which is no error unit that is generated (GN-13)`);
-      rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true, ...(raise === undefined || raised === undefined ? {} : { raise: { unit: raised, kind: raise.kind } }) });
+      rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true, ...(raise === undefined || raised === undefined ? {} : { raise: { unit: raised, kind: raise.kind, ...(library === undefined ? {} : { library }) } }) });
     }
   }
   const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
@@ -1780,7 +1853,7 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, returns, row.result);
       const raise = row.raise;
       if (raise !== undefined && ctx.errorNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} is not generated for ${ctx.target ?? ctx.lang} yet`);
-      const raised = raise === undefined || ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`);
+      const raised = raise === undefined || ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`, raise.library);
       return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once), raised];
     }),
     calls: fixture.calls?.map((call) => [text(name(call.member)), list(argsOf(call.member, call.args))]),

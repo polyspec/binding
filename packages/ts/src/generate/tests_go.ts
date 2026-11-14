@@ -15,12 +15,13 @@
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
 
-import type { Member, Type, Unit } from '../contract.ts';
+import type { Contract, Member, Type, Unit } from '../contract.ts';
+import { classIn } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerType,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
@@ -29,7 +30,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, cancelState,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState,
 } from './samples.ts';
 
 interface Values {
@@ -37,11 +38,15 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
+  // GN-13e, B2.121: whether a test compares a result that holds an instance of a value class of another repository.
+  readsForeign?: boolean;
   // GN-6aa: the callback units whose fixture a case value inside another value makes.
   fixtures: Set<CallbackUnit>;
   // GN-6z: the statement that ends every func of a function type that the values of a test give, in the place of its
   // fixture: the test of the error or of the panic of a func that the core kept in an earlier call.
   keptEnd?: (returns: Type) => string;
+  // GN-13e: the value is the expected result of a case, which takes the forms of the Go out rows of an alias.
+  result?: boolean;
 }
 
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
@@ -122,6 +127,8 @@ function floatValue(value: unknown): string {
     if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
     return form;
   }
+  // G-5: the Go constant -0.0 is 0, so a negative zero is made at run time.
+  if (Object.is(value, -0)) return 'math.Copysign(0, -1)';
   return String(value);
 }
 
@@ -130,6 +137,14 @@ const goKey = (key: unknown): string => caseKey(key, (kind, raw) => {
   if (kind === 'text') return `binding.TextKey(${goString(String(raw))})`;
   return `binding.BytesKey(${hexBytes(raw, 'bytes')})`;
 });
+
+// GN-13e: a key of an expected result in the form that the keyed map of the out row gives it.
+const goOutKey = (key: unknown, keys: readonly string[]): string => {
+  const form = outKeyForm(key, keys);
+  if (form.kind === 'int') return `binding.IntKey(${form.value})`;
+  if (form.kind === 'text') return `binding.TextKey(${goString(form.value.toString('utf8'))})`;
+  return `binding.BytesKey(${hexBytes({ hex: form.value.toString('hex') }, 'bytes')})`;
+};
 
 // A map or a keyed map of a test: a local that statements fill, because gofmt keeps a function literal on one line
 // only while it is short. sink takes the statements, and each of sets is the arguments of one Set.
@@ -159,7 +174,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
   if ('function' in type) return machineFunction(type) ? functionValue(v, b, type.function, json) : keptFunctionValue(v, b, type.function, json);
-  if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough');
+  if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough', v.result === true);
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
@@ -180,10 +195,13 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   const alias = aliasOf(v.model, type);
   // GN-6x, GN-13b: a value of a value class of another repository is an instance of the owner's class.
   if (alias?.library !== undefined && alias.unit.kind === 'class') return foreignMade(v, b, alias, json);
-  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`);
+  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
-  if (implemented !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
+  if (implemented !== undefined && implemented.library === undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
+  // GN-13f, GN-6s: an instance value at a place of a callback of another repository is an instance of the class that
+  // its make member returns, as in the other targets.
+  if (implemented !== undefined && isInstanceValue(json)) return made(v, b, callbackInstance(v.model, implemented.unit, implemented.library, json));
   // GN-13f, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
   const iface = interfaceOf(v.model, type);
   if (iface !== undefined) return made(v, b, interfaceInstance(v.model, iface, json));
@@ -217,7 +235,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   const unit = unitOf(v.model, type);
   // GN-6aa: a callback value inside another value is a fixture of the body, whose calls the test does not read.
-  const callback = v.model.callbacks.find((c) => c.unit === unit);
+  const callback = [...v.model.callbacks, ...v.model.foreignCallbacks].find((c) => c.unit === unit);
   if (callback !== undefined && unit !== undefined && typeof json === 'object' && 'callback' in json) {
     v.fixtures.add(callback);
     return fixtureLines(v, b, fixtureOf(v.model, unit, json, 'a case value'), b.fresh('fixture'));
@@ -307,8 +325,8 @@ const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', o
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string): string {
-  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map() };
+function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false): string {
+  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result };
   const text = aliasPart(model, unit, json, where, making);
   // GN-13: the instances of the value classes are made first and then filled, as statements of the test, so every
   // place of an id is the same pointer and a cycle is made.
@@ -324,12 +342,21 @@ interface Making {
   fills: string[];
   references: Map<number, string>;
   objects: Map<number, string>;
+  // GN-13e: the value is the expected result of a case, made by the Go out rows of the alias.
+  result: boolean;
 }
 
 // The id of a reference or of an object of a case value (G-5).
 function idOf(raw: unknown, where: string): number {
   if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) throw new Error(`an id of ${where} is a number of at least 0, not ${JSON.stringify(raw)}`);
   return raw;
+}
+
+// GN-13e: the entries of an expected result that an out row makes a *KeyedMap[any], whose keys take the forms of the
+// row.
+function outMap(model: Model, unit: Unit | undefined, entries: [unknown, unknown][], keys: readonly string[], where: string, making: Making): string {
+  const sets = entries.map(([key, item]) => `${goOutKey(key, keys)}, ${aliasPart(model, unit, item, where, making)}`);
+  return mapLocal(making.b, making.fills, 'binding.KeyedMap[any]', sets);
 }
 
 function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: string, making: Making): string {
@@ -342,6 +369,15 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   const held = record['value'];
   if (kind === 'null') return 'nil';
   if (kind === 'bool') return String(held === true);
+  // GN-13e: an expected result takes the Go form of the out row of the alias that makes the value: a byte string that
+  // a row makes a text is a string, a map that a row makes a list is a []any, and a key of a keyed map is a text only
+  // where the map takes texts and the bytes are UTF-8.
+  const form = making.result && unit?.out !== undefined && (kind === 'text' || kind === 'bytes' || kind === 'list' || kind === 'map') ? aliasOutForm(unit, 'go', kind, record) : undefined;
+  if ((kind === 'bytes' && form === 'text') || (kind === 'text' && form === 'bytes')) {
+    const { bytes, utf8 } = caseValueBytes(held);
+    if (form === 'bytes') return hexBytes({ hex: bytes.toString('hex') }, 'bytes');
+    return utf8 ? goString(bytes.toString('utf8')) : textValue({ hex: bytes.toString('hex') });
+  }
   if (kind === 'text') return textValue(held);
   if (kind === 'bytes') return hexBytes(held, 'bytes');
   if (kind === 'float') {
@@ -369,7 +405,11 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     making.fills.push(`var ${local} any = ${inner}`, `for range ${repeat} {`, `\t${local} = []any{${local}}`, '}');
     return local;
   }
+  const keyedForm = typeof form === 'object' && form !== null && 'keyed_map' in form ? (form as { keyed_map: { key: string[] } }).keyed_map.key : undefined;
+  if (kind === 'list' && Array.isArray(held) && keyedForm !== undefined) return outMap(model, unit, held.map((item, i) => [{ int: i }, item]), keyedForm, where, making);
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
+  if (kind === 'map' && Array.isArray(held) && form === 'list') return `[]any{${(held as [unknown, unknown][]).map(([, item]) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
+  if (kind === 'map' && Array.isArray(held) && keyedForm !== undefined) return outMap(model, unit, held as [unknown, unknown][], keyedForm, where, making);
   if (kind === 'map' && Array.isArray(held)) {
     const entries = held as [unknown, unknown][];
     const keyed = (unit?.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
@@ -391,10 +431,12 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   if (kind === 'object') {
     const cls = keptOf(model, 'entries', where);
     const key = access(cls);
+    // GN-13e: a key of an expected result takes the key form of the keyed map of the class.
+    const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(model, cls.unit.id)) : goKey(entryKey));
     if (record['repeat'] !== undefined) {
       const repeat = record['repeat'];
       if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${JSON.stringify(json)}`);
-      const k = goKey(record['key']);
+      const k = keyOf(record['key']);
       const top = making.b.fresh('object');
       const at = making.b.fresh('object');
       making.made.push(`${top} := ${construct(cls)}`);
@@ -405,7 +447,7 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     const filled = (local: string): string => {
       making.made.push(`${local} := ${construct(cls)}`);
       if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${JSON.stringify(held)}`);
-      for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${goKey(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
+      for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${keyOf(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
       return local;
     };
     if (record['id'] !== undefined) {
@@ -611,6 +653,14 @@ function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
   const field = keptOwner(v.model, fn)?.fields.find((f) => f.property === fn.member);
   if (field !== undefined) return `kept(${receiver}.${field.writable ? keptField(field) : `${goName(field.name)}()`})`;
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
+    // GN-6s, GN-13f: a member of another repository that an instance value names, through the package of its module in
+    // the Go module of that repository.
+    const owner = fn.library === undefined ? undefined : v.model.foreign.get(fn.library);
+    if (owner !== undefined) {
+      const pkg = goPackage(owner, fn.module);
+      (v.scope.foreignImports ??= new Map()).set(goImport(owner, fn.module), pkg);
+      return `${pkg}.${name}(${args.join(', ')})`;
+    }
     // GN-15a: a function of another module is named by its package.
     if (fn.module === v.module) return `${name}(${args.join(', ')})`;
     v.scope.imports.add(fn.module);
@@ -754,7 +804,9 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
     const returns = members[row.member]?.returns ?? 'none';
     const result = row.result === null || returns === 'none' ? 'nil' : typed(returns, value(v, b, returns, row.result));
     // GN-13: a raise row returns the error unit with its kind, as Go code makes one.
-    const raise = row.raise === undefined ? '' : `, raise: binding.Raised${goName(row.raise.unit.name)}(${goString(row.raise.kind)}, ${goString(`G-5: ${row.raise.kind}`)})`;
+    // GN-6s: an error unit of the owner of a callback unit of another repository is made by its package errors (GN-15d).
+    const maker = row.raise?.library === undefined ? 'binding' : ownerErrors(v.scope, row.raise.library);
+    const raise = row.raise === undefined ? '' : `, raise: ${maker}.Raised${goName(row.raise.unit.name)}(${goString(row.raise.kind)}, ${goString(`G-5: ${row.raise.kind}`)})`;
     return `{member: ${memberName(row.member)}, args: ${argsOf(row.member, row.args)}, result: ${result}, once: ${String(row.once)}${raise}}`;
   });
   b.lines.push(`${name} := fixture${goName(fixture.unit.name)}{&fixture{rows: []fixtureRow{${rows.join(', ')}}}}`);
@@ -804,7 +856,7 @@ const labelOf = (fn: Fn): string => {
 // The fixtures of a case, each a local of the body.
 function fixturesFor(v: Values, out: Out, b: Body, fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: Fixture; name: string }[] {
   return fixturesOf(v.model, fn, id, args).map((fixture, i) => {
-    const callback = v.model.callbacks.find((c) => c.unit === fixture.unit);
+    const callback = [...v.model.callbacks, ...v.model.foreignCallbacks].find((c) => c.unit === fixture.unit);
     if (callback !== undefined) out.callbacks.add(callback);
     return { fixture, name: fixtureLines(v, b, fixture, `fixture${i}`) };
   });
@@ -815,6 +867,140 @@ function holdsAlias(model: Model, type: Type): boolean {
   if (typeof type === 'string') return false;
   if (aliasOf(model, type) !== undefined) return true;
   return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsAlias(model, inner));
+}
+
+// GN-13e, B2.121: whether a type holds an instance of a value class of another repository, at any place of a list, an
+// optional, a map, a tuple, a record or a variant.
+function holdsForeign(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+  if (typeof type === 'string') return false;
+  const alias = aliasOf(model, type);
+  if (alias !== undefined) return alias.library !== undefined && alias.unit.kind === 'class';
+  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
+  const unit = unitOf(model, type);
+  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
+    seen.add(unit.id);
+    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
+  }
+  return inner.some((t) => holdsForeign(model, t, seen));
+}
+
+// GN-13e, B2.121: foreignRead, the form of a result in which an instance of a value class of another repository, or of
+// a map class of its owner, is what the members of its in row read: [is], [is, content] or [is, nil, units]. A pointer
+// and an interface are their value, a list, an array and a struct their items, and a map its pairs in the order of the
+// text of their keys, so reflect.DeepEqual compares two results by what their instances hold.
+function foreignReadHelper(v: Values): string {
+  const model = v.model;
+  const arms: string[] = [];
+  const seen = new Set<string>();
+  const imported = (owner: Contract, unit: Unit): string => {
+    const type = ownerType(owner, unit);
+    (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+    return type.name;
+  };
+  for (const alias of model.aliases.filter((a) => a.owner !== undefined && a.library !== undefined && a.unit.kind === 'class')) {
+    const owner = alias.owner as Contract;
+    const row = classIn(alias, 'go');
+    const type = imported(owner, alias.unit);
+    if (!seen.has(type)) {
+      seen.add(type);
+      const cases = row.cases.map((kase) => {
+        const read = (member: Member, name: string): string => `			${name}, err := ${ownerCall(owner, alias.unit, member, '', 'found')}
+			if err != nil {
+				return err
+			}`;
+        if (kase.read === undefined) return `		case ${goString(kase.is)}:
+			return []any{string(kind)}`;
+        if (kase.units === undefined) return `		case ${goString(kase.is)}:
+${read(kase.read, 'content')}
+			return []any{string(kind), foreignRead(reflect.ValueOf(content))}`;
+        return `		case ${goString(kase.is)}:
+${read(kase.read, 'content')}
+			if read := foreignRead(reflect.ValueOf(content)); read != nil {
+				return []any{string(kind), read}
+			}
+${read(kase.units, 'units')}
+			return []any{string(kind), nil, foreignRead(reflect.ValueOf(units))}`;
+      });
+      arms.push(`	case *${type}:
+		if found == nil {
+			return nil
+		}
+		kind, err := ${ownerCall(owner, alias.unit, row.by, '', 'found')}
+		if err != nil {
+			return err
+		}
+		switch string(kind) {
+${cases.join('\n')}
+		}
+		return fmt.Sprintf("GN-6x: ${type} gives the kind %s, which its in row has no case for", kind)`);
+    }
+    for (const map of row.maps) {
+      const name = imported(owner, map.unit);
+      if (seen.has(name)) continue;
+      seen.add(name);
+      arms.push(`	case *${name}:
+		if found == nil {
+			return nil
+		}
+		entries, err := ${ownerCall(owner, map.unit, map.iterate, '', 'found')}
+		if err != nil {
+			return err
+		}
+		pairs := []any{}
+		for key, item := range entries {
+			pairs = append(pairs, []any{foreignRead(reflect.ValueOf(key)), foreignRead(reflect.ValueOf(item))})
+		}
+		return pairs`);
+    }
+  }
+  return `
+// foreignRead gives a result in the form in which an instance of a value class of another repository is what the
+// members of its in row read, so that reflect.DeepEqual compares two results by what their instances hold (GN-13e).
+func foreignRead(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+	if value.CanInterface() {
+		switch found := value.Interface().(type) {
+${arms.join('\n').split('\n').map((line) => (line === '' ? line : `\t${line}`)).join('\n')}
+		}
+	}
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if value.IsNil() {
+			return nil
+		}
+		return foreignRead(value.Elem())
+	case reflect.Slice, reflect.Array:
+		if value.Kind() == reflect.Slice && value.IsNil() {
+			return nil
+		}
+		items := make([]any, value.Len())
+		for at := range items {
+			items[at] = foreignRead(value.Index(at))
+		}
+		return items
+	case reflect.Struct:
+		fields := make([]any, value.NumField())
+		for at := range fields {
+			fields[at] = foreignRead(value.Field(at))
+		}
+		return []any{value.Type().String(), fields}
+	case reflect.Map:
+		keys := value.MapKeys()
+		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+		pairs := make([]any, len(keys))
+		for at, key := range keys {
+			pairs[at] = []any{foreignRead(key), foreignRead(value.MapIndex(key))}
+		}
+		return pairs
+	}
+	if value.CanInterface() {
+		return value.Interface()
+	}
+	return fmt.Sprint(value)
+}
+`;
 }
 
 function memberTests(v: Values, out: Out, fn: Fn): void {
@@ -1159,10 +1345,25 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       try {
         compared = parts.flatMap((type, i) => {
           const given = parts.length === 1 ? kase.expected?.value : (kase.expected?.value as unknown[] | undefined)?.[i];
-          const want = value(v, b, type, given ?? null);
+          // GN-13e: the expected result takes the forms of the Go out rows of an alias.
+          v.result = true;
+          let want: string;
+          try {
+            want = value(v, b, type, given ?? null);
+          } finally {
+            v.result = false;
+          }
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
           const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
-          return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want)${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
+          // GN-13e: reflect.DeepEqual finds a NaN unequal to itself, so a result whose case holds a NaN is compared by
+          // sameValue, which is reflect.DeepEqual except that a NaN equals a NaN.
+          const compare = (got: string, wanted: string): string => holdsNaN(given) ? `sameValue(${got}, ${wanted})` : `reflect.DeepEqual(${got}, ${wanted})`;
+          // GN-13e, B2.121: an instance of a value class of another repository is compared by what its in row reads.
+          if (holdsForeign(model, type)) {
+            v.readsForeign = true;
+            return [`if want := (${typeName(v, type)})(${want}); !${compare(`foreignRead(reflect.ValueOf(value${i}))`, 'foreignRead(reflect.ValueOf(want))')}${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", foreignRead(reflect.ValueOf(value${i})), foreignRead(reflect.ValueOf(want)))`, '}'];
+          }
+          return [`if want := (${typeName(v, type)})(${want}); !${compare(`value${i}`, 'want')}${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
         });
       } catch (error) {
         if (!(error instanceof Unsupported)) throw error;
@@ -1502,6 +1703,105 @@ func must[T any](made T, err error) T {
 }
 `;
 
+// GN-13e: whether a case value holds a NaN at any place.
+function holdsNaN(json: unknown): boolean {
+  const stack: unknown[] = [json];
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (Array.isArray(item)) stack.push(...item);
+    else if (typeof item === 'object' && item !== null) {
+      if ((item as { float?: unknown }).float === 'nan') return true;
+      stack.push(...Object.values(item));
+    }
+  }
+  return false;
+}
+
+// GN-13e: reflect.DeepEqual except that a NaN equals a NaN, the comparison of a result whose case holds a NaN. A pair
+// of pointers, maps or slices that the walk has entered is equal again, so a cycle ends, as reflect.DeepEqual does.
+const SAME_VALUE = `
+// sameValue is reflect.DeepEqual, except that a NaN equals a NaN (GN-13e).
+func sameValue(got, want any) bool {
+	return sameReflected(reflect.ValueOf(got), reflect.ValueOf(want), map[[3]uintptr]bool{})
+}
+
+func sameReflected(a, b reflect.Value, entered map[[3]uintptr]bool) bool {
+	if !a.IsValid() || !b.IsValid() {
+		return a.IsValid() == b.IsValid()
+	}
+	if a.Type() != b.Type() {
+		return false
+	}
+	switch a.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return a.Float() == b.Float() || (math.IsNaN(a.Float()) && math.IsNaN(b.Float()))
+	case reflect.Complex64, reflect.Complex128:
+		return a.Complex() == b.Complex()
+	case reflect.Bool:
+		return a.Bool() == b.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return a.Int() == b.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return a.Uint() == b.Uint()
+	case reflect.String:
+		return a.String() == b.String()
+	case reflect.Interface:
+		return sameReflected(a.Elem(), b.Elem(), entered)
+	case reflect.Array:
+		for i := range a.Len() {
+			if !sameReflected(a.Index(i), b.Index(i), entered) {
+				return false
+			}
+		}
+		return true
+	case reflect.Struct:
+		for i := range a.NumField() {
+			if !sameReflected(a.Field(i), b.Field(i), entered) {
+				return false
+			}
+		}
+		return true
+	case reflect.Func:
+		return a.IsNil() && b.IsNil()
+	case reflect.Chan, reflect.UnsafePointer:
+		return a.Pointer() == b.Pointer()
+	case reflect.Pointer, reflect.Map, reflect.Slice:
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() == b.IsNil()
+		}
+		if a.Kind() != reflect.Pointer && a.Len() != b.Len() {
+			return false
+		}
+		pair := [3]uintptr{a.Pointer(), b.Pointer(), uintptr(a.Kind())}
+		if entered[pair] {
+			return true
+		}
+		entered[pair] = true
+		switch a.Kind() {
+		case reflect.Pointer:
+			return sameReflected(a.Elem(), b.Elem(), entered)
+		case reflect.Slice:
+			for i := range a.Len() {
+				if !sameReflected(a.Index(i), b.Index(i), entered) {
+					return false
+				}
+			}
+			return true
+		default:
+			entries := a.MapRange()
+			for entries.Next() {
+				other := b.MapIndex(entries.Key())
+				if !other.IsValid() || !sameReflected(entries.Value(), other, entered) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+`;
+
 const KEPT = `
 // kept is a kept value of a value class without core_type (GN-6af) as the result of a call that cannot fail.
 func kept[T any](value T) (T, error) { return value, nil }
@@ -1571,6 +1871,8 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
     ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
     // GN-15f: the packages of other repositories whose records the tests name.
     ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path]) => `"${path}"`),
+    // GN-6s, GN-15d: the packages errors of other repositories whose errors the fixtures raise.
+    ...[...(scope.foreignErrors ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path, name]) => `${name} "${path}"`),
   ];
   return goImportBlock(std, own);
 }
@@ -1623,6 +1925,8 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bmust\(/.test(all) ? [MUST] : []),
     ...(/\bkept\(/.test(all) ? [KEPT] : []),
     ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
+    ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
+    ...(/\bsameValue\(/.test(all) ? [SAME_VALUE] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),

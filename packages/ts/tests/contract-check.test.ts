@@ -846,7 +846,7 @@ describe('CK-78 a class without core_type on a target that does not generate it 
   });
 });
 
-describe('CK-79, CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
+describe('CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
   // A function of the root module: a functions unit of the root with the first function of the unit forms under
   // another name.
   const added = (c: any, name: string[]): { path: string; id: string } => {
@@ -863,26 +863,19 @@ describe('CK-79, CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
   test('the fixture has no such name', () => {
     assert.deepEqual(judged(() => undefined), []);
   });
-  test('a symbol that a library that the contract reads has too (CK-79)', () => {
-    // The library sample-x has the root function y, polyspec_sample_x_y, which is the function x_y of sample.
+  test('the function x_y of sample and the function y of sample-x are no finding: their symbols differ (CK-79 retired, GN-17, B2.125)', () => {
+    // The symbols are polyspec_sample__x_y and polyspec_sample_x__y, so no check compares two libraries.
     const other = contract();
     other.library = 'sample-x';
-    const there = added(other, ['y']);
-    let at = { path: '', id: '' };
-    assert.deepEqual(judged((c) => { at = added(c, ['x', 'y']); }, [['sample-x', other]]), [{
-      check: 'CK-79',
-      path: at.path,
-      message: `${at.id} has the C symbol polyspec_sample_x_y, which ${there.id} of the library sample-x has too, so a Go program that links both libraries defines it twice; rename one of the two (GN-17)`,
-    }]);
-    // Without the target go in either contract no static library holds the symbol.
-    assert.deepEqual(judged((c) => { added(c, ['x', 'y']); c.targets = c.targets.filter((t: string) => t !== 'go'); }, [['sample-x', other]]).filter((f) => f.check === 'CK-79'), []);
+    added(other, ['y']);
+    assert.deepEqual(judged((c) => { added(c, ['x', 'y']); }, [['sample-x', other]]), []);
   });
   test('a function buffer of the root module (CK-80)', () => {
     let at = { path: '', id: '' };
     assert.deepEqual(judged((c) => { at = added(c, ['buffer']); }), [{
       check: 'CK-80',
       path: at.path,
-      message: `${at.id} has the C symbol polyspec_sample_buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`,
+      message: `${at.id} has the C symbol polyspec_sample__buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`,
     }]);
   });
   test('a function whose function of package binding the package declares itself (CK-81)', () => {
@@ -1522,6 +1515,71 @@ describe('CK-22 instance values (GN-13f)', () => {
   });
   test('a receiver of a member that has none', () => {
     assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
+  });
+});
+
+test('CK-13 counts Encode<Variant> and Decode<Variant>, through which another Go module reaches a variant (GN-15a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/variants/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const functions = contract.units.find((u: any) => u.kind === 'functions');
+  functions.members.push({ ...functions.members[0], id: 'variants.encode_figure', name: ['encode', 'figure'] });
+  const found = checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  assert.ok(found.some((f) => f.check === 'CK-13' && /declares EncodeFigure twice/.test(f.message)), JSON.stringify(found.map((f) => `${f.check} ${f.message}`)));
+});
+
+describe('CK-92 the members that the instance values of a case call (GN-13f, Q-4)', () => {
+  // The contract of template has such a case: prepared_render.render is generated for every target, and the receivers
+  // of its cases are made by engine.prepare, whose only keeps it out of wasm, so the wasm test could not make them.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (contract: any) => void): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  };
+  const outOfWasm = { targets: ['php', 'python', 'node', 'go'], reason: 'GN-6q' };
+  const tag = (contract: any): any => contract.units.find((u: any) => u.id === 'tag');
+  test('a member that an instance value calls and that only keeps out of a target of the member of the case', () => {
+    const found = run((contract) => { tag(contract).members.find((m: any) => m.id === 'tag.gate').only = outOfWasm; });
+    assert.ok(found.some((f) => f.check === 'CK-92' && /^the case an_open_gate_lets_its_tag_pass of gate\.enter: its instance values call tag\.gate, which is not generated for wasm, where gate\.enter is; give gate\.enter, its unit or the row of the case an only without wasm \(Q-4, GN-13f, GN-13h\)$/.test(f.message)), JSON.stringify(found));
+  });
+  test('a member that an instance value inside a list, an optional or a record of an argument calls', () => {
+    // The contract of template gives fs_loader.new inside the record options of the receiver of engine.render, and only
+    // keeps fs_loader out of wasm; the check read no instance value below a parameter of a class type.
+    const found = run((contract) => { tag(contract).members.find((m: any) => m.id === 'tag.repeat').only = outOfWasm; });
+    assert.ok(found.some((f) => f.check === 'CK-92' && /^the case the_names_of_the_tags_by_commas of classes\.join: its instance values call tag\.repeat, which is not generated for wasm, where classes\.join is;/.test(f.message)), JSON.stringify(found));
+  });
+  test('the same only on the unit of the member of the case resolves it', () => {
+    const found = run((contract) => {
+      tag(contract).members.find((m: any) => m.id === 'tag.gate').only = outOfWasm;
+      contract.units.find((u: any) => u.id === 'gate').only = outOfWasm;
+      // These members take the interface named, whose cases give a gate made by tag.gate.
+      for (const id of ['classes.label_of', 'classes.label_or', 'tag.names']) {
+        contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).only = outOfWasm;
+      }
+    });
+    assert.deepEqual(found.filter((f) => f.check === 'CK-92'), []);
+  });
+  test('the same only on the row of cases that holds the case resolves it (GN-13h)', () => {
+    // The cases load_not_loaded of engine.render of template need a loader that reads files, which WASM has not, while
+    // engine.render is generated there; their row keeps them out of WASM, and the other cases of the member stay.
+    const found = run((contract) => {
+      tag(contract).members.find((m: any) => m.id === 'tag.gate').only = outOfWasm;
+      for (const row of contract.cases.filter((r: any) => r.member?.startsWith('gate.') || ['classes.label_of', 'classes.label_or', 'tag.names'].includes(r.member))) row.only = outOfWasm;
+    });
+    assert.deepEqual(found.filter((f) => f.check === 'CK-92'), []);
+  });
+  test('a row of cases whose only names no target where its member is generated (GN-13h)', () => {
+    const found = run((contract) => {
+      contract.units.find((u: any) => u.id === 'gate').only = outOfWasm;
+      contract.cases.find((r: any) => r.member === 'gate.enter').only = { targets: ['wasm'], reason: 'GN-6q' };
+    });
+    assert.ok(found.some((f) => f.check === 'CK-92' && /^the row of gate\.enter names in only wasm, where gate\.enter is not generated \(GN-13h, Q-4\)$/.test(f.message)), JSON.stringify(found));
+  });
+  test('a row of the cases of an alias has no only (CK-1)', () => {
+    const found = run((contract) => {
+      contract.cases.push({ alias: 'x', file: 'contracts/cases.json', group: 'join', only: outOfWasm });
+    });
+    assert.ok(found.some((f) => f.check === 'CK-1'), JSON.stringify(found));
   });
 });
 

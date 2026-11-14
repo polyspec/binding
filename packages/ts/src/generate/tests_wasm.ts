@@ -6,7 +6,9 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCase
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_FIXTURE, NODE_ORDERED, NODE_SETTLED, awaitedTest } from './tests_node.ts';
+import { NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeOrdered } from './tests_node.ts';
+import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
+import type { Unit } from '../contract.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '-1', '2 ** 53'],
@@ -34,7 +36,11 @@ export function wasmTests(model: Model): string {
       foreignModules.add(library);
       return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}`;
     },
-    errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
+    // GN-6s: an error unit of the owner of a callback unit of another repository, through the subpath ./wasm of its package.
+    errorNew: (unit, kind, message, library) => {
+      if (library !== undefined) foreignModules.add(library);
+      return `new ${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`;
+    },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.
     variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
@@ -65,8 +71,12 @@ export function wasmTests(model: Model): string {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('wasm', fn.member.name, 'callable');
-    const unit = `pkg.${langName('wasm', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    // GN-6s, GN-13f: a member of another repository that an instance value names, through the subpath ./wasm of the
+    // owner's package.
+    if (fn.library !== undefined) foreignModules.add(fn.library);
+    const prefix = fn.library === undefined ? 'pkg' : `foreign_${fn.library.replaceAll('-', '_')}`;
+    const unit = `${prefix}.${langName('wasm', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${prefix}.${member}(${args})`;
     if (fn.kind === 'constructor') return `new ${unit}(${args})`;
     if (fn.kind === 'static') return `${unit}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;
@@ -496,12 +506,16 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   const blocks = out.map((block) => block.split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
+  // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
+  const readers = usesOrdered ? foreignReaders(model, 'wasm') : [];
+  const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
+  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'wasm', foreignClass));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

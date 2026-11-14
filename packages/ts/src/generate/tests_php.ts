@@ -4,7 +4,8 @@
 import type { Member, Unit } from '../contract.ts';
 import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type PhpLayout, phpCancellationName, phpNamespace } from './php.ts';
+import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
+import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
@@ -111,8 +112,9 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `\\${namespace}${unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}\\${langName('php', unit.name, 'class')}`;
   };
   // GN-13: an instance of an error unit with a kind, by the constructor of its category class (GN-10).
-  const errorNew = (unit: Unit, kind: string, message: string): string =>
-    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${phpText(message)}, ${phpText(kind)})`;
+  // GN-6s: an error unit of the owner of a callback unit of another repository, by the namespace of its package.
+  const errorNew = (unit: Unit, kind: string, message: string, library?: string): string =>
+    `new ${library === undefined ? `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignClass(library, unit)}(${phpText(message)}, ${phpText(kind)})`;
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
@@ -127,7 +129,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const hook = hookCall('php', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('php', fn.member.name, 'callable');
-    const ns = phpNamespace(layout, fn.module);
+    // GN-6s, GN-13f: a member of another repository that an instance value names, in the namespace of the owner.
+    const ownerNamespace = (library: string): string => {
+      const namespace = (model.foreign.get(library)?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+      return `${namespace}${fn.module === '' ? '' : `\\${fn.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}`;
+    };
+    const ns = fn.library === undefined ? phpNamespace(layout, fn.module) : ownerNamespace(fn.library);
     const cls = `\\${ns}\\${langName('php', fn.unit.name, 'class')}`;
     if (fn.kind === 'function') return `\\${ns}\\${member}(${args})`;
     if (fn.kind === 'constructor') return `new ${cls}(${args})`;
@@ -751,6 +758,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         }
     }`);
   }
+  // GN-13e, B2.121: same reads an instance of a value class of another repository through its in row.
+  const readers = usesSame ? foreignReaders(model, 'php') : [];
+  const phpForeign = foreignClassNames(readers, foreignClass);
+  const phpRead = phpForeignRead(readers, foreignClass);
   return `<?php
 
 // ${header('').trim()}
@@ -802,12 +813,15 @@ ${methods.join('\n')}${usesTokens ? PHP_TOKENS : ''}${usesSame ? `
         }
         if (\\is_array($value)) {
             return \\array_map(self::same(...), $value);
-        }
+        }${phpForeign.length === 0 ? '' : `
+        if (${phpForeign.map((c) => `$value instanceof ${c}`).join(' || ')}) {
+            return [$value::class, self::readForeign($value)];
+        }`}
         if (\\is_object($value) && !$value instanceof \\UnitEnum) {
             return [$value::class, self::same(\\get_object_vars($value))];
         }
         return $value;
-    }` : ''}${usesOutcome ? `
+    }${phpRead}` : ''}${usesOutcome ? `
 
     /**
      * G-5: what a call gives: its result, or the class and the kind of its failure, as the text that states the types.

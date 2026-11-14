@@ -918,11 +918,13 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         })
     }`;
   }).join('\n');
+  // GN-6s: the error units of a callback unit of another repository are classes of <owner root>._errors.
+  const errorsModule = cb.library === undefined ? 'None' : `Some(${rustString(`${(model.foreign.get(cb.library)?.packages['python'] as { module: string }).module}._errors`)})`;
   const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
 fn ${recognizedFn(cb, m)}(py: Python<'_>, error: PyErr) -> ${failure} {
-    let core = kind_of_recognized(py, &error, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = kind_of_recognized(py, &error, ${errorsModule}, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
         Some(core) => binding_core::Failure::Kind(core),
         None => thrown(py, error),
@@ -955,19 +957,23 @@ ${recognizing}`;
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
 // members that recognize error units.
 const RECOGNIZED_KIND = `
-/// U-3: the kind and the message of an exception that is an instance of one of the error classes (GN-6d).
-fn kind_of_recognized(py: Python<'_>, error: &PyErr, classes: &[&str]) -> Option<(String, String)> {
+/// U-3: the kind and the message of an exception that is an instance of one of the error classes (GN-6d): those of
+/// this package, or those of the errors module of the package that owns a callback unit of another repository (GN-6s).
+fn kind_of_recognized(py: Python<'_>, error: &PyErr, module: Option<&str>, classes: &[&str]) -> Option<(String, String)> {
     // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
     // thrown.
-    let Ok(found) = read_kind_of_recognized(py, error, classes) else {
+    let Ok(found) = read_kind_of_recognized(py, error, module, classes) else {
         return None;
     };
     found
 }
 /// U-3: what kind_of_recognized gives, or the Python error that reading the exception met.
-fn read_kind_of_recognized(py: Python<'_>, error: &PyErr, classes: &[&str]) -> PyResult<Option<(String, String)>> {
+fn read_kind_of_recognized(py: Python<'_>, error: &PyErr, module: Option<&str>, classes: &[&str]) -> PyResult<Option<(String, String)>> {
     let value = error.value(py);
-    let module = errors(py)?;
+    let module = match module {
+        Some(name) => py.import(name)?,
+        None => errors(py)?.clone(),
+    };
     for name in classes {
         let class = module.getattr(*name)?;
         if value.is_instance(&class)? {
@@ -1270,7 +1276,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // a class that no member returns has none (the lints deny dead code).
   // GN-6z: a function that the core may keep; the function parameter of a member with machine has its own helper (GN-6ae).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
-  const recognizes = model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
+  const recognizes = [...model.callbacks, ...model.foreignCallbacks].some((c) => c.members.some((m) => m.recognized !== undefined));
   const rest = [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + passingRust(model, layout) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\(`).test(draft);

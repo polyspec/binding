@@ -445,7 +445,7 @@ python-source = "generated/python"
       ...(license === undefined ? {} : { license }),
       // GN-3e: the extensions and the packages of the other libraries whose classes the extension makes and reads.
       require: { php: '>=8.4', ...composerRequires(contract, coreDependencies, foreign) },
-      // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
+      // GN-3c: PIE installs the binary of the release for the PHP and the platform of the machine.
       'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
   });
@@ -568,7 +568,7 @@ function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDepen
       ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
-    // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
+    // GN-3c: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
     // loads, and builds it for the Rust triples of the platforms.
     ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
     // GN-3e: the packages of the other libraries that the entries import.
@@ -597,7 +597,11 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
     if (unit === '') continue;
     const owner = foreign.get(library);
     if (owner === undefined) throw new Refused(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
+    // GN-6s: a callback unit, whose interface the Go binding takes from that package. GN-6ar: a value alias whose Go
+    // rows name a class of its owner, which the Go binding makes and reads.
+    const goRows = (u: Unit): boolean => u.kind === 'alias' && ((u.out ?? []).some((row) => { const make = row.make['go']; return typeof make === 'string' && make.includes('.'); })
+      || (u.in ?? []).some((row) => owner.units.some((c) => c.kind === 'class' && c.id === row['go'])));
+    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value') || u.origin === 'callback' || goRows(u)))) found.add(library);
   }
   return [...found].sort();
 }

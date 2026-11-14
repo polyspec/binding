@@ -74,6 +74,13 @@ BINDING ?= HEAD
 e2e: ## Run the end-to-end check of the generator: REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]
 	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO)$(if $(WORK), --work $(WORK))$(foreach dep,$(DEPS), --dep $(dep))
 
+# GN-14f, GN-15g: the consumer of the released form of a Go module on musl. WORK is the work directory of a run of make e2e
+# on Linux on the machine of DOCKER_HOST; scripts/go-musl.sh runs go test -tags musl of its consumer in an Alpine
+# container there. It downloads the Go of mise.lock and the packages of Alpine of config/toolchain.json; ONLINE.
+.PHONY: go-musl-check
+go-musl-check: ## Run the consumer of the released Go module of a Linux e2e run on musl: WORK=<work directory on the machine of DOCKER_HOST>
+	$(ONLINE) sh scripts/go-musl.sh "$(WORK)" "$(CURDIR)/mise.lock" "$(CURDIR)/config/toolchain.json"
+
 # The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
 # check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.
 define run_all
@@ -125,6 +132,22 @@ docs-check: ## Check the documents, the changelogs and the checklists; offline
 
 documents-stamp: ## Write the source-sha256 of each English document into the Korean twins of PATHS, or of every twin whose source moved; offline
 	$(NODE) $(KIT)/documents-stamp.mjs $(PATHS)
+
+# ---- Git hooks (.githooks) ---------------------------------------------------------------------------------------------
+# The hook commit-msg of .githooks refuses a message with the footer or the identity line of an AI tool, through the rules
+# commit-ai-footer and commit-ai-identity of check-commits of kit, before the commit exists: a push publishes what a
+# commit holds, and a commit that was pushed is not written again. make hooks points core.hooksPath of the checkout, and
+# so of each of its worktrees, at .githooks and makes the hook executable; hooks-check fails a checkout without it.
+.PHONY: hooks hooks-check commit-msg-hook
+HOOK_DECLARATION := --hooks-path .githooks --hook commit-msg
+hooks: ## Point core.hooksPath at .githooks, whose commit-msg refuses an AI footer or identity line; offline
+	$(NODE) $(KIT)/git-hooks.mjs install $(HOOK_DECLARATION)
+
+hooks-check: ## Fail unless core.hooksPath points at .githooks and its hooks are executable; offline
+	$(NODE) $(KIT)/git-hooks.mjs check $(HOOK_DECLARATION)
+
+commit-msg-hook: ## Check the message of the commit in MESSAGE, a file, as the hook commit-msg does; offline
+	$(NODE) $(KIT)/check-commits.mjs --message $(MESSAGE) --rules commit-ai-footer,commit-ai-identity
 
 # ---- CI (.github/workflows/ci.yml) -------------------------------------------------------------------------------------
 # ci-targets runs TARGETS past failures with the utility of kit and writes CI_REPORT: the log of each target, record.json

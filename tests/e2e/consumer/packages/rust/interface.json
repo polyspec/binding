@@ -322,6 +322,40 @@
           "core": "polyspec_consumer::copy"
         },
         {
+          "id": "consumer.read",
+          "name": [
+            "read"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": {
+                "unit": "source",
+                "library": "sample"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::read"
+        },
+        {
           "id": "consumer.turned",
           "name": [
             "turned"
@@ -370,6 +404,37 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_consumer::weight"
+        },
+        {
+          "id": "consumer.consult",
+          "name": [
+            "consult"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup",
+                "library": "sample"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::consult"
         }
       ]
     },
@@ -504,6 +569,11 @@
       "group": "copy"
     },
     {
+      "member": "consumer.read",
+      "file": "contracts/cases.json",
+      "group": "read"
+    },
+    {
       "member": "consumer.turned",
       "file": "contracts/cases.json",
       "group": "turned"
@@ -512,6 +582,11 @@
       "member": "consumer.weight",
       "file": "contracts/cases.json",
       "group": "weight"
+    },
+    {
+      "member": "consumer.consult",
+      "file": "contracts/cases.json",
+      "group": "consult"
     }
   ]
 }

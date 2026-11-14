@@ -44,12 +44,236 @@
   null at its place, Go leaves the pointer nil, and a case value may leave out its key (GN-6a, T-4). The record
   `tally` of `tests/e2e/shapes` has the field `note`. Verified by `make test-ts`, whose new test failed before the
   change, and by `make e2e REPO=tests/e2e/shapes`.
+- A test of `packages/ts` copied a fixture with the `cp` tool, whose `cp -r <dir>/ <root>/` copies the contents of
+  `<dir>` into `<root>` on macOS and `<dir>` itself into `<root>/<dir>` on Linux, so the test of CK-65 failed on Linux
+  with ENOENT for `packages/rust/interface.json`. Every copy of `generate.test.ts` now uses `cpSync` of `node:fs`, and
+  `copies.test.ts` fails a test file that starts the `cp` tool (row B2.180). Verified by `node --test` of the two files
+  in `packages/ts` on macOS: the new test failed before the change and named the thirteen copies. Not run: Linux.
+- A generated test of a case whose result holds an instance of a value class of another repository failed with
+  "a result that holds an instance of the class value of json has no case value to compare it with", so no case of
+  `carry` or `passed` of `tests/e2e/relay` could name its result. The test now makes the instance of the case value by
+  the out rows of the owner and compares it with the result, both read through the members of the in row of the owner:
+  the `by` member, the `read` member of its case and, for a text that `read` does not give, the `units` member; a list
+  and a map class of the owner are read item by item. Python `_same`, Node and WASM `ordered`, PHP `same` and Go
+  `foreignRead` read an instance so, at any place of the result (GN-13e). The cases of `carry` and `passed` of
+  `tests/e2e/relay` now name their results. The new test failed before the change; `make test-ts` and `make e2e` of
+  the relay are queued for verification.
+- The function `b_c` of the library `a` and the function `c` of the library `a-b` were both the C symbol
+  `polyspec_a_b_c` of their Go static libraries, so a Go program that linked both failed with the symbol defined
+  twice, and no check saw two libraries of which neither names the other. The prefix of a C symbol is now
+  `polyspec_<repository>_`, so the first two underscores of a symbol end the name of its repository: the two functions
+  are `polyspec_a__b_c` and `polyspec_a_b__c`, and a symbol that is not a member has three underscores after the name,
+  such as `polyspec_a___free` (GN-17). CK-79, which compared the symbols of a contract with those of the libraries
+  that it names, is retired. The new tests failed before the change; `make test-ts` is queued for verification.
+- The make function of a value alias in Python, PHP and Go called itself once for each level of the `OutValue` of
+  the core, so the native stack that a conversion used grew with the depth of the value, and a value deeper than the
+  stack of the thread would end the process. It now walks the value in a loop with a work stack on the heap, as Node
+  and WASM do; a PHP array is made when its last child is made, and Go writes the node of a container before its
+  children (GN-6as). Verified by `make test-ts`, whose test of the make functions failed for the Python, the PHP and
+  the Go crate before the change, and by `make e2e` of `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes` and `tests/e2e/consumer`.
+- A case that states a behaviour that a target does not have could not be kept out of that target alone: the cases
+  `load_not_loaded` of `engine.render`, `engine.render_bound` and `engine.render_json` of template need a loader that
+  reads files, which WebAssembly has not, while those members are generated there, and the only resolution of their
+  CK-92 findings was an `only` of the member, which left every other case of the member out of WASM too. A row of
+  `cases` that names a member now takes `only` (Q-4): the cases of its group are tests of the targets that it lists
+  alone (GN-13h), CK-92 reads the targets of the row, and a row whose `only` names no target where its member is
+  generated is a CK-92 finding. Verified by the tests of CK-92 in `contract-check.test.ts` and the GN-13h test of
+  `generate.test.ts`, which failed before the change.
+- The end-to-end check built, vetted and tested the generated Go module but ran no deadcode, so a generated function
+  that no program and no test reaches passed the run, while the lint of a consuming repository, which runs `deadcode
+  -test`, failed on it. The check now runs the `deadcode -test` that mise.toml pins (0.52.0) on the module, untagged and
+  with each build tag of its files, and fails on a function that every run compiling its file reports (GN-15h).
+  Verified by `make test-ts`: the new tests failed before the change.
+- Go refused a variant of another module that a member names: its encode and decode functions are unexported, so
+  `node` of the module `ast` of template, which the root names, refused go with "a variant of the module ast in the
+  module (the root) is not generated for Go yet (its encode and decode functions are unexported)". The package of a
+  variant that another module names now has `Encode<Variant>` and `Decode<Variant>`, which take `binding.Token` as
+  `<Class>Handle` does, and the other module calls them; CK-13 counts the two names (GN-15a, GN-6v). Verified by `make
+  test-ts`: the new tests failed before the change.
+- A case whose instance values call a member that an `only` keeps out of a target of the member of the case had a
+  test that could not make its instance there: `prepared_render.render` of template is generated for wasm, and the
+  receivers of its cases are made by `engine.prepare`, which `only` keeps out of wasm, so wasm was refused with "the
+  case a_render_of_prepare of prepared_render.render: engine.prepare is no member that the binding generates".
+  `binding check` now reports such a member with the case and the targets (CK-92), also for an instance value inside a
+  list, an `optional`, a map or a field of a record at the place of a class or an interface, such as `fs_loader.new`
+  in the record `options` of the receiver of `engine.render`, which `only` keeps out of wasm, and the contract
+  resolves it by an `only` of the member of the case or of its unit; the generator leaves no case out, so that what a
+  target does not verify shows. Verified by `make test-ts`: the new tests failed before the change; `binding check` of
+  the template contract reports CK-92 for each case of `prepared_render.render`.
+- Go refused a record whose callback field is optional: `engine_options` of template holds `{ "optional": { "unit":
+  "loader" } }`, the Go crate wrote `out_engine_options` for it, and go was refused with "no Go output conversion for
+  {"unit":"loader"}". Such a record only enters, as one whose callback field is not optional, and its core type has
+  the lifetime of GN-6aa. Verified by `make test-ts`: the new test failed before the change.
+- No hook refused a commit message with the footer or the identity line of an AI tool, so such a line reached a push
+  unchecked. The hook `commit-msg` of `.githooks` now refuses it through the rules `commit-ai-footer` and
+  `commit-ai-identity` of `check-commits` of kit; `make hooks` points `core.hooksPath` at `.githooks`, `make hooks-check`
+  fails a checkout without it, and `make commit-msg-hook MESSAGE=<file>` runs the check of the hook. Verified by `make
+  hooks`, `make hooks-check`, and `make commit-msg-hook` on a message with a co-author trailer of an AI tool, which
+  failed with `commit-ai-footer`, and on one without, which passed.
+- The generator refused Go for a value alias of another repository whose rows name a class of its owner, so the Go
+  binding of hyper was not generated for the `in` row of `std_class` of php-serialization, and go.mod did not require
+  the Go module of a library whose callback unit the contract takes, whose package the Go binding imports (GN-6s).
+  Go now takes such a class when it is a value class without core_type of the owner's package (GN-6ar): an `in` row
+  is node 11 whose read gives the field or the method of the property, the owner's keyed map is described as a map
+  of its entries, and an `out` row is node 14 of the result, which the owner's constructor makes on an empty keyed
+  map or on nil before its content; a class with core_type and a constructor of a bool, an integer or a float are
+  refused by name. go.mod requires the library of a callback unit and of such an alias (GN-15f). Verified by the
+  tests of `generate.test.ts`, whose Go test failed before the change with "the go in row of the class box of
+  sample is not generated yet".
+- A case value at a place of a callback unit of another repository that named a member of the owner, such as
+  `{"new": "held_source.new", ...}` at the source of `consumer.read`, failed its generated test with
+  "held_source.new is no member that the binding generates". The test of each target now calls such a member through
+  the owner's package (Python the module of the package, Node the npm package, WASM its subpath `./wasm`, PHP the
+  namespace of the owner, Go the package of the member's module), with its receiver and its calls of `then`; a member
+  of the owner that takes a unit fails the test of its case by name (GN-6s, GN-13f). The sample library has the class
+  `held_source`, which implements `source`, whose `read` takes `&self` (GN-6w), and the cases of `consumer.read`
+  make it. Verified by `generate.test.ts`, whose test failed before the change; `make e2e REPO=tests/e2e/consumer
+  DEPS=tests/e2e/sample` is queued (B2.135).
+
+- A member of a callback unit of another repository that names `errors.recognize` was not generated for Go and WASM
+  with its recognized errors: the WASM entry did not register the classes of the owner, and the Go dispatch named
+  `binding.Recognize<Unit>`, which the binding of this repository does not have. WASM now registers the classes of
+  the subpath `./wasm` of the owner's package after the library classes, and the Go dispatch finds the type of the
+  package `errors` of the owner's Go module with `binding.RecognizeAs`, so the core of the owner takes the kind (U-3,
+  GN-6s, GN-6d). The package `errors` of a library gives `Raised<Unit>` of each error unit that its callback members
+  recognize, because Go code of another module cannot import `internal/binding` to make that error (GN-15d). The
+  member `consult` of `tests/e2e/consumer` runs in all five targets. Verified by `generate.test.ts`, whose Go and
+  WASM test failed before the change; `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample` is queued (B2.222).
+
+- The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
+  WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
+  reads such a class as Node does (GN-6ar): the entry imports the classes from the subpath `./wasm` of the owner's
+  package and hands them over after those of GN-6x, an `in` row checks an instance by `Symbol.hasInstance` and reads
+  its property, one handle per instance within a walk, and an `out` row makes the instance by `Reflect.construct`
+  and sets a reference by `Reflect.set`. Go still refuses such a row by name (B2.136-2). Verified by the GN-6ar tests
+  of `generate.test.ts`, whose WASM test failed before the change with "the wasm in row of the class box of sample is
+  not generated yet".
+
+- The generator refused Go and WASM for a member that takes a callback unit of another repository, so the Go and
+  WASM bindings of hyper were not generated for `opening_functions.open_page.store` and
+  `opening_functions.answer_keep_request.store`, which take `store` of session-store. Go and WASM now wrap such a unit
+  as PHP, Python and Node do (GN-6s): the trait methods return the failure of the owner's error, WASM names the type of
+  the subpath `./wasm` of the owning npm package, Go names the interface of the owning Go module and writes the
+  dispatch of the unit in each package that takes it, and a Go case value at its place is a fixture of that interface
+  or an instance value of the class that its make member returns. `tests/e2e/sample` has the callback unit `source`,
+  and `tests/e2e/consumer` the member `read`, which takes it. Verified by the tests of `generate.test.ts`, whose Go
+  case test failed before the change with "a case value of source is an instance value of no class that implements
+  it", and by `generate` of the hyper checkout, which names no callback unit; `make e2e REPO=tests/e2e/consumer` is
+  queued.
+
+- A callback unit of another repository whose member names `errors.recognized` was refused as `recognized
+  callback errors are not generated yet`. In PHP, Python and Node the error that such a callback raises as an
+  instance of a recognized error unit of the library that owns the callback is now matched to its kind; a unit of a
+  third library, and an owner whose `errors.recognized` names no function, are refused by name (U-3, GN-6s, GN-6d).
+  Go and WASM generate no callback unit of another repository yet (GN-6s). Verified by `make test-ts`, whose test of
+  the consumer of `sample.lookup` failed before the change, and by `make e2e REPO=tests/e2e/consumer
+  DEPS=tests/e2e/sample`, whose cases `consult` give the kind `refused` of the lookup (B2.173).
+
+- A parameter or a field of a value alias, or of a value alias or a value class of another repository, with the
+  default `{empty: "object"}` was refused as `the default {empty: "object"} of the type
+  {"unit":"value","library":"json"} is not generated`. It is now left out as `None`, and the U-2 test of each target
+  gives the empty object of the language in its place (U-2, GN-6i). The units of a PHP alias bound `_wide` in one
+  alternative of `Some(Err(_wide)) | None`, which `cargo clippy` refuses as E0408, so the PHP crate of relay did not
+  build; the alternative now binds no name. Verified by `make test-ts`, whose tests of both failed before the
+  change, and by `make e2e REPO=tests/e2e/relay` with the json checkout, whose cases `width` pass (B2.172).
+
+- CI ran the end-to-end check on linux/arm64 alone and never ran the consumer of the released form of a Go module on
+  musl, so the libraries of `linux_amd64`, `linux_amd64_musl` and `linux_arm64_musl` that a release carries were
+  linked and run by no job. Each entry of the job `e2e` of `.github/workflows/ci.yml` now runs `make go-musl-check` on
+  its work directory after `make e2e`, and the job `e2e-amd64` runs `make e2e` of `tests/e2e/sample` and
+  `make go-musl-check` on `ubuntu-26.04`, the one job that does not run on `ubuntu-26.04-arm`; `ci-passed` needs it
+  (GN-14g, B2.190). A development branch such as `v1/rust-core` is checked by a manual run of its head. Verified by
+  `tests/ci-workflow.test.ts`, whose two changed tests failed before the change.
+- A Go consumer on musl compiled the file of package `binding` of its `<GOOS>_<GOARCH>` and failed to link the static
+  library, which is built for the GNU C library, on symbols that musl does not define: a build constraint of Go does
+  not tell the C library of a Linux apart. A Go module now has the platforms `linux_amd64_musl` and
+  `linux_arm64_musl`, whose library a release builds with `--target <arch>-unknown-linux-musl`, and the build tag
+  `musl` selects them: a consumer on musl builds with `go build -tags musl` (GN-15g). The link file of a Linux
+  platform has the constraint `musl` or `!musl`, and its preamble stops the C compiler of cgo with `#error` when it
+  finds the other C library, naming the Go module, the library, the platform and the remedy. On Linux the released
+  form of the end-to-end check carries the library of musl of its arch, and `make go-musl-check WORK=<work>` runs
+  `go test -tags musl` of its consumer and of the fetched modules in an Alpine container, so a C compiler of musl
+  links each program and musl runs it (GN-14f). The container takes the modules from a module proxy that the run
+  keeps of its downloads, so no Git takes part, and `goMusl` of `config/toolchain.json` pins its image by digest and
+  `gcc` and `musl-dev` of Alpine by their exact versions (`docs/operations/dependencies.md`). `rust-toolchain.toml`
+  lists the two musl targets. Verified by the test
+  of GN-15g of `packages/ts/tests/generate.test.ts`, which failed before the change.
+- The link of the static libraries of several Go modules in one program was verified on `darwin_arm64` alone (GN-15g,
+  GN-14f). `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on linux/arm64 (a Debian container) passed every
+  target, with 21 tests of the released form, in which one program links the libraries of plot and of points;
+  `make e2e` of `tests/e2e/sample` on linux/arm64 passed every target, with 151 generated Go tests and 110 tests of
+  the released form. Both records are evidence. The specification states the two platforms, and B2.96 is done. The run
+  of plot with points on darwin/arm64 also passes every target, so the entry plot of the job `e2e` no longer waits for
+  a failing target (B2.98). The platform packages of the Node addon (B2.92) are verified by
+  `make e2e REPO=tests/e2e/classes` of a commit that holds the change, whose record is evidence and whose target node
+  passed 110 tests with the platform package and the package installed as two archives.
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]` makes the commit and the tag of a Go module with its static libraries (GN-19f,
+  GN-15g). It names every failed check and then makes nothing: `HEAD` is not the commit of the tag, the `go.mod` holds
+  a `replace` or a requirement at `v0.0.0`, a file of a platform that `binding generate --target go` writes is not in
+  the work tree, a library is missing, empty, no `ar` archive of objects of its platform, or holds a test entry point
+  or a debug section. It makes the commit through an index of the run without a change of the checkout, proves it by
+  a consumer module that fetches the tag from a bare repository of the run with `GOPROXY=direct`, creates the
+  annotated tag `<directory>/vX.Y.Z` and prints the reference that the recipe pushes; it pushes nothing, leaves a tag
+  of an earlier run that names the same commit and fails for one that names another. The end-to-end check reads the
+  tag, the consumer, the debug sections and the test entry points from the same module
+  (`packages/ts/src/release/go-module.ts`), which replaces `scripts/go-release.mts`. Verified by `make test-ts` with
+  stand-in programs for Git, Go, rustc and the llvm tools; the command has not run with the real tools, and the
+  end-to-end check has not run since the change of its imports (B2.142).
+- The generator specification states the release of a repository that holds a binding (GN-19 to GN-19g): the steps
+  that a standard tool performs are lines of the repository's recipes, with the command of each kind of asset (the
+  static library of the Go module, the wheel, the PHP extension, the npm platform packages), the runner of each
+  platform and the proof of the assets in CI; the commit and the tag of a Go module, which no tool performs, are the
+  command `binding release-go-module` with its checks, its consumer proof and its output (B2.141).
+- The generator specification named a rule of the shared tools as what refuses a package without the release fields
+  of GN-3c, and a release tool as what builds the platform packages and the commit of a Go module (GN-15g). The
+  shared tools 0.0.112 hold neither, so the specification now states who reads the fields (the napi CLI and PIE) and
+  that the steps of the release of a binding are recipes of the repository that holds it (B2.140).
+- `package.json` and `package-lock.json` pin `@polyspec/kit` 0.0.112, from 0.0.109. Every utility that a recipe of the
+  Makefile runs is in that release and takes the arguments that the recipe gives. The release of binding, the npm
+  archive of `packages/ts` and the tag of `binding_core`, uses nothing that 0.0.112 no longer holds: the per-platform
+  package kinds, the asset sets, the commit of a Go module and the contract check of a release. Verified with
+  `make docs-check` and `make release-coverage` on the installed 0.0.112 (B2.176).
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
   library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
   `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
   change.
+- PHP judged whether an array is a list with `has_sequential_keys` of ext-php-rs 0.16.4, whose iterator reads each
+  key through `ArrayKey::from_zval`, which takes a string key only as UTF-8 and panics with "Invalid array key!" on
+  another, so the tests `array_invalid_utf8_key` and `random_value_351` of php-serialization failed. The binding now
+  reads each key with `next_zval` as an int or the bytes of a string (`sequential_keys`), and the defect of
+  ext-php-rs is reported as https://github.com/extphprs/ext-php-rs/issues/848 (U-7, GN-6x, T-2).
+
+- Node and WASM described a `Uint8Array` as a value outside the set of B-1, although the out row `bytes` gives a
+  byte string that is no UTF-8 as a `Uint8Array`, so the round trip of every such value of php-serialization (264
+  tests in Node and 264 in WASM) was refused as no value of PHP. Node and WASM now describe a `Uint8Array` as bytes
+  and every other typed array as a value outside the set (B-1, U-7, GN-18b). The describe names `Uint8Array` by the
+  import of the crate, so the import check of a crate that imports it passes.
+
+- The expected result of a GN-13e test of Go was written in the kinds of the case and not in the Go forms of the out
+  rows of the alias, so 267 Go tests of php-serialization failed: an empty UTF-8 byte string, which its row makes a
+  `string`, was expected as `[]byte{}`, a map with sequence keys, which its row makes a `[]any`, was expected as a
+  map, and a key of a keyed map, also of a repeated object, was expected in the kind of the case. The generator now
+  writes the expected result by the Go forms of the rows: a byte string that a row makes `text` is a `string`, a map
+  that a row makes `list` is a `[]any`, a map that a row makes `keyed_map` is a `*KeyedMap[any]`, and a key is a text
+  only where its keyed map takes texts and its bytes are UTF-8 (GN-13e).
+
+- Node and WASM gave an integral float of a case as a number, which the binding describes as an int, so the test
+  `serialize float_1e15` of php-serialization gave `i:` for `d:`. A float case value whose out row of the alias makes
+  an instance of a value class (`php_float.constructor`) is now that instance (GN-13).
+
+- Go compared every result with `reflect.DeepEqual`, which finds a NaN unequal to itself, so the test
+  `unserialize float_nan` of php-serialization failed. A result whose case holds a NaN is now compared by `sameValue`
+  of the test file, which is `reflect.DeepEqual` except that a NaN equals a NaN (GN-13e). Go wrote a negative zero of
+  a case as `-0`, the Go constant 0, so `serialize float_negative_zero` gave `d:0;` for `d:-0;`; it is now
+  `math.Copysign(0, -1)` (G-5, GN-13).
+
+- The PHP reader of the UTF-16 units that a member gives matched `Some(Err(_wide)) | None`, an or-pattern that binds
+  `_wide` in one alternative alone, so `cargo clippy` of the PHP crate of relay failed with E0408. The reader now
+  gives each unit as a `Result` and collects the units into one (GN-6x).
+
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
@@ -84,7 +308,6 @@
 - PHP read the least int of a case, `-9223372036854775808` in the source of a test, as the negation of the float
   9223372036854775808, so the test `serialize int_min` of php-serialization gave `d:-9.223372036854776E+18;`. The
   generated test now gives `\PHP_INT_MIN` (G-5). Verified by `make test-ts`, whose test failed before the change.
-
 
 - The tests of 37 cases of http-negotiation failed on the five targets: a case of the group `accept` of the property
   `accept.ranges` with an invalid field expects the failure of `accept.parse`, which makes the receiver from the key

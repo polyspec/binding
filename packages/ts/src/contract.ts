@@ -165,7 +165,7 @@ export interface FaultPoint {
 // K-1: the group of a case file that runs a member, or that holds the cases of a value alias's in function (U-7).
 // G-5: `result` names the key of a case of the group that holds the result of the member (GN-13e), `result` when the row
 // names none.
-export type CaseRow = { member: string; alias?: undefined; file: string; group: string; result?: string } | { alias: string; member?: undefined; file: string; group: string; result?: undefined };
+export type CaseRow = { member: string; alias?: undefined; file: string; group: string; result?: string; only?: Only } | { alias: string; member?: undefined; file: string; group: string; result?: undefined; only?: undefined };
 
 // E-3: the kind of a variant whose row names no kinds is its name in snake_case.
 // GN-7c, E-1b (a): a kind that the core passes on names <outer>/<inner>, the variant of the core error that holds the

@@ -6,6 +6,10 @@
       "value": {
         "kind": "text",
         "value": "nameé"
+      },
+      "result": {
+        "kind": "text",
+        "value": "nameé"
       }
     },
     {
@@ -16,12 +20,24 @@
         "value": [
           55296
         ]
+      },
+      "result": {
+        "kind": "text16",
+        "value": [
+          55296
+        ]
       }
     },
     {
       "id": "an_unpaired_low_surrogate",
       "rule": "RQ-036",
       "value": {
+        "kind": "text16",
+        "value": [
+          56320
+        ]
+      },
+      "result": {
         "kind": "text16",
         "value": [
           56320
@@ -37,12 +53,31 @@
           55357,
           56832
         ]
+      },
+      "result": {
+        "kind": "text16",
+        "value": [
+          55357,
+          56832
+        ]
       }
     },
     {
       "id": "a_text_that_mixes_them",
       "rule": "RQ-036",
       "value": {
+        "kind": "text16",
+        "value": [
+          97,
+          55296,
+          98,
+          55357,
+          56832,
+          56320,
+          99
+        ]
+      },
+      "result": {
         "kind": "text16",
         "value": [
           97,
@@ -85,6 +120,34 @@
             }
           ]
         ]
+      },
+      "result": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text16",
+              "value": [
+                56320
+              ]
+            },
+            {
+              "kind": "null"
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "k"
+            },
+            {
+              "kind": "text16",
+              "value": [
+                55296
+              ]
+            }
+          ]
+        ]
       }
     },
     {
@@ -93,12 +156,53 @@
       "value": {
         "kind": "number",
         "value": "123456789012345678901234567890"
+      },
+      "result": {
+        "kind": "number",
+        "value": "123456789012345678901234567890"
       }
     },
     {
       "id": "a_document_of_every_kind",
       "rule": "RQ-036",
       "value": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text",
+              "value": "list"
+            },
+            {
+              "kind": "list",
+              "value": [
+                {
+                  "kind": "bool",
+                  "value": true
+                },
+                {
+                  "kind": "number",
+                  "value": "-1.5e3"
+                },
+                {
+                  "kind": "null"
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "text"
+            },
+            {
+              "kind": "text",
+              "value": "中\n\""
+            }
+          ]
+        ]
+      },
+      "result": {
         "kind": "map",
         "value": [
           [
@@ -153,11 +257,30 @@
           "kind": "text",
           "value": "a"
         }
+      },
+      "result": {
+        "kind": "one",
+        "value": {
+          "kind": "text",
+          "value": "a"
+        }
       }
     },
     {
       "id": "many_values",
       "packet": {
+        "kind": "many",
+        "values": [
+          {
+            "kind": "text",
+            "value": "a"
+          },
+          {
+            "kind": "null"
+          }
+        ]
+      },
+      "result": {
         "kind": "many",
         "values": [
           {
@@ -208,6 +331,46 @@
       "packet": {
         "kind": "many",
         "values": []
+      },
+      "result": 0
+    }
+  ],
+  "width": [
+    {
+      "id": "an_object_of_two_members",
+      "rule": "U-2",
+      "value": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text",
+              "value": "a"
+            },
+            {
+              "kind": "null"
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "b"
+            },
+            {
+              "kind": "bool",
+              "value": true
+            }
+          ]
+        ]
+      },
+      "result": 2
+    },
+    {
+      "id": "a_text_has_no_member",
+      "rule": "U-2",
+      "value": {
+        "kind": "text",
+        "value": "a"
       },
       "result": 0
     }
