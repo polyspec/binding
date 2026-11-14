@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4b627342f3668896522d9746794fe4f012acfaed4577cceb3142f3dfec3ad7cb -->
+<!-- source-sha256: bbc81ba94e07e108cae72a8af4abab0c9b17b53420a104c5a3fe1c6791ecaedb -->
 # 생성기
 
 [English](generator.md)
@@ -1393,12 +1393,25 @@
   `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
   `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
-- **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 라이브러리를 GNU C library용으로
-  빌드하는 `linux_amd64`와 `linux_arm64`, 그리고 `darwin_arm64`이며, GN-3c의 플랫폼을 `<GOOS>_<GOARCH>`로 적은 것이다.
-  musl은 지원하지 않는다. Go의 빌드 제약은 Linux의 C library를 구분하지 않으므로, musl의 소비자는 자기
-  `<GOOS>_<GOARCH>`의 파일을 컴파일하고 GNU C library용 라이브러리의 링크가 실패한다. `binding generate`는 플랫폼마다 파일 둘을 쓴다.
-  `internal/binding/zz_generated_link_<platform>.go`는 이름 때문에 Go가 그 플랫폼에서만 컴파일하며, 지시문
+- **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 라이브러리를 GNU C library용
+  (`<arch>-unknown-linux-gnu`)으로 빌드하는 `linux_amd64`와 `linux_arm64`, musl용(`<arch>-unknown-linux-musl`)으로
+  빌드하는 `linux_amd64_musl`과 `linux_arm64_musl`, 그리고 `darwin_arm64`이다. `_musl`이 없는 플랫폼은 GN-3c의
+  플랫폼을 `<GOOS>_<GOARCH>`로 적은 것이다. GNU C library용 라이브러리는 그것이 가리키는 심볼 일부를 musl이 정의하지
+  않으므로 musl과 링크되지 않으며, 그래서 각 C library의 Linux 기계는 자기 라이브러리가 필요하다. Go의 빌드 제약은
+  Linux의 C library를 구분하지 않으므로 빌드 tag `musl`이 musl의 라이브러리를 고른다. musl의 소비자는
+  `go build -tags musl`(그리고 `go test -tags musl`)로 빌드하고, GNU C library의 소비자는 그것 없이 빌드한다. 다른 방법이
+  아니라 tag인 이유: Go는 컴파일 전에 C library에 관한 사실을 읽지 않고, cgo 지시문은 C preprocessor 줄이 아니므로,
+  어떤 파일도 C 컴파일러가 찾는 C library에 따라 라이브러리 디렉터리를 가리킬 수 없다. tag는 소비자가 Go에 주는 유일한
+  선택이다.
+  `binding generate`는 플랫폼마다 파일 둘을 쓴다. `internal/binding/zz_generated_link_<file>.go`는 지시문
   `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>`을 담고 패키지 `internal/ffi/lib/<platform>`을 import한다.
+  `<file>`은 플랫폼이며, `linux_<arch>_musl`만 `musl_linux_<arch>`이다. 그래서 Go는 이름 때문에 각 파일을 그
+  `<GOOS>_<GOARCH>`에서만 컴파일한다. `linux_<arch>`의 파일은 제약 `//go:build !musl`을, `linux_<arch>_musl`의 파일은
+  제약 `//go:build musl`을 가지므로 빌드는 그중 하나를 컴파일한다. 각 Linux 파일의 preamble은 링크 전에 cgo의 C
+  컴파일러가 찾는 C library를 확인한다. GNU C library의 파일은 `<stdlib.h>`를 include하고 `__GLIBC__`가 정의되지
+  않으면 Go 모듈, 라이브러리, 플랫폼과 해결책 `go build -tags musl`을 말하는 메시지로 `#error`를 내어 C 컴파일러를
+  멈춘다. musl의 파일은 `__GLIBC__`가 정의되어 있으면 tag `musl` 없이 빌드하라는 해결책과 함께 그것을 멈춘다. 그래서 틀린
+  tag를 준 소비자는 링크의 정의되지 않은 심볼 대신 그 메시지를 받는다.
   `internal/ffi/lib/<platform>/zz_generated_lib.go`는 그 패키지의 유일한 파일이다. 플랫폼의 라이브러리는 그 파일 옆의
   `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`다. 그 디렉터리가 바인딩이 import하는 패키지인 이유:
   `go mod vendor`는 빌드가 import하는 패키지의 디렉터리만 복사하므로, 모듈을 vendor하는 소비자가 모든 플랫폼의
@@ -1406,7 +1419,10 @@
   않는다. checkout은 자기 라이브러리를 빌드하고 그 디렉터리를 `CGO_LDFLAGS`로 가리키며(GN-14), linker는 그 디렉터리를
   지시문의 디렉터리보다 먼저 찾는다.
   Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. release 도구는 tag `vX.Y.Z`의 commit에서 target go의
-  `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이 빌드하고,
+  `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이
+  빌드하고(`linux_<arch>_musl`의 라이브러리는 그 arch의 Linux 기계에서 `--target <arch>-unknown-linux-musl`로 빌드하며,
+  그 Rust toolchain은 `rust-toolchain.toml`에 그 target을 적는다. 정적 라이브러리는 linker가 필요 없으므로 musl의 C
+  컴파일러는 쓰지 않는다),
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
@@ -1881,6 +1897,16 @@
   `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
   단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
   링크하므로, tag로 받은 모듈이 자기가 실은 라이브러리를 링크한다는 것은 이 단계만 보인다.
+  Linux에서는 commit이 실행 arch의 musl 라이브러리도 `internal/ffi/lib/linux_<arch>_musl`에 싣는다. 그 라이브러리는
+  `--target <arch>-unknown-linux-musl`로 빌드하고 다른 것처럼 debug section을 뗀다. 실행은 이 단계의 레포들, Git 설정,
+  소비자를 `<work>/go-release`에 남긴다. 그다음 `make go-musl-check WORK=<work> [RUN_WORK=<path>]`가 소비자를 musl에서
+  실행한다. `scripts/go-musl.sh`가 digest로 고정한 Alpine image의 컨테이너에서, sha256으로 확인한 `mise.lock`의 Go와
+  Alpine의 C 컴파일러와 Git으로, 실행의 경로를 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고,
+  시험이 하나도 실행되지 않거나 하나라도 실패하면 실패한다. 컨테이너는 `DOCKER_HOST`의 Docker가 있는 기계에서 돌고,
+  그 기계는 작업 디렉터리를 `WORK`에 가지며, 그것을 실행 안의 디렉터리 경로인 `RUN_WORK`(기본은 `WORK`)에 mount한다.
+  Git 설정이 그 경로로 레포를 가리키기 때문이다. 컨테이너 이름은 `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end
+  검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고 musl 기계가 실행한 프로그램만이 musl의 라이브러리가
+  링크되고 실행된다는 것을 보인다.
 - **GN-14h** 실행은 각 target에서 생성기가 쓰는 것과 `tests/e2e/<library>`의 계약 case를 시험하고, 레포의 시험은
   실행하지 않는다. unittest는 `packages/python/generated/tests`와 case runner를 찾고, `node --test`는 Node와 WASM의
   `generated.test.mjs`와 case runner를 실행하며, PHPUnit은 `packages/php-ext/generated/tests`와 `CasesTest.php`를
