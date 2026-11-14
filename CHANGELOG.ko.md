@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## 0.0.3
+
 - binding은 바인딩을 가진 레포의 release recipe를 쓴다(GN-19h). `binding release-recipes`는 `packages/release.mk`
   (component는 `packages/<component>/release.mk`)를 쓴다. 그것은 레포의 Makefile이 include하고 추적되지 않는 make
   파일이며, 계약의 target에 대해 `release-go-static`, `release-wheel`, `release-php-ext`, `release-npm-platform`,

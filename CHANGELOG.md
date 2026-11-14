@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.3
+
 - binding writes the release recipes of a repository that holds a binding (GN-19h): `binding release-recipes` writes
   `packages/release.mk` (`packages/<component>/release.mk` for a component), a make file that the Makefile of the
   repository includes and that is not tracked, with the targets `release-go-static`, `release-wheel`,
