@@ -2,6 +2,7 @@
 <!-- source-sha256: 651fea8fdff554ce860ae3b775dc1d526f762649bc804fbe8435c5a4a0ec56e7 -->
 <!-- source-sha256: 15045cf7af4db5d55565035f398ce578be4d3436d1c836d6e23143a004fad289 -->
 <!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
+<!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -70,6 +71,14 @@
   만든다. core_type이 있는 class와 bool, 정수, float의 constructor는 이름을 대고 거부한다. go.mod는 callback unit과 그런
   alias의 라이브러리를 요구한다(GN-15f). 검증: Go 시험이 변경 전에 "the go in row of the class box of sample is not
   generated yet"로 실패한 `generate.test.ts`의 시험.
+- `errors.recognize`를 적은 다른 레포의 callback unit의 member는 Go와 WASM에서 recognize한 오류와 함께 생성되지
+  않았다. WASM entry는 소유자의 class를 등록하지 않았고, Go dispatch는 이 레포의 바인딩에 없는
+  `binding.Recognize<Unit>`을 적었다. 이제 WASM은 소유 패키지의 subpath `./wasm`의 class를 라이브러리 class 뒤에
+  등록하고, Go dispatch는 소유 Go module의 패키지 `errors`의 타입을 `binding.RecognizeAs`로 찾으므로 소유자의 코어가 그
+  kind를 받는다(U-3, GN-6s, GN-6d). 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 라이브러리의 패키지
+  `errors`는 그 callback member가 recognize하는 오류 unit마다 `Raised<Unit>`을 준다(GN-15d). `tests/e2e/consumer`의 member
+  `consult`는 다섯 target 모두에서 돈다. 검증: Go와 WASM 시험이 변경 전에 실패한 `generate.test.ts`. `make e2e
+  REPO=tests/e2e/consumer DEPS=tests/e2e/sample`은 큐에 넣었다(B2.222).
 
 - 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
   `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고
@@ -88,6 +97,20 @@
   `read`가 있다. 검증: Go case 시험이 변경 전에 "a case value of source is an instance value of no class that implements
   it"로 실패한 `generate.test.ts`의 시험, 그리고 callback unit을 대지 않는 hyper checkout의 `generate`.
   `make e2e REPO=tests/e2e/consumer`는 큐에 넣었다.
+
+- 멤버가 `errors.recognized`를 이름하는 다른 저장소의 callback unit은 `recognized callback errors are not
+  generated yet`로 거부되었다. 이제 PHP, Python, Node에서 그런 callback이 callback을 소유한 library의 인식된 error
+  unit의 instance로 던진 error는 그 kind로 대응된다. 세 번째 library의 unit과, `errors.recognized`가 함수를 이름하지
+  않는 소유자는 이름으로 거부된다(U-3, GN-6s, GN-6d). Go와 WASM은 아직 다른 저장소의 callback unit을 생성하지
+  않는다(GN-6s). 검증: `sample.lookup`의 consumer 시험이 변경 전에 실패한 `make test-ts`, cases `consult`가 lookup의
+  kind `refused`를 주는 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`(B2.173).
+
+- 값 alias, 또는 다른 저장소의 값 alias나 값 class의 parameter와 field가 기본값 `{empty: "object"}`를 가지면
+  `the default {empty: "object"} of the type {"unit":"value","library":"json"} is not generated`로 거부되었다. 이제
+  그것은 `None`으로 생략되고, 각 target의 U-2 테스트는 그 자리에 언어의 빈 객체를 준다(U-2, GN-6i). PHP alias의
+  units는 `Some(Err(_wide)) | None`의 한 alternative에만 `_wide`를 묶었고, `cargo clippy`는 그것을 E0408로 거부해
+  relay의 PHP crate가 build되지 않았다. 이제 그 alternative는 이름을 묶지 않는다. 검증: 두 시험이 변경 전에 실패한
+  `make test-ts`, cases `width`가 통과한 json checkout과의 `make e2e REPO=tests/e2e/relay`(B2.172).
 
 - 두 레포의 정적 라이브러리를 링크하는 Go program이, 레포가 `[profile.release]`의 `lto = true`로 그것을 빌드하면 중복
   symbol로 실패했다. http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가 `rust_eh_personality`와

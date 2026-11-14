@@ -34,7 +34,11 @@ export function wasmTests(model: Model): string {
       foreignModules.add(library);
       return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}`;
     },
-    errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
+    // GN-6s: an error unit of the owner of a callback unit of another repository, through the subpath ./wasm of its package.
+    errorNew: (unit, kind, message, library) => {
+      if (library !== undefined) foreignModules.add(library);
+      return `new ${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`;
+    },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.
     variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,

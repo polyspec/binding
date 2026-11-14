@@ -123,6 +123,9 @@ export interface GoScope {
   reaches?: Set<string>;
   // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
   foreignImports?: Map<string, string>;
+  // GN-6s, GN-15d: the import paths of the packages errors of other repositories, each with the name that the import
+  // gives it, because its package name errors is that of the standard package.
+  foreignErrors?: Map<string, string>;
   // GN-6s: the callback units of other repositories that the package encodes, each with a dispatch of the package.
   foreignCallbacks?: Set<CallbackUnit>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
@@ -869,6 +872,21 @@ function foreignCallbackType(scope: GoScope, cb: CallbackUnit): string {
   return `${pkg}.${goName(cb.unit.name)}`;
 }
 
+// U-3, GN-6d: the error units of the library that its callback members recognize, each once.
+const goRecognizedUnits = (model: Model): ErrorUnit[] => [...new Set(model.callbacks.flatMap((c) => c.members.flatMap((m) => m.recognized?.units ?? [])))];
+
+// GN-6s: whether a member of a callback unit of another repository recognizes an error unit of its owner.
+const recognizesOwner = (model: Model): boolean => model.foreignCallbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
+
+// GN-6s, GN-15d: the name of the package errors of the Go module of another repository, which the package imports.
+export function ownerErrors(scope: GoScope, library: string): string {
+  const owner = scope.model.foreign.get(library);
+  if (owner === undefined) throw new Unsupported(`${library}: the contract of the library is not found (GN-6s)`);
+  const name = `${goPackage(owner, '')}errors`;
+  (scope.foreignErrors ??= new Map()).set(goImport(owner, 'errors'), name);
+  return name;
+}
+
 // U-3: the methods of a callback unit in Go and the cases of its dispatch, one per member.
 function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: CallbackMember; method: string; params: string; signature: string }[]; cases: string[] } {
   const methods = cb.members.map((m) => {
@@ -886,7 +904,7 @@ function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: Callba
     lines.push('\t\t\tif err := dec.Finish(); err != nil {', '\t\t\t\treturn err', '\t\t\t}');
     const args = m.params.map((p) => goParam(p.name, scope.model)).join(', ');
     // U-3, GN-6d: an error of a unit that the member recognizes goes to the core with its kind and its message.
-    const failed = (m.recognized?.units ?? []).reduce((err, u) => `binding.Recognize${goName(u.unit.name)}(${err})`, 'err');
+    const failed = (m.recognized?.units ?? []).reduce((err, u) => (cb.library === undefined ? `binding.Recognize${goName(u.unit.name)}(${err})` : `binding.RecognizeAs[*${ownerErrors(scope, cb.library)}.${goName(u.unit.name)}](${err})`), 'err');
     if (m.returns === 'none' && m.recognized === undefined) {
       lines.push(`\t\t\treturn object.${method}(${args})`);
     } else if (m.returns === 'none') {
@@ -1062,7 +1080,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
   const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
-  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`)];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`), ...[...(scope.foreignErrors ?? new Map<string, string>())].map(([path, name]) => `${name} "${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
@@ -1496,8 +1514,9 @@ func (e *${name}) Status() (int, bool) { return e.status, e.hasStatus }
 // Errno is the OS error number of an I/O failure, when there is one (B-4).
 func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
 `).join('');
-  const recognizedUnits = [...new Set(model.callbacks.flatMap((c) => c.members.flatMap((m) => m.recognized?.units ?? [])))];
-  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 ? '' : `
+  const recognizedUnits = goRecognizedUnits(model);
+  const ownerRecognizes = recognizesOwner(model);
+  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 && !ownerRecognizes ? '' : `
 // recognized is an error of an error unit that a callback member recognizes (U-3, GN-6d): the core takes its kind and
 // its message, and the call keeps the error itself.
 type recognized struct {
@@ -1533,7 +1552,20 @@ func Recognize${goName(u.unit.name)}(err error) error {
 	}
 	return err
 }
-`).join('')}`);
+`).join('')}${!ownerRecognizes ? '' : `
+// RecognizeAs is err as an error that the core recognizes when it is a T, an error unit of the owner of a callback unit
+// of another repository, and err otherwise (U-3, GN-6s).
+func RecognizeAs[T interface {
+	error
+	Kind() string
+}](err error) error {
+	var unit T
+	if errors.As(err, &unit) {
+		return &recognized{err: err, kind: unit.Kind(), message: unit.Error()}
+	}
+	return err
+}
+`}`);
   const classCases = model.errorUnits.map((u, i) => `\tcase ${i + 1}:\n\t\tif category != ${CATEGORIES.indexOf(u.category)} {\n\t\t\treturn Malformed()\n\t\t}\n\t\treturn finished(make${goName(u.unit.name)}(&${categoryType(model, u.category)}{f}, properties), properties)`).join('\n');
   const back = callsBack(model);
   const others = [
@@ -1541,7 +1573,7 @@ func Recognize${goName(u.unit.name)}(err error) error {
     ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -2018,7 +2050,7 @@ func (c *Call) run(callback uint64, member uint32, args []byte) (status int32, o
 	return 0, enc.Done()
 }
 
-func (c *Call) raise(err error) (int32, []byte) {${model.callbacks.some((cb) => cb.members.some((m) => m.recognized !== undefined)) ? `
+func (c *Call) raise(err error) (int32, []byte) {${[...model.callbacks, ...model.foreignCallbacks].some((cb) => cb.members.some((m) => m.recognized !== undefined)) ? `
 	if r, ok := err.(*recognized); ok {
 		// U-3, GN-6d: 2, the index of the error, its kind and its message, which the core takes as its kind.
 		c.raised = append(c.raised, r.err)
@@ -3145,6 +3177,12 @@ type ${name} = binding.${name}
 `).join('')}${model.errorUnits.map((u) => `
 // ${goName(u.unit.name)} is the error unit ${u.unit.id} (E-2).
 type ${goName(u.unit.name)} = binding.${goName(u.unit.name)}
+`).join('')}${goRecognizedUnits(model).map((u) => `
+// Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: the error that Go code
+// of another module, which implements a callback unit of ${model.contract.library}, returns for the core to recognize (GN-15d, GN-6s).
+func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
+	return binding.Raised${goName(u.unit.name)}(kind, message)
+}
 `).join('')}`;
 }
 

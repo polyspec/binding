@@ -76,6 +76,15 @@
   refused by name. go.mod requires the library of a callback unit and of such an alias (GN-15f). Verified by the
   tests of `generate.test.ts`, whose Go test failed before the change with "the go in row of the class box of
   sample is not generated yet".
+- A member of a callback unit of another repository that names `errors.recognize` was not generated for Go and WASM
+  with its recognized errors: the WASM entry did not register the classes of the owner, and the Go dispatch named
+  `binding.Recognize<Unit>`, which the binding of this repository does not have. WASM now registers the classes of
+  the subpath `./wasm` of the owner's package after the library classes, and the Go dispatch finds the type of the
+  package `errors` of the owner's Go module with `binding.RecognizeAs`, so the core of the owner takes the kind (U-3,
+  GN-6s, GN-6d). The package `errors` of a library gives `Raised<Unit>` of each error unit that its callback members
+  recognize, because Go code of another module cannot import `internal/binding` to make that error (GN-15d). The
+  member `consult` of `tests/e2e/consumer` runs in all five targets. Verified by `generate.test.ts`, whose Go and
+  WASM test failed before the change; `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample` is queued (B2.222).
 
 - The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
   WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
@@ -97,6 +106,22 @@
   case test failed before the change with "a case value of source is an instance value of no class that implements
   it", and by `generate` of the hyper checkout, which names no callback unit; `make e2e REPO=tests/e2e/consumer` is
   queued.
+
+- A callback unit of another repository whose member names `errors.recognized` was refused as `recognized
+  callback errors are not generated yet`. In PHP, Python and Node the error that such a callback raises as an
+  instance of a recognized error unit of the library that owns the callback is now matched to its kind; a unit of a
+  third library, and an owner whose `errors.recognized` names no function, are refused by name (U-3, GN-6s, GN-6d).
+  Go and WASM generate no callback unit of another repository yet (GN-6s). Verified by `make test-ts`, whose test of
+  the consumer of `sample.lookup` failed before the change, and by `make e2e REPO=tests/e2e/consumer
+  DEPS=tests/e2e/sample`, whose cases `consult` give the kind `refused` of the lookup (B2.173).
+
+- A parameter or a field of a value alias, or of a value alias or a value class of another repository, with the
+  default `{empty: "object"}` was refused as `the default {empty: "object"} of the type
+  {"unit":"value","library":"json"} is not generated`. It is now left out as `None`, and the U-2 test of each target
+  gives the empty object of the language in its place (U-2, GN-6i). The units of a PHP alias bound `_wide` in one
+  alternative of `Some(Err(_wide)) | None`, which `cargo clippy` refuses as E0408, so the PHP crate of relay did not
+  build; the alternative now binds no name. Verified by `make test-ts`, whose tests of both failed before the
+  change, and by `make e2e REPO=tests/e2e/relay` with the json checkout, whose cases `width` pass (B2.172).
 
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
