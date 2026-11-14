@@ -709,6 +709,12 @@ const callLine = (fn: Fn, call: string, names?: string[]): string => {
 };
 
 // E-2, E-7, B-4: the lines that require err to be an error of the type with the kind.
+// E-2: the Go type of the failure of a kind: the type of the error unit that its row names, or of its category.
+function exactType(model: Model, raises: { kind: string; category: string }): string {
+  const unit = errorUnitOfKind(model, raises.kind);
+  return unit === undefined ? categoryType(model, raises.category) : goName(unit.unit.name);
+}
+
 function expectKind(type: string, kind: string, rule: string): string[] {
   return [`if failure, ok := err.(*liberrors.${type}); !ok || failure.Kind() != ${goString(kind)} {`, `\tt.Fatalf("${rule}: %#v", err)`, '}'];
 }
@@ -874,7 +880,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
     const alias = aliasOf(model, arg.type);
     const kase = alias === undefined ? undefined : aliasCases(model).find((c) => c.alias === alias);
-    if (kase !== undefined) single('U-7', `gives the kind of ${kase.alias.unit.id} in ${argName}`, arg, (b) => aliasValue(model, b, kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`), expectKind(types[kase.category] ?? '', kase.kind, 'U-7'));
+    if (kase !== undefined) single('U-7', `gives the kind of ${kase.alias.unit.id} in ${argName}`, arg, (b) => aliasValue(model, b, kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`), expectKind(exactType(model, kase), kase.kind, 'U-7'));
     // U-3, K-2: a nil callback is kind invalid_callback, and the error of a callback is the error of the call.
     const callback = callbackOf(model, arg.type);
     if (callback !== undefined) {
@@ -1797,7 +1803,7 @@ func TestT2AKeyedMapRoundTripsInItsOrder(t *testing.T) {
     return `
 func TestU7${goName(kase.alias.unit.name)}In${testName(kase.id)}(t *testing.T) {
 ${b.lines.map((line) => `\t${line.replace(/\bbinding\./g, '')}\n`).join('')}	err := AliasIn${goName(kase.alias.unit.name)}(${given})
-	if failure, ok := err.(*${categoryType(model, kase.category)}); !ok || failure.Kind() != ${goString(kase.kind)} {
+	if failure, ok := err.(*${exactType(model, kase)}); !ok || failure.Kind() != ${goString(kase.kind)} {
 		t.Fatalf("U-7: %#v", err)
 	}
 }

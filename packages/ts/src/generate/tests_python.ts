@@ -387,7 +387,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${name}_${argName}_gives_the_kind_of_${langName('python', refusedValue.kase.alias.unit.name, 'variable')}(self) -> None:
         with self.assertRaises(pkg.${cls(refusedValue.kase.category)}) as caught:
             ${call(new Map([[arg, refusedValue.value]]))}
-        self.assertIs(type(caught.exception), pkg.${cls(refusedValue.kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(refusedValue.kase)})
         self.assertEqual(caught.exception.kind, ${pyString(refusedValue.kase.kind)})`);
       }
       const text = textKind(arg.type);
@@ -714,7 +714,7 @@ export function pythonTests(model: Model, module: string): string {
     def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
-        self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
+        self.assertIs(type(caught.exception), pkg.${exactClass(kase)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
   // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.

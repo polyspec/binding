@@ -323,7 +323,7 @@ test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
       if (refusedValue !== undefined) {
         out.push(`
 test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${cls(refusedValue.kase.category)} && error.kind === ${jsString(refusedValue.kase.kind)});
+  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${exactClass(refusedValue.kase)} && error.kind === ${jsString(refusedValue.kase.kind)});
 });`);
       }
       const text = textKind(arg.type);
@@ -596,7 +596,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
     usesAddon = true;
     out.push(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
-  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
+  assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
   // GN-6m: a block may hold several tests, each of which awaits when its call does.

@@ -311,7 +311,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             ${call(new Map([[arg, refusedValue.value]]))};
             self::fail('no error');
         } catch (${cls(refusedValue.kase.category)} $error) {
-            self::assertSame(${cls(refusedValue.kase.category)}::class, $error::class);
+            self::assertSame(${exactClass(refusedValue.kase)}::class, $error::class);
             self::assertSame(${phpText(refusedValue.kase.kind)}, $error->kind());
         }
     }`);
@@ -731,7 +731,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             ${call};
             self::fail('no error');
         } catch (${cls(kase.category)} $error) {
-            self::assertSame(${cls(kase.category)}::class, $error::class);
+            self::assertSame(${exactClass(kase)}::class, $error::class);
             self::assertSame(${phpText(kase.kind)}, $error->kind());
         }
     }`);
