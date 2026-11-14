@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { GO_PLATFORMS } from '../generate/go.ts';
+import { GO_PLATFORMS, goLinkFile } from '../generate/go.ts';
 
 export type GoPlatform = (typeof GO_PLATFORMS)[number];
 
@@ -300,7 +300,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   };
   walk('');
   for (const platform of GO_PLATFORMS) {
-    for (const file of [`internal/binding/zz_generated_link_${platform}.go`, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
+    for (const file of [`internal/binding/zz_generated_link_${goLinkFile(platform)}.go`, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
       if (!generated.includes(file)) findings.push(`${directory}/${file} is not in the work tree: run binding generate --target go`);
     }
   }

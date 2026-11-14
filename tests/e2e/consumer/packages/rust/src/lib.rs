@@ -128,12 +128,15 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
 ///
 /// # Errors
 ///
-/// The failure of the source.
-pub fn read(
-    source: &mut dyn polyspec_sample::Source,
-    key: &str,
-) -> Result<Option<String>, Failure<polyspec_sample::Error>> {
-    source.read(key)
+/// An exception of the source, which goes back to the caller as it was thrown. The source recognizes no error unit, so
+/// no kind of the sample library comes back; a function of this library fails with the errors of this library alone.
+pub fn read(source: &mut dyn polyspec_sample::Source, key: &str) -> Result<Option<String>, Failure<Error>> {
+    match source.read(key) {
+        Ok(value) => Ok(value),
+        Err(Failure::Kind(error)) => Err(Failure::Callback(Box::new(error))),
+        Err(Failure::Raised(raised)) => Err(Failure::Raised(raised)),
+        Err(Failure::Callback(error)) => Err(Failure::Callback(error)),
+    }
 }
 
 /// The value that the lookup of the sample library holds for the key, `none` when it holds none, and `kind <kind>` when

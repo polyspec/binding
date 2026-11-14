@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
 import { goModFindings, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
@@ -118,8 +119,8 @@ const TAG_COMMIT = '1'.repeat(40);
 const RELEASE_COMMIT = '2'.repeat(40);
 const OTHER_COMMIT = '3'.repeat(40);
 const GO_MOD = 'module github.com/polyspec/sample/packages/go\n\ngo 1.27.3\n';
-const PLATFORMS = ['linux_amd64', 'linux_arm64', 'darwin_arm64'] as const;
-const OBJECTS = { linux_amd64: ELF_X86_64, linux_arm64: ELF_AARCH64, darwin_arm64: MACHO_ARM64 };
+const PLATFORMS = GO_PLATFORMS;
+const OBJECTS = { linux_amd64: ELF_X86_64, linux_arm64: ELF_AARCH64, linux_amd64_musl: ELF_X86_64, linux_arm64_musl: ELF_AARCH64, darwin_arm64: MACHO_ARM64 };
 
 interface Scene {
   release: GoModuleRelease;
@@ -128,7 +129,7 @@ interface Scene {
   lines: () => string[];
 }
 
-// A repository of the case with the generated files of the Go module in its work tree, the libraries of the three
+// A repository of the case with the generated files of the Go module in its work tree, the libraries of the five
 // platforms and the stand-ins on PATH; `answers` come before the answers of a run in which every check passes.
 function scene(t: { after: (fn: () => void) => void }, answers: Answer[] = []): Scene {
   const dir = mkdtempSync(join(tmpdir(), 'binding-release-go-'));
@@ -152,7 +153,7 @@ function scene(t: { after: (fn: () => void) => void }, answers: Answer[] = []): 
   write(join(module, 'zz_generated_sample.go'), 'package sample\n');
   write(join(module, 'internal/binding/zz_generated_binding.go'), 'package binding\n');
   for (const platform of PLATFORMS) {
-    write(join(module, `internal/binding/zz_generated_link_${platform}.go`), 'package binding\n');
+    write(join(module, `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), 'package binding\n');
     write(join(module, `internal/ffi/lib/${platform}/zz_generated_lib.go`), `package ${platform}\n`);
     write(join(dir, 'libraries', platform, 'libpolyspec_sample_go.a'), ar([{ name: 'a.o', data: OBJECTS[platform] }]));
   }
@@ -227,12 +228,18 @@ test('the command makes the commit through an index of the run, proves it by a c
     ['packages/go/internal/binding/zz_generated_link_darwin_arm64.go', join(module, 'internal/binding/zz_generated_link_darwin_arm64.go')],
     ['packages/go/internal/binding/zz_generated_link_linux_amd64.go', join(module, 'internal/binding/zz_generated_link_linux_amd64.go')],
     ['packages/go/internal/binding/zz_generated_link_linux_arm64.go', join(module, 'internal/binding/zz_generated_link_linux_arm64.go')],
+    ['packages/go/internal/binding/zz_generated_link_musl_linux_amd64.go', join(module, 'internal/binding/zz_generated_link_musl_linux_amd64.go')],
+    ['packages/go/internal/binding/zz_generated_link_musl_linux_arm64.go', join(module, 'internal/binding/zz_generated_link_musl_linux_arm64.go')],
     ['packages/go/internal/ffi/lib/darwin_arm64/libpolyspec_sample_go.a', libraryOf('darwin_arm64')],
     ['packages/go/internal/ffi/lib/darwin_arm64/zz_generated_lib.go', join(module, 'internal/ffi/lib/darwin_arm64/zz_generated_lib.go')],
     ['packages/go/internal/ffi/lib/linux_amd64/libpolyspec_sample_go.a', libraryOf('linux_amd64')],
     ['packages/go/internal/ffi/lib/linux_amd64/zz_generated_lib.go', join(module, 'internal/ffi/lib/linux_amd64/zz_generated_lib.go')],
+    ['packages/go/internal/ffi/lib/linux_amd64_musl/libpolyspec_sample_go.a', libraryOf('linux_amd64_musl')],
+    ['packages/go/internal/ffi/lib/linux_amd64_musl/zz_generated_lib.go', join(module, 'internal/ffi/lib/linux_amd64_musl/zz_generated_lib.go')],
     ['packages/go/internal/ffi/lib/linux_arm64/libpolyspec_sample_go.a', libraryOf('linux_arm64')],
     ['packages/go/internal/ffi/lib/linux_arm64/zz_generated_lib.go', join(module, 'internal/ffi/lib/linux_arm64/zz_generated_lib.go')],
+    ['packages/go/internal/ffi/lib/linux_arm64_musl/libpolyspec_sample_go.a', libraryOf('linux_arm64_musl')],
+    ['packages/go/internal/ffi/lib/linux_arm64_musl/zz_generated_lib.go', join(module, 'internal/ffi/lib/linux_arm64_musl/zz_generated_lib.go')],
     ['packages/go/zz_generated_sample.go', join(module, 'zz_generated_sample.go')],
   ];
   assert.deepEqual(s.lines(), [
@@ -291,7 +298,7 @@ test('every failed check is named and the command changes nothing (GN-19f)', (t)
   const s = scene(t, [
     { tool: 'git', match: 'rev-parse --verify HEAD\\^\\{commit\\}$', stdout: `${OTHER_COMMIT}\n` },
     { tool: 'git', match: ' show 1+:packages/go/go\\.mod$', stdout: `${GO_MOD}\nrequire github.com/polyspec/points/packages/go v0.0.0\n` },
-    { tool: 'llvm-nm', match: 'linux_arm64', stdout: '0000000000000000 T polyspec_sample__panic_test\n' },
+    { tool: 'llvm-nm', match: 'linux_arm64/', stdout: '0000000000000000 T polyspec_sample__panic_test\n' },
     { tool: 'llvm-size', match: 'darwin_arm64', stdout: 'a.o:\nsection   size   addr\n__debug_info   340   0\n__debug_str   12   340\n' },
   ]);
   rmSync(join(s.release.root, 'packages/go/internal/binding/zz_generated_link_linux_amd64.go'));

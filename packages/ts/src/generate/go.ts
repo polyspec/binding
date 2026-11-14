@@ -3396,7 +3396,7 @@ export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'linux_amd64_musl', '
 
 // The name of the link file of a platform after zz_generated_link_: Go compiles a file whose name ends in
 // _<GOOS>_<GOARCH> for that platform alone, so the file of linux_<arch>_musl is musl_linux_<arch>.
-const goLinkFile = (platform: string): string => (platform.endsWith('_musl') ? `musl_${platform.slice(0, -'_musl'.length)}` : platform);
+export const goLinkFile = (platform: string): string => (platform.endsWith('_musl') ? `musl_${platform.slice(0, -'_musl'.length)}` : platform);
 
 // GN-15g: the file of package binding that Go compiles for one platform alone, by its name, and on Linux by the build
 // tag musl. Its directive names the directory of the static library of that platform inside the Go module (${SRCDIR}

@@ -1256,13 +1256,15 @@ test('Go: a record of another repository is the struct of its Go module, which g
   for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }, { git: 'https://github.com/polyspec/points.git', branch: 'main', tag: 'v0.1.2' }]) {
     assert.match(goMod(spec), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n$`), JSON.stringify(spec));
   }
-  // A library whose records the contract does not name is not required: without its member read, the consumer names
-  // only a value alias of sample, whose Go rows name no class.
+  // A library whose records the contract does not name is not required: without its members read and consult, which
+  // take the callback units source and lookup of sample, the consumer names only a value alias of sample, whose Go rows
+  // name no class.
   const consumer = consumerSample();
   const aliasOnly = structuredClone(consumer.contract);
   const holder = aliasOnly.units.find((u: any) => u.id === 'consumer');
-  holder.members = holder.members.filter((m: any) => m.id !== 'consumer.read');
-  aliasOnly.cases = aliasOnly.cases.filter((c: any) => c.member !== 'consumer.read');
+  const callers = new Set(['consumer.read', 'consumer.consult']);
+  holder.members = holder.members.filter((m: any) => !callers.has(m.id));
+  aliasOnly.cases = aliasOnly.cases.filter((c: any) => !callers.has(c.member));
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, aliasOnly, consumer.foreign), /require/);
   // GN-6s: the member read takes the callback unit source of sample, whose interface the Go binding imports.
   assert.match(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);

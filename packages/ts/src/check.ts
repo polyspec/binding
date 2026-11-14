@@ -166,7 +166,7 @@ interface ThenFaults {
 // the generator writes for every contract (packages/ts/src/generate/go.ts); a test compares this list with that file.
 export const GO_BINDING_NAMES: ReadonlySet<string> = new Set([
   'ArmFaults', 'BytesKey', 'Call', 'Callback', 'FaultLeft', 'Function', 'IntKey', 'Kept', 'Key', 'KeyedMap', 'Malformed', 'Map', 'NativeCount', 'NewCall',
-  'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'Reader', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
+  'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'Reader', 'RecognizeAs', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
 ]);
 
 // GN-17: the words of a name in snake_case, the prefix of the C symbols of a contract, and whether Go takes a unit or
