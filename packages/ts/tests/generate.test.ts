@@ -629,6 +629,37 @@ test('the Go package binding names each export in a blank variable, describes a 
   assert.doesNotMatch(shapes, /^var _ = \[\.\.\.\]any\{/m);
 });
 
+test('the Go package binding writes a method of Call only with the export that calls it, and panicked only where a call makes one (GN-15h, U-3, GN-15b)', () => {
+  const binding = (name: string, foreign = new Map<string, unknown>()): string => {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+    const contract = read('packages/rust/interface.json');
+    if (name === 'sample') plainSample(contract);
+    const caseFiles = new Map([['contracts/cases.json', name === 'sample' ? plainSampleCases(read('contracts/cases.json')) : read('contracts/cases.json')]]);
+    return text(generate({ contract, version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles, foreign: foreign as any, targets: ['go'] as Inputs['targets'] & string[] }), 'packages/go/internal/binding/zz_generated_binding.go');
+  };
+  const host = /^func \(c \*Call\) host\(/m;
+  const run = /^func \(c \*Call\) run\(/m;
+  const raise = /^func \(c \*Call\) raise\(/m;
+  const panicked = /^type panicked struct/m;
+  // functions keeps funcs, whose run makes a panicked (keepRaised); no callback and no value alias, so no export calls
+  // run or host.
+  const functions = binding('functions');
+  assert.doesNotMatch(functions, /^\/\/export \w+__go_(?:callback|host)$/m);
+  for (const absent of [host, run, raise]) assert.doesNotMatch(functions, absent);
+  assert.match(functions, panicked);
+  assert.match(functions, /keepRaised\(&panicked\{value: value\}\)/);
+  // kept has a value alias, whose walk the export __go_host answers through host; no callback and no kept func, so
+  // nothing runs Go code that panics into a call, and nothing makes a panicked.
+  const kept = binding('kept');
+  assert.match(kept, /^\/\/export polyspec_kept___go_host$/m);
+  assert.match(kept, host);
+  for (const absent of [run, raise, panicked, /\*panicked\b/]) assert.doesNotMatch(kept, absent);
+  // The sample takes callbacks: the export __go_callback calls run, which makes a panicked and calls raise.
+  const sample = binding('sample');
+  assert.match(sample, /^\/\/export polyspec_sample___go_callback$/m);
+  for (const present of [run, raise, panicked]) assert.match(sample, present);
+});
+
 test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM (T-2, GN-12, GN-18)', () => {
   const { contract, caseFiles } = load();
   const member = contract.units[0].members[0];
