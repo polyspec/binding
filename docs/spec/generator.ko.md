@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e7db208003c10d6bd5a4f5a915ae479ff74f503f5e049b59249b54f4f1ed6d21 -->
+<!-- source-sha256: d92bac09c247a4bcdd352d044167275b3656e9c00dc5b75eba51332da454874c -->
 # 생성기
 
 [English](generator.md)
@@ -641,7 +641,7 @@
   class(GN-6af), 곧 go.mod가 Go module을 요구하는(GN-15f) owner package의 struct일 때 받는다. `in` 행은 pointer의
   property를, writable이면 그 field로 아니면 그 method로 읽어 한 호출에서 pointer마다 handle 하나인 node 11로 묘사하고,
   그런 인스턴스가 보관하는 owner의 keyed map은 entry의 map으로 묘사한다. `out` 행은 class의 위치를 가진 결과의 node
-  13(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
+  14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
   property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
   PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고

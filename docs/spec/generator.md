@@ -787,7 +787,7 @@ the design ids are those of the binding design.
   the package of the owner, whose Go module go.mod requires (GN-15f): an `in` row reads the property of the pointer,
   its field when the property is writable and its method otherwise, as node 11 with one handle per pointer of a call,
   and describes the keyed map of the owner that such an instance keeps as a map of its entries; an `out` row is node
-  13 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
+  14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
   owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
   (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
