@@ -421,10 +421,12 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   if (kind === 'object') {
     const cls = keptOf(model, 'entries', where);
     const key = access(cls);
+    // GN-13e: a key of an expected result takes the key form of the keyed map of the class.
+    const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(model, cls.unit.id)) : goKey(entryKey));
     if (record['repeat'] !== undefined) {
       const repeat = record['repeat'];
       if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${JSON.stringify(json)}`);
-      const k = goKey(record['key']);
+      const k = keyOf(record['key']);
       const top = making.b.fresh('object');
       const at = making.b.fresh('object');
       making.made.push(`${top} := ${construct(cls)}`);
@@ -435,7 +437,6 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     const filled = (local: string): string => {
       making.made.push(`${local} := ${construct(cls)}`);
       if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${JSON.stringify(held)}`);
-      const keyOf = (entryKey: unknown): string => (making.result ? goOutKey(entryKey, keyedField(model, cls.unit.id)) : goKey(entryKey));
       for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${keyOf(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
       return local;
     };
