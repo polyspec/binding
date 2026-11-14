@@ -3144,29 +3144,48 @@ export function go(model: Model, files: Files): void {
   }
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
   for (const platform of GO_PLATFORMS) {
-    files.set(`${BINDING}/zz_generated_link_${platform}.go`, goLink(model, platform));
+    files.set(`${BINDING}/zz_generated_link_${goLinkFile(platform)}.go`, goLink(model, platform));
     files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
   }
   keepGoHelpers(files, `${BINDING}/zz_generated_binding.go`);
 }
 
-// GN-15g: the platforms of a Go module, <GOOS>_<GOARCH> of the platforms of a release (GN-3c).
-export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'darwin_arm64'] as const;
+// GN-15g: the platforms of a Go module: <GOOS>_<GOARCH> of the platforms of a release (GN-3c), whose Linux library is
+// built for the GNU C library, and linux_<arch>_musl, whose library is built for musl and which the build tag musl selects.
+export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'linux_amd64_musl', 'linux_arm64_musl', 'darwin_arm64'] as const;
 
-// GN-15g: the file of package binding that Go compiles for one platform alone, by its name. Its directive names the
-// directory of the static library of that platform inside the Go module (${SRCDIR} is the directory of the file, also
-// in the module cache), so a module that is fetched at its tag links the library that it carries; a checkout, whose
-// directory holds no library, names the directory of its build by CGO_LDFLAGS, which the linker searches first. It
-// imports the package of the directory, because go mod vendor copies only the directories of imported packages.
+// The name of the link file of a platform after zz_generated_link_: Go compiles a file whose name ends in
+// _<GOOS>_<GOARCH> for that platform alone, so the file of linux_<arch>_musl is musl_linux_<arch>.
+const goLinkFile = (platform: string): string => (platform.endsWith('_musl') ? `musl_${platform.slice(0, -'_musl'.length)}` : platform);
+
+// GN-15g: the file of package binding that Go compiles for one platform alone, by its name, and on Linux by the build
+// tag musl. Its directive names the directory of the static library of that platform inside the Go module (${SRCDIR}
+// is the directory of the file, also in the module cache), so a module that is fetched at its tag links the library
+// that it carries; a checkout, whose directory holds no library, names the directory of its build by CGO_LDFLAGS,
+// which the linker searches first. It imports the package of the directory, because go mod vendor copies only the
+// directories of imported packages. On Linux the preamble stops the C compiler of cgo by name when it finds the other
+// C library, before a link that would fail on undefined symbols: a build constraint of Go does not tell the C library
+// apart, so the consumer chooses it by the tag.
 function goLink(model: Model, platform: string): string {
+  const module = goModule(model.contract);
+  const linux = platform.startsWith('linux_');
+  const musl = platform.endsWith('_musl');
+  const build = linux ? `//go:build ${musl ? 'musl' : '!musl'}\n\n` : '';
+  const check = linux
+    ? `// #include <stdlib.h>
+// #${musl ? 'ifdef' : 'ifndef'} __GLIBC__
+// #error "the Go module ${module} links lib${staticLib(model.contract)}.a of ${platform}, which is built for ${musl ? 'musl' : 'the GNU C library'}, and the C compiler of cgo finds ${musl ? 'the GNU C library' : 'another C library'}: ${musl ? 'build without the tag musl' : 'build with go build -tags musl'} (GN-15g)"
+// #endif
+`
+    : '';
   return `${goHeader()}
 
-package binding
+${build}package binding
 
 // #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}
-import "C"
+${check}import "C"
 
-import _ "${goModule(model.contract)}/internal/ffi/lib/${platform}"
+import _ "${module}/internal/ffi/lib/${platform}"
 `;
 }
 
@@ -3174,7 +3193,7 @@ import _ "${goModule(model.contract)}/internal/ffi/lib/${platform}"
 function goLibraryPackage(model: Model, platform: string): string {
   return `${goHeader()}
 
-// Package ${platform} is the directory of the static library lib${staticLib(model.contract)}.a of ${platform.replace('_', '/')}, which a release of
+// Package ${platform} is the directory of the static library lib${staticLib(model.contract)}.a of ${platform.replace('_', '/').replace('_musl', ' with musl')}, which a release of
 // the Go module puts beside this file (GN-15g); package binding imports it, so go mod vendor copies the library.
 package ${platform}
 `;

@@ -389,6 +389,14 @@ if (targets.includes('wasm')) {
   const installed = libdir.status === 0 && existsSync(libdir.stdout.trim()) && readdirSync(libdir.stdout.trim()).some((name) => name.startsWith('libcore-'));
   need('wasm', 'the Rust target wasm32-unknown-unknown', 'rust-toolchain.toml', installed ? 'installed' : undefined);
 }
+// GN-15g, GN-14f: on Linux the released form also carries the library of musl of the arch of the run, which Cargo
+// builds for the Rust target <arch>-unknown-linux-musl of rust-toolchain.toml.
+const muslTriple = process.platform === 'linux' ? ({ x64: 'x86_64', arm64: 'aarch64' } as Record<string, string>)[process.arch] : undefined;
+if (targets.includes('go') && muslTriple !== undefined) {
+  const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', `${muslTriple}-unknown-linux-musl`], { encoding: 'utf8' });
+  const installed = libdir.status === 0 && existsSync(libdir.stdout.trim()) && readdirSync(libdir.stdout.trim()).some((name) => name.startsWith('libcore-'));
+  need('go', `the Rust target ${muslTriple}-unknown-linux-musl`, 'rust-toolchain.toml', installed ? 'installed' : undefined);
+}
 // The PHP of the machine is wrapped as it is (kit), so its minor is compared with .php-version here.
 if (phpTool !== '') {
   const want = readFileSync(join(checkout, '.php-version'), 'utf8').trim();
@@ -903,15 +911,24 @@ if (targets.includes('go')) {
         // fetched modules reads the generated tests alone.
         const carriedFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/'));
         for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
-        const carriedLibrary = join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`);
-        copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), carriedLibrary);
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
-        const built = statSync(carriedLibrary).size;
-        run(llvmStrip, ['--strip-debug', carriedLibrary]);
-        const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
-        if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
-        process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${platform}: ${String(built)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
+        const carry = (built: string, carriedPlatform: string): void => {
+          const carriedLibrary = join(moduleDir, 'internal/ffi/lib', carriedPlatform, `lib${lib(r.p.contract, 'go')}.a`);
+          copyFileSync(built, carriedLibrary);
+          const size = statSync(carriedLibrary).size;
+          run(llvmStrip, ['--strip-debug', carriedLibrary]);
+          const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+          if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform} holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
+          process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform}: ${String(size)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
+        };
+        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform);
+        // On Linux the library of musl of the arch of the run, which make go-musl-check links on musl.
+        if (muslTriple !== undefined) {
+          const triple = `${muslTriple}-unknown-linux-musl`;
+          run('cargo', ['build', '--release', '--manifest-path', join(r.p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--target', triple]);
+          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`);
+        }
         // The packages that a consumer can import: the directories of the module with a Go file that is no test,
         // outside internal.
         const packages: string[] = [];

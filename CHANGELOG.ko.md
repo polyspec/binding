@@ -1,11 +1,24 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b0fc8ba555c9f470345a0d99d269607243d6fb9a81f40959c3bbe49689ea6b50 -->
+<!-- source-sha256: 2aefb80c6bdac99e7f714f282ace56e94e9ace7f7b6daab5763ea2823bdb0d85 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- musl의 Go 소비자는 자기 `<GOOS>_<GOARCH>`의 패키지 `binding` 파일을 컴파일하고, GNU C
+  library용으로 빌드된 정적 라이브러리의 링크에서 musl이 정의하지 않는 심볼로 실패했다. Go의 빌드 제약은
+  Linux의 C library를 구분하지 않기 때문이다. 이제 Go 모듈은 플랫폼 `linux_amd64_musl`과
+  `linux_arm64_musl`을 가지며, release가 그 라이브러리를
+  `--target <arch>-unknown-linux-musl`로 빌드하고, 빌드 tag `musl`이 그것을 고른다.
+  musl의 소비자는 `go build -tags musl`로 빌드한다(GN-15g). Linux 플랫폼의 링크 파일은 제약
+  `musl`이나 `!musl`을 가지며, 그 preamble은 다른 C library를 찾으면 Go 모듈, 라이브러리,
+  플랫폼과 해결책을 말하며 `#error`로 cgo의 C 컴파일러를 멈춘다. Linux에서 end-to-end 검사의
+  release 형태는 그 arch의 musl 라이브러리를 싣고, `make go-musl-check WORK=<work>`는
+  Alpine 컨테이너에서 그 소비자와 받은 모듈의 `go test -tags musl`을 실행하므로, musl의 C 컴파일러가
+  각 프로그램을 링크하고 musl이 그것을 실행한다(GN-14f). `rust-toolchain.toml`은 두 musl
+  target을 적는다. `packages/ts/tests/generate.test.ts`의 GN-15g 시험으로 검증했다: 그
+  시험은 변경 전에 실패했다.
 - 여러 Go 모듈의 정적 라이브러리를 한 프로그램에 링크하는 것은 `darwin_arm64`에서만 확인되었다(GN-15g,
   GN-14f). linux/arm64(Debian 컨테이너)로 돌린 `tests/e2e/points`와 함께인
   `tests/e2e/plot`의 `make e2e`는 모든 target을 통과했고, 한 프로그램이 plot과 points의

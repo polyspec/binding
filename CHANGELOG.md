@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- A Go consumer on musl compiled the file of package `binding` of its `<GOOS>_<GOARCH>` and failed to link the static
+  library, which is built for the GNU C library, on symbols that musl does not define: a build constraint of Go does
+  not tell the C library of a Linux apart. A Go module now has the platforms `linux_amd64_musl` and
+  `linux_arm64_musl`, whose library a release builds with `--target <arch>-unknown-linux-musl`, and the build tag
+  `musl` selects them: a consumer on musl builds with `go build -tags musl` (GN-15g). The link file of a Linux
+  platform has the constraint `musl` or `!musl`, and its preamble stops the C compiler of cgo with `#error` when it
+  finds the other C library, naming the Go module, the library, the platform and the remedy. On Linux the released
+  form of the end-to-end check carries the library of musl of its arch, and `make go-musl-check WORK=<work>` runs
+  `go test -tags musl` of its consumer and of the fetched modules in an Alpine container, so a C compiler of musl
+  links each program and musl runs it (GN-14f). `rust-toolchain.toml` lists the two musl targets. Verified by the test
+  of GN-15g of `packages/ts/tests/generate.test.ts`, which failed before the change.
 - The link of the static libraries of several Go modules in one program was verified on `darwin_arm64` alone (GN-15g,
   GN-14f). `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on linux/arm64 (a Debian container) passed every
   target, with 21 tests of the released form, in which one program links the libraries of plot and of points;
