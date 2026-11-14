@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.7
+
 - A contract case can run against a service that the test run of the repository provides (G-5, GN-13j, CK-95). The
   contract declares it in `services` with the environment variable of its address and, optionally, of the program
   that writes and reads its state; a case names it in `service` with an optional `setup` and `check`, a text place

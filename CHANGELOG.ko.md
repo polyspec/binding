@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: db9c07386fa26ddd5561808a8ba4ab2069663af82665d7991d90ae171e5b36f4 -->
+<!-- source-sha256: eb6f3e7c3c240156aed9c5fd12ad27b4a4748fafa0a209a3e8131dde6950d1d2 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -18,6 +18,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.7
 
 - 계약 case는 레포의 시험 실행이 제공하는 service에 대해 실행될 수 있다(G-5, GN-13j, CK-95). 계약은 `services`에
   service를 그 주소의 환경 변수와, 선택으로 그 상태를 쓰고 읽는 program의 환경 변수와 함께 선언한다. case는
