@@ -1,5 +1,5 @@
 <!-- doc-id: operations-dependencies -->
-<!-- source-sha256: 449feeb6c8db0cd3308ad03932629537c1b96737046c6bcebfc86776f971c89c -->
+<!-- source-sha256: b98af316fa0c3bee50acfef3ceaa58a9d422215041f27b3578c464ad315ad717 -->
 # 의존성
 
 [English](dependencies.md)
@@ -21,3 +21,25 @@
   버전의 `apk add`가 실패한다. 그러면 검사는 빌드 전에 그 패키지를 말하며 실패하고, 고정은 여기의 기록과 함께 한
   변경에서 branch의 버전으로 옮긴다. Alpine 3.22의 main repository는
   2027년 5월까지 지원된다. 그 지원이 끝나면 고정은 여기의 기록과 함께 한 변경에서 지원되는 branch로 옮긴다.
+
+## `make e2e`의 PHP 대상의 LLVM
+
+`config/toolchain.json`의 `llvm`은 LLVM 21을 major 릴리스로 고정한다. `make e2e`는 그 LLVM의 libclang과 clang
+(Ubuntu와 Debian에서는 `/usr/lib/llvm-21`, macOS에서는 Homebrew formula `llvm@21`, `scripts/e2e-llvm.mts`)을
+ext-php-rs의 빌드에 `LIBCLANG_PATH`와 `CLANG_PATH`로 주고, 둘 중 하나가 없거나 clang이 다른 major 릴리스이면 첫 단계
+전에 PHP 대상을 말하며 실패한다(GN-14a).
+
+- 이유: ext-php-rs 0.16.4의 build script는 bindgen 0.73.2로 PHP header의 binding을 생성한다. bindgen은 clang-sys
+  1.9.1로 libclang을 읽고, 포함하는 header의 디렉터리를 clang 실행 파일에서 받는다. `LIBCLANG_PATH`가 없으면 clang-sys는
+  기계의 디렉터리에서 찾은 가장 높은 릴리스의 libclang을 읽고, `CLANG_PATH`가 없으면 bindgen은 `PATH`의 clang을 쓴다.
+  ubuntu-26.04 runner 이미지는 LLVM 20, 21, 22를 설치하고 clang 21을 `/usr/bin/clang`으로 두므로, libclang 22가 clang
+  21의 x86 header를 읽었다. 그 header는 `__builtin_ia32_sqrtss`, `__builtin_ia32_sqrtps`, `__builtin_ia32_sqrtsd`,
+  `__builtin_ia32_sqrtpd`를 부르는데, LLVM 22는 이것들을 `__builtin_elementwise_sqrt`로 바꾸었다. 그래서 libclang 22는
+  이것들을 `int`를 돌려주는 함수로 선언하고 `xmmintrin.h:245`, `:262`, `emmintrin.h:253`, `:269`를 거부했으며, job
+  `e2e-amd64`의 PHP 대상이 실패했다. arm64 job은 PHP header가 그 x86 header를 x86_64에서만 포함하므로 통과했다.
+  ext-php-rs 0.16.4, bindgen 0.73.2, clang-sys 1.9.1은 최신 릴리스이고, 어느 것도 libclang과 clang을 한 설치에서 받지
+  않으므로 더 새 릴리스가 이 불일치를 없애지 않는다. LLVM 21은 두 runner 이미지의 기본 clang이고, 그 릴리스가 실행이
+  확인하는 binding을 정하므로 고정한다.
+- 고정이 바뀌는 때: runner 이미지가 다른 릴리스를 기본 clang으로 하면, 고정은 여기의 기록과 함께 한 변경에서 그것으로
+  옮긴다. 그때까지 검사는 없는 LLVM을 말한다. clang-sys나 bindgen이 libclang과 clang을 스스로 한 LLVM 설치에서 받으면
+  고정은 끝난다.

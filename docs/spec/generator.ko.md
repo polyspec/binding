@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2054600b1dd09c947ea4ffe5560dd02d9d7ff134ed0a301c7a6da5320ab0a400 -->
+<!-- source-sha256: 860af2412a7f15ad3ce49ff62a7d6208c9280e27a8e156c091e377eb5d2e9b21 -->
 # 생성기
 
 [English](generator.md)
@@ -1945,7 +1945,9 @@
   Python의 venv의 Python에 맞춰 wheel을 빌드하고, wheel은 그 지역 디렉터리에서만 venv에 설치한다), node는 `mise.toml`의 npm과
   Node addon의 패키지, wasm은 crate와 같은 릴리스인 `mise.toml`의 wasm-bindgen CLI와 `rust-toolchain.toml`의 Rust target
   `wasm32-unknown-unknown`, php는 `.php-version`의 PHP(기계의 PHP를 그대로 감싸므로 minor를 비교한다), `config/phpunit`의
-  PHPUnit, component `llvm-tools`의 `llvm-nm`(GN-8a), go는 `mise.toml`의 Go와 그 `llvm-nm`(BD-10 (d))이다. 확인 자체는 `mise.toml`의 Node.js로
+  PHPUnit, component `llvm-tools`의 `llvm-nm`(GN-8a)과 `config/toolchain.json`이 major 릴리스로 고정한 LLVM의 libclang과
+  clang이다. 실행은 이 둘을 ext-php-rs의 bindgen에 준다(`LIBCLANG_PATH`, `CLANG_PATH`). 그렇지 않으면 clang-sys는 기계에서
+  가장 높은 libclang을 읽고 bindgen은 `PATH`의 clang에서 header를 받기 때문이다. go는 `mise.toml`의 Go와 그 `llvm-nm`(BD-10 (d))이다. 확인 자체는 `mise.toml`의 Node.js로
   돌고, 실행의 모든 명령은 checkout의 `rust-toolchain.toml`의 Rust toolchain을 쓴다(`RUSTUP_TOOLCHAIN`). 그렇지 않으면
   rustup은 명령의 디렉터리에서 toolchain 파일을 읽으므로, 사본 안에서 도는 명령은 사본의 toolchain이나 기계의 기본값으로
   빌드한다. 도구가 없으면 확인은 아무것도 복사하기 전에 실패하고 target, 도구, 그것을 고정하는 파일, `make install`을 적는다.

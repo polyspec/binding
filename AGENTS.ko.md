@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 5e19a2bffcc076e380db43aa82ba8d7787d7934ec6022bdb3c64d9c0b653d5a8 -->
+<!-- source-sha256: 0cef7de1de645eaf82df7a1efcde8580a9457d4b6b517c4f2bcb6cda741197e5 -->
 # 개발
 
 [English](AGENTS.md)
@@ -20,9 +20,9 @@
 - Own: 릴리스에 따라 검사 결과가 달라지는 모든 도구는 추적 파일에 고정하고 checkout 안에 설치한다. Node.js, npm, Go, Python,
   Composer, wasm-bindgen CLI, maturin은 `mise.toml`에, 그 digest는 `mise.lock`에 있고(npm은 `package.json`의 `devEngines`에도),
   Rust는 component(기호를 읽는 `llvm-nm`의 `llvm-tools` 포함)와 target `wasm32-unknown-unknown`과 함께 `rust-toolchain.toml`에, PHP는 minor로 `.php-version`에,
-  PHPUnit은 `config/phpunit`에, mise는 배포 대상 플랫폼마다의 sha256과 함께 `config/toolchain.json`에 있다. `make install`은
+  PHPUnit은 `config/phpunit`에, PHP 대상의 bindgen이 쓰는 libclang과 clang의 LLVM은 major 릴리스로 `config/toolchain.json`에, mise는 배포 대상 플랫폼마다의 sha256과 함께 `config/toolchain.json`에 있다. `make install`은
   `@polyspec/kit`의 도구로 이것들을 `var/tools`에 설치하고(기계의 유일한 도구인 rustup이 Rust toolchain을 가지며, 기계의
-  PHP는 그대로 감싼다), 고정한 digest로만 내려받으며, 어떤 도구도 처음 쓰일 때 다른 도구를 설치하지 않는다. wasm-bindgen
+  PHP는 그대로 감싸며, 기계의 LLVM은 그대로 쓰고 `make e2e`가 그 major 릴리스를 확인한다), 고정한 digest로만 내려받으며, 어떤 도구도 처음 쓰일 때 다른 도구를 설치하지 않는다. wasm-bindgen
   CLI는 생성 manifest의 `wasm-bindgen` crate와 같은 릴리스다(GN-18). CLI는 자기 릴리스의 모듈만 읽기 때문이다. 이유:
   저장소가 고정하지 않은 도구로 얻은 결과는 되풀이할 수 없으므로 진단이지 증거가 아니다.
   Enforced by: `make install`, 그 `mise install --locked`가 `mise.lock`이 고정하지 않은 도구를 실패시킨다.
