@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bf1292e35c3b4405d64cf7ddf9ed5cb7235cfb5b231225f563d2f426296b4a33 -->
+<!-- source-sha256: 83993699637823db5ef9eb7886ea9c3f8ec7624aba235abe5515633ce0318e0e -->
 # 생성기
 
 [English](generator.md)
@@ -1773,8 +1773,10 @@
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
-  실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들고, 실행이 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 실행의
-  모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는 아무것도 쓰지 않는다
+  실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들어 그 실제 경로로 부르고, 실행이 끝날 때, 실패할 때, SIGINT와
+  SIGTERM을 받을 때 실행의 모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는
+  아무것도 쓰지 않는다. 실제 경로로 부르는 것은 npm이 macOS의 `/var`처럼 symbolic link를 지나는 경로 아래의 패키지를
+  lock에 없는 link로 읽기 때문이다
   (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치하며, 모두 실행의 사본 안에서 하고 checkout에는 아무것도 쓰지 않는다: Python은 그 wheel, PHP는 그 확장, Go는 `go.mod`가 require하는 Go 모듈의 정적 라이브러리, Node와 WASM은 그 npm 패키지이며, addon은 플랫폼 패키지로, WASM 모듈은 glue와 함께 넣는다. npm 패키지는 실행이 npm 패키지를 pack하는 contract가 직접 또는 다른 그런 레포를 거쳐 가리키는 `DEPS`의 레포마다 만든다. 그 contract의 생성된 entry가 Node에서, 그리고 subpath `./wasm`으로 owner의 npm 패키지를 import하기 때문이다. contract가 가리키는 `DEPS`의 레포에 그 대상 `node`나 `wasm`이 없으면 대상 `node`와 `wasm`의 이름 있는 실패다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
   생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어를 lint하고 각 바인딩 crate를 host에서 그 매니페스트의 시험 feature로, 그리고 feature 없이 lint하고(시험 feature의 진입점만 쓰는 import나 helper는 feature 없는 빌드에서만 쓰이지 않기 때문이다, GN-5), 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로

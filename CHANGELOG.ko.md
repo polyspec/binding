@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6569beeba7cadcd4efad56f12e5551a7d48c50209733c4e054919ea11295b057 -->
+<!-- source-sha256: 1629b76280d597efd60448a9b7ce862914091820e80ad30e19b52c079e53811e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `WORK` 없는 `make e2e`는 macOS에서 첫 단계의 `npm ci`가 `Missing: ts@0.0.1 from lock file`로 멈췄다. 실행이 시스템
+  임시 디렉터리 아래에 디렉터리를 만들었는데 그것은 `/private/var`로 가는 symbolic link인 `/var` 아래에 있고, npm은 그
+  경로 아래 생성기 패키지를 lock에 없는 link로 읽었다. 이제 실행은 디렉터리를 그 실제 경로로 부른다(GN-14). 새 단언이
+  변경 전에 실패한 `node --test packages/ts/tests/e2e-work.test.ts`와 두 경로 아래 tree의 `npm ci --dry-run`으로
+  확인했다.
 - 타입 `cancel`(T-1)의 parameter를 가진 member는 모든 target에 대해 이름으로 거부되었으므로(`the type cancel is not
   generated yet`), 호출자의 취소를 관찰하는 core에는 binding이 없었다. 이제 이 타입을 GN-6aq대로 생성한다: core는
   `binding_core::Cancel`을 받고, 그 trigger는 언어 값이 발화할 때, 그리고 호출 전에 이미 발화했으면 곧바로 발화한다.

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- `make e2e` without `WORK` stopped at its first step on macOS with `npm ci` `Missing: ts@0.0.1 from lock file`: the run
+  made its directory under the temporary directory of the system, which is under `/var`, a symbolic link to
+  `/private/var`, and npm read the package of the generator under that path as a link that the lock does not hold. The
+  run now names its directory by its real path (GN-14). Verified by `node --test packages/ts/tests/e2e-work.test.ts`,
+  whose new assertion failed before the change, and by `npm ci --dry-run` of the tree under both paths.
 - A member with a parameter of the type `cancel` (T-1) was refused by name for every target (`the type cancel is not
   generated yet`), so a core that observes the cancellation of its caller had no binding. The type is now generated
   as GN-6aq states: the core takes a `binding_core::Cancel`, whose trigger fires when the language value fires and

@@ -21,7 +21,9 @@ test('a run without a work directory, or with an empty one, makes its own outsid
     try {
       assert.equal(work.own, true);
       assert.ok(existsSync(work.path));
-      assert.ok(inside(tmpdir(), work.path), work.path);
+      assert.ok(inside(realpathSync(tmpdir()), work.path), work.path);
+      // The path has no symbolic link, so npm ci of the tree of binding reads its package as itself.
+      assert.equal(work.path, realpathSync(work.path));
       assert.ok(!inside(root, work.path), work.path);
       assert.notEqual(resolve(work.path), resolve(''));
     } finally {

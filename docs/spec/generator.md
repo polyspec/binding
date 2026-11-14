@@ -2180,9 +2180,10 @@ the design ids are those of the binding design.
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout in the directory `WORK`,
-  or, without `WORK`, in a directory that the run makes under the temporary directory of the system and removes when it
-  ends, when it fails and on SIGINT and SIGTERM, after every process of the run has exited, so a run without `WORK`
-  writes nothing into the checkout but its record (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+  or, without `WORK`, in a directory that the run makes under the temporary directory of the system, named by its real
+  path, and removes when it ends, when it fails and on SIGINT and SIGTERM, after every process of the run has exited, so
+  a run without `WORK` writes nothing into the checkout but its record; the real path is the name because npm reads a
+  package under a path through a symbolic link, such as `/var` of macOS, as a link that its lock does not hold (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the first among them the two forms of a call of `then` (GN-13f: the tally of a counter that arms its own fault and
   leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and

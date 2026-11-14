@@ -6,7 +6,7 @@
 // when the last process that writes to it has exited, which is the event that the removal waits for.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -16,9 +16,12 @@ export interface Work {
   own: boolean;
 }
 
-// The directory that the caller named, or a new directory of the run when none or an empty one was named.
+// The directory that the caller named, or a new directory of the run when none or an empty one was named. A new
+// directory is named by its real path: the temporary directory of macOS is under /var, a symbolic link to /private/var,
+// and npm ci of a package under a path through a link reads the package as a link named after its directory, which its
+// lock does not hold, so the install of the generator fails with "Missing: ts@0.0.1 from lock file".
 export function workOf(given: string | undefined): Work {
-  if (given === undefined || given === '') return { path: mkdtempSync(join(tmpdir(), 'binding-e2e-')), own: true };
+  if (given === undefined || given === '') return { path: realpathSync(mkdtempSync(join(tmpdir(), 'binding-e2e-'))), own: true };
   return { path: resolve(given), own: false };
 }
 
