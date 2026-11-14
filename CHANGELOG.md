@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A callback unit that no member of its contract takes still had a wrapper and a conversion in the crate of its
+  owner: the end-to-end sample declares `source`, which only its class `held_source` implements and only the consumer
+  takes, and its Python, Node, Go and WASM crates held `in_source` and `CbSource`, which `cargo clippy -D warnings`
+  refused as dead code. The crate now writes the wrapper, the conversion and the trait implementation of a callback
+  unit only when a value of the unit enters a member of the contract (GN-6d). Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
 - The end-to-end sample had a callback unit `source` (`source.get`, trait `Source`) for the kept callbacks of GN-6aa, a
   name that another unit of the sample needs. It is now `feed` (`feed.get`, trait `Feed: Send + Sync`), and
   `index.new`, `index.single` and `index.supplied` take it. Verified by `node --test packages/ts/tests/generate.test.ts`.

@@ -1492,6 +1492,33 @@ export function keptCallbacks(model: Model): CallbackUnit[] {
   return model.callbacks.filter((c) => found.has(c.unit));
 }
 
+// GN-6d: the callback units that the crate wraps: each callback unit of this contract that a value enters a member of
+// this contract as (a parameter, a field of a record, an item of a list, an optional, the value of a map or a part of
+// a tuple of one), in contract order, and the callback units of other repositories that a parameter takes (GN-6s). A
+// callback unit that only a class implements (GN-6w), or that only another repository takes, has no wrapper and no
+// conversion in this crate, because no code of the crate would call them.
+export function takenCallbacks(model: Model): CallbackUnit[] {
+  const found = new Set<Unit>();
+  const seen = new Set<string>();
+  const visit = (type: Type | undefined): void => {
+    if (type === undefined || typeof type === 'string') return;
+    if ('list' in type) return visit(type.list);
+    if ('optional' in type) return visit(type.optional);
+    if ('map' in type) return visit(type.map);
+    if ('keyed_map' in type) return visit(type.keyed_map);
+    if ('tuple' in type) return type.tuple.forEach(visit);
+    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+    if (unit?.origin === 'callback') found.add(unit);
+    if (unit?.kind === 'record' && !seen.has(unit.id)) {
+      seen.add(unit.id);
+      (unit.fields ?? []).forEach((f) => visit(f.type));
+    }
+  };
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
+  for (const record of model.records) (record.fields ?? []).forEach((f) => visit(f.type));
+  return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
+}
+
 // GN-6aa: the model of the conversion of a parameter with keeps: its box is 'static and its callbacks are kept.
 export const keptModel = (model: Model): Model => ({ ...model, callbackLife: "'static", keptCallbacks: true });
 

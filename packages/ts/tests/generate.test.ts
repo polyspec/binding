@@ -2545,6 +2545,33 @@ test('a callback unit of another repository is wrapped in Go and WASM as in the 
   assert.doesNotMatch(go, /type Lookup interface/);
 });
 
+test('a callback unit that no member of its contract takes has no wrapper and no conversion in the crate of its owner, and the crate of a contract that takes it has both (GN-6d, GN-6s, GN-6w)', () => {
+  // The sample declares the callback unit source, which only the class held_source implements and only the consumer
+  // takes; the sample takes lookup, whose wrapper and conversion stay.
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  assert.ok(sample.units.some((u: any) => u.id === 'held_source' && (u.implements ?? []).some((ref: any) => ref.unit === 'source')));
+  const crates = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
+  const owner = generateTargets({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const path of crates) {
+    const rust = text(owner, path);
+    assert.match(rust, /struct CbLookup\b/, path);
+    assert.match(rust, /\bfn in_lookup\b/, path);
+    assert.doesNotMatch(rust, /struct CbSource\b/, path);
+    assert.doesNotMatch(rust, /\bfn (in|kept)_source\b/, path);
+    assert.doesNotMatch(rust, /for CbSource\b/, path);
+    // GN-6w: the class that implements source calls the trait method on its held value, which needs no wrapper.
+    assert.match(rust, /<polyspec_sample::HeldSource as polyspec_sample::Source>::read/, path);
+  }
+  // GN-6s: the consumer takes source of the sample, so its crates wrap it and convert it.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const consumer = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const path of crates) {
+    const rust = text(consumer, path);
+    assert.match(rust, /struct CbSource\b/, path);
+    assert.match(rust, /\bfn in_source\b/, path);
+  }
+});
+
 test('Go: a case of a member that takes a callback unit of another repository answers by a fixture that implements the interface of the owning package, and an instance value at its place is an instance of the class that its make member returns (GN-6s, G-5, GN-13f)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   // G-5, GN-6aa: the fixture of the callback source of sample has the methods of the interface sample.Source.
