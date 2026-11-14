@@ -305,10 +305,24 @@ fn float_in(value: &Zval, subject: &str) -> Result<f64, Fail> {
     }
 }
 
+/// T-2, U-7: whether the keys of an array are 0 to n-1 in order. Each key is read as a zval, an int or the bytes of a
+/// string, because the list test of ext-php-rs reads a string key only as UTF-8 and panics on another.
+fn sequential_keys(array: &ZendHashTable) -> bool {
+    let mut entries = array.iter();
+    let mut expected = 0_i64;
+    while let Some((key, _item)) = entries.next_zval() {
+        if key.long() != Some(expected) {
+            return false;
+        }
+        expected += 1;
+    }
+    true
+}
+
 /// T-2: a list is an array whose keys are 0 to n-1 in order; another array would lose its keys (P-4).
 fn list_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
-    if !array.has_sequential_keys() {
+    if !sequential_keys(array) {
         return Err(type_error(subject, "list"));
     }
     array.values().map(item).collect()
@@ -317,7 +331,7 @@ fn list_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fai
 /// GN-6t: a tuple is a list of exactly its parts.
 fn tuple_in<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
-    if !array.has_sequential_keys() {
+    if !sequential_keys(array) {
         return Err(type_error(subject, "list"));
     }
     <[&'a Zval; N]>::try_from(array.values().collect::<Vec<&'a Zval>>()).map_err(|_other| type_error(subject, &format!("a list of {N} items")))
