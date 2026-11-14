@@ -563,8 +563,10 @@
   받는다. WASM은 `isWellFormed`인 string을 UTF-8 byte로, 그 밖의 string을 UTF-16 단위로 받으므로 흔한 text는 text
   하나로 경계를 한 번 건넌다(B2.89). Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
-  키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
-  `array_is_list`와 함께, stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
+  키), Date, 함수로 받고, `Uint8Array`는 `Bytes`로 받는다. out 행 `bytes`가 `Uint8Array`를 만들고, 바인딩이 준 값은 같은
+  값으로 다시 들어와야 하기 때문이다. 다른 원소 타입의 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
+  `array_is_list`와 함께(바인딩은 각 key를 int나 string의 bytes로 읽으므로 UTF-8이 아닌 string key도 다른 key와 같다.
+  ext-php-rs의 list 판정은 string key를 UTF-8로만 읽고 그 밖에는 panic하므로 바인딩은 그것을 부르지 않는다), stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
   그리고 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
   행으로, 내장 형식이나 member로 만든다. member는 계약의 생성된 class의 생성자나 static member로, 하나뿐인 parameter가 그
   kind의 내용(bool, int, int64, float, text, bytes)이고 실패하지 않는 것이며, 그 내용으로 그 코어 경로를 부르고 그 값은 그
@@ -1505,7 +1507,8 @@
 - **GN-18b** WASM의 `core: {in, out}` 값 alias(U-7), 다른 레포의 것(GN-6k) 포함: 값은 Node와 같이 받고 준다(GN-6e). 모듈은
   JavaScript 값을 Node의 규칙대로 한 단계씩 `HostValue`로 기술한다: number는 `UntypedNumber`, bigint는 `Int`(`i64` 밖이면
   그 십진 token), string은 UTF-16 단위, Array, Map(`Array.from`의 항목), plain object(prototype이 `Object.prototype`이나
-  `null`, 키는 `Object.keys`), Date, 함수, symbol, typed array, 그 밖의 객체(constructor 이름과 함께)다. Date와 Map은 전역
+  `null`, 키는 `Object.keys`), Date, 함수, `Bytes`인 `Uint8Array`(B-1), symbol, 다른 원소 타입의 typed array, 그 밖의
+  객체(constructor 이름과 함께)다. Date와 Map은 전역
   class의 `instanceof`로 찾는다. 코어 값은 alias의 내장 형태 `out` 행으로 나가며, 같은 handle은 같은 객체다. 기술 중 값의
   코드(getter, proxy의 trap, iterator)를 실행할 수 있는 JavaScript 연산은 모두 `catch`로 부른다(`Reflect`와, `catch`로
   import한 `Array.isArray`, `Array.from`, `Object.keys`). 그래서 그 예외는 호출이 그대로 다시 던지는 값이며, 예외는
@@ -1622,7 +1625,10 @@
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
-  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. Go는 음의 0을 `math.Copysign(0, -1)`로 준다. Go 상수
+  `-0.0`은 0이기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
+  만드는(`<unit>.constructor`) `float`은 그 수로 만든 그 인스턴스다(`number`가 `int`로 실어 나를 Node의 정수 float이
+  그렇다). binding은 자기가 주는 형태를 다시 받기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
   표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
   Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
   `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
@@ -1672,7 +1678,8 @@
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
   타입과 값으로(`dict`의 항목은 순서대로, NaN은 NaN과 같다), PHP는 객체를 클래스와 property로 바꾼 뒤 `assertSame`으로, Go는
-  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교한다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
+  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교하되, case가 NaN을 담으면 NaN이 NaN과 같다는 점만 다른
+  `sameValue`로 비교한다. `reflect.DeepEqual`은 NaN을 자기 자신과 다르다고 보기 때문이다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의
@@ -1691,7 +1698,11 @@
   자리의 동일성과 각 순환을 비교한다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
   거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
   준다. 이것은 결과를 alias의 `in` 함수로 받아 그 코어 값을 `out` 함수로 돌려주며, 시험은 같은 텍스트를 요구한다. 그래서
-  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. Go는 값 alias를 담은 결과를 `reflect.DeepEqual`로 비교하며,
+  생성기는 기대값을 같은 out 행의 Go 형태로 쓴다. 결과가 case의 kind가 아니라 그 형태를 가지기 때문이다. 행이 `text`를
+  만드는 byte string은 `string`이고(행이 `bytes`를 만드는 text는 `[]byte`), 행이 `list`를 만드는 map은 그 값들의
+  `[]any`이며, 행이 `keyed_map`을 만드는 map이나 list는 `*KeyedMap[any]`다. 그 keyed map의 key와 값 class field의
+  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
   내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
   시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
   PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고

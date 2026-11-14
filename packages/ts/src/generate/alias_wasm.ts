@@ -456,8 +456,8 @@ impl JsHost {
         self.describe_object(value)
     }
 
-    /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a typed
-    /// array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
+    /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a
+    /// Uint8Array is bytes and another typed array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
     fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {/*DESCRIBE*/
         if js::is_array(value)? {
             let array: Array = value.clone().unchecked_into();
@@ -469,6 +469,11 @@ impl JsHost {
             return Ok(HostValue::Date(self.mark()));
         }
         if js_sys::ArrayBuffer::is_view(value) && !instance_of(value, &global, "DataView")? {
+            // B-1: a Uint8Array is the bytes that the out row bytes makes, so a value that the binding gave enters again;
+            // a typed array of another element type is outside the set.
+            if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
+                return Ok(HostValue::Bytes(bytes.to_vec()));
+            }
             return Ok(HostValue::Other { type_name: constructor_name(value)?, handle: self.mark() });
         }
         if instance_of(value, &global, "Map")? {

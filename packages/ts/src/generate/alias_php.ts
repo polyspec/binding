@@ -343,7 +343,7 @@ impl PhpHost<'_> {
             return Ok(described);
         }
         if let Some(array) = value.array() {
-            let is_list = array.has_sequential_keys();
+            let is_list = sequential_keys(array);
             let mut entries = Vec::new();
             let mut iterator = array.iter();
             while let Some((key, item)) = iterator.next_zval() {
@@ -364,7 +364,7 @@ impl PhpHost<'_> {
     /// B2.156: the content of a case of the kind list, an array whose keys are 0 to n-1 in order, as a list of its
     /// values: the walk of the owner reads the kind that the case names, and a PHP array is described as one only here.
     fn describe_items(&mut self, content: Zval, read: &str) -> Result<HostValue, Fail> {
-        let Some(array) = content.array().filter(|array| array.has_sequential_keys()) else {
+        let Some(array) = content.array().filter(|array| sequential_keys(array)) else {
             return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array that is a list") }));
         };
         let mut entries = Vec::new();
@@ -433,13 +433,13 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
     let Some(array) = content.array() else {
         return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
     };
-    // A unit that is no integer of 0 to 0xffff is None, which the collect gives as kind internal.
-    array.values().map(|unit| match unit.long().map(u16::try_from) {
-        Some(Ok(unit)) => Some(unit),
-        Some(Err(_wide)) | None => None,
+    // A unit that is no integer of 0 to 0xffff is kind internal.
+    let refused = || binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") });
+    array.values().map(|unit| match unit.long() {
+        Some(long) => u16::try_from(long).map_err(|_wide| refused()),
+        None => Err(refused()),
     })
-        .collect::<Option<Vec<u16>>>()
-        .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))
+        .collect::<Result<Vec<u16>, Fail>>()
 }
 
 /// GN-6x: how the read member of an in case gives the content of an instance.
@@ -583,7 +583,7 @@ impl<'a> PhpHost<'a> {
             return Ok(HostValue::Text(HostText::Bytes(text.as_bytes().to_vec())));
         }
         if let Some(array) = value.array() {
-            let is_list = array.has_sequential_keys();
+            let is_list = sequential_keys(array);
             let len = handle_count(array.len());
             return Ok(HostValue::PhpArray { handle: self.hold(array), len, is_list });
         }

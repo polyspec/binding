@@ -27,6 +27,40 @@
   library is now built without LTO, and `binding check` reports a release profile of the root manifest or of
   `.cargo/config.toml` that turns it on (GN-15i, CK-91). Verified by `make test-ts`: the new test failed before the
   change.
+- PHP judged whether an array is a list with `has_sequential_keys` of ext-php-rs 0.16.4, whose iterator reads each
+  key through `ArrayKey::from_zval`, which takes a string key only as UTF-8 and panics with "Invalid array key!" on
+  another, so the tests `array_invalid_utf8_key` and `random_value_351` of php-serialization failed. The binding now
+  reads each key with `next_zval` as an int or the bytes of a string (`sequential_keys`), and the defect of
+  ext-php-rs is reported as https://github.com/extphprs/ext-php-rs/issues/848 (U-7, GN-6x, T-2).
+
+- Node and WASM described a `Uint8Array` as a value outside the set of B-1, although the out row `bytes` gives a
+  byte string that is no UTF-8 as a `Uint8Array`, so the round trip of every such value of php-serialization (264
+  tests in Node and 264 in WASM) was refused as no value of PHP. Node and WASM now describe a `Uint8Array` as bytes
+  and every other typed array as a value outside the set (B-1, U-7, GN-18b). The describe names `Uint8Array` by the
+  import of the crate, so the import check of a crate that imports it passes.
+
+- The expected result of a GN-13e test of Go was written in the kinds of the case and not in the Go forms of the out
+  rows of the alias, so 267 Go tests of php-serialization failed: an empty UTF-8 byte string, which its row makes a
+  `string`, was expected as `[]byte{}`, a map with sequence keys, which its row makes a `[]any`, was expected as a
+  map, and a key of a keyed map, also of a repeated object, was expected in the kind of the case. The generator now
+  writes the expected result by the Go forms of the rows: a byte string that a row makes `text` is a `string`, a map
+  that a row makes `list` is a `[]any`, a map that a row makes `keyed_map` is a `*KeyedMap[any]`, and a key is a text
+  only where its keyed map takes texts and its bytes are UTF-8 (GN-13e).
+
+- Node and WASM gave an integral float of a case as a number, which the binding describes as an int, so the test
+  `serialize float_1e15` of php-serialization gave `i:` for `d:`. A float case value whose out row of the alias makes
+  an instance of a value class (`php_float.constructor`) is now that instance (GN-13).
+
+- Go compared every result with `reflect.DeepEqual`, which finds a NaN unequal to itself, so the test
+  `unserialize float_nan` of php-serialization failed. A result whose case holds a NaN is now compared by `sameValue`
+  of the test file, which is `reflect.DeepEqual` except that a NaN equals a NaN (GN-13e). Go wrote a negative zero of
+  a case as `-0`, the Go constant 0, so `serialize float_negative_zero` gave `d:0;` for `d:-0;`; it is now
+  `math.Copysign(0, -1)` (G-5, GN-13).
+
+- The PHP reader of the UTF-16 units that a member gives matched `Some(Err(_wide)) | None`, an or-pattern that binds
+  `_wide` in one alternative alone, so `cargo clippy` of the PHP crate of relay failed with E0408. The reader now
+  gives each unit as a `Result` and collects the units into one (GN-6x).
+
 - The walk of a value alias in Node and WASM passed the name of a property of a value class as `*name`, which
   `cargo clippy -D warnings` refuses as `explicit_auto_deref`, so the Node and WASM crates of php-serialization did
   not pass their lint. The walk now passes `name` (GN-6as, GN-6af). Verified by `make test-ts`, whose test of the
