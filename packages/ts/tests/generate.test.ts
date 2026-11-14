@@ -3405,14 +3405,16 @@ test('an optional field of a record of the result form whose default is {literal
   const out = shaped();
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class Tally:[\s\S]*?\n    note: str \| None = None\n/);
   for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly note\?: string \| null;/, path);
+  // Node and WASM read a missing or undefined member as null where the record of the result form enters (tallies_total).
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /let note: Option<String> = default_in\(member\(value, "note", subject\)\?, \|value\| optional_in\(value, \|value\| text_in\(value, "note"\)\)\)\.map\(Option::flatten\)\?;/);
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/lib.rs'), /let note: Option<String> = default_in\(&member\(value, "note", subject\)\?, /);
   // G-5: a case value of an input may leave the field out; PHP gives null at its place, Go nil, and a result holds null.
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tally_total\(pkg\.Tally\(counts=\{\}, labels=\{\}\)\)/);
-  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tallyTotal\(\{ counts: new Map\(\[\]\), labels: new Map\(\[\]\) \}\)/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /tallyTotal\(new \\Polyspec\\Shapes\\Tally\(counts: \[\], labels: \[\], note: null\)\)/);
-  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Tally\{Counts: [^\n]*, Note: nil\}/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tallies_total\(\[pkg\.Tally\(counts=\{\}, labels=\{\}\), pkg\.Tally\(counts=\{\}, labels=\{\}, note="x"\)\]\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /expected = pkg\.Tally\(counts=\{\}, labels=\{\}, note=None\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.talliesTotal\(\[\{ counts: new Map\(\[\]\), labels: new Map\(\[\]\) \}, /);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /talliesTotal\(\[new \\Polyspec\\Shapes\\Tally\(counts: \[\], labels: \[\], note: null\), /);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /TalliesTotal\(\[\]Tally\{Tally\{Counts: entries0, Labels: entries1, Note: nil\}, /);
 });
 
 test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {

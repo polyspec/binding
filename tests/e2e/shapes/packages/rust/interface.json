@@ -792,6 +792,32 @@
           "core": "polyspec_shapes::tally_total"
         },
         {
+          "id": "shapes.tallies_total",
+          "name": [
+            "tallies",
+            "total"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tallies"
+              ],
+              "type": {
+                "list": {
+                  "unit": "tally"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::tallies_total"
+        },
+        {
           "id": "shapes.merged",
           "name": [
             "merged"
@@ -1446,6 +1472,11 @@
       "member": "shapes.tally_total",
       "file": "contracts/cases.json",
       "group": "tally_total"
+    },
+    {
+      "member": "shapes.tallies_total",
+      "file": "contracts/cases.json",
+      "group": "tallies_total"
     },
     {
       "member": "shapes.merged",

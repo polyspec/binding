@@ -475,6 +475,13 @@ pub fn tally_total(tally: &Tally) -> u64 {
         .saturating_add(noted)
 }
 
+/// The totals of the tallies of a list (SH-3: a record of the result form whose note a caller left out enters with
+/// `None`).
+#[must_use]
+pub fn tallies_total(tallies: &[Tally]) -> u64 {
+    tallies.iter().map(tally_total).fold(0, u64::saturating_add)
+}
+
 /// The maps of a list as one, the counts of a key added (GN-12: a map that enters in a list).
 #[must_use]
 pub fn merged(maps: &[OrderedMap<u64>]) -> OrderedMap<u64> {

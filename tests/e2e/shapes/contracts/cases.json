@@ -548,6 +548,23 @@
       "result": 1
     }
   ],
+  "tallies_total": [
+    {
+      "id": "a_note_left_out_is_null",
+      "tallies": [
+        {
+          "counts": {},
+          "labels": []
+        },
+        {
+          "counts": {},
+          "labels": [],
+          "note": "x"
+        }
+      ],
+      "result": 1
+    }
+  ],
   "merged": [
     {
       "id": "two_maps_in_a_list",
