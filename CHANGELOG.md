@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The sample repository has a case of `shout`: no generated Go test called the function `Shout`, so `deadcode -test`
+  found `Shout` of the internal binding unreachable and the Go target of the sample failed (GN-13e). A unit test
+  requires of the sample, classes and consumer that a Go test calls every function of a member.
+
 - The hand-written contract cases of the consumer read a case value of the kind `reference` and run every pair case,
   where they did not know the kind and the case `a_reference_of_the_owner_twice` failed in Node and WASM. Node, WASM,
   Python and Go make a reference as an instance of the class `Cell` of the owner, one per id, and PHP as a reference
