@@ -817,8 +817,16 @@ the design ids are those of the binding design.
   14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
   owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
   (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
-  that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
-  language is the only form in which a user of both packages can pass an instance from one to the other.
+  that names one is refused by name too. The generated tests of Python and Node write a case value of the kind of
+  such a row as an instance of the class of the owner, and read a result by the classes of the owner, both through
+  the package of the owner, which the test imports (GN-13, GN-13e). The fixture of the end-to-end check is
+  `tests/e2e/sample` with `tests/e2e/consumer`: the alias `data` of the sample makes a map whose keys are the indexes
+  of its entries as the class `box` and a reference as the class `cell`, and reads an instance of the class `ratio`
+  as its float in Node and WASM; the cases of `consumer.pair` pass a reference and such a map both ways. No row makes
+  an instance of `ratio`, because the row of the kind float would then change every float of the fixture, so the
+  constructor that takes a float runs in no end-to-end check. Why: the owner's core gives and takes the value, and
+  its class of the language is the only form in which a user of both packages can pass an instance from one to the
+  other.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -2233,6 +2241,19 @@ the design ids are those of the binding design.
   arms faults, and Go puts a test whose instance values arm faults with the cases that arm faults (GN-13b). A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
+  An instance value at the place of a callback unit of another repository (GN-6s) names members of the owning
+  repository: `new` or `from` names a member of the contract of the owner that gives a class of the owner that
+  implements the unit, and its `receiver`, its `args` and its calls of `then` are members and values of the owner. The
+  test of Python, Node and PHP calls them through the package of the owner, which it imports as it does for a value
+  class of the owner (GN-6x), and Node awaits a member of the owner that waits. The members are those that the generator
+  takes from the contract of the owner for the target: a member that the owner leaves out of the target by `only`, or
+  that the generator refuses in the contract of the owner, gives a test of the case that fails with that reason
+  (GN-13e). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
+  internal unit of the owner, an argument that is an enum, a record, a variant or a callback of the owner, and the
+  faults of a call of `then`. Go and WASM refuse the parameter itself (GN-6s), so they write no such instance.
+  `binding check` does not judge such a value, because CK-22 reads the members of this contract alone. Why: the class
+  that implements the unit is a class of the binding of the owner, so only the package of the owner makes it, and an
+  object that the test made in another way would not be the object that a user passes.
 
 - **GN-13b** Go: the tests of a package are `zz_generated_test.go` in the package itself, so that a test reads the
   handle of an instance, run by `go test`: B-2 for every `int` parameter (2^53 and −2^53) and every `uint` parameter
@@ -2303,7 +2324,7 @@ the design ids are those of the binding design.
   leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
-  value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
+  value alias of the sample, whose rows name classes of the sample (GN-6ar), and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
   `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
   `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
   repository, because the Go program of the repository imports its Go module (GN-15f);

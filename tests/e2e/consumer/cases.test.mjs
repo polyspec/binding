@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as consumer from '@polyspec/consumer';
+import * as sample from '@polyspec/sample';
 
 const cases = JSON.parse(readFileSync(process.env.CASES, 'utf8'));
 
@@ -56,4 +57,18 @@ test('a value that the owner of the alias refuses is its kind in the class of th
     assert.throws(() => consumer.pair([value]), refused);
     assert.throws(() => consumer.fetch({ get: () => value, set: () => {} }, 'a'), refused);
   }
+});
+
+test('an instance of a class of the owner that a row of the alias names crosses both ways (GN-6ar)', () => {
+  // The keys of a map without entries are the indexes of its entries, so the owner gives it as a box.
+  for (const box of consumer.pair(new sample.Box(new Map()))) {
+    assert.ok(box instanceof sample.Box);
+    assert.equal(box.entries.size, 0);
+  }
+  for (const cell of consumer.pair(new sample.Cell('x'))) {
+    assert.ok(cell instanceof sample.Cell);
+    assert.equal(cell.value, 'x');
+  }
+  // The owner reads an instance of ratio as its float, and gives a float as a number.
+  assert.deepEqual(consumer.pair(new sample.Ratio(0.5)), [0.5, 0.5]);
 });

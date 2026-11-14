@@ -1,8 +1,8 @@
 //! A sample library for the end-to-end check of binding: a callback interface that language code implements (U-3).
 
 use binding_core::{
-    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, Native, OutValue,
-    OutValues,
+    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Key, KeyedMap, Kinds, MapOut,
+    Native, OutValue, OutValues, ValueKind,
 };
 use std::fmt;
 
@@ -499,6 +499,8 @@ pub enum Data {
     List(Vec<Data>),
     /// A map with text keys, in order.
     Map(Vec<(String, Data)>),
+    /// A reference to one value that is no reference: an instance of the class cell, or a reference of PHP (GN-6af).
+    Reference(Box<Data>),
     /// An object or a function of the language, which data keeps and gives back as the same object (GN-6u).
     Native(Native),
 }
@@ -583,22 +585,138 @@ fn data_at(
         }
         | HostValue::PlainObject { handle, len, .. }
         | HostValue::StdClass { handle, len } => {
-            let mut entries = Vec::new();
-            for index in 0..len {
-                let (key, value) = host.entry(handle, index).map_err(Failure::Raised)?;
-                let Data::Text(key) = data_at(host, key, depth + 1)? else {
-                    return Err(Failure::Kind(Error::Unsupported {
-                        what: String::from("a key that is no text"),
-                    }));
-                };
-                entries.push((key, data_at(host, value, depth + 1)?));
-            }
-            Ok(Data::Map(entries))
+            Ok(Data::Map(entries_at(host, handle, len, depth)?))
         }
+        // GN-6af, GN-6ar: an instance of box gives its entries, a map of the language, when it is read.
+        HostValue::Value {
+            kind: ValueKind::Map,
+            handle,
+        } => {
+            let HostValue::Map {
+                handle: entries,
+                len,
+            } = host.read(handle).map_err(Failure::Raised)?
+            else {
+                return Err(unsupported("a box whose entries are no map"));
+            };
+            Ok(Data::Map(entries_at(host, entries, len, depth)?))
+        }
+        // GN-6af, GN-6ar: an instance of cell gives its value when it is read, and PHP gives the target of a reference.
+        HostValue::Value {
+            kind: ValueKind::Reference,
+            handle,
+        } => {
+            let held = host.read(handle).map_err(Failure::Raised)?;
+            reference_to(host, held, depth)
+        }
+        HostValue::PhpReference { target, .. } => reference_to(host, *target, depth),
+        // GN-6ar: an instance of ratio gives its float when it is read.
+        HostValue::Value {
+            kind: ValueKind::Float,
+            handle,
+        } => match host.read(handle).map_err(Failure::Raised)? {
+            HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Data::Float(value)),
+            _other => Err(unsupported("a ratio whose value is no float")),
+        },
         HostValue::Callable(native) | HostValue::Object { native, .. } => Ok(Data::Native(native)),
         other => Err(Failure::Kind(Error::Unsupported {
             what: format!("{other:?}"),
         })),
+    }
+}
+
+/// The failure of a value that is not data.
+fn unsupported(what: &str) -> Failure<Error> {
+    Failure::Kind(Error::Unsupported {
+        what: what.to_owned(),
+    })
+}
+
+/// The entries of a map of the language, whose keys are texts.
+fn entries_at(
+    host: &mut dyn HostValues,
+    handle: Handle,
+    len: u64,
+    depth: usize,
+) -> Result<Vec<(String, Data)>, Failure<Error>> {
+    let mut entries = Vec::new();
+    for index in 0..len {
+        let (key, value) = host.entry(handle, index).map_err(Failure::Raised)?;
+        let Data::Text(key) = data_at(host, key, depth + 1)? else {
+            return Err(unsupported("a key that is no text"));
+        };
+        entries.push((key, data_at(host, value, depth + 1)?));
+    }
+    Ok(entries)
+}
+
+/// The reference to a value of the language, which is no reference itself.
+fn reference_to(
+    host: &mut dyn HostValues,
+    held: HostValue,
+    depth: usize,
+) -> Result<Data, Failure<Error>> {
+    let held = data_at(host, held, depth + 1)?;
+    if matches!(held, Data::Reference(_)) {
+        return Err(unsupported("a reference that holds a reference"));
+    }
+    Ok(Data::Reference(Box::new(held)))
+}
+
+/// Judges the entries that an instance of the class box keeps (GN-6af): each key is a text and each value is data.
+/// A map whose keys are the decimal indexes of its entries leaves the core as such an instance (U-1 `when`).
+///
+/// # Errors
+///
+/// Kind `unsupported` for an entry that is not data, and the exception that the language raised.
+pub fn check_box(
+    host: &mut dyn HostValues,
+    entries: Option<KeyedMap<HostValue>>,
+) -> Result<(), Failure<Error>> {
+    let Some(entries) = entries else {
+        return Ok(());
+    };
+    for (key, value) in entries {
+        let Key::Text(_name) = key else {
+            return Err(unsupported("a key that is no text"));
+        };
+        data_at(host, value, 1)?;
+    }
+    Ok(())
+}
+
+/// Judges the value that an instance of the class cell keeps (GN-6af): data that is no reference.
+///
+/// # Errors
+///
+/// Kind `unsupported` for a value that is not data or that is a reference, and the exception that the language raised.
+pub fn check_cell(
+    host: &mut dyn HostValues,
+    value: Option<HostValue>,
+) -> Result<(), Failure<Error>> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    reference_to(host, value, 0).map(|_reference| ())
+}
+
+/// A float that a class of the language holds (GN-6ar): the class ratio.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ratio {
+    value: f64,
+}
+
+impl Ratio {
+    /// The ratio of a float.
+    #[must_use]
+    pub fn new(value: f64) -> Self {
+        Self { value }
+    }
+
+    /// The float of the ratio.
+    #[must_use]
+    pub fn value(&self) -> f64 {
+        self.value
     }
 }
 
@@ -632,6 +750,14 @@ impl<'a> DataOut<'a> {
                     widen(entries.len()),
                     sequence,
                 ))
+            }
+            Data::Reference(held) => {
+                self.held.push(value);
+                let handle = Handle::new(widen(self.held.len() - 1));
+                OutValue::Reference {
+                    handle,
+                    value: Box::new(self.describe(held)),
+                }
             }
             Data::Native(native) => OutValue::Native(native.clone()),
         }
@@ -707,6 +833,7 @@ pub fn describe(value: Option<&Data>) -> String {
         Some(Data::Text(_)) => "text",
         Some(Data::List(_)) => "list",
         Some(Data::Map(_)) => "map",
+        Some(Data::Reference(_)) => "reference",
         Some(Data::Native(_)) => "native",
     };
     String::from(kind)

@@ -663,7 +663,13 @@
   14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
   property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
   PHP에는 그런
-  class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
+  class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. Python과 Node의 생성 시험은 그런
+  행의 kind인 case 값을 owner의 class의 인스턴스로 쓰고 결과를 owner의 class로 읽으며, 둘 다 시험이 import하는 owner의
+  package를 거친다(GN-13, GN-13e). end-to-end 검사의 fixture는 `tests/e2e/sample`과 `tests/e2e/consumer`다: sample의
+  alias `data`는 key가 entry의 index인 map을 class `box`로, reference를 class `cell`로 만들고, Node와 WASM에서 class
+  `ratio`의 인스턴스를 그 float로 읽는다. `consumer.pair`의 case는 reference와 그런 map을 양방향으로 넘긴다. `ratio`의
+  인스턴스를 만드는 행은 없다. kind float의 행이 fixture의 모든 float를 바꾸기 때문이며, 그래서 float를 받는 constructor는
+  어느 end-to-end 검사에서도 실행되지 않는다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
@@ -1814,6 +1820,16 @@
   값이 fault를 장전하는 시험을 fault를 장전하는 case와 함께 둔다(GN-13b). 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
+  다른 레포의 callback unit(GN-6s) 자리의 instance 값은 소유 레포의 member를 적는다: `new`나 `from`은 소유 계약의 member
+  가운데 그 unit을 구현하는 소유 레포의 class를 주는 것을 적고, 그 `receiver`, `args`, `then`의 호출은 소유 레포의 member와
+  값이다. Python, Node, PHP의 시험은 소유 레포의 value class에 하듯(GN-6x) 소유 패키지를 import해 그 패키지로 그것들을
+  부르고, Node는 기다리는 소유 member를 await한다. member는 생성기가 그 target에 대해 소유 계약에서 받는 것이다: 소유 레포가
+  `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서 거부하는 member는 그 이유로 실패하는 case 시험이 된다(GN-13e).
+  아직 생성하지 않으며 각각 이름을 대고 실패하는 case 시험이 되는 것: 소유 레포의 function, 소유 레포 internal unit의
+  member, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의 faults. Go와 WASM은 그 parameter 자체를
+  거부하므로(GN-6s) 그런 instance를 쓰지 않는다. CK-22는 이 계약의 member만 읽으므로 `binding check`는 그런 값을 판정하지
+  않는다. 이유: 그 unit을 구현하는 class는 소유 레포 바인딩의 class이므로 소유 패키지만 그것을 만들고, 시험이 다른 방법으로
+  만든 객체는 사용자가 넘기는 객체가 아니다.
 
 - **GN-13b** Go: 패키지의 시험은 시험이 인스턴스의 handle을 읽도록 그 패키지 안의 `zz_generated_test.go`이며 `go test`로
   실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53이 kind `invalid_number`인 B-2(GN-12a), `int` key의 `keyed_map` parameter마다 key 2^53이 kind
@@ -1867,7 +1883,7 @@
   SIGTERM을 받을 때 실행의 모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는
   아무것도 쓰지 않는다. 실제 경로로 부르는 것은 npm이 macOS의 `/var`처럼 symbolic link를 지나는 경로 아래의 패키지를
   lock에 없는 link로 읽기 때문이다
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치하며, 모두 실행의 사본 안에서 하고 checkout에는 아무것도 쓰지 않는다: Python은 그 wheel, PHP는 그 확장, Go는 `go.mod`가 require하는 Go 모듈의 정적 라이브러리, Node와 WASM은 그 npm 패키지이며, addon은 플랫폼 패키지로, WASM 모듈은 glue와 함께 넣는다. npm 패키지는 실행이 npm 패키지를 pack하는 contract가 직접 또는 다른 그런 레포를 거쳐 가리키는 `DEPS`의 레포마다 만든다. 그 contract의 생성된 entry가 Node에서, 그리고 subpath `./wasm`으로 owner의 npm 패키지를 import하기 때문이다. contract가 가리키는 `DEPS`의 레포에 그 대상 `node`나 `wasm`이 없으면 대상 `node`와 `wasm`의 이름 있는 실패다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고(그 행은 sample의 class를 이름한다, GN-6ar) property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치하며, 모두 실행의 사본 안에서 하고 checkout에는 아무것도 쓰지 않는다: Python은 그 wheel, PHP는 그 확장, Go는 `go.mod`가 require하는 Go 모듈의 정적 라이브러리, Node와 WASM은 그 npm 패키지이며, addon은 플랫폼 패키지로, WASM 모듈은 glue와 함께 넣는다. npm 패키지는 실행이 npm 패키지를 pack하는 contract가 직접 또는 다른 그런 레포를 거쳐 가리키는 `DEPS`의 레포마다 만든다. 그 contract의 생성된 entry가 Node에서, 그리고 subpath `./wasm`으로 owner의 npm 패키지를 import하기 때문이다. contract가 가리키는 `DEPS`의 레포에 그 대상 `node`나 `wasm`이 없으면 대상 `node`와 `wasm`의 이름 있는 실패다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
   생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어를 lint하고 각 바인딩 crate를 host에서 그 매니페스트의 시험 feature로, 그리고 feature 없이 lint하고(시험 feature의 진입점만 쓰는 import나 helper는 feature 없는 빌드에서만 쓰이지 않기 때문이다, GN-5), 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.

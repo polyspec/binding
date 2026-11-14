@@ -44,6 +44,23 @@
   null at its place, Go leaves the pointer nil, and a case value may leave out its key (GN-6a, T-4). The record
   `tally` of `tests/e2e/shapes` has the field `note`. Verified by `make test-ts`, whose new test failed before the
   change, and by `make e2e REPO=tests/e2e/shapes`.
+- No fixture of the end-to-end check had a row of a value alias that names a class of its owner (GN-6ar), so the
+  constructor calls and the instance checks of Python and Node ran in no run, and the generated tests could not
+  express such a value: a case value of the kind reference was refused as "0 value classes keep one value", and
+  every result of the alias failed by name as "the out form <class>.constructor of <alias> is no class whose
+  constructor takes one value that a property of its name gives back". The generated tests of Python and Node now
+  write an instance of the class of the owner and read a result by the classes of the owner, through the package of
+  the owner (GN-13, GN-13e, row B2.139). `tests/e2e/sample` has the classes `box`, `cell` and `ratio` with their core
+  functions `check_box` and `check_cell` and the type `Ratio`: its alias `data` makes a map whose keys are the
+  indexes of its entries as a `box` and a reference as a `cell` in Python, Node, Go and WASM, PHP makes its own
+  object and reference, and Node and WASM read a `ratio` as its float. `tests/e2e/consumer` passes a reference both
+  ways in a case of `consumer.pair`, and a `box`, a `cell` and a `ratio` in its hand-written tests of Python and Node.
+  Go and WASM refuse the rows by name, so the targets go and wasm of the consumer are named failures of its run from
+  now on (BD-27); the unit tests of the other rules read the consumer whose owner has no such row. Not covered: no
+  row makes a `ratio`, and no case passes a `box`, because a case writes a map of PHP with index keys as a list.
+  Verified by `npm test` in `packages/ts`; before the change of the test writers the generated tests of the fixture
+  held the named failure of `consumer.pair`. Not run: the Rust sources of the
+  sample were formatted by rustfmt and compiled by nothing, and no end-to-end check ran.
 - A test of `packages/ts` copied a fixture with the `cp` tool, whose `cp -r <dir>/ <root>/` copies the contents of
   `<dir>` into `<root>` on macOS and `<dir>` itself into `<root>/<dir>` on Linux, so the test of CK-65 failed on Linux
   with ENOENT for `packages/rust/interface.json`. Every copy of `generate.test.ts` now uses `cpSync` of `node:fs`, and

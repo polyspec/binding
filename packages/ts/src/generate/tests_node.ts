@@ -630,6 +630,10 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const readers = usesOrdered ? foreignReaders(model, 'node') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
   const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'node', foreignClass));
+  // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
+  // package of its owner, which the test imports.
+  const forms = usesTokens ? tokenForms(model, 'node') : [];
+  for (const form of forms) if (form.library !== undefined) foreignModules.add(form.library);
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -639,7 +643,7 @@ ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesCasePath ? NODE_CASE_PATH : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {
