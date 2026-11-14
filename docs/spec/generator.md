@@ -1024,6 +1024,7 @@ the design ids are those of the binding design.
   expected result of one test resolve in the same directory, so a result that names the path is compared as the path
   in that directory. An empty path, an absolute path and a path with a part `..` are refused by name (G-4), because
   they would leave the directory of the test: the test of the case fails with that reason in every target (GN-13e).
+  A case writes its files into the same directory before its values are made (GN-13i).
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
   does when `raises` names a variant of the contract's own core error or a parameter without `keeps` holds a callback
   or a function. The error of such a path is `binding_core::Failure<E>`, a kind or what language code raised, when
@@ -2386,6 +2387,26 @@ the design ids are those of the binding design.
   render that needs a loader that reads files, which WebAssembly has no file system for, while the member itself is
   generated there; the row keeps the case for the targets that have the behaviour, instead of an `only` of the member
   that would leave every other case of the member out of that target too.
+- **GN-13i** A case may have `files`, the files that its test writes before it makes any value of the case: an object
+  from a relative path, in the form of a case value of `path` (GN-6y), to the bytes of the file, a text for its UTF-8
+  or `{"hex": ...}` as bytes are written (GN-13). The test of B-4, GN-6ae, GN-6m, GN-6z and GN-13e of the case writes each
+  file, in the order of the object, inside the directory of the test of GN-6y, after it makes the directories of the
+  path, with the mode 0600 for a file and 0700 for a directory, and before it makes the receiver, the arguments and
+  the fixtures of the case; the directory is removed with the test as GN-6y states. A case value of `path` names a
+  file of the case or the directory itself (`.`), so a member that reads a stored file reads the bytes of the case.
+  Each target gives the relative path and the hex of the bytes to a helper of its test file: Python
+  `self._case_file`, Node `caseFile`, PHP `$this->caseFile`, Go `caseFile(t, ...)`, and WASM `caseFile` with
+  `node:fs` of the Node.js that runs its tests (GN-13c), whose directory `afterEach` removes as in Node. The core of
+  WASM has no file system (`wasm32-unknown-unknown`), so a member whose core reads the files has an `only` without
+  `wasm` (Q-4, GN-6y); WASM still writes the files of every case that it runs, so a case means the same in each
+  target. `files` of another form, a path that GN-6y refuses, or content that is neither a text nor `{"hex": ...}`
+  fails the test of the case with the reason in every target, and the other tests are written (G-4, GN-13e). A test
+  that needs any receiver (B-2, B-3, G-7) takes none from a case with `files`, because it writes no files; a case of
+  a hook (N-4) with `files` is refused by name, because the tests of a hook write none; and a case that runs through
+  an entry point of `case-test` (GN-13) writes no files, because that entry point runs a conversion alone. Why: a
+  stored file that holds given bytes is an input of a case, as an argument is, while a fault injection point imitates
+  a condition of the system (G-5); bytes that a point gave in place of a file would run a path that no stored file
+  takes, so the case carries the bytes and the test writes them where the member reads.
 
 ## End-to-end check
 

@@ -4283,7 +4283,7 @@ test('a case writes its files into the directory of its test before its values a
   assert.match(node, /import \{ mkdirSync, mkdtempSync, rmSync, writeFileSync \} from 'node:fs';/);
   assert.match(node, /afterEach\(/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(php, new RegExp(`function testGn13eJoinedANameInADirectory\\(\\): void\\n    \\{\\n        \\$this->caseFile\\("a/b", "${stored}"\\);\\n        \\$this->caseFile\\("c", "00ff"\\);\\n`));
+  assert.match(php, new RegExp(`function testGn13ejoinedANameInADirectory\\(\\): void\\n    \\{\\n        \\$this->caseFile\\("a/b", "${stored}"\\);\\n        \\$this->caseFile\\("c", "00ff"\\);\\n`));
   assert.match(php, /private function caseFile\(string \$relative, string \$content\): void/);
   assert.match(php, /protected function tearDown\(\): void/);
   const go = text(out, 'packages/go/zz_generated_test.go');
