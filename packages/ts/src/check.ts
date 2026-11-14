@@ -165,7 +165,7 @@ interface ThenFaults {
 // CK-81: the names that package binding of a Go module declares itself, the types and the functions of the Go files that
 // the generator writes for every contract (packages/ts/src/generate/go.ts); a test compares this list with that file.
 export const GO_BINDING_NAMES: ReadonlySet<string> = new Set([
-  'ArmFaults', 'BytesKey', 'Call', 'Callback', 'FaultLeft', 'Function', 'IntKey', 'Kept', 'Key', 'KeyedMap', 'Malformed', 'Map', 'NativeCount', 'NewCall',
+  'ArmFaults', 'BytesKey', 'Call', 'Callback', 'Cancel', 'FaultLeft', 'Function', 'IntKey', 'Kept', 'Key', 'KeyedMap', 'Malformed', 'Map', 'NativeCount', 'NewCall',
   'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'Reader', 'RecognizeAs', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
 ]);
 
