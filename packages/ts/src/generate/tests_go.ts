@@ -1834,7 +1834,8 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
   }).join('');
   const tests = `${latin1}${map}${keyed}${aliases}${numbers}`;
   const body = `${/\bmust\(/.test(tests) ? MUST : ''}${tests}`;
-  const std = ['fmt', 'math', 'math/big', 'reflect', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)).map((p) => `\t"${p}"\n`).join('');
+  // gofmt orders the imports of a block by their path, so "testing" takes its place among them.
+  const std = [...['fmt', 'math', 'math/big', 'reflect', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test
@@ -1842,7 +1843,6 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
 package binding
 
 import (
-${std}\t"testing"
-)
+${std})
 ${body}`;
 }

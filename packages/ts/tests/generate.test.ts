@@ -7241,6 +7241,10 @@ test('Go gives an integer outside int64 and uint64 as a *big.Int, which package 
   const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
   const codec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
   assert.match(codec, /^\t"math\/big"$/m);
+  // gofmt orders the imports of a block by their path, "testing" among them.
+  const imports = (/\nimport \(\n((?:\t"[^"]+"\n)+)\)/.exec(codec)?.[1] ?? '').split('\n').filter((line) => line !== '');
+  assert.ok(imports.includes('\t"testing"'), codec);
+  assert.deepEqual(imports, [...imports].sort());
   assert.match(codec, /\t(number\d*) := new\(big\.Int\)\n\tif _, parsed := \1\.SetString\("-9223372036854775809", 10\); !parsed \{\n\t\tpanic\("G-5: -9223372036854775809 is no decimal integer"\)\n\t\}\n(?:\t[^\n]*\n)*?\terr := AliasInData\(\1\)/);
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
   assert.match(binding, /^\t"math\/big"$/m);
