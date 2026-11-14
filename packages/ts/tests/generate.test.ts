@@ -509,6 +509,75 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
 });
 
+// GN-15h: the Go code of a generation, the files of the Go module without comments, for the uses of a helper.
+const goUses = (out: Map<string, string | Buffer>): string =>
+  [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, t]) => String(t).replace(/\/\/[^\n]*/g, '')).join('\n');
+const goContract = (): any => {
+  const { contract } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  contract.cases = [];
+  return contract;
+};
+
+test('the Go package binding holds no keyed-map helper for a contract without a keyed_map<T> (GN-15h)', () => {
+  const out = generate({ contract: goContract(), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /^type Writer struct/m);
+  for (const helper of [/^type KeyedMap\[/m, /^type Key struct/m, /^func IntKey\(/m, /^func BytesKey\(/m, /^func TextKey\(/m, /^func \(k Key\) /m, /^func \(m \*KeyedMap\[T\]\) /m, /^func \(w \*Writer\) Key\(/m, /^func \(r \*Reader\) Key\(/m]) {
+    assert.doesNotMatch(binding, helper);
+  }
+  // Each method of the Writer and the Reader is called by the Go code of the generation through a value of its type.
+  const uses = goUses(out);
+  for (const [, receiver, method] of binding.matchAll(/^func \((w \*Writer|r \*Reader)\) ([A-Z]\w*)\(/gm)) {
+    if (method === 'Done' || method === 'Finish') continue;
+    const names = receiver?.startsWith('w') === true ? '(?:enc|tenc|w)' : '(?:dec|r|properties)';
+    const called = [...uses.matchAll(new RegExp(`\\b${names}\\.${method ?? ''}\\(`, 'g'))].length;
+    assert.ok(called > 0, `${receiver ?? ''} ${method ?? ''} is generated and no Go code calls it`);
+  }
+});
+
+test('a member of a class named as a method of the Writer or the Reader keeps no helper of package binding (GN-15h)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const generated = (name: string[] | undefined): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    const holder = contract.units.find((u: any) => u.id === 'lease').members.find((m: any) => m.id === 'lease.holder');
+    if (name !== undefined) holder.name = name;
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] as Inputs['targets'] & string[] });
+  };
+  const binding = text(generated(undefined), 'packages/go/internal/binding/zz_generated_binding.go');
+  const helpers = (source: string): string[] => source.split('\n').filter((l) => /^func \((?:w \*Writer|r \*Reader|k Key|m \*KeyedMap\[T\])\)|^type (?:Key|KeyedMap)\b|^func (?:Int|Bytes|Text)Key\(|^\t"math"$/.test(l));
+  for (const [name, method] of [[['key'], 'Key'], [['float'], 'Float'], [['bytes'], 'Bytes']] as const) {
+    const out = generated([...name]);
+    assert.match(goUses(out), new RegExp(`\\b\\w+\\.${method}\\(`));
+    assert.deepEqual(helpers(text(out, 'packages/go/internal/binding/zz_generated_binding.go')), helpers(binding));
+  }
+  const uses = goUses(generated(undefined));
+  for (const [, receiver, method] of binding.matchAll(/^func \((w \*Writer|r \*Reader)\) ([A-Z]\w*)\(/gm)) {
+    if (method === 'Done' || method === 'Finish') continue;
+    const names = receiver?.startsWith('w') === true ? '(?:enc|tenc|w)' : '(?:dec|r|properties)';
+    assert.match(uses, new RegExp(`\\b${names}\\.${method ?? ''}\\(`), `${receiver ?? ''} ${method ?? ''} is generated and no Go code calls it`);
+  }
+});
+
+test('the Go package binding holds the keyed-map helpers that a keyed_map<T> of the contract uses (GN-15h)', () => {
+  const out = (returns: unknown, parameter: unknown): string => {
+    const contract = goContract();
+    if (returns !== undefined) contract.units[0].members[0].returns = returns;
+    if (parameter !== undefined) contract.units[0].members[0].parameters[0].type = parameter;
+    return text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() }), 'packages/go/internal/binding/zz_generated_binding.go');
+  };
+  const keyed = { keyed_map: 'text', key: ['int', 'text'] };
+  const given = out(undefined, keyed);
+  for (const helper of [/^type KeyedMap\[T any\] struct/m, /^type Key struct/m, /^func IntKey\(/m, /^func BytesKey\(/m, /^func TextKey\(/m, /^func \(m \*KeyedMap\[T\]\) Set\(/m, /^func \(w \*Writer\) Key\(/m]) {
+    assert.match(given, helper);
+  }
+  const returned = out(keyed, undefined);
+  assert.match(returned, /^func \(r \*Reader\) Key\(\) Key \{/m);
+  assert.match(returned, /^type KeyedMap\[T any\] struct/m);
+});
+
 test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM (T-2, GN-12, GN-18)', () => {
   const { contract, caseFiles } = load();
   const member = contract.units[0].members[0];

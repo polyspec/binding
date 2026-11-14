@@ -1074,6 +1074,333 @@ func make${name}(base *${categoryType(model, unit.category)}, r *Reader) *${name
 `;
 }
 
+// ---- The helpers that package binding keeps (GN-15h) ----
+//
+// Package binding holds only the helpers that the Go code of the generation uses, because a function that no code
+// reaches fails the deadcode and unused lints of the repository that consumes the module, which cannot change a
+// generated file. goBinding writes a mark for each helper; go() replaces each mark with the helper when the Go code of
+// the generation, or a helper that is kept, uses it, and with nothing otherwise. The code is read without its comments
+// and the contents of its literals. A method of the Writer or the Reader is used where a value of its type calls it:
+// the generated code calls a method of a Writer only through a value named enc, tenc or w and a method of a Reader
+// only through a value named dec, r or properties. A call through another name is a method of another type, such as
+// a member of a class of the contract (made0.Key) or of a reflect.Value (v.Float), and no use of a helper.
+
+interface GoHelper {
+  name: string;
+  text: string;
+  kept: (code: string) => boolean;
+}
+
+const WRITERS = ['enc', 'tenc', 'w'];
+const READERS = ['dec', 'r', 'properties'];
+
+// Whether the code calls the method through a value that `own` names.
+const callsMethod = (code: string, method: string, own: string[]): boolean =>
+  new RegExp(`\\b(?:${own.join('|')})\\s*\\.\\s*${method}\\b`).test(code);
+
+const writerHelper = (name: string, text: string): GoHelper => ({ name: `Writer.${name}`, text, kept: (code) => callsMethod(code, name, WRITERS) });
+const readerHelper = (name: string, text: string): GoHelper => ({ name: `Reader.${name}`, text, kept: (code) => callsMethod(code, name, READERS) });
+
+const WRITER_HELPERS: GoHelper[] = [
+  writerHelper('Bool', `
+// Bool encodes a bool as one byte, 0 or 1.
+func (w *Writer) Bool(value bool) {
+	if value {
+		w.bytes = append(w.bytes, 1)
+	} else {
+		w.bytes = append(w.bytes, 0)
+	}
+}
+`),
+  writerHelper('Tag', `
+// Tag encodes the presence of an optional value.
+func (w *Writer) Tag(present bool) { w.Bool(present) }
+`),
+  writerHelper('Uint', `
+// Uint encodes a uint64 as eight bytes, little endian.
+func (w *Writer) Uint(value uint64) { w.bytes = binary.LittleEndian.AppendUint64(w.bytes, value) }
+`),
+  writerHelper('Int', `
+// Int encodes an int64 as its two's complement.
+func (w *Writer) Int(value int64) { w.Uint(uint64(value)) }
+`),
+  writerHelper('Float', `
+// Float encodes a float64 as its IEEE 754 bits.
+func (w *Writer) Float(value float64) { w.Uint(math.Float64bits(value)) }
+`),
+  writerHelper('Len', `
+// Len encodes the length of a list.
+func (w *Writer) Len(length int) { w.Uint(uint64(length)) }
+`),
+  writerHelper('Text', `
+// Text encodes the bytes of a string with their length; the core judges whether text is UTF-8 (B-8).
+func (w *Writer) Text(value string) {
+	w.Len(len(value))
+	w.bytes = append(w.bytes, value...)
+}
+`),
+  writerHelper('Bytes', `
+// Bytes encodes a byte slice with its length.
+func (w *Writer) Bytes(value []byte) {
+	w.Len(len(value))
+	w.bytes = append(w.bytes, value...)
+}
+`),
+];
+
+const READER_HELPERS: GoHelper[] = [
+  readerHelper('Bool', `
+// Bool decodes a bool.
+func (r *Reader) Bool() bool {
+	head := r.take(1)
+	if r.failed {
+		return false
+	}
+	if head[0] > 1 {
+		r.failed = true
+	}
+	return head[0] == 1
+}
+`),
+  readerHelper('Tag', `
+// Tag decodes the presence of an optional value.
+func (r *Reader) Tag() bool { return r.Bool() }
+`),
+  readerHelper('Uint', `
+// Uint decodes a uint64.
+func (r *Reader) Uint() uint64 {
+	head := r.take(8)
+	if r.failed {
+		return 0
+	}
+	return binary.LittleEndian.Uint64(head)
+}
+`),
+  readerHelper('Int', `
+// Int decodes an int64.
+func (r *Reader) Int() int64 { return int64(r.Uint()) }
+`),
+  readerHelper('Float', `
+// Float decodes a float64.
+func (r *Reader) Float() float64 { return math.Float64frombits(r.Uint()) }
+`),
+  readerHelper('Len', `
+// Len decodes the length of a list, which is at most the count of the bytes left.
+func (r *Reader) Len() int {
+	length := r.Uint()
+	if r.failed || length > uint64(len(r.bytes)) {
+		r.failed = true
+		return 0
+	}
+	return int(length)
+}
+`),
+  readerHelper('Text', `
+// Text decodes a string.
+func (r *Reader) Text() string { return string(r.Bytes()) }
+`),
+  readerHelper('Bytes', `
+// Bytes decodes a byte slice, which it copies.
+func (r *Reader) Bytes() []byte {
+	head := r.take(r.Uint())
+	if r.failed {
+		return nil
+	}
+	return append([]byte{}, head...)
+}
+`),
+];
+
+// The Key of a keyed_map<T> is used where the code names the type Key (an identifier Key that is no selector, no call
+// and no declaration of a method, as the member Key of a class is), one of its constructors or a KeyedMap; a method of
+// the Key is called through a value of its type, so it is kept with the type.
+const KEY_HELPERS: GoHelper[] = [{
+  name: 'Key',
+  kept: (code) => /\bKeyedMap\b|\b(?:Int|Bytes|Text)Key\b|(?<![.\w])Key\b(?!\s*\()|\bbinding\.Key\b/.test(code),
+  text: `
+// Key is a key of the contract type keyed_map<T> (T-2): an integer, a byte string or a text. Keys of different kinds
+// are different keys, as IntKey(1), BytesKey([]byte("1")) and TextKey("1").
+type Key struct {
+	kind    byte
+	integer int64
+	text    string
+}
+
+// IntKey is the integer key of a value.
+func IntKey(value int64) Key { return Key{kind: 0, integer: value} }
+
+// BytesKey is the byte string key of a value.
+func BytesKey(value []byte) Key { return Key{kind: 1, text: string(value)} }
+
+// TextKey is the text key of a value.
+func TextKey(value string) Key { return Key{kind: 2, text: value} }
+
+// Int is the integer of an integer key.
+func (k Key) Int() (int64, bool) { return k.integer, k.kind == 0 }
+
+// Bytes is the byte string of a byte string key.
+func (k Key) Bytes() ([]byte, bool) {
+	if k.kind != 1 {
+		return nil, false
+	}
+	return []byte(k.text), true
+}
+
+// Text is the text of a text key.
+func (k Key) Text() (string, bool) {
+	if k.kind != 2 {
+		return "", false
+	}
+	return k.text, true
+}
+`,
+}];
+
+// The KeyedMap is used where the code names it; its methods are called through a value of its type, so they are kept
+// with the type. Writer.Key and Reader.Key are kept where a value of their type calls them.
+const KEYED_HELPERS: GoHelper[] = [
+  {
+    name: 'KeyedMap',
+    kept: (code) => /\bKeyedMap\b/.test(code),
+    text: `
+// KeyedMap is the contract type keyed_map<T> (T-2): keys in the order in which they were first set, each once with
+// its value.
+type KeyedMap[T any] struct {
+	keys   []Key
+	values map[Key]T
+}
+
+// Set sets the value of a key: a new key goes after the others, a key that the map has keeps its place.
+func (m *KeyedMap[T]) Set(key Key, value T) {
+	if m.values == nil {
+		m.values = map[Key]T{}
+	}
+	if _, ok := m.values[key]; !ok {
+		m.keys = append(m.keys, key)
+	}
+	m.values[key] = value
+}
+
+// Get is the value of a key and whether the map has the key.
+func (m *KeyedMap[T]) Get(key Key) (T, bool) {
+	if m == nil {
+		var zero T
+		return zero, false
+	}
+	value, ok := m.values[key]
+	return value, ok
+}
+
+// Keys is the keys in their order.
+func (m *KeyedMap[T]) Keys() []Key {
+	if m == nil {
+		return nil
+	}
+	return append([]Key(nil), m.keys...)
+}
+
+// Len is the count of the keys.
+func (m *KeyedMap[T]) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.keys)
+}
+`,
+  },
+  writerHelper('Key', `
+// Key encodes a key: its kind (0 integer, 1 byte string, 2 text) and its value.
+func (w *Writer) Key(key Key) {
+	w.bytes = append(w.bytes, key.kind)
+	if key.kind == 0 {
+		w.Int(key.integer)
+	} else {
+		w.Text(key.text)
+	}
+}
+`),
+  readerHelper('Key', `
+// Key decodes a key.
+func (r *Reader) Key() Key {
+	head := r.take(1)
+	if r.failed {
+		return Key{}
+	}
+	switch head[0] {
+	case 0:
+		return IntKey(r.Int())
+	case 1:
+		return Key{kind: 1, text: r.Text()}
+	case 2:
+		return TextKey(r.Text())
+	}
+	r.failed = true
+	return Key{}
+}
+`),
+];
+
+const GO_HELPERS = new Map([...WRITER_HELPERS, ...READER_HELPERS, ...KEY_HELPERS, ...KEYED_HELPERS].map((h) => [h.name, h]));
+const helperMark = (name: string): string => `\u0000${name}\u0000`;
+const HELPER_MARK = /\u0000([^\u0000]*)\u0000/g;
+const goHelpers = (helpers: GoHelper[]): string => helpers.map((h) => helperMark(h.name)).join('');
+// The imports of package binding that only a helper may use, each with the selector that uses it.
+const HELPER_IMPORTS = [{ line: '\t"math"\n', selector: /\bmath\./ }];
+
+// Go source without its comments and with its literals empty, for the uses of a helper.
+export function goCode(source: string): string {
+  let out = '';
+  let at = 0;
+  while (at < source.length) {
+    const char = source[at] ?? '';
+    const next = source[at + 1] ?? '';
+    if (char === '/' && next === '/') {
+      const line = source.indexOf('\n', at);
+      at = line < 0 ? source.length : line;
+    } else if (char === '/' && next === '*') {
+      const close = source.indexOf('*/', at + 2);
+      at = close < 0 ? source.length : close + 2;
+      out += ' ';
+    } else if (char === '"' || char === "'") {
+      let i = at + 1;
+      while (i < source.length && source[i] !== char && source[i] !== '\n') i += source[i] === '\\' ? 2 : 1;
+      out += `${char}${char}`;
+      at = i + 1;
+    } else if (char === '`') {
+      const close = source.indexOf('`', at + 1);
+      out += '``';
+      at = close < 0 ? source.length : close + 1;
+    } else {
+      out += char;
+      at += 1;
+    }
+  }
+  return out;
+}
+
+// GN-15h: writes the helpers of package binding that the Go code of the files uses, and drops the others with the
+// imports that only they used.
+function keepGoHelpers(files: Files, path: string): void {
+  const binding = files.get(path) ?? '';
+  const others = [...files].filter(([p]) => p !== path && p.endsWith('.go')).map(([, text]) => text);
+  const base = goCode([binding.replace(HELPER_MARK, ''), ...others].join('\n'));
+  const kept = new Set<string>();
+  let code = base;
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, helper] of GO_HELPERS) {
+      if (kept.has(name) || !helper.kept(code)) continue;
+      kept.add(name);
+      code += `\n${goCode(helper.text)}`;
+      grew = true;
+    }
+  }
+  let text = binding.replace(HELPER_MARK, (_, name: string) => (kept.has(name) ? (GO_HELPERS.get(name)?.text ?? '') : ''));
+  const used = goCode(text);
+  for (const { line, selector } of HELPER_IMPORTS) if (!selector.test(used)) text = text.replace(line, '');
+  files.set(path, text);
+}
+
 function goBinding(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
@@ -1244,43 +1571,7 @@ func NewWriter() *Writer { return &Writer{} }
 
 // Done is the encoded arguments.
 func (w *Writer) Done() []byte { return w.bytes }
-
-// Bool encodes a bool as one byte, 0 or 1.
-func (w *Writer) Bool(value bool) {
-	if value {
-		w.bytes = append(w.bytes, 1)
-	} else {
-		w.bytes = append(w.bytes, 0)
-	}
-}
-
-// Tag encodes the presence of an optional value.
-func (w *Writer) Tag(present bool) { w.Bool(present) }
-
-// Uint encodes a uint64 as eight bytes, little endian.
-func (w *Writer) Uint(value uint64) { w.bytes = binary.LittleEndian.AppendUint64(w.bytes, value) }
-
-// Int encodes an int64 as its two's complement.
-func (w *Writer) Int(value int64) { w.Uint(uint64(value)) }
-
-// Float encodes a float64 as its IEEE 754 bits.
-func (w *Writer) Float(value float64) { w.Uint(math.Float64bits(value)) }
-
-// Len encodes the length of a list.
-func (w *Writer) Len(length int) { w.Uint(uint64(length)) }
-
-// Text encodes the bytes of a string with their length; the core judges whether text is UTF-8 (B-8).
-func (w *Writer) Text(value string) {
-	w.Len(len(value))
-	w.bytes = append(w.bytes, value...)
-}
-
-// Bytes encodes a byte slice with its length.
-func (w *Writer) Bytes(value []byte) {
-	w.Len(len(value))
-	w.bytes = append(w.bytes, value...)
-}
-
+${goHelpers(WRITER_HELPERS)}
 // Reader decodes the result of a call. A result that does not follow the encoding, which only a fault of the
 // generated code can make, fails Finish with kind internal.
 type Reader struct {
@@ -1305,59 +1596,7 @@ func (r *Reader) take(count uint64) []byte {
 	r.bytes = r.bytes[count:]
 	return head
 }
-
-// Bool decodes a bool.
-func (r *Reader) Bool() bool {
-	head := r.take(1)
-	if r.failed {
-		return false
-	}
-	if head[0] > 1 {
-		r.failed = true
-	}
-	return head[0] == 1
-}
-
-// Tag decodes the presence of an optional value.
-func (r *Reader) Tag() bool { return r.Bool() }
-
-// Uint decodes a uint64.
-func (r *Reader) Uint() uint64 {
-	head := r.take(8)
-	if r.failed {
-		return 0
-	}
-	return binary.LittleEndian.Uint64(head)
-}
-
-// Int decodes an int64.
-func (r *Reader) Int() int64 { return int64(r.Uint()) }
-
-// Float decodes a float64.
-func (r *Reader) Float() float64 { return math.Float64frombits(r.Uint()) }
-
-// Len decodes the length of a list, which is at most the count of the bytes left.
-func (r *Reader) Len() int {
-	length := r.Uint()
-	if r.failed || length > uint64(len(r.bytes)) {
-		r.failed = true
-		return 0
-	}
-	return int(length)
-}
-
-// Text decodes a string.
-func (r *Reader) Text() string { return string(r.Bytes()) }
-
-// Bytes decodes a byte slice, which it copies.
-func (r *Reader) Bytes() []byte {
-	head := r.take(r.Uint())
-	if r.failed {
-		return nil
-	}
-	return append([]byte{}, head...)
-}
-
+${goHelpers(READER_HELPERS)}
 ${model.variants.length === 0 ? '' : `// Case reads the number of the case of a variant (T-9, GN-6v); a number of no case of the count fails Finish.
 func (r *Reader) Case(count uint64) uint64 {
 	number := r.Uint()
@@ -1424,115 +1663,7 @@ func (m *Map[T]) Len() int {
 	}
 	return len(m.keys)
 }
-
-// Key is a key of the contract type keyed_map<T> (T-2): an integer, a byte string or a text. Keys of different kinds
-// are different keys, as IntKey(1), BytesKey([]byte("1")) and TextKey("1").
-type Key struct {
-	kind    byte
-	integer int64
-	text    string
-}
-
-// IntKey is the integer key of a value.
-func IntKey(value int64) Key { return Key{kind: 0, integer: value} }
-
-// BytesKey is the byte string key of a value.
-func BytesKey(value []byte) Key { return Key{kind: 1, text: string(value)} }
-
-// TextKey is the text key of a value.
-func TextKey(value string) Key { return Key{kind: 2, text: value} }
-
-// Int is the integer of an integer key.
-func (k Key) Int() (int64, bool) { return k.integer, k.kind == 0 }
-
-// Bytes is the byte string of a byte string key.
-func (k Key) Bytes() ([]byte, bool) {
-	if k.kind != 1 {
-		return nil, false
-	}
-	return []byte(k.text), true
-}
-
-// Text is the text of a text key.
-func (k Key) Text() (string, bool) {
-	if k.kind != 2 {
-		return "", false
-	}
-	return k.text, true
-}
-${tupleArities(model).map(goTupleType).join('')}
-// KeyedMap is the contract type keyed_map<T> (T-2): keys in the order in which they were first set, each once with
-// its value.
-type KeyedMap[T any] struct {
-	keys   []Key
-	values map[Key]T
-}
-
-// Set sets the value of a key: a new key goes after the others, a key that the map has keeps its place.
-func (m *KeyedMap[T]) Set(key Key, value T) {
-	if m.values == nil {
-		m.values = map[Key]T{}
-	}
-	if _, ok := m.values[key]; !ok {
-		m.keys = append(m.keys, key)
-	}
-	m.values[key] = value
-}
-
-// Get is the value of a key and whether the map has the key.
-func (m *KeyedMap[T]) Get(key Key) (T, bool) {
-	if m == nil {
-		var zero T
-		return zero, false
-	}
-	value, ok := m.values[key]
-	return value, ok
-}
-
-// Keys is the keys in their order.
-func (m *KeyedMap[T]) Keys() []Key {
-	if m == nil {
-		return nil
-	}
-	return append([]Key(nil), m.keys...)
-}
-
-// Len is the count of the keys.
-func (m *KeyedMap[T]) Len() int {
-	if m == nil {
-		return 0
-	}
-	return len(m.keys)
-}
-
-// Key encodes a key: its kind (0 integer, 1 byte string, 2 text) and its value.
-func (w *Writer) Key(key Key) {
-	w.bytes = append(w.bytes, key.kind)
-	if key.kind == 0 {
-		w.Int(key.integer)
-	} else {
-		w.Text(key.text)
-	}
-}
-
-// Key decodes a key.
-func (r *Reader) Key() Key {
-	head := r.take(1)
-	if r.failed {
-		return Key{}
-	}
-	switch head[0] {
-	case 0:
-		return IntKey(r.Int())
-	case 1:
-		return Key{kind: 1, text: r.Text()}
-	case 2:
-		return TextKey(r.Text())
-	}
-	r.failed = true
-	return Key{}
-}
-${GO_TOKEN}${model.aliases.length === 0 ? '' : valueClasses(model).length === 0 ? goValue(model) : `${goValue(model).replace('\tcase 255:\n', '\tcase 11:\n\t\treturn r.valueClass(made, instance)\n\tcase 255:\n')}${goValueClassReader(model)}`}${model.kept.map((k) => goKept(model, k)).join('')}
+${goHelpers(KEY_HELPERS)}${tupleArities(model).map(goTupleType).join('')}${goHelpers(KEYED_HELPERS)}${GO_TOKEN}${model.aliases.length === 0 ? '' : valueClasses(model).length === 0 ? goValue(model) : `${goValue(model).replace('\tcase 255:\n', '\tcase 11:\n\t\treturn r.valueClass(made, instance)\n\tcase 255:\n')}${goValueClassReader(model)}`}${model.kept.map((k) => goKept(model, k)).join('')}
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -2985,6 +3116,7 @@ export function go(model: Model, files: Files): void {
     files.set(`${BINDING}/zz_generated_link_${platform}.go`, goLink(model, platform));
     files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
   }
+  keepGoHelpers(files, `${BINDING}/zz_generated_binding.go`);
 }
 
 // GN-15g: the platforms of a Go module, <GOOS>_<GOARCH> of the platforms of a release (GN-3c).

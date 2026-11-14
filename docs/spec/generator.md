@@ -1705,6 +1705,18 @@ the design ids are those of the binding design.
   holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
   a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
   one program. It has run on `darwin_arm64` alone: that the copies link on Linux is not verified yet.
+- **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
+  method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
+  code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
+  and its methods, and the type `KeyedMap` with its methods, only when that code names them; an import that only a
+  dropped helper used is dropped with it. The generator reads the uses from the generated Go code without its comments
+  and the contents of its literals, and repeats until no further helper is kept, because a kept helper may call
+  another. The generated code calls a method of a `Writer` only through a value named `enc`, `tenc` or `w` and a
+  method of a `Reader` only through a value named `dec`, `r` or `properties`; a call of the same name through another
+  value is a method of another type, such as a member of a class of the contract (`made0.Key`) or of a
+  `reflect.Value` (`v.Float`), and no use of a helper. Why: a function that no main package and no test reaches fails the
+  deadcode and unused lints of the repository that consumes the module, and that repository cannot change a generated
+  file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`

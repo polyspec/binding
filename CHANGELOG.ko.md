@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e0b01e6f93447a1e4bf1a0395a309b6c558717ab6f10598be95eff8e5ce6821d -->
+<!-- source-sha256: 21397d5337397e003bd518c242a967be5e2737efceadcf42363fe7dd01363076 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -48,6 +48,17 @@
   case의 Python, Node, WASM, PHP 시험은 Go 시험처럼 실패해야 하는 호출 앞에서 receiver를 지역 변수로 만든다(GN-13f).
   `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다. 값 class의 레포를 준 `tests/e2e/relay`의 `make e2e`로도
   검증했고, 다섯 target에서 통과했다.
+- 모든 계약의 Go 패키지 `internal/binding`이 모든 타입의 도우미를 담았다. `keyed_map<T>`가 없는 계약에도 keyed-map
+  도우미(`Key`, `IntKey`, `BytesKey`, `TextKey`, `Key`와 `KeyedMap`의 method, `Writer.Key`, `Reader.Key`)를 담았고,
+  생성 코드가 부르지 않을 때에도 method `Writer.Bool`, `Writer.Tag`, `Writer.Bytes`, `Reader.Float`를 담았다. 모듈을
+  쓰는 저장소의 `deadcode -test`가 그 각각을 닿지 않는 함수로 보고했고, 그 저장소는 생성 파일을 고칠 수 없다. 이제
+  생성기는 패키지의 도우미를 생성된 Go 코드가 쓸 때만 쓰고, 빠진 도우미만 쓰던 import `math`를 함께 뺀다(GN-15h).
+  `Key` 같은 그런 method의 이름을 가진 계약의 class의 method는 도우미를 남기지 않는다. `make test-ts`로 검증했다:
+  `keyed_map<T>`가 없는 계약의 시험과 이름이 `Key`인 class member의 시험이 변경 전에는 실패했고, `keyed_map<T>`가
+  있는 계약의 시험은 그 도우미가 남는 것을 확인한다. keyed map이 있는 `make e2e REPO=tests/e2e/shapes`와 fsm
+  checkout의 `make e2e`에서 모든 target이 통과했고, fsm checkout에서 그 Go 모듈의 `deadcode`와 `golangci-lint`는
+  아무것도 보고하지 않는다.
+
 - 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
   field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
   field를 이름하는데 field는 더해지지 않았다. 이제 바꾸기는 struct의 끝만 이름하고, 생성기는 host에 더하는 부분이
