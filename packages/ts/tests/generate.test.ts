@@ -2418,6 +2418,40 @@ test('Go: a case of a member that takes a callback unit of another repository an
   assert.match(named, /the case an_instance_value_of_no_member of consumer\.read: a case value of source: nothing\.made is no member that the binding generates \(G-5, GN-13f\)/);
 });
 
+// B2.135: an instance value at a place of a callback unit of another repository may name a member of the owner, which
+// the test of each target calls through the owner's package (GN-6s, GN-13f, GN-6w).
+const heldSource = (sample: any): void => {
+  sample.units.push({
+    id: 'held_source', name: ['held', 'source'], module: '', kind: 'class', visibility: 'public', origin: 'generated',
+    core_type: 'polyspec_sample::HeldSource', final: true, implements: [{ unit: 'source' }],
+    members: [{ id: 'held_source.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['key'], type: 'text', required: true }, { name: ['value'], type: 'text', required: true }], raises: [], wait: 'none', core: 'polyspec_sample::HeldSource::new' }],
+  });
+  sample.units.find((u: any) => u.id === 'source').members[0].core.receiver = '&self';
+};
+test('an instance value at a place of a callback unit of another repository is made by a member of the owner through its package (GN-6s, GN-13f, GN-6w)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  heldSource(foreign.get('sample'));
+  const cases = structuredClone(caseFiles.get('contracts/cases.json')) as any;
+  cases.read.push({ id: 'a_held_source_of_another_repository_gives_its_value', source: { new: 'held_source.new', args: { key: 'a', value: '1' } }, key: 'a', result: '1' });
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign });
+  const tests: Record<string, string> = {
+    python: 'packages/python/generated/tests/test_generated.py', node: 'packages/ts/generated/tests/generated.test.mjs',
+    wasm: 'packages/ts/wasm/generated/tests/generated.test.mjs', php: 'packages/php-ext/generated/tests/GeneratedTest.php', go: 'packages/go/zz_generated_test.go',
+  };
+  for (const [target, path] of Object.entries(tests)) assert.doesNotMatch(text(out, path), /held_source\.new is no member that the binding generates/, target);
+  assert.match(text(out, tests['python'] ?? ''), /^import polyspec\.sample as foreign_sample$[^]*foreign_sample\.HeldSource\("a", "1"\)/m);
+  assert.match(text(out, tests['node'] ?? ''), /^import \* as foreign_sample from '@polyspec\/sample';$[^]*new foreign_sample\.HeldSource\('a', '1'\)/m);
+  assert.match(text(out, tests['wasm'] ?? ''), /^import \* as foreign_sample from '@polyspec\/sample\/wasm';$[^]*new foreign_sample\.HeldSource\('a', '1'\)/m);
+  assert.match(text(out, tests['php'] ?? ''), /new \\Polyspec\\Sample\\HeldSource\("a", "1"\)/);
+  assert.match(text(out, tests['go'] ?? ''), /:= sample\.NewHeldSource\("a", "1"\)/);
+  // G-4, GN-13e: a member of the owner that takes a unit of the owner fails the test of its case by name.
+  const unit = consumerSample();
+  heldSource(unit.foreign.get('sample'));
+  unit.foreign.get('sample').units.find((u: any) => u.id === 'held_source').members[0].parameters[1].type = { unit: 'source' };
+  const named = generateTargets({ contract: unit.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: new Map([['contracts/cases.json', cases]]), foreign: unit.foreign, targets: ['node'] });
+  assert.match(text(named, tests['node'] ?? ''), /held_source\.new of sample takes a unit, which a case value of this repository does not give \(G-4, GN-6s, GN-13f\)/);
+});
+
 test('a callback unit of another repository is refused where its name is a unit of the contract (GN-6s, G-4)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract, foreign);
