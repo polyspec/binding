@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e7f7cbadf44c7200ab7da1d2421d5da9dd4a19fec0a628bfd7e824c19fe322d8 -->
+<!-- source-sha256: 6abd2d192be44397eef98f0c9592f60007a6de26657597e59edd4f154cfc8008 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
@@ -13,6 +13,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Go는 `cancel` 타입 parameter나 그 `optional`의 `context.Context`를 그 parameter가 계약의 어느 자리에 있든 함수의 첫
+  인자로 받는다(GN-6aq). 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에 준다. 취소가 첫
+  parameter가 아닌 member는 Go에서 거부되었으므로, cookie 다음에 optional 취소를 받는 파일 저장소의 member에는 Go
+  함수가 없었다. 그런 parameter가 둘인 member는 Go에서 이름을 대고 거부한다. 검증: 그런 member의 시험이 변경 전에 실패한
+  `node --test packages/ts/tests/generate.test.ts`.
 
 - `only`(Q-4)가 있는 record의 field는 `only`가 있는 parameter와 같이 그것이 적은 target에만 있는 field다. 다른
   target에는 그 field가 없고, 그 바인딩은 코어에 `None`을 주며, 그 field에 값을 주는 case는 그 target의 case가 아니다.

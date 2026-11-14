@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: c5b9a215046507ee8e4a5e8528dadcb4848f53ad8fbc01e636cc70d761a92a03 -->
+<!-- source-sha256: e8b8d82fad1b041c0da4ffc6d55e4366bacb6057e2748dbf4b0c409372af3820 -->
 # 생성기
 
 [English](generator.md)
@@ -577,8 +577,9 @@
     취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
     `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
     취소한다.
-  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). 이 타입의 parameter가 첫
-    parameter가 아닌 member는 Go에 대해 이름으로 거절한다. Go는 context를 맨 앞에 넘기기 때문이다. binding은
+  - Go: `context.Context`. 그 parameter가 계약의 어느 자리에 있든 함수의 첫 인자 `ctx`다(`optional`은 nil `ctx`).
+    Go는 context를 맨 앞에 넘기기 때문이다. 다른 인자는 계약의 순서를 지키고, 바인딩은 코어에 취소를 계약의 그 자리에
+    준다. 이 타입의 parameter가 둘 이상인 member는 Go에 대해 이름으로 거절한다. Go는 context 하나를 받기 때문이다. binding은
     `ctx.Err()`를 읽고, 아니면 `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를
     발화시킨다. 기다리거나 polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때
     놓인다(`runtime.AddCleanup`): context는 `context.AfterFunc`의 func를 실행할 때까지 쥐고, `context.Background()`처럼
@@ -762,8 +763,7 @@
   받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
   거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
   `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
-  parameter가 없고(첫 parameter가 아닌 cancel을 Go가 거부하는 GN-6aq는 Go에 그 parameter가 있을 때만 적용된다),
-  그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
+  parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는
   `only`의 target에만 case다. 다른 target은 그 값을 넘길 수 없기 때문이다. 이유: Python과 Node만 줄 수 있는 member의
   cancellation처럼 한 언어에 형태가 없는 parameter는, 그렇지 않으면 그 언어가 그 parameter 없이 부를 수 있는 member나

@@ -713,8 +713,10 @@ the design ids are those of the binding design.
     `concurrent.futures.Future`). The binding reads `cancelled()` and otherwise adds a done callback, which fires the
     trigger when the future is cancelled and not when it has a result. Another thread cancels a
     `concurrent.futures.Future` by `cancel()`, and an `asyncio.Future` by `loop.call_soon_threadsafe(future.cancel)`.
-  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`); a member whose
-    parameter of the type is not the first one is refused by name for Go, because Go passes a context first. The
+  - Go: a `context.Context`, the first argument `ctx` of the function wherever the parameter stands in the contract
+    (an `optional` is a nil `ctx`), because Go passes a context first; the other arguments keep the order of the
+    contract, and the binding gives the core the cancellation at its place in the contract. A member with more than
+    one parameter of the type is refused by name for Go, which takes one context. The
     binding reads `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine
     that the context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that
     keeps it is unreachable (`runtime.AddCleanup`): the context keeps the func of `context.AfterFunc` until it runs
@@ -936,8 +938,8 @@ the design ids are those of the binding design.
   in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
   with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
   the tests of every other target. A parameter with `only` is a parameter of the targets that it lists alone: every
-  other target has no such parameter in its signature, its declarations and its rules of place (a cancel that is not
-  the first parameter is refused for Go by GN-6aq only where Go has it), and its binding gives the core the parameter
+  other target has no such parameter in its signature, its declarations and its rules of place, and its binding gives
+  the core the parameter
   as left out (`None`). The parameter therefore has a default or an `optional` type, whose core parameter is an
   `Option`; one without either is refused by name (G-4). A case that gives the parameter a value is a case of the
   targets of the `only` alone, because another target cannot pass that value. Why: a parameter that one language has

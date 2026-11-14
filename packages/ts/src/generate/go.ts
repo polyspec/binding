@@ -590,15 +590,20 @@ export const goResultCount = (fn: Fn): number => {
   return typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple.length : 1;
 };
 
+// T-1 cancel, GN-6aq: the parameters of a member in the order of its Go arguments: the cancel first, as Go passes a
+// context, and the others in the order of the contract.
+export const goOrder = <T extends { type: Type }>(params: readonly T[]): T[] => [...params.filter((p) => takesCancel(p.type)), ...params.filter((p) => !takesCancel(p.type))];
+
 function goCallable(scope: GoScope, fn: Fn): string {
   const model = scope.model;
-  // T-1 cancel, GN-6aq: a cancel is the first parameter ctx, as Go passes a context; at another place it is refused.
-  const cancelAt = fn.params.findIndex((p) => takesCancel(p.type));
-  if (cancelAt > 0 || fn.params.filter((p) => takesCancel(p.type)).length > 1) {
-    throw new Unsupported(`${fn.member.id}: a parameter of the type cancel is generated for Go as the first parameter ctx only (GN-6aq)`);
+  // T-1 cancel, GN-6aq: a cancel is the first argument ctx, as Go passes a context, wherever the contract places it;
+  // the encoding, which the core reads, keeps the order of the contract.
+  if (fn.params.filter((p) => takesCancel(p.type)).length > 1) {
+    throw new Unsupported(`${fn.member.id}: a member with more than one parameter of the type cancel is not generated for Go, which takes one context as its first argument (GN-6aq)`);
   }
-  const paramOf = (name: Name, model: Model): string => (cancelAt === 0 && name === fn.params[0]?.name ? 'ctx' : goParam(name, model));
-  const params = fn.params.map((p) => `${paramOf(p.name, scope.model)} ${paramType(scope, fn, p)}`).join(', ');
+  const cancelParam = fn.params.find((p) => takesCancel(p.type));
+  const paramOf = (name: Name, model: Model): string => (name === cancelParam?.name ? 'ctx' : goParam(name, model));
+  const params = goOrder(fn.params).map((p) => `${paramOf(p.name, scope.model)} ${paramType(scope, fn, p)}`).join(', ');
   const results = memberResults(scope, fn);
   const signature = results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})`;
   const zero = results.map((_, i) => `zero${i}`);

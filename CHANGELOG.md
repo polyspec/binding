@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Go takes the `context.Context` of a parameter of the type `cancel`, or of an `optional` of it, as the first
+  argument of the function wherever the parameter stands in the contract (GN-6aq); the other arguments keep the order
+  of the contract, and the binding gives the core the cancellation at its place in the contract. A member whose
+  cancellation was not its first parameter was refused for Go, so a member of a file store that takes a cookie and then
+  an optional cancellation had no Go function. A member with two such parameters is refused for Go by name. Verified by
+  `node --test packages/ts/tests/generate.test.ts`, whose test of such a member failed before the change.
+
 - A field of a record with `only` (Q-4) is a field of the targets that it lists alone, as a parameter with `only` is.
   The other targets have no such field, their binding gives the core `None` for it, and a case that gives it a value
   is no case of theirs; such a field without a default or an `optional` type, and `only` at a field of a case of a
