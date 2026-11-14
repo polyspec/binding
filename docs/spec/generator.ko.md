@@ -1607,7 +1607,8 @@
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
-  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
+  `-9223372036854775808`을 float의 부정으로 읽기 때문이다. Go는 음의 0을 `math.Copysign(0, -1)`로 준다. Go 상수
+  `-0.0`은 0이기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
   만드는(`<unit>.constructor`) `float`은 그 수로 만든 그 인스턴스다(`number`가 `int`로 실어 나를 Node의 정수 float이
   그렇다). binding은 자기가 주는 형태를 다시 받기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
   표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
@@ -1659,7 +1660,8 @@
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
   타입과 값으로(`dict`의 항목은 순서대로, NaN은 NaN과 같다), PHP는 객체를 클래스와 property로 바꾼 뒤 `assertSame`으로, Go는
-  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교한다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
+  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교하되, case가 NaN을 담으면 NaN이 NaN과 같다는 점만 다른
+  `sameValue`로 비교한다. `reflect.DeepEqual`은 NaN을 자기 자신과 다르다고 보기 때문이다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의

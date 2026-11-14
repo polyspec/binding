@@ -1970,7 +1970,8 @@ the design ids are those of the binding design.
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
-  `-9223372036854775808` as the negation of a float. A `float` whose out row of the alias in the language makes an
+  `-9223372036854775808` as the negation of a float, and Go gives a negative zero as `math.Copysign(0, -1)`, because
+  the Go constant `-0.0` is 0. A `float` whose out row of the alias in the language makes an
   instance of a value class (`<unit>.constructor`, such as a Node integral float, which a `number` would carry as an
   `int`) is that instance made from the number, because the binding takes back the form that it gives. A value of the
   language that is no value of the value type is `{"host": <sort>}`
@@ -2036,7 +2037,8 @@ the design ids are those of the binding design.
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
   `Map` becomes its entries in order, Python by type and value with the items of a `dict` in order and NaN equal to
   NaN, PHP with `assertSame` after an object becomes its class and properties, and Go with `reflect.DeepEqual` for
-  each part of a tuple return. The key of the case that holds the result is the `result` of its `cases` row, or
+  each part of a tuple return, or, when the case holds a NaN, with `sameValue`, which is `reflect.DeepEqual` except
+  that a NaN equals a NaN, because `reflect.DeepEqual` finds a NaN unequal to itself. The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
   call alone and fails when it raises. The result `null` of an optional has a case form whatever the optional holds,
