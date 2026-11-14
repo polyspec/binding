@@ -19,6 +19,13 @@
 
 ## Unreleased
 
+- `release-npm`은 `npm pack --dry-run --json`의 목록을 `devEngines`가 고정한 npm의 형식, 곧 패키지 이름을 키로 하는
+  객체로 읽는다(GN-19e). recipe는 `JSON.parse(...)[0].files`를 읽었고 npm 12.2.0은 `{"<name>": {"files": [...]}}`를
+  쓰므로, job `assets / npm`이 `release-npm`에서 `TypeError: Cannot read properties of undefined (reading 'files')`로
+  실패했다. 시험의 stand-in npm은 고정된 어떤 npm도 쓰지 않는 배열 형식을 썼고, 이제 npm 12.2.0의 형식을 쓴다.
+  패키지를 이름으로 담지 않은 목록은 그 경로와 함께 거부한다. `node --test packages/ts/tests/release-recipes.test.ts`로
+  확인했고, `release-npm`의 두 시험은 변경 전에 그 TypeError로 실패했다. (B2.266)
+
 - Python crate는 그 코드가 변환 `out_<class>`를 적는 모든 곳에서 그것을 쓴다(T-5, GN-6b). 변환은 함수와 클래스의
   코드가 `out_<class>(`를 부를 때만 쓰였으므로, 돌려주는 record의 field `list<tuple<text, list<class>>>`만 주는
   클래스는 record 변환에서 `list_out(py, part_1, out_<class>)`을 받고 정의는 받지 못해 crate가 E0425로 실패했다.

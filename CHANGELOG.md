@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- `release-npm` reads the list of `npm pack --dry-run --json` in the form of the npm that `devEngines` pins, an
+  object keyed by the name of the package (GN-19e). The recipe read `JSON.parse(...)[0].files`, and npm 12.2.0 writes
+  `{"<name>": {"files": [...]}}`, so the job `assets / npm` failed at `release-npm` with `TypeError: Cannot read
+  properties of undefined (reading 'files')`. The stand-in npm of the tests wrote the array form, which no pinned npm
+  writes, and now writes the form of npm 12.2.0. A list that does not hold the package by name is refused with its
+  path. Verified by `node --test packages/ts/tests/release-recipes.test.ts`, whose two tests of `release-npm` failed
+  with that TypeError before the change. (B2.266)
+
 - The Python crate writes the conversion `out_<class>` wherever its code names it (T-5, GN-6b). It was written only
   when the code of the functions and the classes called `out_<class>(`, so a class that only a field
   `list<tuple<text, list<class>>>` of a returned record gives got `list_out(py, part_1, out_<class>)` in the

@@ -126,9 +126,11 @@ if (args[0] === 'create-npm-dirs') {
     fs.writeFileSync(path.join(dir, platform, 'package.json'), JSON.stringify({ name: name + '-' + platform, version: '0.0.3' }));
   }
 }`);
-  // npm pack --dry-run --json lists the files of the package, and npm pack writes the archive of the manifest of its folder.
-  standIn(bin, 'npm', `if (args.includes('--dry-run')) { console.log(JSON.stringify([{ files: [{ path: 'package.json' }] }])); process.exit(0); }
-const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  // npm pack --dry-run --json lists the files of the package in an object keyed by the name of the package, as the npm
+  // 12.2.0 of devEngines writes it ({"@polyspec/sample": {"id": ..., "files": [{"path": ...}]}}), and npm pack writes
+  // the archive of the manifest of its folder.
+  standIn(bin, 'npm', `const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+if (args.includes('--dry-run')) { console.log(JSON.stringify({ [manifest.name]: { id: manifest.name + '@' + manifest.version, name: manifest.name, version: manifest.version, files: [{ path: 'package.json' }] } }, null, 2)); process.exit(0); }
 fs.writeFileSync(path.join(option('--pack-destination'), manifest.name.replace('@', '').replace('/', '-') + '-' + manifest.version + '.tgz'), JSON.stringify(manifest));`);
   standIn(bin, 'wasm-bindgen', `if (args[0] === '--version') { console.log('wasm-bindgen ${WASM_BINDGEN}'); process.exit(0); }
 fs.mkdirSync(option('--out-dir'), { recursive: true });

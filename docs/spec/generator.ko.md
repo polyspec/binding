@@ -2195,7 +2195,11 @@
   다른 runner가 addon을 빌드하는 설정된 플랫폼에서 실패하기 때문이다. 그다음 `<npm-dir>/<platform>`에서
   `npm pack --ignore-scripts --pack-destination <assets>`를 실행한다. 플랫폼 없는 항목은 사본의 manifest의
   `optionalDependencies`에 플랫폼마다 `<npm 패키지>-<platform>`을 release의 버전으로 적은 뒤 라이브러리 자체의 패키지를
-  `npm pack --ignore-scripts`로 pack한다. 추적하는 manifest는 그것을 적지 않는다(GN-3c).
+  `npm pack --ignore-scripts`로 pack한다. 추적하는 manifest는 그것을 적지 않는다(GN-3c). 사본은 패키지의
+  `npm pack --dry-run --json --ignore-scripts`가 나열하는 파일을 담는다. 레포의 `devEngines`가 고정한 npm(12.2.0)은
+  그 목록을 패키지 이름을 키로 하는 객체(`{"<name>": {"id": …, "filename": "<scope>-<name>-<version>.tgz", "files":
+  [{"path": …}]}}`)로 쓰고, recipe는 그 형식만 읽으며 패키지를 이름으로 담지 않은 목록은 거부한다. npm의 release는
+  레포가 정하므로, 두 번째 형식은 어떤 실행도 지나지 않는 경로가 되기 때문이다.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
   <directory> --work <directory> [--remote <name>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
   tag `vX.Y.Z`의 commit에 있다. `binding generate --target go`가 Go 모듈의 파일 `zz_generated_*.go`를 work tree에 썼다.

@@ -229,9 +229,13 @@ ${generate('node')}
     const wasmDir = place(contract, 'packages/ts/wasm/generated').slice(npmDir.length + 1);
     const platforms = has('node') ? ` ${PLATFORMS.map((p) => p.platform).join(' ')}` : '';
     // The copy holds the files that npm pack of the package lists, and a manifest that names the platform packages.
+    // npm pack --dry-run --json of the npm that devEngines pins (12.2.0) writes an object keyed by the name of the
+    // package, {"<name>": {"id": ..., "files": [{"path": ...}]}}; a list without the package is refused by name.
     const copy = 'const fs = require("fs"); const path = require("path"); const [from, list, to, ...platforms] = process.argv.slice(1); '
-      + 'for (const file of JSON.parse(fs.readFileSync(list, "utf8"))[0].files.map((f) => f.path)) { fs.mkdirSync(path.dirname(path.join(to, file)), { recursive: true }); fs.copyFileSync(path.join(from, file), path.join(to, file)); } '
       + 'const p = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8")); '
+      + 'const packed = JSON.parse(fs.readFileSync(list, "utf8"))[p.name]; '
+      + 'if (packed === undefined || !Array.isArray(packed.files)) { console.error("release-npm: npm pack --dry-run --json of " + from + " lists no files of the package " + p.name + " in " + list); process.exit(1); } '
+      + 'for (const file of packed.files.map((f) => f.path)) { fs.mkdirSync(path.dirname(path.join(to, file)), { recursive: true }); fs.copyFileSync(path.join(from, file), path.join(to, file)); } '
       + 'if (platforms.length > 0) p.optionalDependencies = Object.fromEntries(platforms.map((platform) => [p.name + "-" + platform, p.version])); '
       + 'fs.writeFileSync(path.join(to, "package.json"), JSON.stringify(p, null, 2) + "\\n");';
     add('release-npm', `${head('release-npm', `release-npm packs ${npm} itself (GN-19e, GN-3c) from a copy of the files that npm pack of ${npmDir} lists${has('wasm') ? `, with the WASM

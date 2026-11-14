@@ -2713,7 +2713,12 @@ the design ids are those of the binding design.
   --npm-dir <the same directory>`; then `npm pack --ignore-scripts --pack-destination <assets>` in `<npm-dir>/<platform>`.
   The entry without a platform packs the package of the library itself with `npm pack --ignore-scripts` after it
   wrote `<npm package>-<platform>` at the version of the release into `optionalDependencies` of the manifest of the
-  copy, for each platform; the tracked manifest names none (GN-3c).
+  copy, for each platform; the tracked manifest names none (GN-3c). The copy holds the files that
+  `npm pack --dry-run --json --ignore-scripts` of the package lists. The npm that `devEngines` of the repository pins
+  (12.2.0) writes that list as an object keyed by the name of the package (`{"<name>": {"id": …, "filename":
+  "<scope>-<name>-<version>.tgz", "files": [{"path": …}]}}`), and the recipe reads that form alone and refuses a list
+  that does not hold the package by name: the release of npm is fixed by the repository, so a second form would be a
+  path that no run takes.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
   <directory> --work <directory> [--remote <name>]` makes the commit and the tag of GN-15g in the repository of the
   contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target go` wrote the
