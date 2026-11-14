@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## 0.0.2
+
 - end-to-end 실행은 binding check 전에 사본의 Cargo.lock에 있는 모든 package를 받는다(GN-15f). check는 B2.261부터
   crate를 오프라인으로 읽는데, 코어의 build는 자기 package만 받았으므로 `tests/e2e/consumer`와 `tests/e2e/plot`의
   check가 모든 대상에서 package를 받지 못해 실패했다. CI job `e2e (consumer)`와 `e2e (plot)`으로 검증했다.

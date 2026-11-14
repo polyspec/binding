@@ -1,6 +1,6 @@
 {
   "name": "@polyspec/binding",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Generates the bindings of a polyspec repository from its interface contract, and checks the contract",
   "license": "MIT",
   "private": true,

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.2
+
 - The end-to-end run fetches every package of the Cargo.lock of a copy before it runs binding check (GN-15f). The
   check reads the crates offline since B2.261, and the build of the core had fetched only its own packages, so the
   check of `tests/e2e/consumer` and `tests/e2e/plot` failed to download a package in every target. Verified by the CI
