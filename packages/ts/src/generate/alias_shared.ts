@@ -376,7 +376,10 @@ impl Drop for OwnedNative {
 
 /// GN-6u: the owner of this thread and its generation; a thread is registered as an owner at its first Native.
 fn native_owner() -> Option<(usize, u64)> {
-    let mut owners = OWNERS.lock().ok()?;
+    // A poisoned table of the owners gives no owner, which the caller reports as kind internal.
+    let Ok(mut owners) = OWNERS.lock() else {
+        return None;
+    };
     let owner = match OWNER.get() {
         Some(owner) => owner,
         None => {
@@ -405,15 +408,22 @@ fn release_queue() {
     let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
         return;
     };
-    let keys = match OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
-        Some(owner) => std::mem::take(&mut owner.released),
-        None => return,
+    let keys = match OWNERS.lock() {
+        Ok(mut owners) => match owners.get_mut(owner) {
+            Some(owner) => std::mem::take(&mut owner.released),
+            None => return,
+        },
+        // A poisoned table of the owners releases nothing here; the cleanup of the thread releases its table.
+        Err(_poisoned) => return,
     };
     if keys.is_empty() {
         return;
     }
     let taken = OWNED.try_with(|owned| {
-        let mut owned = owned.try_borrow_mut().ok()?;
+        // A table that is borrowed now keeps the references; the cleanup of the thread releases them.
+        let Ok(mut owned) = owned.try_borrow_mut() else {
+            return None;
+        };
         let owned = owned.as_mut()?;
         Some(keys.iter().filter_map(|key| owned.values.remove(key)).collect::<Vec<${reference}>>())
     });
@@ -428,12 +438,20 @@ fn clean_up_native() {
     let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
         return;
     };
-    if let Some(owner) = OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
-        owner.generation = owner.generation.saturating_add(1);
-        owner.released.clear();${wakes ? `
-        abort_waker(owner);` : ''}
+    // A poisoned table of the owners has no generation to raise; the table of this thread is still released below.
+    if let Ok(mut owners) = OWNERS.lock() {
+        if let Some(owner) = owners.get_mut(owner) {
+            owner.generation = owner.generation.saturating_add(1);
+            owner.released.clear();${wakes ? `
+            abort_waker(owner);` : ''}
+        }
     }
-    let taken = OWNED.try_with(|owned| owned.try_borrow_mut().ok().and_then(|mut owned| owned.take()));
+    let taken = OWNED.try_with(|owned| match owned.try_borrow_mut() {
+        Ok(mut owned) => owned.take(),
+        // A table that is borrowed at the cleanup cannot be taken; the raised generation keeps a later drop of one of
+        // its Natives from touching it.
+        Err(_borrowed) => None,
+    });
     if let Ok(Some(owned)) = taken {
         let references: Vec<${reference}> = owned.values.into_values().collect();
         ${release}
@@ -525,7 +543,11 @@ impl binding_core::NativeObject for ThrownKey {}
 impl Drop for ThrownKey {
     fn drop(&mut self) {
         if thrown_thread() == self.thread {
-            let removed = THROWN.try_with(|map| map.try_borrow_mut().ok().map(|mut map| map.remove(&self.key)));
+            let removed = THROWN.try_with(|map| match map.try_borrow_mut() {
+                Ok(mut map) => Some(map.remove(&self.key)),
+                // A table that is borrowed now cannot take the removal, so the key goes to DROPPED below.
+                Err(_borrowed) => None,
+            });
             if let Ok(Some(taken)) = removed {
                 drop(taken);
                 return;
@@ -554,7 +576,11 @@ fn release_dropped() {
     if keys.is_empty() {
         return;
     }
-    let taken = THROWN.try_with(|map| map.try_borrow_mut().ok().map(|mut map| keys.iter().filter_map(|key| map.remove(key)).collect::<Vec<Thrown>>()));
+    let taken = THROWN.try_with(|map| match map.try_borrow_mut() {
+        Ok(mut map) => keys.iter().filter_map(|key| map.remove(key)).collect::<Vec<Thrown>>(),
+        // A table that is borrowed now keeps those objects until the cleanup of the thread releases it.
+        Err(_borrowed) => Vec::new(),
+    });
     drop(taken);
 }
 

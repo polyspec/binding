@@ -699,14 +699,24 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 
 /// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again; an
@@ -1067,9 +1077,12 @@ fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
         // The function is made before the cleanup hook is added, so the hook, which napi runs in the reverse order of
         // the hooks, aborts it before napi finalizes it.
         let waker = owner_waker(env)?;
-        match OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
-            Some(found) => found.waker = waker,
-            None => return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned")),
+        match OWNERS.lock() {
+            Ok(mut owners) => match owners.get_mut(owner) {
+                Some(found) => found.waker = waker,
+                None => return Err(napi::Error::from_reason("GN-6u: the table of the owners has no owner of this thread")),
+            },
+            Err(_poisoned) => return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned")),
         }
         env.add_env_cleanup_hook((), |()| clean_up_native())?;
         NATIVE_ENV.set(env.raw());

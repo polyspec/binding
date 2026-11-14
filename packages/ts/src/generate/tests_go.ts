@@ -352,7 +352,11 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     const wide = BigInt(token);
     if (wide >= -(2n ** 63n) && wide < 2n ** 63n) return `int64(${token})`;
     if (wide >= 0n && wide < 2n ** 64n) return `uint64(${token})`;
-    throw new Unsupported(`a case value of ${where}: the int ${token} is outside the integers of Go (G-5)`);
+    // G-5: an integer outside int64 and uint64 is a *big.Int, which package binding describes as its decimal text, the
+    // token that Python and JavaScript describe for it and that PHP gives through case-test.
+    const local = making.b.fresh('number');
+    making.made.push(`${local} := new(big.Int)`, `if _, parsed := ${local}.SetString(${goString(token)}, 10); !parsed {`, `	panic(${goString(`G-5: ${token} is no decimal integer`)})`, '}');
+    return local;
   }
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it.
   if (kind === 'list' && record['repeat'] !== undefined) {
@@ -1523,7 +1527,7 @@ ${cases}
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['errors', 'fmt', 'log', 'math', 'math/big', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   std.sort();
   const own = [
@@ -1830,7 +1834,7 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
   }).join('');
   const tests = `${latin1}${map}${keyed}${aliases}${numbers}`;
   const body = `${/\bmust\(/.test(tests) ? MUST : ''}${tests}`;
-  const std = ['fmt', 'math', 'reflect', 'time'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
+  const std = ['fmt', 'math', 'math/big', 'reflect', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)).map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test

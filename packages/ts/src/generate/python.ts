@@ -934,17 +934,26 @@ ${recognizing}`;
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the error classes (GN-6d).
 fn kind_of_recognized(py: Python<'_>, error: &PyErr, classes: &[&str]) -> Option<(String, String)> {
+    // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
+    // thrown.
+    let Ok(found) = read_kind_of_recognized(py, error, classes) else {
+        return None;
+    };
+    found
+}
+/// U-3: what kind_of_recognized gives, or the Python error that reading the exception met.
+fn read_kind_of_recognized(py: Python<'_>, error: &PyErr, classes: &[&str]) -> PyResult<Option<(String, String)>> {
     let value = error.value(py);
-    let module = errors(py).ok()?;
+    let module = errors(py)?;
     for name in classes {
-        let class = module.getattr(*name).ok()?;
-        if value.is_instance(&class).ok()? {
-            let kind = value.getattr("kind").ok()?.extract::<String>().ok()?;
-            let message = value.str().ok()?.to_string();
-            return Some((kind, message));
+        let class = module.getattr(*name)?;
+        if value.is_instance(&class)? {
+            let kind = value.getattr("kind")?.extract::<String>()?;
+            let message = value.str()?.to_string();
+            return Ok(Some((kind, message)));
         }
     }
-    None
+    Ok(None)
 }
 `;
 

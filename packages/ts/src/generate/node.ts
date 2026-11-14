@@ -1255,19 +1255,32 @@ impl Drop for Owned {
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
 fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+    // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
+    // thrown.
+    let Ok(found) = read_recognized_kind(env, exception, classes) else {
+        return None;
+    };
+    found
+}
+/// U-3: what recognized_kind gives, or the error of napi that reading the exception met.
+fn read_recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> napi::Result<Option<(String, String)>> {
     // SAFETY: the value is the exception that a callback threw, a value of env.
     let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
-    let registered = CLASSES.get()?;
+    let Some(registered) = CLASSES.get() else {
+        return Ok(None);
+    };
     for index in classes {
-        let class = registered.get(*index)?.borrow_back(env).ok()?;
-        if value.instanceof(class).ok()? {
-            let object: Object<'_> = value.coerce_to_object().ok()?;
-            let kind: String = object.get_named_property("kind").ok()?;
-            let message: String = object.get_named_property("message").ok()?;
-            return Some((kind, message));
+        let Some(class) = registered.get(*index) else {
+            return Ok(None);
+        };
+        if value.instanceof(class.borrow_back(env)?)? {
+            let object: Object<'_> = value.coerce_to_object()?;
+            let kind: String = object.get_named_property("kind")?;
+            let message: String = object.get_named_property("message")?;
+            return Ok(Some((kind, message)));
         }
     }
-    None
+    Ok(None)
 }
 `;
 
@@ -1310,10 +1323,10 @@ ${!countsThrown(model.contract, model.foreign) ? '' : `/// GN-6ae: the entry poi
 /// of this thread keeps, after the keys that a drop on another thread queued are removed.
 #[cfg(feature = "thrown-count-test")]
 #[napi(js_name = "__thrownCount")]
-pub fn thrown_count() -> u32 {
+pub fn thrown_count() -> napi::Result<u32> {
     release_dropped();
     let count = THROWN.with_borrow(|map| map.len());
-    u32::try_from(count).unwrap_or(u32::MAX)
+    u32::try_from(count).map_err(|_wide| napi::Error::from_reason(format!("GN-6ae: the count {count} is beyond a u32")))
 }
 
 `}${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
@@ -1721,9 +1734,13 @@ ${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
 /// holds.
 #[cfg(feature = "native-count-test")]
 #[napi(js_name = "__nativeCount")]
-pub fn native_count() -> u32 {
-    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
-    u32::try_from(count).unwrap_or(u32::MAX)
+pub fn native_count() -> napi::Result<u32> {
+    // A thread without a table holds no reference.
+    let count = OWNED.with_borrow(|owned| match owned {
+        Some(owned) => owned.values.len(),
+        None => 0,
+    });
+    u32::try_from(count).map_err(|_wide| napi::Error::from_reason(format!("GN-6u: the count {count} is beyond a u32")))
 }
 `}${takesFunction(model) ? `
 /// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function

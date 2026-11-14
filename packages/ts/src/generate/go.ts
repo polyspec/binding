@@ -1485,7 +1485,7 @@ func Recognize${goName(u.unit.name)}(err error) error {
     ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1797,8 +1797,8 @@ func (c *Call) Value(enc *Writer, value any) {
 	c.describe(enc, reflect.ValueOf(value))
 }
 
-// describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 as its
-// decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
+// describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 (a uint64
+// or a *big.Int) as its decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
 // text, 9 a func with the cgo.Handle that a Native deletes (GN-6u), 10 any other value with its type name; a container
 // with its handle and length.
 func (c *Call) describe(enc *Writer, value reflect.Value) {
@@ -1812,6 +1812,18 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 	if c.describeClass(enc, value) {
 		return
 	}`}
+	if value.CanInterface() {
+		if number, isBig := value.Interface().(*big.Int); isBig && number != nil {
+			if number.IsInt64() {
+				enc.bytes = append(enc.bytes, 2)
+				enc.Int(number.Int64())
+			} else {
+				enc.bytes = append(enc.bytes, 3)
+				enc.Text(number.String())
+			}
+			return
+		}
+	}
 	if c.describeOwn(enc, value) {
 		return
 	}

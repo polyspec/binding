@@ -406,7 +406,11 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
     let Some(array) = content.array() else {
         return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
     };
-    array.values().map(|unit| unit.long().and_then(|unit| u16::try_from(unit).ok()))
+    // A unit that is no integer of 0 to 0xffff is None, which the collect gives as kind internal.
+    array.values().map(|unit| match unit.long().map(u16::try_from) {
+        Some(Ok(unit)) => Some(unit),
+        Some(Err(_wide)) | None => None,
+    })
         .collect::<Option<Vec<u16>>>()
         .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))
 }
@@ -720,14 +724,24 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     }
 }
 
-/// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
+/// A count or an index of Rust as the u64 of a handle or a length.
 fn handle_count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    // GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so the else arm is never taken.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+    let Ok(count) = u64::try_from(value) else {
+        return u64::MAX;
+    };
+    count
 }
 
-/// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
+/// A u64 of a handle or an index as a position of Rust.
 fn handle_position(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+    // A handle beyond usize names no position: usize::MAX is beyond the length of every table, so the lookup by it
+    // finds nothing and gives the error of a missing entry.
+    let Ok(position) = usize::try_from(value) else {
+        return usize::MAX;
+    };
+    position
 }
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.
@@ -858,9 +872,11 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
     if (record['kind'] === 'object' && record['id'] !== undefined && Array.isArray(record['value'])) objects.set(String(record['id']), record['value'].length);
     for (const inner of Object.values(record)) scan(inner);
   };
+  let reserves = false;
   const entries = tests.map((t, i) => {
     objects = new Map();
     scan(t.value);
+    if (objects.size > 0) reserves = true;
     const reserved = [...objects.keys()].map((id) => `let object_${id} = host.reserve();\n            `).join('');
     const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
     return `
@@ -882,10 +898,12 @@ export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: s
   const registers = tests.map((_t, i) => `
         #[cfg(feature = "case-test")]
         let module = module.function(wrap_function!(case_test_${i}));`).join('');
-  return { entries: `${CASE_HOST}${entries}`, registers };
+  return { entries: `${caseHost(reserves)}${entries}`, registers };
 }
 
-const CASE_HOST = `
+// GN-4, GN-13: the host of the case-test entry points; reserve and fill are written only when a case has an object
+// with an id, because no other case calls them and the lints deny dead code.
+const caseHost = (reserves: boolean): string => `
     /// GN-13: the entries of the arrays and the objects that a case-test entry point made, under their handles.
     #[cfg(feature = "case-test")]
     #[derive(Default)]
@@ -899,7 +917,7 @@ const CASE_HOST = `
             self.held.push(entries);
             Handle::new(handle_count(self.held.len() - 1))
         }
-
+${!reserves ? '' : `
         /// G-5: the handle of an object with an id, before its properties are made.
         fn reserve(&mut self) -> Handle {
             self.hold(Vec::new())
@@ -910,7 +928,7 @@ const CASE_HOST = `
                 *held = entries;
             }
         }
-
+`}
         fn entry(&self, handle: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
             match self.held.get(handle_position(handle.raw())).and_then(|entries| entries.get(handle_position(index))) {
                 Some(entry) => Ok(entry.clone()),
