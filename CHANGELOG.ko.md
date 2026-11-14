@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 84d3a3f47633799751f4ad0bf63bde170b3638e05f4c2b7cf62cc24b008ae794 -->
+<!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
 <!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
 <!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
@@ -12,6 +12,11 @@
 
 ## Unreleased
 
+- `make e2e`의 PHP 대상은 `config/toolchain.json`이 major 릴리스로 고정한 LLVM 21의 libclang과 clang으로 ext-php-rs를
+  빌드하고, 둘 중 하나가 없으면 첫 단계 전에 실패한다. LLVM 20, 21, 22를 가진 ubuntu-26.04 runner에서 clang-sys는
+  libclang 22를 읽고 bindgen은 `PATH`의 clang인 clang 21의 header를 받았다. libclang 22에는 clang 21의 x86 header가 부르는
+  builtin `__builtin_ia32_sqrt*`가 없으므로, job `e2e-amd64`의 PHP 대상이 `cargo clippy`에서 실패했다.
+  `node --test packages/ts/tests/e2e-llvm.test.ts`로 확인했고, job `e2e-amd64`는 다음 push에서 돈다.
 - consumer의 손으로 쓴 계약 case는 kind `reference`의 case 값을 읽고 모든 pair case를 실행한다. 그 kind를 몰라서
   case `a_reference_of_the_owner_twice`가 Node와 WASM에서 실패했다. Node, WASM, Python, Go는 reference를 id마다
   하나인 owner의 class `Cell`의 인스턴스로 만들고, PHP는 그 id의 자리들이 함께 가진 reference로 만든다. 각 시험은

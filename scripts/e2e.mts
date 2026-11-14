@@ -38,6 +38,7 @@ import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts'
 import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints, deadcodeFindings, goBuildTags } from './e2e-lint.mts';
+import { llvmOf } from './e2e-llvm.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
@@ -122,7 +123,7 @@ const target = join(work, 'target');
 // that changes a build or a runner may be given by hand. Otherwise the run is a diagnosis, and its record says why.
 // Other files of the working tree do not reach the run, which reads the tree of the commit.
 const readFromCheckout = READ_FROM_CHECKOUT.map((input) => input.path);
-const BY_HAND = /^(RUSTFLAGS|RUSTDOCFLAGS|RUSTC|RUSTC_WRAPPER|RUSTUP_TOOLCHAIN|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_.*|CARGO_TARGET_.*|CARGO_PROFILE_.*|CGO_.*|GOFLAGS|PYTHONPATH|PYTHONHOME|NODE_OPTIONS|NODE_PATH|PHPRC|PHP_INI_SCAN_DIR)$/;
+const BY_HAND = /^(RUSTFLAGS|RUSTDOCFLAGS|RUSTC|RUSTC_WRAPPER|RUSTUP_TOOLCHAIN|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_.*|CARGO_TARGET_.*|CARGO_PROFILE_.*|CGO_.*|GOFLAGS|PYTHONPATH|PYTHONHOME|NODE_OPTIONS|NODE_PATH|PHPRC|PHP_INI_SCAN_DIR|LIBCLANG_PATH|CLANG_PATH|LLVM_CONFIG_PATH|BINDGEN_EXTRA_CLANG_ARGS(_.*)?)$/;
 const diagnosis: string[] = [];
 const changed = [
   ...git(checkout, ['diff', '--name-only', commit, '--', ...readFromCheckout]).split('\n'),
@@ -406,6 +407,23 @@ if (phpTool !== '') {
   const want = readFileSync(join(checkout, '.php-version'), 'utf8').trim();
   const minor = spawnSync(phpTool, ['-r', 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'], { encoding: 'utf8' }).stdout.trim();
   if (minor !== want) missing.push(`the target php needs PHP ${want} (.php-version); var/tools/bin/php is PHP ${minor || 'that does not run'}`);
+}
+// GN-14a: the bindgen of ext-php-rs takes the libclang and the clang of the LLVM of config/toolchain.json (e2e-llvm.mts),
+// so the headers that it includes are those of the libclang that parses them.
+if (targets.includes('php')) {
+  const major = (JSON.parse(readFileSync(join(checkout, 'config/toolchain.json'), 'utf8')) as { llvm: { version: string } }).llvm.version;
+  const llvm = llvmOf(process.platform, major);
+  const libclang = llvm !== undefined && existsSync(llvm.libclang) && readdirSync(llvm.libclang).some((name) => /^libclang(-[0-9.]+)?\.(so|dylib)/.test(name)) ? llvm.libclang : undefined;
+  need('php', `the libclang of LLVM ${major}`, 'config/toolchain.json', libclang);
+  const clang = need('php', `the clang of LLVM ${major}`, 'config/toolchain.json', llvm === undefined ? undefined : file(llvm.clang));
+  if (clang !== '') {
+    const release = spawnSync(clang, ['-dumpversion'], { encoding: 'utf8' }).stdout.trim();
+    if (release.split('.')[0] !== major) missing.push(`the target php needs clang ${major} (config/toolchain.json); ${clang} is clang ${release || 'that does not run'}`);
+  }
+  if (libclang !== undefined && clang !== '') {
+    process.env['LIBCLANG_PATH'] = libclang;
+    process.env['CLANG_PATH'] = clang;
+  }
 }
 if (missing.length > 0) {
   process.stderr.write(`the tools of the targets ${targets.join(', ')} are not all installed; run make install (AGENTS.md):\n${missing.map((m) => `  ${m}\n`).join('')}`);

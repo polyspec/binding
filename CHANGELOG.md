@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The PHP target of `make e2e` builds ext-php-rs with the libclang and the clang of LLVM 21, which
+  `config/toolchain.json` pins by its major release, and fails before its first step when either is missing. On the
+  ubuntu-26.04 runners, which hold LLVM 20, 21 and 22, clang-sys loaded libclang 22 while bindgen took the headers of
+  clang 21, the clang of `PATH`; libclang 22 does not have the builtins `__builtin_ia32_sqrt*` that the x86 headers of
+  clang 21 call, so the PHP target of the job `e2e-amd64` failed in `cargo clippy`. Verified by
+  `node --test packages/ts/tests/e2e-llvm.test.ts`; the job `e2e-amd64` runs on the next push.
 - The hand-written contract cases of the consumer read a case value of the kind `reference` and run every pair case,
   where they did not know the kind and the case `a_reference_of_the_owner_twice` failed in Node and WASM. Node, WASM,
   Python and Go make a reference as an instance of the class `Cell` of the owner, one per id, and PHP as a reference

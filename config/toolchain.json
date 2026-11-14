@@ -1,6 +1,9 @@
 {
   "schema": 1,
-  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer, and the wasm-bindgen CLI, maturin and deadcode of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs. goMusl is the Alpine image and the exact packages of its C compiler with which make go-musl-check links and runs the consumer of the released form of a Go module on musl (GN-14f, GN-15g); docs/operations/dependencies.md states why they are pinned and when the pin ends.",
+  "comment": "The toolchains of binding that no other file declares. npm is declared in devEngines.packageManager of package.json, Rust with its targets in rust-toolchain.toml and PHP in .php-version. mise is the release that make install-tools TOOLS=npm installs with the sha256 of each platform of the deployment targets (plan T-2); mise.toml declares the tools it installs (Node.js, npm, Go, Python, Composer, and the wasm-bindgen CLI, maturin and deadcode of the end-to-end check) and mise.lock locks them. phpunit is the Composer project of config/phpunit, which make install-tools installs. llvm is the major release of the LLVM of the machine whose libclang and clang the bindgen of ext-php-rs uses in the PHP target of make e2e (GN-14a, scripts/e2e-llvm.mts). goMusl is the Alpine image and the exact packages of its C compiler with which make go-musl-check links and runs the consumer of the released form of a Go module on musl (GN-14f, GN-15g); docs/operations/dependencies.md states why they are pinned and when the pin ends.",
+  "llvm": {
+    "version": "21"
+  },
   "phpunit": {
     "version": "13.4.6"
   },
