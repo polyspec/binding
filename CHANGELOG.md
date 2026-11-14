@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.1
+
 - A core takes a callback as `&dyn` of its trait when no member of the unit takes `&mut self` (U-3, B2.252).
   `variants.tail_of` and `consumer.read` took `&mut dyn` of traits whose members take `&self`, and the `&` that the
   binding passes failed with E0308 in their five binding crates. The step of the consumer on musl runs only after a

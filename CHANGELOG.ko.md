@@ -16,6 +16,8 @@
 
 ## Unreleased
 
+## 0.0.1
+
 - 코어는 unit의 어떤 member도 `&mut self`를 받지 않으면 callback을 그 trait의 `&dyn`으로 받는다(U-3, B2.252).
   `variants.tail_of`와 `consumer.read`는 member가 `&self`를 받는 trait의 `&mut dyn`을 받았고, 바인딩이 넘기는 `&`가
   그 다섯 binding crate에서 E0308로 실패했다. musl의 consumer 단계는 그것이 읽는 work 디렉터리를 쓰는 end-to-end
