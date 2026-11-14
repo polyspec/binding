@@ -1041,8 +1041,8 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
   for (const [path, made] of [
     ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
-    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
-    // GN-6as: the instance is a value without children, which the walk of Node puts next.
+    // GN-6as: the instance is a value without children, which the walk of Python, Node and WASM puts next.
+    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
   ] as const) {
@@ -1088,7 +1088,7 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\), type_name, json_serializable: false \}\)/);
   // A value outside the closed set is valid for the call alone.
   assert.match(python, /HostValue::Other \{ type_name, handle: self\.mark\(\) \}/);
-  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\),/);
+  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(OutStep::Put\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\)\),/);
   // WASM holds the key of the table of its one thread; the drop removes it.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
@@ -1718,7 +1718,9 @@ test('a value alias of another repository whose rows name a class of its owner m
   // Out: the constructor of the owner's class takes the dict of the entries, which is filled after the instance is
   // made, and a reference is made on None and takes its value by its writable property.
   assert.match(python, /let map = PyDict::new\(py\);\n +let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\.call1\(\(map\.clone\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);/);
-  assert.match(python, /let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Cell"\)\?\.call1\(\(py\.None\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +let content = make\(py, \*value, source, made\)\?;\n +instance\.setattr\("value", content\)\?;/);
+  assert.match(python, /let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Cell"\)\?\.call1\(\(py\.None\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), fill: OutFill::Property\(instance\.clone\(\), "value"\), made: instance \}\)\)/);
+  // GN-6as: the made value of the reference goes into the writable property of the level that waits for it.
+  assert.match(python, /OutFill::Property\(instance, name\) => \{\n +instance\.setattr\(\*name, value\)\?;/);
   // In: an instance of the owner's class is HostValue::Value with the kind of its row, under one handle within the
   // walk, and read gives the property that the row names.
   assert.match(python, /if value\.is_instance\(&foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\)\? \{\n {12}let address = value\.as_ptr\(\)\.addr\(\);[\s\S]*?Held::Foreign\(value\.clone\(\), Some\(\("entries", false, ReadAs::Content\)\)\)[\s\S]*?return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Map, handle \}\)\);/);
@@ -2048,12 +2050,13 @@ test('the make function of a value alias walks the value with a work stack and c
     kept: own('kept'),
   };
   // The targets whose make function is the walk; the other targets are not generated in this form yet (GN-6as).
-  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
+  const wasm = 'packages/ts/wasm/generated/lib.rs';
+  const libs = ['packages/ts/generated/lib.rs', wasm, 'packages/python/generated/lib.rs'];
   for (const [sample, inputs] of Object.entries(samples)) {
     const out = generate(inputs);
     const found = libs.filter((path) => out.has(path));
     // The contracts of sample and consumer are not generated for WASM (BD-27).
-    assert.deepEqual(found, sample === 'sample' || sample === 'consumer' ? libs.slice(0, 1) : libs, sample);
+    assert.deepEqual(found, sample === 'sample' || sample === 'consumer' ? libs.filter((path) => path !== wasm) : libs, sample);
     for (const path of found) {
       const fns = makeFns(text(out, path));
       assert.ok(fns.length > 0, `${sample} ${path}: a make function`);

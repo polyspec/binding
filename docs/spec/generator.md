@@ -799,8 +799,8 @@ the design ids are those of the binding design.
   (B-1), so the walk of an incoming value is the loop of the `in` function of the core, and the binding adds no level
   of its own to it. Why: a value within the depth limit that a contract states has the same result on the five
   targets; the binding cannot enlarge the stack of a host, such as the main thread of Node or the stack of a WASM
-  module; and a larger stack only moves the depth at which the process ends. Generated for Node and WASM. Not
-  generated yet: the make functions of Python, PHP and Go, which still call themselves once for each level.
+  module; and a larger stack only moves the depth at which the process ends. Generated for Node, WASM and Python.
+  Not generated yet: the make functions of PHP and Go, which still call themselves once for each level.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a

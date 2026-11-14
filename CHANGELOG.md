@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The make function of a value alias in Python called itself once for each level of the `OutValue` of the core, so
+  the native stack that a conversion used grew with the depth of the value, and a value deeper than the stack of the
+  thread would end the process. It now walks the value in a loop with a work stack on the heap, as Node and WASM do
+  (GN-6as). Verified by `make test-ts`, whose test of the make functions failed for the Python crate before the
+  change, and by `make e2e` of `tests/e2e/relay`, `tests/e2e/sample`, `tests/e2e/classes` and `tests/e2e/consumer`.
 - A Go program that links the static libraries of two repositories failed with duplicate symbols when a repository
   built them with `lto = true` in `[profile.release]`: the released form of http-negotiation, which links the
   library of http-media-type, failed with `rust_eh_personality` and `std::panicking::EMPTY_PANIC` twice. The Go static
