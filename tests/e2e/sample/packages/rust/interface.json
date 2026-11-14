@@ -809,6 +809,39 @@
           "optional_reason": "U-3"
         },
         {
+          "id": "sample.ask",
+          "name": [
+            "ask"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "feed"
+              ],
+              "type": {
+                "unit": "feed"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::ask",
+          "optional_reason": "U-3"
+        },
+        {
           "id": "sample.seek",
           "name": [
             "seek"
@@ -2792,6 +2825,11 @@
       "member": "sample.maybe",
       "file": "contracts/cases.json",
       "group": "maybe"
+    },
+    {
+      "member": "sample.ask",
+      "file": "contracts/cases.json",
+      "group": "ask"
     },
     {
       "member": "sample.seek",

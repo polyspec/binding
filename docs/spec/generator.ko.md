@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bbb8e3de512eb57be3acb6c0e2141143ed53240a9b207291a5845c22f4a15065 -->
+<!-- source-sha256: 300dfa8e8bcb698662954f4188a4dcf9bd9045ce02c553130b70c33f9e1ed378 -->
 # 생성기
 
 [English](generator.md)
@@ -453,7 +453,13 @@
   method는 그 struct 자신의 것(`impl CbFeed { fn get(…) }`)이고, 보관되는 wrapper가 호출마다 빌리는 struct에서 그것을 부른다.
   보관되는 wrapper가 kept func를 부르는 Go는 struct도 `in_<unit>`도 두지 않는다. 이유: 코어가 보관하는 trait는 보통
   `Send + Sync`인데 언어 환경의 값을 갖는 호출의 struct는 그렇지 않고, 어떤 member도 닿지 않는 코드는 죽은 코드다. Python은
-  `keeps`와 상관없이 객체를 `Py<PyAny>`로 가지므로 trait 구현을 유지한다.
+  `keeps`와 상관없이 객체를 `Py<PyAny>`로 가지므로 trait 구현을 유지한다. `keeps`가 있는 parameter가 갖고 `keeps`가 없는
+  parameter가 빌려주는 unit(end-to-end sample의 `sample.ask`)도 Node, PHP, WASM에서 그 struct에 trait 구현이 없다. 이 대상들은
+  그 unit의 값을 `keeps`가 없는 자리에서도 모두 보관되는 wrapper(`kept_<unit>`)로 바꾸고, 그 자리의 값은 보관되는
+  wrapper 자체(`KeptCbFeed`)이거나 호출의 수명을 가진 그 box다. Go는 `keeps`가 없는 자리에서 호출의 struct와 그 trait
+  구현을 유지한다. 그 struct는 두 수와 스레드 id를 가지며, 이것들은 `Send`이고 `Sync`이기 때문이다. 이유: 생성기는 Rust를
+  읽지 않으므로 보관되는 trait가 `Send`와 `Sync`를 요구하는지 알 수 없고, 그것을 요구하는 trait는 어느 자리에서도 호출의
+  struct를 받지 않지만, 보관되는 wrapper는 `Native`만 갖는다.
 - **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.

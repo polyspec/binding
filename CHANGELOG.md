@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A callback unit that one parameter lends and another keeps did not compile in Node, PHP and WASM when its trait
+  requires `Send` and `Sync`: the struct of a call, which holds a napi `Object`, a PHP `Zval` or a `JsValue`,
+  implemented the trait for the parameter that lends. These targets now convert every value of a kept unit through
+  its kept wrapper, which holds only a `Native`; Go and Python keep the struct of a call, which is `Send` and `Sync`
+  there (GN-6d, GN-6aa). The sample lends its feed in `sample.ask`, whose cases the end-to-end check runs. Verified by
+  `node --test packages/ts/tests/generate.test.ts`.
+
 - Generated tests and crates of the end-to-end repositories that failed after the lanes met. A member that keeps
   its callback for a later member, such as `Index.single` of the sample, returns before the callback runs, so the
   generated tests of the callback's exception and of a result of another type are now generated only for a member

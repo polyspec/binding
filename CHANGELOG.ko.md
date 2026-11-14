@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 442fd0207d08ea0f4ba6ce4f509facb6a2e62a730590ac1fa826284cc75c8ed2 -->
+<!-- source-sha256: 9a23ba97864ae56df500ec889b2bdf566553bb365a74a0977ce52855d9d3e17f -->
 <!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
 <!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
 # 변경 기록
@@ -7,6 +7,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 한 parameter가 빌려주고 다른 parameter가 보관하는 callback unit은 그 trait가 `Send`와 `Sync`를 요구하면 Node, PHP,
+  WASM에서 컴파일되지 않았다. napi `Object`, PHP `Zval`, `JsValue`를 갖는 호출의 struct가 빌려주는 parameter를 위해 그
+  trait를 구현했기 때문이다. 이제 이 대상들은 보관되는 unit의 모든 값을 `Native`만 갖는 보관되는 wrapper로 바꾸고, Go와
+  Python은 그곳에서 `Send`이고 `Sync`인 호출의 struct를 유지한다(GN-6d, GN-6aa). sample은 `sample.ask`에서 feed를
+  빌려주고, end-to-end 검사가 그 case를 실행한다. `node --test packages/ts/tests/generate.test.ts`로 검증했다.
 
 - lane이 합쳐진 뒤 실패한 끝에서 끝까지 레포의 생성 시험과 crate. sample의 `Index.single`처럼 callback을 나중
   member를 위해 보관하는 member는 callback이 실행되기 전에 돌아오므로, callback의 예외와 다른 타입 결과의 생성

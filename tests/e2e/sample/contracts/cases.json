@@ -1143,6 +1143,25 @@
       "result": null
     }
   ],
+  "ask": [
+    {
+      "id": "a_lent_feed_gives_its_value",
+      "feed": {
+        "callback": {
+          "feed.get": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "b"
+            }
+          ]
+        }
+      },
+      "key": "a",
+      "result": "b"
+    }
+  ],
   "seek": [
     {
       "id": "the_lookup_of_the_search_gives_the_value",

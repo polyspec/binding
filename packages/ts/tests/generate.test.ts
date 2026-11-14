@@ -8910,8 +8910,20 @@ test('no Rust name that the generator joins from a contract name holds a raw ide
   assert.match(text(sample, 'packages/ts/generated/lib.rs'), /\npub fn check_box<'env>\(env: &'env Env, entries: Unknown<'env>\) -> napi::Result<\(\)> \{/);
 });
 
+// The sample without sample.ask, the one parameter that lends a feed (B2.242), so that feed enters only parameters with
+// keeps.
+const keptOnlySample = (): Map<string, string | Buffer> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = read('sample/packages/rust/interface.json');
+  const cases = read('sample/contracts/cases.json');
+  for (const unit of contract.units) if (unit.members !== undefined) unit.members = unit.members.filter((m: any) => m.id !== 'sample.ask');
+  contract.cases = contract.cases.filter((row: any) => row.member !== 'sample.ask');
+  delete cases.ask;
+  return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+};
+
 test('a callback unit whose values enter only parameters with keeps has no trait implementation on the struct of a call in Node, PHP and WASM, and no struct in Go (GN-6d, GN-6aa, B2.227)', () => {
-  const sample = e2eGenerated().get('sample') ?? new Map();
+  const sample = keptOnlySample();
   const borrowing: [string, RegExp, RegExp][] = [
     ['packages/ts/generated/lib.rs', /\nimpl<'env> CbFeed<'env> \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
     ['packages/php-ext/generated/lib.rs', /\nimpl CbFeed \{\n    fn get\(&self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>> \{/, /let borrowed = CbFeed \{[^\n]*\};\n        CbFeed::get\(&borrowed, key\)\n/],
@@ -9052,4 +9064,31 @@ test('Python moves a callback parameter with keeps into the core as its box (GN-
   const python = text(e2eGenerated().get('sample') ?? new Map(), 'packages/python/generated/lib.rs');
   assert.match(python, /let source: Box<dyn polyspec_sample::Feed[^\n]*> = in_feed\([^\n]*\)[^\n]*\.map\(/);
   assert.doesNotMatch(python, /let source: CbFeed = /);
+});
+
+test('a callback unit that one parameter lends and another keeps is called through its kept wrapper at every place in Node, PHP and WASM, so a trait with Send and Sync takes it (GN-6d, GN-6aa, B2.242)', () => {
+  // Feed of the sample requires Send and Sync; sample.ask lends a feed for its call, and the index keeps its feeds.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const libs: [string, RegExp][] = [
+    ['packages/ts/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(env, feed, "feed"\)\?;/],
+    ['packages/php-ext/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(feed, "feed"\)\?;/],
+    ['packages/ts/wasm/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(&feed, "feed"\)\?;/],
+  ];
+  for (const [path, read] of libs) {
+    const lib = text(sample, path);
+    assert.match(lib, read, path);
+    // The struct of a call holds a value of the environment of the language, which is neither Send nor Sync.
+    assert.doesNotMatch(lib, /polyspec_sample::Feed for CbFeed\b/, path);
+    assert.match(lib, /polyspec_sample::Feed for KeptCbFeed \{/, path);
+    assert.match(lib, /polyspec_sample::ask\(&mut \{ feed \}/, path);
+    // lookup is never kept, so its struct of a call still implements its trait.
+    assert.match(lib, /polyspec_sample::Lookup for CbLookup\b/, path);
+  }
+  // Go and Python: the struct of a call is Send and Sync (two numbers and a thread, a Py<PyAny>), so it implements the trait.
+  const go = text(sample, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /let feed: CbFeed = in_feed\(&mut input, "feed"\)\?;/);
+  assert.match(go, /impl polyspec_sample::Feed for CbFeed \{/);
+  assert.match(text(sample, 'packages/python/generated/lib.rs'), /impl polyspec_sample::Feed for CbFeed \{/);
+  // The cases of sample.ask call the lent feed in each target.
+  assert.match(text(sample, 'packages/ts/generated/tests/generated.test.mjs'), /a_lent_feed_gives_its_value/);
 });

@@ -564,7 +564,14 @@ the design ids are those of the binding design.
   borrows for a call, and Go, whose kept wrapper calls a kept func, has neither the struct nor `in_<unit>`. Why: a
   trait that the core keeps is usually `Send + Sync`, which the struct of a call, holding a value of the environment
   of the language, is not, and code that no member reaches is dead code. Python keeps the trait implementation,
-  because it holds the object as a `Py<PyAny>` with or without `keeps`.
+  because it holds the object as a `Py<PyAny>` with or without `keeps`. A unit that a parameter with `keeps` holds
+  and a parameter without it lends (`sample.ask` of the end-to-end sample) has no trait implementation on that
+  struct in Node, PHP and WASM either: these targets convert each of its values through the kept wrapper
+  (`kept_<unit>`), at a place without `keeps` too, where the value is the kept wrapper itself (`KeptCbFeed`) or its
+  box with the lifetime of the call. Go keeps the struct of a call and its trait implementation at a place without
+  `keeps`, because that struct holds two numbers and a thread id, which are `Send` and `Sync`. Why: the generator
+  reads no Rust, so it cannot tell whether a kept trait requires `Send` and `Sync`, and a trait that requires them
+  does not take the struct of a call at any place, while the kept wrapper holds only a `Native`.
 - **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
