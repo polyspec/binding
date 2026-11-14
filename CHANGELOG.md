@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A test of `packages/ts` copied a fixture with the `cp` tool, whose `cp -r <dir>/ <root>/` copies the contents of
+  `<dir>` into `<root>` on macOS and `<dir>` itself into `<root>/<dir>` on Linux, so the test of CK-65 failed on Linux
+  with ENOENT for `packages/rust/interface.json`. Every copy of `generate.test.ts` now uses `cpSync` of `node:fs`, and
+  `copies.test.ts` fails a test file that starts the `cp` tool (row B2.180). Verified by `node --test` of the two files
+  in `packages/ts` on macOS: the new test failed before the change and named the thirteen copies. Not run: Linux.
 - A generated test of a case whose result holds an instance of a value class of another repository failed with
   "a result that holds an instance of the class value of json has no case value to compare it with", so no case of
   `carry` or `passed` of `tests/e2e/relay` could name its result. The test now makes the instance of the case value by

@@ -4,12 +4,18 @@
 <!-- source-sha256: 30ccbfdce895a9236b1c7910ca155e2805a25d340cfdd582c65ee688c06a0178 -->
 <!-- source-sha256: 71fa0af71a2437496afdb051206931831b74510927289680bd9ad1817a844605 -->
 <!-- source-sha256: e007de1b9fcd56628b8d39732f6728811990aaedbc2a43ea632090fbc924ce35 -->
+<!-- source-sha256: efe6277ecf0ce7c597df382db781325e49d9d095c68ee100c8b56fec8a7a64ab -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `packages/ts`의 시험이 fixture를 `cp` 도구로 복사했다. `cp -r <dir>/ <root>/`는 macOS에서는 `<dir>`의 내용을 `<root>`에
+  복사하고 Linux에서는 `<dir>` 자체를 `<root>/<dir>`에 복사하므로, CK-65의 시험이 Linux에서 `packages/rust/interface.json`을
+  찾지 못하고 ENOENT로 실패했다. 이제 `generate.test.ts`의 모든 복사는 `node:fs`의 `cpSync`를 쓰고, `copies.test.ts`는
+  `cp` 도구를 실행하는 시험 파일을 실패시킨다(행 B2.180). macOS에서 `packages/ts`의 두 파일을 `node --test`로 돌려
+  검증했다. 새 시험은 변경 전에 실패했고 복사 열세 곳을 이름으로 댔다. 실행하지 않은 것: Linux.
 - 결과가 다른 저장소의 value class instance를 담은 case의 생성된 시험은 "a result that holds an instance of the class
   value of json has no case value to compare it with"로 실패했으므로, `tests/e2e/relay`의 `carry`와 `passed`의 어떤 case도
   결과를 적을 수 없었다. 이제 시험은 case 값의 instance를 owner의 out 행으로 만들어 결과와 비교하고, 둘 다 owner의 in 행
