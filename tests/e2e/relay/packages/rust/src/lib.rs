@@ -49,6 +49,6 @@ pub fn count(packet: &Packet) -> u64 {
 pub fn width(value: Option<&Value>) -> u64 {
     match value.map(Value::members) {
         Some(Ok(members)) => members.len(),
-        Some(Err(_other_kind)) | None => 0,
+        Some(Err(_)) | None => 0,
     }
 }
