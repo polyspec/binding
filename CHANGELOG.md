@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.6
+
 - `release-platform-assets` requires the whole set of the assets of a release before it uploads (GN-19a, GN-19g): the
   wheel of each platform, the npm package with the platform package of each platform, and the PHP extension of each
   platform for each PHP minor of `phpExtension.minors` of `config/toolchain.json` of the repository, which the recipe

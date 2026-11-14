@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## 0.0.6
+
 - `release-platform-assets`는 upload 전에 release asset의 집합 전체를 요구한다(GN-19a, GN-19g). 플랫폼마다의 wheel,
   npm 패키지와 플랫폼마다의 플랫폼 패키지, 레포의 `config/toolchain.json`의 `phpExtension.minors`의 PHP minor마다
   플랫폼마다의 PHP 확장이며, recipe가 그 목록을 읽는다. 빠진 asset마다 label을 대고, 목록 밖 PHP minor의 파일, label이
