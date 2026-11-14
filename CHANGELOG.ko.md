@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8540798e98ab940bd6f90ae8ec48763efbe02458a7b019dac60b40a6dbb5c81f -->
+<!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
 <!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
 <!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
 <!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
@@ -13,6 +13,12 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 종료했고 부모를 기다리는 프로세스의 시험은 실패를 보고하고 끝난다(HR-84, HR-87). 그 단언은 `cat`의 입력을 끝내기
+  전에 돌았으므로 단언 하나가 실패하면 `cat`, 그 pipe, 시험 파일이 계속 돌았고, Linux에서 `unit-ts`는 18분 동안 출력이
+  없었다. 이제 프로세스는 shell이 `cat`이 된 뒤에만 종료한다. 그 전에 끝난 job의 상태를 읽는 shell은 그렇지 않으면
+  그 상태를 가져갈 수 있다. 시험은 `finally`에서 `cat`과 프로세스를 끝내고 그 pipe를 기다린다. 검증: 장면의 검사가
+  실패하는 시험이 변경 전에 실패한 `node --test packages/ts/tests/e2e-work.test.ts`.
 
 - 끝에서 끝까지 확인은 `tsc --strict`를 npm이 각 패키지를 설치한 자리의 선언에, 설치한 패키지들의 디렉터리에서
   `--module nodenext`로 돌린다(GN-14, GN-6s). 확인은 레포 사본의 선언을 읽었고 그 옆의 `node_modules`에는 패키지가

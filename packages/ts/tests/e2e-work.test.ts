@@ -4,10 +4,11 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
+import { on, once } from 'node:events';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import type { Readable } from 'node:stream';
+import { createInterface } from 'node:readline';
+import type { Readable, Writable } from 'node:stream';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { runIn, workOf } from '../../../scripts/e2e-work.mts';
@@ -48,25 +49,66 @@ const ended = (pid: number): { ended: boolean; state: string } => {
   return { ended: state === '' || state.startsWith('Z') || state.includes('E'), state };
 };
 
-test('a process that has exited and waits for its parent to read its status has ended, which kill(pid, 0) does not tell (HR-87)', async () => {
-  // sh starts a process that exits at once and then becomes cat, which never reads the status of that process. The
-  // process holds the pipe of fd 3 and sh closes it, so the pipe ends when the process has exited.
-  const parent = spawn('sh', ['-c', 'sh -c "exit 0" & echo $!; exec 3>&-; exec cat'], { stdio: ['pipe', 'pipe', 'inherit', 'pipe'] });
+// The scene of a process that has exited and whose parent never reads its status: sh starts a process that waits for a
+// line on fd 4, prints its pid and then becomes cat, which never reads the status of a child. The line goes to fd 4 only
+// after cat has given back a line of its input, so the process exits after the shell has become cat: a shell that reads
+// the status of a finished job before it becomes cat (dash may) cannot read it. The process holds the pipe of fd 3,
+// which the shell closes, so the end of that pipe comes when the process has exited. `check` gets the pid of the
+// process and of cat. B2.251: the scene ends cat and the process in every case, also when the check or a step fails,
+// and awaits the close of every pipe, so a failure is reported and the file of the test ends (HR-84, HR-87).
+async function exitedChild(check: (pid: number, parent: number) => void): Promise<void> {
+  const parent = spawn('sh', ['-c', 'sh -c "read go <&4; exit 0" & echo $!; exec 3>&- 4>&-; exec cat'], { stdio: ['pipe', 'pipe', 'inherit', 'pipe', 'pipe'] });
   const closed = once(parent, 'close');
   const held = parent.stdio[3] as Readable;
+  const go = parent.stdio[4] as Writable;
+  const { stdin, stdout } = parent;
+  assert.ok(stdin !== null && stdout !== null && parent.pid !== undefined);
   const exited = once(held, 'end');
   held.resume();
-  const { stdin, stdout } = parent;
-  assert.ok(stdin !== null && stdout !== null);
-  const [line] = (await once(stdout.setEncoding('utf8'), 'data')) as [string];
-  await exited;
-  const pid = Number(line.trim());
-  assert.ok(Number.isInteger(pid) && pid > 0, line);
-  assert.doesNotThrow(() => process.kill(pid, 0));
-  const { ended: done, state } = ended(pid);
-  assert.ok(done, `the process that has exited is in state ${state}`);
-  stdin.end();
-  await closed;
+  const lines = on(createInterface({ input: stdout }), 'line', { close: ['close'] });
+  const line = async (what: string): Promise<string> => {
+    const next = await lines.next();
+    if (next.done === true) throw new Error(`the scene ended before ${what}`);
+    return String((next.value as unknown[])[0]);
+  };
+  try {
+    const pid = Number((await line('the pid of the process')).trim());
+    assert.ok(Number.isInteger(pid) && pid > 0, String(pid));
+    stdin.write('cat\n');
+    assert.equal(await line('cat gave back its input'), 'cat');
+    go.end('go\n');
+    await exited;
+    check(pid, parent.pid);
+  } finally {
+    // The end of fd 4 lets a process that waits for its line exit, and SIGTERM ends cat, which keeps the pipes of the
+    // scene open while its input is open.
+    go.end();
+    stdin.end();
+    parent.kill('SIGTERM');
+    await closed;
+    await lines.return?.(undefined);
+  }
+}
+
+test('a process that has exited and waits for its parent to read its status has ended, which kill(pid, 0) does not tell (HR-87)', async () => {
+  await exitedChild((pid) => {
+    assert.doesNotThrow(() => process.kill(pid, 0));
+    const { ended: done, state } = ended(pid);
+    assert.ok(done, `the process that has exited is in state ${state}`);
+  });
+});
+
+// HR-84, HR-87, B2.251: a check that fails inside the scene is reported, and the scene still ends its processes and
+// their pipes, so the file of the test ends.
+test('the scene of an exited process reports a failure of its check and ends its processes (HR-84, HR-87, B2.251)', async () => {
+  let parent = 0;
+  await assert.rejects(exitedChild((pid, cat) => {
+    parent = cat;
+    assert.ok(pid > 0);
+    throw new Error('the check failed');
+  }), /the check failed/);
+  assert.ok(parent > 0);
+  assert.throws(() => process.kill(parent, 0), { code: 'ESRCH' }, 'the parent of the scene outlives it');
 });
 
 test('a run without a work directory, or with an empty one, makes its own outside the checkout (GN-14)', () => {
