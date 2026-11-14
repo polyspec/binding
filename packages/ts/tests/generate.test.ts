@@ -7445,6 +7445,22 @@ test('the count and the position of a handle convert with let-else, whose else a
 // a plausible value; generated code matches the Result or the Option instead.
 const DISALLOWED = /\.(ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\(|\b(?:Option|Result)::(?:ok|unwrap_or|unwrap_or_default|unwrap_or_else|map_or|map_or_else)\b/;
 
+test('PHP judges a list by reading each key as an int or the bytes of a string, never by has_sequential_keys of ext-php-rs, which panics on a key that is no UTF-8 (U-7, GN-6x, T-2)', () => {
+  const outs = [sampleWith(() => undefined), generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' })];
+  let helpers = 0;
+  for (const out of outs) {
+    for (const path of [...out.keys()].filter((p) => p.startsWith('packages/php-ext/') && p.endsWith('.rs'))) {
+      const rust = text(out, path);
+      assert.doesNotMatch(rust, /has_sequential_keys|has_numerical_keys/, path);
+      if (/\bfn sequential_keys\b/.test(rust)) {
+        helpers += 1;
+        assert.match(rust, /fn sequential_keys\(array: &ZendHashTable\) -> bool \{\n {4}let mut entries = array\.iter\(\);\n {4}let mut expected = 0_i64;\n {4}while let Some\(\(key, _item\)\) = entries\.next_zval\(\) \{\n {8}if key\.long\(\) != Some\(expected\) \{\n {12}return false;\n {8}\}\n {8}expected \+= 1;\n {4}\}\n {4}true\n\}/, path);
+      }
+    }
+  }
+  assert.equal(helpers, 2);
+});
+
 test('the PHP reader of UTF-16 units binds no name in one alternative of an or-pattern alone, which Rust refuses as E0408 (GN-6x, B2.81)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   const php = [...out.keys()].filter((p) => p.endsWith('.rs')).map((p) => text(out, p)).find((t) => /\bfn php_units\b/.test(t));
