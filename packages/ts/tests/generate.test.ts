@@ -7437,6 +7437,13 @@ test('the walk of Node and WASM passes the name of a property of a value class w
   }
 });
 
+test('Node and WASM describe a Uint8Array as Bytes, the value that the out row bytes makes, and another typed array as Other (B-1, U-7)', () => {
+  const node = text(sampleWith(() => undefined, ['node']), 'packages/ts/generated/lib.rs');
+  assert.match(node, /if value\.is_typedarray\(\)\? \{\n(?: {12}\/\/ [^\n]*\n)+ {12}if let Ok\(bytes\) = unsafe \{ value\.cast::<napi::bindgen_prelude::Uint8Array>\(\) \} \{\n {16}return Ok\(HostValue::Bytes\(bytes\.to_vec\(\)\)\);\n {12}\}\n {12}return Ok\(HostValue::Other \{ type_name: js_constructor_name\(object\)\?, handle: self\.mark\(\) \}\);/);
+  const wasm = text(sampleWith(() => undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /if js_sys::ArrayBuffer::is_view\(value\) && !instance_of\(value, &global, "DataView"\)\? \{\n(?: {12}\/\/ [^\n]*\n)+ {12}if let Some\(bytes\) = value\.dyn_ref::<js_sys::Uint8Array>\(\) \{\n {16}return Ok\(HostValue::Bytes\(bytes\.to_vec\(\)\)\);\n {12}\}\n {12}return Ok\(HostValue::Other \{ type_name: constructor_name\(value\)\?, handle: self\.mark\(\) \}\);/);
+});
+
 test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {
   const raises = { kind: 'unsupported', status: null, category: 'value' };
   const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
