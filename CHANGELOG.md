@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- CI ran the end-to-end check on linux/arm64 alone and never ran the consumer of the released form of a Go module on
+  musl, so the libraries of `linux_amd64`, `linux_amd64_musl` and `linux_arm64_musl` that a release carries were
+  linked and run by no job. Each entry of the job `e2e` of `.github/workflows/ci.yml` now runs `make go-musl-check` on
+  its work directory after `make e2e`, and the job `e2e-amd64` runs `make e2e` of `tests/e2e/sample` and
+  `make go-musl-check` on `ubuntu-26.04`, the one job that does not run on `ubuntu-26.04-arm`; `ci-passed` needs it
+  (GN-14g, B2.190). A development branch such as `v1/rust-core` is checked by a manual run of its head. Verified by
+  `tests/ci-workflow.test.ts`, whose two changed tests failed before the change.
 - A Go consumer on musl compiled the file of package `binding` of its `<GOOS>_<GOARCH>` and failed to link the static
   library, which is built for the GNU C library, on symbols that musl does not define: a build constraint of Go does
   not tell the C library of a Linux apart. A Go module now has the platforms `linux_amd64_musl` and

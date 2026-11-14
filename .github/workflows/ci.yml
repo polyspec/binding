@@ -7,7 +7,7 @@
 # and uploads its report var/ci/<name>/: the status, the first failure lines and the full log of each target. The last job,
 # ci-passed, passes only when every other job of this workflow passed; a release takes the id of such a run and tags its
 # commit (.github/workflows/release.yml). Every step that runs a command runs one make target, the jobs run on
-# ubuntu-26.04-arm, the actions are pinned by commit and no step has a time limit.
+# ubuntu-26.04-arm (e2e-amd64 on ubuntu-26.04), the actions are pinned by commit and no step has a time limit.
 #
 # Each job runs the bootstrap right after the checkout (uses: ./.github/actions/bootstrap), then installs the tools of its
 # entry with make install-tools: the Rust toolchain of rust-toolchain.toml, which the tests of packages/ts also run for
@@ -16,7 +16,8 @@
 # The job e2e runs the end-to-end check (make e2e) of each repository of tests/e2e, one entry of its matrix per
 # repository with the repositories that its core depends on (DEPS), on every tool of the checkout (make install-tools)
 # and in a work directory outside the checkout. It is the run of the five targets, and of the released form of the Go
-# module (GN-14f), on Linux; an entry whose run fails stays in the matrix and fails ci-passed. Each entry uploads the
+# module (GN-14f), on Linux, followed by its consumer on musl (make go-musl-check, GN-15g); an entry whose run fails
+# stays in the matrix and fails ci-passed. Each entry uploads the
 # record var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job, and a
 # contract of tests/e2e whose core depends on a repository that is not in tests/e2e has no entry until a tracked file of
 # the contract names a release tag of that repository: tests/e2e/not-in-ci.json lists it with its reason (GN-14g).
@@ -111,6 +112,9 @@ jobs:
       - id: e2e
         if: ${{ !cancelled() }}
         run: make e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}" WORK=${{ runner.temp }}/e2e
+      - id: musl
+        if: ${{ !cancelled() }}
+        run: make go-musl-check WORK=${{ runner.temp }}/e2e
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         id: report
         if: ${{ !cancelled() }}
@@ -118,12 +122,39 @@ jobs:
           name: e2e-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: var/report/e2e/
           if-no-files-found: error
+  # GN-14g, GN-15g: a release carries the libraries of linux_amd64 and linux_amd64_musl, which only an amd64 machine
+  # links and runs, so this job runs the end-to-end check of the sample and its consumer on musl on linux/amd64. It is
+  # the one job that does not run on ubuntu-26.04-arm.
+  e2e-amd64:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+      - uses: ./.github/actions/bootstrap
+        id: bootstrap
+        if: ${{ !cancelled() }}
+      - id: tools
+        if: ${{ !cancelled() }}
+        run: make install-tools
+      - id: e2e
+        if: ${{ !cancelled() }}
+        run: make e2e REPO=tests/e2e/sample WORK=${{ runner.temp }}/e2e
+      - id: musl
+        if: ${{ !cancelled() }}
+        run: make go-musl-check WORK=${{ runner.temp }}/e2e
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: report
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-amd64-sample-${{ github.run_id }}-${{ github.run_attempt }}
+          path: var/report/e2e/
+          if-no-files-found: error
   # The job that fails the run when any other job did not pass, so a release, which takes a successful run by its id,
   # holds every job. It runs after every other job, also after a failed, skipped or cancelled one (if: always()), and
   # make ci-passed fails unless every job of needs has the result success.
   ci-passed:
     if: ${{ always() }}
-    needs: [check, e2e]
+    needs: [check, e2e, e2e-amd64]
     runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

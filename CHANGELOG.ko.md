@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 719defd2f3a2d80648525cdda61ceef7cb16914e8e6e6da287e00862f733f780 -->
+<!-- source-sha256: 6bf280bae124bfcfde95ef351791eaf40865908ae3f63b59c3767399d290f664 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- CI는 끝에서 끝까지 확인을 linux/arm64에서만 실행했고 Go 모듈의 release 형태의 소비자를 musl에서
+  실행하지 않았으므로, release가 싣는 `linux_amd64`, `linux_amd64_musl`,
+  `linux_arm64_musl`의 라이브러리를 링크하고 실행하는 job이 없었다. 이제
+  `.github/workflows/ci.yml`의 job `e2e`의 각 항목은 `make e2e` 뒤에 자기 work
+  디렉터리로 `make go-musl-check`를 실행하고, job `e2e-amd64`는 `ubuntu-26.04`에서
+  `tests/e2e/sample`의 `make e2e`와 `make go-musl-check`를 실행한다. 이 job은
+  `ubuntu-26.04-arm`에서 돌지 않는 유일한 job이고 `ci-passed`가 그것을 기다린다(GN-14g,
+  B2.190). `v1/rust-core` 같은 개발 branch는 그 head의 수동 실행으로 확인한다.
+  `tests/ci-workflow.test.ts`로 검증했다: 바뀐 두 시험이 변경 전에 실패했다.
 - musl의 Go 소비자는 자기 `<GOOS>_<GOARCH>`의 패키지 `binding` 파일을 컴파일하고, GNU C
   library용으로 빌드된 정적 라이브러리의 링크에서 musl이 정의하지 않는 심볼로 실패했다. Go의 빌드 제약은
   Linux의 C library를 구분하지 않기 때문이다. 이제 Go 모듈은 플랫폼 `linux_amd64_musl`과

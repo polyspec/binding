@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 51d96d4702d57a358479df21caf089fccc88c7da38f7ec7497452d577c6d085f -->
+<!-- source-sha256: 4d50c75da3e47ae833fe0bf3a56d133b88b350d517e454fad1fa0e5f472b8736 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -73,3 +73,4 @@
 | B2.166 | PHP는 key가 UTF-8이 아닌 byte string인 배열을 만든다(U-7, GN-6x). 확장의 make가 ext-php-rs의 "Invalid array key!"로 실패하며, php-serialization의 시험 `array_invalid_utf8_key`와 `random_value_351` 4개가 그렇다 | `packages/ts/src/generate/alias_php.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; php-serialization checkout의 `make e2e` | [ ] |
 | B2.167 | Node와 WASM의 값 alias walk는 값 class의 property 이름을 명시 deref 없이 넘긴다(GN-6as, GN-6af). `value_define(instance, *name, ...)`이 php-serialization의 Node와 WASM crate의 `cargo clippy -D warnings`를 `explicit_auto_deref`로 실패시켰다 | `packages/ts/src/generate/alias_node.ts`, `alias_wasm.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/kept`; 모든 crate의 `cargo clippy`가 통과하는 php-serialization checkout의 `make e2e` | [o] |
 | B2.170 | Go 정적 라이브러리는 LTO 없이 빌드하고, `binding check`는 그것을 켜는 release profile을 보고한다(GN-15i, CK-91). http-media-type의 라이브러리를 링크하는 http-negotiation의 배포 형태가, 두 레포가 `[profile.release]`에 `lto = true`를 두어 중복 symbol로 실패했다 | `packages/ts/src/cli.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; http-media-type과 http-negotiation checkout의 `binding check`가 CK-91을 보고 | [o] |
+| B2.190 | CI가 Go 모듈의 release 형태를 musl과 linux/amd64에서 링크하고 실행한다(GN-14g, GN-15g). `.github/workflows/ci.yml`은 끝에서 끝까지 확인을 linux/arm64에서만 실행했고 musl에서 소비자를 실행하지 않았으므로, release가 싣는 `linux_amd64`, `linux_amd64_musl`, `linux_arm64_musl`의 라이브러리를 링크하고 실행하는 job이 없었다. job `e2e`의 각 항목은 자기 work 디렉터리로 `make go-musl-check`를 실행하고, job `e2e-amd64`는 `ubuntu-26.04`에서 `tests/e2e/sample`의 `make e2e`와 `make go-musl-check`를 실행한다 | `.github/workflows/ci.yml`, `packages/ts/tests/ci-workflow.test.ts`, `docs/spec/generator.md`(.ko), `AGENTS.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; workflow 실행의 `make ci-passed`, 그 job `e2e`와 `e2e-amd64`가 `make go-musl-check`와 함께 통과 | [~] |
