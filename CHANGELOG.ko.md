@@ -1,10 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d56b192e3ddd51a84869782e8fc493d65103710db3a7dea29306a381dcf22ea5 -->
+<!-- source-sha256: 1516dad216a64d599cf44647b50864b5714e339668cf31a18fd6e0d079e99203 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 생성기는 행이 owner의 class를 이름하는 다른 레포의 값 alias에 대해 WASM을 거부했다. 그래서 php-serialization의
+  `php_float`의 `in` 행 때문에 hyper의 WASM 바인딩이 생성되지 않았다. 이제 WASM은 Node처럼 그런 class를 만들고
+  읽는다(GN-6ar). entry는 owner package의 subpath `./wasm`에서 class를 가져와 GN-6x의 class 뒤에 넘기고, `in` 행은
+  `Symbol.hasInstance`로 인스턴스를 검사해 그 property를 읽으며 한 순회 안에서 인스턴스마다 handle이 하나이고, `out`
+  행은 `Reflect.construct`로 인스턴스를 만들고 reference를 `Reflect.set`으로 채운다. Go는 여전히 그런 행을 이름을 대고
+  거부한다(B2.136-2). 검증: WASM 시험이 변경 전에 "the wasm in row of the class box of sample is not generated yet"로
+  실패한 `generate.test.ts`의 GN-6ar 시험.
 
 - 생성기는 다른 레포의 callback unit을 받는 member에 대해 Go와 WASM을 거부했다. 그래서 session-store의 `store`를 받는
   `opening_functions.open_page.store`와 `opening_functions.answer_keep_request.store` 때문에 hyper의 Go와 WASM 바인딩이

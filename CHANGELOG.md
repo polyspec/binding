@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The generator refused WASM for a value alias of another repository whose rows name a class of its owner, so the
+  WASM binding of hyper was not generated for the `in` row of `php_float` of php-serialization. WASM now makes and
+  reads such a class as Node does (GN-6ar): the entry imports the classes from the subpath `./wasm` of the owner's
+  package and hands them over after those of GN-6x, an `in` row checks an instance by `Symbol.hasInstance` and reads
+  its property, one handle per instance within a walk, and an `out` row makes the instance by `Reflect.construct`
+  and sets a reference by `Reflect.set`. Go still refuses such a row by name (B2.136-2). Verified by the GN-6ar tests
+  of `generate.test.ts`, whose WASM test failed before the change with "the wasm in row of the class box of sample is
+  not generated yet".
+
 - The generator refused Go and WASM for a member that takes a callback unit of another repository, so the Go and
   WASM bindings of hyper were not generated for `opening_functions.open_page.store` and
   `opening_functions.answer_keep_request.store`, which take `store` of session-store. Go and WASM now wrap such a unit
