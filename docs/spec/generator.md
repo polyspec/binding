@@ -1849,6 +1849,19 @@ the design ids are those of the binding design.
   lines of its files name, without the tags of the test features of the run, and fails on a function that every run
   compiling its file reports and on any line that is no finding, because the lint of a consuming repository judges
   the module the same way.
+  The static library calls each export of package `binding` (`//export <prefix>__go_<name>`) through C, which the
+  call graph of deadcode does not hold: its roots are the main and init functions of the programs of the module and
+  of its tests, so it reaches neither an export nor a function that only an export calls. Package `binding`
+  therefore names every export that it writes in the initializer of a blank variable (`var _ = [...]any{…}`), which
+  the init of the package runs: deadcode counts a function whose address a reached function takes as reached in a
+  program that holds `reflect.Value.Call`, as every program that imports `fmt` does. A Go value of a call is a
+  `*KeyedMap[any]` only when a type of the contract names a `keyed_map<T>`, whose Go type the root package exports
+  with its keys, or when the contract has a value alias, whose decoder makes one (GN-6e); otherwise no code outside
+  package `binding` can make one, so `describeOwn` has no case of it, and `describeOwn` is not written when it has no
+  case. `zz_generated_thrown_count.go` is written only with the Go tests of the count (GN-6ae), which run the cases
+  of a member that takes a callback or a function type. Why: an export is reached at run time through the static
+  library, which no Go analysis sees, while a case of a type that no caller can make, or a function that no test
+  calls, is unreachable in every program.
 - **GN-15i** The Go static library is built without link-time optimization: `[profile.release]` of the root manifest
   and of `.cargo/config.toml` of a repository with the target `go` turns on no `lto` (absent, `false` or `"off"`),
   and `binding check` reports any other value (CK-91). Why: LTO puts the standard library and `binding_core` into the
