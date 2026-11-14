@@ -27,7 +27,9 @@
   result through that call, so the alias converts by its `in` function as in the other targets, and then ends the
   call through the export `<prefix>__go_end`. An error of a read of a value class in that call is kept in the table
   of no call under the call 0, because the member returns it after that call ended (GN-6z, GN-15c). Verified by
-  `make test-ts`: the new tests failed before the change.
+  `make test-ts`: the new tests failed before the change; and by `make e2e` of `tests/e2e/functions`, whose kept
+  funcs now run in a call of their own, at the merge 5317da1: php, python, node, go and wasm passed, with
+  `evidence: true`. Not run: a kept func with a value alias result end to end, which no contract of `tests/e2e` has.
 - The Go package `internal/binding` of every contract held the helpers of every type: the keyed-map helpers (`Key`,
   `IntKey`, `BytesKey`, `TextKey`, the methods of `Key` and `KeyedMap`, `Writer.Key`, `Reader.Key`) also for a
   contract without a `keyed_map<T>`, and the methods `Writer.Bool`, `Writer.Tag`, `Writer.Bytes` and `Reader.Float`

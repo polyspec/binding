@@ -24,7 +24,10 @@
   `binding`의 자기 호출 안에서 실행되고, 결과는 그 호출의 handle로 시작한다. static library는 그 호출을 통해 결과를 읽으므로
   alias는 다른 target처럼 `in` 함수로 변환되고, 그다음 export `<prefix>__go_end`로 호출을 끝낸다. 그 호출에서 value class를
   읽다 난 오류는 호출 0 아래 어느 호출의 것도 아닌 table에 보관한다. member가 그 호출이 끝난 뒤에 그 오류를 돌려주기
-  때문이다(GN-6z, GN-15c). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다.
+  때문이다(GN-6z, GN-15c). `make test-ts`로 확인했다. 새 시험들은 변경 전에 실패했다. 보관된 func가 이제 자기
+  호출 안에서 실행되는 `tests/e2e/functions`의 `make e2e`도 merge 5317da1에서 php, python, node, go, wasm 모두 통과했고
+  `evidence: true`다. 실행하지 않은 것: 결과가 값 alias인 보관된 func의 끝에서 끝까지 확인. `tests/e2e`의 어느 계약에도
+  그런 함수가 없다.
 - 모든 계약의 Go 패키지 `internal/binding`이 모든 타입의 도우미를 담았다. `keyed_map<T>`가 없는 계약에도 keyed-map
   도우미(`Key`, `IntKey`, `BytesKey`, `TextKey`, `Key`와 `KeyedMap`의 method, `Writer.Key`, `Reader.Key`)를 담았고,
   생성 코드가 부르지 않을 때에도 method `Writer.Bool`, `Writer.Tag`, `Writer.Bytes`, `Reader.Float`를 담았다. 모듈을
