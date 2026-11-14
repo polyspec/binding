@@ -7254,6 +7254,15 @@ test('a U-7 test of a kind of a value alias whose row names an error unit requir
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /if failure, ok := err\.\(\*liberrors\.RefusedError\); !ok \|\| failure\.Kind\(\) != "unsupported" \{\n\t+t\.Fatalf\("U-7: /);
 });
 
+test('PHP gives the least int of a case as PHP_INT_MIN, because PHP reads -9223372036854775808 as the negation of a float (G-5, T-1)', () => {
+  const raises = { kind: 'unsupported', status: null, category: 'value' };
+  const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'the_least_int', value: { kind: 'int', value: '-9223372036854775808' }, raises }, { id: 'the_largest_int', value: { kind: 'int', value: '9223372036854775807' }, raises }); }, ['php']);
+  const php = text(out, phpTests);
+  assert.match(php, /Internal\\aliasInData\(\\PHP_INT_MIN\);/);
+  assert.match(php, /Internal\\aliasInData\(9223372036854775807\);/);
+  assert.doesNotMatch(php, /-9223372036854775808\)/);
+});
+
 test('Go gives an integer outside int64 and uint64 as a *big.Int, which package binding describes as its decimal text (G-5, GN-15c, U-7)', () => {
   const raises = { kind: 'unsupported', status: null, category: 'value' };
   const out = sampleWith((_c, cases) => { cases.data_in.push({ id: 'a_narrow_integer', value: { kind: 'int', value: '-9223372036854775809' }, raises }); }, ['go']);
