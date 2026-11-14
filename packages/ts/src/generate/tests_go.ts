@@ -124,6 +124,8 @@ function floatValue(value: unknown): string {
     if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
     return form;
   }
+  // G-5: the Go constant -0.0 is 0, so a negative zero is made at run time.
+  if (Object.is(value, -0)) return 'math.Copysign(0, -1)';
   return String(value);
 }
 
@@ -1201,7 +1203,10 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
           }
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
           const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
-          return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want)${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
+          // GN-13e: reflect.DeepEqual finds a NaN unequal to itself, so a result whose case holds a NaN is compared by
+          // sameValue, which is reflect.DeepEqual except that a NaN equals a NaN.
+          const equal = holdsNaN(given) ? `sameValue(value${i}, want)` : `reflect.DeepEqual(value${i}, want)`;
+          return [`if want := (${typeName(v, type)})(${want}); !${equal}${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
         });
       } catch (error) {
         if (!(error instanceof Unsupported)) throw error;
@@ -1528,6 +1533,105 @@ func must[T any](made T, err error) T {
 }
 `;
 
+// GN-13e: whether a case value holds a NaN at any place.
+function holdsNaN(json: unknown): boolean {
+  const stack: unknown[] = [json];
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (Array.isArray(item)) stack.push(...item);
+    else if (typeof item === 'object' && item !== null) {
+      if ((item as { float?: unknown }).float === 'nan') return true;
+      stack.push(...Object.values(item));
+    }
+  }
+  return false;
+}
+
+// GN-13e: reflect.DeepEqual except that a NaN equals a NaN, the comparison of a result whose case holds a NaN. A pair
+// of pointers, maps or slices that the walk has entered is equal again, so a cycle ends, as reflect.DeepEqual does.
+const SAME_VALUE = `
+// sameValue is reflect.DeepEqual, except that a NaN equals a NaN (GN-13e).
+func sameValue(got, want any) bool {
+	return sameReflected(reflect.ValueOf(got), reflect.ValueOf(want), map[[3]uintptr]bool{})
+}
+
+func sameReflected(a, b reflect.Value, entered map[[3]uintptr]bool) bool {
+	if !a.IsValid() || !b.IsValid() {
+		return a.IsValid() == b.IsValid()
+	}
+	if a.Type() != b.Type() {
+		return false
+	}
+	switch a.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return a.Float() == b.Float() || (math.IsNaN(a.Float()) && math.IsNaN(b.Float()))
+	case reflect.Complex64, reflect.Complex128:
+		return a.Complex() == b.Complex()
+	case reflect.Bool:
+		return a.Bool() == b.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return a.Int() == b.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return a.Uint() == b.Uint()
+	case reflect.String:
+		return a.String() == b.String()
+	case reflect.Interface:
+		return sameReflected(a.Elem(), b.Elem(), entered)
+	case reflect.Array:
+		for i := range a.Len() {
+			if !sameReflected(a.Index(i), b.Index(i), entered) {
+				return false
+			}
+		}
+		return true
+	case reflect.Struct:
+		for i := range a.NumField() {
+			if !sameReflected(a.Field(i), b.Field(i), entered) {
+				return false
+			}
+		}
+		return true
+	case reflect.Func:
+		return a.IsNil() && b.IsNil()
+	case reflect.Chan, reflect.UnsafePointer:
+		return a.Pointer() == b.Pointer()
+	case reflect.Pointer, reflect.Map, reflect.Slice:
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() == b.IsNil()
+		}
+		if a.Kind() != reflect.Pointer && a.Len() != b.Len() {
+			return false
+		}
+		pair := [3]uintptr{a.Pointer(), b.Pointer(), uintptr(a.Kind())}
+		if entered[pair] {
+			return true
+		}
+		entered[pair] = true
+		switch a.Kind() {
+		case reflect.Pointer:
+			return sameReflected(a.Elem(), b.Elem(), entered)
+		case reflect.Slice:
+			for i := range a.Len() {
+				if !sameReflected(a.Index(i), b.Index(i), entered) {
+					return false
+				}
+			}
+			return true
+		default:
+			entries := a.MapRange()
+			for entries.Next() {
+				other := b.MapIndex(entries.Key())
+				if !other.IsValid() || !sameReflected(entries.Value(), other, entered) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+`;
+
 const KEPT = `
 // kept is a kept value of a value class without core_type (GN-6af) as the result of a call that cannot fail.
 func kept[T any](value T) (T, error) { return value, nil }
@@ -1649,6 +1753,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bmust\(/.test(all) ? [MUST] : []),
     ...(/\bkept\(/.test(all) ? [KEPT] : []),
     ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
+    ...(/\bsameValue\(/.test(all) ? [SAME_VALUE] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
