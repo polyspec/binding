@@ -236,8 +236,7 @@
     {
       "member": "split",
       "file": "contracts/cases.json",
-      "group": "split",
-      "result": "words"
+      "group": "split"
     }
   ]
 }

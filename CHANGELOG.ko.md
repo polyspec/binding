@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 63c0788afa7e5dc204da40b1decfe30a2a83cb982bacd0ea0293488869f36abd -->
+<!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
 <!-- source-sha256: 81ac0e50b9b114a9dfff7cf56dc806ca1371432de81388c3319fbf52e9f58ba5 -->
 <!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
@@ -8,7 +8,7 @@
 
 ## Unreleased
 
-- `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포는 행의 `result` 없이 결과를 `words`로 이름했다.
+- `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포의 case는 어떤 시험도 읽지 않는 key `words`를 가졌고 이를 지운다.
 - `out` 행의 kind가 `nested:<값 타입>`인 값 alias를 다섯 타깃이 생성한다: arm은 그 값을 가진 레포의 값 alias의 make 함수로 만든다(GN-6bb, B2.308). 모든 타깃이 `no OutValue variant of the kind nested:json_value`나 앞선 행의 거부로 이를 거부했다.
 - PHP는 alias의 map이나 list를 받는 member로 만드는 `out` 행을 만들어진 자식의 배열로 만든다.(GN-6bc, B2.309). orm 계약은 `map_value.constructor of the kind map takes map<orm_value>`로 거부되었다.
 - Go는 값 alias의 `out` 행이 다른 module의 class 인스턴스를 만들 때 그 package가 export하는 `<Class>FromHandle`로 만든다(GN-6be, B2.310). `its handle and dispatch are unexported`로 거부되었다.

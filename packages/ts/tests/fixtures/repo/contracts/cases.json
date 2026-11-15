@@ -20,17 +20,7 @@
       "options": {
         "max_words": null,
         "mode": "latin"
-      },
-      "words": [
-        [
-          "a",
-          0
-        ],
-        [
-          "b",
-          2
-        ]
-      ]
+      }
     }
   ]
 }
