@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 427a530f4a78ff5e9fed35204a6f689f9fbcc58aee5cab96447372606b9ade76 -->
+<!-- source-sha256: e188cd495291e991dfdbd0c5c665ed31fa5da6ac7f3437d74a67b90fe6226ece -->
 <!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
@@ -9,6 +9,7 @@
 
 - `make install-tools`는 자신이 감싼 PHP가 `.php-version`의 minor가 아니면 둘을 이름하며 실패한다(B2.300).
 - callback을 쥐는 record, `value`라는 record 필드, 나가는 tuple 필드, member 없는 class, 필드 기본값이 있는 kept record, owner thread의 callback에 대해 생성된 binding이 컴파일된다. owner thread callback의 PHP와 Node adapter는 Send와 Sync이고, PHP는 그 객체를 owner thread에서만 놓는다(B2.301).
+- PHP stub은 PHP 타입이 `mixed`인 optional을 `php -l`이 거부하던 `?mixed`가 아니라 `mixed`로 쓴다. docblock은 `mixed|null`을 유지한다(B2.302).
   첫 php가 PHP 8.5인 기계는 8.5의 `var/tools/bin/php`를 얻었고, 나중에 `make e2e`만 그것을 거부했다.
 
 - `binding scaffold`는 `cargo metadata`가 실패하면 아무 파일도 쓰지 않고 Cargo의 오류로 실패한다(GN-3e, B2.299).

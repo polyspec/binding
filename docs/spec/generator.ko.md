@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4d5278af69ecc991c9c6c0408b55c34d5624b208d7898861bb5f603e895c7686 -->
+<!-- source-sha256: ca120eebc7a4115cdc79b3d3ae64923050291443e0b29a0411f414265e0a214a -->
 # 생성기
 
 [English](generator.md)
@@ -869,6 +869,8 @@
   `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값. 다만 `optional` 타입의 기본값은 거부하지 않는다. 그런 field의 결과 형태는 그
   optional 타입의 값이므로 코어의 `None`은 언어의 null이다.
+  PHP stub은 PHP 타입이 `mixed`인 optional을 `mixed`로 쓴다. `mixed`는 이미 null을 포함하고 PHP는 `?mixed`와
+  `mixed|null`을 거부하기 때문이다. docblock은 `mixed|null`을 유지한다(B2.302).
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
   판정은 코어가 한다. Python은 `str`을 그 UTF-8로, 또는 PyO3가 바이트로 읽는 값을 받는다. Node는 string을 그 UTF-8로,
   또는 `Uint8Array`를 받는다. PHP는 string을 받고 그 바이트를 그대로 넘긴다. PHP string은 그 바이트이기 때문이다. 짝 없는

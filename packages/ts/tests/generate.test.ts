@@ -1580,6 +1580,16 @@ test('PHP reads a field with a default of a record parameter with keeps as any a
   assert.match(php, /let label: Option<String> = default_in\(label, /);
 });
 
+test('the PHP stub writes an optional of the PHP type mixed as mixed, and its docblock keeps mixed|null (GN-6i, B2.302)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const echo = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.echo');
+  echo.returns = { optional: echo.returns };
+  const stub = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] }), 'packages/php-ext/generated/polyspec_sample.stub.php');
+  assert.doesNotMatch(stub, /\?mixed|mixed\|null \{/);
+  assert.match(stub, /function same\(mixed \$value\): mixed \{\}/);
+  assert.match(stub, /@return mixed\|null/);
+});
+
 test('Go writes no dispatch of a call for a callback that only a parameter with keeps takes (GN-6aw, GN-6aa, B2.301)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

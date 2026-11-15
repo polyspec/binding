@@ -2012,7 +2012,11 @@ function stub(model: Model, layout: PhpLayout): string {
       return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', path: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
-    if ('optional' in type) return `?${phpType(type.optional)}`;
+    // GN-6i: mixed already includes null, so PHP refuses ?mixed and mixed|null; a nullable mixed is mixed.
+    if ('optional' in type) {
+      const inner = phpType(type.optional);
+      return inner === 'mixed' || inner.startsWith('?') ? inner : `?${inner}`;
+    }
     // GN-6z: a function type is a Closure; GN-6ae: the function parameter of a member with machine is any callable.
     if ('function' in type) return machineFunction(type) ? 'mixed' : '\\Closure';
     const unit = unitOf(model, type);
@@ -2070,7 +2074,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
     ${u.unit.final === true ? 'final ' : ''}class ${langName('php', u.unit.name, 'class')} extends ${parent}
     {${u.properties.map((p) => `${typeof p.returns === 'object' && 'list' in p.returns ? `
         /** @return ${docType(p.returns)}|null */` : ''}
-        public function ${langName('php', p.member.name, 'callable')}(): ${phpType(typeof p.returns === 'object' && 'optional' in p.returns ? p.returns.optional : p.returns).replace(/^\?/, '')}|null {}`).join('\n')}
+        public function ${langName('php', p.member.name, 'callable')}(): ${((t: string): string => (t === 'mixed' ? t : `${t.replace(/^\?/, '')}|null`))(phpType(typeof p.returns === 'object' && 'optional' in p.returns ? p.returns.optional : p.returns))} {}`).join('\n')}
     }
 }`);
   }
