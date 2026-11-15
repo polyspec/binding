@@ -9,7 +9,7 @@ import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
-import { caseTestTargets, generate as generateTargets, type Inputs } from '../src/generate/index.ts';
+import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
@@ -8211,8 +8211,35 @@ test('Go compares a result whose case holds a NaN by sameValue, in which a NaN e
   assert.match(body('SameNotANumber'), /want := \(any\)\(\[\]any\{math\.NaN\(\)\}\); !sameValue\(value0, want\) \{/);
   assert.match(body('SameNegativeZero'), /Same\(math\.Copysign\(0, -1\)\)/);
   assert.match(body('SameNegativeZero'), /!reflect\.DeepEqual\(value0, want\)/);
-  assert.match(go, /\nfunc sameValue\(got, want any\) bool \{\n\treturn sameReflected\(reflect\.ValueOf\(got\), reflect\.ValueOf\(want\), map\[\[3\]uintptr\]bool\{\}\)\n\}/);
-  assert.match(go, /case reflect\.Float32, reflect\.Float64:\n\t\treturn a\.Float\(\) == b\.Float\(\) \|\| \(math\.IsNaN\(a\.Float\(\)\) && math\.IsNaN\(b\.Float\(\)\)\)/);
+  const comparison = text(out, 'packages/go/zz_generated_value_comparison_test.go');
+  assert.match(comparison, /\nfunc sameValue\(got, want any\) bool \{\n\treturn sameReflected\(reflect\.ValueOf\(got\), reflect\.ValueOf\(want\), map\[\[3\]uintptr\]bool\{\}\)\n\}/);
+  assert.doesNotMatch(go, /\nfunc sameValue\(/);
+});
+
+test('B2.273: Go result assertions reject changed zero signs and retain NaN equality', () => {
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  file['echo'] = [
+    { id: 'negative_zero', value: { kind: 'float', value: -0 }, result: { kind: 'float', value: -0 } },
+    { id: 'nested_negative_zero', value: { kind: 'null' }, result: { kind: 'list', value: [{ kind: 'float', value: -0 }] } },
+    { id: 'nan_and_negative_zero', value: { kind: 'null' }, result: { kind: 'list', value: [{ kind: 'float', value: { float: 'nan' } }, { kind: 'float', value: -0 }] } },
+  ];
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
+  const main = text(out, 'packages/go/zz_generated_test.go');
+  for (const name of ['NegativeZero', 'NestedNegativeZero', 'NanAndNegativeZero']) {
+    const body = new RegExp(`func TestGN13eSame${name}\\(t \\*testing\\.T\\) \\{([\\s\\S]*?)\\n\\}`).exec(main)?.[1] ?? '';
+    assert.match(body, /!sameValue\(value0, want\)/, name);
+  }
+  const comparisonPath = 'packages/go/zz_generated_value_comparison_test.go';
+  const comparison = text(out, comparisonPath);
+  assert.equal(isGoGenerated(comparisonPath), true);
+  assert.match(comparison, /math\.Float64bits\(a\.Float\(\)\) == math\.Float64bits\(b\.Float\(\)\)/);
+  assert.match(comparison, /math\.IsNaN\(a\.Float\(\)\) && math\.IsNaN\(b\.Float\(\)\)/);
+  assert.match(comparison, /func TestGN13eFloatComparisonDistinguishesZeroSigns\(t \*testing\.T\)/);
+  assert.match(comparison, /math\.Copysign\(0, -1\)/);
+  assert.match(comparison, /\{positive, negative, false\}/);
+  assert.doesNotMatch(comparison, /\"[^\"]*polyspec[^\"]*\"/);
 });
 
 test('a float case value that the out row of its alias gives as an instance of a value class is that instance in Node and WASM, and else a number (GN-13)', () => {

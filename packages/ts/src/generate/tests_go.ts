@@ -1924,6 +1924,33 @@ func sameReflected(a, b reflect.Value, entered map[[3]uintptr]bool) bool {
 }
 `;
 
+// GN-13e: this invariant is a native test of the emitted comparison, independent of the binding's transport.
+const FLOAT_COMPARISON_TEST = `
+func TestGN13eFloatComparisonDistinguishesZeroSigns(t *testing.T) {
+\tnegative := math.Copysign(0, -1)
+\tpositive := math.Copysign(0, 1)
+\tif !math.Signbit(negative) || math.Signbit(positive) {
+\t\tt.Fatal("GN-13e: the comparison inputs do not have opposite zero signs")
+\t}
+\tfor index, pair := range []struct { got, want any; equal bool }{
+\t\t{negative, negative, true},
+\t\t{positive, positive, true},
+\t\t{positive, negative, false},
+\t\t{negative, positive, false},
+\t\t{float32(positive), float32(negative), false},
+\t\t{[]any{map[string]float64{"zero": negative}}, []any{map[string]float64{"zero": negative}}, true},
+\t\t{[]any{map[string]float64{"zero": positive}}, []any{map[string]float64{"zero": negative}}, false},
+\t\t{struct { Value float64 }{positive}, struct { Value float64 }{negative}, false},
+\t\t{math.NaN(), math.NaN(), true},
+\t\t{[]any{math.NaN(), positive}, []any{math.NaN(), negative}, false},
+\t} {
+\t\tif equal := sameValue(pair.got, pair.want); equal != pair.equal {
+\t\t\tt.Errorf("GN-13e: comparison %d gives %v, expected %v for %#v and %#v", index, equal, pair.equal, pair.got, pair.want)
+\t\t}
+\t}
+}
+`;
+
 const KEPT = `
 // kept is a kept value of a value class without core_type (GN-6af) as the result of a call that cannot fail.
 func kept[T any](value T) (T, error) { return value, nil }
@@ -2062,7 +2089,6 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bkept\(/.test(all) ? [KEPT] : []),
     ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
     ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
-    ...(/\bsameValue\(/.test(all) ? [SAME_VALUE] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
@@ -2082,6 +2108,7 @@ package ${pkg}
 ${testImports(model, module, body, scope)}${body}`;
   };
   const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers)]];
+  if (/\bsameValue\(/.test(all)) files.push(['zz_generated_value_comparison_test.go', file(undefined, [], `${SAME_VALUE}${FLOAT_COMPARISON_TEST}`)]);
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
   if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
