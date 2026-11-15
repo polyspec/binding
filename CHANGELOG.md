@@ -7,7 +7,8 @@
 
 - Reject Windows drive prefixes in every component of case-owned relative paths before fixture preparation
   (GN-6y, B2.276). Nested and drive-relative components previously passed the shared validator; non-drive colons
-  and the existing path guards retain their meanings.
+  and the existing path guards retain their meanings. The owning Node validator tests pass on committed input;
+  this is lexical validation, not native Windows filesystem verification.
 
 - `FloatOut::safe_integer` and `OutValue::predicate` recognize finite integral floats in the inclusive safe
   integer range, including negative zero (B2.272). `Predicate::applies_to` replaces the single-kind `kind` API.
