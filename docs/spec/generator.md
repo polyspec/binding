@@ -2903,15 +2903,30 @@ the design ids are those of the binding design.
   repository pins, and the check finds a Makefile that still holds a copy.
 - **GN-19i** The workflow that builds the assets of each platform is a workflow of the repository (`assets.yml`), which
   its workflows of CI and of the release call (`workflow_call`, with the input `ref` of the tag and the input `release`
-  that runs `make release-binding-check` first). Its job `platform` runs, for each platform of GN-19a on its runner
-  (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`), each step as one make target, the build steps after the first also
-  after a failed one (`if: ${{ !cancelled() }}`): the install of its tools, `make release-recipes` (the target of the
-  repository that runs `binding release-recipes`), `make release-go-static`, `make release-wheel`, `make install-llvm`,
-  `make release-php-ext PHP=php` for each PHP minor of GN-19a, after it installs that PHP, and `make release-npm-platform`, and uploads
-  `var/release/assets` as the artifact `assets-<platform>`. Its job `npm` runs `make release-recipes`, `make
-  install-wasm-bindgen` and `make release-npm` and uploads the artifact `assets-npm`. The release workflow downloads
-  the artifacts into `var/release/assets`, then runs `make release-go-module` and `make release-platform-assets` after
-  the draft release exists. binding writes no workflow: GitHub reads a workflow only from the tracked tree, and the
-  steps of a job name the targets of the repository, which this rule fixes. Why: the steps that build an asset are
-  the recipes of GN-19h, so a workflow that names those targets in this order holds nothing that a repository must
-  change when the recipes change.
+  that runs `make release-binding-check` first). Independent jobs build the non-PHP assets once per platform and the
+  PHP extensions once per platform and PHP minor of GN-19a. Every job runs on the runner of its platform
+  (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`), each step as one make target, and the build steps after the first
+  also after a failed one (`if: ${{ !cancelled() }}`).
+  - The job `platform` installs its tools, runs `make release-recipes` (the target of the repository that runs
+    `binding release-recipes`), `make release-go-static`, `make release-wheel` and `make release-npm-platform`, and
+    uploads `var/release/assets` as the artifact `assets-<platform>`.
+  - The job `php` has a matrix of platform and PHP minor. Each entry selects one native PHP runtime, installs its tools,
+    runs `make release-recipes`, `make install-llvm` and `make release-php-ext PHP=<selected executable>`, and uploads
+    `var/release/assets` as the distinct artifact `assets-php-<platform>-<minor>`. A setup action declaration alone
+    does not prove which native runtime a build used.
+  - The job `npm` runs `make release-recipes`, `make install-wasm-bindgen` and `make release-npm` and uploads the
+    artifact `assets-npm`.
+
+  Planned in B2.275, not implemented: the generated `release-php-ext` recipe accepts the optional expected minor
+  `EXPECTED_PHP_MINOR=<major.minor>`, which every PHP matrix entry supplies. It compares the actual runtime minor
+  with that expected minor when supplied, always requires the minor reported by `php-config` to match the actual
+  runtime before Cargo builds, and prints both full versions as build evidence. These checks establish minor selection, not all ABI or
+  patch-build compatibility; loading the native extension remains required. No repository copies this check into
+  a wrapper target.
+
+  The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module`
+  and `make release-platform-assets` after the draft release exists; the latter validates the complete required asset
+  set. binding writes no workflow: GitHub reads a workflow only from the tracked tree, and the steps of a job name
+  the targets of the repository. Why: each PHP job owns one runtime selection and one artifact, so parallel minor
+  builds cannot replace one another's results, while the non-PHP assets are built only once per platform. The recipes
+  of GN-19h keep the build commands in binding when a repository changes its workflow layout.

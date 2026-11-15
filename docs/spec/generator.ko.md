@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2ac4712b3463f28fc2f57e24b6067b2388aadff4ed678e1791a05ef0b6bd3e85 -->
+<!-- source-sha256: cca17b257c46c751a32e0b43cb0448e70aed7385ef61fcdc5431da03fa135b13 -->
 # 생성기
 
 [English](generator.md)
@@ -2353,14 +2353,30 @@
   손으로 지키는 recipe는 결함 하나를 레포마다 한 번씩 갖는다. 추적되지 않는 생성 파일은 레포가 고정한 binding에서
   벗어날 수 없고, 검사는 아직 복사본을 가진 Makefile을 찾는다.
 - **GN-19i** 플랫폼마다 asset을 빌드하는 workflow는 레포의 workflow(`assets.yml`)이고, 레포의 CI와 release workflow가
-  그것을 부른다(`workflow_call`, tag의 입력 `ref`와 먼저 `make release-binding-check`를 실행하는 입력 `release`). 그 job
-  `platform`은 GN-19a의 플랫폼마다 그 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 각 단계를 make target
-  하나로 실행하고, 첫 빌드 단계 뒤의 빌드 단계는 앞 단계가 실패해도 실행한다(`if: ${{ !cancelled() }}`). 단계는 도구
-  설치, `make release-recipes`(`binding release-recipes`를 실행하는 레포의 target), `make release-go-static`, `make
-  release-wheel`, `make install-llvm`, GN-19a의 PHP minor마다 그 PHP를 설치한 뒤 `make release-php-ext PHP=php`, `make release-npm-platform`이고,
-  `var/release/assets`를 artifact `assets-<platform>`으로 upload한다. job `npm`은 `make release-recipes`, `make
-  install-wasm-bindgen`, `make release-npm`을 실행하고 artifact `assets-npm`을 upload한다. release workflow는 artifact를
-  `var/release/assets`에 내려받고, draft release가 생긴 뒤 `make release-go-module`과 `make release-platform-assets`를
-  실행한다. binding은 workflow를 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의 단계는 이 규칙이 정하는
-  레포의 target을 적기 때문이다. 이유: asset을 빌드하는 단계는 GN-19h의 recipe이므로, 그 target을 이 순서로 적는
-  workflow는 recipe가 바뀔 때 레포가 바꿀 것을 갖지 않는다.
+  그것을 부른다(`workflow_call`, tag의 입력 `ref`와 먼저 `make release-binding-check`를 실행하는 입력 `release`).
+  독립 job이 PHP 외 asset을 플랫폼마다 한 번 빌드하고, PHP extension을 GN-19a의 플랫폼과 PHP minor마다 한 번
+  빌드한다. 각 job은 그 플랫폼의 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 각 단계를 make target
+  하나로 실행하고, 첫 빌드 단계 뒤의 빌드 단계는 앞 단계가 실패해도 실행한다(`if: ${{ !cancelled() }}`).
+  - job `platform`은 도구를 설치하고, `make release-recipes`(`binding release-recipes`를 실행하는 레포의 target),
+    `make release-go-static`, `make release-wheel`, `make release-npm-platform`을 실행하며,
+    `var/release/assets`를 artifact `assets-<platform>`으로 upload한다.
+  - job `php`는 플랫폼과 PHP minor의 matrix를 갖는다. 각 entry는 native PHP runtime 하나를 선택하고 도구를
+    설치하며, `make release-recipes`, `make install-llvm`, `make release-php-ext PHP=<selected executable>`을
+    실행하고 `var/release/assets`를 고유한 artifact `assets-php-<platform>-<minor>`로 upload한다. setup action의
+    선언만으로는 빌드가 사용한 native runtime을 검증하지 못한다.
+  - job `npm`은 `make release-recipes`, `make install-wasm-bindgen`, `make release-npm`을 실행하고 artifact
+    `assets-npm`을 upload한다.
+
+  B2.275 계획이며 아직 구현하지 않았다. 생성 `release-php-ext` recipe는 선택적인 기대 minor
+  `EXPECTED_PHP_MINOR=<major.minor>`를 받고, 모든 PHP matrix entry가 이 값을 준다. 기대 minor를 주면 실제
+  runtime minor와 비교하고, Cargo 빌드 전에 `php-config`가 보고한 minor가 실제 runtime과 일치하는지는 항상 검증하며,
+  빌드 증거로 두 전체 version을 출력한다. 이 검사는 minor 선택을 검증하며 모든 ABI나 patch build의 호환성을
+  검증하지 않는다. native extension을 불러오는 검사는 계속 필요하다. 레포는 이 검사를 wrapper target에
+  복사하지 않는다.
+
+  release workflow는 모든 asset artifact를 `var/release/assets`에 내려받고, draft release가 생긴 뒤
+  `make release-go-module`과 `make release-platform-assets`를 실행한다. 뒤의 target은 필요한 asset 전체를
+  검증한다. binding은 workflow를 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의 단계는
+  레포의 target을 적기 때문이다. 이유: 각 PHP job이 runtime 선택 하나와 artifact 하나를 소유하므로 병렬 minor
+  빌드가 서로의 결과를 대체하지 않고, PHP 외 asset은 플랫폼마다 한 번만 빌드한다. 레포가 workflow 구성을
+  바꾸어도 GN-19h의 recipe가 binding 안에 빌드 명령을 유지한다.

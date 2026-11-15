@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bc3a2dc399d9894a8a7d3a762eb35b506b25fe5ac3034cd06ed04c113d84cc01 -->
+<!-- source-sha256: 615c19e617c3f5654423747fd56edc92b97becb20761b11f6a16e0528e43a6f4 -->
+<!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -24,6 +25,10 @@
   가능한 모든 분기가 outgoing kind와 일치할 때만 순서가 있는 incoming case를 허용하므로, 모호하지 않은
   큰 정수 float를 native number로 유지한다. 생성 case도 소수와 비유한 값을 BigInt로 바꾸지 않고 같은
   float 술어를 판별한다.
+- 독립 platform·PHP minor asset job과 고유한 PHP artifact, release asset 전체 수집을 명세했다
+  (GN-19i, B2.274). provider 소유의 기대 minor 및 runtime/header 검사는 B2.275의 미구현 항목으로
+  명시했으며, 생성 recipe의 interface는 아직 바꾸지 않았다. commit한 입력에서 규칙의 두 문서가
+  `make docs-check`를 통과했다.
 
 - Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
   `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와

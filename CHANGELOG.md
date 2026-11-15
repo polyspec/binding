@@ -10,6 +10,10 @@
   The checker accepts ordered incoming cases only when every reachable branch agrees on the outgoing kind,
   preserving large integral floats as native numbers when unambiguous. Generated cases judge the same float
   predicate without converting fractional or nonfinite values to BigInt.
+- Specify independent platform and PHP-minor asset jobs, distinct PHP artifacts and complete release asset
+  collection (GN-19i, B2.274). The provider-owned expected-minor and runtime/header checks are explicitly pending
+  B2.275; the generated recipe interface has not yet changed. The paired rule passes `make docs-check` on its
+  committed input.
 
 - Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
   (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded
