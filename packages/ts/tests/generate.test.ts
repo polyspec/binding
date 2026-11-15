@@ -10062,3 +10062,21 @@ test('a case whose parameter or expected value is named files keeps it, because 
     assert.ok(!/case_?[Ff]ile\(/.test(tests), `${path} writes no file for the key files`);
   }
 });
+
+test('Go: a pick of a part of a tuple inside a value names the field of the part, not an index (GN-13f, GN-16)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const files = { list: { tuple: ['text', { list: { unit: 'badge' } }] } };
+  contract.units.push(
+    { id: 'badge', name: ['badge'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::Badge', final: true, members: [
+      { id: 'badge.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['name'], type: 'text', required: true }], raises: [], wait: 'none', core: 'polyspec_classes::Badge::new' },
+      { id: 'badge.name', name: ['name'], kind: 'property', visibility: 'public', parameters: [], returns: 'text', raises: [], wait: 'none', core: { path: 'polyspec_classes::Badge::name', receiver: '&self' } },
+    ] },
+  );
+  const join = contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.join');
+  join.returns = files;
+  contract.cases = [{ member: 'badge.name', file: 'contracts/picks.json', group: 'name' }];
+  const caseFiles = new Map<string, unknown>([['contracts/picks.json', { name: [{ id: 'a_badge_of_a_tuple', receiver: { from: 'classes.join', args: { tags: [] }, pick: [{ index: 0 }, { tuple: 1 }, { index: 0 }] }, result: 'x' }] }]]);
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  // A tuple of Go is the struct TupleN, whose parts are the fields P0 to PN-1; an index of a struct does not compile.
+  assert.match(go, /(made\d+) := made\d+\[0\]\n\t(made\d+) := \1\.P1\n\tmade\d+ := \2\[0\]\n/);
+});
