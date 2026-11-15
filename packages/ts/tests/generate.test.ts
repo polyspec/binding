@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
+import { generateOnStack } from '../src/generate/stack.ts';
 import { carriers } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
@@ -10093,4 +10094,21 @@ test('Node: a call of then that waits and must fail reads the kind of the settle
   assert.doesNotMatch(tests, /assert\.equal\(await settled\(/);
   const wasm = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/tests/generated.test.mjs');
   assert.doesNotMatch(wasm, /assert\.equal\(await settled\(/);
+});
+
+test('a case value nested far deeper than a JSON reader takes is generated on a stack of its own, as binding generate does (GN-1c, GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  // 1000 lists, each the one item of the one around it; json gives 513 and 772 levels. Each level is several frames of
+  // the generator, more than the stack of the main thread holds.
+  let deep: unknown = { kind: 'null' };
+  for (let i = 0; i < 1000; i += 1) deep = { kind: 'list', value: [deep] };
+  (caseFiles.get('contracts/cases.json') as any).show = [{ id: 'deep', value: deep, result: '"x"' }];
+  for (const target of ['php', 'python', 'node', 'wasm'] as const) {
+    const out = generateOnStack({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: [target] });
+    assert.ok(out.size > 0, target);
+    for (const [path, file] of out) assert.ok(typeof file === 'string' || Buffer.isBuffer(file), path);
+  }
+  // A refusal keeps its sentences across the thread.
+  const refused = JSON.parse(JSON.stringify(contract));
+  assert.throws(() => generateOnStack({ contract: refused, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['nope' as never] }), /the contract has no target nope/);
 });
