@@ -1,11 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b0028903c750a87fa2a132e674eb36249db00878d5bbca349dca6aad5efaf991 -->
+<!-- source-sha256: 81ac0e50b9b114a9dfff7cf56dc806ca1371432de81388c3319fbf52e9f58ba5 -->
 <!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.11
 
 - `make install-tools`는 자신이 감싼 PHP가 `.php-version`의 minor가 아니면 둘을 이름하며 실패한다(B2.300).
 - callback을 쥐는 record, `value`라는 record 필드, 나가는 tuple 필드, member 없는 class, 필드 기본값이 있는 kept record, owner thread의 callback에 대해 생성된 binding이 컴파일된다. owner thread callback의 PHP와 Node adapter는 Send와 Sync이고, PHP는 그 객체를 owner thread에서만 놓는다(B2.301).

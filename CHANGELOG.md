@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.11
+
 - `make install-tools` fails when the PHP that it wraps is not the minor of `.php-version`, and names both (B2.300).
 - The generated bindings compile for a record that holds a callback, a record field named `value`, a tuple field that leaves, a class without members, a kept record with field defaults and callbacks of the owner thread; the PHP and Node adapters of an owner-thread callback are Send and Sync, and PHP releases its object only on the owner thread (B2.301).
 - The PHP stub writes an optional whose PHP type is `mixed` as `mixed`, not `?mixed`, which `php -l` refused; the docblock keeps `mixed|null` (B2.302).
