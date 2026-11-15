@@ -8221,13 +8221,14 @@ test('B2.273: Go result assertions reject changed zero signs and retain NaN equa
   const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
   file['echo'] = [
     { id: 'negative_zero', value: { kind: 'float', value: -0 }, result: { kind: 'float', value: -0 } },
+    { id: 'positive_zero', value: { kind: 'float', value: 0 }, result: { kind: 'float', value: 0 } },
     { id: 'nested_negative_zero', value: { kind: 'null' }, result: { kind: 'list', value: [{ kind: 'float', value: -0 }] } },
     { id: 'nan_and_negative_zero', value: { kind: 'null' }, result: { kind: 'list', value: [{ kind: 'float', value: { float: 'nan' } }, { kind: 'float', value: -0 }] } },
   ];
   const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] });
   const main = text(out, 'packages/go/zz_generated_test.go');
-  for (const name of ['NegativeZero', 'NestedNegativeZero', 'NanAndNegativeZero']) {
+  for (const name of ['NegativeZero', 'PositiveZero', 'NestedNegativeZero', 'NanAndNegativeZero']) {
     const body = new RegExp(`func TestGN13eSame${name}\\(t \\*testing\\.T\\) \\{([\\s\\S]*?)\\n\\}`).exec(main)?.[1] ?? '';
     assert.match(body, /!sameValue\(value0, want\)/, name);
   }

@@ -5,10 +5,11 @@
 
 ## Unreleased
 
-- A native generated Go comparison regression constructs both zero signs independently and expects a
-  sign-changing result to differ, including nested values and values beside NaN (GN-13e, B2.273). The current
-  comparison treats both zero signs as equal. Sample cases exercise negative-zero and NaN results, and the
-  native Go sample runner compares transported float bits independently of the result comparison.
+- Generated Go result assertions distinguish both zero signs, including nested values and values beside NaN
+  (GN-13e, B2.273). The comparison previously treated both signs as equal. A private generated test constructs
+  the two signs independently and rejects a sign-changing result; sample cases exercise negative-zero and NaN
+  results, and the native Go sample runner compares transported float bits independently. The IEEE 754
+  transport and the policy that all NaN values compare equal are unchanged.
 
 - Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
   and verification remain open.

@@ -2276,12 +2276,11 @@ the design ids are those of the binding design.
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
   `Map` becomes its entries in order, Python by type and value with the items of a `dict` in order and NaN equal to
   NaN, PHP with `assertSame` after an object becomes its class and properties, and Go with `reflect.DeepEqual` for
-  each part of a tuple return, or, when the case holds a NaN or negative zero, with `sameValue`, which treats a NaN
+  each part of a tuple return, or, when the case holds a NaN or either zero sign, with `sameValue`, which treats a NaN
   as equal to a NaN and distinguishes negative zero from positive zero at every nested float. A private generated
   comparison test independently constructs both zero signs and requires a sign-changing result to be unequal;
   the existing sample Go tests also compare transported float bits. This checks the result assertion, because
   `reflect.DeepEqual` finds a NaN unequal to itself and the two zero signs equal. NaN payloads remain unexamined.
-  The signed-zero assertion is not implemented yet (B2.273).
   The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the

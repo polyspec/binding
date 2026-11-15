@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 08e7009ffaa86d7257951123933681b0459bdf36608b3497724c9ce8f9e1b4eb -->
+<!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -19,9 +19,10 @@
 
 ## Unreleased
 
-- 생성한 Go 비교의 native 회귀 시험이 영의 두 부호를 독립적으로 만들고 부호가 바뀐 결과가 다름을 요구한다.
-  중첩 값과 NaN 옆의 값도 포함한다(GN-13e, B2.273). 현재 비교는 영의 두 부호를 같게 본다. Sample case는
-  음의 영과 NaN 결과를 실행하고, native Go sample runner는 결과 비교와 별개로 전송한 float의 bit를 비교한다.
+- 생성한 Go 결과 검증이 중첩 값과 NaN 옆의 값을 포함해 영의 두 부호를 구분한다(GN-13e, B2.273).
+  이전 비교는 두 부호를 같게 보았다. 비공개 생성 시험이 두 부호를 독립적으로 만들고 부호가 바뀐 결과를 거부한다.
+  Sample case는 음의 영과 NaN 결과를 실행하고 native Go sample runner는 전송한 float의 bit를 독립적으로
+  비교한다. IEEE 754 전송과 모든 NaN을 같게 비교하는 정책은 바뀌지 않는다.
 
 - 미구현 float `safe_integer` 범위와 순서가 있는 case의 분기 일치 조건을 명세했다(B2.272).
   구현과 검증은 아직 남아 있다.

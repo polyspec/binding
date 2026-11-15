@@ -1426,9 +1426,8 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
           }
           // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
           const same = (model.kept.length > 0 || foreignKeptClasses(model).length > 0) && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
-          // GN-13e: reflect.DeepEqual finds a NaN unequal to itself, so a result whose case holds a NaN is compared by
-          // sameValue, which is reflect.DeepEqual except that a NaN equals a NaN.
-          const compare = (got: string, wanted: string): string => holdsNaN(given) ? `sameValue(${got}, ${wanted})` : `reflect.DeepEqual(${got}, ${wanted})`;
+          // GN-13e: a NaN equals a NaN, while zero signs differ, also inside a nested result.
+          const compare = (got: string, wanted: string): string => needsFloatComparison(given) ? `sameValue(${got}, ${wanted})` : `reflect.DeepEqual(${got}, ${wanted})`;
           // GN-13e, B2.121: an instance of a value class of another repository is compared by what its in row reads.
           if (holdsForeign(model, type)) {
             v.readsForeign = true;
@@ -1825,11 +1824,13 @@ func must[T any](made T, err error) T {
 }
 `;
 
-// GN-13e: whether a case value holds a NaN at any place.
-function holdsNaN(json: unknown): boolean {
+// GN-13e: whether a case value holds a NaN or either zero sign at any place. A zero's result type may be float,
+// including when the expected JSON literal is positive zero; integer zeros retain their ordinary comparison.
+function needsFloatComparison(json: unknown): boolean {
   const stack: unknown[] = [json];
   while (stack.length > 0) {
     const item = stack.pop();
+    if (typeof item === 'number' && item === 0) return true;
     if (Array.isArray(item)) stack.push(...item);
     else if (typeof item === 'object' && item !== null) {
       if ((item as { float?: unknown }).float === 'nan') return true;
@@ -1839,10 +1840,10 @@ function holdsNaN(json: unknown): boolean {
   return false;
 }
 
-// GN-13e: reflect.DeepEqual except that a NaN equals a NaN, the comparison of a result whose case holds a NaN. A pair
+// GN-13e: reflect.DeepEqual except that a NaN equals a NaN and opposite zero signs differ. A pair
 // of pointers, maps or slices that the walk has entered is equal again, so a cycle ends, as reflect.DeepEqual does.
 const SAME_VALUE = `
-// sameValue is reflect.DeepEqual, except that a NaN equals a NaN (GN-13e).
+// sameValue is reflect.DeepEqual, except that a NaN equals a NaN and opposite zero signs differ (GN-13e).
 func sameValue(got, want any) bool {
 	return sameReflected(reflect.ValueOf(got), reflect.ValueOf(want), map[[3]uintptr]bool{})
 }
@@ -1856,7 +1857,7 @@ func sameReflected(a, b reflect.Value, entered map[[3]uintptr]bool) bool {
 	}
 	switch a.Kind() {
 	case reflect.Float32, reflect.Float64:
-		return a.Float() == b.Float() || (math.IsNaN(a.Float()) && math.IsNaN(b.Float()))
+		return math.Float64bits(a.Float()) == math.Float64bits(b.Float()) || (math.IsNaN(a.Float()) && math.IsNaN(b.Float()))
 	case reflect.Complex64, reflect.Complex128:
 		return a.Complex() == b.Complex()
 	case reflect.Bool:
@@ -1932,7 +1933,10 @@ func TestGN13eFloatComparisonDistinguishesZeroSigns(t *testing.T) {
 \tif !math.Signbit(negative) || math.Signbit(positive) {
 \t\tt.Fatal("GN-13e: the comparison inputs do not have opposite zero signs")
 \t}
-\tfor index, pair := range []struct { got, want any; equal bool }{
+\tfor index, pair := range []struct {
+\t\tgot, want any
+\t\tequal     bool
+\t}{
 \t\t{negative, negative, true},
 \t\t{positive, positive, true},
 \t\t{positive, negative, false},
@@ -1940,7 +1944,7 @@ func TestGN13eFloatComparisonDistinguishesZeroSigns(t *testing.T) {
 \t\t{float32(positive), float32(negative), false},
 \t\t{[]any{map[string]float64{"zero": negative}}, []any{map[string]float64{"zero": negative}}, true},
 \t\t{[]any{map[string]float64{"zero": positive}}, []any{map[string]float64{"zero": negative}}, false},
-\t\t{struct { Value float64 }{positive}, struct { Value float64 }{negative}, false},
+\t\t{struct{ Value float64 }{positive}, struct{ Value float64 }{negative}, false},
 \t\t{math.NaN(), math.NaN(), true},
 \t\t{[]any{math.NaN(), positive}, []any{math.NaN(), negative}, false},
 \t} {
@@ -2108,7 +2112,7 @@ package ${pkg}
 ${testImports(model, module, body, scope)}${body}`;
   };
   const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers)]];
-  if (/\bsameValue\(/.test(all)) files.push(['zz_generated_value_comparison_test.go', file(undefined, [], `${SAME_VALUE}${FLOAT_COMPARISON_TEST}`)]);
+  if (/\bsameValue\(/.test(all)) files.push(['zz_generated_value_comparison_test.go', file(undefined, [], `${SAME_VALUE}${FLOAT_COMPARISON_TEST}`.trimEnd())]);
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
   if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
