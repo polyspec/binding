@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a47199ce6aef871b7d94c1eed03fd15330f9b3696c8b72e0df44d705d3f0061c -->
+<!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -21,7 +21,8 @@
 
 - 독립 platform·PHP minor asset job과 고유한 PHP artifact, release asset 전체 수집을 명세했다
   (GN-19i, B2.274). provider 소유의 기대 minor 및 runtime/header 검사는 B2.275의 미구현 항목으로
-  명시했으며, 생성 recipe의 interface는 아직 바꾸지 않았다.
+  명시했으며, 생성 recipe의 interface는 아직 바꾸지 않았다. commit한 입력에서 규칙의 두 문서가
+  `make docs-check`를 통과했다.
 
 - 미구현 float `safe_integer` 범위와 순서가 있는 case의 분기 일치 조건을 명세했다(B2.272).
   구현과 검증은 아직 남아 있다.
