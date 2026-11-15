@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- A Go test that picks a part of a tuple inside a value names the field `P<n>` of the struct `TupleN` (GN-16,
+  B2.283). It indexed the struct, which `go vet` and the compiler refuse.
+
 ## 0.0.8
 
 - The development dependency @polyspec/kit is 0.0.114.

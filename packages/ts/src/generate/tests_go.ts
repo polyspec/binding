@@ -798,7 +798,8 @@ function made(v: Values, b: Body, r: Receiver): string {
   }
   for (const step of picks) {
     const next = b.fresh();
-    const expr = 'field' in step ? `${local}.${goName(step.field.split('_'))}` : `${local}[${'index' in step ? step.index : step.tuple}]`;
+    // GN-16: a tuple inside a value is the struct TupleN, whose parts are the fields P0 to PN-1.
+    const expr = 'field' in step ? `${local}.${goName(step.field.split('_'))}` : 'index' in step ? `${local}[${step.index}]` : `${local}.P${step.tuple}`;
     b.lines.push(`${next} := ${expr}`);
     local = next;
   }

@@ -1,10 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 56de334bb27fc16be3d51118a0a73d90171bfdc396745c49b9bfd87a165eea5c -->
+<!-- source-sha256: 154198660aae243b8829b832443f3f25c63fd5ba34ba243d490aeee96a4329fd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 값 안 tuple의 부분을 고르는 Go 시험은 struct `TupleN`의 field `P<n>`을 쓴다(GN-16, B2.283). 전에는 struct를
+  index로 읽었고, `go vet`과 compiler가 이를 거부했다.
 
 ## 0.0.8
 
