@@ -166,11 +166,11 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
 }
 
 // GN-6y: a case value of a path is a relative path inside the directory of the test; an empty or absolute path and a
-// part .. would leave it.
+// part .. or a drive-qualified component could leave it.
 export function casePathOf(value: unknown): string {
   const parts = typeof value === 'string' ? value.split('/') : [];
-  if (typeof value !== 'string' || value === '' || value.startsWith('/') || value.includes('\\') || parts.includes('..') || parts.includes('')) {
-    throw new Unsupported(`a case value of the type path is a relative path inside the directory of the test, without .. (GN-6y), not ${shown(value)}`);
+  if (typeof value !== 'string' || value === '' || value.startsWith('/') || value.includes('\\') || parts.includes('..') || parts.includes('') || parts.some((part) => /^[A-Za-z]:/.test(part))) {
+    throw new Unsupported(`a case value of the type path is a relative path inside the directory of the test, without .. or drive-qualified components (GN-6y), not ${shown(value)}`);
   }
   return value;
 }

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 110b9a3a0166d9a1b0f25ee422ba67daa233b53687b39d4c7256ac517dcda35d -->
+<!-- source-sha256: 769e1eb9ae78d10ef87efd865b159e42aa6658acfb02bdf918a933872c19dee5 -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
@@ -22,8 +22,9 @@
 
 ## Unreleased
 
-- case 소유 상대 경로의 모든 component에서 Windows drive prefix를 거부할 미구현 규칙을 명세했다
-  (GN-6y, B2.276). drive가 아닌 colon과 기존 경로 검사는 유지한다.
+- fixture 준비 전에 case 소유 상대 경로의 모든 component에서 Windows drive prefix를 거부한다
+  (GN-6y, B2.276). 이전에는 중첩 및 drive 상대 component가 공통 validator를 통과했다. drive가 아닌 colon과
+  기존 경로 검사의 의미는 유지한다.
 
 - `FloatOut::safe_integer`와 `OutValue::predicate`가 음의 영을 포함해 닫힌 안전 정수 범위에 있는 유한한
   정수 float를 판별한다(B2.272). `Predicate::applies_to`가 단일 kind `kind` API를 대신한다. checker는 도달

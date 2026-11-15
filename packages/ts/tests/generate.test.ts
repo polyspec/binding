@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
-import { fromJson } from '../src/generate/samples.ts';
+import { caseFilesOf, casePathOf, fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, hostRequirements, trackedPackages } from '../src/generate/packages.ts';
@@ -4287,6 +4287,25 @@ test('a {literal: null} default of a value type is None without a constant, and 
   assert.doesNotMatch(python, /def test_u2_describe_value_takes_none_as_a_value/);
 });
 
+test('B2.276: drive-qualified components are refused before case-file preparation (GN-6y, GN-13i)', () => {
+  for (const path of ['C:/outside', 'C:relative', 'dir/C:/outside', 'dir/C:relative', 'c:/outside', 'c:relative', 'dir/c:/outside', 'dir/c:relative']) {
+    assert.throws(() => casePathOf(path), /without \.\. or drive-qualified components \(GN-6y\)/, path);
+    assert.throws(() => caseFilesOf({ [path]: 'owned' }), /relative path inside the directory of the test.*GN-13i/, path);
+  }
+});
+
+test('B2.276: relative ownership guards and non-drive colons retain their meanings (GN-6y)', () => {
+  for (const path of ['', '/outside', '../a', 'a/../b', 'a//b', 'a/', 'a\\b', null, undefined, {}]) {
+    assert.throws(() => casePathOf(path), /relative path inside the directory of the test.*GN-6y/);
+  }
+  for (const path of ['a', 'a/b', '.', './a', 'report:2026/file']) {
+    assert.equal(casePathOf(path), path);
+  }
+  for (const path of ['a', 'a/b', 'report:2026/file']) {
+    assert.deepEqual(caseFilesOf({ [path]: 'owned' }), [{ path, hex: '6f776e6564' }]);
+  }
+});
+
 test('a path is the bytes of an OS path in every place, and each target judges it by binding_core (T-1, B-3, GN-6y)', () => {
   // shapes.joined takes a path and a text and returns a path; shapes.parent_of returns an optional<path>. Both leave out WASM (CK-15).
   const out = shaped();
@@ -4345,7 +4364,7 @@ test('a path is the bytes of an OS path in every place, and each target judges i
     const kase = (caseFiles.get('contracts/cases.json') as any).joined[0];
     kase.dir = bad;
     const refusedOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
-    const reason = `a case value of the type path is a relative path inside the directory of the test, without .. (GN-6y), not ${JSON.stringify(bad)}`;
+    const reason = `a case value of the type path is a relative path inside the directory of the test, without .. or drive-qualified components (GN-6y), not ${JSON.stringify(bad)}`;
     const written: [string, (text: string) => string][] = [
       ['packages/python/generated/tests/test_generated.py', (t) => `self.fail(${JSON.stringify(t)})`],
       ['packages/ts/generated/tests/generated.test.mjs', (t) => `assert.fail('${t.replaceAll("'", "\\'")}')`],

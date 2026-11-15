@@ -1057,7 +1057,7 @@ the design ids are those of the binding design.
   expected result of one test resolve in the same directory, so a result that names the path is compared as the path
   in that directory. An empty path, an absolute path and a path with a part `..` are refused by name (G-4), because
   they would leave the directory of the test: the test of the case fails with that reason in every target (GN-13e).
-  Planned in B2.276, not implemented: every slash-separated component also refuses a drive prefix matching
+  Every slash-separated component also refuses a drive prefix matching
   `^[A-Za-z]:`, because a Windows path join can replace its preceding root with a drive-qualified component,
   even when that component is nested or drive-relative. Other colons, such as `report:2026/file`, remain accepted by this validator.
   This lexical rule applies on every host; it does not establish Windows filesystem verification.
