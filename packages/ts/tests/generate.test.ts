@@ -6094,7 +6094,7 @@ test('a call of then arms the faults of its own call, or calls the receiver of t
   const armed = generate({ contract: read('sample', 'packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', sample]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const shown = JSON.stringify(faults);
   const node = text(armed, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.ok(node.includes(`  const made2 = addon().__armFaults('counter.draw', '${shown}');\n  assert.equal(outcome(() => made0.draw(made1)).kind, 'internal'`), node);
+  assert.ok(node.includes(`  const made2 = addon().__armFaults('counter.draw', '${shown}');\n  assert.equal((outcome(() => made0.draw(made1))).kind, 'internal'`), node);
   assert.match(node, /\n  assert\.deepEqual\(addon\(\)\.__faultLeft\(made2\), \[\], 'G-5: the faults of then 0 fire'\);\n/);
   const python = text(armed, 'packages/python/generated/tests/test_generated.py');
   assert.ok(python.includes(`        made2 = _native._arm_faults("counter.draw", ${JSON.stringify(shown)})\n        assert _outcome(lambda: made0.draw(made1))`), python);
