@@ -231,7 +231,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   interface 자리의 list, `optional`, map, record의 field 안에 있어도, case의 member와 그 unit의 `only`, 그리고 그 case가
   있는 `cases` 행의 `only`(생성기 GN-13h)가 남기는 계약의 모든 target에서 생성된다. `only`가 그런 target에서 빼는
   member는 case, member, target과 함께 보고된다. 계약은 case의 member, 그 unit, 또는 그 case가 있는 `cases` 행에 그
-  target이 없는 `only`를 주어 해소한다. `only`가 그 member가 생성되는 target을 하나도 이름하지 않는 행도 보고된다. 이유:
+  target이 없는 `only`를 주어 해소한다. `only`가 그 member나 그 alias가 생성되는 target을 하나도 이름하지 않는 행도 보고된다. 이유:
   case의 시험은 그 member와 그 행의 target마다 생성되는데, 한 target에서 인스턴스를 만들 수 없는 시험은 그 target을
   거부하거나 case를 조용히 빼게 되고, 그러면 그곳에서 무엇이 검증되지 않았는지가 보이지 않는다.
 - **CK-93** case는 `only`가 case의 target에서 빼는 parameter나 field를 주지 않는다(생성기 GN-6g, GN-13h): 각 case에서,

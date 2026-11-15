@@ -10546,3 +10546,45 @@ test('a member case that raises without status checks no status on any target (G
   }
   assert.ok(seen > 0);
 });
+
+test('a constructor holds the callbacks that it takes as Natives, without keeps (GN-6bh, B2.315)', () => {
+  // The instance owns its core value ('static, GN-6au), so a callback that the constructor gives the core and that
+  // borrowed the env of the call escapes the body of the constructor (E0521). lookup is held by no member with keeps.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = read('sample/packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'index.new') for (const p of member.parameters) { delete p.keeps; p.type = { list: { unit: 'lookup' } }; }
+  contract.cases = contract.cases.filter((row: any) => row.member !== 'index.new');
+  const cases = read('sample/contracts/cases.json');
+  delete cases.index_new;
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['node'] as Inputs['targets'] & string[] });
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(lib, /let sources: Vec<Box<dyn polyspec_sample::Lookup \+ 'static>> = list_in\(sources, "sources", \|item\| kept_lookup\(env_, /);
+  // The core path stays the Result with the failure of a callback that the contract declares (E-1c).
+  const construct = lib.slice(lib.indexOf('pub struct Index'), lib.indexOf('pub struct Index') + 3000);
+  assert.match(construct, /Err\(error\) => return Err\(failure_error\(error\)\)/);
+});
+
+test('go.mod replaces the Go module of a library of the same repository by its path (GN-15f, B2.316)', () => {
+  // The path of the dependency line joined to the core gives packages/points/rust, the core of the library itself,
+  // which a test for the suffix /packages/points/rust did not take.
+  const { contract, foreign } = plotSample();
+  const points = JSON.parse(JSON.stringify(foreign.get('points')).replaceAll('"library":"points"', '"library":"plot-points"'));
+  points.library = 'plot-points';
+  points.core.path = 'packages/points/rust';
+  const own = JSON.parse(JSON.stringify(contract).replaceAll('"library":"points"', '"library":"plot-points"'));
+  own.library = 'plot-figures';
+  own.core.path = 'packages/figures/rust';
+  const packages = trackedPackages(own, '0.0.0', new Map<string, unknown>([['polyspec-plot-points', { path: '../../points/rust' }], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], new Map([...foreign, ['plot-points', points]]));
+  const goMod = String([...packages].find(([path]) => path.endsWith('go.mod'))?.[1]);
+  assert.match(goMod, /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/points\/go\n$/);
+});
+
+test('the cases of an alias row with only are tests of the targets that it lists alone (GN-13h, B2.317)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = read('sample/packages/rust/interface.json');
+  for (const row of contract.cases) if (row.alias === 'data') row.only = { targets: ['python', 'node', 'go', 'wasm'], reason: 'G-5' };
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('sample/contracts/cases.json')]]), targets: ['php', 'python'] as Inputs['targets'] & string[] });
+  const named = (lang: string): boolean => [...out].some(([path, content]) => path.includes(lang === 'php' ? 'php' : 'python') && /test/i.test(path) && /bytes_?that_?are_?no_?text_?are_?not_?data/i.test(String(content)));
+  assert.equal(named('python'), true);
+  assert.equal(named('php'), false);
+});

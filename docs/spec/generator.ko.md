@@ -784,6 +784,9 @@
 - **GN-6bg** 이름이 Rust 키워드인 Node method나 property는 raw identifier 없이 Rust 함수 `method_<name>`이고, 그
   JavaScript 이름은 속성 `js_name`으로 남는다. 이유: 매크로 `napi`는 method의 Rust 이름에 접미사를 붙이는데,
   `r#where_c_callback`은 identifier가 아니어서 매크로가 panic한다.
+- **GN-6bh** 콜백을 직접 또는 그 record의 field로 가진 class 생성자의 parameter는 계약에 `keeps`가 없어도 `keeps`가
+  선언한 것처럼(GN-6aa) 그 콜백을 보관한다. 이유: 인스턴스는 그 코어 값을 소유하므로(GN-6au) 생성자가 코어에 준 콜백은
+  호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
@@ -1599,7 +1602,7 @@
   다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
-  `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이
+  `replace <module> => <path>` 줄을 준다. 그 경로를 코어에 이은 결과는 다른 레포나 이 레포에 있는 그 라이브러리의 코어이다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이
   `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
   `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
@@ -2060,7 +2063,9 @@
   target에 해당한다. `only`가 있는 행은 그 member가 생성되는 target을 하나 이상 이름한다. 이유: case는 어떤 target에 없는
   동작을 말할 수 있다. 예를 들어 파일을 읽는 로더가 필요한 render는 파일 시스템이 없는 WebAssembly에 없지만 member
   자체는 거기서 생성된다. 그 행은 그 동작이 있는 target에만 case를 남긴다. member의 `only`를 쓰면 그 member의 다른 모든
-  case도 그 target에서 빠지기 때문이다.
+  case도 그 target에서 빠지기 때문이다. alias를 이름하는 `cases`의 행도 `only`를 가질 수 있고, 그 alias의 in 함수의
+  case(U-7)에 같은 뜻이며, 그 alias가 생성되는 target을 하나 이상 이름한다. 이유: alias의 case는 어떤 target이 만들 수
+  없는 값, 예를 들어 PHP의 64비트 int 밖의 정수를 말할 수 있고, 다른 target에서는 코어가 그 값을 거부한다.
 - **GN-13i** case는 `@files`를 가질 수 있다. 그 시험이 case의 어떤 값을 만들기 전에 쓰는 파일이다. `@files`는 `path`의 case
   값 형식(GN-6y)인 상대 경로에서 파일의 바이트로 가는 object다. 바이트는 그 UTF-8을 뜻하는 text이거나, 바이트를 적는
   방식대로 `{"hex": ...}`다(GN-13). case의 B-4, GN-6ae, GN-6m, GN-6z, GN-13e 시험은 object의 순서대로 각 파일을 GN-6y의 시험

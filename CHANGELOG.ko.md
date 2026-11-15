@@ -11,6 +11,9 @@
 - `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포의 case는 어떤 시험도 읽지 않는 key `words`를 가졌고 이를 지운다.
 - 이름이 Rust 키워드인 Node method, 예를 들어 `where`는 Rust 함수 `method_where`이다. raw identifier `r#where`는 매크로 `napi`를 panic하게 했다(GN-6bg, B2.313).
 - `status` 없이 raise하는 member case는 status를 검사하지 않는다. Go는 go vet이 거부하는 `status != undefined`를 썼고, 다른 타깃은 status를 `undefined`와 비교했다(GN-13ka, B2.314).
+- class 생성자는 parameter가 직접 또는 그 record의 field로 가진 콜백을 `keeps` 없이 보관한다. Node에서 그 콜백은 호출의 env를 빌렸고, 코어가 `'static` record를 받는 곳에서 env가 생성자 본문을 벗어났다(E0521)(GN-6bh, B2.315).
+- go.mod는 같은 레포의 라이브러리의 Go module을 그 경로로 replace한다. 의존 줄의 경로를 코어에 이은 결과는 `packages/validator/rust`처럼 그 라이브러리의 코어 자체이고, 접미사 `/packages/validator/rust` 검사가 그것을 거부했다(GN-15f, B2.316).
+- alias를 이름하는 `cases`의 행은 member를 이름하는 행처럼 `only`를 가질 수 있다. 그 case는 그 행이 나열한 target의 시험일 뿐이고, `binding check`는 `only`가 그 alias의 target을 하나도 이름하지 않는 행을 보고한다. schema는 그런 행의 `only`를 거부했다(GN-13h, CK-92, B2.317).
 - `out` 행의 kind가 `nested:<값 타입>`인 값 alias를 다섯 타깃이 생성한다: arm은 그 값을 가진 레포의 값 alias의 make 함수로 만든다(GN-6bb, B2.308). 모든 타깃이 `no OutValue variant of the kind nested:json_value`나 앞선 행의 거부로 이를 거부했다.
 - PHP는 alias의 map이나 list를 받는 member로 만드는 `out` 행을 만들어진 자식의 배열로 만든다.(GN-6bc, B2.309). orm 계약은 `map_value.constructor of the kind map takes map<orm_value>`로 거부되었다.
 - Go는 값 alias의 `out` 행이 다른 module의 class 인스턴스를 만들 때 그 package가 export하는 `<Class>FromHandle`로 만든다(GN-6be, B2.310). `its handle and dispatch are unexported`로 거부되었다.

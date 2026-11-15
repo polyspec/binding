@@ -449,6 +449,27 @@ export function buildModel(
 
 // The model of the items that the generator supports, with a refusal in refusals for each item that it does not; a
 // model with a refusal is not emitted (G-4).
+// GN-6bh: the instance of a class owns its core value ('static, GN-6au), so a callback that its constructor gives the
+// core outlives the call: a parameter of a constructor that holds a callback keeps it, as keeps declares.
+function constructorsKeep(contract: Contract): Contract {
+  const units = new Map(contract.units.map((u) => [u.id, u]));
+  // A record parameter is the fields of its unit (U-2), and a field that holds a callback is held with the record.
+  const recordHoldsCallback = (type: Type): boolean => {
+    const record = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
+    return record?.kind === 'record' && (record.fields ?? []).some((f) => holdsCallback(units, f.type));
+  };
+  return {
+    ...contract,
+    units: contract.units.map((unit) => unit.kind !== 'class' || unit.members === undefined ? unit : {
+      ...unit,
+      members: unit.members.map((member) => member.kind !== 'constructor' || member.parameters === undefined ? member : {
+        ...member,
+        parameters: member.parameters.map((p) => p.keeps === true || !(holdsCallback(units, p.type) || recordHoldsCallback(p.type)) ? p : { ...p, keeps: true, implied: true }),
+      }),
+    }),
+  };
+}
+
 export function collectModel(
   contract: Contract,
   version: string,
@@ -461,7 +482,7 @@ export function collectModel(
   refusals.attempt(() => assertNoExceptions(contract));
   // The units refused as a whole, whose dependents are not refused again for them.
   const refusedUnits = new Set<string>();
-  contract = resolveNamedTypes(contract);
+  contract = constructorsKeep(resolveNamedTypes(contract));
   const units = new Map(contract.units.map((u) => [u.id, u]));
   const functions: Fn[] = [];
   const constants: Constant[] = [];
@@ -613,7 +634,10 @@ export function collectModel(
     // GN-7: a parameter with keeps (GN-6aa) does not count, because the core keeps that value for a later call; the
     // fields of a record parameter with keeps are kept with it.
     const keptArg = (a: Arg): boolean => (a.field ? record?.param.keeps === true : (member.parameters ?? []).some((p) => p.name.join('_') === a.name.join('_') && p.keeps === true));
-    const takesCallback = args.some((a) => !keptArg(a) && (holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type)));
+    // GN-6bh: a keep that a constructor implies leaves the core path as the contract declares it, a Result with the
+    // failure of a callback when it takes one.
+    const declaredKept = (a: Arg): boolean => keptArg(a) && !(a.field ? (record?.param as { implied?: boolean } | undefined)?.implied === true : (member.parameters ?? []).some((p) => p.name.join('_') === a.name.join('_') && (p as { implied?: boolean }).implied === true));
+    const takesCallback = args.some((a) => !declaredKept(a) && (holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type)));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -1993,6 +2017,7 @@ export function membersFor(model: Model, lang: Lang): Model {
     // Q-4, B2.253, B2.254: a case that gives a parameter, or a field of a record, that the language does not have is no
     // case of the language.
     cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => caseOfLang(id, item))])),
+    aliasCases: new Map([...model.aliasCases].map(([id, items]) => [id, items.filter((item) => model.caseTargets?.get(item)?.includes(lang) ?? true)])),
   };
 }
 

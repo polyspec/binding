@@ -1711,12 +1711,6 @@ describe('CK-92 the members that the instance values of a case call (GN-13f, Q-4
     });
     assert.ok(found.some((f) => f.check === 'CK-92' && /^the row of gate\.enter names in only wasm, where gate\.enter is not generated \(GN-13h, Q-4\)$/.test(f.message)), JSON.stringify(found));
   });
-  test('a row of the cases of an alias has no only (CK-1)', () => {
-    const found = run((contract) => {
-      contract.cases.push({ alias: 'x', file: 'contracts/cases.json', group: 'join', only: outOfWasm });
-    });
-    assert.ok(found.some((f) => f.check === 'CK-1'), JSON.stringify(found));
-  });
 });
 
 describe('CK-22 the faults and the receiver of a call of then (GN-13f)', () => {
@@ -1840,4 +1834,17 @@ describe('CK-96 a key of a member case without a meaning (G-5, B2.312)', () => {
     assert.equal(found.length, 1);
     assert.match(found[0]?.message ?? '', /^the case b277_raw_path of tag\.name has the key files, which is no parameter of tag\.name, no key of its result and no key of a case \(G-5\)$/);
   });
+});
+
+test('a row of cases that names an alias may have only, which names a target where the alias is generated (GN-13h, CK-92, B2.317)', () => {
+  // A case of an alias may state a value that a target cannot make, such as an integer outside the int of PHP.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (only: unknown): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    for (const row of contract.cases) if (row.alias === 'data') row.only = only;
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  };
+  assert.deepEqual(run({ targets: ['python', 'node', 'go', 'wasm'], reason: 'G-5' }), []);
+  const found = run({ targets: ['ruby'], reason: 'G-5' });
+  assert.ok(found.length > 0, JSON.stringify(found));
 });

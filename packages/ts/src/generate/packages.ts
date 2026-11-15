@@ -639,7 +639,7 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
     const form = dependencyForm(dependencies.get(crate));
     if (form.path !== undefined) {
       const root = posix.normalize(posix.join(contract.core.path, form.path));
-      if (!root.endsWith(`/${owner.core.path}`)) throw new Refused(`${crate}: the path ${form.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
+      if (root !== owner.core.path && !root.endsWith(`/${owner.core.path}`)) throw new Refused(`${crate}: the path ${form.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
       const target = posix.join(root.slice(0, -owner.core.path.length), componentBase(owner), 'go');
       requires.push(`${module} v0.0.0`);
       replaces.push(`replace ${module} => ${posix.relative(`${componentBase(contract)}/go`, target)}`);

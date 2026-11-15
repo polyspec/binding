@@ -68,6 +68,8 @@ function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<
       resultKeys.set(kase.member, keys);
       if (kase.only !== undefined) for (const item of items) caseTargets.set(item, kase.only.targets);
     }
+    // GN-13h: a row of an alias with only holds its cases for the targets that it lists alone.
+    else if (kase.only !== undefined) for (const item of items) caseTargets.set(item, kase.only.targets);
   }
   const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys, caseTargets };
   return model;

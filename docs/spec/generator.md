@@ -968,6 +968,10 @@ the design ids are those of the binding design.
 - **GN-6bg** A Node method or property whose name is a Rust keyword is the Rust function `method_<name>` without the
   raw identifier, and its JavaScript name stays the attribute `js_name`. Why: the macro `napi` joins the Rust name of
   a method with a suffix, and `r#where_c_callback` is no identifier, so the macro panics.
+- **GN-6bh** A parameter of a constructor of a class that holds a callback, directly or in a field of its record,
+  keeps it, as `keeps` declares (GN-6aa), without `keeps` in the contract. Why: the instance owns its core value
+  (GN-6au), so a callback that the constructor gives the core outlives the call, and in Node a callback that borrows
+  the env of the call escapes the body of the constructor (E0521).
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -1957,7 +1961,8 @@ the design ids are those of the binding design.
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
-  repository to the Go module of that one; every other dependency line (a branch, a commit, a version
+  repository to the Go module of that one, where the path joined to the core is the core of that library, in another
+  repository or in this one; every other dependency line (a branch, a commit, a version
   range) is a development form too (GN-3e) and gives `v0.0.0` without a `replace` line, which the development
   checkout resolves through its development link, an untracked `go.work` that names the checkout of that repository
   (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
@@ -2540,7 +2545,10 @@ the design ids are those of the binding design.
   target where its member is generated. Why: a case may state a behaviour that a target does not have, such as a
   render that needs a loader that reads files, which WebAssembly has no file system for, while the member itself is
   generated there; the row keeps the case for the targets that have the behaviour, instead of an `only` of the member
-  that would leave every other case of the member out of that target too.
+  that would leave every other case of the member out of that target too. A row of `cases` that names an alias
+  may have `only` too, with the same meaning for the cases of the in function of the alias (U-7), and names at least
+  one target where the alias is generated. Why: a case of an alias may state a value that a target cannot make, such
+  as an integer outside the 64-bit int of PHP, while the core refuses that value in the other targets.
 - **GN-13i** A case may have `@files`, the files that its test writes before it makes any value of the case: an object
   from a relative path, in the form of a case value of `path` (GN-6y), to the bytes of the file, a text for its UTF-8
   or `{"hex": ...}` as bytes are written (GN-13). The test of B-4, GN-6ae, GN-6m, GN-6z and GN-13e of the case writes each

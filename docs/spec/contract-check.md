@@ -273,7 +273,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   and of the member of the case and the `only` of its row of `cases` (generator GN-13h) keep. A member that an `only`
   keeps out of such a target is reported with the case, the member and the targets; the contract resolves it by an
   `only` without those targets of the member of the case, of its unit, or of the row of `cases` that holds the case.
-  A row whose `only` names no target where its member is generated is reported too. Why: the test of a case is
+  A row whose `only` names no target where its member, or its alias, is generated is reported too. Why: the test of a case is
   generated for each target of its member and its row, and a test that cannot make its instance in a target would
   either refuse the target or leave the case out silently, so that what was not verified there would not show.
 - **CK-93** A case gives no parameter and no field that an `only` keeps out of a target of the case (generator GN-6g,

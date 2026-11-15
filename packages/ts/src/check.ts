@@ -1494,6 +1494,12 @@ class Checker {
       if ((groups.get(key) ?? what) !== what) this.report('CK-22', `/cases/${i}`, `the group ${row.group} of ${row.file} holds the cases of a member and of an alias (U-7)`);
       groups.set(key, what);
       if (row.member === undefined) {
+        // CK-92, GN-13h: an only of the row names a target where its alias is generated.
+        const aliasUnit = this.units.get(row.alias)?.value;
+        const aliasTargets = this.contract.targets.filter((lang) => aliasUnit?.only === undefined || aliasUnit.only.targets.includes(lang));
+        if (row.only !== undefined && aliasUnit !== undefined && !row.only.targets.some((lang) => aliasTargets.includes(lang))) {
+          this.report('CK-92', `/cases/${i}`, `the row of the alias ${row.alias} names in only ${row.only.targets.join(', ')}, where ${row.alias} is not generated (GN-13h, Q-4)`);
+        }
         const kinds = aliasRaised.get(row.alias) ?? new Set<string>();
         this.aliasCases(row.alias, group, `/cases/${i}`, kinds);
         aliasRaised.set(row.alias, kinds);

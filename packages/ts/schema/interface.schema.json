@@ -2013,17 +2013,8 @@
             "alias"
           ],
           "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "result"
-                ]
-              },
-              {
-                "required": [
-                  "only"
-                ]
-              }
+            "required": [
+              "result"
             ]
           }
         }
@@ -2048,7 +2039,8 @@
           "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
         },
         "only": {
-          "$ref": "#/$defs/only"
+          "$ref": "#/$defs/only",
+          "description": "The targets whose tests hold the cases of the group (GN-13h); a row with member or with alias may have it."
         }
       }
     },
