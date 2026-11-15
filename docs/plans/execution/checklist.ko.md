@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: eee7847069226f12203c685860e9ec5068999405c9ab37868c9390893358803b -->
+<!-- source-sha256: b84f40cbab1b2ccad8cdfa864bd8b67b499eac13be0798475a89105cc4bbbc24 -->
 <!-- source-sha256: 4de7f8558acfd66042c7f00b986617c7bdae7ef1b473210c8908587f89274d10 -->
 # 실행 체크리스트
 
@@ -179,3 +179,4 @@
 | B2.302 | PHP stub은 PHP 타입이 `mixed`인 optional을 `?mixed`로 쓰고, mixed는 이미 null을 포함하므로 `php -l`이 이를 거부한다. 명세 먼저(GN-6i), Red case, 그다음 stub은 `mixed`를 쓰고 docblock은 `mixed\|null`을 유지한다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/php.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.302 tests/generate.test.ts | [o] |
 | B2.303 | 저장소가 쓰는 파일을 이름하는 `.`과 `./wasm`이 아닌 `packages.node.entries` 항목(`types`, `import`, `require`, `files`를 가진 `./render`)을 schema가 거부하고 scaffold가 그 export를 쓰지 않으므로, 그것을 선언한 manifest를 CK-19가 보고한다. 명세 먼저(GN-3c), Red case, 그다음 schema가 조건과 files를 받아들이고 scaffold가 그것을 쓴다. | `docs/spec/generator.md`(.ko); `packages/ts/schema/interface.schema.json`; `packages/ts/src/generate/packages.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.303 tests/generate.test.ts | [o] |
 | B2.304 | 다른 저장소의 value alias를 가진 contract의 Go 테스트는 `places`에서 `*<owner>.KeyedMap[any]`와 owner의 class를 이름하지만 다른 테스트가 그 package를 이름할 때만 import하므로 `go vet`이 정의되지 않은 이름을 보고한다. 명세 먼저(GN-15f), Red case, 그다음 `places`가 이름하는 package를 import한다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/tests_go.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.304 tests/generate.test.ts | [o] |
+| B2.305 | 하나의 parameter가 `int64`인 생성자로 instance를 만드는 kind `int`의 out row를, kind의 내용이 i64인데도 거부한다(G-4, U-7). 명세 먼저(GN-6e), Red case, 그다음 make가 `int64`를 받는다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/alias_shared.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.305 tests/generate.test.ts | [o] |

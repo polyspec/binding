@@ -10,6 +10,7 @@
 - The PHP stub writes an optional whose PHP type is `mixed` as `mixed`, not `?mixed`, which `php -l` refused; the docblock keeps `mixed|null` (B2.302).
 - An entry of `packages.node.entries` other than `.` and `./wasm` may name `types`, `import`, `require` and `files`; scaffold writes them as an export and files of `package.json`, and CK-19 accepts them (B2.303).
 - The generated Go tests import the package of another repository whose classes `places` names, so `go vet` finds the name (B2.304).
+- An out row of the kind `int` makes an instance by a constructor whose one parameter is `int64` (B2.305).
   A machine whose first php was PHP 8.5 got `var/tools/bin/php` of 8.5, which only `make e2e` refused later.
 
 - `binding scaffold` writes no file when `cargo metadata` fails, and fails with the error of Cargo (GN-3e, B2.299).

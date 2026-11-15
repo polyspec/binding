@@ -43,8 +43,9 @@ export function container(alias: ValueAlias, kind: string, form: string): Contai
 
 // U-7, T-5: the argument that the content of a kind gives to the one parameter of a factory, by the contract type of the
 // parameter, as GN-6 passes it: a text borrowed, a number or a bool by value.
-const CONTENT: Record<string, { type: string; arg: string }> = {
-  bool: { type: 'bool', arg: 'value' }, int: { type: 'int', arg: 'value.value()' }, int64: { type: 'int64', arg: 'value' },
+// The content of the kind int is an i64 (IntOut::value), which a parameter of int64 also takes as it is.
+const CONTENT: Record<string, { type: string; arg: string; also?: string[] }> = {
+  bool: { type: 'bool', arg: 'value' }, int: { type: 'int', arg: 'value.value()', also: ['int64'] }, int64: { type: 'int64', arg: 'value' },
   float: { type: 'float', arg: 'value.value()' }, text: { type: 'text', arg: '&value' }, bytes: { type: 'bytes', arg: 'value.value()' },
 };
 
@@ -77,7 +78,7 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
   }
   const content = CONTENT[kind];
   const param = factory.params.length === 1 ? factory.params[0]?.type : undefined;
-  if (content === undefined || param !== content.type) {
+  if (content === undefined || typeof param !== 'string' || (param !== content.type && !(content.also ?? []).includes(param))) {
     throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes ${factory.params.map((p) => (typeof p.type === 'string' ? p.type : JSON.stringify(p.type))).join(', ') || 'no parameter'}, not the content of the kind (U-7)`);
   }
   if (factory.fallible || factory.failure) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} can fail, which a make by a member is not generated for yet (U-7)`);

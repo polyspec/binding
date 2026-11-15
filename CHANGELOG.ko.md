@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1bb192711c99b56d114668bb6e5919564d863e0ad59da66538dd83f3f9e4ba3d -->
+<!-- source-sha256: 9c665820c3c8960c2f7a4a89e52c7888b6c22b7d9ab53c11077a983ac7644ce9 -->
 <!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
@@ -12,6 +12,7 @@
 - PHP stub은 PHP 타입이 `mixed`인 optional을 `php -l`이 거부하던 `?mixed`가 아니라 `mixed`로 쓴다. docblock은 `mixed|null`을 유지한다(B2.302).
 - `.`과 `./wasm`이 아닌 `packages.node.entries` 항목은 `types`, `import`, `require`, `files`를 이름할 수 있다. scaffold는 그것을 `package.json`의 export와 files로 쓰고 CK-19는 그것을 받아들인다(B2.303).
 - 생성된 Go 테스트는 `places`가 class를 이름하는 다른 저장소의 package를 import하므로 `go vet`이 그 이름을 찾는다(B2.304).
+- kind `int`의 out row는 하나의 parameter가 `int64`인 생성자로 instance를 만든다(B2.305).
   첫 php가 PHP 8.5인 기계는 8.5의 `var/tools/bin/php`를 얻었고, 나중에 `make e2e`만 그것을 거부했다.
 
 - `binding scaffold`는 `cargo metadata`가 실패하면 아무 파일도 쓰지 않고 Cargo의 오류로 실패한다(GN-3e, B2.299).

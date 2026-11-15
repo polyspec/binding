@@ -824,6 +824,7 @@ the design ids are those of the binding design.
   drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
   `Other` value is valid only inside the `in` or `out` call that gave it: the binding numbers a `Date` and an `Other`
   value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6u).
+  The content of the kind `int` is an i64, so a member whose one parameter is `int64` also takes it as it is (B2.305).
 - **GN-6at** During one incoming host-value walk, each Python list or dict and each JavaScript Array, Map or plain
   object has one handle and one description. Repeated descriptions of the same container reuse that description;
   distinct containers retain distinct handles. The walk holds the original container until it ends, so an identity

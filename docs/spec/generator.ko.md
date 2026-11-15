@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 85c7a5fad727d53d7277ebae29ca1d21af0f316331483f576003d362b9813e8b -->
+<!-- source-sha256: d65af26d07b8ec27811e38c2e0fc935ab4b6d5736706fe3c004440443c75789b -->
 # 생성기
 
 [English](generator.md)
@@ -666,6 +666,7 @@
   객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
   객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
   `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
+  kind `int`의 내용은 i64이므로 하나의 parameter가 `int64`인 member도 그것을 그대로 받는다(B2.305).
 - **GN-6at** 들어오는 host-value 순회 하나에서 Python list와 dict, JavaScript Array, Map, plain object는
   각각 handle 하나와 description 하나를 갖는다. 같은 container를 다시 설명하면 그 description을 재사용하며,
   다른 container는 다른 handle을 유지한다. 순회가 끝날 때까지 원본 container를 보유해서 수거된 container의
