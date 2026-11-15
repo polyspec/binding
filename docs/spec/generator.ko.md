@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 295bf38d16bd5366feb70daf624d905793734cf597652248e3b78e093183a7ea -->
+<!-- source-sha256: e99f2449e25c66a74981eec4ebc3cb426fa3b9eb28f55e7335272340224c4182 -->
 # 생성기
 
 [English](generator.md)
@@ -862,6 +862,10 @@
   디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
   거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e). case는 값을 만들기 전에 자기 파일을 같은
   디렉터리에 쓴다(GN-13i).
+  slash로 나눈 모든 component에서도 `^[A-Za-z]:`에 맞는 drive
+  prefix를 거부한다. Windows 경로 결합은 중첩되거나 drive 상대인 component라도 drive를 지정하면 앞의
+  root를 대체할 수 있기 때문이다. `report:2026/file`처럼 그 밖의 colon은 이 validator가 계속 허용한다.
+  이 어휘 규칙은 모든 host에 적용하며 Windows filesystem 검증을 뜻하지 않는다.
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
   코어 오류 variant를 가리키거나 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 돌려준다. 그런 경로의 오류는
   `core.failure`가 참이면, 그리고 그것이 없으면 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 kind 또는 언어
@@ -2029,6 +2033,33 @@
   errno가 없음을 기대한다. 숫자는 그 값을 기대하고, symbol은 GN-13 member 시험처럼 해석한다(WASM은 symbol에
   대해 platform errno가 없음을 기대한다). PHP가 PHP 표현이 없는 값을 `case-test`로 실행할 때도 이 검사를
   적용한다. 이 기대값을 버리면 잘못된 error payload도 시험을 통과하므로 alias 정규화가 이를 보존한다.
+
+- **GN-13l** 타입 `text` 자리의 case 값은
+  `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
+  가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.
+  `as`가 없으면 풀린 경로를 그대로 넣고, 유일한 명시적 mode인 `json-string`은 완전한 따옴표 붙은 JSON
+  string token을 넣는다. 상대 경로는 GN-6y를 따르고 NUL과 짝 없는 surrogate를 담지 않는다. literal 문자열과
+  private JSON quoting helper는 NUL을 포함한 모든 Unicode 제어 문자를 허용한다. 모든 경로는
+  GN-13i 파일과 같은 case 소유 root에서 푼다. root는 receiver, argument, callback을 만들기 전에 준비하며,
+  가리키는 파일은 없어도 된다. 관찰한 결과, 환경 변수 확장,
+  일반 formatter, 실행 가능한 표현식에서 part를 얻지 않는다. 기대 text는 literal의 모든 byte, 공백, key
+  순서를 유지하고 parsed JSON이 아닌 text로 비교한다. 이 형태는 typed text 자리에서만 해석하며 실제
+  record와 map 데이터는 바꾸지 않는다. 지원하지 않는 scalar 사용과 모든 alias 생성자 projection은
+  객체를 문자열로 강제 변환하지 않고 이름으로 실패한다. alias kind와 관계없이 optional, list, map, record
+  parameter를 거쳐 도달한 typed text에도 이 제한을 적용하며 실제 map과 record 데이터는 데이터로 유지한다.
+  alias-token 확장은 더하지 않는다. 기존 plain text, `ill_formed`, typed
+  `path`의 의미는 유지한다. 새 text 변환을 나중에 수행하는 private helper는 숨은 인자나 private closure로
+  같은 case owner를 전달한다. 전역 root를 풀지 않고 기존 case 밖의 수명을 더하지 않는다. 이 형태를 쓰지
+  않는 helper는 바꾸지 않는다.
+
+  JSON string token은 따옴표, backslash, U+0000–001F를 escape한다. 이름이 있는 제어 문자는 `\b`, `\t`,
+  `\n`, `\f`, `\r`로 쓰고 나머지는 소문자 `\u00xx`로 쓴다. slash, 비-ASCII Unicode, `<`, `>`, `&`,
+  U+2028, U+2029는 UTF-8 그대로 둔다. 잘못된 Unicode는 대체하지 않고 거부한다. 고정 native 입력과 기대
+  UTF-8 hex vector가 literal backslash-u 수열을 포함해 각 helper와 독립적으로 이 정확한 표기를 검증한다.
+  독립 witness는 기존 GN-13i helper로 쓰고 표준 filesystem I/O로 합성 경로에서 읽으므로, 같은 잘못된 입력과
+  기대 callback이 서로의 root를 확인할 수 없다. WASM은 Node 시험 host가 소유한 root에서 text를 합성할 수
+  있고, typed OS path나 Rust filesystem 접근을 얻지 않는다. GN-6y와 CK-15는 유지하며 실제 filesystem과
+  database case는 선언된 적용 범위를 유지한다.
 
 ## 끝에서 끝까지 확인
 

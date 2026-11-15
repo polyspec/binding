@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -111,6 +111,100 @@ function casePath(relative) {
 }
 `;
 
+// GN-13l: only actual expression dependencies activate a captured root; marker text is ordinary text.
+export function nodeCaseTextScope(ctx: Context, out: string[]): { emit: (...blocks: string[]) => void; derive: (code: string, sources: readonly string[]) => string; bind: (local: string, expression: string) => void; used: () => boolean } {
+  const dependent = new Set<string>();
+  const frames: { root: boolean }[] = [];
+  let pending = false;
+  let used = false;
+  const mark = (code: string): string => {
+    dependent.add(code);
+    const frame = frames.at(-1);
+    if (frame !== undefined) frame.root = true;
+    pending = true;
+    used = true;
+    return code;
+  };
+  ctx.caseTextPath = (relative, jsonString) => mark(`caseTextPath(_caseTextRoot, ${jsString(relative)}, ${String(jsonString)})`);
+  ctx.caseTextExpression = (make) => {
+    const frame = { root: false };
+    const before = pending;
+    frames.push(frame);
+    let complete = false;
+    try {
+      const code = make();
+      if (frame.root || dependent.has(code)) mark(code);
+      complete = true;
+      return code;
+    } finally {
+      frames.pop();
+      if (complete && frame.root) {
+        const parent = frames.at(-1);
+        if (parent !== undefined) parent.root = true;
+      }
+      if (!complete) pending = before;
+    }
+  };
+  return {
+    derive: (code, sources) => sources.some((source) => dependent.has(source)) ? mark(code) : code,
+    bind: (local, expression) => {
+      const root = dependent.has(expression);
+      dependent.delete(local);
+      if (root) mark(local);
+    },
+    used: () => used,
+    emit: (...blocks) => {
+      const root = pending;
+      pending = false;
+      out.push(...blocks.map((block) => root ? block.replace(/(\ntest\([^\n]*=> \{)/g, '$1\n  const _caseTextRoot = casePath(\'.\');') : block));
+    },
+  };
+}
+
+export const NODE_CASE_TEXT = `
+// GN-13l: a complete minimal UTF-8 JSON string token, without replacing malformed Unicode.
+function caseJsonString(value) {
+  if (typeof value !== 'string' || !value.isWellFormed()) throw new TypeError('GN-13l: a case text is well-formed Unicode');
+  return JSON.stringify(value);
+}
+
+function caseTextPath(root, relative, jsonString) {
+  const path = join(root, ...relative.split('/'));
+  if (path.includes('\\0')) throw new TypeError('GN-13l: a case text path has no NUL');
+  const quoted = caseJsonString(path);
+  return jsonString ? quoted : path;
+}
+`;
+
+export function nodeCaseTextProof(ctx: Context, emit: (block: string) => void): void {
+  const vectors = CASE_JSON_STRING_GOLDENS.map((v) => `[${jsString(v.inputHex)}, ${jsString(v.expectedHex)}]`).join(',\n    ');
+  emit(`
+test('GN-13l: JSON string tokens match fixed UTF-8 bytes', () => {
+  for (const [input, expected] of [
+    ${vectors}
+  ]) {
+    const value = Buffer.from(input, 'hex').toString('utf8');
+    assert.equal(Buffer.from(caseJsonString(value), 'utf8').toString('hex'), expected);
+  }
+  assert.throws(() => caseJsonString('\\uD800'), TypeError);
+});`);
+  const relative = 'owned-text-witness/file';
+  const make = (): string => {
+    const result = ctx.caseTextPath?.(relative, false);
+    if (result === undefined || ctx.machineFunctionNew === undefined) throw new Unsupported('GN-13l: the host case-root callback is missing');
+    return ctx.machineFunctionNew({ parameters: 0, awaits: false, steps: [], end: { result } });
+  };
+  const callback = ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
+  emit(`
+test('GN-13l: composed paths use the old file-owned root', () => {
+  caseFile(${jsString(relative)}, '726f6f74207769746e657373');
+  const callback = ${callback};
+  const path = callback();
+  assert.equal(path, casePath(${jsString(relative)}));
+  assert.equal(readFileSync(path).toString('hex'), '726f6f74207769746e657373');
+});`);
+}
+
 // GN-13i: a file of a case, written inside the directory of the test with the directories of its path before the values
 // of the case are made; its bytes are given as hex. WASM writes it the same way, with node:fs of the Node.js that runs
 // its tests.
@@ -161,8 +255,8 @@ export const nodeServiceEnd = (service: unknown): string => {
 };
 
 // GN-6y, GN-13i: the imports of node:fs and node:os that the directory of a test and the files of a case use.
-export const nodeCaseImports = (usesCaseFile: boolean): string =>
-  `\nimport { ${usesCaseFile ? 'mkdirSync, mkdtempSync, rmSync, writeFileSync' : 'mkdtempSync, rmSync'} } from 'node:fs';\nimport { tmpdir } from 'node:os';`;
+export const nodeCaseImports = (usesCaseFile: boolean, usesCaseText = false): string =>
+  `\nimport { ${usesCaseFile ? `mkdirSync, mkdtempSync, ${usesCaseText ? 'readFileSync, ' : ''}rmSync, writeFileSync` : 'mkdtempSync, rmSync'} } from 'node:fs';\nimport { tmpdir } from 'node:os';`;
 
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
@@ -203,11 +297,13 @@ export function nodeTests(model: Model): string {
     return unit === undefined ? cls(raises.category) : langName('node', unit.unit.name, 'class');
   };
   const out: string[] = [];
+  const textPaths = nodeCaseTextScope(ctx, out);
+  const emit = textPaths.emit;
   let usesFixture = false;
   let usesErrno = false;
   let usesAddon = false;
   // GN-6m: a call of a member that waits is awaited where it is made.
-  const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
+  const invoke = (fn: Fn, args: string, receiver: string): string => textPaths.derive(awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver), [args, receiver]);
   const called = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
@@ -228,14 +324,14 @@ export function nodeTests(model: Model): string {
   const form: MadeForm = {
     ctx,
     invoke,
-    bind: (local, expr) => `const ${local} = ${expr};`,
+    bind: (local, expr) => { textPaths.bind(local, expr); return `const ${local} = ${expr};`; },
     name: (local) => local,
     run: (expr) => `${expr};`,
     fails: (expr, kind, what) => {
       usesOutcome = true;
       return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
-    pick: (expr, step) => ('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+    pick: (expr, step) => textPaths.derive('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
     arm: (local, member, faults) => {
       usesAddon = true;
       return `const ${local} = addon().__armFaults(${jsString(member)}, ${jsString(faults)});`;
@@ -250,11 +346,14 @@ export function nodeTests(model: Model): string {
   };
   // GN-13f: a receiver as one expression; an instance value is made in a function that the expression calls.
   const made = (receiver: Receiver): string => {
-    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
-    const built = madeLines(model, form, receiver);
-    const body = `${built.lines.join(' ')} return ${built.expr};`;
-    // GN-6m: a receiver that a call that waits makes is awaited.
-    return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
+    const make = (): string => {
+      if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+      const built = madeLines(model, form, receiver);
+      const body = `${built.lines.join(' ')} return ${built.expr};`;
+      // GN-6m: a receiver that a call that waits makes is awaited.
+      return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
+    };
+    return ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
   };
   ctx.instanceNew = made;
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
@@ -323,7 +422,7 @@ export function nodeTests(model: Model): string {
     // GN-6z: a value of a function type that is not a function is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
     if (functionArg !== undefined && reachable) {
-      out.push(`
+      emit(`
 test('GN-6z: ${name} refuses a ${langName('node', functionArg.name, 'variable')} that is not a function', () => {
   assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
@@ -332,7 +431,7 @@ test('GN-6z: ${name} refuses a ${langName('node', functionArg.name, 'variable')}
       const argName = langName('node', arg.name, 'variable');
       const number = isNumber(arg.type);
       if (number !== undefined) {
-        out.push(`
+        emit(`
 test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
   for (const bad of [${(BAD_NUMBERS[number] ?? []).join(', ')}]) {
     assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number', String(bad));
@@ -341,21 +440,21 @@ test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
       }
       const refused = refusedKeyMap(model, ctx, arg.type);
       if (refused !== undefined) {
-        out.push(`
+        emit(`
 test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
       const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
       if (unsafeKey !== undefined) {
-        out.push(`
+        emit(`
 test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
       // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
       if (refusesNull(arg) && !takesNull(model, arg.type)) {
-        out.push(`
+        emit(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
   assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });`);
@@ -363,7 +462,7 @@ test('U-2: ${name} takes null in ${argName} as a value', () => {
       // GN-6y: a path with a NUL byte is kind invalid_path, a string with an unpaired surrogate kind invalid_text, and a
       // value that is neither a string nor a Uint8Array kind invalid_argument_type.
       if (isPath(arg.type)) {
-        out.push(`
+        emit(`
 test('T-1: ${name} refuses a NUL byte in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, "'a\\u0000b'"]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_path');
 });
@@ -378,7 +477,7 @@ test('T-1: ${name} refuses a value that is no path in ${argName}', () => {
       }
       const bytes = bytesKind(arg.type);
       if (bytes !== undefined) {
-        out.push(`
+        emit(`
 test('T-7: ${name} refuses a ${argName} that is not ${bytes === 'source' ? 'a string or a Uint8Array' : 'a Uint8Array'}', () => {
   for (const bad of [1, new Uint16Array(1), [1]${bytes === 'source' ? '' : ", 'a'"}]) {
     assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
@@ -386,7 +485,7 @@ test('T-7: ${name} refuses a ${argName} that is not ${bytes === 'source' ? 'a st
 });`);
       }
       if (bytes === 'source') {
-        out.push(`
+        emit(`
 test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
 });`);
@@ -394,7 +493,7 @@ test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
       // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
       const refusedValue = aliasRepresentative(model, ctx, arg.type);
       if (refusedValue !== undefined) {
-        out.push(`
+        emit(`
 test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${exactClass(refusedValue.kase)} && error.kind === ${jsString(refusedValue.kase.kind)});
 });`);
@@ -402,7 +501,7 @@ test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${arg
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
-        out.push(`
+        emit(`
 test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'an unpaired surrogate'} in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, wrapText(arg.type, bad)]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
 });`);
@@ -410,7 +509,7 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
     }
     // GN-6ae: a parameter of a function type takes a function, and any other value is kind invalid_callback.
     for (const arg of reachable ? fn.args.filter((a) => machineFunction(a.type)) : []) {
-      out.push(`
+      emit(`
 test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that is no function', () => {
   assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
 });`);
@@ -418,7 +517,7 @@ test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that i
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('node', pair.arg.name, 'variable');
-      out.push(`
+      emit(`
 test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
   assert.deepStrictEqual(outcome(() => ${target(callArgs(model, ctx, fn, pair.left))}), outcome(() => ${target(callArgs(model, ctx, fn, pair.right))}));
 });`);
@@ -426,7 +525,7 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
     for (const kase of raisingCases(model, fn)) {
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        emit(`
 test('B-4: ${name} ${kase.id}', () => {
   assert.fail(${jsString(refusal)});
 });`);
@@ -458,7 +557,7 @@ test('B-4: ${name} ${kase.id}', () => {
       const after = fixtures
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
-      out.push(`
+      emit(`
 test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
@@ -473,7 +572,7 @@ test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeSer
     for (const kase of callbackCases(model, fn)) {
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        emit(`
 test('GN-6ae: ${name} ${kase.id}', () => {
   assert.fail(${jsString(refusal)});
 });`);
@@ -481,7 +580,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       }
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
       const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
-      out.push(`
+      emit(`
 test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
   assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
@@ -490,7 +589,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${node
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
       if (kase.refused !== undefined) {
-        out.push(`
+        emit(`
 test('GN-13e: ${name} ${kase.id}', () => {
   assert.fail(${jsString(kase.refused)});
 });`);
@@ -498,7 +597,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
       }
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        emit(`
 test('GN-13e: ${name} ${kase.id}', () => {
   assert.fail(${jsString(refusal)});
 });`);
@@ -529,7 +628,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
               : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
-      out.push(`
+      emit(`
 test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
@@ -539,7 +638,7 @@ test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${node
     if (callback !== undefined && cbUnit !== undefined && reachable) {
       const with_ = (how: CallbackHow): string =>
         target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
-      out.push(`
+      emit(`
 test('K-2: ${name} refuses a callback without its members', () => {
   assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
 });${!fn.failure ? '' : `
@@ -556,13 +655,13 @@ test('K-2: ${name} refuses a callback result of another type', () => {
     for (const kase of primitiveCases(model, ctx, fn)) {
       const instance = receiverOfCase(kase.receiver);
       const number = invoke(fn, '', instance.expr);
-      out.push(`
+      emit(`
 test('N-4: ${name} ${kase.id}', () => {${instance.lines}
   ${kase.result === undefined ? `${number};` : `assert.strictEqual(${number}, ${kase.result});`}
 });`);
     }
     for (const kase of stringCases(model, fn)) {
-      out.push(`
+      emit(`
 test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
   assert.equal(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${jsString(kase.result)});
 });`);
@@ -578,7 +677,7 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     const lacking = { ...fields, [field]: undefined };
     assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
-    out.push(`
+    emit(`
 test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined) ? '' : `
   assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
@@ -589,13 +688,13 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   const refused = (category: string, kind: string, call: string): string => `
   assert.throws(() => ${call}, (error) => error.constructor === pkg.${cls(category)} && error.kind === ${jsString(kind)});`;
   for (const test of held.poison) {
-    out.push(`
+    emit(`
 test('B-5c: ${langName('node', test.object.unit.name, 'class')} refuses a poisoned object', () => {
   const held = ${test.instance};${[`addon().${POISON_ENTRY.node}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
 });`);
   }
   for (const test of held.busy) {
-    out.push(`
+    emit(`
 test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', test.fn.member.name, 'callable')} refuses the instance at two places', () => {
   const held = ${test.instance};${test.armed === undefined ? '' : `\n  const armed = addon().__armFaults(${jsString(test.fn.member.id)}, ${jsString(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n  ${test.after};`}${test.armed === undefined ? '' : `
   // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
@@ -606,7 +705,7 @@ test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', t
   // entry point of the feature thread-test.
   if (takesFunction(model)) {
     usesAddon = true;
-    out.push(`
+    emit(`
 test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', () => {
   assert.equal(addon().__threadTest(() => null), 'wrong_thread');
 });`);
@@ -619,7 +718,7 @@ test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', ()
   if (roundFn !== undefined) {
     usesAddon = true;
     const same = (value: string): string => invoke(roundFn, value, '');
-    out.push(`
+    emit(`
 test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
   ${same('new Subject()')};
   await new Promise(setImmediate);
@@ -636,7 +735,7 @@ test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the
     if (sample === undefined) continue;
     usesOutcome = true;
     const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
-    out.push(`
+    emit(`
 test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.member.name, 'callable')} consumes its object', () => {
   const held = ${made(sample)};
   outcome(() => ${invoke(fn, args, 'held')});
@@ -652,7 +751,7 @@ test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.me
     if (cleanup === undefined || sample === undefined) continue;
     usesGc = true;
     const label = langName('node', object.unit.name, 'class');
-    out.push(`
+    emit(`
 test('B-10: ${label} warns when it is destroyed without ${memberName('node', cleanup)}()', async () => {
   const expected = ${jsString(cleanupWarning(label, memberName('node', cleanup)))};
   const warned = new Promise((resolve) => {
@@ -675,16 +774,18 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
     const errno = expectedErrno(kase);
     usesErrno ||= errno !== null && 'symbol' in errno;
     usesAddon = true;
-    out.push(`
+    emit(`
 test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)}${kase.raises.status === undefined ? '' : ` && error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)}`} && error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});
 });`);
   }
   // GN-6m: a block may hold several tests, each of which awaits when its call does.
+  const usesCaseText = textPaths.used();
+  if (usesCaseText) nodeCaseTextProof(ctx, emit);
   const blocks = out.map((block) => block.split(/(?=\ntest\()/).map(awaitedTest).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
-  const usesCaseFile = blocks.some((block) => block.includes('caseFile('));
+  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile('));
   const usesCasePath = usesCaseFile || blocks.some((block) => block.includes('casePath('));
   // GN-13j: the helpers of a service, which the lines of a test and its values call.
   const usesService = blocks.some((block) => /\bservice(Address|State)\(/.test(block));
@@ -700,12 +801,12 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
 import assert from 'node:assert/strict';${usesService ? "\nimport { spawnSync } from 'node:child_process';" : ''}
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile) : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile, usesCaseText) : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesService ? NODE_SERVICE : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesService ? NODE_SERVICE : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

@@ -9,6 +9,31 @@ import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
+import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
+
+// GN-13l: native JSON string quoting preserves valid Unicode and rejects surrogate replacement.
+const PYTHON_CASE_TEXT_PATH = `
+
+def _case_json_string(value: str) -> str:
+    value.encode("utf-8", errors="strict")
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _case_text_path(root: str, relative: str, json_string: bool) -> str:
+    path = os.path.join(root, relative)
+    quoted = _case_json_string(path)
+    return quoted if json_string else path
+`;
+
+const PYTHON_CASE_TEXT_GOLDENS = `
+    def test_gn13l_case_json_string_golden_bytes(self) -> None:
+        for input_hex, expected_hex in (
+${CASE_JSON_STRING_GOLDENS.map(({ inputHex, expectedHex }) => `            ("${inputHex}", "${expectedHex}"),`).join('\n')}
+        ):
+            with self.subTest(input_hex=input_hex):
+                value = bytes.fromhex(input_hex).decode("utf-8")
+                self.assertEqual(_case_json_string(value).encode("utf-8").hex(), expected_hex)
+`;
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
@@ -189,7 +214,39 @@ export function pythonTests(model: Model, module: string): string {
     return `foreign_${fn.library.replaceAll('-', '_')}.`;
   };
   const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
-  const ctx: Context = { lang: 'python', enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
+  // GN-13l: only actual generation scopes and cached helper metadata carry the immutable case root.
+  let caseTextUses = 0;
+  let methodMark = 0;
+  let usesFunctools = false;
+  const expressionMarks: number[] = [];
+  const rootExpressions = new Set<string>();
+  const rootNeeded = (): boolean => {
+    const mark = expressionMarks.at(-1);
+    return mark !== undefined && caseTextUses > mark;
+  };
+  const withRoot = (expression: string, needed: boolean): string => {
+    if (needed) {
+      rootExpressions.add(expression);
+      caseTextUses += 1;
+    }
+    return expression;
+  };
+  const useExpression = (expression: string): string => withRoot(expression, rootExpressions.has(expression));
+  const caseTextExpression = (make: () => string): string => {
+    const mark = caseTextUses;
+    expressionMarks.push(mark);
+    try {
+      const expression = make();
+      if (caseTextUses > mark) rootExpressions.add(expression);
+      return expression;
+    } finally {
+      expressionMarks.pop();
+    }
+  };
+  const ctx: Context = { lang: 'python', caseTextExpression, caseTextPath: (relative, jsonString) => {
+    caseTextUses += 1;
+    return `_case_text_path(_case_text_root, ${pyString(relative)}, ${jsonString ? 'True' : 'False'})`;
+  }, enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
     cancelNew: (fired) => `self._future(${fired ? 'True' : 'False'})`,
     serviceAddress: (service) => `_service_address(${pyString(service.id)}, ${pyString(service.address)})`,
@@ -225,6 +282,12 @@ export function pythonTests(model: Model, module: string): string {
     return unit === undefined ? cls(raises.category) : langName('python', unit.unit.name, 'class');
   };
   const out: string[] = [];
+  const methodRoots: boolean[] = [];
+  const append = (...blocks: string[]): number => {
+    methodRoots.push(...blocks.map(() => caseTextUses > methodMark));
+    methodMark = caseTextUses;
+    return out.push(...blocks);
+  };
   let usesFixture = false;
   // GN-6z: a function value of a case is a fixture whose one member is the call itself (__call__).
   type Made = { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined } };
@@ -240,11 +303,16 @@ export function pythonTests(model: Model, module: string): string {
   // calls.
   const helpers: string[] = [];
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => {
-    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+    const mark = caseTextUses;
+    if (isPlain(receiver)) {
+      const expression = invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+      return withRoot(expression, caseTextUses > mark);
+    }
     const built = steps.apart(() => madeLines(model, madeForm, receiver));
+    const needed = caseTextUses > mark;
     const helper = `_made_${helpers.length}`;
-    helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
-    return `${helper}()`;
+    helpers.push(`\n\ndef ${helper}(${needed ? '_case_text_root' : ''}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
+    return withRoot(`${helper}(${needed ? '_case_text_root' : ''})`, needed);
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
   // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a
@@ -264,9 +332,10 @@ export function pythonTests(model: Model, module: string): string {
       const last = steps.bind(expr);
       if (pending.length === 0) return last;
       const helper = `_deep_${deepFunctions++}`;
-      helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${pending.map((line) => `    ${line}\n`).join('')}    return ${last}\n`);
+      const needed = rootNeeded();
+      helpers.push(`\n\ndef ${helper}(${needed ? '_case_text_root' : ''}):  # noqa: ANN202\n${pending.map((line) => `    ${line}\n`).join('')}    return ${last}\n`);
       pending = [];
-      return `${helper}()`;
+      return withRoot(`${helper}(${needed ? '_case_text_root' : ''})`, needed);
     },
     drop: (): void => {
       pending = [];
@@ -324,6 +393,8 @@ export function pythonTests(model: Model, module: string): string {
   let usesSame = false;
   let usesTokens = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
+    useExpression(args);
+    useExpression(receiver);
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('python', fn.member.name, 'callable');
@@ -349,7 +420,12 @@ export function pythonTests(model: Model, module: string): string {
   // exception that the test of the case holds. A fixture with awaits is a coroutine function, whose steps await the
   // awaited form of a member that waits. Two fixtures of one body are one function.
   let usesRaised = false;
-  const functions = new Map<string, string>();
+  const functions = new Map<string, { name: string; needsRoot: boolean }>();
+  const functionExpression = (helper: { name: string; needsRoot: boolean }): string => {
+    if (!helper.needsRoot) return helper.name;
+    usesFunctools = true;
+    return withRoot(`functools.partial(${helper.name}, _case_text_root)`, true);
+  };
   ctx.machineFunctionNew = (fixture) => {
     const lines = fixture.steps.flatMap((step, i) => {
       const on = `args[${step.on}]`;
@@ -361,13 +437,15 @@ export function pythonTests(model: Model, module: string): string {
     });
     usesRaised ||= 'exception' in fixture.end;
     lines.push('result' in fixture.end ? `return ${fixture.end.result}` : 'raise' in fixture.end ? `raise ${fixture.end.raise}` : 'raise _raised[0]');
-    const body = `${fixture.awaits ? 'async ' : ''}def NAME(*args):  # noqa: ANN002, ANN202\n${lines.map((line) => `    ${line}\n`).join('')}`;
+    const needsRoot = rootNeeded();
+    const body = `${fixture.awaits ? 'async ' : ''}def NAME(${needsRoot ? '_case_text_root, ' : ''}*args):  # noqa: ANN002, ANN202\n${lines.map((line) => `    ${line}\n`).join('')}`;
     const known = functions.get(body);
-    if (known !== undefined) return known;
+    if (known !== undefined) return functionExpression(known);
     const name = `_function_${functions.size}`;
-    functions.set(body, name);
+    const helper = { name, needsRoot };
+    functions.set(body, helper);
     helpers.push(`\n\n${body.replace('NAME', name)}`);
-    return name;
+    return functionExpression(helper);
   };
   // GN-6ae: the call of a case: a case whose function fixture names awaits runs the awaited form on an event loop.
   const caseCall = (fn: Fn, args: string, receiver: string, given: Map<Fn['args'][number], unknown>): string => {
@@ -390,6 +468,7 @@ export function pythonTests(model: Model, module: string): string {
       return `\n        after_${i} = ${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}\n        expected_${i} = ${expected.text}\n        self.assertTrue(_same(after_${i}, expected_${i}), f"{after_${i}!r} is not {expected_${i}!r}")`;
     }).join('');
   for (const fn of callables(model)) {
+    methodMark = caseTextUses;
     const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
@@ -398,10 +477,11 @@ export function pythonTests(model: Model, module: string): string {
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
     for (const arg of reachable ? fn.args : []) {
+      methodMark = caseTextUses;
       const number = isNumber(arg.type);
       const argName = langName('python', arg.name, 'variable');
       if (number !== undefined) {
-        out.push(`
+        append(`
     def test_b2_${name}_${argName}_refuses_what_is_not_${number}(self) -> None:
         for bad in [${(BAD_NUMBERS[number] ?? []).join(', ')}]:
             with self.subTest(bad=bad):
@@ -412,7 +492,7 @@ export function pythonTests(model: Model, module: string): string {
       }
       const refused = refusedKeyMap(model, ctx, arg.type);
       if (refused !== undefined) {
-        out.push(`
+        append(`
     def test_t2_${name}_${argName}_refuses_a_${refused.kind}_key(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, refused.value]]))}
@@ -420,7 +500,7 @@ export function pythonTests(model: Model, module: string): string {
       }
       const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
       if (unsafeKey !== undefined) {
-        out.push(`
+        append(`
     def test_b2_${name}_${argName}_refuses_a_key_outside_the_safe_integers(self) -> None:
         with self.assertRaises(pkg.${cls('value')}) as caught:
             ${call(new Map([[arg, unsafeKey]]))}
@@ -428,7 +508,7 @@ export function pythonTests(model: Model, module: string): string {
       }
       // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
       if (refusesNull(arg) && !takesNull(model, arg.type)) {
-        out.push(`
+        append(`
     def test_u2_${name}_${argName}_takes_none_as_a_value(self) -> None:
         with self.assertRaises((pkg.${cls('value')}, pkg.${cls('type')})) as caught:
             ${call(new Map([[arg, 'None']]))}
@@ -437,7 +517,7 @@ export function pythonTests(model: Model, module: string): string {
       // GN-6y: a path with a NUL byte is kind invalid_path, and a value that os.fsencode refuses by its type is kind
       // invalid_argument_type.
       if (isPath(arg.type)) {
-        out.push(`
+        append(`
     def test_t1_${name}_${argName}_refuses_a_nul_byte(self) -> None:
         with self.assertRaises(pkg.${cls('value')}) as caught:
             ${call(new Map([[arg, '"a\\x00b"']]))}
@@ -450,14 +530,14 @@ export function pythonTests(model: Model, module: string): string {
       }
       const bytes = bytesKind(arg.type);
       if (bytes !== undefined) {
-        out.push(`
+        append(`
     def test_t7_${name}_${argName}_refuses_what_is_not_${bytes === 'source' ? 'a_text_or_bytes' : 'bytes'}(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, '1']]))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
       }
       if (bytes === 'source') {
-        out.push(`
+        append(`
     def test_b3_${name}_${argName}_refuses_an_unpaired_surrogate(self) -> None:
         with self.assertRaises(pkg.${cls('value')}) as caught:
             ${call(new Map([[arg, '"\\ud800"']]))}
@@ -466,7 +546,7 @@ export function pythonTests(model: Model, module: string): string {
       // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
       const refusedValue = aliasRepresentative(model, ctx, arg.type);
       if (refusedValue !== undefined) {
-        out.push(`
+        append(`
     def test_u7_${name}_${argName}_gives_the_kind_of_${langName('python', refusedValue.kase.alias.unit.name, 'variable')}(self) -> None:
         with self.assertRaises(pkg.${cls(refusedValue.kase.category)}) as caught:
             ${call(new Map([[arg, refusedValue.value]]))}
@@ -476,7 +556,7 @@ export function pythonTests(model: Model, module: string): string {
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? pyString('Ā') : '"\\ud800"';
-        out.push(`
+        append(`
     def test_b3_${name}_${argName}_refuses_${text === 'latin1' ? 'a_character_above_u00ff' : 'an_unpaired_surrogate'}(self) -> None:
         with self.assertRaises(pkg.${cls('value')}) as caught:
             ${call(new Map([[arg, wrapText(arg.type, bad)]]))}
@@ -487,16 +567,17 @@ export function pythonTests(model: Model, module: string): string {
     // form of a member whose function may return an awaitable has no event loop to await it on, which is the same kind
     // with a message that names the awaited form.
     for (const arg of reachable ? fn.args : []) {
+      methodMark = caseTextUses;
       if (!machineFunction(arg.type)) continue;
       const argName = langName('python', arg.name, 'variable');
-      out.push(`
+      append(`
     def test_gn6ae_${name}_${argName}_refuses_what_is_no_callable(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, '1']]))}
         self.assertEqual(caught.exception.kind, "invalid_callback")`);
       if (!arg.type.function.async_allowed || fn.machine !== true) continue;
       const awaitable = ctx.machineFunctionNew?.({ parameters: arg.type.function.parameters.length, awaits: true, steps: [], end: { result: 'None' } }) ?? '';
-      out.push(`
+      append(`
     def test_gn6ae_${name}_${argName}_refuses_an_awaitable_without_an_event_loop(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, awaitable]]))}
@@ -509,10 +590,11 @@ export function pythonTests(model: Model, module: string): string {
     const keptNames = keptClass?.fields.flatMap((f) => (f.property === undefined ? [] : [pyString(langName('python', f.property.name, 'variable'))])) ?? [];
     const observed = (made: string): string => (keptClass === undefined ? made : `_kept(${made}, (${keptNames.map((n) => `${n},`).join(' ')}))`);
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
+      methodMark = caseTextUses;
       usesOutcome = true;
       usesKept ||= keptClass !== undefined;
       const argName = langName('python', pair.arg.name, 'variable');
-      out.push(`
+      append(`
     def test_${pair.rule === 'U-2' ? `u2_${name}_${argName}_left_out_is_its_default` : `t1_${name}_${argName}_takes_a_text_as_its_utf8_bytes`}(self) -> None:
         self.assertEqual(
             _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.left)))}),
@@ -520,9 +602,10 @@ export function pythonTests(model: Model, module: string): string {
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
+      methodMark = caseTextUses;
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        append(`
     def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(refusal)})`);
         continue;
@@ -554,7 +637,7 @@ export function pythonTests(model: Model, module: string): string {
       const armedCall = invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `arg_${fn.args.indexOf(arg)}`)), receiver === '' ? '' : 'receiver');
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
-      out.push(`
+      append(`
     def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? caseCall(fn, callArgs(model, ctx, fn, caseArg), receiver, kase.args) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
@@ -567,10 +650,11 @@ export function pythonTests(model: Model, module: string): string {
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
+      methodMark = caseTextUses;
       const id = caseSnake(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        append(`
     def test_gn6ae_${name}_${id}(self) -> None:
         self.fail(${pyString(refusal)})`);
         continue;
@@ -578,7 +662,7 @@ export function pythonTests(model: Model, module: string): string {
       const receiverMade = receiverOfCase(kase.receiver);
       const call = caseCall(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr === '' ? '' : 'receiver', kase.args);
       usesRaised = true;
-      out.push(`
+      append(`
     def test_gn6ae_${name}_${id}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}
         raised = LookupError(${pyString(FIXTURE_RAISED)})
         _raised[:] = [raised]
@@ -588,15 +672,16 @@ export function pythonTests(model: Model, module: string): string {
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
+      methodMark = caseTextUses;
       if (kase.refused !== undefined) {
-        out.push(`
+        append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(kase.refused)})`);
         continue;
       }
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
-        out.push(`
+        append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(refusal)})`);
         continue;
@@ -628,7 +713,7 @@ export function pythonTests(model: Model, module: string): string {
         usesThreads = true;
         const plain = invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiver === '' ? '' : 'subject');
         const awaited = plain.replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
-        out.push(`
+        append(`
     def test_gn6m_${name}_drops_its_result_when_its_loop_is_closed(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiver === '' ? '' : `\n        subject = ${receiver}`}
         escaped = []
         started = []
@@ -664,7 +749,7 @@ export function pythonTests(model: Model, module: string): string {
               ? `\n        self.assertEqual(_tokens(${call}), json.loads(${pyString(expected.tokens)}))`
               : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
             : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
-      out.push(`
+      append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -673,7 +758,7 @@ export function pythonTests(model: Model, module: string): string {
     if (callback !== undefined && cbUnit !== undefined && reachable) {
       const with_ = (how: CallbackHow): string =>
         target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
-      out.push(`
+      append(`
     def test_k2_${name}_refuses_a_callback_without_its_members(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${with_({ missing: true })}
@@ -694,7 +779,7 @@ export function pythonTests(model: Model, module: string): string {
         usesAsyncio = true;
         const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : placeholder(model, ctx, arg.type, true)));
         const awaited = invoke(fn, args, recv).replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
-        out.push(`
+        append(`
     def test_gn6q_${name}_awaits_a_callback_on_the_thread_of_to_thread(self) -> None:
         raised = LookupError("raised by the callback")
         with self.assertRaises(LookupError) as caught:
@@ -705,14 +790,15 @@ export function pythonTests(model: Model, module: string): string {
     // GN-6z: a value of a function type that is not callable is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
     if (functionArg !== undefined && reachable) {
-      out.push(`
+      append(`
     def test_gn6z_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type, true))))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
     }
     for (const kase of stringCases(model, fn)) {
-      out.push(`
+      methodMark = caseTextUses;
+      append(`
     def test_n4_${name}_${caseSnake(kase.id)}(self) -> None:${receiverOfCase(kase.receiver).lines}
         self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
     }
@@ -724,7 +810,7 @@ export function pythonTests(model: Model, module: string): string {
     const pyo3New = bare && fn.kind === 'constructor';
     const extra = pyo3New ? 'takes 0 positional arguments' : bare ? 'takes no arguments' : 'positional';
     const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
-    out.push(`
+    append(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${target('')}`}
@@ -741,12 +827,12 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(category)})
         self.assertEqual(caught.exception.kind, ${pyString(kind)})`;
   for (const test of held.poison) {
-    out.push(`
+    append(`
     def test_b5c_${langName('python', test.object.unit.name, 'variable')}_refuses_a_poisoned_object(self) -> None:
         held = ${test.instance}${[`_native.${POISON_ENTRY.python}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}`);
   }
   for (const test of held.busy) {
-    out.push(`
+    append(`
     def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
         held = ${test.instance}${test.armed === undefined ? '' : `\n        armed = _native._arm_faults(${pyString(test.fn.member.id)}, ${pyString(test.armed.faults)})`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}${test.armed === undefined ? '' : `
         # GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
@@ -754,11 +840,12 @@ export function pythonTests(model: Model, module: string): string {
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
   for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    methodMark = caseTextUses;
     const sample = sampleReceiver(model, fn);
     if (sample === undefined) continue;
     usesOutcome = true;
     const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
-    out.push(`
+    append(`
     def test_gn6o_${langName('python', fn.unit.name, 'variable')}_${langName('python', fn.member.name, 'callable')}_consumes_its_object(self) -> None:
         held = ${made(sample, (arg) => caseValue(model, ctx, arg, sample.args))}
         _outcome(lambda: ${invoke(fn, args, 'held')})
@@ -778,7 +865,7 @@ export function pythonTests(model: Model, module: string): string {
     const callName = langName('python', cleanup.member.name, 'callable');
     const recv = made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
     const warned = 'self.assertEqual([str(w.message) for w in caught if issubclass(w.category, ResourceWarning)], ';
-    out.push(`
+    append(`
     def test_b10_${variable}_warns_without_${callName}(self) -> None:
         held = ${recv}
         with warnings.catch_warnings(record=True) as caught:
@@ -796,9 +883,10 @@ export function pythonTests(model: Model, module: string): string {
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
+    methodMark = caseTextUses;
     const errno = expectedErrno(kase);
     usesErrno ||= errno !== null && 'symbol' in errno;
-    out.push(`
+    append(`
     def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
@@ -814,7 +902,7 @@ export function pythonTests(model: Model, module: string): string {
   if (roundFn !== undefined) {
     const name = langName('python', roundFn.member.name, 'variable');
     const same = (value: string): string => invoke(roundFn, value, '');
-    out.push(`
+    append(`
     def test_gn6u_${name}_gives_back_the_same_object_and_releases_it(self) -> None:
         ${same('_Subject()')}
         subject = _Subject()
@@ -826,8 +914,34 @@ export function pythonTests(model: Model, module: string): string {
         del subject
         self.assertIsNone(alive())`);
   }
+  if (caseTextUses > 0) {
+    methodMark = caseTextUses;
+    const relative = 'owned-text-witness/file';
+    const rootCallback = (): string => caseTextExpression(() => {
+      const value = ctx.caseTextPath?.(relative, false);
+      if (value === undefined) throw new Unsupported('GN-13l: the Python case-root callback is missing');
+      const callback = ctx.machineFunctionNew?.({ parameters: 0, awaits: false, steps: [], end: { result: value } });
+      if (callback === undefined) throw new Unsupported('GN-13l: the Python function-fixture callback is missing');
+      return callback;
+    });
+    const callback = rootCallback();
+    const cachedCallback = rootCallback();
+    append(`
+    def test_gn13l_composed_callback_uses_old_file_root(self) -> None:
+        self._case_file(${pyString(relative)}, "726f6f74207769746e657373")
+        callback = ${callback}
+        cached_callback = ${cachedCallback}
+        for path in (callback(), cached_callback()):
+            self.assertEqual(path, self._case_path(${pyString(relative)}))
+            with open(path, "rb") as file:
+                self.assertEqual(file.read().hex(), "726f6f74207769746e657373")`);
+  }
+  const usesCaseTextPath = caseTextUses > 0;
+  const renderedOut = out.map((block, i) => methodRoots[i] === true
+    ? block.replace(/(\n    def test_[^\n]*:\n)/g, '$1        _case_text_root = os.path.dirname(self._case_path("."))\n')
+    : block);
   const usesCaseFile = out.some((block) => block.includes('self._case_file('));
-  const usesCasePath = usesCaseFile || out.some((block) => block.includes('self._case_path('));
+  const usesCasePath = usesCaseTextPath || usesCaseFile || out.some((block) => block.includes('self._case_path('));
   const usesFuture = out.some((block) => block.includes('self._future('));
   // GN-13j: the helpers of a service are module functions, which the lines of a test and of a made value call.
   const usesService = [...out, ...helpers].some((block) => /\b_service_(address|state)\(/.test(block));
@@ -842,19 +956,19 @@ export function pythonTests(model: Model, module: string): string {
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesFunctools ? 'import functools\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens || usesCaseTextPath ? 'import json\n' : ''}${usesTokens ? 'import struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
-class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesFuture ? PYTHON_FUTURE : ''}
+class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
         with self.assertRaises(pkg.${cls('internal')}) as caught:
             _native._panic_test()
         self.assertEqual(caught.exception.kind, "internal")
         self.assertIsInstance(caught.exception, RuntimeError)
-${out.join('\n')}
+${renderedOut.join('\n')}
 
 
 if __name__ == "__main__":

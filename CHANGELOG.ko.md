@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 4255d8999f3d51f68ca1f046dd30922b9d04b16ec4a30ec80f1ffbbac7d909aa -->
+<!-- source-sha256: 7511bfdb9b101ac30c253ded73902aafddde51b5a4a86f069415641eb1e8b961 -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
@@ -26,6 +27,15 @@
   검증이 통과했다(B2.270, B2.271, B2.272, B2.273, B2.275). `make test-ts` 709개 시험, `make test-rust`,
   `make lint-rust`, 다섯 대상의 sample end-to-end 검증이 통과했다. Go runtime 시험이 전송한 음의 영의 bit를
   독립적으로 검증했고, PHP runtime은 8.4.27이다.
+- typed text case가 Unicode literal과 case 소유 상대 경로를 합성하고, 선택적으로 완전한 최소 UTF-8
+  JSON string token을 쓴다(GN-13l, B2.277). 정확한 기대 text를 유지하며 private helper는 캡처한 case root를
+  전달한다. 고정 byte quote golden과 기존 root/file witness를 생성한다. alias token과 기존 plain text는
+  바꾸지 않는다. WASM은 Node host root를 text로만 사용하고 filesystem 접근을 얻지 않는다.
+
+- fixture 준비 전에 case 소유 상대 경로의 모든 component에서 Windows drive prefix를 거부한다
+  (GN-6y, B2.276). 이전에는 중첩 및 drive 상대 component가 공통 validator를 통과했다. drive가 아닌 colon과
+  기존 경로 검사의 의미는 유지한다. commit한 입력에서 소유 Node validator 시험이 통과했다. 이는 어휘
+  검증이며 native Windows filesystem 검증은 아니다.
 
 - `FloatOut::safe_integer`와 `OutValue::predicate`가 음의 영을 포함해 닫힌 안전 정수 범위에 있는 유한한
   정수 float를 판별한다(B2.272). `Predicate::applies_to`가 단일 kind `kind` API를 대신한다. checker는 도달

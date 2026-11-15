@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
-import { fromJson } from '../src/generate/samples.ts';
+import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, hostRequirements, trackedPackages } from '../src/generate/packages.ts';
@@ -4287,6 +4287,284 @@ test('a {literal: null} default of a value type is None without a constant, and 
   assert.doesNotMatch(python, /def test_u2_describe_value_takes_none_as_a_value/);
 });
 
+test('B2.276: drive-qualified components are refused before case-file preparation (GN-6y, GN-13i)', () => {
+  for (const path of ['C:/outside', 'C:relative', 'dir/C:/outside', 'dir/C:relative', 'c:/outside', 'c:relative', 'dir/c:/outside', 'dir/c:relative']) {
+    assert.throws(() => casePathOf(path), /without \.\. or drive-qualified components \(GN-6y\)/, path);
+    assert.throws(() => caseFilesOf({ [path]: 'owned' }), /relative path inside the directory of the test.*GN-13i/, path);
+  }
+});
+
+test('B2.276: relative ownership guards and non-drive colons retain their meanings (GN-6y)', () => {
+  for (const path of ['', '/outside', '../a', 'a/../b', 'a//b', 'a/', 'a\\b', null, undefined, {}]) {
+    assert.throws(() => casePathOf(path), /relative path inside the directory of the test.*GN-6y/);
+  }
+  for (const path of ['a', 'a/b', '.', './a', 'report:2026/file']) {
+    assert.equal(casePathOf(path), path);
+  }
+  for (const path of ['a', 'a/b', 'report:2026/file']) {
+    assert.deepEqual(caseFilesOf({ [path]: 'owned' }), [{ path, hex: '6f776e6564' }]);
+  }
+});
+
+function b277TextFixture(): { contract: any; caseFiles: Map<string, unknown> } {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  return { contract, caseFiles: sampleCases() };
+}
+
+test('B2.277: text parts have strict contextual keys, modes, Unicode and owned paths (GN-13l)', () => {
+  assert.deepEqual(caseTextParts({ text: ['\0', { case_path: 'owned/new.db' }, { case_path: './file', as: 'json-string' }] }), ['\0', { relative: 'owned/new.db', jsonString: false }, { relative: './file', jsonString: true }]);
+  for (const value of [
+    { text: [] }, { text: 'literal' }, { text: ['a'], extra: true }, { text: [1] }, { text: ['\ud800'] },
+    { text: [{ case_path: 'file', as: 'raw' }] }, { text: [{ case_path: 'file', as: null }] },
+    { text: [{ case_path: 'file', extra: true }] }, { text: [{ case_path: 'bad\0file' }] },
+    { text: [{ case_path: '\ud800' }] }, { text: [{ case_path: '/outside' }] }, { text: [{ case_path: '../outside' }] },
+    { text: [{ case_path: 'dir/C:relative' }] }, { text: [{ case_path: '' }] }, { text: [{}] },
+  ]) assert.throws(() => caseTextParts(value), /GN-13l|GN-6y/);
+  assert.deepEqual(caseTextParts({ text: ['🙂'] }), ['🙂']);
+  assert.equal(caseTextParts('ordinary'), undefined);
+  assert.equal(caseTextParts({ ill_formed: 'ordinary' }), undefined);
+  const model = {} as Parameters<typeof fromJson>[0];
+  let paths = 0;
+  const ctx: Parameters<typeof fromJson>[1] = { lang: 'node', enumRef: () => '', recordNew: () => '', callbackNew: () => '', caseTextPath: () => { paths += 1; return 'path'; } };
+  assert.throws(() => fromJson(model, ctx, 'latin1', { text: ['a'] }), /type text only.*GN-13l/);
+  assert.doesNotThrow(() => fromJson(model, ctx, { map: { list: 'text' } }, { text: ['ordinary'] }));
+  assert.equal(paths, 0, 'a genuine map does not interpret its text key as a composition marker');
+});
+
+test('B2.277: expression dependency scopes render once and preserve steps and errors (GN-13l)', () => {
+  const model = {} as Parameters<typeof fromJson>[0];
+  let enters = 0;
+  let leaves = 0;
+  let paths = 0;
+  const ctx: Parameters<typeof fromJson>[1] = { lang: 'node', enumRef: () => '', recordNew: () => '', callbackNew: () => '',
+    caseTextPath: () => { paths += 1; return 'owned'; },
+    caseTextExpression: (make) => { enters += 1; try { return make(); } finally { leaves += 1; } },
+  };
+  assert.equal(fromJson(model, ctx, 'text', { text: [{ case_path: 'a' }] }), '(owned)');
+  assert.equal(paths, 1);
+  assert.equal(enters, 1);
+  assert.equal(leaves, 1);
+  assert.throws(() => fromJson(model, ctx, 'text', { text: [] }), /GN-13l/);
+  assert.equal(enters, 2);
+  assert.equal(leaves, 2);
+  let dropped = 0;
+  ctx.steps = { depth: 0, bind: (expr) => expr, done: (expr) => expr, drop: () => { dropped += 1; } };
+  assert.throws(() => fromJson(model, ctx, 'text', { text: [] }), /GN-13l/);
+  assert.equal(ctx.steps.depth, 0);
+  assert.equal(dropped, 1);
+  assert.equal(enters, leaves);
+});
+
+test('B2.277: fixed UTF-8 JSON goldens decode to their independent input bytes (GN-13l)', () => {
+  for (const vector of CASE_JSON_STRING_GOLDENS) {
+    const expected = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(vector.expectedHex, 'hex'));
+    const input = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(vector.inputHex, 'hex'));
+    assert.equal(JSON.parse(expected), input);
+  }
+  assert.ok(CASE_JSON_STRING_GOLDENS.some((v) => v.inputHex === '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'));
+});
+
+test('B2.277: composed typed text reaches all five writers with private root and JSON helpers (GN-13l)', () => {
+  const fixture = b277TextFixture();
+  const out = generate({ ...fixture, version: '0.0.0', coreLib: 'polyspec_sample', targets: FIVE as Inputs['targets'] & string[] });
+  for (const [path, call] of [
+    ['packages/python/generated/tests/test_generated.py', /_case_text_path\(/],
+    ['packages/ts/generated/tests/generated.test.mjs', /caseTextPath\(/],
+    ['packages/ts/wasm/generated/tests/generated.test.mjs', /caseTextPath\(/],
+    ['packages/php-ext/generated/tests/GeneratedTest.php', /caseTextPath\(/],
+    ['packages/go/zz_generated_test.go', /caseTextPath\(/],
+  ] as [string, RegExp][]) {
+    const generated = text(out, path);
+    const refused = generated.split('\n').filter((line) => line.includes('the case b277_raw_path') && line.includes('type text'));
+    assert.deepEqual(refused, [], path);
+    assert.match(generated, call, path);
+  }
+});
+
+test('B2.277: private module helpers and cached function fixtures carry the case root (GN-13l)', () => {
+  const out = generate({ ...b277TextFixture(), version: '0.0.0', coreLib: 'polyspec_sample', targets: ['python'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def _made_\d+\(_case_text_root/);
+  assert.match(python, /def _function_\d+\(_case_text_root, \*args\)/);
+  assert.ok((python.match(/functools\.partial\(_function_\d+, _case_text_root\)/g) ?? []).length >= 2);
+  assert.match(python, /_case_text_root = os\.path\.dirname\(self\._case_path\(["']\.["']\)\)/);
+});
+
+test('B2.277: deep typed-text expressions carry their root into private parser-depth helpers (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  let type: unknown = 'text';
+  let value: unknown = { text: [{ case_path: 'owned/deep.txt' }] };
+  for (let i = 0; i < 60; i += 1) { type = { list: type }; value = [value]; }
+  const measure = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.measure');
+  measure.parameters[0].type = type;
+  (caseFiles.get('contracts/cases.json') as any).measure = [{ id: 'b277_deep_text', text: value, result: 0 }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['python'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def _deep_\d+\(_case_text_root/);
+  assert.match(python, /pkg\.measure\(_deep_\d+\(_case_text_root\)\)/);
+});
+
+test('B2.277: ordinary literal private-marker text does not acquire a case root (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  const literal = '_case_text_root caseTextPath( _case_text_path( $_caseTextRoot json.NewEncoder( utf8.ValidString(';
+  for (const [group, items] of Object.entries(cases)) if (Array.isArray(items)) cases[group] = items.filter((item: any) => !String(item.id).startsWith('b277_'));
+  cases.tag_name = [{ id: 'b277_plain_private_marker', name: literal, result: literal }];
+  cases.scoped = [];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['python', 'php', 'node', 'wasm', 'go'] });
+  assert.ok(!out.has('packages/go/zz_generated_case_json_string_test.go'), 'ordinary marker text does not activate a new private Go golden file');
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /func TestGN13l/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /\n\t"(?:encoding\/json|unicode\/utf8)"/);
+  assert.doesNotMatch(text(out, 'packages/python/generated/tests/test_generated.py'), /\n {8}_case_text_root = /);
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\n {8}\$_caseTextRoot = /);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.doesNotMatch(text(out, path), /\n {2}const _caseTextRoot/);
+});
+
+test('B2.277: an ordinary receiver after owned text does not inherit another case root (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  const literal = '_caseTextRoot caseTextPath(';
+  cases.tag_name.push({ id: 'b277_after_owned_plain_marker', receiver: { new: 'tag.new', args: { name: literal }, then: [{ call: 'tag.name', args: {} }] }, result: literal });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['node', 'wasm'] });
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const generated = text(out, path);
+    const start = generated.indexOf("test('GN-13e: Tag.name b277_after_owned_plain_marker'");
+    assert.ok(start >= 0, path);
+    const body = generated.slice(start, generated.indexOf('\n});', start));
+    assert.doesNotMatch(body, /\n {2}const _caseTextRoot = /, path);
+  }
+});
+
+test('B2.277: reused complex receiver expressions retain their case-root dependency (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  const owned = { text: [{ case_path: 'owned/receiver' }] };
+  cases.tag_new = [];
+  cases.tag_name = [{ id: 'b277_first_owned_receiver', receiver: { new: 'tag.new', args: { name: owned }, then: [{ call: 'tag.name', args: {} }] }, result: owned }];
+  // The same core getter may be declared as a method; that exercises reuse in the generic argument-count tests.
+  contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'tag.name').kind = 'method';
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['node', 'wasm'] });
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const generated = text(out, path);
+    const start = generated.indexOf("test('G-7: Tag.name counts and names its arguments'");
+    assert.ok(start >= 0, path);
+    const body = generated.slice(start, generated.indexOf('\n});', start));
+    assert.match(body, /caseTextPath\(_caseTextRoot/, path);
+    assert.match(body, /\n {2}const _caseTextRoot = /, path);
+  }
+});
+
+test('B2.277: private Go JSON dependencies do not collide with a foreign json library (GN-13l)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  // Add a typed-TEXT member while keeping the foreign value-class members in the same package.
+  const carry = contract.units.flatMap((unit: any) => unit.members ?? []).find((member: any) => member.id === 'relay.carry');
+  const composed = structuredClone(carry);
+  composed.id = 'relay.composed'; composed.name = ['composed'];
+  composed.parameters[0].type = 'text'; composed.returns = 'text';
+  contract.units[0].members.push(composed);
+  contract.cases.push({ member: 'relay.composed', file: 'contracts/cases.json', group: 'composed' });
+  const value = { text: ['owned:', { case_path: 'new.db' }] };
+  (caseFiles.get('contracts/cases.json') as any).composed = [{ id: 'b277_foreign_json_path', value, result: value }];
+  const out = generate({ contract, caseFiles, foreign, version: '0.0.0', coreLib: 'polyspec_relay', targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /_caseTextJSON "encoding\/json"/);
+  assert.match(go, /_caseTextUTF8 "unicode\/utf8"/);
+  assert.match(go, /"github\.com\/polyspec\/json\/packages\/go"/);
+  const privateFile = text(out, 'packages/go/zz_generated_case_json_string_test.go');
+  assert.match(privateFile, /_caseTextJSON "encoding\/json"/);
+  assert.match(privateFile, /_caseTextUTF8 "unicode\/utf8"/);
+  assert.doesNotMatch(privateFile, /github\.com\/polyspec\/json/);
+});
+
+test('B2.277: alias-text expectations remain named refusals rather than token expansion (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  for (const [group, items] of Object.entries(cases)) if (Array.isArray(items)) cases[group] = items.filter((item: any) => !String(item.id).startsWith('b277_'));
+  cases.echo = [{ id: 'b277_alias_text', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: { text: [{ case_path: 'not-allowed' }] } } }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: FIVE as Inputs['targets'] & string[] });
+  for (const path of ['packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs', 'packages/php-ext/generated/tests/GeneratedTest.php']) assert.ok(text(out, path).includes('not an alias text value (GN-13l)'), path);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /t\.Fatal\([^\n]*a case value of the type text/);
+  assert.ok(!out.has('packages/go/zz_generated_case_json_string_test.go'));
+});
+
+test('B2.277: foreign alias text refuses composition through optional constructor parameters (GN-13l)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const owner = foreign.get('json');
+  const member = owner.units.flatMap((unit: any) => unit.members ?? []).find((found: any) => found.id === 'value.string');
+  member.parameters[0].type = { optional: 'text' };
+  const value = { kind: 'map', value: [['key', { kind: 'text', value: { text: [{ case_path: 'owned/forbidden' }] } }]] };
+  (caseFiles.get('contracts/cases.json') as any).carry = [{ id: 'b277_foreign_optional_alias', value }];
+  const out = generate({ contract, caseFiles, foreign, version: '0.0.0', coreLib: 'polyspec_relay', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/php-ext/generated/tests/GeneratedTest.php', 'packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.ok(text(out, path).includes('not an alias text value (GN-13l)'), path);
+});
+
+test('B2.277: every aliased typed-text projection refuses composition (GN-13l)', () => {
+  for (const nested of [false, true]) {
+    const { contract, caseFiles, foreign } = relaySample();
+    const member = foreign.get('json').units.flatMap((unit: any) => unit.members ?? []).find((found: any) => found.id === 'value.number');
+    member.parameters[0].type = { optional: 'text' };
+    const number = { kind: 'number', value: { text: nested ? [{ case_path: 'owned/forbidden' }] : ['0'] } };
+    const value = nested ? { kind: 'map', value: [['key', number]] } : number;
+    (caseFiles.get('contracts/cases.json') as any).carry = [{ id: 'b277_number_projection', value }];
+    const out = generate({ contract, caseFiles, foreign, version: '0.0.0', coreLib: 'polyspec_relay', targets: ['php', 'python', 'node', 'wasm'] });
+    for (const path of ['packages/php-ext/generated/tests/GeneratedTest.php', 'packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.ok(text(out, path).includes('not an aliased typed-text value (GN-13l)'), `${path}: nested=${nested}`);
+  }
+});
+
+test('B2.277: recursive alias projections refuse composed values and retain genuine map data (GN-13l)', () => {
+  for (const [type, value, refused] of [
+    [{ list: 'text' }, [{ text: ['0'] }], true],
+    [{ map: 'text' }, { text: { text: ['0'] } }, true],
+    [{ map: { list: 'text' } }, { text: ['ordinary'] }, false],
+  ] as const) {
+    const { contract, caseFiles, foreign } = relaySample();
+    const member = foreign.get('json').units.flatMap((unit: any) => unit.members ?? []).find((found: any) => found.id === 'value.number');
+    member.parameters[0].type = type;
+    (caseFiles.get('contracts/cases.json') as any).carry = [{ id: 'b277_recursive_projection', value: { kind: 'number', value } }];
+    const out = generate({ contract, caseFiles, foreign, version: '0.0.0', coreLib: 'polyspec_relay', targets: ['php', 'python', 'node', 'wasm'] });
+    for (const path of ['packages/php-ext/generated/tests/GeneratedTest.php', 'packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.equal(text(out, path).includes('not an aliased typed-text value (GN-13l)'), refused, path);
+  }
+});
+
+test('B2.277: own value-class projections refuse composition and restore the next ordinary case scope (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const members = contract.units.flatMap((unit: any) => unit.members ?? []);
+  members.find((member: any) => member.id === 'ratio.constructor').parameters[0].type = { optional: 'text' };
+  contract.units.find((unit: any) => unit.id === 'ratio').out = [{ kind: 'float', make: Object.fromEntries(FIVE.map((target) => [target, 'ratio.constructor'])) }];
+  members.find((member: any) => member.id === 'sample.measure').parameters[0].type = { unit: 'ratio' };
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.measure = [{ id: 'b277_own_projection', text: { kind: 'float', value: { text: ['0'] } } }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/php-ext/generated/tests/GeneratedTest.php', 'packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.ok(text(out, path).includes('not an aliased typed-text value (GN-13l)'), path);
+    assert.ok(text(out, path).includes('sqlite://'), 'later ordinary composition remains generated');
+  }
+});
+
+test('B2.277: alias projection scope traverses records without reserving text data keys (GN-13l)', () => {
+  const unit = { id: 'owned_record', name: ['owned_record'], module: '', kind: 'record', fields: [{ name: ['text'], type: { list: 'text' }, required: true }] };
+  const model = { contract: { units: [unit] }, aliases: [] } as unknown as Parameters<typeof fromJson>[0];
+  const ctx: Parameters<typeof fromJson>[1] = { lang: 'node', enumRef: () => '', recordNew: (_unit, fields) => fields.join(', '), callbackNew: () => '', caseTextAlias: true };
+  assert.doesNotThrow(() => fromJson(model, ctx, { unit: 'owned_record' }, { text: ['ordinary'] }));
+  assert.throws(() => fromJson(model, ctx, { unit: 'owned_record' }, { text: [{ text: ['0'] }] }), /not an aliased typed-text value.*GN-13l/);
+  delete ctx.caseTextAlias;
+  assert.equal(fromJson(model, ctx, { unit: 'owned_record' }, { text: [{ text: ['0'] }] }), "[('0')]");
+});
+
+test('B2.277: literal-only composition needs no owned root or filesystem helpers (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  for (const [group, items] of Object.entries(cases)) if (Array.isArray(items)) cases[group] = items.filter((item: any) => !String(item.id).startsWith('b277_'));
+  const value = { text: ['part', '\0🙂'] };
+  cases.tag_name = [{ id: 'b277_literal_only', name: value, result: value }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: FIVE as Inputs['targets'] & string[] });
+  assert.ok(!out.has('packages/go/zz_generated_case_json_string_test.go'));
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /func caseTextPath|func TestGN13l/);
+  assert.doesNotMatch(text(out, 'packages/python/generated/tests/test_generated.py'), /def _case_text_path|\n {8}_case_text_root = /);
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function caseTextPath|\n {8}\$_caseTextRoot = /);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.doesNotMatch(text(out, path), /function caseTextPath|\n {2}const _caseTextRoot/);
+});
+
 test('a path is the bytes of an OS path in every place, and each target judges it by binding_core (T-1, B-3, GN-6y)', () => {
   // shapes.joined takes a path and a text and returns a path; shapes.parent_of returns an optional<path>. Both leave out WASM (CK-15).
   const out = shaped();
@@ -4345,7 +4623,7 @@ test('a path is the bytes of an OS path in every place, and each target judges i
     const kase = (caseFiles.get('contracts/cases.json') as any).joined[0];
     kase.dir = bad;
     const refusedOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
-    const reason = `a case value of the type path is a relative path inside the directory of the test, without .. (GN-6y), not ${JSON.stringify(bad)}`;
+    const reason = `a case value of the type path is a relative path inside the directory of the test, without .. or drive-qualified components (GN-6y), not ${JSON.stringify(bad)}`;
     const written: [string, (text: string) => string][] = [
       ['packages/python/generated/tests/test_generated.py', (t) => `self.fail(${JSON.stringify(t)})`],
       ['packages/ts/generated/tests/generated.test.mjs', (t) => `assert.fail('${t.replaceAll("'", "\\'")}')`],
@@ -5352,7 +5630,7 @@ test('Go compares the errno of a symbol as int, and WASM, a target without errno
   assert.ok(wasm.includes(`= stepGlue.__armFaults('counter.tally', ${armed});\n`), wasm);
   assert.doesNotMatch(wasm, /"errno":/);
   assert.match(wasm, /test\('B-4: Counter\.tally a_tally_that_fails_is_unreadable'[^]*?error\.kind === 'unreadable' &&\n    error\.status === null &&\n    error\.errno === null\);/);
-  assert.doesNotMatch(wasm, /errnoOf|node:os/);
+  assert.doesNotMatch(wasm, /errnoOf|import \{[^}]*\bconstants\b[^}]*\} from 'node:os'/);
   // A number is compared as it is.
   const numbered = text(sampleWith((c, cases) => { cases.counter_tally[1].raises.errno = 5; }, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs');
   assert.match(numbered, /error\.errno === 5\);/);
@@ -5377,7 +5655,7 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
   };
   const out = sampleWith(withErrno, ['python', 'node', 'php']);
   // GN-13e: sample.echo returns the alias data, whose result the tokens compare, which read json and struct.
-  assert.match(text(out, pythonTests), /^import errno\nimport json\nimport struct\nimport sys\nimport unittest$/m);
+  for (const module of ['errno', 'json', 'struct', 'sys', 'unittest']) assert.match(text(out, pythonTests), new RegExp(`^import ${module}$`, 'm'));
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);

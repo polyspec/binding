@@ -9,6 +9,15 @@
   release selection passes on the committed source (B2.270, B2.271, B2.272, B2.273, B2.275): `make test-ts`
   (709 tests), `make test-rust`, `make lint-rust` and the sample end-to-end check of all five targets. The Go
   runtime tests independently verify transported negative-zero bits; the PHP runtime is 8.4.27.
+- Typed text cases compose Unicode literals and case-owned relative paths, optionally as complete minimal
+  UTF-8 JSON string tokens (GN-13l, B2.277). Exact expected text is preserved; private helpers carry the captured
+  case root, and fixed-byte quote goldens and old-root/file witnesses are generated. Alias tokens and existing
+  plain text remain unchanged. WASM uses its Node host root only as text and gains no filesystem access.
+
+- Reject Windows drive prefixes in every component of case-owned relative paths before fixture preparation
+  (GN-6y, B2.276). Nested and drive-relative components previously passed the shared validator; non-drive colons
+  and the existing path guards retain their meanings. The owning Node validator tests pass on committed input;
+  this is lexical validation, not native Windows filesystem verification.
 
 - `FloatOut::safe_integer` and `OutValue::predicate` recognize finite integral floats in the inclusive safe
   integer range, including negative zero (B2.272). `Predicate::applies_to` replaces the single-kind `kind` API.
