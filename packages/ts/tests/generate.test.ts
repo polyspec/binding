@@ -4533,11 +4533,41 @@ test('B2.277: own value-class projections refuse composition and restore the nex
   contract.units.find((unit: any) => unit.id === 'ratio').out = [{ kind: 'float', make: Object.fromEntries(FIVE.map((target) => [target, 'ratio.constructor'])) }];
   members.find((member: any) => member.id === 'sample.measure').parameters[0].type = { unit: 'ratio' };
   const cases = caseFiles.get('contracts/cases.json') as any;
-  cases.measure = [{ id: 'b277_own_projection', text: { kind: 'float', value: { text: ['0'] } } }];
-  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['php', 'python', 'node', 'wasm'] });
+  cases.measure = [
+    { id: 'b277_own_projection', text: { kind: 'float', value: { text: ['0'] } } },
+    { id: 'b277_explicit_constructor', text: { new: 'ratio.constructor', args: { value: { text: ['2'] } } } },
+  ];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: FIVE as Inputs['targets'] & string[] });
   for (const path of ['packages/php-ext/generated/tests/GeneratedTest.php', 'packages/python/generated/tests/test_generated.py', 'packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     assert.ok(text(out, path).includes('not an aliased typed-text value (GN-13l)'), path);
     assert.ok(text(out, path).includes('sqlite://'), 'later ordinary composition remains generated');
+  }
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /t\.Fatal\([^\n]*not an aliased typed-text value \(GN-13l\)/);
+  const explicit = go.slice(go.indexOf('func TestGN13eMeasureB277ExplicitConstructor('));
+  const block = explicit.slice(0, explicit.indexOf('\n}'));
+  assert.match(block, /NewRatio\(ptr\(\("2"\)\)\)/);
+  assert.doesNotMatch(block, /t\.Fatal\(/);
+});
+
+test('B2.277: Go own alias map projections preserve data keys and refuse composed elements (GN-13l)', () => {
+  for (const refused of [false, true]) {
+    const { contract, caseFiles } = b277TextFixture();
+    const ratio = contract.units.find((unit: any) => unit.id === 'ratio');
+    ratio.out = [{ kind: 'float', make: Object.fromEntries(FIVE.map((target) => [target, 'ratio.constructor'])) }];
+    ratio.members.find((member: any) => member.id === 'ratio.constructor').parameters[0].type = { map: { list: 'text' } };
+    contract.units.flatMap((unit: any) => unit.members ?? []).find((member: any) => member.id === 'sample.measure').parameters[0].type = { unit: 'ratio' };
+    const cases = caseFiles.get('contracts/cases.json') as any;
+    // The constructor now takes a map, so its old scalar receiver fixtures do not describe this focused contract.
+    cases.ratio_constructor = []; cases.ratio_value = [];
+    cases.measure = [{ id: 'b277_go_map_projection', text: { kind: 'float', value: { text: refused ? [{ text: ['0'] }] : ['ordinary'] } } }];
+    const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['go'] });
+    const go = text(out, 'packages/go/zz_generated_test.go');
+    const start = go.indexOf('func TestGN13eMeasureB277GoMapProjection(');
+    assert.ok(start >= 0);
+    const block = go.slice(start, go.indexOf('\n}', start));
+    assert.equal(block.includes('not an aliased typed-text value (GN-13l)'), refused);
+    if (!refused) { assert.match(block, /"text"/); assert.match(block, /"ordinary"/); }
   }
 });
 

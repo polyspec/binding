@@ -42,6 +42,8 @@ interface Values {
   usesPtr: boolean;
   // GN-13l: only a rendered owned-path term activates the private text helpers, never words in an ordinary literal.
   usesCaseText?: boolean;
+  // GN-13l: only normalized value-class projections close over the alias input forms.
+  caseTextAlias?: boolean;
   // GN-13e, B2.121: whether a test compares a result that holds an instance of a value class of another repository.
   readsForeign?: boolean;
   // GN-6aa: the callback units whose fixture a case value inside another value makes.
@@ -196,6 +198,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (typeof type === 'string') {
     const textParts = caseTextParts(json);
     if (textParts !== undefined) {
+      if (v.caseTextAlias === true) throw new Unsupported('a composed case text is not an aliased typed-text value (GN-13l)');
       if (type !== 'text') throw new Unsupported(`a composed case text stands at a place of the type text alone (GN-13l), not ${type}`);
       return `(${textParts.map((part) => {
         if (typeof part === 'string') return goString(part);
@@ -256,7 +259,16 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     // GN-13f, U-1, GN-13: an instance value, the call of the make member of a class of origin value, or the pairs that
     // fill another class, as in the other targets.
     if (isInstanceValue(json)) return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
-    if (object.unit.origin === 'value') return made(v, b, valueClassReceiver(v.model, 'go', object.unit, json));
+    if (object.unit.origin === 'value') {
+      const previous = v.caseTextAlias;
+      v.caseTextAlias = true;
+      try {
+        return made(v, b, valueClassReceiver(v.model, 'go', object.unit, json));
+      } finally {
+        if (previous === undefined) delete v.caseTextAlias;
+        else v.caseTextAlias = previous;
+      }
+    }
     if (Array.isArray(json)) return made(v, b, pairsReceiver(v.model, object, json));
     throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} or the [key, value] pairs that fill it, not ${JSON.stringify(json)} (GN-13f, GN-13)`);
   }

@@ -23,6 +23,9 @@
 
 ## Unreleased
 
+- Go 정규화 값 클래스 입력은 생성자 projection에서 조합 text를 거절하며 명시적 생성자 호출의 typed text
+  지원은 유지한다. 이름을 붙인 거절 뒤에 projection scope를 복원한다(GN-13l, B2.277).
+
 - Go 조합 text에 괄호를 써서 callback 인자와 대입식이 gofmt 아래에서 같은 표현식 형식을 유지한다.
   평가 순서와 literal 내용은 바꾸지 않는다(GN-13l, B2.277).
 

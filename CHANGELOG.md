@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Go normalized value-class inputs reject composed text in constructor projections while explicit constructor
+  calls retain typed text support. The projection scope is restored after a named refusal (GN-13l, B2.277).
+
 - Parenthesize Go composed text so callback arguments and assignments retain the same expression formatting
   under gofmt without changing evaluation order or literal content (GN-13l, B2.277).
 
