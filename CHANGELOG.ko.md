@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e59af78b32335e7c4a4402342b520ae7ffc833d59f7f29ddeed1f1215c1409c2 -->
+<!-- source-sha256: 0083937b5d1581a4acba8c9f21e5fdba85387bd2d9f933309881d2231448be61 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -8,6 +8,8 @@
 
 ## 0.0.10
 
+- Python value alias는 out 값의 null과 생략된 기본값에서도 token `py_`를 쓴다(GN-6ax, B2.298). 거기 남은 `py.None()`은
+  sample, kept, consumer의 crate에서 compile되지 않았다(E0425).
 - 인스턴스 값이 아닌 형식으로 준 class의 case 값은 그 형식 `{"new": "<member id>", "args": {...}}`를 이름하는 규칙으로
   시험이 실패한다(GN-13f, B2.295). list나 tuple 안에서도 그렇다. 전에는 그 타입의 case 값을 아직 쓰지 않는다고만 했다.
   class를 생성자 인자의 객체로 준 case는 `{"new": "<class>.new", "args": <그 객체>}`로 쓴다.

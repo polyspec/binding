@@ -42,7 +42,7 @@ const PYTHON_MADE = { name: 'made', type: "&mut BTreeMap<u64, Bound<'py, PyAny>>
 function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return put('py.None().into_bound(py_)');
+      return put('py_.None().into_bound(py_)');
     case 'bool':
       return put('PyBool::new(py_, value).to_owned().into_any()');
     case 'int':
@@ -715,7 +715,7 @@ export function keptPython(module: string, kept: KeptClass): string {
   const kept_ = kept.fields.map((f) => {
     const v = variable(f);
     if (f.default === undefined) return `${rustField(f.name)}: ${v}.clone().unbind()`;
-    const empty = { null: 'py.None()', map: 'PyDict::new(py_).into_any().unbind()', list: 'PyList::empty(py_).into_any().unbind()' }[f.default];
+    const empty = { null: 'py_.None()', map: 'PyDict::new(py_).into_any().unbind()', list: 'PyList::empty(py_).into_any().unbind()' }[f.default];
     return `${rustField(f.name)}: match ${v} {
                     Given::Omitted => ${empty},
                     Given::Value(value) => value.unbind(),

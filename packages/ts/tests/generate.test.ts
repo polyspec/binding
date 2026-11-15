@@ -1493,6 +1493,18 @@ test('Python and Node: a parameter named as the token of the runtime keeps its n
   assert.match(text(named('env', ['node']), 'packages/ts/generated/lib.rs'), /fn function_shift<'env>\(env_: &'env Env, env: Unknown<'env>, /);
 });
 
+test('the generated Rust of Python and Node names the token of its runtime py_ and env_ on every path, also in the value aliases (GN-6ax, B2.298)', () => {
+  const bare = { 'packages/python/generated/lib.rs': /(?<![\w.'#])py(?![\w'])/, 'packages/ts/generated/lib.rs': /(?<![\w.'#])env(?![\w'!])/ };
+  for (const repo of ['sample', 'kept', 'classes', 'functions', 'shapes', 'variants', 'points']) {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+    const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${repo}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'node'] });
+    for (const [path, token] of Object.entries(bare)) {
+      const lines = text(out, path).split('\n').map((line) => line.replace(/"(\\.|[^"\\])*"/g, '""').replace(/\/\/.*/, '')).filter((line) => token.test(line));
+      assert.deepEqual(lines, [], `${repo}: ${path}`);
+    }
+  }
+});
+
 test('Go: the package of another library of the same repository is imported under the name of its library (GN-6s, GN-15f)', () => {
   const { contract, caseFiles, foreign } = plotSample();
   // Two libraries of the repository plot: plot-figures, whose root package is plot, takes the record of plot-points.

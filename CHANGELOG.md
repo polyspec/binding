@@ -7,6 +7,8 @@
 
 ## 0.0.10
 
+- A value alias of Python names the token `py_` also for the null of an out value and for an omitted default
+  (GN-6ax, B2.298); `py.None()` left there did not compile (E0425) in the crates of sample, kept and consumer.
 - A case value of a class in another form than an instance value fails its test with the rule that names the form,
   `{"new": "<member id>", "args": {...}}` (GN-13f, B2.295), also inside a list or a tuple. The message said only that
   no case value of the type was written yet. A case that gave a class as the object of the arguments of its
