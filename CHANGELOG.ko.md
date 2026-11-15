@@ -23,6 +23,9 @@
 
 ## Unreleased
 
+- Go 조합 text에 괄호를 써서 callback 인자와 대입식이 gofmt 아래에서 같은 표현식 형식을 유지한다.
+  평가 순서와 literal 내용은 바꾸지 않는다(GN-13l, B2.277).
+
 - 고정 byte fixture의 hex는 source에서 대문자로 쓰고 생성할 때 정규화한다. source가 Git revision처럼
   보이지 않으며 생성된 fixture byte는 동일하게 유지된다(B2.277).
 

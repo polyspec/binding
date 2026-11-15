@@ -4551,6 +4551,15 @@ test('B2.277: alias projection scope traverses records without reserving text da
   assert.equal(fromJson(model, ctx, { unit: 'owned_record' }, { text: [{ text: ['0'] }] }), "[('0')]");
 });
 
+test('B2.277: Go composed text preserves parenthesized precedence in callback arguments (GN-13l)', () => {
+  const { contract, caseFiles } = b277TextFixture();
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['go'] });
+  for (const path of ['packages/go/zz_generated_test.go', 'packages/go/zz_generated_thrown_count_test.go']) {
+    const generated = text(out, path);
+    assert.match(generated, /arg0\.Put\("a", \("sqlite:\/\/" \+ _caseTextPath\(/, path);
+  }
+});
+
 test('B2.277: literal-only composition needs no owned root or filesystem helpers (GN-13l)', () => {
   const { contract, caseFiles } = b277TextFixture();
   const cases = caseFiles.get('contracts/cases.json') as any;

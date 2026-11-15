@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Parenthesize Go composed text so callback arguments and assignments retain the same expression formatting
+  under gofmt without changing evaluation order or literal content (GN-13l, B2.277).
+
 - Fixed-byte fixture hex uses uppercase source data and normalizes it during generation, so the source does not
   resemble a Git revision and generated fixture bytes remain identical (B2.277).
 

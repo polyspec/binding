@@ -197,12 +197,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     const textParts = caseTextParts(json);
     if (textParts !== undefined) {
       if (type !== 'text') throw new Unsupported(`a composed case text stands at a place of the type text alone (GN-13l), not ${type}`);
-      return textParts.map((part) => {
+      return `(${textParts.map((part) => {
         if (typeof part === 'string') return goString(part);
         v.usesCaseText = true;
         const context = b.caseTextContext();
         return `_caseTextPath(${context.owner}, ${context.path}, ${goString(part.relative)}, ${String(part.jsonString)})`;
-      }).join(' + ');
+      }).join(' + ')})`;
     }
     if (type === 'text') return textValue(json);
     if (type === 'latin1') return goString(String(json));
