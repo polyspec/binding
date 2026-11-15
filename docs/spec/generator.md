@@ -2782,6 +2782,10 @@ the design ids are those of the binding design.
   with 0 (GN-3g) before it packs `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name
   part>[-debug]-<zts|nts>.zip <extension-name>.so`, the name by which PIE finds a pre-packaged binary (GN-3c). The
   recipe reads `zts` and `debug` from that PHP (`PHP_ZTS`, `PHP_DEBUG`).
+  `release-php-ext` accepts optional `EXPECTED_PHP_MINOR` in `major.minor`
+  form and refuses a different actual runtime minor before Cargo builds. It always compares the minor of the
+  selected `php-config --version` with the runtime and records both full versions. This checks the header minor,
+  not every ABI or patch flag; the native extension-load check remains required.
 - **GN-19e** The npm platform package (GN-3c), on each platform, with the napi CLI that the repository pins as the
   devDependency `@napi-rs/cli`: `napi build --platform --release --no-js --manifest-path <Cargo.toml>
   --package-json-path <package.json> --target-dir <target> --output-dir <addons> --target <Rust triple> -- --locked`;
@@ -2915,18 +2919,14 @@ the design ids are those of the binding design.
     `binding release-recipes`), `make release-go-static`, `make release-wheel` and `make release-npm-platform`, and
     uploads `var/release/assets` as the artifact `assets-<platform>`.
   - The job `php` has a matrix of platform and PHP minor. Each entry selects one native PHP runtime, installs its tools,
-    runs `make release-recipes`, `make install-llvm` and `make release-php-ext PHP=<selected executable>`, and uploads
+    runs `make release-recipes`, `make install-llvm` and `make release-php-ext PHP=<selected executable> EXPECTED_PHP_MINOR=<matrix minor>`, and uploads
     `var/release/assets` as the distinct artifact `assets-php-<platform>-<minor>`. A setup action declaration alone
     does not prove which native runtime a build used.
   - The job `npm` runs `make release-recipes`, `make install-wasm-bindgen` and `make release-npm` and uploads the
     artifact `assets-npm`.
 
-  Planned in B2.275, not implemented: the generated `release-php-ext` recipe accepts the optional expected minor
-  `EXPECTED_PHP_MINOR=<major.minor>`, which every PHP matrix entry supplies. It compares the actual runtime minor
-  with that expected minor when supplied, always requires the minor reported by `php-config` to match the actual
-  runtime before Cargo builds, and prints both full versions as build evidence. These checks establish minor selection, not all ABI or
-  patch-build compatibility; loading the native extension remains required. No repository copies this check into
-  a wrapper target.
+  Each PHP matrix entry supplies `EXPECTED_PHP_MINOR`; the generated recipe checks and records its native
+  selection as GN-19d specifies, so no repository copies this check into a wrapper target.
 
   The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module`
   and `make release-platform-assets` after the draft release exists; the latter validates the complete required asset

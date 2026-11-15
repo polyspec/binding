@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ccca991ff865864a123ad55015c19e8b3c1cdc8a828c06d229a496f72c24847e -->
+<!-- source-sha256: 295bf38d16bd5366feb70daf624d905793734cf597652248e3b78e093183a7ea -->
 # 생성기
 
 [English](generator.md)
@@ -2252,6 +2252,10 @@
   뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
   <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
   PHP에서 읽는다(`PHP_ZTS`, `PHP_DEBUG`).
+  `release-php-ext`는 선택적 `EXPECTED_PHP_MINOR`를 `major.minor`
+  형식으로 받고, 실제 runtime minor가 다르면 Cargo 빌드 전에 거부한다. 선택한 `php-config --version`의 minor를
+  runtime과 항상 비교하고 두 전체 버전을 기록한다. 이는 모든 ABI와 patch flag가 아닌 header minor를
+  확인하며, native 확장 load 검증은 계속 요구한다.
 - **GN-19e** npm 플랫폼 패키지(GN-3c), 플랫폼마다, 레포가 devDependency `@napi-rs/cli`로 고정한 napi CLI로:
   `napi build --platform --release --no-js --manifest-path <Cargo.toml> --package-json-path <package.json> --target-dir
   <target> --output-dir <addons> --target <Rust triple> -- --locked`. 그다음 그 플랫폼의 Rust triple만 적은 실행의 설정
@@ -2365,18 +2369,14 @@
     `make release-go-static`, `make release-wheel`, `make release-npm-platform`을 실행하며,
     `var/release/assets`를 artifact `assets-<platform>`으로 upload한다.
   - job `php`는 플랫폼과 PHP minor의 matrix를 갖는다. 각 entry는 native PHP runtime 하나를 선택하고 도구를
-    설치하며, `make release-recipes`, `make install-llvm`, `make release-php-ext PHP=<selected executable>`을
+    설치하며, `make release-recipes`, `make install-llvm`, `make release-php-ext PHP=<selected executable> EXPECTED_PHP_MINOR=<matrix minor>`를
     실행하고 `var/release/assets`를 고유한 artifact `assets-php-<platform>-<minor>`로 upload한다. setup action의
     선언만으로는 빌드가 사용한 native runtime을 검증하지 못한다.
   - job `npm`은 `make release-recipes`, `make install-wasm-bindgen`, `make release-npm`을 실행하고 artifact
     `assets-npm`을 upload한다.
 
-  B2.275 계획이며 아직 구현하지 않았다. 생성 `release-php-ext` recipe는 선택적인 기대 minor
-  `EXPECTED_PHP_MINOR=<major.minor>`를 받고, 모든 PHP matrix entry가 이 값을 준다. 기대 minor를 주면 실제
-  runtime minor와 비교하고, Cargo 빌드 전에 `php-config`가 보고한 minor가 실제 runtime과 일치하는지는 항상 검증하며,
-  빌드 증거로 두 전체 version을 출력한다. 이 검사는 minor 선택을 검증하며 모든 ABI나 patch build의 호환성을
-  검증하지 않는다. native extension을 불러오는 검사는 계속 필요하다. 레포는 이 검사를 wrapper target에
-  복사하지 않는다.
+  각 PHP matrix entry는 `EXPECTED_PHP_MINOR`를 준다. 생성 recipe가 GN-19d에 따라 native 선택을
+  검증하고 기록하므로 레포는 이 검사를 wrapper target에 복사하지 않는다.
 
   release workflow는 모든 asset artifact를 `var/release/assets`에 내려받고, draft release가 생긴 뒤
   `make release-go-module`과 `make release-platform-assets`를 실행한다. 뒤의 target은 필요한 asset 전체를

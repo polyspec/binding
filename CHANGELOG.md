@@ -11,14 +11,16 @@
   preserving large integral floats as native numbers when unambiguous. Generated cases judge the same float
   predicate without converting fractional or nonfinite values to BigInt.
 - Specify independent platform and PHP-minor asset jobs, distinct PHP artifacts and complete release asset
-  collection (GN-19i, B2.274). The provider-owned expected-minor and runtime/header checks are explicitly pending
-  B2.275; the generated recipe interface has not yet changed. The paired rule passes `make docs-check` on its
-  committed input.
+  collection (GN-19i, B2.274). Each PHP matrix entry supplies its expected minor to the shared recipe rather
+  than copying its runtime-selection check into a wrapper target.
 - Generated Go result assertions distinguish both zero signs, including nested values and values beside NaN
   (GN-13e, B2.273). The comparison previously treated both signs as equal. A private generated test constructs
   the two signs independently and rejects a sign-changing result; sample cases exercise negative-zero and NaN
   results, and the native Go sample runner compares transported float bits independently. The IEEE 754
   transport and the policy that all NaN values compare equal are unchanged.
+- The generated PHP release recipe checks optional `EXPECTED_PHP_MINOR` against the selected runtime and always
+  checks the php-config header minor before Cargo builds (GN-19d, B2.275). It records both full versions and
+  preserves the native extension-load check; previously a wrong runtime or header minor could reach the build.
 
 - Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
   (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded

@@ -1,7 +1,8 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 62a79153fc210a04922ce5742abaab3537f9b624603a2789facc91ef0db749dd -->
+<!-- source-sha256: 04e6cb1f563d51966ce09f79b627217e777293a19d1b15ec9e850bafee977d13 -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
+<!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -27,13 +28,15 @@
   큰 정수 float를 native number로 유지한다. 생성 case도 소수와 비유한 값을 BigInt로 바꾸지 않고 같은
   float 술어를 판별한다.
 - 독립 platform·PHP minor asset job과 고유한 PHP artifact, release asset 전체 수집을 명세했다
-  (GN-19i, B2.274). provider 소유의 기대 minor 및 runtime/header 검사는 B2.275의 미구현 항목으로
-  명시했으며, 생성 recipe의 interface는 아직 바꾸지 않았다. commit한 입력에서 규칙의 두 문서가
-  `make docs-check`를 통과했다.
+  (GN-19i, B2.274). 각 PHP matrix entry는 runtime 선택 검사를 wrapper target에 복사하지 않고
+  공유 recipe에 기대 minor를 준다.
 - 생성한 Go 결과 검증이 중첩 값과 NaN 옆의 값을 포함해 영의 두 부호를 구분한다(GN-13e, B2.273).
   이전 비교는 두 부호를 같게 보았다. 비공개 생성 시험이 두 부호를 독립적으로 만들고 부호가 바뀐 결과를 거부한다.
   Sample case는 음의 영과 NaN 결과를 실행하고 native Go sample runner는 전송한 float의 bit를 독립적으로
   비교한다. IEEE 754 전송과 모든 NaN을 같게 비교하는 정책은 바뀌지 않는다.
+- 생성 PHP release recipe가 Cargo 빌드 전에 선택적 `EXPECTED_PHP_MINOR`를 선택한 runtime과 비교하고
+  php-config header minor도 항상 확인한다(GN-19d, B2.275). 두 전체 버전을 기록하고 native 확장 load 검증을
+  유지한다. 이전에는 잘못된 runtime이나 header minor로 빌드에 도달할 수 있었다.
 
 - Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
   `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와
