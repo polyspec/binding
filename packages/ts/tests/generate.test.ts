@@ -1625,6 +1625,21 @@ test('an out row of the kind int makes an instance by a constructor that takes i
   }
 });
 
+test('a case value of another JSON kind than its type is written as that value for the binding to refuse (B-4, G-5, B2.306)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const refused = { kind: 'invalid_argument_type', status: null, category: 'type', message: null };
+  cases['buffer_from_end'].push({ id: 'a_count_that_is_a_text_fails', start: 'ab', count: '60', raises: refused }, { id: 'a_count_that_is_a_bool_fails', start: 'ab', count: true, raises: refused });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'php'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\.from_end\("60"\)/);
+  assert.match(python, /\.from_end\(True\)/);
+  const node = [...out].filter(([path]) => path.startsWith('packages/ts/generated/tests/')).map(([, body]) => String(body)).join('\n');
+  assert.match(node, /\.fromEnd\('60'\)/);
+  assert.match(node, /\.fromEnd\(true\)/);
+});
+
 test('Go writes no dispatch of a call for a callback that only a parameter with keeps takes (GN-6aw, GN-6aa, B2.301)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d65af26d07b8ec27811e38c2e0fc935ab4b6d5736706fe3c004440443c75789b -->
+<!-- source-sha256: 511bc31fda28d56a68e9417cd6f12d9a1db1115a0298c7eb100e2d0c07d24dad -->
 # 생성기
 
 [English](generator.md)
@@ -1901,6 +1901,8 @@
   T-7: `bytes` parameter는 바이트가 아닌 값을 거부하며 Node에서는 string도 거부한다. B-4: kind가 `class`를 적은 case는 그
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
   뺀다.
+  B-4 case가 binding이 거부하도록 주는, 자리의 타입과 다른 JSON 종류의 case 값(숫자 자리의 text나 bool, text 자리의 숫자나
+  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306).
 
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은

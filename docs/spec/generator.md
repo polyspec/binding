@@ -2341,6 +2341,9 @@ the design ids are those of the binding design.
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is
   caught as the class of its category. A case may leave out the key of a parameter with a default, which is then left
   out of the call.
+  A case value of another JSON kind than the type of its place, which a case of B-4 gives for the binding to refuse
+  (a text or a bool for a number, a number or a bool for a text, a number or a text for a bool), is written as the
+  value of its JSON kind and never converted to the type (B2.306).
 
 - **GN-13e** Every target runs each contract case of a member that does not raise, has no `faults` and is no hook
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
