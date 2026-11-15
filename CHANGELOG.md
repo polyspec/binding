@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Specify independent platform and PHP-minor asset jobs, distinct PHP artifacts and complete release asset
+  collection (GN-19i, B2.274). The provider-owned expected-minor and runtime/header checks are explicitly pending
+  B2.275; the generated recipe interface has not yet changed.
+
 - Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
   and verification remain open.
 
