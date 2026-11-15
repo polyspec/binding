@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8e3ca7406ef29a74b69ca8e38f2f9a968563d0979669dd38554a0e0ce1497193 -->
+<!-- source-sha256: e59af78b32335e7c4a4402342b520ae7ffc833d59f7f29ddeed1f1215c1409c2 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.10
 
 - 인스턴스 값이 아닌 형식으로 준 class의 case 값은 그 형식 `{"new": "<member id>", "args": {...}}`를 이름하는 규칙으로
   시험이 실패한다(GN-13f, B2.295). list나 tuple 안에서도 그렇다. 전에는 그 타입의 case 값을 아직 쓰지 않는다고만 했다.

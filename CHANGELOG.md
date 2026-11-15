@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.10
+
 - A case value of a class in another form than an instance value fails its test with the rule that names the form,
   `{"new": "<member id>", "args": {...}}` (GN-13f, B2.295), also inside a list or a tuple. The message said only that
   no case value of the type was written yet. A case that gave a class as the object of the arguments of its
