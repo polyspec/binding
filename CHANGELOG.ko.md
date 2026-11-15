@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c4ce2d888008676341b475bae95315937bc7bc5209414219a89af0ddc47575f9 -->
+<!-- source-sha256: 507ec22973fca5b94182c045095c764279636b00280a0551862fdfa1b048cddd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.9
 
 - `binding generate`는 각 target을 1 GiB stack을 가진 thread에서 생성한다(GN-1c, B2.285). JSON 라이브러리의 깊이 한계
   case처럼 수백 단계 중첩된 case 값은 main thread의 stack을 넘쳐 `RangeError: Maximum call stack size exceeded`로

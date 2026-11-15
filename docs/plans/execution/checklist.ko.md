@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: f2b7b608648c6a3f4bc178f587beb29054b44e230fdce200fe855d9325153490 -->
+<!-- source-sha256: a3af522eb037c03cb7ce2b99c2345f330e2986ccc7e872f5c9e84865d4c9d9d0 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -159,3 +159,4 @@
 | B2.283 | receiver가 값 안 tuple의 부분을 고르는(`index` 뒤의 `{"tuple": n}`) case의 Go 시험은 struct `TupleN`을 index로 읽어 compile되지 않는다. 그 field `P<n>`을 쓴다. 생성기 시험에 Red case를 먼저 두고 고친다. | `packages/ts/src/generate/tests_go.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
 | B2.284 | 기다리는 `then` 호출이 실패해야 하는 Node나 WASM 시험은 `await settled(...).kind`를 써서 promise의 `kind`를 읽는다. 결과를 괄호로 묶는다. 생성기 시험에 Red case를 먼저 두고 고친다. | `packages/ts/src/generate/tests_node.ts`, `tests_wasm.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
 | B2.285 | `binding generate`는 수백 단계 중첩된 case 값(json: 513과 772 단계)에서 깊이에 따라 우연히 main thread의 stack을 넘친다. spec에서 먼저 각 target을 큰 stack의 thread에서 생성하게 하고(GN-1c), 생성기 시험에 Red case를 먼저 두고 고친다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/stack.ts`; `packages/ts/src/cli.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
+| B2.286 | 0.0.9 release: `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `packages/core/rust/Cargo.lock`의 버전은 0.0.9이고, B2.283부터 B2.285까지의 변경은 두 changelog의 `## 0.0.9` 절이다. | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock` | make docs-check; make lint-rust; make test-ts | [o] |
