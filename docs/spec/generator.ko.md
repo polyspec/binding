@@ -781,6 +781,9 @@
 - **GN-6bf** 다른 레포의 callback unit의 member는 그 owner의 계약의 타입을 이름한다. 그래서 그 unit의 fixture의 case
   값, 즉 행이나 기대 호출의 인자와 결과는 그 계약의 이름 붙은 타입을 그 라이브러리의 unit으로 풀어서(T-3) 다섯 타깃에서
   쓴다. 이유: 이름 붙은 타입은 그 계약의 이름이고, 그것이 이름하는 값 alias는 이 계약이 변환하는 것이다.
+- **GN-6bg** 이름이 Rust 키워드인 Node method나 property는 raw identifier 없이 Rust 함수 `method_<name>`이고, 그
+  JavaScript 이름은 속성 `js_name`으로 남는다. 이유: 매크로 `napi`는 method의 Rust 이름에 접미사를 붙이는데,
+  `r#where_c_callback`은 identifier가 아니어서 매크로가 panic한다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
@@ -2119,6 +2122,9 @@
   대해 platform errno가 없음을 기대한다). PHP가 PHP 표현이 없는 값을 `case-test`로 실행할 때도 이 검사를
   적용한다. 이 기대값을 버리면 잘못된 error payload도 시험을 통과하므로 alias 정규화가 이를 보존한다.
 
+- **GN-13ka** raise하면서 `status`를 이름하지 않는 member case는 alias case처럼(GN-13k) status 기대를 선언하지 않는다.
+  어떤 타깃도 그 error의 status를 검사하지 않는다. 이유: kind의 status는 코어의 것이고, 선언되지 않은 값을 검사하면
+  시험에 `undefined`가 쓰여 Go가 컴파일하지 않는다.
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.

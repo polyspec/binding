@@ -965,6 +965,9 @@ the design ids are those of the binding design.
   case value of a fixture of that unit, an argument or a result of a row or of an expected call, is written with the
   named types of that contract resolved to units of their libraries (T-3), in the five targets. Why: a named type is
   a name of its contract, and the value alias that it names is the one that this contract converts.
+- **GN-6bg** A Node method or property whose name is a Rust keyword is the Rust function `method_<name>` without the
+  raw identifier, and its JavaScript name stays the attribute `js_name`. Why: the macro `napi` joins the Rust name of
+  a method with a suffix, and `r#where_c_callback` is no identifier, so the macro panics.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -2612,6 +2615,9 @@ the design ids are those of the binding design.
   without a PHP form through `case-test`. Alias normalization retains these expectations because discarding
   them would allow an incorrect error payload to pass the test.
 
+- **GN-13ka** A member case that raises and names no `status` declares no status expectation, as an alias case
+  does (GN-13k): no target checks the status of its error. Why: the status of a kind belongs to the core, and a
+  check of an undeclared value writes `undefined` into the test, which Go does not compile.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.

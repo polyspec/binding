@@ -1507,7 +1507,7 @@ export const bytesKind = (type: Type): 'bytes' | 'source' | undefined => {
 export interface RaisingCase {
   id: string;
   args: Map<Arg, unknown>;
-  raises: { kind: string; status: number | null; category: string; errno?: unknown };
+  raises: { kind: string; status?: number | null; category: string; errno?: unknown };
   // G-5: the faults that the case arms before its call, as the JSON text that the arming entry point takes.
   faults?: string;
   // GN-13i: the files of the case as the case gives them, which caseRefusal judges and caseFilesOf reads.

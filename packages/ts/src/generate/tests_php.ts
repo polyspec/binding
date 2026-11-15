@@ -562,8 +562,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${exactClass(kase.raises)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
-            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
-            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
         }
     }`);
         continue;
@@ -609,8 +608,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${exactClass(kase.raises)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
-            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
-            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }

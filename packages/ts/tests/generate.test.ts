@@ -10513,3 +10513,36 @@ test('a fixture of a callback unit of another repository writes its case values 
     assert.ok(out.size > 0, target);
   }
 });
+
+test('a Node method whose name is a Rust keyword is no raw identifier, which the macro napi refuses (GN-6bg, B2.313)', () => {
+  // napi joins the name of a method with _c_callback; r#where_c_callback is no identifier, so the macro panics.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = read('sample/packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'counter.add') member.name = ['where'];
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('sample/contracts/cases.json')]]), targets: ['node'] as Inputs['targets'] & string[] });
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  assert.doesNotMatch(lib, /pub fn r#/);
+  assert.match(lib, /#\[napi\(js_name = "__where", enumerable = false\)\]\n\s+pub fn method_where<'env>\(/);
+});
+
+test('a member case that raises without status checks no status on any target (GN-13ka, B2.314)', () => {
+  // String(undefined) wrote status != undefined into Go, which go vet refuses, and undefined into the other tests.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const cases = read('sample/contracts/cases.json');
+  const dropped = (value: any): void => {
+    if (Array.isArray(value)) value.forEach(dropped);
+    else if (typeof value === 'object' && value !== null) {
+      if (typeof value.raises === 'object' && value.raises !== null && value.raises.status === null) delete value.raises.status;
+      Object.values(value).forEach(dropped);
+    }
+  };
+  dropped(cases);
+  const out = generateTargets({ contract: read('sample/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[] });
+  let seen = 0;
+  for (const [path, content] of out) {
+    if (!/test/i.test(path)) continue;
+    seen += 1;
+    assert.doesNotMatch(String(content), /status(\(\))? (!=|===) undefined|assert\w*\((error\.status, )?undefined/, path);
+  }
+  assert.ok(seen > 0);
+});

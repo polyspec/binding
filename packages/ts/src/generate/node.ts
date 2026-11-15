@@ -802,7 +802,7 @@ ${lines.join('\n')}
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
-    pub fn ${fn.kind === 'constructor' ? 'construct' : rustField(fn.member.name)}<'env>(${self}env_: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+    pub fn ${fn.kind === 'constructor' ? 'construct' : `method_${rustField(fn.member.name).replace(/^r#/, '')}`}<'env>(${self}env_: &'env Env${params}) -> napi::Result<Unknown<'env>> {
         guard(|| {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })

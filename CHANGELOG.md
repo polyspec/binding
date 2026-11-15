@@ -6,6 +6,8 @@
 ## Unreleased
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.
+- A Node method whose name is a Rust keyword, such as `where`, is the Rust function `method_where`; the raw identifier `r#where` made the macro `napi` panic (GN-6bg, B2.313).
+- A member case that raises without `status` checks no status; Go wrote `status != undefined`, which go vet refuses, and the other targets compared the status with `undefined` (GN-13ka, B2.314).
 - A value alias whose `out` row has the kind `nested:<value type>` is generated for the five targets: the arm makes the value by the make function of the value alias of the owning repository (GN-6bb, B2.308). Every target refused it with `no OutValue variant of the kind nested:json_value`, or with the refusal of an earlier row.
 - PHP makes an `out` row by a member that takes the map or the list of the alias, from the array of the made children (GN-6bc, B2.309). The orm contract was refused with `map_value.constructor of the kind map takes map<orm_value>`.
 - Go makes the instance of a class of another module for an `out` row of a value alias through the exported `<Class>FromHandle` of its package (GN-6be, B2.310). It was refused with `its handle and dispatch are unexported`.

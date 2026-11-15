@@ -646,8 +646,7 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(error), pkg.${exactClass(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
-        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
-        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
+${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})\n`}        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
