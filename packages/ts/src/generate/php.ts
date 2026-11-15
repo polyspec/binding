@@ -53,7 +53,7 @@ const phpCase = (name: Name): string => {
 // GN-4c: the Rust name of the entry of a function of a functions unit, which no helper of the crate has.
 const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'rust', 'variable')}`;
 
-function convertIn(model: Model, type: Type, value: string, subject: string): string {
+export function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in', cancel: 'cancel_in' };
     const name = fn[type];

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ca120eebc7a4115cdc79b3d3ae64923050291443e0b29a0411f414265e0a214a -->
+<!-- source-sha256: 57874969a959a133032b9d06cc8074d94b10973a81790a06caab251110061dbe -->
 # 생성기
 
 [English](generator.md)
@@ -756,6 +756,27 @@
   인스턴스를 만드는 행은 없다. kind float의 행이 fixture의 모든 float를 바꾸기 때문이며, 그래서 float를 받는 constructor는
   어느 end-to-end 검사에서도 실행되지 않는다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
+- **GN-6bb** 이 계약의 값 alias의 `out` 행은 kind `nested:<값 타입>`을 가질 수 있다. 값 타입은
+  `binding_core::ValueType`이 가진 다른 레포의 이름 붙은 타입(T-3)이고(`json_value`, `template_value`, `php_value`),
+  각 타깃의 make는 `{value: <값 타입>}`이며 행은 `when` 없이 하나다(CK-8). 코어는 `OutValue::Nested { value_type,
+  value }`를 주고, `value`는 그 값 타입의 `out` 표의 kind로 기술되며 그 자식은 같은 source에서 온다. 그래서 arm은 그
+  레포의 값 alias나 값 class의 make 함수를 부른다. 바인딩은 그것을 member가 이름한 이름 붙은 타입처럼 변환하고, source와,
+  owner class가 없는 값 alias면 순회가 만든 container를 넘긴다. 다섯 타깃이 이 행을 생성한다. 이름을 대고 거부한다(G-4):
+  그 kind의 다른 make, `when`이 있는 행, `ValueType`에 없는 값 타입. 이유: 코어는 다른 레포의 값을 자기 값 안에 담고,
+  언어가 그 값을 어떻게 갖는지는 그 레포의 값 타입의 바인딩만 안다.
+- **GN-6bc** make가 이 계약의 class의 member이고 그 member가 `list<alias>`(kind `list`)나 `map<alias>`(kind `map`)
+  타입의 parameter 하나를 받는 값 alias의 `out` 행은 두 단계로 만든다. 순회는 내장 꼴처럼 alias의 행으로 자식을 언어의
+  배열에 만들고, 마지막 자식이 만들어지면 parameter의 변환이 그 배열을 받아 member의 코어 경로가 코어 값을 만들고 class의
+  인스턴스가 나간다. PHP가 생성하고, 다른 타깃은 이름을 대고 거부한다(G-4). 그런 행을 그 타깃에 두는 계약이 없기
+  때문이다. 이유: class의 코어 값은 alias의 코어 값을 담고, 바인딩은 만들어진 자식에서 alias의 `in` 함수로만 그것을 다시
+  얻는다.
+- **GN-6be** `out` 행이 다른 module의 class의 인스턴스를 만드는 Go 값 alias는 그 module의 package가 export하는
+  `<Class>FromHandle`(GN-15a)로 인스턴스를 만들고, 디코딩하는 package의 `aliasInstance`가 그것을 부른다. 같은 package의
+  class는 여전히 handle로 만든다. 이유: class의 handle과 constructor는 export되지 않고, `binding.Token`은 export된 함수를
+  바인딩의 package에만 남긴다.
+- **GN-6bf** 다른 레포의 callback unit의 member는 그 owner의 계약의 타입을 이름한다. 그래서 그 unit의 fixture의 case
+  값, 즉 행이나 기대 호출의 인자와 결과는 그 계약의 이름 붙은 타입을 그 라이브러리의 unit으로 풀어서(T-3) 다섯 타깃에서
+  쓴다. 이유: 이름 붙은 타입은 그 계약의 이름이고, 그것이 이름하는 값 alias는 이 계약이 변환하는 것이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

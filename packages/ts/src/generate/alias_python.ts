@@ -337,7 +337,7 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPython(alias, name, core, failure);
-  const arms = (walk: Walk): string => outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(py_, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py_, ', (kept, field, holds, head) => keptMake(kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMake(make, kind, head, walk), walk.leaf).join('\n');
+  const arms = (walk: Walk): string => outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(py_, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py_, ', (kept, field, holds, head) => keptMake(kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMake(make, kind, head, walk), walk.leaf, 'made').join('\n');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {

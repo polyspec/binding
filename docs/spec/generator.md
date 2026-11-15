@@ -936,6 +936,31 @@ the design ids are those of the binding design.
   constructor that takes a float runs in no end-to-end check. Why: the owner's core gives and takes the value, and
   its class of the language is the only form in which a user of both packages can pass an instance from one to the
   other.
+- **GN-6bb** An `out` row of a value alias of this contract may have the kind `nested:<value type>`, where the value
+  type is a named type (T-3) of another repository that `binding_core::ValueType` has (`json_value`,
+  `template_value`, `php_value`), with the make `{value: <value type>}` for each target, in one row without `when`
+  (CK-8). The core gives `OutValue::Nested { value_type, value }`, where `value` is described in the kinds of the
+  `out` table of the value type and its children come from the same source, so the arm calls the make function of the
+  value alias or value class of that repository, which the binding converts as it converts a named type that a member
+  names, with the source and, for a value alias without an owner class, the made containers of the walk. The five
+  targets generate the row. Refused by name (G-4): another make of the kind, a row with `when`, and a value type that
+  `ValueType` does not have. Why: the core keeps a value of another repository inside its own value, and only the
+  binding of that repository's value type knows how a language holds it.
+- **GN-6bc** An `out` row of a value alias whose make is a member of a class of this contract that takes one parameter
+  of the type `list<alias>` (kind `list`) or `map<alias>` (kind `map`) is made in two steps: the walk makes the
+  children by the rows of the alias into the array of the language, as the built-in form does, and when the last
+  child is made the conversion of the parameter takes that array, the member's core path makes the core value and the
+  instance of the class leaves. PHP generates it; the other targets refuse it by name (G-4), because no contract
+  makes such a row for them. Why: the core value of the class holds core values of the alias, which the binding
+  only gets back from the made children through the `in` function of the alias.
+- **GN-6be** A Go value alias whose `out` rows make an instance of a class of another module makes it through the
+  exported `<Class>FromHandle` of that module's package (GN-15a), which `aliasInstance` of the decoding package calls;
+  a class of the same package is still made by its handle. Why: the handle and the constructor of a class are
+  unexported, and `binding.Token` keeps the exported function to the packages of the binding.
+- **GN-6bf** A member of a callback unit of another repository names the types of the contract of its owner, so a
+  case value of a fixture of that unit, an argument or a result of a row or of an expected call, is written with the
+  named types of that contract resolved to units of their libraries (T-3), in the five targets. Why: a named type is
+  a name of its contract, and the value alias that it names is the one that this contract converts.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

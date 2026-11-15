@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A value alias whose `out` row has the kind `nested:<value type>` is generated for the five targets: the arm makes the value by the make function of the value alias of the owning repository (GN-6bb, B2.308). Every target refused it with `no OutValue variant of the kind nested:json_value`, or with the refusal of an earlier row.
+- PHP makes an `out` row by a member that takes the map or the list of the alias, from the array of the made children (GN-6bc, B2.309). The orm contract was refused with `map_value.constructor of the kind map takes map<orm_value>`.
+- Go makes the instance of a class of another module for an `out` row of a value alias through the exported `<Class>FromHandle` of its package (GN-6be, B2.310). It was refused with `its handle and dispatch are unexported`.
+- A fixture of a callback unit of another repository writes its case values with the named types of the owner resolved (GN-6bf, B2.311). The crud-ui generator contract was refused on the five targets with `no case value of the type json_value`. A case map value that is no array of `[key, value]` pairs is refused by name, where the Go generation crashed with `held.every is not a function`.
 - `make install-tools` fails when the PHP that it wraps is not the minor of `.php-version`, and names both (B2.300).
 - The generated bindings compile for a record that holds a callback, a record field named `value`, a tuple field that leaves, a class without members, a kept record with field defaults and callbacks of the owner thread; the PHP and Node adapters of an owner-thread callback are Send and Sync, and PHP releases its object only on the owner thread (B2.301).
 - The PHP stub writes an optional whose PHP type is `mixed` as `mixed`, not `?mixed`, which `php -l` refused; the docblock keeps `mixed|null` (B2.302).

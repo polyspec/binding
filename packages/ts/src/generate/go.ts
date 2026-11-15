@@ -173,11 +173,6 @@ function reached(scope: GoScope, unit: Unit): string | undefined {
   return goPackage(scope.model.contract, unit.module);
 }
 
-// U-7, GN-15c: only the package of a class makes its instance by the number of the class.
-function sameModule(scope: GoScope, unit: Unit, what: string): void {
-  if (unit.module !== scope.module) throw new Unsupported(`${unit.id}: a ${what} of the module ${unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its handle and dispatch are unexported)`);
-}
-
 // Whether a type names a unit, inside another type too.
 const namesUnit = (type: Type): boolean => {
   if (typeof type === 'string') return false;
@@ -555,8 +550,9 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
   if (valueAlias !== undefined) {
     const instances = aliasInstances(scope.model, valueAlias);
     if (instances.length === 0) return [`${t}${target} = dec.Value()`];
-    // GN-15c: only the package of a class makes its instance, as aliasInstance of that package.
-    for (const object of instances) sameModule(scope, object.unit, `class whose instance an out row of the alias ${valueAlias.unit.id} makes`);
+    // GN-15c: aliasInstance of the package makes the instance of a class of the package, and that of a class of
+    // another module through its exported FromHandle, which binding.Token keeps for the modules of the binding (GN-15a).
+    for (const object of instances) reached(scope, object.unit);
     for (const object of instances) (scope.aliasInstances ??= new Set()).add(object);
     return [`${t}${target} = dec.ValueWith(aliasInstance)`];
   }
@@ -1103,12 +1099,13 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
   const instance = made.length === 0
     ? ''
     : `
-// aliasInstance makes the instance of a class of this package by its number in the contract, for a value alias whose
-// out rows make an instance by a member (U-7, GN-15c); nil for any other number.
+// aliasInstance makes the instance of a class by its number in the contract, for a value alias whose out rows make an
+// instance by a member (U-7, GN-15c): a class of this package by its handle, and a class of another module through the
+// FromHandle of its package (GN-15a); nil for any other number.
 func aliasInstance(class uint64, handle uint64) any {
 	switch class {
 ${made.map((o) => `	case ${model.objects.indexOf(o)}:
-		return new${goName(o.unit.name)}(handle)`).join('\n')}
+		return ${o.unit.module === module ? `new${goName(o.unit.name)}(handle)` : `${goPackage(model.contract, o.unit.module)}.${goName(o.unit.name)}FromHandle(binding.Token{}, handle)`}`).join('\n')}
 	}
 	return nil
 }

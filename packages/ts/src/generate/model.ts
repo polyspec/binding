@@ -1130,6 +1130,14 @@ export function collectModel(
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
   }
   for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
+  // GN-6bb: an out row of the kind nested:<value type> of a value alias of this contract is made by the make function
+  // of that value type, so the value alias of the repository that owns it is converted here as a named type is.
+  for (const alias of aliases.filter((a) => a.library === undefined)) {
+    for (const row of alias.unit.out ?? []) {
+      const nested = nestedType(contract, row.kind);
+      if (nested !== undefined) eachType(nested, foreignAlias);
+    }
+  }
   for (const callback of [...callbacks, ...foreignCallbacks]) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
@@ -2002,8 +2010,19 @@ export function forLanguage(model: Model, lang: Lang): Model {
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
 // repository's own is a unit of this contract, another repository's names its library.
+// GN-6bb: the value type of another repository that an out row of the kind nested:<value type> names, by the named
+// types of the contract (T-3), or undefined for any other kind.
+export function nestedType(contract: Contract, kind: string): { unit: string; library: string } | undefined {
+  if (!kind.startsWith('nested:')) return undefined;
+  const named = (contract.types as Record<string, { library: string; unit: string } | undefined> | undefined)?.[kind.slice('nested:'.length)];
+  return named === undefined || named.library === contract.library ? undefined : { unit: named.unit, library: named.library };
+}
+
+// T-3: a type of a contract with its named types resolved: the unit of another library, or a unit of the contract.
+export const resolveNamedType = (contract: Contract, type: Type): Type => resolveNamedTypes({ ...contract, units: [{ id: '', name: [''], module: '', kind: 'record', visibility: 'public', fields: [{ name: [''], type }] } as unknown as Unit] }).units[0]?.fields?.[0]?.type ?? type;
+
 export function resolveNamedTypes(contract: Contract): Contract {
-  const named = contract.types as Record<string, { library: string; unit: string } | undefined>;
+  const named = (contract.types ?? {}) as Record<string, { library: string; unit: string } | undefined>;
   const resolve = (type: Type): Type => {
     if (typeof type === 'string') {
       const owner = named[type];

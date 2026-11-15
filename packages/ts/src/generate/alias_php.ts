@@ -5,9 +5,10 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
+import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
+import { convertIn } from './php.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
@@ -489,13 +490,44 @@ export function phpHost(model: Model): string {
   return host + valueClassesPhpHost(model);
 }
 
+// GN-6bc: a member of a class of this contract that takes the list or the map of the alias: the walk makes the children
+// into a PHP array, as the built-in form does, and when the last child is made the conversion of the parameter takes
+// the array and the member makes the instance.
+function memberContainer(model: Model, alias: ValueAlias, make: ContainerMake, fills: (Fill & { close: string })[], { level }: Walk): string {
+  const name = `Made${langName('php', make.object.unit.name, 'class')}`;
+  const parameter = make.factory.params[0];
+  if (!fills.some((fill) => fill.name === name)) {
+    const like = fills.find((fill) => fill.name === (make.kind === 'list' ? 'Items' : 'Entries'));
+    if (like === undefined || parameter === undefined) throw new Error('GN-6bc: the PHP fills have no Items or Entries');
+    fills.push({
+      ...like,
+      name,
+      doc: `An array that takes the ${make.kind === 'list' ? 'items of a list' : 'entries of a map'}, which ${make.factory.member.id} takes when its last child is made (GN-6bc).`,
+      pattern: like.pattern.replace(`OutFill::${like.name}(`, `OutFill::${name}(`),
+      ...(like.nextPattern === undefined ? {} : { nextPattern: like.nextPattern.replace(`OutFill::${like.name}(`, `OutFill::${name}(`) }),
+      close: `making.entered.remove(&level.handle.raw());
+let mut zval = Zval::new();
+zval.set_hashtable(array);
+let argument = ${convertIn(model, make.param, '&zval', rustString(parameter.name.join('_')))}?;
+${make.made('argument')}`,
+    });
+  }
+  const parts = container(alias, make.kind, make.kind);
+  return `{
+            ${parts.head === '' ? '' : `${parts.head}\n            `}php_enter(making, handle)?;
+            ${level({ walks: true, fill: `OutFill::${name}(ZendHashTable::new()${make.kind === 'map' ? ', None' : ''})` })}
+        }`;
+}
+
 export function aliasPhp(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('php', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPhp(alias, name, core, failure);
-  const arms = (walk: Walk): string => outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', undefined, 'out_', undefined, walk.leaf).join('\n');
+  // GN-6bc: the fills of the walk, with an array for each member that takes the list or the map of the alias.
+  const fills = [...ALIAS_FILLS];
+  const arms = (walk: Walk): string => outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', undefined, 'out_', undefined, walk.leaf, 'making', (make) => memberContainer(model, alias, make, fills, walk)).join('\n');
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
@@ -510,7 +542,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let mut making = PhpMaking::default();
     make_${name}(root, &mut source, &mut making)
 }
-${walkRust(PHP_WALK, name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PHP_MAKING, { head: '', of: (fill) => ALIAS_FILLS.find((f) => f.name === fill.name)?.close ?? '' })}`;
+${walkRust(PHP_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PHP_MAKING, { head: '', of: (fill) => fills.find((f) => f.name === fill.name)?.close ?? '' })}`;
 }
 
 // B-1: what a PHP value is as a HostValue, one level at a time; the children of an array or a stdClass are asked for

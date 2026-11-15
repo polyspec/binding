@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e188cd495291e991dfdbd0c5c665ed31fa5da6ac7f3437d74a67b90fe6226ece -->
+<!-- source-sha256: d0399925a764ed8eab79fe0a81af8a3274721046e397009227c01c214537846f -->
 <!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
@@ -7,6 +7,10 @@
 
 ## Unreleased
 
+- `out` 행의 kind가 `nested:<값 타입>`인 값 alias를 다섯 타깃이 생성한다: arm은 그 값을 가진 레포의 값 alias의 make 함수로 만든다(GN-6bb, B2.308). 모든 타깃이 `no OutValue variant of the kind nested:json_value`나 앞선 행의 거부로 이를 거부했다.
+- PHP는 alias의 map이나 list를 받는 member로 만드는 `out` 행을 만들어진 자식의 배열로 만든다.(GN-6bc, B2.309). orm 계약은 `map_value.constructor of the kind map takes map<orm_value>`로 거부되었다.
+- Go는 값 alias의 `out` 행이 다른 module의 class 인스턴스를 만들 때 그 package가 export하는 `<Class>FromHandle`로 만든다(GN-6be, B2.310). `its handle and dispatch are unexported`로 거부되었다.
+- 다른 레포의 callback unit의 fixture는 owner의 이름 붙은 타입을 풀어서 case 값을 쓴다(GN-6bf, B2.311). crud-ui generator 계약은 다섯 타깃에서 `no case value of the type json_value`로 거부되었다. `[key, value]` 쌍의 배열이 아닌 map case 값은 이름을 대고 거부하며, Go 생성은 이 값에서 `held.every is not a function`으로 멈췄다.
 - `make install-tools`는 자신이 감싼 PHP가 `.php-version`의 minor가 아니면 둘을 이름하며 실패한다(B2.300).
 - callback을 쥐는 record, `value`라는 record 필드, 나가는 tuple 필드, member 없는 class, 필드 기본값이 있는 kept record, owner thread의 callback에 대해 생성된 binding이 컴파일된다. owner thread callback의 PHP와 Node adapter는 Send와 Sync이고, PHP는 그 객체를 owner thread에서만 놓는다(B2.301).
 - PHP stub은 PHP 타입이 `mixed`인 optional을 `php -l`이 거부하던 `?mixed`가 아니라 `mixed`로 쓴다. docblock은 `mixed|null`을 유지한다(B2.302).

@@ -406,7 +406,7 @@ export function aliasWasm(model: Model, alias: ValueAlias): string {
   const label = langName('wasm', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassWasm(model, alias, name, core, failure);
-  const arms = (walk: Walk): string => outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', (kept, field, holds, head) => keptMakeWasm(model, kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMakeWasm(model, make, kind, head, walk), walk.leaf).join('\n');
+  const arms = (walk: Walk): string => outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '', (kept, field, holds, head) => keptMakeWasm(model, kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMakeWasm(model, make, kind, head, walk), walk.leaf, 'made').join('\n');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &JsValue, _subject: &str) -> Result<${core}, Fail> {

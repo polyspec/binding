@@ -33,6 +33,7 @@ import {
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
   caseTextParts, CASE_JSON_STRING_GOLDENS,
+  fixtureType,
 } from './samples.ts';
 
 interface Values {
@@ -910,10 +911,13 @@ const raisedLine = (args: ReadonlyMap<Arg, unknown>): string[] =>
 // G-5: the fixture of a callback, which answers the calls of the core by the rows of a case.
 function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: string): string {
   const members = fixture.unit.members ?? [];
+  // T-3: a callback unit of another repository names the types of its owner's contract.
+  const named = fixtureType(v.model, fixture.unit);
   const memberName = (i: number): string => goString(langName('go', members[i]?.name ?? [], 'callable'));
-  const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(p.type, value(v, b, p.type, args[i] ?? null))).join(', ')}}`;
+  const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(named(p.type), value(v, b, named(p.type), args[i] ?? null))).join(', ')}}`;
   const rows = fixture.rows.map((row) => {
-    const returns = members[row.member]?.returns ?? 'none';
+    const given = members[row.member]?.returns;
+    const returns = given === undefined ? 'none' : named(given);
     const result = row.result === null || returns === 'none' ? 'nil' : typed(returns, value(v, b, returns, row.result));
     // GN-13: a raise row returns the error unit with its kind, as Go code makes one.
     // GN-6s: an error unit of the owner of a callback unit of another repository is made by its package errors (GN-15d).
@@ -928,9 +932,10 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
 function fixtureChecks(fixtures: { fixture: Fixture; name: string }[], v: Values, b: Body): string[] {
   return fixtures.flatMap(({ fixture, name }) => {
     const members = fixture.unit.members ?? [];
+    const named = fixtureType(v.model, fixture.unit);
     const lines = [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}'];
     if (fixture.calls !== undefined) {
-      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(p.type, value(v, b, p.type, call.args[i] ?? null)))].join(', ')}}`);
+      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(named(p.type), value(v, b, named(p.type), call.args[i] ?? null)))].join(', ')}}`);
       // reflect.DeepEqual tells a nil slice from an empty one, so no expected call is read as the length 0.
       if (calls.length === 0) lines.push(`if len(${name}.calls) != 0 {`, `\tt.Fatalf("G-5: the calls %v are not none", ${name}.calls)`, '}');
       else lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${name}.calls, want) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${name}.calls, want)`, '}');

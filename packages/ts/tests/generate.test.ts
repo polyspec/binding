@@ -1242,13 +1242,15 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   assert.match(pkg, /= dec\.ValueWith\(aliasInstance\)/);
   assert.match(pkg, /\nfunc aliasInstance\(class uint64, handle uint64\) any \{\n\tswitch class \{\n\tcase 0:\n\t\treturn newTag\(handle\)\n\t\}\n\treturn nil\n\}\n/);
   assert.match(text(go, 'packages/go/internal/binding/zz_generated_binding.go'), /\n\tcase 10:\n\t\tclass, handle := r\.Uint\(\), r\.Uint\(\)\n/);
-  // Only the package of the class makes its instance, so a member of another module that gives the value is refused.
+  // GN-6be: a member of another module that gives the value makes the instance through the FromHandle of the package
+  // of the class.
   const moved = structuredClone(sample);
   moved.units.find((u: any) => u.id === 'tag').module = 'tags';
   const owner = moved.units.find((u: any) => u.id === 'sample');
   owner.members = owner.members.filter((m: any) => !JSON.stringify(m).includes('"unit":"tag"'));
   moved.cases = [];
-  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), /tag: a class whose instance an out row of the alias data makes of the module tags in the module \(the root\) is not generated for Go yet/);
+  const movedGo = generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  assert.match([...movedGo.values()].map(String).join('\n'), /return tags\.TagFromHandle\(binding\.Token\{\}, handle\)/);
   row.make.go = 'text';
   // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
   row.kind = 'bool';
@@ -10368,4 +10370,96 @@ test('a case value nested far deeper than a JSON reader takes is generated on a 
   // A refusal keeps its sentences across the thread.
   const refused = JSON.parse(JSON.stringify(contract));
   assert.throws(() => generateOnStack({ contract: refused, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['nope' as never] }), /the contract has no target nope/);
+});
+
+// GN-6bb: the consumer with a value alias of its own whose out row of the kind nested:json_value makes the value alias
+// data of its owner, which the named type json_value names.
+const nestedSample = (): ReturnType<typeof consumerSample> => {
+  const parts = consumerSample();
+  parts.contract.types = { json_value: { library: 'sample', unit: 'data' } };
+  const all = (make: unknown): Record<string, unknown> => Object.fromEntries(FIVE.map((lang) => [lang, make]));
+  parts.contract.units.push({
+    id: 'wrapped', name: ['wrapped'], module: '', kind: 'alias', visibility: 'public', origin: 'value', core_type: 'polyspec_consumer::Wrapped',
+    core: { in: 'polyspec_consumer::wrapped_in', out: 'polyspec_consumer::wrapped_out' },
+    out: [{ kind: 'null', make: all('null') }, { kind: 'nested:json_value', make: all({ value: 'json_value' }) }],
+    in: FIVE.map((lang) => ({ [lang]: lang === 'python' ? 'None' : lang === 'go' ? 'nil' : 'null', cases: [{ kind: 'null' }] })),
+  });
+  parts.contract.units.find((u: any) => u.id === 'consumer').members.push({ id: 'consumer.wrapped', name: ['wrapped'], kind: 'function', visibility: 'public', parameters: [], returns: { unit: 'wrapped' }, raises: [], wait: 'none', core: 'polyspec_consumer::wrapped' });
+  return parts;
+};
+
+test('an out row of the kind nested:<value type> makes the value by the make function of the value alias of its owner in the five targets (GN-6bb, B2.308)', () => {
+  const { contract, caseFiles, foreign } = nestedSample();
+  const paths: Record<string, string> = { python: 'packages/python/generated/lib.rs', node: 'packages/ts/generated/lib.rs', wasm: 'packages/ts/wasm/generated/lib.rs', php: 'packages/php-ext/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs' };
+  const args: Record<string, string> = { python: 'py_, \\*value, source, made', node: 'env_, \\*value, source, made', wasm: '\\*value, source, made', php: '\\*value, source, making', go: 'output, \\*value, source' };
+  for (const target of FIVE) {
+    const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target as Lang] }), paths[target] ?? '');
+    assert.match(lib, new RegExp(`OutValue::Nested \\{ value_type: binding_core::ValueType::Json, value \\} => \\{?\\s*library_sample::make_data\\(${args[target] ?? ''}\\)`), target);
+  }
+  // A make of the kind that is not {value: <value type>} is refused by name.
+  const refused = nestedSample();
+  refused.contract.units.at(-1).out[1].make.python = 'null';
+  assert.throws(() => generate({ contract: refused.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: refused.caseFiles, foreign: refused.foreign, targets: ['python'] }), /wrapped: the python make of the kind nested:json_value is \{value: json_value\} in one row without when \(GN-6bb, CK-8\)/);
+});
+
+// GN-6bc, B2.305: the consumer whose alias wrapped makes a map by the constructor of its class entries, which takes the
+// map of the alias, and an int by the constructor of its class count, which takes an int64.
+const memberMadeSample = (): ReturnType<typeof consumerSample> => {
+  const parts = nestedSample();
+  const wrapped = parts.contract.units.find((u: any) => u.id === 'wrapped');
+  const owned = (id: string, type: unknown): any => ({
+    id, name: [id], module: '', kind: 'class', visibility: 'public', origin: 'value', final: true, core_type: `polyspec_consumer::${id[0]?.toUpperCase()}${id.slice(1)}`,
+    members: [
+      { id: `${id}.constructor`, name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type, required: true }], raises: [], wait: 'none', core: `polyspec_consumer::${id[0]?.toUpperCase()}${id.slice(1)}::new` },
+      { id: `${id}.value`, name: ['value'], kind: 'property', visibility: 'public', returns: type, raises: [], wait: 'none', writable: false, core: { path: `polyspec_consumer::${id[0]?.toUpperCase()}${id.slice(1)}::value`, receiver: '&self' } },
+    ],
+  });
+  parts.contract.units.push(owned('entries', { map: { unit: 'wrapped' } }), owned('count', 'int64'));
+  wrapped.out.push({ kind: 'map', make: { php: 'entries.constructor', python: 'map', node: 'map', go: 'map', wasm: 'map' } });
+  wrapped.out.push({ kind: 'int', make: { php: 'count.constructor', python: 'count.constructor', node: 'int', go: 'int', wasm: 'int' } });
+  return parts;
+};
+
+test('a member that takes the map of the alias makes the instance from the made array in PHP, and the content of the kind int is an int64 argument (GN-6bc, B2.305, B2.309)', () => {
+  const { contract, caseFiles, foreign } = memberMadeSample();
+  const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  // The walk fills an array of its own for the member, as for a map, and closes it into the argument of the member.
+  assert.match(php, /php_enter\(making, handle\)\?;\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len, index: 0, waiting: None, fill: OutFill::MadeEntries\(ZendHashTable::new\(\), None\) \}\)\)/);
+  assert.match(php, /zval\.set_hashtable\(array\);\n +let argument = map_in\(&zval, "value", [^\n]*\)\?;\n +out_entries\(polyspec_consumer::Entries::new\(argument\)\)/);
+  // B2.305: the content of the kind int is the i64 that the int64 parameter takes.
+  assert.match(php, /OutValue::Int\(value\) => out_count\(polyspec_consumer::Count::new\(value\.value\(\)\)\)/);
+  const python = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), 'packages/python/generated/lib.rs');
+  assert.match(python, /OutValue::Int\(value\) => out_count\(py_, polyspec_consumer::Count::new\(value\.value\(\)\)\)/);
+  // Another target refuses a member that takes the map of the alias by name.
+  const node = memberMadeSample();
+  node.contract.units.find((u: any) => u.id === 'wrapped').out.at(-2).make.node = 'entries.constructor';
+  assert.throws(() => generate({ contract: node.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: node.caseFiles, foreign: node.foreign, targets: ['node'] }), /wrapped: the node make entries\.constructor of the kind map takes the map of the alias, which a make by a member is generated for in PHP only \(GN-6bc\)/);
+});
+
+test('Go makes an instance of a class of another module for an out row of a value alias through its exported FromHandle (GN-6be, B2.310)', () => {
+  const parts = memberMadeSample();
+  parts.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  parts.contract.units.find((u: any) => u.id === 'wrapped').out.at(-1).make.go = 'count.constructor';
+  parts.contract.units.push({ id: 'codec', name: ['codec'], module: 'codec', kind: 'functions', visibility: 'public', origin: 'generated', members: [{ id: 'codec.wrapped', name: ['wrapped'], kind: 'function', visibility: 'public', parameters: [], returns: { unit: 'wrapped' }, raises: [], wait: 'none', core: 'polyspec_consumer::wrapped' }] });
+  const out = generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: ['go'] });
+  const codec = [...out.keys()].find((path) => /packages\/go\/codec\/zz_generated_codec\.go$/.test(path)) ?? '';
+  assert.match(text(out, codec), /func aliasInstance\(class uint64, handle uint64\) any \{\n\tswitch class \{\n\tcase \d+:\n\t\treturn consumer\.CountFromHandle\(binding\.Token\{\}, handle\)/);
+  const root = [...out.keys()].find((path) => /packages\/go\/zz_generated_consumer\.go$/.test(path)) ?? '';
+  assert.match(text(out, root), /func CountFromHandle\(_ binding\.Token, handle uint64\) \*Count \{/);
+});
+
+test('a fixture of a callback unit of another repository writes its case values with the named types of the owner resolved (GN-6bf, B2.311)', () => {
+  const parts = consumerSample();
+  const owner = parts.foreign.get('sample');
+  owner.types = { held: { library: 'sample', unit: 'data' } };
+  owner.units.find((u: any) => u.id === 'lookup').members[0].parameters[0].type = 'held';
+  const cases = parts.caseFiles.get('contracts/cases.json') as any;
+  for (const kase of cases.consult) {
+    for (const row of kase.lookup.callback['lookup.find']) row.args.key = { kind: 'text', value: 'a' };
+    for (const call of kase.lookup.calls) call.args.key = { kind: 'text', value: 'a' };
+  }
+  for (const target of FIVE) {
+    const out = generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: [target as Lang] });
+    assert.ok(out.size > 0, target);
+  }
 });

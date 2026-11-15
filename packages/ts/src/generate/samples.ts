@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Contract, Member, Service, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -966,6 +966,7 @@ function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>
       return Number.isFinite(number) && Number.isInteger(number);
     }
     case 'sequence_keys':
+      if (kind !== 'list' && !Array.isArray(held)) throw new Unsupported(`a case value of the kind ${kind} of ${alias.id} is ${JSON.stringify(held)}, not an array of [key, value] pairs (G-5)`);
       return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
     default:
       throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
@@ -2187,6 +2188,20 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
   return out;
 }
 
+// T-3: the contract of the repository that owns a callback unit of another repository, or undefined for a unit of
+// this contract.
+export function fixtureOwner(model: Model, unit: Unit): Contract | undefined {
+  const library = model.foreignCallbacks.find((c) => c.unit === unit || (c.library !== undefined && c.unit.id === unit.id && model.foreign.get(c.library)?.units.includes(unit) === true))?.library;
+  return library === undefined ? undefined : model.foreign.get(library);
+}
+
+// T-3: the types of the members of a callback unit as this contract names them: a type that the contract of the owner
+// of a unit of another repository names is resolved there, to a unit of its library.
+export function fixtureType(model: Model, unit: Unit): (type: Type) => Type {
+  const owner = fixtureOwner(model, unit);
+  return (type) => (owner === undefined ? type : resolveNamedType({ ...owner, library: '' }, type));
+}
+
 // G-5: the rows and the calls of a callback value {"callback": {...}, "calls": [...]} of the unit.
 export function fixtureOf(model: Model, unit: Unit, given: unknown, where: string): Omit<Fixture, 'arg'> {
   const value = given as { callback: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] };
@@ -2226,7 +2241,9 @@ export function fixtureOf(model: Model, unit: Unit, given: unknown, where: strin
 export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture, 'arg'>): { members: string[]; rows: string[][]; calls: string[][] | undefined } {
   const members = fixture.unit.members ?? [];
   const name = (member: number): string => langName(ctx.lang, members[member]?.name ?? [], 'callable');
-  const argsOf = (member: number, args: unknown[]): string[] => (members[member]?.parameters ?? []).map((p, i) => fromJson(model, ctx, p.type, args[i] ?? null));
+  // T-3: a callback unit of another repository names the types of its owner's contract, which resolve there.
+  const typed = fixtureType(model, fixture.unit);
+  const argsOf = (member: number, args: unknown[]): string[] => (members[member]?.parameters ?? []).map((p, i) => fromJson(model, ctx, typed(p.type), args[i] ?? null));
   const none = ctx.lang === 'python' ? 'None' : 'null';
   const flag = (on: boolean): string => (ctx.lang === 'python' ? (on ? 'True' : 'False') : String(on));
   const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
@@ -2235,7 +2252,7 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
     members: members.map((_m, i) => text(name(i))),
     rows: fixture.rows.map((row) => {
       const returns = members[row.member]?.returns ?? 'none';
-      const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, returns, row.result);
+      const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, typed(returns), row.result);
       const raise = row.raise;
       if (raise !== undefined && ctx.errorNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} is not generated for ${ctx.target ?? ctx.lang} yet`);
       const raised = raise === undefined || ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`, raise.library);

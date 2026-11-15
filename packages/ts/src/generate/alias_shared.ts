@@ -3,7 +3,7 @@
 
 import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { type Fn, type KeptClass, type KeptField, type Model, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField } from './model.ts';
+import { type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField, unitFn } from './model.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -51,7 +51,7 @@ const CONTENT: Record<string, { type: string; arg: string }> = {
 // U-7, T-5: an out row that names a member makes an instance of a class of this contract: the content of the kind is the
 // one argument of the core path of the class's constructor or static factory, which cannot fail, and the value it gives
 // leaves as the class's instance (out_<class>, whose first arguments are `env`).
-function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter, leaf: (made: string) => string = (made) => made): string {
+function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter, leaf: (made: string) => string = (made) => made, containerMake?: ContainerMakeWriter): string {
   if (alias.library !== undefined) {
     // GN-6ar: the class is of the owner of the alias, whose constructor the language of the target calls.
     if (foreignMake === undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
@@ -75,8 +75,16 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
   if (object === undefined || factory === undefined || factory.receiver !== undefined || !makes) {
     throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} is no constructor or static member of a generated class that returns it (U-7)`);
   }
-  const content = CONTENT[kind];
   const param = factory.params.length === 1 ? factory.params[0]?.type : undefined;
+  // GN-6bc: a member whose one parameter is a list or a map of this alias takes the children of a list or a map, made
+  // first by the rows of the alias into the container of the language, which the conversion of the parameter takes.
+  const container_ = typeof param === 'object' && ((kind === 'list' && 'list' in param && sameUnit(param.list, alias.unit.id)) || (kind === 'map' && 'map' in param && sameUnit(param.map, alias.unit.id)));
+  if (container_) {
+    if (containerMake === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes the ${kind} of the alias, which a make by a member is generated for in PHP only (GN-6bc)`);
+    if (factory.fallible || factory.failure) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} can fail, which a make by a member is not generated for yet (U-7)`);
+    return containerMake({ object, factory, kind, param, made: (arg) => `${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${arg}))` });
+  }
+  const content = CONTENT[kind];
   if (content === undefined || param !== content.type) {
     throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes ${factory.params.map((p) => (typeof p.type === 'string' ? p.type : JSON.stringify(p.type))).join(', ') || 'no parameter'}, not the content of the kind (U-7)`);
   }
@@ -88,10 +96,11 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
 // first arguments of the out function of a class in the language, for a row that makes an instance by a member, and
 // `instance` the prefix of the name of that function. `leaf` writes what an arm gives for the instance of a class that
 // a member of this contract made, where the arms of a language give another type than the made value (GN-6as).
-export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter, leaf?: (made: string) => string): string[] {
+export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter, leaf?: (made: string) => string, kept?: string, containerMake?: ContainerMakeWriter): string[] {
   const rows = (alias.unit.out ?? []).filter((row) => row.make[lang] !== undefined);
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
+    if (kind.startsWith('nested:')) return nestedArm(model, alias, lang, kind, env, kept, leaf ?? ((made) => made));
     const variant = VARIANT[kind];
     if (variant === undefined) throw new Unsupported(`no OutValue variant of the kind ${kind}`);
     const ofKind = rows.filter((row) => row.kind === kind);
@@ -100,7 +109,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
       if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake, leaf);
+      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake, leaf, containerMake);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;
@@ -115,6 +124,42 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       }).join(' ') + ` else { ${noRow} }`;
     return `        ${variant} => ${body},`;
   });
+}
+
+// GN-6bc: a make by a member of a class of this contract whose one parameter is a list or a map of the alias: the arm
+// that enters the container whose children the rows of the alias make, and `made` writes the instance of the class
+// from the argument that the conversion of the parameter gives.
+export interface ContainerMake {
+  object: ObjectClass;
+  factory: Fn;
+  kind: string;
+  param: Type;
+  made: (arg: string) => string;
+}
+
+export type ContainerMakeWriter = (make: ContainerMake) => string;
+
+// GN-6bb: the ValueType of binding_core of each value type that a repository owns and another nests (T-3).
+const VALUE_TYPE: Record<string, string> = { json_value: 'Json', template_value: 'Template', php_value: 'Php' };
+
+// GN-6bb: the arm of the kind nested:<value type>. The core of this contract describes the value in the kinds of the out
+// table of the value type, and its children come from the same source, so the make function of the value alias of the
+// owner makes it; `kept` is the extra argument of a make function of a value alias without an owner class.
+function nestedArm(model: Model, alias: ValueAlias, lang: Lang, kind: string, env: string, kept: string | undefined, leaf: (made: string) => string): string {
+  const name = kind.slice('nested:'.length);
+  const rows = (alias.unit.out ?? []).filter((row) => row.kind === kind);
+  for (const row of rows) {
+    const make = row.make[lang];
+    if (row.when !== undefined || typeof make !== 'object' || make === null || !('value' in make) || make.value !== name) {
+      throw new Unsupported(`${alias.unit.id}: the ${lang} make of the kind ${kind} is {value: ${name}} in one row without when (GN-6bb, CK-8)`);
+    }
+  }
+  const type = nestedType(model.contract, kind);
+  const variant = VALUE_TYPE[name];
+  const nested = type === undefined ? undefined : model.aliases.find((a) => a.library === type.library && a.unit.id === type.unit);
+  if (variant === undefined || nested === undefined) throw new Unsupported(`${alias.unit.id}: the kind ${kind} names no value type of another repository that binding_core::ValueType has, so its out row is not generated (GN-6bb)`);
+  const extra = nested.owner === undefined && kept !== undefined ? `, ${kept}` : '';
+  return `        OutValue::Nested { value_type: binding_core::ValueType::${variant}, value } => ${leaf(`${unitFn('make', nested.unit, nested.library)}(${env}*value, source${extra})`)},`;
 }
 
 // GN-6af: how a language makes an instance of a value class without core_type from the content of an out row: the
@@ -699,11 +744,13 @@ export function walkRust(shape: WalkShape, name: string, fills: Fill[], arms: (w
   const probe = arms({ put: (value) => `Ok(OutStep::Put(${value}))`, leaf: (made) => `${made}.map(OutStep::Put)`, level: (parts) => `OutStep::Enter(${parts.fill})` });
   const used = fills.filter((fill) => probe.includes(`OutFill::${fill.name}(`));
   if (used.length === 0) {
-    // No row makes a container, so the value has no children and the function has no walk.
+    // No row makes a container, so the value has no children and the function has no walk; an arm that makes a nested
+    // value reads the source (GN-6bb).
+    const flat = arms(plain);
     return `
-fn make_${name}${generics}(${env.params}out: OutValue, _source: &mut dyn OutValues${kept === undefined ? '' : `, _${kept.name}: ${kept.type}`}) -> ${result(made_)} {
+fn make_${name}${generics}(${env.params}out: OutValue, ${/\bsource\b/.test(flat) ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${new RegExp(`\\b${kept.name}\\b`).test(flat) ? '' : '_'}${kept.name}: ${kept.type}`}) -> ${result(made_)} {
 ${opened === '' ? '' : `    ${opened}\n`}    match out${kept === undefined ? '' : '.clone()'} {
-${arms(plain)}
+${flat}
         ${tail}
     }
 }
@@ -717,6 +764,8 @@ ${arms(plain)}
     level: (parts) => `Ok(OutStep::Enter(OutLevel { ${walked ? `handle, ${parts.walks ? 'len' : 'len: 0'}, index: 0, ` : ''}waiting: ${parts.waiting ?? 'None'}, fill: ${parts.fill}${made ? `, made: ${parts.made ?? ''}` : ''} }))`,
   };
   const body = arms(walk);
+  // GN-6bb: an arm that makes a nested value reads its children from the source, which open_level then takes.
+  const sourced = /\bsource\b/.test(body);
   // A fill whose next binds parts of the container is matched by its nextPattern on the container borrowed mutably.
   const bound = used.some((fill) => fill.nextPattern !== undefined);
   const next = walked
@@ -736,7 +785,7 @@ ${used.length === 1
 ${close.head === '' ? '' : `        ${close.head}\n`}${indent(closing, 8)}
     }`;
   return `
-fn make_${name}${generics}(${env.params}out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(made_)} {
+fn make_${name}${generics}(${env.params}out: OutValue, ${walked || sourced ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(made_)} {
     // GN-6as: a container whose children are made next: an entry of the work stack of the walk.${walked ? ' The children are\n    // read from the source by the handle, one for each index below the length.' : ''} waiting is the value that
     // is made first: the value of the entry whose key was made, or the one value of a reference.
     struct OutLevel${life} {${walked ? `
@@ -760,7 +809,7 @@ ${used.map((fill) => `        // ${fill.doc}\n        ${fill.name}(${fill.type})
         Next,
     }
     // GN-6as: one value: a value without children is made, and a container is entered before its children are made.
-    fn open_level${generics}(${env.params}out: OutValue${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(`OutStep${life}`)} {
+    fn open_level${generics}(${env.params}out: OutValue${sourced ? ', source: &mut dyn OutValues' : ''}${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> ${result(`OutStep${life}`)} {
 ${opened === '' ? '' : `        ${opened}\n`}        match out${kept === undefined ? '' : '.clone()'} {
 ${indent(body, 4)}
             ${tail}
@@ -782,7 +831,7 @@ ${indent(perFill(used, '&mut level.fill', (fill) => fill.put), 8)}
     let mut step = OutStep::Open(out);
     loop {
         step = match step {
-            OutStep::Open(out) => open_level(${env.args}out${kept === undefined ? '' : `, ${kept.name}`})?,
+            OutStep::Open(out) => open_level(${env.args}out${sourced ? ', source' : ''}${kept === undefined ? '' : `, ${kept.name}`})?,
             OutStep::Enter(level) => {
                 levels.push(level);
                 OutStep::Next
