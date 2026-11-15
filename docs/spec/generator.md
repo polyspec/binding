@@ -2778,7 +2778,7 @@ the design ids are those of the binding design.
   with 0 (GN-3g) before it packs `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name
   part>[-debug]-<zts|nts>.zip <extension-name>.so`, the name by which PIE finds a pre-packaged binary (GN-3c). The
   recipe reads `zts` and `debug` from that PHP (`PHP_ZTS`, `PHP_DEBUG`).
-  Planned in B2.275, not implemented: `release-php-ext` accepts optional `EXPECTED_PHP_MINOR` in `major.minor`
+  `release-php-ext` accepts optional `EXPECTED_PHP_MINOR` in `major.minor`
   form and refuses a different actual runtime minor before Cargo builds. It always compares the minor of the
   selected `php-config --version` with the runtime and records both full versions. This checks the header minor,
   not every ABI or patch flag; the native extension-load check remains required.

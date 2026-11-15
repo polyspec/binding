@@ -116,8 +116,9 @@ fs.mkdirSync(option('--out-dir'), { recursive: true });
 fs.writeFileSync(path.join(option('--out-dir'), 'polyspec_sample-0.0.3-cp314-abi3-' + tag + '.whl'), 'wheel');`);
   standIn(bin, 'php', `const code = option('-r');
 if (code.includes('PHP_MAJOR_VERSION')) process.stdout.write(process.env.PHP_MINOR ?? '8.4');
+else if (code === 'echo PHP_VERSION;') process.stdout.write(process.env.PHP_VERSION ?? (process.env.PHP_MINOR ?? '8.4') + '.27');
 else if (code.includes('PHP_DEBUG')) process.stdout.write('-nts');`);
-  standIn(bin, 'php-config', '');
+  standIn(bin, 'php-config', `if (args[0] === '--version') console.log(process.env.PHP_CONFIG_VERSION ?? (process.env.PHP_MINOR ?? '8.4') + '.27');`);
   standIn(bin, 'zip', `fs.writeFileSync(args[3], 'zipped');`);
   standIn(join(llvm, 'bin'), 'clang', `if (args[0] === '-dumpversion') console.log((process.env.CLANG_MAJOR ?? ${JSON.stringify(LLVM_MAJOR)}) + '.1.8');`);
   mkdirSync(join(llvm, 'lib'));
@@ -246,6 +247,45 @@ test('the PHP extension is built with the libclang and the clang of the LLVM of 
   const noPhp = box.make('release-php-ext', 'PHP=', `LLVM_ROOT=${box.llvm}`);
   assert.equal(noPhp.status, 2);
   assert.match(noPhp.output, /release-php-ext needs PHP/);
+});
+
+test('B2.275: PHP release checks the expected runtime and header minor before cargo builds (GN-19d)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  const php = `PHP=${join(box.bin, 'php')}`;
+  const make = (expected?: string): ReturnType<Sandbox['make']> => box.make('release-php-ext', php, `LLVM_ROOT=${box.llvm}`, ...(expected === undefined ? [] : [`EXPECTED_PHP_MINOR=${expected}`]));
+  const noBuild = (): void => assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0, JSON.stringify(box.calls()));
+  const clear = (): void => { writeFileSync(box.env['CALLS'] as string, ''); };
+
+  const wrongRuntime = make('8.5');
+  assert.equal(wrongRuntime.status, 2, wrongRuntime.output);
+  assert.match(wrongRuntime.output, /PHP runtime 8\.4 does not match EXPECTED_PHP_MINOR 8\.5/);
+  noBuild();
+  for (const expected of ['8', '8.4.27', '8.x', '.4', '8.']) {
+    clear();
+    const malformed = make(expected);
+    assert.equal(malformed.status, 2, malformed.output);
+    assert.match(malformed.output, /EXPECTED_PHP_MINOR must be major\.minor/);
+    noBuild();
+  }
+  box.env['PHP_CONFIG_VERSION'] = '8.5.3';
+  for (const expected of ['8.4', undefined]) {
+    clear();
+    const wrongHeaders = make(expected);
+    assert.equal(wrongHeaders.status, 2, wrongHeaders.output);
+    assert.match(wrongHeaders.output, /php-config 8\.5\.3 has minor 8\.5, not PHP runtime 8\.4/);
+    noBuild();
+  }
+  delete box.env['PHP_CONFIG_VERSION'];
+
+  for (const [minor, expected] of [['8.4', '8.4'], ['8.5', '8.5'], ['8.5', undefined]] as const) {
+    clear();
+    box.env['PHP_MINOR'] = minor;
+    const run = make(expected);
+    assert.equal(run.status, 0, run.output);
+    assert.match(run.output, new RegExp(`PHP runtime ${minor.replace('.', '\\.') }\\.27; php-config ${minor.replace('.', '\\.') }\\.27`));
+    assert.match(box.calls().find((call) => call.tool === 'cargo' && call.args[0] === 'build')?.env['CARGO_TARGET_DIR'] ?? '', new RegExp(`php${minor.replace('.', '\\.') }-nts$`));
+    assert.ok(existsSync(join(box.root, `var/release/assets/php-ext/php_polyspec_sample-v0.0.3_php${minor}-x86_64-linux-glibc-nts.zip`)));
+  }
 });
 
 // Defect 3: napi create-npm-dirs takes only a folder inside the package of --package-json-path.

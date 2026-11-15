@@ -5,7 +5,9 @@
 
 ## Unreleased
 
-- Specify the pending PHP runtime expectation and header-minor checks of the generated release recipe (B2.275).
+- The generated PHP release recipe checks optional `EXPECTED_PHP_MINOR` against the selected runtime and always
+  checks the php-config header minor before Cargo builds (GN-19d, B2.275). It records both full versions and
+  preserves the native extension-load check; previously a wrong runtime or header minor could reach the build.
 
 - Specify the pending float `safe_integer` domain and ordered-case branch agreement (B2.272); implementation
   and verification remain open.

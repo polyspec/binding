@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 37566bc998e3ead861d5a800b02347aa44f280104aa0205b7af1e71b03a232c7 -->
+<!-- source-sha256: f5c481c66674d03765fac8586cf6f8d8784232390156e3ec322968b9e7bcdb00 -->
 # 생성기
 
 [English](generator.md)
@@ -2248,7 +2248,7 @@
   뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
   <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
   PHP에서 읽는다(`PHP_ZTS`, `PHP_DEBUG`).
-  B2.275 계획이며 아직 구현하지 않았다. `release-php-ext`는 선택적 `EXPECTED_PHP_MINOR`를 `major.minor`
+  `release-php-ext`는 선택적 `EXPECTED_PHP_MINOR`를 `major.minor`
   형식으로 받고, 실제 runtime minor가 다르면 Cargo 빌드 전에 거부한다. 선택한 `php-config --version`의 minor를
   runtime과 항상 비교하고 두 전체 버전을 기록한다. 이는 모든 ABI와 patch flag가 아닌 header minor를
   확인하며, native 확장 load 검증은 계속 요구한다.

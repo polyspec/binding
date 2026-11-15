@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c481d5a3e164ab345dd4df615601c4ac42a3fa696f3e7320369bdd0976777557 -->
+<!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -19,7 +19,9 @@
 
 ## Unreleased
 
-- 생성 release recipe의 미구현 PHP runtime 기대값과 header minor 확인 조건을 명세했다(B2.275).
+- 생성 PHP release recipe가 Cargo 빌드 전에 선택적 `EXPECTED_PHP_MINOR`를 선택한 runtime과 비교하고
+  php-config header minor도 항상 확인한다(GN-19d, B2.275). 두 전체 버전을 기록하고 native 확장 load 검증을
+  유지한다. 이전에는 잘못된 runtime이나 header minor로 빌드에 도달할 수 있었다.
 
 - 미구현 float `safe_integer` 범위와 순서가 있는 case의 분기 일치 조건을 명세했다(B2.272).
   구현과 검증은 아직 남아 있다.

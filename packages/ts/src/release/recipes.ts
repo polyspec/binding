@@ -188,9 +188,12 @@ PHP_CONFIG when the command line gives it and the one beside that PHP otherwise,
 the build script of ext-php-rs refuses a PHP that it cannot find by the path that PHP names. It builds with the libclang
 and the clang of the LLVM of config/toolchain.json, which it checks first. Each PHP minor and build builds in its own
 target directory, because the extension is compiled against the headers of that PHP. The extension must load into that
-PHP without a php.ini before it is packed under the name by which PIE finds a pre-packaged binary.`)}
+PHP without a php.ini before it is packed under the name by which PIE finds a pre-packaged binary. Optional
+EXPECTED_PHP_MINOR is the expected major.minor; the selected runtime and php-config header minor must agree before
+Cargo builds, and the recipe records their full versions. This checks the minor, not every ABI or patch flag.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 	@test -n "$(PHP)" || { echo '${step} needs PHP: the PHP to build for, for example make ${step} PHP=php' >&2; exit 2; }
+	@test -z "$(EXPECTED_PHP_MINOR)" || printf '%s\\n' "$(EXPECTED_PHP_MINOR)" | grep -Eq '^[0-9]+\\.[0-9]+$$' || { echo '${step}: EXPECTED_PHP_MINOR must be major.minor (for example 8.4)' >&2; exit 2; }
 	@test -n "$(LLVM_MAJOR)" || { echo '${step}: config/toolchain.json pins no major release of LLVM (llvm.version)' >&2; exit 2; }
 	@test -x "$(LLVM_ROOT)/bin/clang" && ls "$(LLVM_ROOT)/lib" 2>/dev/null | grep -q '^libclang' || { echo '${step}: the bindgen of ext-php-rs needs the libclang and the clang of LLVM $(LLVM_MAJOR) (config/toolchain.json) in $(LLVM_ROOT); make install-llvm installs it' >&2; exit 2; }
 	@test "$$("$(LLVM_ROOT)/bin/clang" -dumpversion | cut -d. -f1)" = "$(LLVM_MAJOR)" || { echo "${step}: $(LLVM_ROOT)/bin/clang is clang $$("$(LLVM_ROOT)/bin/clang" -dumpversion), not $(LLVM_MAJOR) (config/toolchain.json)" >&2; exit 2; }
@@ -202,6 +205,12 @@ ${generate('php')}
 	case "$$config" in /*) ;; *) config=$(CURDIR)/$$config ;; esac; \\
 	set -ex; \\
 	minor=$$("$$php" -n -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'); \\
+	runtime_version=$$("$$php" -n -r 'echo PHP_VERSION;'); \\
+	test -z "$(EXPECTED_PHP_MINOR)" || test "$$minor" = "$(EXPECTED_PHP_MINOR)" || { echo "${step}: PHP runtime $$minor does not match EXPECTED_PHP_MINOR $(EXPECTED_PHP_MINOR); select the PHP executable for that minor with PHP" >&2; exit 2; }; \\
+	config_version=$$("$$config" --version); \\
+	config_minor=$$(printf '%s\\n' "$$config_version" | cut -d. -f1,2); \\
+	test "$$config_minor" = "$$minor" || { echo "${step}: php-config $$config_version has minor $$config_minor, not PHP runtime $$minor; select matching headers with PHP_CONFIG" >&2; exit 2; }; \\
+	printf '%s\\n' "${step}: PHP runtime $$runtime_version; php-config $$config_version"; \\
 	build=$$("$$php" -n -r 'echo PHP_DEBUG ? "-debug" : "", "-", PHP_ZTS ? "zts" : "nts";'); \\
 	target=$(abspath $(RELEASE_TARGET))/php$$minor$$build; \\
 	PHP="$$php" PHP_CONFIG="$$config" LIBCLANG_PATH=$(LLVM_ROOT)/lib CLANG_PATH=$(LLVM_ROOT)/bin/clang CARGO_TARGET_DIR="$$target" cargo build --release --locked -p ${crate('php-ext')}; \\
