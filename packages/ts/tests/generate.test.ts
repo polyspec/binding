@@ -10080,3 +10080,17 @@ test('Go: a pick of a part of a tuple inside a value names the field of the part
   // A tuple of Go is the struct TupleN, whose parts are the fields P0 to PN-1; an index of a struct does not compile.
   assert.match(go, /(made\d+) := made\d+\[0\]\n\t(made\d+) := \1\.P1\n\tmade\d+ := \2\[0\]\n/);
 });
+
+test('Node: a call of then that waits and must fail reads the kind of the settled outcome, not of its promise (GN-13f, GN-6m)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'gate.close') member.wait = 'blocking_io';
+  const cases = read('contracts/cases.json');
+  cases.gate_enter[2].receiver.then.push({ call: 'gate.close', raises: { kind: 'closed' } });
+  const tests = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['node'] }), 'packages/ts/generated/tests/generated.test.mjs');
+  // `await settled(...).kind` reads kind of the promise, which is undefined, so the outcome is awaited before .kind.
+  assert.match(tests, /assert\.equal\(\(await settled\(async \(\) => \(await made\d+\.close\(\)\)\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);/);
+  assert.doesNotMatch(tests, /assert\.equal\(await settled\(/);
+  const wasm = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.doesNotMatch(wasm, /assert\.equal\(await settled\(/);
+});
