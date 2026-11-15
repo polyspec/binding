@@ -1442,6 +1442,9 @@ export function coreArg(model: Model, type: Type, variable: string): string {
   if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
   if (typeof type === 'object' && !('unit' in type) && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), type)) return variable;
+  // GN-6aa: so does a record with a field that holds a callback, whose core type carries the lifetime of the callback.
+  const record = unitOf(model, type);
+  if (record?.kind === 'record' && libraryOf(type) === undefined && (record.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type))) return variable;
   // U-3, T-1: the core takes a callback as &mut dyn of its trait when a member of the unit takes &mut self, and as &dyn
   // otherwise, where clippy::unnecessary_mut_passed refuses a &mut; the block moves the struct into a temporary.
   const callback = unitOf(model, type);
@@ -1677,6 +1680,11 @@ const RUST_KEYWORDS = new Set([
 export const rustIdent = (text: string): string => (RUST_KEYWORDS.has(text) ? `r#${text}` : text);
 
 export const rustField = (name: Name): string => rustIdent(convert(name, 'rust', 'variable'));
+// GN-6ax: the conversion in of a record binds `value`, `subject` and `class` itself, so the local of a field of such a
+// name takes a trailing underscore, which no name of the contract has; the literal of the record names the field.
+const RECORD_LOCALS = new Set(['value', 'subject', 'class']);
+export const recordLocal = (name: Name): string => (RECORD_LOCALS.has(rustField(name)) ? `${rustField(name)}_` : rustField(name));
+export const recordInit = (name: Name): string => (recordLocal(name) === rustField(name) ? rustField(name) : `${rustField(name)}: ${recordLocal(name)}`);
 export const rustVariant = (name: Name): string => convert(name, 'rust', 'class');
 
 // The language name of a symbol; naming exceptions are not generated yet, which buildModel refuses below.
@@ -1707,8 +1715,8 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   }
   const args = order.map((p) => {
     if (absent(p)) return 'None';
-    // GN-6aa: a record that holds a callback moves into the core.
-    if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && unitOf(model, a.type)?.origin === 'callback') ? rustField(p.name) : `&${rustField(p.name)}`;
+    // GN-6aa: a record that holds a callback, also inside an optional or a list of a field, moves into the core.
+    if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), a.type)) ? rustField(p.name) : `&${rustField(p.name)}`;
     // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
     // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
     // A parameter whose `core` is `value` gives a clone of the value under its read guard, as the contract names it.
@@ -2494,5 +2502,5 @@ export const narrowed = (variable: string, subject: string, failed: string): str
 // partsN gives a reference to each part of either, which part converts, and made takes the converted parts.
 export const tupleOut = (parts: Type[], value: string, part: (type: Type, name: string, index: number) => string, made: (converted: string[]) => string): string => {
   const names = parts.map((_, i) => `part_${i}`);
-  return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${parts.length}(&${value}); ${made(parts.map((t, i) => `${part(t, names[i] ?? '', i)}?`))} }`;
+  return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${parts.length}(${value.startsWith('&') ? value : `&${value}`}); ${made(parts.map((t, i) => `${part(t, names[i] ?? '', i)}?`))} }`;
 };

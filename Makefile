@@ -54,6 +54,7 @@ ifeq ($(TOOLS),npm)
 	$(ONLINE) $(BOOTSTRAP_NODE) $(KIT)/bootstrap/bootstrap.mjs
 else
 	$(COMPOSER_TOOL_ENV) $(ONLINE) $(NODE) $(KIT)/install-tools.mjs --no-self-update $(TOOLS)
+	$(if $(or $(if $(TOOLS),,all),$(filter php,$(TOOLS))),$(NODE) scripts/php-minor.mts)
 endif
 
 install-packages: ## Install package-lock.json and packages/ts/package-lock.json with the npm of var/tools; ONLINE

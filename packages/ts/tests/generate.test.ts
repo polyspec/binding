@@ -1505,6 +1505,93 @@ test('the generated Rust of Python and Node names the token of its runtime py_ a
   }
 });
 
+test('a record whose field holds a callback inside an optional moves into the core in every target (GN-6aa, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const search = contract.units.find((u: any) => u.id === 'search');
+  search.fields[0].type = { optional: search.fields[0].type };
+  delete search.fields[0].required;
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['python', 'node', 'php', 'go'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_sample::seek\(search\)/, path);
+  }
+});
+
+test('a tuple field of a record leaves through the reference of the field, never of a temporary (GN-6ac, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/contracts/cases.json', import.meta.url), 'utf8'));
+  // The record with a tuple field also leaves, as the result of a member.
+  contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'shapes.stride_count').returns = { unit: 'stride' };
+  cases['stride_count'] = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'php', 'go'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.doesNotMatch(text(out, path), /parts\d\(&&/, path);
+    assert.match(text(out, path), /parts\d\(&value\./, path);
+  }
+});
+
+test('a record field named value reads into a local that does not shadow the value of the conversion (GN-6ax, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/contracts/cases.json', import.meta.url), 'utf8'));
+  contract.units.find((u: any) => u.id === 'stride').fields[1].name = ['value'];
+  // A record inside a list enters through its conversion in, which binds the value that it reads.
+  const count = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'shapes.stride_count');
+  count.parameters[0].type = { list: count.parameters[0].type };
+  cases['stride_count'] = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'php', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /let value_: u64 = /, path);
+    assert.match(rust, /polyspec_shapes::Stride \{ ends, value: value_ \}/, path);
+  }
+});
+
+test('WASM writes no module of members for a class without members of its own (GN-6aw, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  // lease has no member of its own: its instances come from tag.lease, and its members are left out.
+  const lease = contract.units.find((u: any) => u.id === 'lease');
+  lease.members = [];
+  delete lease.cleanup;
+  contract.cases = contract.cases.filter((row: any) => !String(row.member).startsWith('lease.'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/contracts/cases.json', import.meta.url), 'utf8'));
+  for (const key of Object.keys(cases)) if (key.startsWith('lease_')) delete cases[key];
+  const wasm = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn free_lease\(/);
+  assert.doesNotMatch(wasm, /pub mod class_lease \{/);
+});
+
+test('the PHP and Node adapter of a callback of the owner thread is Send and Sync, and PHP releases its object only on the owner (GN-6ay, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'node'] });
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /pub struct CbLookup \{\n {4}object: std::mem::ManuallyDrop<Zval>,\n {4}owner: std::thread::ThreadId,\n\}/);
+  assert.match(php, /unsafe impl Send for CbLookup \{\}\n[^\n]*\nunsafe impl Sync for CbLookup \{\}/);
+  assert.match(php, /impl Drop for CbLookup \{\n {4}fn drop\(&mut self\) \{\n {8}if std::thread::current\(\)\.id\(\) == self\.owner \{/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /unsafe impl Send for CbLookup<'_> \{\}\n[^\n]*\nunsafe impl Sync for CbLookup<'_> \{\}/);
+});
+
+test('PHP reads a field with a default of a record parameter with keeps as any argument with a default (GN-6aa, U-2, B2.301)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const label = contract.units.find((u: any) => u.id === 'supply').fields[1];
+  label.type = { optional: 'text' };
+  label.default = { computed: 'RT-5' };
+  label.reason = 'RT-5';
+  delete label.required;
+  const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let label: Option<String> = default_in\(label, /);
+});
+
+test('Go writes no dispatch of a call for a callback that only a parameter with keeps takes (GN-6aw, GN-6aa, B2.301)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  // classes has one callback unit, guide, and no function of a machine; every parameter that takes guide keeps it.
+  for (const member of contract.units.flatMap((u: any) => u.members ?? [])) {
+    for (const parameter of member.parameters ?? []) if (parameter.type?.unit === 'guide') parameter.keeps = true;
+  }
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /fn kept_guide\(/);
+  assert.doesNotMatch(go, /fn go_callback\(/);
+});
+
 test('Go: the package of another library of the same repository is imported under the name of its library (GN-6s, GN-15f)', () => {
   const { contract, caseFiles, foreign } = plotSample();
   // Two libraries of the repository plot: plot-figures, whose root package is plot, takes the record of plot-points.
@@ -4857,7 +4944,7 @@ test('a case writes its files into the directory of its test before its values a
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, new RegExp(`test\\('GN-13e: joined a_name_in_a_directory', \\(\\) => \\{\\n  caseFile\\('a/b', '${stored}'\\);\\n  caseFile\\('c', '00ff'\\);\\n`));
   assert.match(node, /function caseFile\(relative, content\) \{/);
-  assert.match(node, /import \{ mkdirSync, mkdtempSync, rmSync, writeFileSync \} from 'node:fs';/);
+  assert.match(node, /import \{ mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync \} from 'node:fs';/);
   assert.match(node, /afterEach\(/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, new RegExp(`function testGn13ejoinedANameInADirectory\\(\\): void\\n    \\{\\n        \\$this->caseFile\\("a/b", "${stored}"\\);\\n        \\$this->caseFile\\("c", "00ff"\\);\\n`));

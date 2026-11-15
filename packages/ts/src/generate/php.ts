@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct } from './model.ts';
+import { absentInits, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -575,10 +575,10 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const entry = library === undefined ? `RECORDS[${index}].get().copied()` : `ClassEntry::try_find(${rustString(phpName)}).map(Class)`;
   const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
   const props = fields.map((f) => langName('php', f.name, 'variable'));
-  const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
+  const reads = fields.map((f, i) => `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = {
         let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
-    };${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
+    };${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
   const constructor = recordConstructor(name, fields, props, args);
@@ -592,7 +592,7 @@ fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
         return Err(type_error(subject, ${rustString(phpName)}));
     };
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
+    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
 }
 
 fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
@@ -892,7 +892,10 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
     // A field of a record parameter with keeps is kept with it.
     const kept = (fn.member.parameters ?? []).some((p) => p.name === (arg.field ? fn.record?.param.name : arg.name) && p.keeps === true);
-    const converted = kept ? boxed(keptModel(model), arg.type, convertIn(keptModel(model), arg.type, rustIdent(variable), rustString(variable))) : arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`);
+    // A kept argument with a default is read as any argument with a default, through the conversions of the kept model.
+    const typed = kept ? keptModel(model) : model;
+    const read = (value: string): string => (kept || arg.field ? boxed(typed, arg.type, convertIn(typed, arg.type, value, rustString(variable))) : convertIn(typed, arg.type, value, rustString(variable)));
+    const converted = arg.default === undefined ? read(rustIdent(variable)) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], read('value'))})`);
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(kept ? keptModel(model) : model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
@@ -1043,16 +1046,32 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
   return `
 /// U-3: ${label}, a callback that PHP code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct} {
-    object: Zval,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+    object: ${cb.owner ? 'std::mem::ManuallyDrop<Zval>' : 'Zval'},${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
 }
+${cb.owner ? `
+// GN-6ay: every call compares the thread with the owner first (kind wrong_thread), and the Zval is released only on the
+// owner, so the core may keep the adapter where its trait asks for Send and Sync.
+// SAFETY: no member reads the Zval on another thread than the owner, and Drop leaves it on another thread.
+unsafe impl Send for ${struct} {}
+// SAFETY: as for Send; a shared reference reaches the Zval only through a call, which the owner check guards.
+unsafe impl Sync for ${struct} {}
 
+impl Drop for ${struct} {
+    fn drop(&mut self) {
+        if std::thread::current().id() == self.owner {
+            // SAFETY: the Zval is dropped once, here, on the thread of PHP that made it.
+            unsafe { std::mem::ManuallyDrop::drop(&mut self.object) };
+        }
+    }
+}
+` : ''}
 /// U-3: a callback object is checked when it enters: each member is a method of its class (kind invalid_callback).
 fn in_${name}(value: &Zval, subject: &str) -> Result<${struct}, Fail> {
     let Some(object) = value.object() else {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     };
 ${checks}
-    Ok(${struct} { object: value.shallow_clone()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+    Ok(${struct} { object: ${cb.owner ? 'std::mem::ManuallyDrop::new(value.shallow_clone())' : 'value.shallow_clone()'}${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
 ${lentCallbacks(model).includes(cb) ? `impl ${cb.unit.core ?? ''} for ${struct} {` : `impl ${struct} {`}${methods}
@@ -1084,7 +1103,7 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
             return Err(thrown_elsewhere(error));
         }
         let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ', owner: std::thread::current().id()' : ''} };
+        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ': std::mem::ManuallyDrop::new(object), owner: std::thread::current().id()' : ''} };
         ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
     }`;
   }).join('\n');

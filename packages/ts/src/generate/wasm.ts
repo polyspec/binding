@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -439,14 +439,14 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     const js = langName('wasm', f.name, 'variable');
     // GN-6a: a field that may be left out is null when its member is missing or undefined.
     const read = caseLeftOut(f) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${read}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(js), 'binding_error')}` : ''}`;
+    return `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = ${read}?;${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(js), 'binding_error')}` : ''}`;
   });
-  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
+  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
   return `
 /// T-4: a value of the record ${langName('wasm', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
+    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
 }
 
 fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
@@ -835,12 +835,14 @@ ${tables}
 function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('wasm', object.unit.name, 'class');
   const name = plainName(object.unit);
-  return `
+  // GN-6aw: a class without members of its own has no module of members, whose import would be unused.
+  const members = object.members.map((fn) => functionRust(model, fn)).join('');
+  return `${members === '' ? '' : `
 /// T-5, GN-4c: the exports of the members of ${jsClass}, each a function of this module.
 pub mod class_${name} {
     use super::*;
-${object.members.map((fn) => functionRust(model, fn)).join('').replace(/\n(?=.)/g, '\n    ')}}
-
+${members.replace(/\n(?=.)/g, '\n    ')}}
+`}
 /// T-5: drops the value of an instance of ${jsClass} that the engine collected (the FinalizationRegistry of the ES module).${object.cleanup === undefined ? `
 #[wasm_bindgen(js_name = ${rustString(`__free_${jsClass}`)})]
 pub fn free_${name}(this: u32) {

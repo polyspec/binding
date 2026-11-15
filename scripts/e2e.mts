@@ -42,6 +42,7 @@ import { llvmOf } from './e2e-llvm.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
+import { phpMinorProblem } from './php-minor.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -408,9 +409,8 @@ if (targets.includes('go') && muslTriple !== undefined) {
 }
 // The PHP of the machine is wrapped as it is (kit), so its minor is compared with .php-version here.
 if (phpTool !== '') {
-  const want = readFileSync(join(checkout, '.php-version'), 'utf8').trim();
-  const minor = spawnSync(phpTool, ['-r', 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'], { encoding: 'utf8' }).stdout.trim();
-  if (minor !== want) missing.push(`the target php needs PHP ${want} (.php-version); var/tools/bin/php is PHP ${minor || 'that does not run'}`);
+  const problem = phpMinorProblem(readFileSync(join(checkout, '.php-version'), 'utf8').trim(), phpTool);
+  if (problem !== undefined) missing.push(`the target php: ${problem}`);
 }
 // GN-14a: the bindgen of ext-php-rs takes the libclang and the clang of the LLVM of config/toolchain.json (e2e-llvm.mts),
 // so the headers that it includes are those of the libclang that parses them.

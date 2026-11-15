@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -556,14 +556,14 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     const member = langName('node', f.name, 'variable');
     // GN-6a: a field that may be left out is null when its member is missing or undefined.
     const read = caseLeftOut(f) ? `default_in(member(value, ${rustString(member)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(member))}).map(Option::flatten)` : convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member));
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${read}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(member), 'binding_error')}` : ''}`;
+    return `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = ${read}?;${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(member), 'binding_error')}` : ''}`;
   });
   const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
 /// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
 fn in_${name}(${envParam(model, unit, library)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
+    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
 }
 
 fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
@@ -1055,7 +1055,14 @@ pub struct ${struct}<'env> {
     object: Object<'env>,
     env_: &'env Env,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
 }
-
+${cb.owner ? `
+// GN-6ay: every call compares the thread with the owner first (kind wrong_thread), and the adapter holds the handles of
+// the call, which have no drop, so the core may keep it where its trait asks for Send and Sync.
+// SAFETY: no member reads the object or the env on another thread than the owner.
+unsafe impl Send for ${struct}<'_> {}
+// SAFETY: as for Send; a shared reference reaches the object only through a call, which the owner check guards.
+unsafe impl Sync for ${struct}<'_> {}
+` : ''}
 /// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
 fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Object {

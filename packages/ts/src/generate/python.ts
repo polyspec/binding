@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -484,7 +484,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const attr = langName('python', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(attr), '|error| binding_error(py_, error)')}` : ''}`;
+    return `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(attr), '|error| binding_error(py_, error)')}` : ''}`;
   });
   const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   return `
@@ -495,7 +495,7 @@ fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyRes
         return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
     }
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
+    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
 }
 
 fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {

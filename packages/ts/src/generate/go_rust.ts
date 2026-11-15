@@ -19,8 +19,7 @@ import {
   holdsCallback,
   takenCallbacks,
   lentCallbacks,
-  absentInits,
-} from './model.ts';
+  absentInits, byValue } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
@@ -77,9 +76,9 @@ const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
 };
 
 // U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
-// GN-6d: the callback units that a member of the contract takes; a unit that only a class implements (GN-6w) calls no
-// Go code, so it needs no dispatch of Go.
-const allCallbacks = (model: Model): CallbackUnit[] => takenCallbacks(model);
+// GN-6d: the callback units that a member of the contract takes without keeps; a unit that only a class implements
+// (GN-6w) or that only a parameter with keeps takes (GN-6aa, through kept_called) needs no dispatch of a call (GN-6aw).
+const allCallbacks = (model: Model): CallbackUnit[] => lentCallbacks(model);
 
 // GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a model has such a member.
 const passesFn = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
@@ -159,7 +158,7 @@ export function convertOut(model: Model, type: Type, value: string): string {
   // GN-6ac: the core holds a tuple as a Rust tuple or, when its parts have one type, as an array; partsN reads either.
   if ('tuple' in type) {
     const names = type.tuple.map((_, i) => `part_${i}`);
-    return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${type.tuple.length}(&${value}); ${type.tuple.map((t, i) => `${convertOut(model, t, names[i] ?? '')};`).join(' ')} }`;
+    return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${type.tuple.length}(${value.startsWith('&') ? value : `&${value}`}); ${type.tuple.map((t, i) => `${convertOut(model, t, names[i] ?? '')};`).join(' ')} }`;
   }
   // GN-6ae: a result passthrough crosses the C ABI as the handle of its value in the table of package binding.
   if ('passthrough' in type) return `passed_out(output, ${value})`;
@@ -593,7 +592,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const reads = recordReads(model, unit, 'input');
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
-  const writes = (): string[] => fields.map((f) => `    ${convertOut(model, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
+  const writes = (): string[] => fields.map((f) => `    ${convertOut(model, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && (scalar(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type))) ? '' : '&'}value.${rustField(f.name)}`)};`);
   // GN-6aa: a record with a callback field, in an optional, a list, a map or a tuple too, has one lifetime and only
   // enters, as rustType writes its core type.
   const units = new Map(model.contract.units.map((u) => [u.id, u]));

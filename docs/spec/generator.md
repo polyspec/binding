@@ -425,6 +425,8 @@ the design ids are those of the binding design.
   Why: the core keeps the integer type that its own code needs, such as `usize` for an index or a length, and the
   contract states only the range of the value. A trait whose target the core's signature chooses converts without a
   core type in the contract, so the contract stays the same for every core that holds the value.
+  A part of a tuple that leaves is read from the reference that the code already holds (`parts2(&value.span)`), never
+  from a reference to a temporary of it, which Rust drops before the parts are used (B2.301).
 - **GN-6ad** A list parameter whose items narrow (GN-6ac), a list of integers or of tuples that hold them, is converted
   into a local `Vec` of the table's types, which `IntoCore` turns into a `Vec` of the core's item type, and the core
   call takes `&values[..]`, so a core that borrows a slice of a narrower item, such as `&[usize]`, `&[u32]` or
@@ -556,6 +558,8 @@ the design ids are those of the binding design.
   type, a value alias or a machine. A callback interface that only a class implements (GN-6w) calls no language code,
   so a member whose Failure comes from its trait converts a `Raised` into a failure of kind internal, which no table
   holds. Why: an item that nothing uses fails the lints of the workspace, which deny warnings.
+  WASM writes no module of members for a class without members of its own, and Go writes the dispatch of a call
+  (`go_callback`, `Thrown::Go`) only for a callback that a member takes without keeps (B2.301).
 - **GN-6ax** The names that the generated Rust binds itself never equal a name of the contract. A name of the contract
   is snake_case words without a trailing underscore, so the token of the runtime that every function of the Python
   crate takes is `py_` (`py_: Python<'py>`) and that of the Node crate is `env_` (`env_: &'env Env`). A parameter named
@@ -563,6 +567,17 @@ the design ids are those of the binding design.
   name is public, so a parameter of the name of a local of an entry point takes the trailing underscore there
   (GN-15j). Why: a parameter that shadows the token makes every conversion after it take the parameter, which does
   not compile, and the name of a parameter is public in Python and PHP.
+  The conversion in of a record binds `value`, `subject` and `class` itself, so the local of a field of such a name
+  takes the trailing underscore and the literal of the record names the field (`Stride { ends, value: value_ }`)
+  (B2.301).
+- **GN-6ay** A callback unit with `thread: "owner"` (U-3) is called by the host on the thread that made it, one call at a
+  time, so its adapter in PHP and Node is `Send` and `Sync` (`unsafe impl`), whatever bound the core trait has: every
+  call first compares the thread with the owner and fails with kind `wrong_thread` on another, and a drop on another
+  thread does not touch the language object (PHP keeps the `Zval` in `ManuallyDrop` and releases it only on the owner;
+  the Node adapter holds a borrowed handle of the call, which has no drop). Python (`Py`) and Go (a handle) are `Send`
+  and `Sync` already, and WASM has one thread. Why: a core trait such as `Loader: Send + Sync` lets a core keep the
+  callback in a shared value, and the host objects of PHP and Node are raw pointers, which Rust does not send; the owner
+  check makes each use sound, so the bound is met without a second form of the trait.
 - **GN-6av** Node calls a language function, a member of a callback (U-3) or a function value (GN-6z), as a napi
   `Function` whose arguments are `FnArgs` of the converted values, and a function without arguments as a `Function`
   of `()` that it calls with `()`. Why: napi implements the arguments of a call for `FnArgs` of one or more values and
@@ -689,6 +704,9 @@ the design ids are those of the binding design.
   its fields with the conversion of a kept callback, and its core type is `'static` (`index.supplied`); Go reads the
   fields of that record in the entry point itself, not through the reader of the record, whose callbacks last for the
   call only.
+  A record whose field holds a callback, also inside an optional, a list, a map or a tuple of the field, moves into the
+  core as a parameter with such a type does; and a field with a default of a record parameter with keeps is read as
+  any argument with a default, through the conversions of its kept callbacks (B2.301).
 - **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations

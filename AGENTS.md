@@ -25,7 +25,7 @@ rules of this repository.
   the PHP target uses by its major release in `config/toolchain.json`, and mise in `config/toolchain.json`
   with the sha256 of each platform of the deployment targets. `make install` installs them with the utilities of
   `@polyspec/kit` into `var/tools` (rustup, the one tool of the machine, keeps the Rust toolchain, and the PHP of the
-  machine is wrapped as it is; the LLVM of the machine is used as it is, and `make e2e` checks its major release), downloads only at the pinned digests, and no tool installs another tool on first use. The
+  machine is wrapped as it is, and `make install-tools` fails when its minor is not that of `.php-version` (`scripts/php-minor.mts`); the LLVM of the machine is used as it is, and `make e2e` checks its major release), downloads only at the pinned digests, and no tool installs another tool on first use. The
   wasm-bindgen CLI is the release of the `wasm-bindgen` crate of the generated manifests (GN-18), because the CLI reads only
   a module of its own release. Why: a result of a tool that the repository does not pin cannot be repeated, so it is a
   diagnosis and not evidence.

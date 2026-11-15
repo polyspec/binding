@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f4fe7ac44a281e6bdf5470410b1f634273202c1bb523e6326853c29d69cbe95c -->
+<!-- source-sha256: 4d5278af69ecc991c9c6c0408b55c34d5624b208d7898861bb5f603e895c7686 -->
 # 생성기
 
 [English](generator.md)
@@ -342,6 +342,8 @@
   `isize` 결과.
   이유: 코어는 index나 길이의 `usize`처럼 자기 코드가 필요로 하는 정수 타입을 유지하고, 계약은 값의 범위만 적는다. 코어의
   signature가 대상을 정하는 trait는 계약에 코어 타입 없이 바꾸므로, 값을 가진 어떤 코어에도 계약은 같다.
+  나가는 tuple의 부분은 코드가 이미 쥔 참조에서 읽고(`parts2(&value.span)`), 부분을 쓰기 전에 Rust가 버리는 그 임시값의
+  참조에서 읽지 않는다(B2.301).
 - **GN-6ad** 항목이 좁혀지는(GN-6ac) list parameter, 곧 정수나 정수를 가진 tuple의 list는 표의 타입으로 된 지역 `Vec`으로
   바뀌고, `IntoCore`가 그것을 코어 항목 타입의 `Vec`으로 바꾸며, 코어 호출은 `&values[..]`를 받는다. 그래서 `&[usize]`,
   `&[u32]`, `&[[usize; 2]]`처럼 더 좁은 항목의 slice를 빌리는 코어가 그것을 받는다. 코어 타입의 범위 밖의 항목은
@@ -446,11 +448,22 @@
   곳에만 있다: member가 받는 callback unit(GN-6d), 함수 타입, 값 alias, machine. class만 구현하는 callback interface(GN-6w)는
   언어 코드를 부르지 않으므로, trait에서 Failure가 오는 member는 `Raised`를 table 없이 kind internal의 실패로 바꾼다. 이유:
   아무것도 쓰지 않는 항목은 경고를 거부하는 workspace lint에서 실패한다.
+  WASM은 자신의 member가 없는 class에 member module을 쓰지 않고, Go는 keeps 없이 member가 받는 callback에만 호출의
+  dispatch(`go_callback`, `Thrown::Go`)를 쓴다(B2.301).
 - **GN-6ax** 생성 Rust가 스스로 묶는 이름은 계약의 이름과 같지 않다. 계약의 이름은 밑줄로 끝나지 않는 snake_case 단어이므로
   Python crate의 모든 함수가 받는 runtime token은 `py_`(`py_: Python<'py>`), Node crate의 것은 `env_`(`env_: &'env Env`)다.
   `py`나 `env`라는 parameter는 이름을 유지하며 Python은 그 이름을 keyword로 받는다. Go는 공개 이름이 없는 C ABI에서 계약
   이름을 묶으므로, 진입점 지역 변수의 이름을 가진 parameter가 거기서 밑줄을 붙인다(GN-15j). 이유: token을 가리는 parameter는
   그 뒤의 모든 변환이 parameter를 받게 해 compile되지 않고, parameter 이름은 Python과 PHP에서 공개된다.
+  record의 변환 in은 `value`, `subject`, `class`를 스스로 묶으므로 그런 이름의 필드 지역 변수는 밑줄을 붙이고, record의
+  literal은 필드를 이름한다(`Stride { ends, value: value_ }`)(B2.301).
+- **GN-6ay** `thread: "owner"`인 callback unit(U-3)은 host가 그것을 만든 스레드에서 한 번에 하나씩 부르므로, PHP와 Node의
+  adapter는 core trait의 bound와 상관없이 `Send`이자 `Sync`다(`unsafe impl`): 모든 호출은 먼저 스레드를 owner와 비교해 다른
+  스레드에서는 kind `wrong_thread`로 실패하고, 다른 스레드의 drop은 언어 객체를 건드리지 않는다(PHP는 `Zval`을
+  `ManuallyDrop`에 두고 owner에서만 놓는다. Node adapter는 drop이 없는 호출의 빌린 handle을 쥔다). Python(`Py`)과 Go(handle)는
+  이미 `Send`이자 `Sync`이고 WASM은 스레드가 하나다. 이유: `Loader: Send + Sync` 같은 core trait은 코어가 callback을 공유
+  값에 둘 수 있게 하고, PHP와 Node의 host 객체는 Rust가 보내지 않는 raw pointer다. owner 확인이 각 사용을 건전하게 하므로
+  trait의 두 번째 형식 없이 bound를 만족한다.
 - **GN-6av** Node는 언어 함수, 즉 callback의 member(U-3)나 함수 값(GN-6z)을 변환한 값의 `FnArgs`를 인자로 받는 napi
   `Function`으로 부르고, 인자 없는 함수는 `()`의 `Function`으로 `()`를 넘겨 부른다. 이유: napi는 하나 이상의 값의
   `FnArgs`와, 인자 없음으로 넘기는 `()`에 대해 호출 인자를 구현하며 `FnArgs<()>`에 대해서는 구현하지 않는다.
@@ -551,6 +564,8 @@
   parameter는 그 box로 값째 core에 들어간다(`index.single`). `keeps`가 있는 record parameter는 보관되는 callback의 변환으로
   field들에서 만들어지고, 그 core 타입은 `'static`이다(`index.supplied`). Go는 그 record의 field를 record의 reader가 아니라
   진입점 안에서 직접 읽는데, record의 reader가 만드는 callback은 그 호출 동안만 살기 때문이다.
+  필드가 callback을 쥐는 record는, 그 필드의 optional, list, map, tuple 안에서도, 그런 타입의 parameter처럼 코어로
+  옮겨진다. keeps가 있는 record parameter의 기본값 있는 필드는 kept callback의 변환으로 다른 기본값 인자처럼 읽는다(B2.301).
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는
