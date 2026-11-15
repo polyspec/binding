@@ -337,7 +337,7 @@ export function nodeTests(model: Model): string {
       // GN-6m: the outcome is parenthesized, so a test that waits reads kind of the settled outcome, not of its promise.
       return `assert.equal((outcome(() => ${expr})).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
-    pick: (expr, step) => textPaths.derive('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
+    pick: (expr, step) => 'present' in step ? expr : textPaths.derive('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
     arm: (local, member, faults) => {
       usesAddon = true;
       return `const ${local} = addon().__armFaults(${jsString(member)}, ${jsString(faults)});`;

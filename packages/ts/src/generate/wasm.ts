@@ -1110,8 +1110,18 @@ fn read_recognized_kind(value: &JsValue, classes: &[usize]) -> Result<Option<(St
 // generated caller throws it again; and the failure of a core that calls back, as the error of its kind or that
 // exception.
 function failureRust(model: Model): string {
-  if (!carriesThrown(model)) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no JavaScript code that
+  // throws, so it keeps no table, and a Raised that the core gives is a failure of kind internal.
+  if (!carriesThrown(model)) return ![...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.failure) ? '' : `
+fn failure_error(failure: ${failure}) -> Fail {
+    match failure {
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        binding_core::Failure::Raised(raised) => binding_error(BindingError::Internal { detail: raised.to_string() }),
+        binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+    }
+}
+`;
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the module, in a callback or while the core walks a value.
 enum Thrown {

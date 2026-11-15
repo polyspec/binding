@@ -51,6 +51,16 @@ export const bindingFn = (fn: Fn): string =>
   `${moduleSegments(fn.module).map((segment) => `${goName(segment)}__`).join('')}${fn.kind === 'function' ? '' : `${goName(fn.unit.name)}_`}${goName(memberWords(fn))}`;
 
 // The snake_case name of a unit in the names that this file makes; a keyword needs no raw form inside a longer name.
+// GN-15: the names of the locals that the generated Rust of an entry point and of in_<record> binds itself. A
+// parameter or a field of the contract of such a name takes a trailing underscore, so it does not shadow the local.
+const RUST_LOCALS = new Set(['args', 'len', 'result', 'input', 'outcome', 'held', 'this']);
+const rustLocal = (name: Name): string => {
+  const field = rustField(name);
+  return RUST_LOCALS.has(field) ? `${field}_` : field;
+};
+// T-4: a field of a record in its literal, by its local when that local takes the underscore.
+const fieldInit = (name: Name): string => (rustLocal(name) === rustField(name) ? rustField(name) : `${rustField(name)}: ${rustLocal(name)}`);
+
 export const plainName = (unit: Unit): string => rustField(unit.name).replace(/^r#/, '');
 const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()}`;
 export const releaseSymbol = (model: Model, unit: Unit): string => `${prefix(model)}__release_${plainName(unit)}`;
@@ -67,7 +77,9 @@ const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
 };
 
 // U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
-const allCallbacks = (model: Model): CallbackUnit[] => [...model.callbacks, ...model.foreignCallbacks];
+// GN-6d: the callback units that a member of the contract takes; a unit that only a class implements (GN-6w) calls no
+// Go code, so it needs no dispatch of Go.
+const allCallbacks = (model: Model): CallbackUnit[] => takenCallbacks(model);
 
 // GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a model has such a member.
 const passesFn = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
@@ -569,8 +581,8 @@ ${arms.join('\n')}
 function recordReads(model: Model, unit: Unit, input: string): string[] {
   return (unit.fields ?? []).map((f) => {
     const subject = rustString(goName(f.name));
-    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, input, subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, input, subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
+    if (pointed(f)) return `    let ${rustLocal(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, input, subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustLocal(f.name), subject, 'binding_error')}` : ''}`;
+    return `    let ${rustLocal(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, input, subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustLocal(f.name), subject, 'binding_error')}` : ''}`;
   });
 }
 
@@ -590,7 +602,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
+    Ok(${core} { ${fields.map((f) => fieldInit(f.name)).join(', ')}${absentInits(unit)} })
 }
 ${entersOnly ? '' : `
 fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
@@ -785,7 +797,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
     if (!locked(model, fn)) lines.push(`        let this: &${fn.unit.core_type ?? ''} = &held;`);
   }
   for (const parameter of fn.params) {
-    const variable = rustField(parameter.name);
+    const variable = rustLocal(parameter.name);
     const subject = rustString(goSubject(parameter.name));
     const object = heldParam(model, parameter.type);
     if (object !== undefined) {
@@ -807,7 +819,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
       if (record?.kind === 'record') {
         // GN-6aa: a record parameter with keeps is read field by field here, its callbacks kept funcs and its type 'static.
         lines.push(...recordReads(typed, record, '&mut input').map((l) => `    ${l}`));
-        lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(record)} };`);
+        lines.push(`        let ${variable}: ${rustType(typed, parameter.type)} = ${record.core_type ?? ''} { ${(record.fields ?? []).map((f) => fieldInit(f.name)).join(', ')}${absentInits(record)} };`);
         continue;
       }
       // GN-6aa: a callback parameter with keeps moves into the core as its box; one without keeps is the struct of the
@@ -820,7 +832,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
     }
   }
   lines.push('        finish_input(input)?;');
-  lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel));
+  lines.push(...lockLines(model, fn, (p) => rustLocal(p.name), 'held', 'binding_error', classLabel));
   return lines;
 }
 
@@ -1055,7 +1067,7 @@ fn passed_out(output: &mut Vec<u8>, value: binding_core::Passthrough) {
 
 // The core call of a member, the receiver first.
 function coreCall(model: Model, fn: Fn): string {
-  const args = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
+  const args = coreCallArgs(model, fn, (p) => rustLocal(p.name), 'this');
   return `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? args : ['this', ...args.slice(1)]).join(', ')})`;
 }
 

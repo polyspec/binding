@@ -40,15 +40,15 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   // GN-6aa: a callback of a parameter with keeps, and any callback of a unit that one holds, is held as a Native of its
   // owner thread.
-  if (unit?.origin === 'callback' && convertsKept(model, type, unit)) return `kept_${rustField(unit.name)}(env, ${value}, ${subject})`;
-  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
-  // GN-6c, GN-6v: the conversion of a record or a variant takes the env when a value alias, a class or a callback in it
-  // reads it, and no env otherwise.
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${readsEnv(model, unit, libraryOf(type)) ? 'env, ' : ''}${value}, ${subject})`;
+  if (unit?.origin === 'callback' && convertsKept(model, type, unit)) return `kept_${rustField(unit.name)}(env_, ${value}, ${subject})`;
+  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(env_, ${value}, ${subject})`;
+  // GN-6c, GN-6v: the conversion of a record or a variant takes the env_ when a value alias, a class or a callback in it
+  // reads it, and no env_ otherwise.
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${readsEnv(model, unit, libraryOf(type)) ? 'env_, ' : ''}${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env_ of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -56,19 +56,20 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
   const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
-  const argsType = `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
+  // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
+  const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
   const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(env, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(env_, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                let env = match native_env(&native, ${subject}) {
-                    Ok(env) => env,
+                let env_ = match native_env(&native, ${subject}) {
+                    Ok(env_) => env_,
                     Err(error) => return Err(thrown_elsewhere(error)),
                 };
                 let call = || -> Result<${result}, Thrown> {
-                    let env = &env;
-                    let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
-                    let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
-                    let returned = function.call(args).map_err(Thrown::Js)?;
+                    let env_ = &env_;
+                    let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env_, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
+${type.parameters.length === 0 ? '' : `                    let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
+`}                    let returned = function.call(${type.parameters.length === 0 ? '()' : 'args'}).map_err(Thrown::Js)?;
                     ${returned}
                 };
                 call().map_err(thrown)
@@ -80,26 +81,26 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
-    if (type === 'none') return 'none_out(env)';
+    if (type === 'none') return 'none_out(env_)';
     const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out', path: 'path_out' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
-    return `${name}(env, ${value})`;
+    return `${name}(env_, ${value})`;
   }
   // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(env, ${value})`;
-  if ('list' in type) return `list_out(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
+  if ('passthrough' in type) return `passed_out(env_, ${value})`;
+  if ('list' in type) return `list_out(env_, ${value}, ${closure(['env_', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `map_out(env, ${value}, |env, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `keyed_map_out(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `optional_out(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('map' in type) return `map_out(env_, ${value}, |env_, item| ${convertOut(model, type.map, 'item')})`;
+  if ('keyed_map' in type) return `keyed_map_out(env_, ${value}, |env_, item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('optional' in type) return `optional_out(env_, ${optionRef(value)}, ${closure(['env_', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(env, vec![${parts.join(', ')}])`);
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(env_, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(env, ${value})`;
-  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `${unitFn('out', unit, aliasOf(model, type)?.library)}(env, ${value})`;
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env_, ${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(env_, ${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `${unitFn('out', unit, aliasOf(model, type)?.library)}(env_, ${value})`;
   throw new Unsupported(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -167,8 +168,8 @@ fn path_in(value: Unknown<'_>, subject: &str) -> Result<std::path::PathBuf, Fail
 /// T-1 cancel, GN-6aq: an AbortSignal, as the Cancel of a pair whose trigger fires when the signal aborts: at once when
 /// it aborted before the call, and otherwise by a listener of its event abort, which runs once.
 fn cancel_in(value: Unknown<'_>, subject: &str) -> Result<binding_core::Cancel, Fail> {
-    let env = Env::from_raw(JsValue::value(&value).env);
-    let class: Function<'_, (), Unknown<'_>> = env.get_global().map_err(internal)?.get_named_property("AbortSignal").map_err(internal)?;
+    let env_ = Env::from_raw(JsValue::value(&value).env);
+    let class: Function<'_, (), Unknown<'_>> = env_.get_global().map_err(internal)?.get_named_property("AbortSignal").map_err(internal)?;
     if !value.instanceof(class).map_err(internal)? {
         return Err(type_error(subject, "AbortSignal"));
     }
@@ -178,13 +179,13 @@ fn cancel_in(value: Unknown<'_>, subject: &str) -> Result<binding_core::Cancel, 
         trigger.cancel();
         return Ok(cancel);
     }
-    let listener = env
+    let listener = env_
         .create_function_from_closure::<(), (), _>("abort", move |_call| {
             trigger.cancel();
             Ok(())
         })
         .map_err(internal)?;
-    let mut options = Object::new(&env).map_err(internal)?;
+    let mut options = Object::new(&env_).map_err(internal)?;
     options.set_named_property("once", true).map_err(internal)?;
     // clippy::type_complexity: the method addEventListener, which takes the name of the event, the listener and the
     // options, is named by an alias.
@@ -203,17 +204,17 @@ fn default_in<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) ->
 }
 
 /// T-7: bytes leave as a Uint8Array of their copy.
-fn bytes_out<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
-    ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env).map_err(internal)
+fn bytes_out<'env>(env_: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env_).map_err(internal)
 }
 
 /// T-1 path, GN-6y: a string when the bytes of the path are UTF-8, and a Uint8Array of them when they are not, so that
 /// no byte is replaced.
-fn path_out<'env>(env: &'env Env, value: impl AsRef<std::path::Path>) -> Result<Unknown<'env>, Fail> {
+fn path_out<'env>(env_: &'env Env, value: impl AsRef<std::path::Path>) -> Result<Unknown<'env>, Fail> {
     let bytes = binding_core::path_bytes(value.as_ref());
     match std::str::from_utf8(bytes) {
-        Ok(text) => text_out(env, text),
-        Err(_not_utf8) => bytes_out(env, bytes),
+        Ok(text) => text_out(env_, text),
+        Err(_not_utf8) => bytes_out(env_, bytes),
     }
 }
 
@@ -313,65 +314,65 @@ fn member_or_undefined<'env>(record: Unknown<'env>, name: &str, subject: &str) -
     member(record, name, subject)
 }
 
-fn text_out<'env>(env: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
-    Ok(env.create_string(value.as_ref()).map_err(internal)?.to_unknown())
+fn text_out<'env>(env_: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
+    Ok(env_.create_string(value.as_ref()).map_err(internal)?.to_unknown())
 }
 
 /// T-1 latin1: each byte is one character.
-fn latin1_out<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+fn latin1_out<'env>(env_: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
     let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
-    text_out(env, text)
+    text_out(env_, text)
 }
 
-fn bool_out<'env>(env: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
-    ToNapiValue::into_unknown(*value.borrow(), env).map_err(internal)
+fn bool_out<'env>(env_: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(*value.borrow(), env_).map_err(internal)
 }
 
 /// B-2: a number leaves only as a safe integer; a larger one is kind internal.
-fn int_out<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+fn int_out<'env>(env_: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
     let value = value.widen_int();
     if value.abs() > 9_007_199_254_740_991 {
         return Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") }));
     }
-    Ok(env.create_int64(value).map_err(internal)?.to_unknown())
+    Ok(env_.create_int64(value).map_err(internal)?.to_unknown())
 }
 
 /// T-1 int64: a bigint, so that the whole range of i64 leaves.
-fn int64_out<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
-    ToNapiValue::into_unknown(BigInt::from(value.widen_int()), env).map_err(internal)
+fn int64_out<'env>(env_: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(BigInt::from(value.widen_int()), env_).map_err(internal)
 }
 
-fn uint_out<'env>(env: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
+fn uint_out<'env>(env_: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
     let value = value.widen_uint();
     match i64::try_from(value) {
-        Ok(value) => int_out(env, value),
+        Ok(value) => int_out(env_, value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") })),
     }
 }
 
-fn float_out<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'env>, Fail> {
-    Ok(env.create_double(*value.borrow()).map_err(internal)?.to_unknown())
+fn float_out<'env>(env_: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'env>, Fail> {
+    Ok(env_.create_double(*value.borrow()).map_err(internal)?.to_unknown())
 }
 
-fn none_out(env: &Env) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown((), env).map_err(internal)
+fn none_out(env_: &Env) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown((), env_).map_err(internal)
 }
 
-fn null_out(env: &Env) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(Null, env).map_err(internal)
+fn null_out(env_: &Env) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(Null, env_).map_err(internal)
 }
 
-fn list_out<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
-    let items = value.into_iter().map(|value| item(env, value)).collect::<Result<Vec<_>, Fail>>()?;
-    tuple_out(env, items)
+fn list_out<'env, T>(env_: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
+    let items = value.into_iter().map(|value| item(env_, value)).collect::<Result<Vec<_>, Fail>>()?;
+    tuple_out(env_, items)
 }
 
 /// T-2, GN-12: the entries of a Map in its order, each [key, value]; a value that is no Map (an array of pairs, a plain
 /// object) is kind invalid_argument_type. The Map is read here, where the value is judged, so a map is taken at every
 /// place of a type: as a parameter, in a list, an optional, a record, a variant and another map.
 fn map_entries<'env>(value: Unknown<'env>, subject: &str, expected: &str) -> Result<Vec<[Unknown<'env>; 2]>, Fail> {
-    let env = Env::from_raw(JsValue::value(&value).env);
-    let global = env.get_global().map_err(internal)?;
+    let env_ = Env::from_raw(JsValue::value(&value).env);
+    let global = env_.get_global().map_err(internal)?;
     let class: Function<'env, (), Unknown<'env>> = global.get_named_property("Map").map_err(internal)?;
     if !value.instanceof(class).map_err(internal)? {
         return Err(type_error(subject, expected));
@@ -386,9 +387,9 @@ fn map_entries<'env>(value: Unknown<'env>, subject: &str, expected: &str) -> Res
 }
 
 /// T-2, GN-12: a new Map of the entries, in their order.
-fn entries_out<'env>(env: &'env Env, entries: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
-    let class: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = env.get_global().map_err(internal)?.get_named_property("Map").map_err(internal)?;
-    class.new_instance(FnArgs::from((tuple_out(env, entries)?,))).map_err(internal)
+fn entries_out<'env>(env_: &'env Env, entries: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
+    let class: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = env_.get_global().map_err(internal)?.get_named_property("Map").map_err(internal)?;
+    class.new_instance(FnArgs::from((tuple_out(env_, entries)?,))).map_err(internal)
 }
 
 /// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
@@ -407,15 +408,15 @@ fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'e
 
 /// T-2: a map, owned or borrowed, as a Map of its entries in their order.
 fn map_out<'env, T>(
-    env: &'env Env,
+    env_: &'env Env,
     value: impl Borrow<binding_core::OrderedMap<T>>,
     item: impl Fn(&'env Env, &T) -> Result<Unknown<'env>, Fail>,
 ) -> Result<Unknown<'env>, Fail> {
     let mut entries = Vec::new();
     for (key, value) in value.borrow().iter() {
-        entries.push(tuple_out(env, vec![text_out(env, key)?, item(env, value)?])?);
+        entries.push(tuple_out(env_, vec![text_out(env_, key)?, item(env_, value)?])?);
     }
-    entries_out(env, entries)
+    entries_out(env_, entries)
 }
 
 /// T-2, U-7 (c): a Map whose keys are safe integers or strings of the kinds that the contract lists; any other key is
@@ -450,30 +451,30 @@ fn keyed_map_in<'env, T>(
 /// T-2: a keyed map, owned or borrowed, as a Map of its entries in their order; an integer key leaves as a number (a
 /// safe integer, B-2) and a byte string key, which no Node contract lists, is kind internal.
 fn keyed_map_out<'env, T>(
-    env: &'env Env,
+    env_: &'env Env,
     value: impl Borrow<binding_core::KeyedMap<T>>,
     item: impl Fn(&'env Env, &T) -> Result<Unknown<'env>, Fail>,
 ) -> Result<Unknown<'env>, Fail> {
     let mut entries = Vec::new();
     for (key, value) in value.borrow().iter() {
         let key = match key {
-            binding_core::Key::Int(integer) => int_out(env, integer)?,
-            binding_core::Key::Text(text) => text_out(env, text)?,
+            binding_core::Key::Int(integer) => int_out(env_, integer)?,
+            binding_core::Key::Text(text) => text_out(env_, text)?,
             binding_core::Key::Bytes(_bytes) => return Err(binding_error(BindingError::Internal { detail: String::from("a byte string key of a keyed map") })),
         };
-        entries.push(tuple_out(env, vec![key, item(env, value)?])?);
+        entries.push(tuple_out(env_, vec![key, item(env_, value)?])?);
     }
-    entries_out(env, entries)
+    entries_out(env_, entries)
 }
 
-fn tuple_out<'env>(env: &'env Env, items: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
-    Ok(Array::from_vec(env, items).map_err(internal)?.to_unknown())
+fn tuple_out<'env>(env_: &'env Env, items: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
+    Ok(Array::from_vec(env_, items).map_err(internal)?.to_unknown())
 }
 
-fn optional_out<'env, T>(env: &'env Env, value: Option<T>, item: impl FnOnce(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
+fn optional_out<'env, T>(env_: &'env Env, value: Option<T>, item: impl FnOnce(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
     match value {
-        Some(value) => item(env, value),
-        None => null_out(env),
+        Some(value) => item(env_, value),
+        None => null_out(env_),
     }
 }
 `;
@@ -494,21 +495,21 @@ ${arms}
     }
 }
 
-fn out_${name}(env: &Env, value: impl Borrow<${core}>) -> Result<Unknown<'_>, Fail> {
+fn out_${name}(env_: &Env, value: impl Borrow<${core}>) -> Result<Unknown<'_>, Fail> {
     let text = match value.borrow() {
 ${outArms}
     };
-    text_out(env, String::from(text))
+    text_out(env_, String::from(text))
 }
 `;
 }
 
-// The name of the env parameter of a conversion: env when its body names it, and _env when no field reads it.
-// GN-6c, GN-6v: the records and the variants whose conversion in reads the env, by the path of the conversion: a unit
+// The name of the env_ parameter of a conversion: env_ when its body names it, and _env when no field reads it.
+// GN-6c, GN-6v: the records and the variants whose conversion in reads the env_, by the path of the conversion: a unit
 // with a field whose conversion reads it, directly (a value alias, a class, a callback, a function) or through the
-// conversion of another such unit. A unit that holds itself reads no env by that alone, so its conversion has no
+// conversion of another such unit. A unit that holds itself reads no env_ by that alone, so its conversion has no
 // parameter that only its own call uses, which the lints deny (clippy only_used_in_recursion). The set is the least
-// one: it starts empty, and a unit joins it when the conversions of its fields, written with the set so far, name env.
+// one: it starts empty, and a unit joins it when the conversions of its fields, written with the set so far, name env_.
 const ENV_READERS = new WeakMap<Model, Set<string>>();
 function readsEnv(model: Model, unit: Unit, library: string | undefined): boolean {
   let readers = ENV_READERS.get(model);
@@ -522,7 +523,7 @@ function readsEnv(model: Model, unit: Unit, library: string | undefined): boolea
     const reads = (u: Unit): boolean => {
       const types = u.kind === 'record' ? (u.fields ?? []).map((f) => f.type) : (u.cases ?? []).flatMap((c) => c.fields.map((f) => f.type));
       try {
-        return types.some((type) => /\benv\b/.test(convertIn(model, type, 'value', '"subject"')));
+        return types.some((type) => /\benv_\b/.test(convertIn(model, type, 'value', '"subject"')));
       } catch (error) {
         // A unit with a type that Node does not generate is refused where it is written; it is counted as a reader.
         if (error instanceof Unsupported) return true;
@@ -543,8 +544,8 @@ function readsEnv(model: Model, unit: Unit, library: string | undefined): boolea
   }
   return readers.has(unitFn('in', unit, library));
 }
-// The env parameter of the conversion in of a record or a variant, with its comma, or nothing (readsEnv).
-const envParam = (model: Model, unit: Unit, library: string | undefined): string => (readsEnv(model, unit, library) ? 'env: &Env, ' : '');
+// The env_ parameter of the conversion in of a record or a variant, with its comma, or nothing (readsEnv).
+const envParam = (model: Model, unit: Unit, library: string | undefined): string => (readsEnv(model, unit, library) ? 'env_: &Env, ' : '');
 
 // T-4: the result form of a record, a plain object with a member per field.
 function recordRust(model: Model, unit: Unit, library?: string): string {
@@ -565,9 +566,9 @@ ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')}${absentInits(unit)} })
 }
 
-fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
     let value = value.borrow();
-    let mut object = Object::new(env).map_err(internal)?;
+    let mut object = Object::new(env_).map_err(internal)?;
 ${writes.join('\n')}
     Ok(object.to_unknown())
 }
@@ -595,7 +596,7 @@ function variantRust(model: Model, variant: Variant): string {
   const arms = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
     const writes = [
-      `            object.set_named_property(${rustString(tag)}, text_out(env, ${rustString(kase.value)})?).map_err(internal)?;`,
+      `            object.set_named_property(${rustString(tag)}, text_out(env_, ${rustString(kase.value)})?).map_err(internal)?;`,
       ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
     ];
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
@@ -611,8 +612,8 @@ ${ins.join('\n')}
 }
 
 /// T-9: a value of the variant ${jsName} leaves as the object of its case.
-fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-    let mut object = Object::new(env).map_err(internal)?;
+fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+    let mut object = Object::new(env_).map_err(internal)?;
     match value.borrow() {
 ${arms.join('\n')}
     }
@@ -631,18 +632,18 @@ function iterateRust(model: Model, fn: Fn): string {
   const body = yields.key === undefined
     ? `                items.push(${item(yields.value, 'item')});`
     : `                let (key, value) = item;
-                items.push(tuple_out(env, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
+                items.push(tuple_out(env_, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
   return `
     #[napi(js_name = "__iterate", enumerable = false)]
-    pub fn iterate<'env>(&self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+    pub fn iterate<'env>(&self, env_: &'env Env) -> napi::Result<Unknown<'env>> {
         guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut items = Vec::new();
             for item in ${armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`)} {
 ${body}
             }
-            tuple_out(env, items)
+            tuple_out(env_, items)
         })
-        .map_err(|fail| throw(env, fail))
+        .map_err(|fail| throw(env_, fail))
     }
 `;
 }
@@ -697,10 +698,10 @@ function entryRust(model: Model, fn: Fn): string {
       const kept = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
       const typed = kept ? keptModel(model) : model;
       lines.push(owned !== undefined
-        ? `        let ${variable} = owned_${rustField(owned.unit.name)}(env, ${variable}, ${subject})?;`
+        ? `        let ${variable} = owned_${rustField(owned.unit.name)}(env_, ${variable}, ${subject})?;`
         : held === undefined
         ? `        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, variable, subject)) : converted(arg, parameter.type, variable, subject)}?;`
-        : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${subject})?;`);
+        : `        let ${variable} = held_${rustField(held.unit.name)}(env_, ${variable}, ${subject})?;`);
       if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
@@ -719,7 +720,7 @@ function entryRust(model: Model, fn: Fn): string {
     const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
-            match (awaiting, outcome_of(env, settled)?) {
+            match (awaiting, outcome_of(env_, settled)?) {
                 (true, Some(outcome)) => machine.settle(outcome),
                 (false, None) => {}
                 (true, None) | (false, Some(_)) => {
@@ -729,11 +730,11 @@ function entryRust(model: Model, fn: Fn): string {
             awaiting = false;` : '';
     const awaited = passes(fn) ? `binding_core::machine::Next::Await(value) => {
                     awaiting = true;
-                    Ok((1, passed_out(env, value)?))
+                    Ok((1, passed_out(env_, value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
         let given = std::sync::Arc::new(std::sync::Mutex::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
-        Driven::start(env, advancing(move |env, ${passes(fn) ? 'settled' : '_settled'}| {${settles}
+        Driven::start(env_, advancing(move |env_, ${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
             if let Some(output) = output {
                 machine.give(output);
@@ -741,7 +742,7 @@ function entryRust(model: Model, fn: Fn): string {
             match machine.advance() {
                 binding_core::machine::Next::Wait(io) => {
                     let given = std::sync::Arc::clone(&given);
-                    let promise = driving(env, ${wait}, |env, ()| none_out(env))?;
+                    let promise = driving(env_, ${wait}, |env_, ()| none_out(env_))?;
                     Ok((0, promise))
                 }
                 ${awaited}
@@ -755,7 +756,7 @@ function entryRust(model: Model, fn: Fn): string {
     // is converted on the JavaScript thread.
     const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+    lines.push(`        driving(env_, ${futureOf(model, fn, body)}, ${closure(['env_', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (pooled(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
@@ -764,7 +765,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        ${pooledBy(fn)}(env, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+    lines.push(`        ${pooledBy(fn)}(env_, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env_', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -780,11 +781,11 @@ function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
-pub fn function_${rustField(fn.member.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+pub fn function_${rustField(fn.member.name).replace(/^r#/, '')}<'env>(env_: &'env Env${params}) -> napi::Result<Unknown<'env>> {
     guard(|| {
 ${lines.join('\n')}
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 `;
   }
@@ -801,11 +802,11 @@ ${lines.join('\n')}
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
-    pub fn ${fn.kind === 'constructor' ? 'construct' : rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+    pub fn ${fn.kind === 'constructor' ? 'construct' : rustField(fn.member.name)}<'env>(${self}env_: &'env Env${params}) -> napi::Result<Unknown<'env>> {
         guard(|| {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
-        .map_err(|fail| throw(env, fail))
+        .map_err(|fail| throw(env_, fail))
     }
 `;
 }
@@ -815,16 +816,16 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 const WAITING = `
 /// GN-6m, B-5 (b): starts the work of a member that waits for another process on a thread of its own and gives its
 /// promise, which the JavaScript thread settles with the converted result or the error.
-fn waiting_apart<'env, W, O>(env: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+fn waiting_apart<'env, W, O>(env_: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
 where
     W: FnOnce() -> Result<O, Fail> + Send + 'static,
     O: Send + 'static,
 {
-    let (deferred, promise) = env.create_deferred::<Settled, _>().map_err(internal)?;
+    let (deferred, promise) = env_.create_deferred::<Settled, _>().map_err(internal)?;
     let started = std::thread::Builder::new().spawn(move || {
         let output = guard(work);
-        deferred.resolve(move |env| {
-            let value = output.and_then(|value| give(&env, value)).map_err(|fail| throw(&env, fail))?;
+        deferred.resolve(move |env_| {
+            let value = output.and_then(|value| give(&env_, value)).map_err(|fail| throw(&env_, fail))?;
             Ok(Settled(value.raw()))
         });
     });
@@ -842,12 +843,12 @@ impl ToNapiValue for Settled {
 }
 
 /// GN-6m: starts the work of a member that waits on the libuv pool and gives its promise.
-fn waiting<'env, W, O>(env: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+fn waiting<'env, W, O>(env_: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
 where
     W: FnOnce() -> Result<O, Fail> + Send + 'env,
     O: Send + 'static,
 {
-    let promise = env.spawn(Waiting { work: Some(work), give }).map_err(internal)?;
+    let promise = env_.spawn(Waiting { work: Some(work), give }).map_err(internal)?;
     Ok(promise.promise_object().to_unknown())
 }
 /// GN-6m: the work of a call that waits and the conversion of its result.
@@ -866,8 +867,8 @@ where
         let work = self.work.take().ok_or_else(|| napi::Error::from_reason("GN-6m: the work of a call runs once"))?;
         Ok(guard(work))
     }
-    fn resolve(&mut self, env: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
-        output.and_then(|value| (self.give)(env, value)).map_err(|fail| throw(env, fail))
+    fn resolve(&mut self, env_: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
+        output.and_then(|value| (self.give)(env_, value)).map_err(|fail| throw(env_, fail))
     }
 }
 `;
@@ -896,20 +897,20 @@ pub struct Driven {
 }
 
 impl Driven {
-    fn start<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env, Unknown<'e>) -> Result<(u64, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
-        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+    fn start<'env>(env_: &'env Env, advance: impl for<'e> FnMut(&'e Env, Unknown<'e>) -> Result<(u64, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env_).map_err(internal)
     }
 }
 
 #[napi]
 impl Driven {
     #[napi]
-    pub fn advance<'env>(&mut self, env: &'env Env, settled: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+    pub fn advance<'env>(&mut self, env_: &'env Env, settled: Unknown<'env>) -> napi::Result<Unknown<'env>> {
         guard(|| {
-            let (step, value) = (self.advance)(env, settled)?;
-            tuple_out(env, vec![uint_out(env, step)?, value])
+            let (step, value) = (self.advance)(env_, settled)?;
+            tuple_out(env_, vec![uint_out(env_, step)?, value])
         })
-        .map_err(|fail| throw(env, fail))
+        .map_err(|fail| throw(env_, fail))
     }
 }
 `;
@@ -925,14 +926,14 @@ function machineRust(model: Model): string {
 // kind internal (B-7), and the result or the failure is converted on the JavaScript thread.
 const DRIVING = `
 /// GN-6n: starts the future of a member with wait async_driver and gives its promise.
-fn driving<'env, F, O>(env: &'env Env, future: F, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+fn driving<'env, F, O>(env_: &'env Env, future: F, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
 where
     F: std::future::Future<Output = Result<O, Fail>> + Send + 'static,
     O: Send + 'static,
 {
-    let promise = env
-        .spawn_future_with_callback(driven(binding_core::driver::Caught::new(future)), move |env, ended: Result<O, Fail>| {
-            ended.and_then(|value| give(env, value)).map_err(|fail| throw(env, fail))
+    let promise = env_
+        .spawn_future_with_callback(driven(binding_core::driver::Caught::new(future)), move |env_, ended: Result<O, Fail>| {
+            ended.and_then(|value| give(env_, value)).map_err(|fail| throw(env_, fail))
         })
         .map_err(internal)?;
     Ok(promise.to_unknown())
@@ -989,23 +990,24 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name)).replace(/^([a-z0-9_:]+)\(env, /, '$1(self.env, ')}?`);
+    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name)).replace(/^([a-z0-9_:]+)\(env_, /, '$1(self.env_, ')}?`);
     const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
     const returned = m.returns === 'none' ? 'Ok(())' : convertIn(model, m.returns, 'returned', rustString(`${jsName}.${method}() returns`));
-    const argsType = `FnArgs<(${m.params.map(() => "Unknown<'env>").join(', ')}${m.params.length === 1 ? ',' : ''})>`;
+    // U-3: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
+    const argsType = m.params.length === 0 ? '()' : `FnArgs<(${m.params.map(() => "Unknown<'env>").join(', ')}${m.params.length === 1 ? ',' : ''})>`;
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {${cb.owner ? `
         if std::thread::current().id() != self.owner {
             return Err(thrown(Thrown::Binding(binding_error(BindingError::WrongThread { subject: String::from(${rustString(`${jsName}.${method}()`)}) }))));
         }` : ''}
-        let call = || -> Result<${result}, Thrown> {${/\benv\b/.test(returned) && m.returns !== 'none' ? '\n            let env = self.env;' : ''}
+        let call = || -> Result<${result}, Thrown> {${/\benv_\b/.test(returned) && m.returns !== 'none' ? '\n            let env_ = self.env_;' : ''}
             let function: Function<'env, ${argsType}, Unknown<'env>> =
                 self.object.get_named_property(${rustString(method)}).map_err(|error| Thrown::Binding(internal(error)))?;
-            let args: ${argsType} = FnArgs::from((${outs.map((o) => `${o.replace(/\?$/, '')}.map_err(Thrown::Binding)?`).join(', ')}${outs.length === 1 ? ',' : ''}));
-            let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
+${m.params.length === 0 ? '' : `            let args: ${argsType} = FnArgs::from((${outs.map((o) => `${o.replace(/\?$/, '')}.map_err(Thrown::Binding)?`).join(', ')}${outs.length === 1 ? ',' : ''}));
+`}            let returned = function.apply(self.object, ${m.params.length === 0 ? '()' : 'args'}).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`}).map_err(|failure| kept(self.env, failure))
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env_, error)`}).map_err(|failure| kept(self.env_, failure))
     }`;
   }).join('\n');
   // GN-6s: an error unit of the owner of a callback unit of another repository is registered after the library classes.
@@ -1017,7 +1019,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
 /// is.
-fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
+fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     let Thrown::Js(js) = &error else {
         return thrown(error);
     };
@@ -1025,16 +1027,16 @@ fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
         return thrown(error);
     }
     let mut exception = std::ptr::null_mut();
-    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
-    if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+    // SAFETY: the callback ran on the thread of env_, which holds the exception that it threw.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env_.raw(), &mut exception) } != napi::sys::Status::napi_ok {
         return thrown(error);
     }
-    let core = recognized_kind(env, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = recognized_kind(env_, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     if let Some(core) = core {
         return binding_core::Failure::Kind(core);
     }
     // SAFETY: the exception that this took is thrown again on the same thread, so the caller throws the same object.
-    if unsafe { napi::sys::napi_throw(env.raw(), exception) } != napi::sys::Status::napi_ok {
+    if unsafe { napi::sys::napi_throw(env_.raw(), exception) } != napi::sys::Status::napi_ok {
         return thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback could not be thrown again") })));
     }
     thrown(error)
@@ -1051,17 +1053,17 @@ fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
 /// U-3: ${jsName}, a callback that JavaScript code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct}<'env> {
     object: Object<'env>,
-    env: &'env Env,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+    env_: &'env Env,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
 }
 
 /// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
-fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
+fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Object {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }
     let object: Object<'env> = unsafe { value.cast() }.map_err(internal)?;
 ${checks}
-    Ok(${struct} { object, env${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+    Ok(${struct} { object, env_${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
 ${lentCallbacks(model).includes(cb) ? `impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {` : `impl<'env> ${struct}<'env> {`}${methods}
@@ -1073,8 +1075,8 @@ ${recognizing}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
-// after the call that gave it. A call on the owner thread borrows the object in the env of the owner and calls it as
-// the callback of a call does; a call on another thread is kind wrong_thread, and one after the cleanup of the env kind
+// after the call that gave it. A call on the owner thread borrows the object in the env_ of the owner and calls it as
+// the callback of a call does; a call on another thread is kind wrong_thread, and one after the cleanup of the env_ kind
 // internal, each a Raised of its BindingError.
 function keptCallbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
@@ -1088,9 +1090,9 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
     const mutable = m.receiver === '&mut self';
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let env = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
-        let object = native_object(&env, &self.native).and_then(|value| unsafe { value.cast::<Object<'_>>() }.map_err(internal)).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object, env: &env${cb.owner ? ', owner: std::thread::current().id()' : ''} };
+        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
+        let object = native_object(&env_, &self.native).and_then(|value| unsafe { value.cast::<Object<'_>>() }.map_err(internal)).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };
         ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
     }`;
   }).join('\n');
@@ -1101,9 +1103,9 @@ pub struct Kept${struct} {
 }
 
 /// GN-6aa: a callback object that the core keeps is checked when it enters, as in_${name} checks it.
-fn kept_${name}(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Kept${struct}, Fail> {
-    let checked = in_${name}(env, value, subject)?;
-    Ok(Kept${struct} { native: js_native(env, checked.object.to_unknown()).map_err(internal)? })
+fn kept_${name}(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Kept${struct}, Fail> {
+    let checked = in_${name}(env_, value, subject)?;
+    Ok(Kept${struct} { native: js_native(env_, checked.object.to_unknown()).map_err(internal)? })
 }
 
 impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
@@ -1123,13 +1125,13 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = callable_in(env, ${name}, ${subject})?;`,
+    `        let ${name} = callable_in(env_, ${name}, ${subject})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
-    `            let env = &Env::from_raw(${name}.env);`,
+    `            let env_ = &Env::from_raw(${name}.env_);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i} = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
-    `                let returned = called(env, &${name}, &[${parts.map((_part, i) => `arg${i}`).join(', ')}])?;`,
-    '                pass(env, returned).map_err(Thrown::Binding)',
+    `                let returned = called(env_, &${name}, &[${parts.map((_part, i) => `arg${i}`).join(', ')}])?;`,
+    '                pass(env_, returned).map_err(Thrown::Binding)',
     '            };',
     '            call().map_err(thrown)',
     '        };',
@@ -1150,8 +1152,8 @@ thread_local! {
 static NEXT_PASSED: AtomicU64 = AtomicU64::new(1);
 
 /// GN-6ae: holds a JavaScript value in the table, which the core moves and never reads.
-fn pass(env: &Env, value: Unknown<'_>) -> Result<binding_core::Passthrough, Fail> {
-    let held = Owned::boxed(env, value)?;
+fn pass(env_: &Env, value: Unknown<'_>) -> Result<binding_core::Passthrough, Fail> {
+    let held = Owned::boxed(env_, value)?;
     let handle = NEXT_PASSED.fetch_add(1, Ordering::Relaxed);
     PASSED.with_borrow_mut(|map| map.insert(handle, held));
     Ok(binding_core::Passthrough::from_generated(binding_core::Handle::new(handle), release_passed))
@@ -1165,45 +1167,45 @@ fn release_passed(handle: binding_core::Handle) {
 }
 
 /// GN-6ae: the value of a result passthrough, or of a value that the machine awaits, which leaves the table unchanged.
-fn passed_out(env: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_>, Fail> {
+fn passed_out(env_: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_>, Fail> {
     let handle = value.into_handle();
     let held = PASSED
         .with_borrow_mut(|map| map.remove(&handle.raw()))
         .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))?;
-    held.unboxed(env)
+    held.unboxed(env_)
 }
 
 /// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn callable_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
+fn callable_in(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }
-    Owned::new(env, value)
+    Owned::new(env_, value)
 }
 
 /// GN-6ae: calls a function of JavaScript code with the receiver undefined. Its exception is taken out of the
 /// environment and held, because the machine goes on after the call and the caller gets the same object at its end.
-fn called<'env>(env: &'env Env, function: &Owned, args: &[Unknown<'env>]) -> Result<Unknown<'env>, Thrown> {
-    let function = function.value(env).map_err(Thrown::Binding)?;
-    let receiver = none_out(env).map_err(Thrown::Binding)?;
+fn called<'env>(env_: &'env Env, function: &Owned, args: &[Unknown<'env>]) -> Result<Unknown<'env>, Thrown> {
+    let function = function.value(env_).map_err(Thrown::Binding)?;
+    let receiver = none_out(env_).map_err(Thrown::Binding)?;
     let mut raw = Vec::with_capacity(args.len());
     for arg in args {
         raw.push(arg.raw());
     }
     let mut returned = std::ptr::null_mut();
-    // SAFETY: the function, its receiver and its arguments are values of env, on the thread of env.
-    let status = unsafe { napi::sys::napi_call_function(env.raw(), receiver.raw(), function.raw(), raw.len(), raw.as_ptr(), &mut returned) };
+    // SAFETY: the function, its receiver and its arguments are values of env_, on the thread of env_.
+    let status = unsafe { napi::sys::napi_call_function(env_.raw(), receiver.raw(), function.raw(), raw.len(), raw.as_ptr(), &mut returned) };
     if status == napi::sys::Status::napi_ok {
-        // SAFETY: returned is the value that the function returned, a value of env.
-        return Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), returned) });
+        // SAFETY: returned is the value that the function returned, a value of env_.
+        return Ok(unsafe { Unknown::from_raw_unchecked(env_.raw(), returned) });
     }
     let mut exception = std::ptr::null_mut();
-    // SAFETY: the function ran on the thread of env, which holds the exception that it threw.
-    if status != napi::sys::Status::napi_pending_exception || unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+    // SAFETY: the function ran on the thread of env_, which holds the exception that it threw.
+    if status != napi::sys::Status::napi_pending_exception || unsafe { napi::sys::napi_get_and_clear_last_exception(env_.raw(), &mut exception) } != napi::sys::Status::napi_ok {
         return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6ae: a function of JavaScript code could not be called") })));
     }
-    // SAFETY: exception is the value that the function threw, a value of env.
-    match Owned::boxed(env, unsafe { Unknown::from_raw_unchecked(env.raw(), exception) }) {
+    // SAFETY: exception is the value that the function threw, a value of env_.
+    match Owned::boxed(env_, unsafe { Unknown::from_raw_unchecked(env_.raw(), exception) }) {
         Ok(held) => Err(Thrown::Held(held)),
         Err(fail) => Err(Thrown::Binding(fail)),
     }
@@ -1212,15 +1214,15 @@ fn called<'env>(env: &'env Env, function: &Owned, args: &[Unknown<'env>]) -> Res
 /// GN-6ae: the outcome of the value that a machine awaited, which the JavaScript entry gives to the next advance:
 /// undefined when the machine awaited none, [true, the value] of a value or of a fulfilled promise, which enters the
 /// table again, and [false, the rejection] of a rejected promise, which is held as the exception of the function.
-fn outcome_of(env: &Env, settled: Unknown<'_>) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> {
+fn outcome_of(env_: &Env, settled: Unknown<'_>) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> {
     if settled.get_type().map_err(internal)? == ValueType::Undefined {
         return Ok(None);
     }
     let [fulfilled, value] = tuple_in(settled, "settled")?;
     if bool_in(fulfilled, "settled")? {
-        return Ok(Some(Ok(pass(env, value)?)));
+        return Ok(Some(Ok(pass(env_, value)?)));
     }
-    Ok(Some(Err(raised(Thrown::Held(Owned::boxed(env, value)?)))))
+    Ok(Some(Err(raised(Thrown::Held(Owned::boxed(env_, value)?)))))
 }
 
 `;
@@ -1237,7 +1239,8 @@ const holdsThrown = (model: Model): boolean => passesAny(model) || callsBack(mod
 
 // U-3: whether a member of the contract calls a callback, whose exception is taken out of the environment where it is
 // called, also for a member without a machine: the core may answer the Raised and return a value.
-const callsBack = (model: Model): boolean => model.callbacks.length > 0 || model.foreignCallbacks.length > 0;
+// A callback unit that only a class implements (GN-6w) calls no JavaScript code, so it is not counted.
+const callsBack = (model: Model): boolean => takenCallbacks(model).length > 0;
 
 // GN-6ab: the callback unit of a parameter type that a machine owns.
 function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
@@ -1258,10 +1261,10 @@ function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
     const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let env = Env::from_raw(self.object.env);
-        let object = self.object.object(&env).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let mut borrowed = ${struct} { object, env: &env${cb.owner ? ', owner: self.owner' : ''} };
-        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${m.receiver === '&mut self' ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`}).map_err(|failure| kept(&env, failure))
+        let env_ = Env::from_raw(self.object.env_);
+        let object = self.object.object(&env_).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let mut borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: self.owner' : ''} };
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${m.receiver === '&mut self' ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`}).map_err(|failure| kept(&env_, failure))
     }`;
   }).join('\n');
   return `
@@ -1271,9 +1274,9 @@ pub struct Owned${struct} {
 }
 
 /// GN-6ab: a callback object that a machine owns is checked when it enters, as in_${name} checks it.
-fn owned_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<Owned${struct}, Fail> {
-    let checked = in_${name}(env, value, subject)?;
-    Ok(Owned${struct} { object: Owned::new(env, checked.object.to_unknown())?${cb.owner ? ', owner: checked.owner' : ''} })
+fn owned_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<Owned${struct}, Fail> {
+    let checked = in_${name}(env_, value, subject)?;
+    Ok(Owned${struct} { object: Owned::new(env_, checked.object.to_unknown())?${cb.owner ? ', owner: checked.owner' : ''} })
 }
 
 impl ${cb.unit.core ?? ''} for Owned${struct} {${methods}
@@ -1286,52 +1289,52 @@ impl ${cb.unit.core ?? ''} for Owned${struct} {${methods}
 const owned = (callbacks: boolean): string => `
 /// GN-6ab: a JavaScript value that a machine owns across the advances of its call.
 struct Owned {
-    env: napi::sys::napi_env,
+    env_: napi::sys::napi_env,
     reference: napi::sys::napi_ref,
 }
 
 impl Owned {
-    fn new(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
+    fn new(env_: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
         let mut reference = std::ptr::null_mut();
-        // SAFETY: value is a value of env, on the thread of env.
-        if unsafe { napi::sys::napi_create_reference(env.raw(), value.raw(), 1, &mut reference) } != napi::sys::Status::napi_ok {
+        // SAFETY: value is a value of env_, on the thread of env_.
+        if unsafe { napi::sys::napi_create_reference(env_.raw(), value.raw(), 1, &mut reference) } != napi::sys::Status::napi_ok {
             return Err(binding_error(BindingError::Internal { detail: String::from("GN-6ab: a reference to a JavaScript value could not be made") }));
         }
-        Ok(Self { env: env.raw(), reference })
+        Ok(Self { env_: env_.raw(), reference })
     }
 
-    fn value<'env>(&self, env: &'env Env) -> Result<Unknown<'env>, Fail> {
+    fn value<'env>(&self, env_: &'env Env) -> Result<Unknown<'env>, Fail> {
         let mut value = std::ptr::null_mut();
-        // SAFETY: the reference is alive until this value is dropped, and the machine runs on the thread of env.
-        if unsafe { napi::sys::napi_get_reference_value(env.raw(), self.reference, &mut value) } != napi::sys::Status::napi_ok || value.is_null() {
+        // SAFETY: the reference is alive until this value is dropped, and the machine runs on the thread of env_.
+        if unsafe { napi::sys::napi_get_reference_value(env_.raw(), self.reference, &mut value) } != napi::sys::Status::napi_ok || value.is_null() {
             return Err(binding_error(BindingError::Internal { detail: String::from("GN-6ab: a referenced JavaScript value is gone") }));
         }
-        // SAFETY: value is a value of env.
-        Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), value) })
+        // SAFETY: value is a value of env_.
+        Ok(unsafe { Unknown::from_raw_unchecked(env_.raw(), value) })
     }
 ${callbacks ? `
-    fn object<'env>(&self, env: &'env Env) -> Result<Object<'env>, Fail> {
+    fn object<'env>(&self, env_: &'env Env) -> Result<Object<'env>, Fail> {
         // SAFETY: the reference holds the object that the check of the callback found.
-        unsafe { self.value(env)?.cast() }.map_err(internal)
+        unsafe { self.value(env_)?.cast() }.map_err(internal)
     }
 ` : ''}
     /// GN-6ae: holds any value, as the one element of an array: Node-API version 8 makes a reference only to an object, a
     /// function or a symbol, and JavaScript code returns and throws any value.
-    fn boxed(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
-        Self::new(env, tuple_out(env, vec![value])?)
+    fn boxed(env_: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
+        Self::new(env_, tuple_out(env_, vec![value])?)
     }
 
     /// GN-6ae: the value that boxed holds.
-    fn unboxed<'env>(&self, env: &'env Env) -> Result<Unknown<'env>, Fail> {
-        let [value] = tuple_in(self.value(env)?, "a held value")?;
+    fn unboxed<'env>(&self, env_: &'env Env) -> Result<Unknown<'env>, Fail> {
+        let [value] = tuple_in(self.value(env_)?, "a held value")?;
         Ok(value)
     }
 }
 
 impl Drop for Owned {
     fn drop(&mut self) {
-        // SAFETY: the owner of the reference drops it on the thread of its env (GN-6ab); a failed delete leaves the value to the engine.
-        unsafe { napi::sys::napi_delete_reference(self.env, self.reference) };
+        // SAFETY: the owner of the reference drops it on the thread of its env_ (GN-6ab); a failed delete leaves the value to the engine.
+        unsafe { napi::sys::napi_delete_reference(self.env_, self.reference) };
     }
 }
 `;
@@ -1347,18 +1350,18 @@ function recognizedOwners(model: Model): string {
 // members that recognize error units.
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
-fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+fn recognized_kind(env_: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
     // An exception whose class, kind or message cannot be read is no recognized one; the caller raises it as it was
     // thrown.
-    let Ok(found) = read_recognized_kind(env, exception, classes) else {
+    let Ok(found) = read_recognized_kind(env_, exception, classes) else {
         return None;
     };
     found
 }
 /// U-3: what recognized_kind gives, or the error of napi that reading the exception met.
-fn read_recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> napi::Result<Option<(String, String)>> {
-    // SAFETY: the value is the exception that a callback threw, a value of env.
-    let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
+fn read_recognized_kind(env_: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> napi::Result<Option<(String, String)>> {
+    // SAFETY: the value is the exception that a callback threw, a value of env_.
+    let value = unsafe { Unknown::from_raw_unchecked(env_.raw(), exception) };
     let Some(registered) = CLASSES.get() else {
         return Ok(None);
     };
@@ -1366,7 +1369,7 @@ fn read_recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[
         let Some(class) = registered.get(*index) else {
             return Ok(None);
         };
-        if value.instanceof(class.borrow_back(env)?)? {
+        if value.instanceof(class.borrow_back(env_)?)? {
             let object: Object<'_> = value.coerce_to_object()?;
             let kind: String = object.get_named_property("kind")?;
             let message: String = object.get_named_property("message")?;
@@ -1394,7 +1397,18 @@ function failureRust(model: Model): string {
   const passing = holdsThrown(model);
   // U-3, U-7: a callback and the walk of a value give an error of napi; a function of a machine gives none, because
   // its exception is held (GN-6ae), so a crate without them has no variant that nothing makes.
-  const napiError = model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || model.aliases.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
+  const napiError = takenCallbacks(model).length > 0 || model.aliases.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
+  // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no JavaScript code that
+  // throws, so it keeps no table, and a Raised that the core gives is a failure of kind internal.
+  if (!keepsThrown(model) && model.aliases.length === 0 && !passing && !countsThrown(model.contract, model.foreign)) return `
+fn failure_error(failure: ${failure}) -> Fail {
+    match failure {
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        binding_core::Failure::Raised(raised) => binding_error(BindingError::Internal { detail: raised.to_string() }),
+        binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+    }
+}
+`;
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
 enum Thrown {${napiError ? `
@@ -1441,13 +1455,13 @@ fn failure_error(failure: ${failure}) -> Fail {
 ${passing ? `/// GN-6ab, GN-6ae: throws again the exception that a function or a callback of a machine raised, so that the caller gets
 /// the same object.
 fn thrown_again(exception: &Owned) -> Fail {
-    let env = Env::from_raw(exception.env);
-    let value = match exception.unboxed(&env) {
+    let env_ = Env::from_raw(exception.env_);
+    let value = match exception.unboxed(&env_) {
         Ok(value) => value,
         Err(fail) => return fail,
     };
-    // SAFETY: value is a value of env, on the thread of env.
-    if unsafe { napi::sys::napi_throw(env.raw(), value.raw()) } != napi::sys::Status::napi_ok {
+    // SAFETY: value is a value of env_, on the thread of env_.
+    if unsafe { napi::sys::napi_throw(env_.raw(), value.raw()) } != napi::sys::Status::napi_ok {
         return binding_error(BindingError::Internal { detail: String::from("GN-6ae: the exception of the function could not be thrown again") });
     }
     Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
@@ -1458,7 +1472,7 @@ fn thrown_again(exception: &Owned) -> Fail {
 /// the exception is taken out of the environment
 /// and held under the key of its Raised; failure_error throws the held value again. The failure is of any core error,
 /// because a callback unit of another repository fails with the error of its owner (GN-6s).
-fn kept<E>(env: &Env, failure: binding_core::Failure<E>) -> binding_core::Failure<E> {
+fn kept<E>(env_: &Env, failure: binding_core::Failure<E>) -> binding_core::Failure<E> {
     let binding_core::Failure::Raised(raised) = &failure else {
         return failure;
     };
@@ -1470,10 +1484,10 @@ fn kept<E>(env: &Env, failure: binding_core::Failure<E>) -> binding_core::Failur
         return failure;
     }
     let mut exception = std::ptr::null_mut();
-    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
-    let taken = if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } == napi::sys::Status::napi_ok {
-        // SAFETY: exception is the value that the callback threw, a value of env.
-        match Owned::boxed(env, unsafe { Unknown::from_raw_unchecked(env.raw(), exception) }) {
+    // SAFETY: the callback ran on the thread of env_, which holds the exception that it threw.
+    let taken = if unsafe { napi::sys::napi_get_and_clear_last_exception(env_.raw(), &mut exception) } == napi::sys::Status::napi_ok {
+        // SAFETY: exception is the value that the callback threw, a value of env_.
+        match Owned::boxed(env_, unsafe { Unknown::from_raw_unchecked(env_.raw(), exception) }) {
             Ok(held) => Thrown::Held(held),
             Err(fail) => Thrown::Binding(fail),
         }
@@ -1494,10 +1508,10 @@ function interfaceRust(model: Model, iface: Unit): string {
   return `
 /// GN-6ap: a value of the interface ${jsName} is an instance of a class that implements it, whose value the core takes
 /// as ${core}.
-fn in_${rustField(iface.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+fn in_${rustField(iface.name)}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
 ${implementorsOf(model, iface).map((o) => `    // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-    if unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${langName('node', o.unit.name, 'class')}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }.is_ok() {
-        return in_${rustField(o.unit.name)}(env, value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
+    if unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${langName('node', o.unit.name, 'class')}> as FromNapiValue>::from_napi_value(env_.raw(), value.raw()) }.is_ok() {
+        return in_${rustField(o.unit.name)}(env_, value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
     }
 `).join('')}    Err(type_error(subject, ${rustString(jsName)}))
 }
@@ -1527,11 +1541,11 @@ ${object.cleanup === undefined ? '' : `
     /// GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning, and dropping the value
     /// releases its resource.
     impl ObjectFinalize for ${struct} {
-        fn finalize(self, env: Env) -> napi::Result<()> {
+        fn finalize(self, env_: Env) -> napi::Result<()> {
             if self.inner.${cleanupMade(object)}() {
                 return Ok(());
             }
-            let process: Object<'_> = env.get_global()?.get_named_property("process")?;
+            let process: Object<'_> = env_.get_global()?.get_named_property("process")?;
             let emit: Function<'_, FnArgs<(&str, &str)>, ()> = process.get_named_property("emitWarning")?;
             emit.apply(process, FnArgs::from((${rustString(cleanupWarning(jsClass, memberName('node', object.cleanup)))}, "ResourceWarning")))
         }
@@ -1547,15 +1561,15 @@ const _: () = {
     sync::<${core}>();
 };
 
-` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: impl CoreForm<${core}>) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value.core_form()')} }, env).map_err(internal)
+` : ''}fn out_${rustField(object.unit.name)}(env_: &Env, value: impl CoreForm<${core}>) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value.core_form()')} }, env_).map_err(internal)
 }
 
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${jsClass} inside another type is an instance of it, whose value is read, cloned and
 /// released.
-fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+fn in_${rustField(object.unit.name)}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
     // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env_.raw(), value.raw()) } {
         Ok(instance) => match instance.inner.read(${rustString(jsClass)}, &[]) {
             Ok(held) => Ok((*held).clone()),
             Err(error) => Err(binding_error(error)),
@@ -1565,9 +1579,9 @@ fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>,
 }
 ` : ''}${takesHeld(model, object) ? `
 /// T-5, GN-6h: a parameter of the class ${jsClass} takes an instance of it, whose lock the call takes.
-fn held_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${heldType(object)}, Fail> {
+fn held_${rustField(object.unit.name)}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${heldType(object)}, Fail> {
     // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+    match unsafe { <ClassInstance<'_, class_${rustField(object.unit.name)}::${struct}> as FromNapiValue>::from_napi_value(env_.raw(), value.raw()) } {
         Ok(instance) => Ok(instance.inner.clone()),
         Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
     }
@@ -1582,7 +1596,7 @@ function poisonRust(model: Model): string {
   const arms = written.map((o) => {
     const jsClass = langName('node', o.unit.name, 'class');
     return `        // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-        if let Ok(instance) = unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${jsClass}> as FromNapiValue>::from_napi_value(env.raw(), object.raw()) } {
+        if let Ok(instance) = unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${jsClass}> as FromNapiValue>::from_napi_value(env_.raw(), object.raw()) } {
             let _held = instance.inner.write(${rustString(jsClass)}).map_err(binding_error)?;
             panic!("panic-test");
         }`;
@@ -1592,12 +1606,12 @@ function poisonRust(model: Model): string {
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = ${rustString(POISON_ENTRY.node)})]
-pub fn panic_test_held(env: &Env, object: Unknown<'_>) -> napi::Result<()> {
+pub fn panic_test_held(env_: &Env, object: Unknown<'_>) -> napi::Result<()> {
     guard(|| {
 ${arms}
         Err(binding_error(BindingError::Internal { detail: String::from("B-5c: the object is of no class with a write place") }))
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 `;
 }
@@ -1622,7 +1636,7 @@ ${arms}
 `;
   }
   // E-2, I-3: the kind of an error unit is an instance of the class of the unit. The core error gives its properties
-  // here, and the instance takes them where the call returns, which has the env.
+  // here, and the instance takes them where the call returns, which has the env_.
   // The closure outlives the core error, so a text or bytes that the error lends is copied.
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
@@ -1635,11 +1649,11 @@ ${arms}
 /// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
 fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Result<Properties, Fail> {
 ${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`))};`).join('\n')}
-    Ok(Box::new(move |env, object| {
+    Ok(Box::new(move |env_, object| {
 ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         let property = match ${convertOut(model, property.returns, 'value')} {
             Ok(property) => property,
-            Err(fail) => return Err(throw(env, fail)),
+            Err(fail) => return Err(throw(env_, fail)),
         };
         read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
         Ok(())
@@ -1720,7 +1734,7 @@ ${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections:
 ${constants}
 
 /// A failure on its way to the caller: the library class (an index of CLASSES), the message, the kind, the status and the
-/// errno (B-4). It becomes an instance of the class where the call returns, which has the env.
+/// errno (B-4). It becomes an instance of the class where the call returns, which has the env_.
 struct Fail {
     class: usize,
     message: String,
@@ -1761,7 +1775,7 @@ pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
 }
 
 /// The instance of the library class of a failure, as the error that the call throws (B-4).
-fn throw(env: &Env, fail: Fail) -> napi::Error {
+fn throw(env_: &Env, fail: Fail) -> napi::Error {
     if let Some(thrown) = fail.thrown {
         return thrown;
     }
@@ -1770,15 +1784,15 @@ fn throw(env: &Env, fail: Fail) -> napi::Error {
     };
     let args: ClassArgs = FnArgs::from((fail.message, String::from(fail.kind), fail.status.map(u32::from), fail.errno));
 ${model.errorUnits.length > 0 ? `    let properties = fail.properties;
-    let made = class.borrow_back(env).and_then(|class| class.new_instance(args)).and_then(|error| {
+    let made = class.borrow_back(env_).and_then(|class| class.new_instance(args)).and_then(|error| {
         let Some(properties) = properties else {
             return Ok(error);
         };
         let mut object = error.coerce_to_object()?;
-        (*properties)(env, &mut object)?;
+        (*properties)(env_, &mut object)?;
         Ok(object.to_unknown())
     });
-    match made {` : `    match class.borrow_back(env).and_then(|class| class.new_instance(args)) {`}
+    match made {` : `    match class.borrow_back(env_).and_then(|class| class.new_instance(args)) {`}
         Ok(error) => napi::Error::from(error),
         Err(error) => error,
     }
@@ -1820,8 +1834,8 @@ ${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRu
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
-pub fn panic_test(env: &Env) -> napi::Result<()> {
-    guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
+pub fn panic_test(env_: &Env) -> napi::Result<()> {
+    guard(|| panic!("panic-test")).map_err(|fail| throw(env_, fail))
 }
 ${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
 /// GN-6u: the entry point of the generated release test: the count of the references that the table of this thread
@@ -1841,8 +1855,8 @@ pub fn native_count() -> napi::Result<u32> {
 /// gives on another thread, whose drop of the Native the owner releases at its next entry point.
 #[cfg(feature = "thread-test")]
 #[napi(js_name = "__threadTest")]
-pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
-    let native = guard(|| kept_function_in(env, value, "value")).map_err(|fail| throw(env, fail))?;
+pub fn thread_test<'env>(env_: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
+    let native = guard(|| kept_function_in(env_, value, "value")).map_err(|fail| throw(env_, fail))?;
     let kind = std::thread::spawn(move || match native_env(&native, "value") {
         Ok(_env) => String::from("none"),
         Err(error) => error.kind().to_owned(),
@@ -1854,45 +1868,45 @@ pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<S
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[napi(js_name = ${rustString(`__aliasIn${langName('node', alias.unit.name, 'class')}`)})]
-pub fn alias_in_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<()> {
+pub fn alias_in_${rustField(alias.unit.name)}<'env>(env_: &'env Env, value: Unknown<'env>) -> napi::Result<()> {
     guard(|| {
-        let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
+        let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env_, value, "value")?;
         Ok(())
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 
 /// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
 #[cfg(feature = "codec-test")]
 #[napi(js_name = ${rustString(`__aliasRound${langName('node', alias.unit.name, 'class')}`)})]
-pub fn alias_round_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+pub fn alias_round_${rustField(alias.unit.name)}<'env>(env_: &'env Env, value: Unknown<'env>) -> napi::Result<Unknown<'env>> {
     guard(|| {
-        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
-        out_${rustField(alias.unit.name)}(env, &value)
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env_, value, "value")?;
+        out_${rustField(alias.unit.name)}(env_, &value)
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 `).join('')}${model.faults.length === 0 ? '' : `
 /// G-5: arms the faults of a case for the next call of the member from this thread, and gives the id of the arming.
 #[cfg(feature = "fault-test")]
 #[napi(js_name = "__armFaults")]
-pub fn arm_faults(env: &Env, member: String, faults: String) -> napi::Result<i64> {
+pub fn arm_faults(env_: &Env, member: String, faults: String) -> napi::Result<i64> {
     guard(|| {
         let id: u64 = binding_core::fault::arm(&member, &faults).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         i64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 
 /// G-5: the points of an arming whose fault did not fire.
 #[cfg(feature = "fault-test")]
 #[napi(js_name = "__faultLeft")]
-pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
+pub fn fault_left(env_: &Env, id: i64) -> napi::Result<Vec<String>> {
     guard(|| {
         let id: u64 = u64::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 `}`;
 }

@@ -5,6 +5,38 @@
 
 ## Unreleased
 
+- A case value of a class in another form than an instance value fails its test with the rule that names the form,
+  `{"new": "<member id>", "args": {...}}` (GN-13f, B2.295), also inside a list or a tuple. The message said only that
+  no case value of the type was written yet. A case that gave a class as the object of the arguments of its
+  constructor writes `{"new": "<class>.new", "args": <that object>}`.
+
+- A callback interface that only a class implements generates no code that calls language code (GN-6aw, B2.294):
+  no Go dispatch, no table of thrown values and no variant of `Thrown` that nothing makes. That code was unused, so
+  the workspace lints, which deny warnings, failed.
+
+- Go binds a parameter or a record field that has the name of a local of the generated Rust (`input`, `result`,
+  ...) with a trailing underscore (GN-15j, B2.292). A parameter `input` shadowed the reader of the arguments, so
+  `finish_input(input)` took the parameter and the crate did not compile (E0308). The token of the runtime of the
+  Python and Node crates is `py_` and `env_` (GN-6ax), so a parameter named `py` or `env` keeps its public name and
+  no longer shadows the token.
+
+- Node calls a language function without arguments as a `Function` of `()` with `()` (GN-6av, B2.293). It wrote
+  `FnArgs<()>`, which napi does not implement (E0277, E0599).
+
+- An instance value may be made by a factory that returns a named type of this repository, such as `json_value`
+  of the library json, which CK-22 refused as no class, and the pick step `"?"` takes the value of an optional
+  result (GN-13f, B2.288).
+
+- An optional parameter of a record or a value class, also of another repository, is passed to the core as
+  `Option<&T>` (GN-6, B2.289). It was refused as not generated.
+
+- Go names the root package of another repository after its library and writes that name in the import (GN-15f,
+  B2.290). Two libraries of one repository both had the package of the repository, so Go refused the package of the
+  other as a package of the same name.
+
+- Each crate asserts that the core type of each class is owned (`'static`) (GN-6au, B2.291), so a core type that
+  borrows fails at that assertion, whose comment names the rule.
+
 - A member that a class declares with the core path of a trait method of a callback interface that it implements
   raises the `Failure<E>` of the trait (GN-6w, B2.287). It was generated with `core_error`, which takes the core
   error, so the crate did not compile (E0308).

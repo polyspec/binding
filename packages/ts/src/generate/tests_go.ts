@@ -21,7 +21,7 @@ import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
+  foreignPackage, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
   goOrder,
 } from './go.ts';
 import {
@@ -329,7 +329,7 @@ function foreignMade(v: Values, b: Body, alias: ValueAlias, json: unknown): stri
   if (owner === undefined) throw new Unsupported(`${alias.unit.id}: no owner contract of the value class (GN-6x)`);
   const named = (unit: Unit): string => {
     const type = ownerType(owner, unit);
-    (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+    importForeign(v.scope, type.path, type.pkg, type.declared);
     return type.name;
   };
   const cls = named(alias.unit);
@@ -421,7 +421,7 @@ function foreignKept(v: Values, library: string): ForeignKept {
     model: ownerModel(v.model, library),
     pkg: (unit) => {
       const type = ownerType(owner, unit);
-      (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+      importForeign(v.scope, type.path, type.pkg, type.declared);
       return type.pkg;
     },
   };
@@ -740,8 +740,8 @@ function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
     // the Go module of that repository.
     const owner = fn.library === undefined ? undefined : v.model.foreign.get(fn.library);
     if (owner !== undefined) {
-      const pkg = goPackage(owner, fn.module);
-      (v.scope.foreignImports ??= new Map()).set(goImport(owner, fn.module), pkg);
+      const pkg = foreignPackage(owner, fn.module);
+      importForeign(v.scope, goImport(owner, fn.module), pkg, goPackage(owner, fn.module));
       return `${pkg}.${name}(${args.join(', ')})`;
     }
     // GN-15a: a function of another module is named by its package.
@@ -799,7 +799,8 @@ function made(v: Values, b: Body, r: Receiver): string {
   for (const step of picks) {
     const next = b.fresh();
     // GN-16: a tuple inside a value is the struct TupleN, whose parts are the fields P0 to PN-1.
-    const expr = 'field' in step ? `${local}.${goName(step.field.split('_'))}` : 'index' in step ? `${local}[${step.index}]` : `${local}.P${step.tuple}`;
+    // GN-13f: the value of an optional is the pointer itself where nil is the absence, and what it points to elsewhere.
+    const expr = 'present' in step ? (nilAbsent(v.model, step.present) ? local : `*${local}`) : 'field' in step ? `${local}.${goName(step.field.split('_'))}` : 'index' in step ? `${local}[${step.index}]` : `${local}.P${step.tuple}`;
     b.lines.push(`${next} := ${expr}`);
     local = next;
   }
@@ -1005,7 +1006,7 @@ function foreignReadHelper(v: Values): string {
   const seen = new Set<string>();
   const imported = (owner: Contract, unit: Unit): string => {
     const type = ownerType(owner, unit);
-    (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+    importForeign(v.scope, type.path, type.pkg, type.declared);
     return type.name;
   };
   for (const alias of model.aliases.filter((a) => a.owner !== undefined && a.library !== undefined && a.unit.kind === 'class')) {
@@ -2217,7 +2218,7 @@ function testImports(model: Model, module: string, text: string, scope: GoScope,
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
     ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
     // GN-15f: the packages of other repositories whose records the tests name.
-    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path]) => `"${path}"`),
+    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path, name]) => (scope.foreignNamed?.has(path) === true ? `${name} "${path}"` : `"${path}"`)),
     // GN-6s, GN-15d: the packages errors of other repositories whose errors the fixtures raise.
     ...[...(scope.foreignErrors ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path, name]) => `${name} "${path}"`),
   ];

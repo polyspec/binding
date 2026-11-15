@@ -1788,17 +1788,29 @@ class Checker {
     this.namedThen?.add(member.id);
     const method = typeof member.core === 'object' && member.core.receiver !== undefined;
     // The type that the member gives, then each step of pick into it.
-    let at: Type | undefined = member.returns === undefined || member.returns === 'self' ? { unit: found.unit.id } : member.returns;
+    // T-3: a named type of this repository (types) is the unit of this contract that it names.
+    const named = this.contract.types as Record<string, { library: string; unit: string } | undefined>;
+    const own = (type: Type | undefined): Type | undefined => {
+      const owner = typeof type === 'string' ? named[type] : undefined;
+      return owner !== undefined && owner.library === this.contract.library ? { unit: owner.unit } : type;
+    };
+    let at: Type | undefined = own(member.returns === undefined || member.returns === 'self' ? { unit: found.unit.id } : member.returns);
     const pick = record['pick'];
     if (from && !Array.isArray(pick)) return report(`${what} reads its instance from the result of ${member.id} by a pick, a list of steps`);
     for (const [i, step] of (Array.isArray(pick) ? pick : []).entries()) {
       const target: Type | undefined = at;
       if (target === undefined) break;
+      // GN-13f: the step "?" takes the value of an optional, which the test requires to be present.
+      if (step === '?') {
+        if (typeof target !== 'object' || !('optional' in target)) return report(`step ${i} of the pick of ${what} takes the value of ${JSON.stringify(target)}, which is no optional`);
+        at = own(target.optional);
+        continue;
+      }
       if (typeof step === 'string') {
         const unit: Unit | undefined = typeof target === 'object' && 'unit' in target && target.library === undefined ? this.units.get(target.unit)?.value : undefined;
         const field: Field | undefined = unit?.kind === 'record' ? (unit.fields ?? []).find((f: Field) => convert(f.name, 'python', 'variable') === step) : undefined;
         if (field === undefined) return report(`step ${i} of the pick of ${what} names the field ${step}, which ${JSON.stringify(target)} has not`);
-        at = field.type;
+        at = own(field.type);
         continue;
       }
       const index = typeof step === 'object' && step !== null && !Array.isArray(step) ? (step as Record<string, unknown>) : {};
@@ -1806,10 +1818,10 @@ class Checker {
       if (Object.keys(index).length !== 1 || typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return report(`step ${i} of the pick of ${what} is not a field name, {"index": n} or {"tuple": n}`);
       if ('index' in index) {
         if (typeof target !== 'object' || !('list' in target)) return report(`step ${i} of the pick of ${what} takes an item of ${JSON.stringify(target)}, which is no list`);
-        at = target.list;
+        at = own(target.list);
       } else {
         if (typeof target !== 'object' || !('tuple' in target) || n >= target.tuple.length) return report(`step ${i} of the pick of ${what} takes part ${n} of ${JSON.stringify(target)}, which is no tuple of that length`);
-        at = target.tuple[n];
+        at = own(target.tuple[n]);
       }
     }
     if (typeof at !== 'object' || !('unit' in at) || at.unit !== unitId || at.library !== undefined) report(`${what}: ${member.id}${from ? ' and its pick give' : ' gives'} ${JSON.stringify(at)}, not the class ${unitId}`);

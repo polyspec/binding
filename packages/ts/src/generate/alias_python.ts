@@ -33,8 +33,8 @@ const keptFills = (model: Model): Fill[] => model.kept.flatMap((kept) => {
 
 // GN-6as: the make function of Python.
 const PYTHON_WALK: WalkShape = {
-  generics: "<'py>", life: "<'py>", anon: "<'_>", env: { params: "py: Python<'py>, ", args: 'py, ' }, value: "Bound<'py, PyAny>",
-  result: (type) => `PyResult<${type}>`, internal: (detail) => `Err(binding_error(py, BindingError::Internal { detail: ${detail} }))`, language: 'Python',
+  generics: "<'py>", life: "<'py>", anon: "<'_>", env: { params: "py_: Python<'py>, ", args: 'py_, ' }, value: "Bound<'py, PyAny>",
+  result: (type) => `PyResult<${type}>`, internal: (detail) => `Err(binding_error(py_, BindingError::Internal { detail: ${detail} }))`, language: 'Python',
 };
 const PYTHON_MADE = { name: 'made', type: "&mut BTreeMap<u64, Bound<'py, PyAny>>" };
 
@@ -42,36 +42,36 @@ const PYTHON_MADE = { name: 'made', type: "&mut BTreeMap<u64, Bound<'py, PyAny>>
 function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return put('py.None().into_bound(py)');
+      return put('py.None().into_bound(py_)');
     case 'bool':
-      return put('PyBool::new(py, value).to_owned().into_any()');
+      return put('PyBool::new(py_, value).to_owned().into_any()');
     case 'int':
     case 'bigint':
       if (kind === 'number') return leaf('py.get_type::<PyInt>().call1((value,))');
-      if (kind === 'int64') return put('value.into_pyobject(py)?.into_any()');
-      return put('value.value().into_pyobject(py)?.into_any()');
+      if (kind === 'int64') return put('value.into_pyobject(py_)?.into_any()');
+      return put('value.value().into_pyobject(py_)?.into_any()');
     case 'float':
       if (kind === 'number') return leaf('py.get_type::<PyFloat>().call1((value,))');
-      if (kind === 'float') return put('PyFloat::new(py, value.value()).into_any()');
+      if (kind === 'float') return put('PyFloat::new(py_, value.value()).into_any()');
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `{
             let Ok(float) = ${kind === 'int64' ? 'value' : 'value.value()'}.to_string().parse::<f64>() else {
-                return Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: an integer that is no number") }));
+                return Err(binding_error(py_, BindingError::Internal { detail: String::from("U-7: an integer that is no number") }));
             };
-            ${put('PyFloat::new(py, float).into_any()')}
+            ${put('PyFloat::new(py_, float).into_any()')}
         }`;
     case 'text':
       if (kind === 'bytes') {
         return `{
             let Ok(text) = std::str::from_utf8(value.value()) else {
-                return Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") }));
+                return Err(binding_error(py_, BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") }));
             };
-            ${put('PyString::new(py, text).into_any()')}
+            ${put('PyString::new(py_, text).into_any()')}
         }`;
       }
-      return put('PyString::new(py, &value).into_any()');
+      return put('PyString::new(py_, &value).into_any()');
     case 'bytes':
-      return put(kind === 'text' ? 'PyBytes::new(py, value.as_bytes()).into_any()' : 'PyBytes::new(py, value.value()).into_any()');
+      return put(kind === 'text' ? 'PyBytes::new(py_, value.as_bytes()).into_any()' : 'PyBytes::new(py_, value.value()).into_any()');
     case 'list': {
       const parts = container(alias, kind, form);
       // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
@@ -80,7 +80,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let list = PyList::empty(py);
+            let list = PyList::empty(py_);
             made.insert(handle.raw(), list.clone().into_any());
             ${level({ walks: true, fill: `OutFill::${fill}(list.clone())`, made: 'list.into_any()' })}
         }`;
@@ -92,15 +92,15 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let map = PyDict::new(py);
+            let map = PyDict::new(py_);
             made.insert(handle.raw(), map.clone().into_any());
             ${level({ walks: true, fill: 'OutFill::Entries(map.clone(), None)', made: 'map.into_any()' })}
         }`;
     }
     case 'native':
       return `match native.downcast::<PyNative>() {
-            Some(object) => ${put('object._held.clone_ref(py).into_bound(py)')},
-            None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
+            Some(object) => ${put('object._held.clone_ref(py_).into_bound(py_)')},
+            None => Err(binding_error(py_, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
         }`;
     default:
       throw new Unsupported(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
@@ -111,14 +111,14 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
 function ownerClass(alias: ValueAlias, unit: Unit): string {
   const python = alias.owner?.packages['python'] as { module: string } | undefined;
   const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
-  return `foreign_types(py, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
+  return `foreign_types(py_, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
 }
 
 // GN-6ar: a class of the owner of a value alias of another repository, by the module of the owner's package.
 function rowClass(owner: Contract, unit: Unit): string {
   const python = owner.packages['python'] as { module: string } | undefined;
   const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
-  return `foreign_types(py, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
+  return `foreign_types(py_, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
 }
 
 // GN-6ar: an instance of a class of the owner made from the content of an out row, through the constructor of the
@@ -133,7 +133,7 @@ const foreignMake = (make: ForeignMake, kind: string, head: string, { put, leaf,
             if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let instance = ${cls}.call1((py.None(),))?;
+            let instance = ${cls}.call1((py_.None(),))?;
             made.insert(handle.raw(), instance.clone());
             ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Property(instance.clone(), ${rustString(langName('python', make.set?.name ?? [], 'callable'))})`, made: 'instance' })}
         }`;
@@ -142,7 +142,7 @@ const foreignMake = (make: ForeignMake, kind: string, head: string, { put, leaf,
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let map = PyDict::new(py);
+            let map = PyDict::new(py_);
             let instance = ${cls}.call1((map.clone(),))?;
             made.insert(handle.raw(), instance.clone());
             ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance' })}
@@ -177,7 +177,7 @@ function valueClassPython(alias: ValueAlias, name: string, core: string, failure
       if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The list of the made items of a list.', type: "Bound<'py, PyList>", pattern: 'OutFill::Items(items)', put: PUT_APPENDED('items'), next: 'Some(source.item(level.handle, level.index))' });
       closes.set('Items', call(make.member, 'items'));
       return `        OutValue::List { handle, len } => {
-            let items = PyList::empty(py);
+            let items = PyList::empty(py_);
             ${walk.level({ walks: true, fill: 'OutFill::Items(items)' })}
         }`;
     }
@@ -195,21 +195,21 @@ function valueClassPython(alias: ValueAlias, name: string, core: string, failure
   const opened = /\bclass\./.test(arms({ put: (value) => value, leaf: (made) => made, level: () => '' })) ? ownClass : '';
   return `
 /// GN-6x: an instance of ${langName('python', alias.unit.name, 'class')} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
-fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
     if !value.is_instance(&${own})? {
-        return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(langName('python', alias.unit.name, 'class'))}) }));
+        return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(langName('python', alias.unit.name, 'class'))}) }));
     }
-    let mut host = PyHost::new(py);
+    let mut host = PyHost::new(py_);
     let described = host.describe(value)?;
-    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py, failure))
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py_, failure))
 }
 
 /// GN-6x: a core value of ${langName('python', alias.unit.name, 'class')} leaves as the instance that the members of its owner make.
-fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
+fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(py, root, &mut source)
+    make_${name}(py_, root, &mut source)
 }
-${walkRust(PYTHON_WALK, name, fills, arms, 'other => Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
+${walkRust(PYTHON_WALK, name, fills, arms, 'other => Err(binding_error(py_, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -247,7 +247,7 @@ function valueClassesHostAll(model: Model): string {
             let by: String = value.${by.call ? `call_method0(${rustString(by.name)})` : `getattr(${rustString(by.name)})`}?.extract()?;
             let (kind, read) = match by.as_str() {
 ${arms}
-                other => return Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: ${langName('python', alias.unit.name, 'class')} gives the kind {other}, which its in row has no case for") })),
+                other => return Err(binding_error(py_, BindingError::Internal { detail: format!("GN-6x: ${langName('python', alias.unit.name, 'class')} gives the kind {other}, which its in row has no case for") })),
             };
             return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Foreign(value.clone(), read)) }));
         }`, ...maps];
@@ -274,20 +274,20 @@ impl<'py> PyHost<'py> {
     /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance
     /// of a class of its owner that a read member gives, as a map of the entries of its iteration.
     fn value_class(&mut self, value: &Bound<'py, PyAny>) -> PyResult<Option<HostValue>> {
-        let py = self.py;
+        let py_ = self.py_;
 ${checks.join('\n')}
         Ok(None)
     }
 
     /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
     fn read_value(&mut self, value: Handle) -> PyResult<HostValue> {
-        let py = self.py;
+        let py_ = self.py_;
         let held = match self.held.get(handle_position(value.raw())) {
             Some(Held::Foreign(object, Some(read))) => Some((object.clone(), *read)),
             _ => None,
         };
         let Some((object, (name, call, read_as))) = held else {
-            return Err(binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }));
+            return Err(binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such value") }));
         };
         let content = if call { object.call_method0(name)? } else { object.getattr(name)? };
         match read_as {
@@ -337,22 +337,22 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPython(alias, name, core, failure);
-  const arms = (walk: Walk): string => outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', (kept, field, holds, head) => keptMake(kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMake(make, kind, head, walk), walk.leaf).join('\n');
+  const arms = (walk: Walk): string => outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(py_, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py_, ', (kept, field, holds, head) => keptMake(kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMake(make, kind, head, walk), walk.leaf).join('\n');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
-fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
-    let mut host = PyHost::new(py);
+fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
+    let mut host = PyHost::new(py_);
     let described = host.describe(value)?;
-    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py, failure))
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py_, failure))
 }
 
 /// U-7: a core value of ${langName('python', alias.unit.name, 'class')} leaves as the Python values of its out rows.
-fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
+fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     let mut made = BTreeMap::new();
-    make_${name}(py, root, &mut source, &mut made)
+    make_${name}(py_, root, &mut source, &mut made)
 }
-${walkRust(PYTHON_WALK, name, [...ALIAS_FILLS, ...keptFills(model)], arms, 'other => Err(binding_error(py, BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PYTHON_MADE)}`;
+${walkRust(PYTHON_WALK, name, [...ALIAS_FILLS, ...keptFills(model)], arms, 'other => Err(binding_error(py_, BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', PYTHON_MADE)}`;
 }
 
 // B-1: what a Python value is as a HostValue, one level at a time; the children of a container are asked for through
@@ -367,15 +367,15 @@ enum Held<'py> {
 }
 
 struct PyHost<'py> {
-    py: Python<'py>,
+    py_: Python<'py>,
     held: Vec<Held<'py>>,
     containers: BTreeMap<usize, (Bound<'py, PyAny>, HostValue)>,
     marked: u64,/*SEEN*/
 }
 
 impl<'py> PyHost<'py> {
-    fn new(py: Python<'py>) -> Self {
-        Self { py, held: Vec::new(), containers: BTreeMap::new(), marked: 0/*NEW*/ }
+    fn new(py_: Python<'py>) -> Self {
+        Self { py_, held: Vec::new(), containers: BTreeMap::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held<'py>) -> Handle {
@@ -460,33 +460,33 @@ impl<'py> PyHost<'py> {
 
 impl HostValues for PyHost<'_> {
     fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {
-        let py = self.py;
+        let py_ = self.py_;
         let item = match self.held.get(handle_position(list.raw())) {
             Some(Held::Items(items)) => items.get(handle_position(index)).cloned(),
             _ => None,
         };
         let Some(item) = item else {
-            return Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such item") })));
+            return Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such item") })));
         };
-        self.describe(&item).map_err(|error| raised(py, error))
+        self.describe(&item).map_err(|error| raised(py_, error))
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
-        let py = self.py;
+        let py_ = self.py_;
         let entry = match self.held.get(handle_position(map.raw())) {
             Some(Held::Entries(entries)) => entries.get(handle_position(index)).cloned(),
             _ => None,
         };
         let Some((key, value)) = entry else {
-            return Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such entry") })));
+            return Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such entry") })));
         };
-        let key = self.describe(&key).map_err(|error| raised(py, error))?;
-        let value = self.describe(&value).map_err(|error| raised(py, error))?;
+        let key = self.describe(&key).map_err(|error| raised(py_, error))?;
+        let value = self.describe(&value).map_err(|error| raised(py_, error))?;
         Ok((key, value))
     }
 
     fn read(&mut self, /*READ*/) -> Result<HostValue, binding_core::Raised> {
-        let py = self.py;
+        let py_ = self.py_;
         /*READS*/
     }
 }
@@ -536,18 +536,18 @@ export function foreignFailurePython(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn error_of_${library}(py: Python<'_>, error: ${error.path}) -> PyErr {
+fn error_of_${library}(py_: Python<'_>, error: ${error.path}) -> PyErr {
     let class = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
-    library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+    library_error(py_, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 
-fn failure_of_${library}(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
+fn failure_of_${library}(py_: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
     match failure {
-        binding_core::Failure::Kind(error) => error_of_${library}(py, error),
-        binding_core::Failure::Raised(raised) => failure_error(py, binding_core::Failure::Raised(raised)),
-        binding_core::Failure::Callback(error) => failure_error(py, binding_core::Failure::Callback(error)),
+        binding_core::Failure::Kind(error) => error_of_${library}(py_, error),
+        binding_core::Failure::Raised(raised) => failure_error(py_, binding_core::Failure::Raised(raised)),
+        binding_core::Failure::Callback(error) => failure_error(py_, binding_core::Failure::Callback(error)),
     }
 }
 `;
@@ -566,11 +566,11 @@ export function pythonHost(model: Model): string {
   const foreign = rows || model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';
   const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(|error| raised(py, error))';
+  const foreignRead = 'self.read_value(value).map_err(|error| raised(py_, error))';
   const foreignHost = foreign ? valueClassesHost(model) : '';
   if (reads.length === 0) {
     return PYTHON_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rows ? '\n    seen: BTreeMap<usize, Handle>,' : '').replace('/*NEW*/', rows ? ', seen: BTreeMap::new()' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
+      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
   }
   const struct = (unit: Unit): string => `Py${langName('python', unit.name, 'class')}`;
   const describe = reads.map((r, index) => {
@@ -601,10 +601,10 @@ export function pythonHost(model: Model): string {
       return `
             ${index} => match object.cast::<${struct(r.kept.unit.unit)}>() {
                 Ok(instance) => {
-                    let kept = instance.borrow().${rustField(r.kept.field.name)}.clone_ref(py).into_bound(py);
-                    self.describe(&kept).map_err(|error| raised(py, error))
+                    let kept = instance.borrow().${rustField(r.kept.field.name)}.clone_ref(py_).into_bound(py_);
+                    self.describe(&kept).map_err(|error| raised(py_, error))
                 }
-                Err(_other) => Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }))),
+                Err(_other) => Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such value") }))),
             },`;
     }
     const object = r.object;
@@ -613,11 +613,11 @@ export function pythonHost(model: Model): string {
     return `
             ${index} => match object.cast::<${struct(object.unit.unit)}>() {
                 Ok(instance) => {
-                    ${object.unit.lock === undefined ? `let value = ${object.property.corePath}(&instance.get().inner);` : `let held = instance.get().inner.read(${label}, &[]).map_err(|error| raised(py, binding_error(py, error)))?;
+                    ${object.unit.lock === undefined ? `let value = ${object.property.corePath}(&instance.get().inner);` : `let held = instance.get().inner.read(${label}, &[]).map_err(|error| raised(py_, binding_error(py_, error)))?;
                     let value = ${object.property.corePath}(&held);`}
                     Ok(${readValue(object.property.returns as string)})
                 }
-                Err(_other) => Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }))),
+                Err(_other) => Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such value") }))),
             },`;
   }).join('');
   return PYTHON_HOST
@@ -630,10 +630,10 @@ export function pythonHost(model: Model): string {
             return ${foreignRead};
         }
         ` : ''}let Some(Held::Value(object, read)) = self.held.get(handle_position(value.raw())).cloned() else {
-            return Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") })));
+            return Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such value") })));
         };
         match read {${read}
-            _ => Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }))),
+            _ => Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no such value") }))),
         }`) + foreignHost;
 }
 
@@ -647,7 +647,7 @@ const keptMake = (kept: KeptClass, field: KeptField, holds: 'entries' | 'value',
             if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let instance = Bound::new(py, ${struct} { ${name}: py.None() })?;
+            let instance = Bound::new(py_, ${struct} { ${name}: py_.None() })?;
             made.insert(handle.raw(), instance.clone().into_any());
             ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Kept${struct}(instance.clone())`, made: 'instance.into_any()' })}
         }`;
@@ -656,8 +656,8 @@ const keptMake = (kept: KeptClass, field: KeptField, holds: 'entries' | 'value',
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return ${put('made.clone()')};
             }
-            let map = PyDict::new(py);
-            let instance = Bound::new(py, ${struct} { ${name}: map.clone().into_any().unbind() })?;
+            let map = PyDict::new(py_);
+            let instance = Bound::new(py_, ${struct} { ${name}: map.clone().into_any().unbind() })?;
             made.insert(handle.raw(), instance.clone().into_any());
             ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance.into_any()' })}
         }`;
@@ -682,7 +682,7 @@ export function keptPython(module: string, kept: KeptClass): string {
     if (typeof type === 'object' && 'keyed_map' in type) {
       const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
       return `{
-                let given = keyed_map_in(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, |_py, item| Ok(item.clone()))?;
+                let given = keyed_map_in(py_, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, |_py, item| Ok(item.clone()))?;
                 let mut described = binding_core::KeyedMap::new();
                 for (key, item) in given {
                     described.insert(key, host.describe(&item)?);
@@ -692,7 +692,7 @@ export function keptPython(module: string, kept: KeptClass): string {
     }
     if (typeof type === 'object' && 'list' in type) {
       return `{
-                let given = list_in(py, ${value}, ${subject}, |_py, item| Ok(item.clone()))?;
+                let given = list_in(py_, ${value}, ${subject}, |_py, item| Ok(item.clone()))?;
                 let mut described = Vec::new();
                 for item in given {
                     described.push(host.describe(&item)?);
@@ -715,7 +715,7 @@ export function keptPython(module: string, kept: KeptClass): string {
   const kept_ = kept.fields.map((f) => {
     const v = variable(f);
     if (f.default === undefined) return `${rustField(f.name)}: ${v}.clone().unbind()`;
-    const empty = { null: 'py.None()', map: 'PyDict::new(py).into_any().unbind()', list: 'PyList::empty(py).into_any().unbind()' }[f.default];
+    const empty = { null: 'py.None()', map: 'PyDict::new(py_).into_any().unbind()', list: 'PyList::empty(py_).into_any().unbind()' }[f.default];
     return `${rustField(f.name)}: match ${v} {
                     Given::Omitted => ${empty},
                     Given::Value(value) => value.unbind(),
@@ -733,12 +733,12 @@ ${fields}
 impl ${struct} {
     #[new]
     #[pyo3(signature = (${signature}))]
-    fn new<'py>(py: Python<'py>${params}) -> PyResult<Self> {
-        guard(py, || {
-            let mut host = PyHost::new(py);
+    fn new<'py>(py_: Python<'py>${params}) -> PyResult<Self> {
+        guard(py_, || {
+            let mut host = PyHost::new(py_);
 ${lines.join('\n')}
             if let Err(failure) = ${fn.corePath}(&mut host, ${args}) {
-                return Err(failure_error(py, failure));
+                return Err(failure_error(py_, failure));
             }
             Ok(Self {
                 ${kept_.join(',\n                ')},

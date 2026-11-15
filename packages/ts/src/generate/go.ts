@@ -48,6 +48,18 @@ export function goPackage(contract: Contract, module: string): string {
   return base.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// GN-6s: the name that the code of this repository gives the package of a module of another repository. The package of
+// its root module is named after its library, because two libraries of one repository both have the package of the
+// repository; the package of another module keeps its name. An import whose name differs from the package is written
+// with that name.
+export const foreignPackage = (owner: Contract, module: string): string => (module === '' ? owner.library.toLowerCase().replace(/[^a-z0-9]/g, '') : goPackage(owner, module));
+
+// GN-6s: the import of a package of another repository, under the name that foreignPackage gives it.
+export function importForeign(scope: GoScope, path: string, name: string, declared: string): void {
+  (scope.foreignImports ??= new Map()).set(path, name);
+  if (name !== declared) (scope.foreignNamed ??= new Set()).add(path);
+}
+
 export const staticLib = (contract: Contract): string => `${extensionName(contract)}_go`;
 
 const GO_KEYWORDS = new Set([
@@ -123,6 +135,8 @@ export interface GoScope {
   reaches?: Set<string>;
   // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
   foreignImports?: Map<string, string>;
+  // GN-6s: the import paths of foreignImports whose name is not the name of the package, which the import writes.
+  foreignNamed?: Set<string>;
   // GN-6s, GN-15d: the import paths of the packages errors of other repositories, each with the name that the import
   // gives it, because its package name errors is that of the standard package.
   foreignErrors?: Map<string, string>;
@@ -217,9 +231,9 @@ export function goType(scope: GoScope, type: Type): string {
   const valueClass = aliasOf(scope.model, type);
   if (valueClass?.owner !== undefined) {
     const owner = valueClass.owner;
-    const pkg = goPackage(owner, valueClass.unit.module);
+    const pkg = foreignPackage(owner, valueClass.unit.module);
     if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${owner.library}.${valueClass.unit.id}: the Go package ${pkg} of the value class has the name of a package of ${scope.model.contract.library} (GN-6x)`);
-    (scope.foreignImports ??= new Map()).set(goImport(owner, valueClass.unit.module), pkg);
+    importForeign(scope, goImport(owner, valueClass.unit.module), pkg, goPackage(owner, valueClass.unit.module));
     return `*${pkg}.${goName(valueClass.unit.name)}`;
   }
   // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
@@ -238,9 +252,9 @@ export function goType(scope: GoScope, type: Type): string {
     const owner = scope.model.foreign.get(library);
     if (record?.kind !== 'record' || owner === undefined) throw new Unsupported(`${library}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias or a record is not generated for Go yet`);
     if ((record.fields ?? []).some((f) => namesUnit(f.type))) throw new Unsupported(`${library}.${record.id}: a record of another repository with a field of a unit type is not generated for Go yet (GN-15f)`);
-    const pkg = goPackage(owner, record.module);
+    const pkg = foreignPackage(owner, record.module);
     if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${library}.${record.id}: the Go package ${pkg} of the record has the name of a package of ${scope.model.contract.library} (GN-15f)`);
-    (scope.foreignImports ??= new Map()).set(goImport(owner, record.module), pkg);
+    importForeign(scope, goImport(owner, record.module), pkg, goPackage(owner, record.module));
     return `${pkg}.${goName(record.name)}`;
   }
   const unit = unitOf(scope.model, type);
@@ -921,9 +935,9 @@ func (this *${name}) handle() uint64 {
 function foreignCallbackType(scope: GoScope, cb: CallbackUnit): string {
   const owner = cb.library === undefined ? undefined : scope.model.foreign.get(cb.library);
   if (owner === undefined || cb.library === undefined) throw new Unsupported(`${cb.unit.id}: the contract of the library of the callback unit is not found (GN-6s)`);
-  const pkg = goPackage(owner, cb.unit.module);
+  const pkg = foreignPackage(owner, cb.unit.module);
   if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${cb.library}.${cb.unit.id}: the Go package ${pkg} of the callback unit has the name of a package of ${scope.model.contract.library} (GN-6s)`);
-  (scope.foreignImports ??= new Map()).set(goImport(owner, cb.unit.module), pkg);
+  importForeign(scope, goImport(owner, cb.unit.module), pkg, goPackage(owner, cb.unit.module));
   return `${pkg}.${goName(cb.unit.name)}`;
 }
 
@@ -937,7 +951,7 @@ const recognizesOwner = (model: Model): boolean => model.foreignCallbacks.some((
 export function ownerErrors(scope: GoScope, library: string): string {
   const owner = scope.model.foreign.get(library);
   if (owner === undefined) throw new Unsupported(`${library}: the contract of the library is not found (GN-6s)`);
-  const name = `${goPackage(owner, '')}errors`;
+  const name = `${foreignPackage(owner, '')}errors`;
   (scope.foreignErrors ??= new Map()).set(goImport(owner, 'errors'), name);
   return name;
 }
@@ -1134,7 +1148,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
   const std = [...(scope.usesContext === true ? ['"context"'] : []), ...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
-  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`), ...[...(scope.foreignErrors ?? new Map<string, string>())].map(([path, name]) => `${name} "${path}"`)];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map<string, string>())].map(([path, name]) => (scope.foreignNamed?.has(path) === true ? `${name} "${path}"` : `"${path}"`)), ...[...(scope.foreignErrors ?? new Map<string, string>())].map(([path, name]) => `${name} "${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
@@ -2464,8 +2478,8 @@ func Function(run func(dec *Reader) (any, error)) Callback {
 
 // GN-6x: the Go name of the type of a class of the owner of a value class of another repository, in the package of its
 // module, and the import of that package.
-export const ownerType = (owner: Contract, unit: Unit): { pkg: string; path: string; name: string } =>
-  ({ pkg: goPackage(owner, unit.module), path: goImport(owner, unit.module), name: `${goPackage(owner, unit.module)}.${goName(unit.name)}` });
+export const ownerType = (owner: Contract, unit: Unit): { pkg: string; declared: string; path: string; name: string } =>
+  ({ pkg: foreignPackage(owner, unit.module), declared: goPackage(owner, unit.module), path: goImport(owner, unit.module), name: `${foreignPackage(owner, unit.module)}.${goName(unit.name)}` });
 
 // GN-6x: the Go call of a member of the owner: a method or a property on an instance, a static member or a constructor
 // of the package of its class.
@@ -2479,16 +2493,20 @@ export function ownerCall(owner: Contract, unit: Unit, member: Member, args: str
 // GN-6x: the imports of package binding for the value classes of other repositories: the packages of their classes
 // and of the classes that their in and out rows name.
 function valueClassImports(model: Model): string[] {
-  const paths = new Set<string>();
+  const paths = new Map<string, string>();
+  // GN-6s: an import whose name is not the name of the package writes the name.
+  const add = (type: ReturnType<typeof ownerType>): void => {
+    paths.set(type.path, type.pkg === type.declared ? goString(type.path) : `${type.pkg} ${goString(type.path)}`);
+  };
   for (const alias of valueClasses(model)) {
     const owner = alias.owner as Contract;
-    paths.add(ownerType(owner, alias.unit).path);
-    for (const map of classIn(alias, 'go').maps) paths.add(ownerType(owner, map.unit).path);
-    for (const make of classMakes(alias, 'go')) if (make.form === 'map') paths.add(ownerType(owner, make.map).path);
+    add(ownerType(owner, alias.unit));
+    for (const map of classIn(alias, 'go').maps) add(ownerType(owner, map.unit));
+    for (const make of classMakes(alias, 'go')) if (make.form === 'map') add(ownerType(owner, make.map));
   }
   // GN-6ar: the packages of the classes that the rows of a value alias of another repository name.
-  for (const c of foreignRowClasses(model, 'go')) paths.add(ownerType(c.owner, c.unit).path);
-  return [...paths].map((path) => goString(path));
+  for (const c of foreignRowClasses(model, 'go')) add(ownerType(c.owner, c.unit));
+  return [...paths.values()];
 }
 
 // GN-15h: whether a Go value of the call may be a *KeyedMap[any] of package binding: a type of the contract names a

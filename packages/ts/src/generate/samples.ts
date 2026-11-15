@@ -636,6 +636,8 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   // U-1, GN-13: a value of another class is the [key, value] pairs that fill it, as those of a kind map do.
   const filled = objectUnit(model, type);
   if (filled !== undefined && Array.isArray(value) && !out) return pairsInto(model, ctx, filled, value);
+  // GN-13f: a class has one form of a case value, the instance value that a member of the contract makes.
+  if (filled !== undefined && unit !== undefined && !out) throw new Unsupported(`a case value of the class ${unit.id} is an instance value {"new": "<member id>", "args": {...}} or {"from": ...}, not ${shown(value)} (G-5, GN-13f)`);
   throw new Unsupported(`no case value of the type ${shown(type)} is written yet (G-5)`);
 }
 
@@ -1555,8 +1557,9 @@ export interface Receiver {
 export const armsFaults = (receiver: Receiver | undefined): boolean =>
   receiver !== undefined && ((receiver.then ?? []).some((step) => step.faults !== undefined) || armsFaults(receiver.on));
 
-// G-5 (GN-13f): a step into a result: a field of a record, an item of a list, a part of a tuple.
-export type Pick = { field: string } | { index: number } | { tuple: number };
+// G-5 (GN-13f): a step into a result: a field of a record, an item of a list, a part of a tuple, the value of an
+// optional (present names the type of that value).
+export type Pick = { field: string } | { index: number } | { tuple: number } | { present: Type };
 
 // Whether a receiver is one factory call, which a test writes as one expression.
 export const isPlain = (receiver: Receiver): boolean =>
@@ -1575,7 +1578,12 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
   let at = type;
   for (const [i, step] of pick.entries()) {
     const what = `step ${i} of pick`;
-    if (typeof at === 'object' && 'optional' in at) return `${what} reads an optional, which a pick does not step into`;
+    if (step === '?') {
+      if (typeof at !== 'object' || !('optional' in at)) return `${what} takes the value of ${shown(at)}, which is no optional`;
+      at = at.optional;
+      continue;
+    }
+    if (typeof at === 'object' && 'optional' in at) return `${what} reads an optional, which only the step "?" steps into`;
     if (typeof step === 'string') {
       const unit = unitOf(model, at);
       const field = unit?.kind === 'record' ? (unit.fields ?? []).find((f) => langName('python', f.name, 'variable') === step) : undefined;
@@ -1595,6 +1603,12 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
     }
   }
   return at;
+}
+
+// GN-13f: the type of the value of the optional that the steps before a step "?" reach.
+function presentType(model: Model, type: Type, before: readonly unknown[]): Type {
+  const at = pickedType(model, type, before);
+  return typeof at === 'object' && 'optional' in at ? at.optional : 'none';
 }
 
 // G-5 (GN-13f): the instance of the class unit `unitId` that an instance value gives:
@@ -1711,7 +1725,7 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
     if (change !== undefined && !(change instanceof ServiceChange)) return fail(`then ${i} changes the service by ${shown(change)}, which the generator does not read (GN-13j)`);
     return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}), ...(change === undefined ? {} : { service: change }) };
   });
-  const picks = pick.map((step): Pick => (typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
+  const picks = pick.map((step, i): Pick => (step === '?' ? { present: presentType(model, factory.returns, pick.slice(0, i)) } : typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
 }
 

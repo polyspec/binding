@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: dd9519e4f482891a53c7b1260b3185ca18255944394918bbb3f4feaa88b602c5 -->
+<!-- source-sha256: 5ecca0eec943909ed8047cff03f1398b8670b1a704f6ef493931b04e71632833 -->
 # 생성기
 
 [English](generator.md)
@@ -304,7 +304,7 @@
 
 - **GN-6** 인자마다 T-1의 Rust 타입을 적은 `let`으로 바꾼다. 두 형태를 가진 타입(text, latin1, bytes, source, path)의
   parameter는 빌려서 넘기고(`&String`과 `&Vec<u8>`는 `&str`과 `&[u8]`로 바뀐다), 그런 타입의 `optional<T>`는
-  `as_deref()`로, Copy 타입(bool, 수, enum)은 값으로, 그 밖의 타입(list, record)은 참조로 넘긴다. record는 소유 형태인
+  `as_deref()`로, record나 값 class(다른 레포의 것 포함)의 `optional<T>`는 `as_ref()`로(`Option<&T>`), Copy 타입(bool, 수, enum)은 값으로, 그 밖의 타입(list, record)은 참조로 넘긴다. record는 소유 형태인
   펼친 field로 만든다. 반환은 그 Rust 함수에 보통인 형태이므로(접근자는 빌린 형태, 계산한 값은 소유) 생성 코드는 타입을
   적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다. `none` 반환은 예외이며
   unit으로 묶는다(`let (): () = …`): 그 자리에서 다른 것을 돌려주는 코어는 `Result`를 포함해 컴파일되지 않으므로 그 `Err`가
@@ -441,6 +441,18 @@
   crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다. 이유: 이 계약의
   패키지에 그 record의 두 번째 클래스가 있으면 그것은 다른 타입이고, record를 가진 레포의 함수가 그것을 거부하므로, 한
   값이 두 패키지를 함께 지날 수 없다.
+- **GN-6aw** crate는 쓰는 코드만 가진다(GN-4): Go의 dispatch, 던져진 값의 table, `Thrown`의 variant는 언어 코드가 실행되는
+  곳에만 있다: member가 받는 callback unit(GN-6d), 함수 타입, 값 alias, machine. class만 구현하는 callback interface(GN-6w)는
+  언어 코드를 부르지 않으므로, trait에서 Failure가 오는 member는 `Raised`를 table 없이 kind internal의 실패로 바꾼다. 이유:
+  아무것도 쓰지 않는 항목은 경고를 거부하는 workspace lint에서 실패한다.
+- **GN-6ax** 생성 Rust가 스스로 묶는 이름은 계약의 이름과 같지 않다. 계약의 이름은 밑줄로 끝나지 않는 snake_case 단어이므로
+  Python crate의 모든 함수가 받는 runtime token은 `py_`(`py_: Python<'py>`), Node crate의 것은 `env_`(`env_: &'env Env`)다.
+  `py`나 `env`라는 parameter는 이름을 유지하며 Python은 그 이름을 keyword로 받는다. Go는 공개 이름이 없는 C ABI에서 계약
+  이름을 묶으므로, 진입점 지역 변수의 이름을 가진 parameter가 거기서 밑줄을 붙인다(GN-15j). 이유: token을 가리는 parameter는
+  그 뒤의 모든 변환이 parameter를 받게 해 compile되지 않고, parameter 이름은 Python과 PHP에서 공개된다.
+- **GN-6av** Node는 언어 함수, 즉 callback의 member(U-3)나 함수 값(GN-6z)을 변환한 값의 `FnArgs`를 인자로 받는 napi
+  `Function`으로 부르고, 인자 없는 함수는 `()`의 `Function`으로 `()`를 넘겨 부른다. 이유: napi는 하나 이상의 값의
+  `FnArgs`와, 인자 없음으로 넘기는 `()`에 대해 호출 인자를 구현하며 `FnArgs<()>`에 대해서는 구현하지 않는다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 unit의 member가 `&mut self`를 받으면 그 trait의 `&mut dyn`으로, 아니면 `&dyn`으로 받고, binding은 그것을
   `&mut`와 `&`로 넘긴다(B2.252). 코어가 `&`를 받는 곳의 `&mut`는 `clippy::unnecessary_mut_passed`가 거부한다. 객체가 들어올 때 각 member가 호출
@@ -1097,6 +1109,11 @@
   객체가 수거될 때까지 class의 table이 비워진 lock을 그 객체의 handle 아래에 두므로, 그 handle의 뒤 자리는 kind
   `consumed`다. 이유: 호출 뒤 코어가 가진 값에는 그 객체로 다시 닿을 수 없고,
   kind가 호출자에게 객체가 왜 거부하는지 알려 준다.
+- **GN-6au** class의 코어 타입은 소유 타입(`'static`)이다: 각 crate는 class마다 `core_type`에 대해 이를 단언하므로
+  (`const fn owned<T: 'static>() {}`와 `const _: fn() = owned::<core_type>;`) 빌리는 코어 타입은 그 단언에서 build가 실패하고,
+  그 주석이 이유를 말한다. lifetime을 이름하는 `core_type`은 schema의 Rust 경로가 아니다(CK-1). 이유: 인스턴스는 코어 값을
+  모든 호출 너머까지 가지며 생성한 struct는 lifetime을 이름하지 않는다. 생성기는 Rust를 읽지 않으므로(I-2) 빌리는 코어
+  타입은 crate의 build에서 드러난다.
 - **GN-6p** `cleanup`이 있는 class unit(B-10)은 코어 receiver가 `self`(GN-6o)이거나 `&mut self`인 그 unit의 method를
   가리킨다. 다른 member는 이름을 대고 거부한다. `self`인 cleanup은 객체를 소비하고, 그 뒤 그 객체의 모든 사용은 kind
   `consumed`다(GN-6o). `&mut self`인 cleanup은 객체를 남긴다. 코어가 cleanup이 있었다는 것을 간직하고 그 뒤 각 member가
@@ -1513,8 +1530,16 @@
   `map<T>`(`*Map[T]`), `keyed_map<T>`(`*KeyedMap[T]`), class의 인스턴스(`*<Class>`), 다른 레포의 value class(GN-6x)가
   그렇다. 그 nil이 없는 값이고 C ABI는 그 nil에 값이 없다는 태그를 쓰므로 `optional<keyed_map<T>>`는 `*KeyedMap[T]`다.
   `optional`의 `optional`은 두 번째 포인터를 그대로 둔다. 안쪽 포인터의 nil이 바깥 타입의 값이기 때문이다.
+- **GN-15j** Go의 생성 Rust의 지역 변수(GN-15): 진입점은 `args`, `len`, `result`, `input`, `outcome`, `held`, `this`를
+  묶고 `in_<record>`는 `input`을 받는다. record의 field는 두 범위 모두에서 묶인다. 이 이름을 가진 계약의 parameter나 field는 그 이름에
+  밑줄을 붙여(`input_`) 묶고, record 리터럴은 `field: field_`로 쓴다. 이유: 그 이름의 parameter는 지역 변수를 가리므로 인자
+  reader나 결과 buffer가 parameter의 값을 받게 되어 compile되지 않는다.
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
-  `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
+  `<Record>`이며 패키지는 그 패키지를 한 이름으로 import한다. root module의 패키지 이름은 그 라이브러리 이름의 소문자와
+  숫자이고(`crud-ui-validator`는 `cruduivalidator`), 다른 module의 것은 그 패키지 이름이다. 이름이 패키지 이름과 다른
+  import는 그 이름을 적는다. 이유: root module의 패키지는 레포 이름을 따르므로(GN-15) 한 레포의 두 라이브러리는 같은 이름의
+  패키지를 가지며, 라이브러리 이름이 둘을 구별한다. 코드가 이름하는 다른 레포의 모든 패키지에 같은 이름을 쓴다: callback
+  unit(GN-6s), 값 class(GN-6x), 패키지 `<name>errors`(GN-15d). C ABI는 이 레포의 record처럼 field마다
   `library_<library>::in_<record>`와 `library_<library>::out_<record>`로 쓰고 읽는다(GN-4c). unit 타입 field가 있는 다른 레포의 record와, 패키지
   이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. 계약이 Go module(`packages.go`)을 적지 않은 라이브러리는
   `generate`의 Go target을 그 라이브러리와 이유와 함께 거부하고 다른 target은 생성한다(GN-1c). `scaffold`가 Go module만 쓰지
@@ -1902,7 +1927,11 @@
   `{"new": "<member id>", "receiver": <인스턴스 값>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
   또는 `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<단계>], "then": [...]}`. `new`는 그 class를
   돌려주는 member다: 생성자, static member, 함수, 어느 class의 메서드. `from`은 결과가 그 class를 담는 member이고,
-  `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
+  `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`, 그리고 `optional`의 값을 취하는
+  `"?"`이며, 시험은 그 값이 있음을 요구한다(`{"from": "value.get", "receiver": ..., "args": {"key": "a"}, "pick": ["?"]}`).
+  Go는 없음이 nil pointer가 아닌 optional의 pointer를 역참조한다. `types`에 이름된 타입으로 library가 이 레포인 것은 member와
+  각 단계에서 그것이 이름하는 이 계약의 class다(T-3). 그래서 library json의 `json_value`를 돌려주는 factory는 class `value`를
+  만든다. `receiver`는
   member가 메서드일 때 주며 그 자체가 인스턴스 값이다. case는 자기 키 가운데, 계약 순서로 첫 factory의 인자를 준다. 그
   factory는 모든 parameter의 키가 case에 있고 그 키가 case의 member의 parameter 키가 아닌 factory다. 그런 키는 그
   member의 인자를 담는다. factory `from_units` 곁의 메서드 `get_units`의 case에서 `units`가 그렇다. 그 키로 만든
@@ -1914,7 +1943,9 @@
   factory의 오류를 case의 오류로 받아 만든 receiver에만 member를 부른다. 이유: parser의 잘못된 field와 그 property처럼
   factory와 그 class의 member가 함께 실행하는 case group은 둘 모두에 parse의 실패를 적으며, 레포의 runner는 receiver를
   만들고 member를 부르는 것을 한 단계로 한다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
-  자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
+  자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). 인스턴스 값은 case에서 origin `generated` class 값의 유일한 형식이며, list의 항목과 tuple의 부분에서도 그렇다
+  (`{"new": "uploaded_file.new", "args": {...}}`). 생성자 인자의 객체 같은 다른 형식은 그 규칙을 이름하며 case의 시험을
+  실패시킨다. 이유: 모든 자리에 한 형식을 두면 case가 인스턴스를 만드는 규칙이 하나다(P-1). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
   그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. `then`의 호출은
   `"faults": [...]`를 가질 수 있다. 그것은 case의 faults 꼴(CK-22)로 적은 그 호출 자신의 fault 주입점이다. 시험은 그 호출

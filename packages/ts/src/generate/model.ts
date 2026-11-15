@@ -1452,6 +1452,10 @@ export function coreArg(model: Model, type: Type, variable: string): string {
   if (typeof type === 'object' && 'optional' in type) {
     const inner = type.optional;
     if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;
+    // GN-6: a record or a value class, of this repository or another, is taken by reference, so its optional is the
+    // Option of the reference.
+    const held = unitOf(model, inner);
+    if (held !== undefined && (held.kind === 'record' || (held.kind === 'class' && held.origin === 'value'))) return `${variable}.as_ref()`;
     throw new Unsupported(`an optional parameter of ${JSON.stringify(inner)} is not generated yet`);
   }
   // GN-6ad: a list whose items narrow is a Vec of the core's item type, whose slice the core borrows.
@@ -1498,7 +1502,7 @@ export function takesFunction(model: Model): boolean {
 // U-3: whether a contract has a callback or a function type, of GN-6z or of GN-6ae, whose call keeps what the language
 // code threw.
 export function keepsThrown(model: Model): boolean {
-  return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+  return takenCallbacks(model).length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
 
 // GN-6aq: whether a type is a cancellation, or an optional one, which a parameter alone takes.
@@ -1731,7 +1735,14 @@ export function cleanupAsserts(model: Model): string {
   const lines = model.objects.map((o) => (o.cleanup === undefined
     ? `const _: fn() = <${o.unit.core_type ?? ''} as NotCleanup<_>>::not_cleanup;`
     : `const _: fn() = cleanup::<${o.unit.core_type ?? ''}>;`));
-  return `
+  // GN-6au: the core type of every class is owned, because the instance keeps it beyond every call.
+  const held = model.objects.filter((o) => o.unit.core_type !== undefined);
+  const owned = held.length === 0 ? '' : `
+/// GN-6au: the core type of a class is owned ('static): the instance keeps it beyond every call.
+const fn owned<T: 'static>() {}
+${held.map((o) => `const _: fn() = owned::<${o.unit.core_type ?? ''}>;`).join('\n')}
+`;
+  return `${owned}
 /// GN-6p: a class unit with cleanup holds a core type that implements Cleanup (B-10).
 ${model.objects.some((o) => o.cleanup !== undefined) ? `const fn cleanup<T: binding_core::Cleanup>() {}\n` : ''}${model.objects.some((o) => o.cleanup === undefined) ? `/// GN-6p: a core type that implements Cleanup has two implementations of this trait, so its not_cleanup is ambiguous.
 trait NotCleanup<A> {
@@ -2218,7 +2229,7 @@ export function armedCall(model: Model, fn: Fn, call: string): string {
 // member with two entry points (the keys and the pairs of an iterate) has two guard calls.
 export function withFaults(model: Model, fn: Fn, text: string): string {
   if (model.faults.length === 0) return text;
-  const guard = /guard\((py, )?\|\| /;
+  const guard = /guard\((py_, )?\|\| /;
   const open = '$&shielded(|| ';
   const lines = text.split('\n');
   let found = 0;

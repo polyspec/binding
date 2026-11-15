@@ -1250,6 +1250,17 @@ function failureRust(model: Model): string {
   // U-3, GN-6x: an exception of PHP code is kept for a callback or a function type, and for a member of the owner of a
   // value class of another repository, whose exception the call throws again.
   const keepsPhp = keepsThrown(model) || model.aliases.some((a) => a.owner !== undefined);
+  // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no PHP code that throws,
+  // so it keeps no table, and a Raised that the core gives is a failure of kind internal.
+  if (!keepsThrown(model) && model.aliases.length === 0 && !countsThrown(model.contract, model.foreign)) return `
+fn failure_error(failure: ${failure}) -> Fail {
+    match failure {
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        binding_core::Failure::Raised(raised) => binding_error(BindingError::Internal { detail: raised.to_string() }),
+        binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+    }
+}
+`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
 enum Thrown {${!keepsPhp ? '' : `

@@ -1,10 +1,37 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 507ec22973fca5b94182c045095c764279636b00280a0551862fdfa1b048cddd -->
+<!-- source-sha256: 8e3ca7406ef29a74b69ca8e38f2f9a968563d0979669dd38554a0e0ce1497193 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 인스턴스 값이 아닌 형식으로 준 class의 case 값은 그 형식 `{"new": "<member id>", "args": {...}}`를 이름하는 규칙으로
+  시험이 실패한다(GN-13f, B2.295). list나 tuple 안에서도 그렇다. 전에는 그 타입의 case 값을 아직 쓰지 않는다고만 했다.
+  class를 생성자 인자의 객체로 준 case는 `{"new": "<class>.new", "args": <그 객체>}`로 쓴다.
+
+- class만 구현하는 callback interface는 언어 코드를 부르는 코드를 생성하지 않는다(GN-6aw, B2.294): Go dispatch, 던져진
+  값의 table, 아무것도 만들지 않는 `Thrown`의 variant가 없다. 그 코드는 쓰이지 않아 경고를 거부하는 workspace lint가 실패했다.
+
+- Go는 생성 Rust의 지역 변수 이름(`input`, `result` 등)을 가진 parameter나 record field를 밑줄을 붙여 묶는다(GN-15g,
+  B2.292). parameter `input`이 인자 reader를 가려 `finish_input(input)`이 parameter를 받았고 crate가 compile되지 않았다(E0308).
+  Python과 Node crate의 runtime token은 `py_`와 `env_`이므로(GN-6ax) `py`나 `env`라는 parameter는 공개 이름을 유지하고
+  token을 가리지 않는다.
+
+- Node는 인자 없는 언어 함수를 `()`의 `Function`으로 `()`를 넘겨 부른다(GN-6av, B2.293). 전에는 napi가 구현하지 않는
+  `FnArgs<()>`를 적었다(E0277, E0599).
+
+- 인스턴스 값은 이 레포의 이름된 타입(library json의 `json_value` 등)을 돌려주는 factory로도 만들 수 있다. CK-22는 이를
+  class가 아니라며 거부했다. pick 단계 `"?"`는 optional 결과의 값을 취한다(GN-13f, B2.288).
+
+- record나 값 class(다른 레포의 것 포함)의 optional parameter는 코어에 `Option<&T>`로 넘어간다(GN-6, B2.289). 전에는 아직
+  생성하지 않는다며 거부했다.
+
+- Go는 다른 레포의 root 패키지를 그 라이브러리 이름으로 부르고 import에 그 이름을 적는다(GN-15f, B2.290). 한 레포의 두
+  라이브러리가 모두 레포의 패키지 이름을 가져, Go가 다른 쪽의 패키지를 같은 이름의 패키지로 거부했다.
+
+- 각 crate는 class마다 코어 타입이 소유 타입(`'static`)임을 단언한다(GN-6au, B2.291). 빌리는 코어 타입은 규칙을 이름하는
+  주석이 붙은 그 단언에서 실패한다.
 
 - class가 구현하는 callback interface의 trait 메서드를 코어 경로로 선언한 member는 trait의 `Failure<E>`를 던진다(GN-6w,
   B2.287). 코어 오류를 받는 `core_error`로 생성되어 crate가 compile되지 않았다(E0308).

@@ -373,7 +373,8 @@ the design ids are those of the binding design.
 
 - **GN-6** Each argument is converted into a `let` of the Rust type of T-1. A parameter of a type with two forms (text,
   latin1, bytes, source, path) is passed borrowed (`&String` and `&Vec<u8>` coerce to `&str` and `&[u8]`), an
-  `optional<T>` of one with `as_deref()`, a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
+  `optional<T>` of one with `as_deref()`, an `optional<T>` of a record or a value class (also of another repository)
+  with `as_ref()` (`Option<&T>`), a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
   record) by reference. A record is built from its expanded fields, which are owned. A return has the form that is usual for its Rust function
   (an accessor borrows, a computed value is owned), so the generated code binds it without a type and reads either
   form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field), except a return of `none`, which
@@ -549,6 +550,22 @@ the design ids are those of the binding design.
   crate with the core's own dependency line, which `binding scaffold` copies. Why: a second class of the record in
   the package of this contract would be another type, which a function of the repository of the record refuses, so
   one value could not pass through both packages.
+- **GN-6aw** A crate holds only the code that it uses (GN-4): the dispatch of Go, the table of thrown values and the
+  variants of `Thrown` exist only where language code runs: a callback unit that a member takes (GN-6d), a function
+  type, a value alias or a machine. A callback interface that only a class implements (GN-6w) calls no language code,
+  so a member whose Failure comes from its trait converts a `Raised` into a failure of kind internal, which no table
+  holds. Why: an item that nothing uses fails the lints of the workspace, which deny warnings.
+- **GN-6ax** The names that the generated Rust binds itself never equal a name of the contract. A name of the contract
+  is snake_case words without a trailing underscore, so the token of the runtime that every function of the Python
+  crate takes is `py_` (`py_: Python<'py>`) and that of the Node crate is `env_` (`env_: &'env Env`). A parameter named
+  `py` or `env` keeps its name, which Python takes as its keyword. Go binds its contract names in the C ABI, where no
+  name is public, so a parameter of the name of a local of an entry point takes the trailing underscore there
+  (GN-15j). Why: a parameter that shadows the token makes every conversion after it take the parameter, which does
+  not compile, and the name of a parameter is public in Python and PHP.
+- **GN-6av** Node calls a language function, a member of a callback (U-3) or a function value (GN-6z), as a napi
+  `Function` whose arguments are `FnArgs` of the converted values, and a function without arguments as a `Function`
+  of `()` that it calls with `()`. Why: napi implements the arguments of a call for `FnArgs` of one or more values and
+  for `()`, which it passes as no argument, and not for `FnArgs<()>`.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut dyn` of its trait when a member of the unit takes `&mut self`, and as
   `&dyn` otherwise, which the binding passes as `&mut` and `&` (B2.252); a `&mut` where the core takes `&` is refused by
@@ -1337,6 +1354,11 @@ the design ids are those of the binding design.
   and WASM the table of the class keeps the emptied lock under the handle of the object until the object is
   collected, so a later place of that handle is kind `consumed`. Why: a value that the core owns
   after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
+- **GN-6au** The core type of a class is owned (`'static`): each crate asserts it of the `core_type` of each class
+  (`const _: fn() = owned::<core_type>;` with `const fn owned<T: 'static>() {}`), so a core type that borrows fails
+  the build at that assertion with the reason in its comment; a `core_type` that names a lifetime is no Rust path of
+  the schema (CK-1). Why: the instance keeps its core value beyond every call, and the generated struct names no
+  lifetime; the generator reads no Rust (I-2), so the build of the crate is where a borrowing core type is found.
 - **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o) or
   `&mut self`; another member is refused by name. A cleanup with `self` consumes the object, and every later use of it
   is kind `consumed` (GN-6o). A cleanup with `&mut self` leaves the object: the core keeps that the cleanup was made
@@ -1849,9 +1871,19 @@ the design ids are those of the binding design.
   the missing value, and the C ABI writes the tag of an absent value for it, so `optional<keyed_map<T>>` is
   `*KeyedMap[T]`. An `optional` of an `optional` keeps its second pointer, because the nil of the inner pointer is a
   value of the outer type.
+- **GN-15j** The locals of the generated Rust of Go (GN-15): an entry point binds `args`, `len`, `result`, `input`,
+  `outcome`, `held` and `this`, and `in_<record>` takes `input`; the fields of a record are bound in both scopes. A
+  parameter or a field of the contract with one of these names is bound as that name with a trailing underscore (`input_`), and a record
+  literal writes `field: field_`. Why: a parameter of that name would shadow the local, so the reader of the arguments
+  or the buffer of the result would take the value of the parameter, which does not compile.
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
-  by its package name; the C ABI writes and reads it field by field as a record of this repository, through
+  under a name. The name of the package of a root module is the name of its library in lowercase letters and digits
+  (`crud-ui-validator` gives `cruduivalidator`), and that of another module is its package name; an import whose name
+  differs from the package name writes the name. Why: the package of a root module is named after the repository
+  (GN-15), so two libraries of one repository have packages of the same name, and the name of the library tells them
+  apart. The same name applies to every package of another repository that the code names: a callback unit (GN-6s),
+  a value class (GN-6x) and the package `<name>errors` (GN-15d); the C ABI writes and reads it field by field as a record of this repository, through
   `library_<library>::in_<record>` and `library_<library>::out_<record>` (GN-4c); a record of another repository with a field of a unit type, and
   one whose package has the name of a package of this repository, are refused by name. A library whose contract names no
   Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
@@ -2344,7 +2376,12 @@ the design ids are those of the binding design.
   or `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<step>], "then": [...]}`. `new` names a member
   that returns the class: a constructor, a static member, a function, or a method of any class; `from` names a member
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
-  and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
+  and `{"tuple": n}` of a tuple, and `"?"` takes the value of an `optional`, which the test requires to be present
+  (`{"from": "value.get", "receiver": ..., "args": {"key": "a"}, "pick": ["?"]}`); Go dereferences the pointer of an
+  optional whose absence is no nil pointer. A type named in `types` whose library is this repository is the class of
+  this contract that it names (T-3), at the member and at each step, so a factory that returns `json_value` of the
+  library json makes the class `value`. `receiver` is given when the member is a method, and is an instance value
+  itself.
   Among its own keys a case gives the arguments of the first factory, in contract order, whose every parameter has a
   key that is no key of a parameter of the member of the case: such a key holds an argument of that member, as `units`
   of a case of a method `get_units` does beside a factory `from_units`, and a receiver made from it is another value
@@ -2360,7 +2397,10 @@ the design ids are those of the binding design.
   the member as one step.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
-  a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not
+  a callback that a class of the case implements (GN-6w). An instance value is the one form of the value of a class of
+  origin `generated` in a case, also an item of a list or a part of a tuple (`{"new": "uploaded_file.new", "args":
+  {...}}`); another form, such as an object of the arguments of its constructor, fails the test of the case by name
+  with that rule. Why: one form for every place keeps one rule of how a case makes an instance (P-1). Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
   requires before the next step, so a kind that only an instance after a failed call reaches has a case. A call of
   `then` may hold `"faults": [...]`, the fault injection points of its own call in the form of the faults of a case

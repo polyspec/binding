@@ -24,7 +24,7 @@ const ALIAS_FILLS: Fill[] = [
 
 // GN-6as: the make function of Node.
 const NODE_WALK: WalkShape = {
-  generics: "<'env>", life: "<'env>", anon: "<'_>", env: { params: "env: &'env Env, ", args: 'env, ' }, value: "Unknown<'env>",
+  generics: "<'env>", life: "<'env>", anon: "<'_>", env: { params: "env_: &'env Env, ", args: 'env_, ' }, value: "Unknown<'env>",
   result: (type) => `Result<${type}, Fail>`, internal: (detail) => `Err(binding_error(BindingError::Internal { detail: ${detail} }))`, language: 'JavaScript',
 };
 const NODE_MADE = { name: 'made', type: "&mut BTreeMap<u64, Unknown<'env>>" };
@@ -33,24 +33,24 @@ const NODE_MADE = { name: 'made', type: "&mut BTreeMap<u64, Unknown<'env>>" };
 function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }: Walk): string {
   switch (form) {
     case 'null':
-      return leaf('null_out(env)');
+      return leaf('null_out(env_)');
     case 'bool':
-      return leaf('bool_out(env, value)');
+      return leaf('bool_out(env_, value)');
     case 'int':
-      if (kind === 'number') return leaf('js_literal_number(env, &value)');
-      return leaf(kind === 'int64' ? 'int_out(env, value)' : 'int_out(env, value.value())');
+      if (kind === 'number') return leaf('js_literal_number(env_, &value)');
+      return leaf(kind === 'int64' ? 'int_out(env_, value)' : 'int_out(env_, value.value())');
     case 'bigint':
-      if (kind === 'number') return leaf('js_literal_bigint(env, &value)');
-      return leaf(kind === 'int64' ? 'js_bigint(env, value)' : 'js_bigint(env, value.value())');
+      if (kind === 'number') return leaf('js_literal_bigint(env_, &value)');
+      return leaf(kind === 'int64' ? 'js_bigint(env_, value)' : 'js_bigint(env_, value.value())');
     case 'float':
-      if (kind === 'number') return leaf('js_literal_number(env, &value)');
-      if (kind === 'float') return leaf('float_out(env, value.value())');
+      if (kind === 'number') return leaf('js_literal_number(env_, &value)');
+      if (kind === 'float') return leaf('float_out(env_, value.value())');
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return leaf(`js_literal_number(env, &${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
+      return leaf(`js_literal_number(env_, &${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
     case 'text':
-      return leaf(kind === 'bytes' ? 'js_utf8(env, value.value())' : 'text_out(env, value)');
+      return leaf(kind === 'bytes' ? 'js_utf8(env_, value.value())' : 'text_out(env_, value)');
     case 'bytes':
-      return leaf(kind === 'text' ? 'js_bytes(env, value.as_bytes())' : 'js_bytes(env, value.value())');
+      return leaf(kind === 'text' ? 'js_bytes(env_, value.as_bytes())' : 'js_bytes(env_, value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
       // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
@@ -59,7 +59,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }:
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            let array = env.create_array(js_index(len)?).map_err(internal)?;
+            let array = env_.create_array(js_index(len)?).map_err(internal)?;
             made.insert(handle.raw(), array.to_unknown());
             ${level({ walks: true, fill: `OutFill::${fill}(array)`, made: 'array.to_unknown()' })}
         }`;
@@ -71,13 +71,13 @@ function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }:
             ${parts.head === '' ? '' : `${parts.head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            let map = js_new_map(env).map_err(internal)?;
+            let map = js_new_map(env_).map_err(internal)?;
             made.insert(handle.raw(), map.to_unknown());
             ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'map.to_unknown()' })}
         }`;
     }
     case 'native':
-      return leaf('native_object(env, &native)');
+      return leaf('native_object(env_, &native)');
     default:
       throw new Unsupported(`${alias.unit.id}: the Node form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -105,7 +105,7 @@ const rowIndex = (model: Model, library: string, unit: Unit): number =>
 // value. An object and a reference are the same instance at every position of their handle (U-7 (d)).
 function foreignMakeNode(model: Model, make: ForeignMake, kind: string, head: string, { put, level }: Walk): string {
   const index = rowIndex(model, make.library, make.unit);
-  const constructed = (type: string, argument: string): string => `let class = foreign_class(env, ${index}).map_err(internal)?;
+  const constructed = (type: string, argument: string): string => `let class = foreign_class(env_, ${index}).map_err(internal)?;
             let constructor: Function<'env, FnArgs<(${type},)>, Unknown<'env>> = unsafe { class.to_unknown().cast() }.map_err(internal)?;
             let instance = constructor.new_instance(FnArgs::from((${argument},))).map_err(js_fail)?;`;
   if (make.holds === 'content') {
@@ -121,7 +121,7 @@ function foreignMakeNode(model: Model, make: ForeignMake, kind: string, head: st
             if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            ${constructed("Unknown<'env>", 'null_out(env)?')}
+            ${constructed("Unknown<'env>", 'null_out(env_)?')}
             made.insert(handle.raw(), instance);
             let object: Object<'env> = unsafe { instance.cast() }.map_err(internal)?;
             ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Property(object, ${rustString(langName('node', make.set?.name ?? [], 'callable'))})`, made: 'instance' })}
@@ -131,7 +131,7 @@ function foreignMakeNode(model: Model, make: ForeignMake, kind: string, head: st
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            let map = js_new_map(env).map_err(internal)?;
+            let map = js_new_map(env_).map_err(internal)?;
             ${constructed("Unknown<'env>", 'map.to_unknown()')}
             made.insert(handle.raw(), instance);
             ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance' })}
@@ -175,7 +175,7 @@ function valueClassNode(model: Model, alias: ValueAlias, name: string, core: str
       closes.set('Items', `let items = items.to_unknown();
 Ok(${jsCall(make.member, 'class', 'items', "Unknown<'env>")})`);
       return `        OutValue::List { handle, len } => {
-            let items = env.create_array(js_index(len)?).map_err(internal)?;
+            let items = env_.create_array(js_index(len)?).map_err(internal)?;
             ${walk.level({ walks: true, fill: 'OutFill::Items(items)' })}
         }`;
     }
@@ -188,31 +188,31 @@ Ok(${jsCall(make.member, 'class', 'map', "Unknown<'env>")})`);
     return `        OutValue::Map(value) => {
             let handle = value.handle();
             let len = value.len();
-            let map_class = foreign_class(env, ${classIndex(model, make.map) < 0 ? 0 : classIndex(model, make.map)}).map_err(internal)?;
+            let map_class = foreign_class(env_, ${classIndex(model, make.map) < 0 ? 0 : classIndex(model, make.map)}).map_err(internal)?;
             let constructor: Function<'env, (), Unknown<'env>> = unsafe { map_class.to_unknown().cast() }.map_err(internal)?;
             let map: Object<'env> = unsafe { constructor.new_instance(()).map_err(js_fail)?.cast() }.map_err(internal)?;
             ${walk.level({ walks: true, fill: 'OutFill::Entries(map, None)' })}
         }`;
   }).join('\n');
   // The arms are written once here, so that the containers that they fill are known to the walk.
-  const ownClass = `let class = foreign_class(env, ${own}).map_err(internal)?;`;
+  const ownClass = `let class = foreign_class(env_, ${own}).map_err(internal)?;`;
   const opened = /\bclass\b/.test(arms({ put: (value) => value, leaf: (made) => made, level: () => '' })) ? ownClass : '';
   return `
 /// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
-fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
-    let class = foreign_class(env, ${own}).map_err(internal)?;
+fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+    let class = foreign_class(env_, ${own}).map_err(internal)?;
     if value.get_type().map_err(internal)? != ValueType::Object || !value.instanceof(class).map_err(js_fail)? {
         return Err(type_error(subject, ${rustString(label)}));
     }
-    let mut host = JsHost::new(env);
+    let mut host = JsHost::new(env_);
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
 
 /// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
-fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(env, root, &mut source)
+    make_${name}(env_, root, &mut source)
 }
 ${walkRust(NODE_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
 }
@@ -243,15 +243,15 @@ function valueClassesNodeHostAll(model: Model): string {
     const by = row.by.kind === 'property'
       ? `object.get_named_property::<String>(${rustString(langName('node', row.by.name, 'callable'))})?`
       : `object.get_named_property::<Function<'env, (), String>>(${rustString(langName('node', row.by.name, 'callable'))})?.apply(object, ())?`;
-    return [`        if value.instanceof(foreign_class(self.env, ${classIndex(model, alias.unit)})?)? {
+    return [`        if value.instanceof(foreign_class(self.env_, ${classIndex(model, alias.unit)})?)? {
             let by: String = ${by};
             let (kind, read) = match by.as_str() {
 ${arms}
                 other => return Err(napi::Error::from_reason(format!("GN-6x: ${label} gives the kind {other}, which its in row has no case for"))),
             };
             return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Foreign(object, read)) }));
-        }`, ...row.maps.map((map) => `        if value.instanceof(foreign_class(self.env, ${classIndex(model, map.unit)})?)? {
-            let pairs: Object<'env> = js_global_member_call(self.env, "Array", "from", value)?;
+        }`, ...row.maps.map((map) => `        if value.instanceof(foreign_class(self.env_, ${classIndex(model, map.unit)})?)? {
+            let pairs: Object<'env> = js_global_member_call(self.env_, "Array", "from", value)?;
             let len = u64::from(pairs.get_array_length()?);
             return Ok(Some(HostValue::Map { handle: self.hold(Held::Pairs(pairs)), len }));
         }`)];
@@ -262,11 +262,11 @@ ${arms}
     const read = `(${rustString(langName('node', row.read.name, 'callable'))}, false, ReadAs::${row.as})`;
     const index = rowIndex(model, row.library, row.unit);
     checks.push(row.as === 'Content'
-      ? `        if value.instanceof(foreign_class(self.env, ${index})?)? {
+      ? `        if value.instanceof(foreign_class(self.env_, ${index})?)? {
             let handle = self.foreign_identity(object, ${read})?;
             return Ok(Some(HostValue::Value { kind: ${row.variant}, handle }));
         }`
-      : `        if value.instanceof(foreign_class(self.env, ${index})?)? {
+      : `        if value.instanceof(foreign_class(self.env_, ${index})?)? {
             return Ok(Some(HostValue::Value { kind: ${row.variant}, handle: self.hold(Held::Foreign(object, Some(${read}))) }));
         }`);
   }
@@ -277,7 +277,7 @@ ${arms}
         let seen = match self.foreign_seen {
             Some(seen) => seen,
             None => {
-                let seen = js_new_map(self.env)?;
+                let seen = js_new_map(self.env_)?;
                 self.foreign_seen = Some(seen);
                 seen
             }
@@ -290,7 +290,7 @@ ${arms}
         }
         let handle = self.hold(Held::Foreign(object, Some(read)));
         let position = u32::try_from(handle.raw()).map_err(|_wide| napi::Error::from_reason("B-1: too many values in one walk"))?;
-        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env)?)?;
+        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env_)?)?;
         Ok(handle)
     }
 ` : '';
@@ -311,11 +311,11 @@ pub fn register_foreign(classes: Vec<Function<'_, (), ()>>) -> napi::Result<()> 
 }
 
 /// GN-6x: the class of another repository at its position, as the object that holds its static members.
-fn foreign_class(env: &Env, index: usize) -> napi::Result<Object<'_>> {
+fn foreign_class(env_: &Env, index: usize) -> napi::Result<Object<'_>> {
     let Some(class) = FOREIGN.get().and_then(|classes| classes.get(index)) else {
         return Err(napi::Error::from_reason("GN-6x: the classes of other repositories are not registered"));
     };
-    let function = class.borrow_back(env)?;
+    let function = class.borrow_back(env_)?;
     unsafe { function.to_unknown().cast() }
 }
 
@@ -440,20 +440,20 @@ export function aliasNode(model: Model, alias: ValueAlias): string {
   const label = langName('node', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassNode(model, alias, name, core, failure);
-  const arms = (walk: Walk): string => outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ', (kept, field, holds, head) => keptMakeNode(model, kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMakeNode(model, make, kind, head, walk), walk.leaf).join('\n');
+  const arms = (walk: Walk): string => outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind, walk), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env_, ', (kept, field, holds, head) => keptMakeNode(model, kept, field, holds, head, walk), 'out_', (make, kind, head) => foreignMakeNode(model, make, kind, head, walk), walk.leaf).join('\n');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
-fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = JsHost::new(env);
+fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
+    let mut host = JsHost::new(env_);
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
 
 /// U-7: a core value of ${label} leaves as the JavaScript values of its out rows.
-fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
     let mut made = BTreeMap::new();
-    make_${name}(env, root, &mut source, &mut made)
+    make_${name}(env_, root, &mut source, &mut made)
 }
 ${walkRust(NODE_WALK, name, ALIAS_FILLS, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("U-7: no out row of the kind {}", other.kind().as_str()) })),', '', NODE_MADE)}`;
 }
@@ -471,7 +471,7 @@ enum Held<'env> {
 }
 
 struct JsHost<'env> {
-    env: &'env Env,
+    env_: &'env Env,
     held: Vec<Held<'env>>,
     containers: Option<Object<'env>>,
     container_values: Vec<HostValue>,
@@ -479,8 +479,8 @@ struct JsHost<'env> {
 }
 
 impl<'env> JsHost<'env> {
-    fn new(env: &'env Env) -> Self {
-        Self { env, held: Vec::new(), containers: None, container_values: Vec::new(), marked: 0/*NEW*/ }
+    fn new(env_: &'env Env) -> Self {
+        Self { env_, held: Vec::new(), containers: None, container_values: Vec::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held<'env>) -> Handle {
@@ -512,13 +512,13 @@ impl<'env> JsHost<'env> {
                 Ok(HostValue::Text(HostText::Utf16(units)))
             }
             ValueType::BigInt => {
-                let text: String = js_global_call(self.env, "String", value)?;
+                let text: String = js_global_call(self.env_, "String", value)?;
                 Ok(match text.parse::<i64>() {
                     Ok(int) => HostValue::Int(int),
                     Err(_wide) => HostValue::Number(text),
                 })
             }
-            ValueType::Function => Ok(HostValue::Callable(js_native(self.env, value)?)),
+            ValueType::Function => Ok(HostValue::Callable(js_native(self.env_, value)?)),
             ValueType::Object => self.describe_object(value),
             ValueType::Symbol => Ok(HostValue::Other { type_name: String::from("symbol"), handle: self.mark() }),
             _other => Ok(HostValue::Other { type_name: String::from("external"), handle: self.mark() }),
@@ -531,7 +531,7 @@ impl<'env> JsHost<'env> {
         let containers = match self.containers {
             Some(containers) => containers,
             None => {
-                let containers = js_new_map(self.env)?;
+                let containers = js_new_map(self.env_)?;
                 self.containers = Some(containers);
                 containers
             }
@@ -545,7 +545,7 @@ impl<'env> JsHost<'env> {
         let described = self.describe_object_value(value)?;
         if matches!(described, HostValue::List { .. } | HostValue::Map { .. } | HostValue::PlainObject { .. }) {
             let index = u32::try_from(self.container_values.len()).map_err(|_wide| napi::Error::from_reason("GN-6at: too many containers in one walk"))?;
-            js_map_set(containers, value, ToNapiValue::into_unknown(index, self.env)?)?;
+            js_map_set(containers, value, ToNapiValue::into_unknown(index, self.env_)?)?;
             self.container_values.push(described.clone());
         }
         Ok(described)
@@ -569,10 +569,10 @@ impl<'env> JsHost<'env> {
             }
             return Ok(HostValue::Other { type_name: js_constructor_name(object)?, handle: self.mark() });
         }
-        let global = self.env.get_global()?;
+        let global = self.env_.get_global()?;
         let map_class: Unknown<'_> = global.get_named_property("Map")?;
         if value.instanceof(map_class)? {
-            let pairs: Object<'env> = js_global_member_call(self.env, "Array", "from", value)?;
+            let pairs: Object<'env> = js_global_member_call(self.env_, "Array", "from", value)?;
             let len = u64::from(pairs.get_array_length()?);
             return Ok(HostValue::Map { handle: self.hold(Held::Pairs(pairs)), len });
         }
@@ -581,17 +581,17 @@ impl<'env> JsHost<'env> {
         let object_prototype: Unknown<'_> = object_class.get_named_property("prototype")?;
         let plain = if prototype.get_type()? == ValueType::Null {
             Some(Prototype::Null)
-        } else if self.env.strict_equals(prototype, object_prototype)? {
+        } else if self.env_.strict_equals(prototype, object_prototype)? {
             Some(Prototype::Object)
         } else {
             None
         };
         if let Some(prototype) = plain {
-            let keys: Object<'env> = js_global_member_call(self.env, "Object", "keys", value)?;
+            let keys: Object<'env> = js_global_member_call(self.env_, "Object", "keys", value)?;
             let len = u64::from(keys.get_array_length()?);
             return Ok(HostValue::PlainObject { handle: self.hold(Held::Properties(object, keys)), len, prototype });
         }
-        Ok(HostValue::Object { native: js_native(self.env, value)?, type_name: js_constructor_name(object)?, json_serializable: false })
+        Ok(HostValue::Object { native: js_native(self.env_, value)?, type_name: js_constructor_name(object)?, json_serializable: false })
     }
 }
 
@@ -634,15 +634,15 @@ impl HostValues for JsHost<'_> {
 }
 
 /// A function of the global object called with one value, such as String(value).
-fn js_global_call<'env, T: FromNapiValue>(env: &'env Env, name: &str, value: Unknown<'env>) -> napi::Result<T> {
-    let function: Function<'env, FnArgs<(Unknown<'env>,)>, T> = env.get_global()?.get_named_property(name)?;
+fn js_global_call<'env, T: FromNapiValue>(env_: &'env Env, name: &str, value: Unknown<'env>) -> napi::Result<T> {
+    let function: Function<'env, FnArgs<(Unknown<'env>,)>, T> = env_.get_global()?.get_named_property(name)?;
     function.call(FnArgs::from((value,)))
 }
 
 /// A member function of a global object called with one value, such as Array.from(value).
-fn js_global_member_call<'env, T: FromNapiValue>(env: &'env Env, object: &str, name: &str, value: Unknown<'env>) -> napi::Result<T> {
+fn js_global_member_call<'env, T: FromNapiValue>(env_: &'env Env, object: &str, name: &str, value: Unknown<'env>) -> napi::Result<T> {
     // A global class is a function, which an Object of napi refuses unless unchecked.
-    let holder: Object<'env> = env.get_global()?.get_named_property_unchecked(object)?;
+    let holder: Object<'env> = env_.get_global()?.get_named_property_unchecked(object)?;
     let function: Function<'env, FnArgs<(Unknown<'env>,)>, T> = holder.get_named_property(name)?;
     function.apply(holder, FnArgs::from((value,)))
 }
@@ -662,8 +662,8 @@ fn js_constructor_name(object: Object<'_>) -> napi::Result<String> {
 }
 
 /// U-7: a new Map, which make fills.
-fn js_new_map(env: &Env) -> napi::Result<Object<'_>> {
-    let class: Function<'_, (), Unknown<'_>> = env.get_global()?.get_named_property("Map")?;
+fn js_new_map(env_: &Env) -> napi::Result<Object<'_>> {
+    let class: Function<'_, (), Unknown<'_>> = env_.get_global()?.get_named_property("Map")?;
     let map = class.new_instance(())?;
     unsafe { map.cast() }
 }
@@ -679,35 +679,35 @@ fn js_map_get<'env>(map: Object<'env>, key: Unknown<'env>) -> napi::Result<Unkno
 }
 
 /// U-7: an integer as a bigint.
-fn js_bigint(env: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(BigInt::from(value), env).map_err(internal)
+fn js_bigint(env_: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(BigInt::from(value), env_).map_err(internal)
 }
 
 /// U-7: the literal token of a number (F-1 (a)) as a bigint, without loss.
-fn js_literal_bigint<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
-    let text = text_out(env, literal)?;
-    js_global_call(env, "BigInt", text).map_err(internal)
+fn js_literal_bigint<'env>(env_: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
+    let text = text_out(env_, literal)?;
+    js_global_call(env_, "BigInt", text).map_err(internal)
 }
 
 /// U-7: the literal token of a number as a JavaScript number, the nearest double.
-fn js_literal_number<'env>(env: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
+fn js_literal_number<'env>(env_: &'env Env, literal: &str) -> Result<Unknown<'env>, Fail> {
     match literal.parse::<f64>() {
-        Ok(number) => float_out(env, number),
+        Ok(number) => float_out(env_, number),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
 
 /// U-7: bytes that are UTF-8 as a string.
-fn js_utf8<'env>(env: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
+fn js_utf8<'env>(env_: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => text_out(env, text),
+        Ok(text) => text_out(env_, text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }
 
 /// U-7: bytes as a Uint8Array.
-fn js_bytes<'env>(env: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
-    ToNapiValue::into_unknown(napi::bindgen_prelude::Uint8Array::from(bytes.to_vec()), env).map_err(internal)
+fn js_bytes<'env>(env_: &'env Env, bytes: &[u8]) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(napi::bindgen_prelude::Uint8Array::from(bytes.to_vec()), env_).map_err(internal)
 }
 
 /// A count or an index of the core as the u32 of a JavaScript array.
@@ -813,14 +813,14 @@ export function nodeHost(model: Model): string {
       const struct = langName('node', r.object.unit.unit.name, 'class');
       return `
         // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-        if unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), value.raw()) }.is_ok() {
+        if unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env_.raw(), value.raw()) }.is_ok() {
             let handle = self.hold(Held::Value(object, ${index}));
             return Ok(HostValue::Value { kind: ${r.variant}, handle });
         }`;
     }
     const position = model.kept.findIndex((k) => k === r.kept?.unit);
     return `
-        if value_prototype(self.env, ${position}, object)? {
+        if value_prototype(self.env_, ${position}, object)? {
             let handle = self.identity(object, ${index})?;
             return Ok(HostValue::Value { kind: ${r.variant}, handle });
         }`;
@@ -840,7 +840,7 @@ export function nodeHost(model: Model): string {
     return `
             ${index} => {
                 // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
-                let instance = unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), object.raw()) }.map_err(js_raised)?;
+                let instance = unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env_.raw(), object.raw()) }.map_err(js_raised)?;
                 ${o.unit.lock === undefined ? `let value = ${o.property.corePath}(&instance.inner);` : `let held = instance.inner.read(${rustString(struct)}, &[]).map_err(|error| raised(Thrown::Binding(binding_error(error))))?;
                 let value = ${o.property.corePath}(&held);`}
                 Ok(${readValue(o.property.returns as string)})
@@ -853,7 +853,7 @@ export function nodeHost(model: Model): string {
         let seen = match self.seen {
             Some(seen) => seen,
             None => {
-                let seen = js_new_map(self.env)?;
+                let seen = js_new_map(self.env_)?;
                 self.seen = Some(seen);
                 seen
             }
@@ -865,7 +865,7 @@ export function nodeHost(model: Model): string {
         }
         let handle = self.hold(Held::Value(object, read));
         let position = u32::try_from(handle.raw()).map_err(|_wide| napi::Error::from_reason("B-1: too many values in one walk"))?;
-        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env)?)?;
+        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env_)?)?;
         Ok(handle)
     }` : '';
   return NODE_HOST
@@ -897,30 +897,30 @@ thread_local! {
 
 /// GN-6af: the entry registers the prototype of each value class when it loads.
 #[napi(js_name = "__registerValues")]
-pub fn register_values(env: &Env, prototypes: Vec<Unknown<'_>>) -> napi::Result<()> {
-    let references = prototypes.iter().map(|prototype| unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), prototype.raw()) }).collect::<napi::Result<Vec<_>>>()?;
+pub fn register_values(env_: &Env, prototypes: Vec<Unknown<'_>>) -> napi::Result<()> {
+    let references = prototypes.iter().map(|prototype| unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env_.raw(), prototype.raw()) }).collect::<napi::Result<Vec<_>>>()?;
     VALUE_PROTOTYPES.with_borrow_mut(|registered| *registered = references);
     Ok(())
 }
 
 /// GN-6af: the registered prototype of a value class.
-fn value_class<'env>(env: &'env Env, position: usize) -> napi::Result<Unknown<'env>> {
+fn value_class<'env>(env_: &'env Env, position: usize) -> napi::Result<Unknown<'env>> {
     VALUE_PROTOTYPES.with_borrow(|registered| match registered.get(position) {
-        Some(prototype) => prototype.get_value(env),
+        Some(prototype) => prototype.get_value(env_),
         None => Err(napi::Error::from_reason("GN-6af: the value classes are not registered")),
     })
 }
 
 /// GN-6af: whether the prototype of an object is the prototype of the value class.
-fn value_prototype(env: &Env, position: usize, object: Object<'_>) -> napi::Result<bool> {
+fn value_prototype(env_: &Env, position: usize, object: Object<'_>) -> napi::Result<bool> {
     let prototype = object.get_prototype()?;
-    env.strict_equals(prototype, value_class(env, position)?)
+    env_.strict_equals(prototype, value_class(env_, position)?)
 }
 
 /// GN-6af: a new instance of a value class, whose properties make defines.
-fn value_instance(env: &Env, position: usize) -> Result<Object<'_>, Fail> {
-    let prototype = value_class(env, position).map_err(internal)?;
-    js_global_member_call(env, "Object", "create", prototype).map_err(internal)
+fn value_instance(env_: &Env, position: usize) -> Result<Object<'_>, Fail> {
+    let prototype = value_class(env_, position).map_err(internal)?;
+    js_global_member_call(env_, "Object", "create", prototype).map_err(internal)
 }
 
 /// GN-6af: a kept value as the own enumerable data property of an instance, writable when the property is.
@@ -943,8 +943,8 @@ function keptMakeNode(model: Model, kept: KeptClass, field: KeptField, holds: 'e
             if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            let mut instance = value_instance(env, ${position})?;
-            value_define(&mut instance, ${name}, null_out(env)?, true)?;
+            let mut instance = value_instance(env_, ${position})?;
+            value_define(&mut instance, ${name}, null_out(env_)?, true)?;
             made.insert(handle.raw(), instance.to_unknown());
             ${level({ walks: false, waiting: 'Some(*value)', fill: `OutFill::Defined(instance, ${name})`, made: 'instance.to_unknown()' })}
         }`;
@@ -953,8 +953,8 @@ function keptMakeNode(model: Model, kept: KeptClass, field: KeptField, holds: 'e
             ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
                 return Ok(OutStep::Put(*made));
             }
-            let mut instance = value_instance(env, ${position})?;
-            let map = js_new_map(env).map_err(internal)?;
+            let mut instance = value_instance(env_, ${position})?;
+            let map = js_new_map(env_).map_err(internal)?;
             value_define(&mut instance, ${name}, map.to_unknown(), ${String(field.writable)})?;
             made.insert(handle.raw(), instance.to_unknown());
             ${level({ walks: true, fill: 'OutFill::Entries(map, None)', made: 'instance.to_unknown()' })}
@@ -1002,52 +1002,52 @@ export function keptCheckNode(kept: KeptClass): string {
   return `
 /// GN-6af: judges the arguments of the constructor of ${js}, which the class of the entry keeps.
 #[napi(js_name = ${rustString(`__check${js}`)})]
-pub fn check_${rustField(kept.unit.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<()> {
+pub fn check_${rustField(kept.unit.name).replace(/^r#/, '')}<'env>(env_: &'env Env${params}) -> napi::Result<()> {
     guard(|| {
-        let mut host = JsHost::new(env);
+        let mut host = JsHost::new(env_);
 ${lines.join('\n')}
         ${kept.constructor.corePath}(&mut host, ${kept.fields.map(variable).join(', ')}).map_err(failure_error)
     })
-    .map_err(|fail| throw(env, fail))
+    .map_err(|fail| throw(env_, fail))
 }
 `;
 }
 
-// GN-6u, GN-6z: the Natives of Node, which a value alias and a function type hold: the owner table, the env that
+// GN-6u, GN-6z: the Natives of Node, which a value alias and a function type hold: the owner table, the env_ that
 // releases its references and the call of a function on the owner thread.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const NODE_NATIVE = (`${ownedNatives('napi::UnknownRef<false>', 'release_references(references);', true)}
 thread_local! {
-    /// GN-6u: the env of the table of this thread, which releases its references.
+    /// GN-6u: the env_ of the table of this thread, which releases its references.
     static NATIVE_ENV: std::cell::Cell<napi::sys::napi_env> = const { std::cell::Cell::new(std::ptr::null_mut()) };
 }
 
-/// GN-6u: releases references of the env of this thread. A reference that napi cannot delete stays with the env,
+/// GN-6u: releases references of the env_ of this thread. A reference that napi cannot delete stays with the env_,
 /// which frees it when it ends.
 fn release_references(references: Vec<napi::UnknownRef<false>>) {
-    let env = Env::from_raw(NATIVE_ENV.get());
+    let env_ = Env::from_raw(NATIVE_ENV.get());
     for reference in references {
-        let _kept = reference.unref(&env);
+        let _kept = reference.unref(&env_);
     }
 }
 
 /// GN-6u: the threadsafe function of the owner of this thread, without a JavaScript function, which does not keep the
 /// event loop alive.
-fn owner_waker(env: &Env) -> napi::Result<Waker> {
+fn owner_waker(env_: &Env) -> napi::Result<Waker> {
     let text = "polyspec-release";
     let length = isize::try_from(text.len()).map_err(|error| napi::Error::from_reason(error.to_string()))?;
     let mut name = std::ptr::null_mut();
-    // SAFETY: the env is the live env of this thread and the text is UTF-8 of the length given.
-    let status = unsafe { napi::sys::napi_create_string_utf8(env.raw(), text.as_ptr().cast(), length, &raw mut name) };
+    // SAFETY: the env_ is the live env_ of this thread and the text is UTF-8 of the length given.
+    let status = unsafe { napi::sys::napi_create_string_utf8(env_.raw(), text.as_ptr().cast(), length, &raw mut name) };
     if status != napi::sys::Status::napi_ok {
         return Err(napi::Error::from_reason("GN-6u: the name of the threadsafe function"));
     }
     let mut waker = std::ptr::null_mut();
-    // SAFETY: the env is the live env of this thread; the function has no JavaScript function, so napi calls
+    // SAFETY: the env_ is the live env_ of this thread; the function has no JavaScript function, so napi calls
     // release_on_owner, and the queue has no limit and one thread, the owner.
     let status = unsafe {
         napi::sys::napi_create_threadsafe_function(
-            env.raw(),
+            env_.raw(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             name,
@@ -1063,8 +1063,8 @@ fn owner_waker(env: &Env) -> napi::Result<Waker> {
     if status != napi::sys::Status::napi_ok {
         return Err(napi::Error::from_reason("GN-6u: the threadsafe function of the owner"));
     }
-    // SAFETY: the function was made on this thread, in this env.
-    let status = unsafe { napi::sys::napi_unref_threadsafe_function(env.raw(), waker) };
+    // SAFETY: the function was made on this thread, in this env_.
+    let status = unsafe { napi::sys::napi_unref_threadsafe_function(env_.raw(), waker) };
     if status != napi::sys::Status::napi_ok {
         return Err(napi::Error::from_reason("GN-6u: the unref of the threadsafe function"));
     }
@@ -1072,15 +1072,15 @@ fn owner_waker(env: &Env) -> napi::Result<Waker> {
 }
 
 /// GN-6u: a JavaScript value that a core may keep, as a Native of the table of this thread; the cleanup hook of the
-/// env is registered with the table.
-fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
+/// env_ is registered with the table.
+fn js_native(env_: &Env, value: Unknown<'_>) -> napi::Result<Native> {
     if OWNED.with_borrow(Option::is_none) {
         let Some((owner, generation)) = native_owner() else {
             return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned"));
         };
         // The function is made before the cleanup hook is added, so the hook, which napi runs in the reverse order of
         // the hooks, aborts it before napi finalizes it.
-        let waker = owner_waker(env)?;
+        let waker = owner_waker(env_)?;
         match OWNERS.lock() {
             Ok(mut owners) => match owners.get_mut(owner) {
                 Some(found) => found.waker = waker,
@@ -1088,20 +1088,20 @@ fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
             },
             Err(_poisoned) => return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned")),
         }
-        env.add_env_cleanup_hook((), |()| clean_up_native())?;
-        NATIVE_ENV.set(env.raw());
+        env_.add_env_cleanup_hook((), |()| clean_up_native())?;
+        NATIVE_ENV.set(env_.raw());
         OWNED.with_borrow_mut(|owned| *owned = Some(OwnerTable { owner, generation, next: 0, values: BTreeMap::new() }));
     }
-    // SAFETY: the value is a live value of this env; from_napi_value creates a reference to it.
-    let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }?;
+    // SAFETY: the value is a live value of this env_; from_napi_value creates a reference to it.
+    let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env_.raw(), value.raw()) }?;
     keep_native(reference).ok_or_else(|| napi::Error::from_reason("GN-6u: this thread has no table"))
 }
 
-/// GN-6u: the JavaScript value that entered as the Native; one of an ended env, or of another thread, is kind internal.
-fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>, Fail> {
+/// GN-6u: the JavaScript value that entered as the Native; one of an ended env_, or of another thread, is kind internal.
+fn native_object<'env>(env_: &'env Env, native: &Native) -> Result<Unknown<'env>, Fail> {
     let found = native.downcast::<OwnedNative>().and_then(|native| {
         OWNED.with_borrow(|owned| match owned {
-            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(|reference| reference.get_value(env)),
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(|reference| reference.get_value(env_)),
             _ => None,
         })
     });
@@ -1112,15 +1112,15 @@ fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>,
 }
 
 /// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
-fn kept_function_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
+fn kept_function_in(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
     }
-    js_native(env, value).map_err(internal)
+    js_native(env_, value).map_err(internal)
 }
 
-/// GN-6z: the env of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
-/// and a call after the cleanup of the env is kind internal. The failure is a BindingError, which any thread may keep.
+/// GN-6z: the env_ of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
+/// and a call after the cleanup of the env_ is kind internal. The failure is a BindingError, which any thread may keep.
 fn native_env(native: &Native, subject: &str) -> Result<Env, BindingError> {
     let Some(native) = native.downcast::<OwnedNative>() else {
         return Err(BindingError::Internal { detail: String::from("GN-6u: a native value that no JavaScript value entered as") });
@@ -1129,7 +1129,7 @@ fn native_env(native: &Native, subject: &str) -> Result<Env, BindingError> {
         return Err(BindingError::WrongThread { subject: subject.to_owned() });
     }
     if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
-        return Err(BindingError::Internal { detail: String::from("GN-6u: the env of the function has ended") });
+        return Err(BindingError::Internal { detail: String::from("GN-6u: the env_ of the function has ended") });
     }
     Ok(Env::from_raw(NATIVE_ENV.get()))
 }

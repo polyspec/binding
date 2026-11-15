@@ -1546,6 +1546,21 @@ describe('CK-22 instance values (GN-13f)', () => {
     assert.match(messages((c) => { c.gate_enter[0].receiver.new = 'tag.nothing'; }), /CK-22 the case an_open_gate_lets_its_tag_pass of gate\.enter: the receiver names tag\.nothing, which is no member/);
     assert.match(messages((c) => { c.gate_enter[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.new gives \{"unit":"tag"\}, not the class gate/);
   });
+  test('a named type of this repository is its class, and the step "?" takes the value of an optional (T-3, GN-13f)', () => {
+    const named = (returns: (type: string) => unknown, pick?: unknown[]): Finding[] => {
+      const contract = read('packages/rust/interface.json');
+      contract.types = { json_value: { library: 'classes', unit: 'gate' } };
+      const tag = contract.units.find((u: any) => u.id === 'tag');
+      tag.members.find((m: any) => m.id === 'tag.gates').returns = returns('json_value');
+      const cases = read('contracts/cases.json');
+      if (pick !== undefined) cases.gate_enter[1].receiver.pick = pick;
+      // CK-9 refuses a class that is no value unit under json_value; this test reads the instance values only.
+      return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-22');
+    };
+    assert.deepEqual(named((type) => ({ list: type })), []);
+    assert.deepEqual(named((type) => ({ list: { optional: type } }), [{ index: 1 }, '?']), []);
+    assert.match(named((type) => ({ list: type }), [{ index: 1 }, '?']).map((f) => f.message).join('\n'), /step 1 of the pick of the receiver takes the value of \{"unit":"gate"\}, which is no optional/);
+  });
   test('a method without its receiver, and args that are not the parameters', () => {
     assert.match(messages((c) => { delete c.gate_enter[0].receiver.receiver; }), /tag\.gate is a method, so the value gives its receiver/);
     assert.match(messages((c) => { c.gate_enter[0].receiver.receiver.args = {}; }), /the args of the receiver of the receiver give no name of tag\.new/);
