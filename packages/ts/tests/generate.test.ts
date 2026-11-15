@@ -4680,10 +4680,10 @@ test('a case writes its files into the directory of its test before its values a
   // shapes.joined takes a path, which leaves out WASM (CK-15); shapes.length is generated for WASM too.
   const { contract, caseFiles } = shapes();
   const cases = caseFiles.get('contracts/cases.json') as any;
-  cases.joined[0].files = { 'a/b': 'stored\n', c: { hex: '00ff' } };
-  cases.length[0].files = { held: 'x' };
+  cases.joined[0]['@files'] = { 'a/b': 'stored\n', c: { hex: '00ff' } };
+  cases.length[0]['@files'] = { held: 'x' };
   // The case that raises writes its files too.
-  cases.length[1].files = { held: { hex: '' } };
+  cases.length[1]['@files'] = { held: { hex: '' } };
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
   const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
   // The bytes of a file are the UTF-8 of its text or the bytes of its hex, given to the helper as hex.
@@ -4718,10 +4718,10 @@ test('a case writes its files into the directory of its test before its values a
   for (const bad of [[], { '../a': 'x' }, { a: 1 }, { a: { hex: 'F' } }]) {
     const { contract: refusedContract, caseFiles: refusedFiles } = shapes();
     const kase = (refusedFiles.get('contracts/cases.json') as any).length[0];
-    kase.files = bad;
+    kase['@files'] = bad;
     const refusedOut = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles });
     const refusedWasm = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles, targets: ['wasm'] });
-    const reason = `the case ${kase.id} of shapes.length: files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
+    const reason = `the case ${kase.id} of shapes.length: @files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
     const written: [Map<string, string | Buffer>, string, string][] = [
       [refusedOut, 'packages/python/generated/tests/test_generated.py', `self.fail(${JSON.stringify(reason)})`],
       [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
@@ -10012,5 +10012,53 @@ test('a callback parameter without keeps passes the core a shared borrow when no
     assert.match(lib, /polyspec_sample::ask\(&\{ feed \}, /, path);
     assert.doesNotMatch(lib, /polyspec_sample::ask\(&mut /, path);
     assert.match(lib, /polyspec_sample::resolve\(&mut \{ lookup \}, /, path);
+  }
+});
+
+test('B-10: a class whose factory waits is made inside an async function that the test awaits, so the test file loads (GN-6p)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'tag.lease') member.wait = 'blocking_io';
+  const caseFiles = new Map([['contracts/cases.json', read('contracts/cases.json')]]);
+  for (const [target, path] of [['node', 'packages/ts/generated/tests/generated.test.mjs'], ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs']] as const) {
+    const tests = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: [target] }), path);
+    const body = /test\('B-10: Lease warns when it is destroyed without release\(\)', async \(\) => \{[\s\S]*?\n\}\);/.exec(tests)?.[0] ?? '';
+    assert.notEqual(body, '', target);
+    // An await belongs to an async function: in the function that drops the object, the file would not load at all.
+    if (body.includes('await tag') || /await [^(]*\.lease\(/.test(body)) assert.match(body, /await \(async \(\) => \{\n {4}[^\n]*await [^\n]*;\n {2}\}\)\(\);\n {2}gc\(\);/, target);
+    assert.doesNotMatch(body, /\(\(\) => \{\n {4}[^\n]*\bawait\b/, target);
+    // The file parses as a module.
+    const dir = mkdtempSync(join(tmpdir(), 'b10-'));
+    try {
+      writeFileSync(join(dir, 'generated.test.mjs'), tests);
+      const checked = spawnSync(process.execPath, ['--check', join(dir, 'generated.test.mjs')], { encoding: 'utf8' });
+      assert.equal(checked.status, 0, `${target}: ${checked.stderr}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('Go: the release function of a class without cleanup is written as gofmt writes it, whatever the length of its symbol (T-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  // gofmt keeps a function body on the line of its header only while both are short, so the body has its own line.
+  assert.ok(binding.includes('func ReleaseGate(handle uint64) {\n\tC.polyspec_classes___release_gate(C.uint64_t(handle))\n}'), 'Go writes the body of ReleaseGate on its own line');
+  assert.doesNotMatch(binding, /^func Release\w+\(handle uint64\) \{ /m);
+});
+
+test('a case whose parameter or expected value is named files keeps it, because the files of a case are under @files (G-5, GN-13i)', () => {
+  const { contract, caseFiles } = shapes();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  // A key files of the contract's own names, as an expected list of a case, is no list of files of the case.
+  cases.length[0].files = [];
+  cases.length[1].files = [{ name: 'docs', filename: 'a.txt' }];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+  const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
+  for (const [files, path] of [[out, 'packages/python/generated/tests/test_generated.py'], [out, 'packages/ts/generated/tests/generated.test.mjs'], [out, 'packages/php-ext/generated/tests/GeneratedTest.php'], [out, 'packages/go/zz_generated_test.go'], [wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs']] as const) {
+    const tests = text(files, path);
+    assert.ok(!tests.includes('GN-13i'), `${path} refuses no case for its key files`);
+    assert.ok(!/case_?[Ff]ile\(/.test(tests), `${path} writes no file for the key files`);
   }
 });
