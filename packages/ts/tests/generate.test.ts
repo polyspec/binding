@@ -4078,6 +4078,21 @@ test('a class that implements a callback interface has its members and stands fo
   assert.throws(() => variants((c) => { unitOf(c, 'ribbon').abstract = true; }), /ribbon: an abstract class is not generated yet/);
 });
 
+test('a member that a class declares with the path of a trait method of a callback interface that it implements raises the Failure of the trait (E-1c, GN-6w)', () => {
+  const declared = (c: any): void => {
+    const own = { ...unitOf(c, 'tail').members[0], id: 'ribbon.last', raises: [], wait: 'none', core: { path: 'polyspec_variants::Tail::last', receiver: '&self', result: true } };
+    delete own.async_allowed;
+    unitOf(c, 'ribbon').members.push(own);
+  };
+  const out = variants(declared, ['python', 'node', 'php', 'wasm', 'go']);
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /polyspec_variants::Tail::last\(/, path);
+    assert.doesNotMatch(lib, /Tail::last\([^\n]*\)\)? \{\n\s*Ok\(value\) => value,\n\s*Err\(error\) => return Err\(core_error\(error\)\)/, path);
+    assert.match(lib, /fn failure_error\(/, path);
+  }
+});
+
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.

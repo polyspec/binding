@@ -546,7 +546,10 @@
   단언한다. callback의 호출은 U-3의 dispatch로 그 메서드를 부르고, 메서드는 C ABI로 trait 메서드를 부른다. 그래서 class의 인스턴스는
   그 member를 가진 언어 객체처럼 callback을 받는 자리에 들어오고, callback의 호출은 그 메서드를 거쳐 가진 값에 닿는다. case에서
   callback의 자리에 인스턴스 값(GN-13f)이 올 수 있다. 아직 생성하지 않아 이름으로 거부한다: 다른 레포의 interface, class가
-  `&self`가 아닌 receiver로 구현하는 member, abstract class(U-1).
+  `&self`가 아닌 receiver로 구현하는 member, abstract class(U-1). class가 스스로 선언하는 member로서 코어 경로가 그런
+  interface의 trait 메서드(`<trait>::<method>`)인 것도 그 trait를 부르고 그것이 돌려주는 `Failure<E>`를 던진다: kind는 그
+  variant의 오류로 가고(E-1), 나머지 실패는 callback의 실패처럼 간다(E-1c). CK-21이 언어 코드에 닿는 member에만 허용하는
+  `core.failure`는 필요 없다.
   이유: 코어 타입이 trait를 구현하는 class는 이미 callback이므로, 호출자는 호출마다 넘겨 주는 자기 객체 대신 그 인스턴스를
   callback을 받는 자리에 넘긴다.
   `errors.recognize`가 오류 unit을 적은 member(U-3)는 언어 코드의 예외가 그중 하나의 인스턴스이면(Python `isinstance`, PHP

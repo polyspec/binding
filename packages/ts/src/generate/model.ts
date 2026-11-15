@@ -542,6 +542,12 @@ export function collectModel(
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
     const corePath = typeof core === 'string' ? core : core.path;
+    // E-1c, GN-6w: a member whose core path is a trait method of a callback interface of this contract that its class
+    // implements calls that trait, which returns Failure<E> (GN-6d), so its error is a Failure.
+    const traitMethod = (unit.implements ?? []).some((ref) => {
+      const iface = ref.library === undefined ? units.get(ref.unit) : undefined;
+      return iface?.kind === 'interface' && iface.origin === 'callback' && typeof iface.core === 'string' && corePath.startsWith(`${iface.core}::`) && !corePath.slice(iface.core.length + 2).includes('::');
+    });
     const receiver = typeof core === 'object' ? core.receiver : undefined;
     const wantsReceiver = kind === 'method' || kind === 'property' || kind === 'iterate';
     if (wantsReceiver !== (receiver !== undefined)) throw new Unsupported(`${member.id}: a ${kind} ${wantsReceiver ? 'needs' : 'takes no'} receiver`);
@@ -638,8 +644,8 @@ export function collectModel(
       // E-1c: core.result says whether the core path returns a Result; without it, a path does when raises names a
       // variant of the core error of this contract or the member takes a callback.
       // E-1c, GN-7: core.failure names a member that calls language code that its receiver keeps.
-      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback || (typeof core === 'object' && core.failure === true)),
-      failure: (typeof core === 'object' ? core.failure : undefined) ?? takesCallback,
+      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback || traitMethod || (typeof core === 'object' && core.failure === true)),
+      failure: (typeof core === 'object' ? core.failure : undefined) ?? (takesCallback || traitMethod),
       corePath,
       ...(record === undefined ? {} : { record }),
       ...(reachesCode && (member.wait === 'blocking_io' || member.wait === 'process_wait') ? { reaches: true as const } : {}),

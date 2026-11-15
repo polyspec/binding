@@ -682,7 +682,11 @@ the design ids are those of the binding design.
   of the class therefore enters where the callback is taken as any language object with those members does, and the
   call of the callback reaches the held value through the method. In a case an instance value (GN-13f) may stand at
   a place of the callback. Refused by name, not generated yet: an interface of another repository, a member that the
-  class implements with a receiver other than `&self`, and an abstract class (U-1).
+  class implements with a receiver other than `&self`, and an abstract class (U-1). A member that the class declares
+  itself, whose core path is a method of the trait of such an interface (`<trait>::<method>`), calls that trait and
+  raises the `Failure<E>` that it returns as well: the kind goes to the error of its variant (E-1), and the other
+  failures go the way of the failure of a callback (E-1c), without `core.failure`, which CK-21 keeps for members that
+  reach language code.
   Why: a class whose core type implements the trait is a callback already, so a caller passes its instance where the
   callback is taken instead of an object of its own that forwards each call.
   A member whose `errors.recognize` names error units (U-3) reads an exception of its language code that is an

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A member that a class declares with the core path of a trait method of a callback interface that it implements
+  raises the `Failure<E>` of the trait (GN-6w, B2.287). It was generated with `core_error`, which takes the core
+  error, so the crate did not compile (E0308).
+
 ## 0.0.9
 
 - `binding generate` generates each target on a thread with a stack of 1 GiB (GN-1c, B2.285). A case value nested

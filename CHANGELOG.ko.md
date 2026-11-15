@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- class가 구현하는 callback interface의 trait 메서드를 코어 경로로 선언한 member는 trait의 `Failure<E>`를 던진다(GN-6w,
+  B2.287). 코어 오류를 받는 `core_error`로 생성되어 crate가 compile되지 않았다(E0308).
+
 ## 0.0.9
 
 - `binding generate`는 각 target을 1 GiB stack을 가진 thread에서 생성한다(GN-1c, B2.285). JSON 라이브러리의 깊이 한계
