@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- A Node or WASM test of a call of `then` that waits and must fail reads the kind of the settled outcome (GN-6m,
+  B2.284). It read `kind` of the promise, `await settled(...).kind`, which is undefined, so every such case failed.
+
 - A Go test that picks a part of a tuple inside a value names the field `P<n>` of the struct `TupleN` (GN-16,
   B2.283). It indexed the struct, which `go vet` and the compiler refuse.
 

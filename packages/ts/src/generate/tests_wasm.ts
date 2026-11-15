@@ -95,7 +95,7 @@ export function wasmTests(model: Model): string {
     run: (expr) => `${expr};`,
     fails: (expr, kind, what) => {
       usesOutcome = true;
-      return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
+      return `assert.equal((outcome(() => ${expr})).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => textPaths.derive('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
     // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in

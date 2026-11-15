@@ -1,10 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 154198660aae243b8829b832443f3f25c63fd5ba34ba243d490aeee96a4329fd -->
+<!-- source-sha256: d33c934ec3e6f13af3933eda30eb6d75e9b74195e4af11a977499eec663761d1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 기다리는 `then` 호출이 실패해야 하는 Node나 WASM 시험은 settle된 결과의 kind를 읽는다(GN-6m, B2.284). 전에는
+  promise의 `kind`, 곧 `await settled(...).kind`를 읽어 undefined가 되었고, 그런 case가 모두 실패했다.
 
 - 값 안 tuple의 부분을 고르는 Go 시험은 struct `TupleN`의 field `P<n>`을 쓴다(GN-16, B2.283). 전에는 struct를
   index로 읽었고, `go vet`과 compiler가 이를 거부했다.

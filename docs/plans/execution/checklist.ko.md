@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 71556f27ddc4e769de2fd3d4504236b4436b3f2a650d085d7ef66237895f6e7b -->
+<!-- source-sha256: 11be1c6b213865e276df8ba37c5dba750fefc39f5d73d366fac328d8af8c61d5 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -157,3 +157,4 @@
 | B2.281 | 저장소의 binding을 생성해서 찾은 생성기 결함 셋: GN-13i의 case 키 `files`는 contract가 쓸 수 있는 이름(매개변수나 기댓값)이므로 spec에서 먼저 case의 파일에 snake_case 이름 밖의 키(`@files`)를 준다. Node와 WASM의 B-10 시험은 async가 아닌 함수 안에서 factory를 await한다. cleanup이 없는 class의 Go release 함수는 gofmt의 형식이 아니다. 생성기 시험에 Red case를 먼저 두고 고친다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/samples.ts`, `tests_node.ts`, `tests_wasm.ts`, `go.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
 | B2.282 | 0.0.8 release: 개발 의존성 @polyspec/kit은 lock과 함께 0.0.114다. `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `Cargo.lock`의 버전은 0.0.8이고, B2.281의 변경은 두 changelog의 `## 0.0.8` 절이다. | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock`; `package.json`; `package-lock.json` | make docs-check; make lint-rust; make test-ts | [o] |
 | B2.283 | receiver가 값 안 tuple의 부분을 고르는(`index` 뒤의 `{"tuple": n}`) case의 Go 시험은 struct `TupleN`을 index로 읽어 compile되지 않는다. 그 field `P<n>`을 쓴다. 생성기 시험에 Red case를 먼저 두고 고친다. | `packages/ts/src/generate/tests_go.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
+| B2.284 | 기다리는 `then` 호출이 실패해야 하는 Node나 WASM 시험은 `await settled(...).kind`를 써서 promise의 `kind`를 읽는다. 결과를 괄호로 묶는다. 생성기 시험에 Red case를 먼저 두고 고친다. | `packages/ts/src/generate/tests_node.ts`, `tests_wasm.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
