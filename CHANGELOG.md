@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- `binding generate` generates each target on a thread with a stack of 1 GiB (GN-1c, B2.285). A case value nested
+  hundreds of levels deep, as the depth-limit cases of a JSON library give, overflowed the stack of the main thread
+  with `RangeError: Maximum call stack size exceeded`, depending on how close the depth came to its size.
+
 - A Node or WASM test of a call of `then` that waits and must fail reads the kind of the settled outcome (GN-6m,
   B2.284). It read `kind` of the promise, `await settled(...).kind`, which is undefined, so every such case failed.
 

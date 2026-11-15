@@ -23,6 +23,7 @@ import { checkContract } from './check.ts';
 import { gitPinDiffers, ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
+import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
 import { Refused, releaseGoModule } from './release/go-module.ts';
@@ -534,7 +535,8 @@ const files: ReturnType<typeof generate> = new Map();
 const refused: { target: Lang; refusals: string[] }[] = [];
 for (const target of targets) {
   try {
-    for (const [path, text] of generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets: [target] })) files.set(path, text);
+    // GN-1c, GN-13e: on a thread whose stack holds the nesting of any case value.
+    for (const [path, text] of generateOnStack({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets: [target] })) files.set(path, text);
   } catch (error) {
     refused.push({ target, refusals: sentences(error) });
   }

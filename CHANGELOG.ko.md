@@ -1,10 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d33c934ec3e6f13af3933eda30eb6d75e9b74195e4af11a977499eec663761d1 -->
+<!-- source-sha256: c4ce2d888008676341b475bae95315937bc7bc5209414219a89af0ddc47575f9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `binding generate`는 각 target을 1 GiB stack을 가진 thread에서 생성한다(GN-1c, B2.285). JSON 라이브러리의 깊이 한계
+  case처럼 수백 단계 중첩된 case 값은 main thread의 stack을 넘쳐 `RangeError: Maximum call stack size exceeded`로
+  실패했고, 깊이가 stack 크기에 얼마나 가까운지에 따라 실패 여부가 달랐다.
 
 - 기다리는 `then` 호출이 실패해야 하는 Node나 WASM 시험은 settle된 결과의 kind를 읽는다(GN-6m, B2.284). 전에는
   promise의 `kind`, 곧 `await settled(...).kind`를 읽어 undefined가 되었고, 그런 case가 모두 실패했다.

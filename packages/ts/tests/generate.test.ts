@@ -10106,7 +10106,7 @@ test('a case value nested far deeper than a JSON reader takes is generated on a 
   for (const target of ['php', 'python', 'node', 'wasm'] as const) {
     const out = generateOnStack({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: [target] });
     assert.ok(out.size > 0, target);
-    for (const [path, file] of out) assert.ok(typeof file === 'string' || Buffer.isBuffer(file), path);
+    for (const [path, file] of out) assert.equal(typeof file, 'string', path);
   }
   // A refusal keeps its sentences across the thread.
   const refused = JSON.parse(JSON.stringify(contract));
