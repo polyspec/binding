@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 04e6cb1f563d51966ce09f79b627217e777293a19d1b15ec9e850bafee977d13 -->
+<!-- source-sha256: 4255d8999f3d51f68ca1f046dd30922b9d04b16ec4a30ec80f1ffbbac7d909aa -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
@@ -21,6 +21,11 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- commit한 소스에서 host-container 식별, alias 오류 metadata, float 술어, 영의 부호 검증, PHP release 선택의
+  검증이 통과했다(B2.270, B2.271, B2.272, B2.273, B2.275). `make test-ts` 709개 시험, `make test-rust`,
+  `make lint-rust`, 다섯 대상의 sample end-to-end 검증이 통과했다. Go runtime 시험이 전송한 음의 영의 bit를
+  독립적으로 검증했고, PHP runtime은 8.4.27이다.
 
 - `FloatOut::safe_integer`와 `OutValue::predicate`가 음의 영을 포함해 닫힌 안전 정수 범위에 있는 유한한
   정수 float를 판별한다(B2.272). `Predicate::applies_to`가 단일 kind `kind` API를 대신한다. checker는 도달

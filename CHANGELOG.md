@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Verification of host-container identity, alias error metadata, float predicates, signed-zero assertions and PHP
+  release selection passes on the committed source (B2.270, B2.271, B2.272, B2.273, B2.275): `make test-ts`
+  (709 tests), `make test-rust`, `make lint-rust` and the sample end-to-end check of all five targets. The Go
+  runtime tests independently verify transported negative-zero bits; the PHP runtime is 8.4.27.
+
 - `FloatOut::safe_integer` and `OutValue::predicate` recognize finite integral floats in the inclusive safe
   integer range, including negative zero (B2.272). `Predicate::applies_to` replaces the single-kind `kind` API.
   The checker accepts ordered incoming cases only when every reachable branch agrees on the outgoing kind,
