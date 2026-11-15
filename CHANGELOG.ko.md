@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.0.7
+
 - `binding release-recipes`는 레포의 workflow `assets.yml`의 각 job의 빌드 recipe `release-assets-platform`,
   `release-assets-php`, `release-assets-npm`을 쓴다(GN-19i, B2.279). 레포의 고정 recipe `ci-assets-<job>`이
   `make release-recipes` 뒤에 그것을 실행하므로 각 job은 run step 하나를 가진다. platform job의 빌드는 실패한 빌드 뒤에도
@@ -81,8 +83,6 @@
   handle 하나를 유지한다(GN-6at, B2.270). 이전에는 반복 container가 새 handle을 받아 core가 순환을 식별하지
   못하고 깊이 제한에 닿았다. 순회는 원본 container를 보유하고 이미 읽은 길이와 entry key를 포함한 description을
   재사용한다.
-
-## 0.0.7
 
 - 계약 case는 레포의 시험 실행이 제공하는 service에 대해 실행될 수 있다(G-5, GN-13j, CK-95). 계약은 `services`에
   service를 그 주소의 환경 변수와, 선택으로 그 상태를 쓰고 읽는 program의 환경 변수와 함께 선언한다. case는
