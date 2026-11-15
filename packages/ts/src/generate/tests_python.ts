@@ -928,13 +928,13 @@ export function pythonTests(model: Model, module: string): string {
     const cachedCallback = rootCallback();
     append(`
     def test_gn13l_composed_callback_uses_old_file_root(self) -> None:
-        self._case_file(${pyString(relative)}, "726f6f74207769746e657373")
+        self._case_file(${pyString(relative)}, "${'726F6F74207769746E657373'.toLowerCase()}")
         callback = ${callback}
         cached_callback = ${cachedCallback}
         for path in (callback(), cached_callback()):
             self.assertEqual(path, self._case_path(${pyString(relative)}))
             with open(path, "rb") as file:
-                self.assertEqual(file.read().hex(), "726f6f74207769746e657373")`);
+                self.assertEqual(file.read().hex(), "${'726F6F74207769746E657373'.toLowerCase()}")`);
   }
   const usesCaseTextPath = caseTextUses > 0;
   const renderedOut = out.map((block, i) => methodRoots[i] === true

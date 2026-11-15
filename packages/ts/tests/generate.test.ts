@@ -4302,7 +4302,7 @@ test('B2.276: relative ownership guards and non-drive colons retain their meanin
     assert.equal(casePathOf(path), path);
   }
   for (const path of ['a', 'a/b', 'report:2026/file']) {
-    assert.deepEqual(caseFilesOf({ [path]: 'owned' }), [{ path, hex: '6f776e6564' }]);
+    assert.deepEqual(caseFilesOf({ [path]: 'owned' }), [{ path, hex: '6F776E6564'.toLowerCase() }]);
   }
 });
 

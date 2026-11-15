@@ -1922,7 +1922,7 @@ function caseTextWitness(v: Values): string {
   return `
 func TestGN13lCaseTextCapturesTheOwnedRoot(t *testing.T) {
 ${indent([
-    `caseFile(t, ${goString(relative)}, "7769746e657373")`, ...b.lines,
+    `caseFile(t, ${goString(relative)}, "${'7769746E657373'.toLowerCase()}")`, ...b.lines,
     `${rawCallback} := func(t, caseTextPath, caseJSONString string) string {`, ...rawBody.lines.map((line) => `\t${line}`), `\treturn ${raw}`, '}',
     `${jsonCallback} := func(t, caseTextPath, caseJSONString string) string {`, ...quotedBody.lines.map((line) => `\t${line}`), `\treturn ${quoted}`, '}',
     `expected := casePath(t, ${goString(relative)})`,

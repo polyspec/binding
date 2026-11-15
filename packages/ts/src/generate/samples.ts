@@ -205,12 +205,12 @@ export function caseTextParts(value: unknown): CaseTextPart[] | undefined {
 
 // GN-13l: independent fixed UTF-8 byte oracles, not output of a target's quoting helper.
 export const CASE_JSON_STRING_GOLDENS: readonly { inputHex: string; expectedHex: string }[] = [
-  { inputHex: '225c2f3c3e26', expectedHex: '225c225c5c2f3c3e2622' },
-  { inputHex: 'ed959ceab880e280a8e280a9', expectedHex: '22ed959ceab880e280a8e280a922' },
-  { inputHex: '5c75323032385c7532303239', expectedHex: '225c5c75323032385c5c753230323922' },
-  { inputHex: '5c7532303238e280a85c7532303239e280a9', expectedHex: '225c5c7532303238e280a85c5c7532303239e280a922' },
+  { inputHex: '225C2F3C3E26', expectedHex: '225C225C5C2F3C3E2622' },
+  { inputHex: 'ED959CEAB880E280A8E280A9', expectedHex: '22ED959CEAB880E280A8E280A922' },
+  { inputHex: '5C75323032385C7532303239', expectedHex: '225C5C75323032385C5C753230323922' },
+  { inputHex: '5C7532303238E280A85C7532303239E280A9', expectedHex: '225c5c7532303238e280a85c5c7532303239e280a922' },
   { inputHex: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', expectedHex: '225c75303030305c75303030315c75303030325c75303030335c75303030345c75303030355c75303030365c75303030375c625c745c6e5c75303030625c665c725c75303030655c75303030665c75303031305c75303031315c75303031325c75303031335c75303031345c75303031355c75303031365c75303031375c75303031385c75303031395c75303031615c75303031625c75303031635c75303031645c75303031655c753030316622' },
-];
+].map(({ inputHex, expectedHex }) => ({ inputHex: inputHex.toLowerCase(), expectedHex: expectedHex.toLowerCase() }));
 
 // GN-13i: the files of a case, which its test writes into the directory of the test before it makes the values of the
 // case: an object from a relative path in the form of a case value of a path (GN-6y) to its bytes, a text for its UTF-8

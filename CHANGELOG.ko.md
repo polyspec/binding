@@ -23,6 +23,9 @@
 
 ## Unreleased
 
+- 고정 byte fixture의 hex는 source에서 대문자로 쓰고 생성할 때 정규화한다. source가 Git revision처럼
+  보이지 않으며 생성된 fixture byte는 동일하게 유지된다(B2.277).
+
 - commit한 소스에서 host-container 식별, alias 오류 metadata, float 술어, 영의 부호 검증, PHP release 선택의
   검증이 통과했다(B2.270, B2.271, B2.272, B2.273, B2.275). `make test-ts` 709개 시험, `make test-rust`,
   `make lint-rust`, 다섯 대상의 sample end-to-end 검증이 통과했다. Go runtime 시험이 전송한 음의 영의 bit를

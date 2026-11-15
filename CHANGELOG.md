@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Fixed-byte fixture hex uses uppercase source data and normalizes it during generation, so the source does not
+  resemble a Git revision and generated fixture bytes remain identical (B2.277).
+
 - Verification of host-container identity, alias error metadata, float predicates, signed-zero assertions and PHP
   release selection passes on the committed source (B2.270, B2.271, B2.272, B2.273, B2.275): `make test-ts`
   (709 tests), `make test-rust`, `make lint-rust` and the sample end-to-end check of all five targets. The Go

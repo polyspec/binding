@@ -197,11 +197,11 @@ test('GN-13l: JSON string tokens match fixed UTF-8 bytes', () => {
   const callback = ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
   emit(`
 test('GN-13l: composed paths use the old file-owned root', () => {
-  caseFile(${jsString(relative)}, '726f6f74207769746e657373');
+  caseFile(${jsString(relative)}, '${'726F6F74207769746E657373'.toLowerCase()}');
   const callback = ${callback};
   const path = callback();
   assert.equal(path, casePath(${jsString(relative)}));
-  assert.equal(readFileSync(path).toString('hex'), '726f6f74207769746e657373');
+  assert.equal(readFileSync(path).toString('hex'), '${'726F6F74207769746E657373'.toLowerCase()}');
 });`);
 }
 

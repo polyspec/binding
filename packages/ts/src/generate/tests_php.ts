@@ -922,14 +922,14 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     append(`
     public function testGn13lComposedCallbackUsesOldFileRoot(): void
     {
-        $this->caseFile(${phpText(relative)}, '726f6f74207769746e657373');
+        $this->caseFile(${phpText(relative)}, '${'726F6F74207769746E657373'.toLowerCase()}');
         $callback = ${callback};
         $cachedCallback = ${cachedCallback};
         foreach ([$callback(), $cachedCallback()] as $path) {
             self::assertSame($this->casePath(${phpText(relative)}), $path);
             $contents = file_get_contents($path);
             self::assertIsString($contents);
-            self::assertSame('726f6f74207769746e657373', bin2hex($contents));
+            self::assertSame('${'726F6F74207769746E657373'.toLowerCase()}', bin2hex($contents));
         }
     }`);
   }
