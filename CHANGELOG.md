@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Committed verification of portable case-owned path validation passes (B2.276): the owning Node selection
+  (2 tests) refuses drive prefixes in every component and retains ordinary relative paths.
+
 - Go normalized value-class inputs reject composed text in constructor projections while explicit constructor
   calls retain typed text support. The projection scope is restored after a named refusal (GN-13l, B2.277).
 

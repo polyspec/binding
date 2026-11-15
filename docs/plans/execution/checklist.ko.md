@@ -1,23 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 9bcd4fcd83ffd847f7edb1252826699e5db24255d1a7475831c76d22e14afd63 -->
-<!-- source-sha256: 77b66bc693edbad8aae52a1402e914c2e3b2aced04575401504529f4c2c65d7a -->
-<!-- source-sha256: ce81894a5941019d28c78360c49ae8c66790018f5d53fbc7ff89192a1978b488 -->
-<!-- source-sha256: 7501caf7ce4c3683f328b64375d0be394394edc007c4f370dd0d571f3bb85d0c -->
-<!-- source-sha256: eea1c2bf29821338b25abd00475cb71f503bcc15620104164cdf8b7e9a5bdfb2 -->
-<!-- source-sha256: a3a550defb21ab5b0e06517692e054b62447f287992eb296638d25bca7fcdcee -->
-<!-- source-sha256: 289dbc73aaea910337a066b6851a71b0eef03944d10d5b75472a853942db6f11 -->
-<!-- source-sha256: 494a564c6b77df9f6e2f241a40323f6703ff6b7144e0af0eba81a9a4e1581bf3 -->
-<!-- source-sha256: aad387096bf3afbc3945681db60c6854aa84fe1b5a95e3909d43e6ab916415b9 -->
-<!-- source-sha256: b01b5d1379d6b42ee2657533717f33cc137ca0f641b46d6e7a9600d71f6d1cc0 -->
-<!-- source-sha256: 8a4891060dc2ec0ff602d9905ae613436fb9b422937b89322b27cbfd6da17965 -->
-<!-- source-sha256: 73951f0a74bb244a10923ac848ecf65c30cd36157232b93b1c0963fc7db028c5 -->
-<!-- source-sha256: 524f50a6f2f47e38a096e9679e618f8e2d019e063e659a9319d1486ae99da0c3 -->
-<!-- source-sha256: c25e71a22597f561bdd94f2d6b59dd584654b3bd9c6ad5629ca7e3f8fe97443c -->
-<!-- source-sha256: 56df629e1ea3619a8ca6b8063aaa352c25cd1c8cb62de95c6c8838137b96d63a -->
-<!-- source-sha256: 856a64cccc9bf2c3f632d86ccabf8f2772e6567d7080d090ec9a23f0f267aeb5 -->
-<!-- source-sha256: dae90dd0eaf7f20308aa83c3d4ecea2b6d97c8cb69c41960e1c13c526b83e092 -->
-<!-- source-sha256: 68e00e256dd17da6f40cf411d385a46b7b03b2553098771ba9fd8d3654654448 -->
-<!-- source-sha256: a80df3f0236eeec3acae40e0582953fcd50b65497109565aa5d313c7d9421135 -->
+<!-- source-sha256: e7a34c686bc2a391b3b8a19bd314f52e4591e869fd49efc00358989466a4dd49 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -167,5 +149,5 @@
 | B2.273 | 생성 Go 결과 검증은 중첩 값과 NaN도 담은 case를 포함해 음의 영과 양의 영을 구분한다(GN-13e). 기존 IEEE 754 전송은 바꾸지 않는다. | packages/ts/src/generate/tests_go.ts, packages/ts/tests/generate.test.ts, tests/e2e/sample/contracts/cases.json, tests/e2e/sample/cases_test.go, docs/spec/generator.md(.ko), CHANGELOG.md(.ko) | make test-ts; make e2e REPO=tests/e2e/sample | [o] |
 | B2.274 | GN-19i는 PHP 외 asset의 독립 platform job과 PHP extension의 platform × PHP minor job을 허용한다. 각 PHP job은 실제 native PHP minor를 선택하고 검증하며 고유한 assets-php-<platform>-<minor> artifact를 upload한다. release는 모든 artifact를 모은 뒤 필요한 asset을 검증한다. workflow는 레포가 계속 소유하고 생성 recipe의 interface는 바꾸지 않는다. 우선순위: B2.273 뒤. | docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | make docs-check | [o] |
 | B2.275 | 생성 PHP release recipe가 선택적 EXPECTED_PHP_MINOR의 major.minor 형식을 확인하고 빌드 전에 선택한 runtime과 비교하며, php-config header가 항상 같은 minor인지 확인하고 두 전체 버전을 기록한다. 불일치와 잘못된 기대값은 cargo 전에 실패한다. 기대값을 생략하면 runtime으로 고른 빌드와 native 확장 load 검증을 유지한다. | packages/ts/src/release/recipes.ts; packages/ts/tests/release-recipes.test.ts; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | node --test --test-name-pattern=B2.275 packages/ts/tests/release-recipes.test.ts | [o] |
-| B2.276 | fixture를 쓰기 전에 case 소유 상대 경로의 모든 slash component에서 Windows drive prefix /^[A-Za-z]:/를 거부한다. 중첩 및 drive 상대 형태도 포함한다. 기존 빈 값, 절대 경로, backslash, 부모 component, 빈 component 거부는 유지하고 report:2026/file처럼 drive가 아닌 colon은 허용한다. 이는 이식 가능한 어휘 검증이며 Windows filesystem 검증은 아니다. | packages/ts/src/generate/samples.ts; packages/ts/tests/generate.test.ts; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | node --test --test-name-pattern=B2.276 packages/ts/tests/generate.test.ts | [v] |
+| B2.276 | fixture를 쓰기 전에 case 소유 상대 경로의 모든 slash component에서 Windows drive prefix /^[A-Za-z]:/를 거부한다. 중첩 및 drive 상대 형태도 포함한다. 기존 빈 값, 절대 경로, backslash, 부모 component, 빈 component 거부는 유지하고 report:2026/file처럼 drive가 아닌 colon은 허용한다. 이는 이식 가능한 어휘 검증이며 Windows filesystem 검증은 아니다. | packages/ts/src/generate/samples.ts; packages/ts/tests/generate.test.ts; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | node --test --test-name-pattern=B2.276 packages/ts/tests/generate.test.ts | [o] |
 | B2.277 | typed text case 값이 literal Unicode text와 case 소유 상대 경로를 합성하고, 선택적으로 경로를 완전한 최소 UTF-8 JSON string token으로 쓴다. 정확한 기대 text, 문맥별 엄격한 형태 검증, 기존 경로 검사와 case별 정리를 유지한다. private native 고정 hex golden과 독립적인 기존 root/file witness로 다섯 writer를 검증하고, 기존 Tag.name case가 다섯 대상에서 합성 text를 왕복한다. WASM은 Node host root를 text로만 사용하고 OS-path, filesystem, database 기능을 얻지 않는다. | packages/ts/src/generate/samples.ts; tests_python.ts; tests_node.ts; tests_wasm.ts; tests_php.ts; tests_go.ts; packages/ts/tests/generate.test.ts; tests/e2e/sample/contracts/cases.json; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | node --test --test-name-pattern=B2.277 packages/ts/tests/generate.test.ts; make e2e REPO=tests/e2e/sample | [~] |

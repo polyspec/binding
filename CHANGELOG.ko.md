@@ -1,27 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 16da81fc7d54a89d59632ec4cbc054a75af989a013c0ef8f3228635cf324ff60 -->
-<!-- source-sha256: 7511bfdb9b101ac30c253ded73902aafddde51b5a4a86f069415641eb1e8b961 -->
-<!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
-<!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
-<!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
-<!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
-<!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
-<!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
-<!-- source-sha256: 1abb610e42457190c8098283210c98a2f9b2373596abafe77586e315c0d77e16 -->
-<!-- source-sha256: 32353e9704f9998f7fae52fb44ff2a8353dd5603138f2fb266cace78a9a15166 -->
-<!-- source-sha256: d20a6b17cf0bd4bc80f90c8291e95def426be420b0b35f99775194cb64f0d811 -->
-<!-- source-sha256: 45553326db42464b0355387672d4c6d252893edda40567e048b07411c3d2e1e4 -->
-<!-- source-sha256: b5e91904945961dca8bb754cbe1d035f27f1c53ceae0662b2645920c18fb4d22 -->
-<!-- source-sha256: 8099563958a7929e5e5bd91fc3ab8628e698ef0be3034fd4b7b45b864f6917eb -->
-<!-- source-sha256: 1cda4ea7cc33fcb3b583842303a4f7b8ab35a24e4cc8744884e86fdb0ddbad2f -->
-<!-- source-sha256: fd683a72223968f3a964ee00f87e0987592634c898553223329a794644eed15e -->
-<!-- source-sha256: 656a59b37fed0497b602205d439055aeaa5a6c0b472a0288fdb0b538d88ad0af -->
-<!-- source-sha256: a31f6318e590e15c7b6d64e2c8826d83a1c61ffd6ca7c4d99ea36873eef85fbd -->
+<!-- source-sha256: 6b7de8b2ba8e934e7652c794d951318ad9d68423034ea2f26802643ec1811e4e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Case 소유 경로의 이식 가능한 검증을 commit된 소스에서 확인했다(B2.276). 소유 Node 시험 2개가
+  모든 component의 drive prefix 거부와 일반 상대 경로 유지를 검증했다.
 
 - Go 정규화 값 클래스 입력은 생성자 projection에서 조합 text를 거절하며 명시적 생성자 호출의 typed text
   지원은 유지한다. 이름을 붙인 거절 뒤에 projection scope를 복원한다(GN-13l, B2.277).
