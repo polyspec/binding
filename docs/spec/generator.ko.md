@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 493c2002680d20268d95396ad692bd8b9002b01d257b455eb48f139794c6b36c -->
+<!-- source-sha256: d430f63a08e27d0dfb5beea411cde08729437fe166ee8943e89109ea8a1fdb06 -->
 # 생성기
 
 [English](generator.md)
@@ -1975,7 +1975,7 @@
   동작을 말할 수 있다. 예를 들어 파일을 읽는 로더가 필요한 render는 파일 시스템이 없는 WebAssembly에 없지만 member
   자체는 거기서 생성된다. 그 행은 그 동작이 있는 target에만 case를 남긴다. member의 `only`를 쓰면 그 member의 다른 모든
   case도 그 target에서 빠지기 때문이다.
-- **GN-13i** case는 `files`를 가질 수 있다. 그 시험이 case의 어떤 값을 만들기 전에 쓰는 파일이다. `files`는 `path`의 case
+- **GN-13i** case는 `@files`를 가질 수 있다. 그 시험이 case의 어떤 값을 만들기 전에 쓰는 파일이다. `@files`는 `path`의 case
   값 형식(GN-6y)인 상대 경로에서 파일의 바이트로 가는 object다. 바이트는 그 UTF-8을 뜻하는 text이거나, 바이트를 적는
   방식대로 `{"hex": ...}`다(GN-13). case의 B-4, GN-6ae, GN-6m, GN-6z, GN-13e 시험은 object의 순서대로 각 파일을 GN-6y의 시험
   디렉터리 안에 쓴다. 경로의 디렉터리를 먼저 만들고, 파일은 mode 0600으로, 디렉터리는 0700으로 만들며, case의 receiver,
@@ -1985,13 +1985,15 @@
   `caseFile(t, ...)`이고, WASM은 시험을 실행하는 Node.js의 `node:fs`로 쓰는 `caseFile`이며(GN-13c), 그 디렉터리는 Node처럼
   `afterEach`가 지운다. WASM의 코어에는 파일 시스템이 없으므로(`wasm32-unknown-unknown`), 코어가 파일을 읽는 member는
   `wasm`이 없는 `only`를 가진다(Q-4, GN-6y). 그래도 WASM은 자기가 실행하는 모든 case의 파일을 써서, case가 각 target에서
-  같은 뜻을 가지게 한다. 다른 형식의 `files`, GN-6y가 거부하는 경로, text도 `{"hex": ...}`도 아닌 내용은 모든 target에서
+  같은 뜻을 가지게 한다. 다른 형식의 `@files`, GN-6y가 거부하는 경로, text도 `{"hex": ...}`도 아닌 내용은 모든 target에서
   그 case의 시험을 그 이유로 실패시키고, 다른 시험은 쓴다(G-4, GN-13e). 아무 receiver나 필요한 시험(B-2, B-3, G-7)은
-  `files`가 있는 case에서 receiver를 가져오지 않는다. 그 시험은 파일을 쓰지 않기 때문이다. `files`가 있는 hook(N-4)의
+  `@files`가 있는 case에서 receiver를 가져오지 않는다. 그 시험은 파일을 쓰지 않기 때문이다. `@files`가 있는 hook(N-4)의
   case는 이름으로 거부한다. hook의 시험은 파일을 쓰지 않기 때문이다. `case-test`의 진입점(GN-13)으로 실행하는 case는
   파일을 쓰지 않는다. 그 진입점은 변환 하나만 실행하기 때문이다. 이유: 주어진 바이트를 담은 저장 파일은 인자처럼 case의
   입력이고, fault injection point는 시스템의 조건을 흉내 낸다(G-5). point가 파일 대신 준 바이트는 어떤 저장 파일도 지나지
-  않는 경로를 실행하므로, case가 바이트를 가지고 시험이 그것을 member가 읽는 곳에 쓴다.
+  않는 경로를 실행하므로, case가 바이트를 가지고 시험이 그것을 member가 읽는 곳에 쓴다. 키는 `@`로 시작하며, snake_case
+  이름은 `@`를 갖지 않으므로 이 키는 contract와 그 case의 이름 밖에 있다. 매개변수, field, case의 기댓값은 `files`라는
+  이름을 가질 수 있고 그 뜻을 유지하며, 생성기는 contract 자신의 이름인 키를 case의 파일로 읽지 않는다.
 - **GN-13j** case는 레포의 시험 실행이 제공하는 service(예: database 서버)에 대해 실행될 수 있다. 형식은
   `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`이고 `setup`과 `check`는 선택이다. 계약은 그런
   service를 `services`에 선언한다(계약 검사 CK-95): `{"id", "address", "state", "reason"}`. `address`는 service의 주소를

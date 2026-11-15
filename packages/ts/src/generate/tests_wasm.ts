@@ -6,7 +6,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCase
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_CASE_FILE, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
+import { NODE_CASE_FILE, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
@@ -117,7 +117,10 @@ export function wasmTests(model: Model): string {
     const make = (): string => {
       if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
       const built = madeLines(model, form, receiver);
-      return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
+      const body = `${built.lines.join(' ')} return ${built.expr};`;
+      // GN-6m: a receiver that a call that waits makes is awaited, as in Node; an await in a function that is not
+      // async is a syntax error that stops the whole file from loading.
+      return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
     };
     return ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
   };
@@ -501,9 +504,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
     };
     process.on('warning', listener);
   });
-  (() => {
-    ${made(sample)};
-  })();
+  ${scoped(made(sample))}
   gc();
   assert.equal((await warned).message, expected);
 });`);

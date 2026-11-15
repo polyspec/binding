@@ -2436,7 +2436,7 @@ the design ids are those of the binding design.
   render that needs a loader that reads files, which WebAssembly has no file system for, while the member itself is
   generated there; the row keeps the case for the targets that have the behaviour, instead of an `only` of the member
   that would leave every other case of the member out of that target too.
-- **GN-13i** A case may have `files`, the files that its test writes before it makes any value of the case: an object
+- **GN-13i** A case may have `@files`, the files that its test writes before it makes any value of the case: an object
   from a relative path, in the form of a case value of `path` (GN-6y), to the bytes of the file, a text for its UTF-8
   or `{"hex": ...}` as bytes are written (GN-13). The test of B-4, GN-6ae, GN-6m, GN-6z and GN-13e of the case writes each
   file, in the order of the object, inside the directory of the test of GN-6y, after it makes the directories of the
@@ -2448,14 +2448,17 @@ the design ids are those of the binding design.
   `node:fs` of the Node.js that runs its tests (GN-13c), whose directory `afterEach` removes as in Node. The core of
   WASM has no file system (`wasm32-unknown-unknown`), so a member whose core reads the files has an `only` without
   `wasm` (Q-4, GN-6y); WASM still writes the files of every case that it runs, so a case means the same in each
-  target. `files` of another form, a path that GN-6y refuses, or content that is neither a text nor `{"hex": ...}`
+  target. `@files` of another form, a path that GN-6y refuses, or content that is neither a text nor `{"hex": ...}`
   fails the test of the case with the reason in every target, and the other tests are written (G-4, GN-13e). A test
-  that needs any receiver (B-2, B-3, G-7) takes none from a case with `files`, because it writes no files; a case of
-  a hook (N-4) with `files` is refused by name, because the tests of a hook write none; and a case that runs through
+  that needs any receiver (B-2, B-3, G-7) takes none from a case with `@files`, because it writes no files; a case of
+  a hook (N-4) with `@files` is refused by name, because the tests of a hook write none; and a case that runs through
   an entry point of `case-test` (GN-13) writes no files, because that entry point runs a conversion alone. Why: a
   stored file that holds given bytes is an input of a case, as an argument is, while a fault injection point imitates
   a condition of the system (G-5); bytes that a point gave in place of a file would run a path that no stored file
-  takes, so the case carries the bytes and the test writes them where the member reads.
+  takes, so the case carries the bytes and the test writes them where the member reads. The key begins with `@`, which
+  no name in snake_case has, so it is outside the names of the contract and of its cases: a parameter, a field or an
+  expected value of a case may be named `files` and keeps its meaning, and the generator reads no key of the contract's
+  own names as the files of a case.
 - **GN-13j** A case may run against a service that the test run of the repository provides, such as a database
   server, through `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`, of which `setup` and `check`
   are optional. The contract declares each such service in `services` (contract check CK-95):

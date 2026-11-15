@@ -215,6 +215,9 @@ export const CASE_JSON_STRING_GOLDENS: readonly { inputHex: string; expectedHex:
 // GN-13i: the files of a case, which its test writes into the directory of the test before it makes the values of the
 // case: an object from a relative path in the form of a case value of a path (GN-6y) to its bytes, a text for its UTF-8
 // or {"hex": ...}. Each file is given as its path and the lower-case hex of its bytes, which every target decodes.
+// The key of the files of a case begins with @, which no snake_case name has, so no parameter, field or expected value
+// of a contract (which may be named files) is read as the files of a case.
+export const CASE_FILES = '@files';
 export interface CaseFile {
   path: string;
   hex: string;
@@ -222,7 +225,7 @@ export interface CaseFile {
 export function caseFilesOf(raw: unknown): CaseFile[] {
   if (raw === undefined) return [];
   const refused = (): never => {
-    throw new Unsupported(`files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${shown(raw)}`);
+    throw new Unsupported(`${CASE_FILES} of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${shown(raw)}`);
   };
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return refused();
   return Object.entries(raw as Record<string, unknown>).map(([path, content]): CaseFile => {
@@ -1853,7 +1856,7 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
       const record = kase as Record<string, unknown>;
       // GN-13i: a test that needs any receiver writes no files, so it takes none of a case that gives files.
       // GN-13j: nor of a case that runs against a service, whose lines it does not run.
-      if (record['raises'] !== undefined || record['files'] !== undefined || servesCase(record)) continue;
+      if (record['raises'] !== undefined || record[CASE_FILES] !== undefined || servesCase(record)) continue;
       const found = receiverOf(model, fn, record, member);
       // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
       if (found !== undefined && !armsFaults(found)) return found;
@@ -1883,7 +1886,7 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
 
 // GN-13i: the tests of a hook (N-4) write no files, so a case of a hook that gives files is refused by name (G-4).
 function hookWithoutFiles(fn: Fn, record: Record<string, unknown>): void {
-  if (record['files'] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives files, which the test of a hook does not write (N-4, GN-13i)`);
+  if (record[CASE_FILES] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${CASE_FILES}, which the test of a hook does not write (N-4, GN-13i)`);
   // GN-13j: nor runs the lines of a service.
   if (servesCase(record)) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} runs against a service, which the test of a hook does not reach (N-4, GN-13j)`);
 }
@@ -1946,7 +1949,7 @@ export function callbackCases(model: Model, fn: Fn): { id: string; args: Map<Arg
 // A case that runs against a service is marked serves, which a test that takes the values of a case without its lines
 // reads.
 const filesOf = (record: Record<string, unknown>): { files?: unknown; service?: unknown; serves?: true } => ({
-  ...(record['files'] === undefined ? {} : { files: record['files'] }),
+  ...(record[CASE_FILES] === undefined ? {} : { files: record[CASE_FILES] }),
   ...(record['service'] === undefined ? {} : { service: record['service'] }),
   ...(servesCase(record) ? { serves: true as const } : {}),
 });

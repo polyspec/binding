@@ -216,6 +216,11 @@ function caseFile(relative, content) {
 }
 `;
 
+// GN-6p, B-10: the statement that makes an object inside a function of its own, so that nothing of the test holds it
+// when gc() runs; a factory that the test awaits is made inside an async function, which the test awaits, because an
+// await in a function that is not async is a syntax error that stops the whole file from loading.
+export const scoped = (made: string): string => (/\bawait\b/.test(made) ? `await (async () => {\n    ${made};\n  })();` : `(() => {\n    ${made};\n  })();`);
+
 // GN-13i: the lines that write the files of a case, first in the body of its test.
 export const nodeCaseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});`).join('');
 
@@ -762,9 +767,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
     };
     process.on('warning', listener);
   });
-  (() => {
-    ${made(sample)};
-  })();
+  ${scoped(made(sample))}
   gc();
   assert.equal((await warned).message, expected);
 });`);

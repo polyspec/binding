@@ -1604,7 +1604,9 @@ func ${bindingFn(fn)}(args []byte) (*Reader, error) {
 `).join('');
   const releases = model.objects.map((o) => `
 // ${releaseFn(o.unit)} releases the value of an instance of ${goName(o.unit.name)} (T-5).${o.cleanup === undefined ? `
-func ${releaseFn(o.unit)}(handle uint64) { C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) }` : `
+func ${releaseFn(o.unit)}(handle uint64) {
+	C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle))
+}` : `
 // GN-6p, B-10: a value that its cleanup call did not consume is released here, and the standard logger warns.
 func ${releaseFn(o.unit)}(handle uint64) {
 	if C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) != 0 {
