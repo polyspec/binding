@@ -7,6 +7,8 @@
 
 ## 0.0.7
 
+- The development dependency @polyspec/kit is 0.0.113, whose CI jobs each run one recipe.
+
 - `binding release-recipes` writes the build recipe of each job of the workflow `assets.yml` of a repository,
   `release-assets-platform`, `release-assets-php` and `release-assets-npm` (GN-19i, B2.279), which a fixed recipe
   `ci-assets-<job>` of the repository runs after `make release-recipes`, so each job has one run step. A build of the

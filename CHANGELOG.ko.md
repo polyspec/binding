@@ -8,6 +8,8 @@
 
 ## 0.0.7
 
+- 개발 의존성 @polyspec/kit은 0.0.113이다. 그 CI job은 각각 recipe 하나를 실행한다.
+
 - `binding release-recipes`는 레포의 workflow `assets.yml`의 각 job의 빌드 recipe `release-assets-platform`,
   `release-assets-php`, `release-assets-npm`을 쓴다(GN-19i, B2.279). 레포의 고정 recipe `ci-assets-<job>`이
   `make release-recipes` 뒤에 그것을 실행하므로 각 job은 run step 하나를 가진다. platform job의 빌드는 실패한 빌드 뒤에도
