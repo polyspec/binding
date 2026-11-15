@@ -483,6 +483,12 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       if (ctx.lang === 'node') return `${jsString(text)} + '\\uD800'`;
       return `${phpText(text)} . "\\xFF"`;
     }
+    // B-4, G-5: a value of another JSON kind than the type, which a case gives for the binding to refuse, is written as
+    // the value of its JSON kind, never converted to the type.
+    const scalar = (): string => typeof value === 'string' ? (ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value))
+      : typeof value === 'boolean' ? (ctx.lang === 'python' ? (value ? 'True' : 'False') : String(value)) : String(value);
+    const numeric = type === 'uint' || type === 'int' || type === 'int64' || type === 'float';
+    if ((numeric && (typeof value === 'string' || typeof value === 'boolean')) || ((type === 'text' || type === 'latin1' || type === 'bool') && (typeof value === 'number' || (type === 'bool' ? typeof value === 'string' : typeof value === 'boolean')))) return scalar();
     if (type === 'text' || type === 'latin1') {
       const text = String(value);
       if (ctx.lang === 'python') return pyString(text);

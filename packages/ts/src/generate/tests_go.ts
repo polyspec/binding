@@ -2146,20 +2146,22 @@ func kept[T any](value T) (T, error) { return value, nil }
 
 // GN-6ar, GN-6af: the value classes without core_type of the owners of the value aliases of other repositories, each
 // with the package of its owner, whose instances a result of such an alias holds.
-function foreignKeptClasses(model: Model): { cls: KeptClass; pkg: string }[] {
+function foreignKeptClasses(model: Model): { cls: KeptClass; pkg: string; declared: string; path: string }[] {
   const libraries = [...new Set(model.aliases.flatMap((a) => (a.library !== undefined && a.unit.kind !== 'class' ? [a.library] : [])))];
   return libraries.flatMap((library) => {
     const owner = model.foreign.get(library);
     if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6ar)`);
-    return ownerModel(model, library).kept.map((cls) => ({ cls, pkg: ownerType(owner, cls.unit).pkg }));
+    return ownerModel(model, library).kept.map((cls) => ({ cls, ...ownerType(owner, cls.unit) }));
   });
 }
 
 // GN-15c, GN-6ar: the places of the instances of the value classes without core_type in a value, of this repository
 // and of the owners of the value aliases of other repositories, which two deeply equal values share only when each
 // holds the same pointer where the other does.
-function placesHelper(model: Model): string {
+function placesHelper(model: Model, scope: GoScope): string {
   const foreign = foreignKeptClasses(model);
+  // GN-15f: the file of the tests imports each package of another repository whose classes places names (B2.304).
+  for (const { path, pkg, declared } of foreign) importForeign(scope, path, pkg, declared);
   const classes = [...model.kept.map((cls) => ({ cls, pkg: 'binding' })), ...foreign];
   const cases = classes.map(({ cls: k, pkg }) => {
     const walked = k.fields.map((f) => `\t\t\twalk(found.${f.writable ? keptField(f) : `${goName(f.name)}()`})`).join('\n');
@@ -2282,7 +2284,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bmust\(/.test(all) ? [MUST] : []),
     ...(/\bkept\(/.test(all) ? [KEPT] : []),
-    ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
+    ...(/\bplaces\(/.test(all) ? [placesHelper(model, scope)] : []),
     ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(composedText || /\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),

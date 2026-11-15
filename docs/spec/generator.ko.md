@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 57874969a959a133032b9d06cc8074d94b10973a81790a06caab251110061dbe -->
+<!-- source-sha256: bd89d413f9a96bbf19a3caf97e5cd80e14e66b2698ef00039de46a43464613fb -->
 # 생성기
 
 [English](generator.md)
@@ -107,6 +107,9 @@
   레포의 recipe다(GN-19). 공용 도구(`@polyspec/kit`)의 release utility는 `vX.Y.Z` tag를 달고 package manager 하나가 기계 하나에서
   pack하는 archive를 만들며, 플랫폼 패키지도 PHP 확장의 binary도 Go 모듈의 commit(GN-15g)도 만들지 않는다. 이유: 바인딩의
   release가 어떤 파일을 싣는지는 이 명세와 그 레포의 규칙이고, 레포의 recipe를 실행하는 도구는 레포의 규칙을 갖지 않는다.
+  `.`과 `./wasm`이 아닌 `packages.node.entries`의 항목이 `types`, `import`, `require`를 이름하면 그것은 저장소가 직접 쓰는
+  파일의 export다. scaffold는 그 조건을 `package.json`에서 그 항목의 export로 쓰고 그 `files`를 package의 files에 더하므로
+  CK-19가 manifest를 받아들인다(B2.303).
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
   `macos`일 때 `cargo:rustc-cdylib-link-arg=-undefined`와 `cargo:rustc-cdylib-link-arg=dynamic_lookup`을 내고, 다른 target에서는
   아무것도 내지 않으며, 그 변수를 읽을 수 없으면 실패한다(P-3). 그 crate의 `[lib]`은 `test = false`와 `doctest = false`를
@@ -663,6 +666,7 @@
   객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
   객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
   `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
+  kind `int`의 내용은 i64이므로 하나의 parameter가 `int64`인 member도 그것을 그대로 받는다(B2.305).
 - **GN-6at** 들어오는 host-value 순회 하나에서 Python list와 dict, JavaScript Array, Map, plain object는
   각각 handle 하나와 description 하나를 갖는다. 같은 container를 다시 설명하면 그 description을 재사용하며,
   다른 container는 다른 handle을 유지한다. 순회가 끝날 때까지 원본 container를 보유해서 수거된 container의
@@ -1596,6 +1600,8 @@
   `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
   `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
+  생성된 테스트 파일은 다른 저장소의 value alias의 value class를 위해 helper `places`가 이름하는 그 저장소의 각 package를,
+  어떤 테스트도 그 package를 이름하지 않을 때에도 import한다(B2.304).
 - **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 라이브러리를 GNU C library용
   (`<arch>-unknown-linux-gnu`)으로 빌드하는 `linux_amd64`와 `linux_arm64`, musl용(`<arch>-unknown-linux-musl`)으로
   빌드하는 `linux_amd64_musl`과 `linux_arm64_musl`, 그리고 `darwin_arm64`이다. `_musl`이 없는 플랫폼은 GN-3c의
@@ -1916,6 +1922,8 @@
   T-7: `bytes` parameter는 바이트가 아닌 값을 거부하며 Node에서는 string도 거부한다. B-4: kind가 `class`를 적은 case는 그
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
   뺀다.
+  B-4 case가 binding이 거부하도록 주는, 자리의 타입과 다른 JSON 종류의 case 값(숫자 자리의 text나 bool, text 자리의 숫자나
+  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306).
 
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은

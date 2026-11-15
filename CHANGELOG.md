@@ -10,9 +10,16 @@
 - PHP makes an `out` row by a member that takes the map or the list of the alias, from the array of the made children (GN-6bc, B2.309). The orm contract was refused with `map_value.constructor of the kind map takes map<orm_value>`.
 - Go makes the instance of a class of another module for an `out` row of a value alias through the exported `<Class>FromHandle` of its package (GN-6be, B2.310). It was refused with `its handle and dispatch are unexported`.
 - A fixture of a callback unit of another repository writes its case values with the named types of the owner resolved (GN-6bf, B2.311). The crud-ui generator contract was refused on the five targets with `no case value of the type json_value`. A case map value that is no array of `[key, value]` pairs is refused by name, where the Go generation crashed with `held.every is not a function`.
+
+## 0.0.11
+
 - `make install-tools` fails when the PHP that it wraps is not the minor of `.php-version`, and names both (B2.300).
 - The generated bindings compile for a record that holds a callback, a record field named `value`, a tuple field that leaves, a class without members, a kept record with field defaults and callbacks of the owner thread; the PHP and Node adapters of an owner-thread callback are Send and Sync, and PHP releases its object only on the owner thread (B2.301).
 - The PHP stub writes an optional whose PHP type is `mixed` as `mixed`, not `?mixed`, which `php -l` refused; the docblock keeps `mixed|null` (B2.302).
+- An entry of `packages.node.entries` other than `.` and `./wasm` may name `types`, `import`, `require` and `files`; scaffold writes them as an export and files of `package.json`, and CK-19 accepts them (B2.303).
+- The generated Go tests import the package of another repository whose classes `places` names, so `go vet` finds the name (B2.304).
+- An out row of the kind `int` makes an instance by a constructor whose one parameter is `int64` (B2.305).
+- A case value of another JSON kind than its type, such as a text `"60"` for a uint or `true` for a number, is written as that value, so the binding refuses it in the test (B2.306).
   A machine whose first php was PHP 8.5 got `var/tools/bin/php` of 8.5, which only `make e2e` refused later.
 
 - `binding scaffold` writes no file when `cargo metadata` fails, and fails with the error of Cargo (GN-3e, B2.299).

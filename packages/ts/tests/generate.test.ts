@@ -1592,6 +1592,56 @@ test('the PHP stub writes an optional of the PHP type mixed as mixed, and its do
   assert.match(stub, /@return mixed\|null/);
 });
 
+test('scaffold writes an extra export of packages.node.entries with its conditions and files, which the schema accepts (GN-3c, B2.303)', async () => {
+  const { checkContract } = await import('../src/check.ts');
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  contract.packages.node.entries['./render'] = { formats: ['import', 'require'], types: './render/render.d.ts', import: './render/render.mjs', require: './render/render.cjs', files: ['render'] };
+  assert.deepEqual(checkContract(contract).filter((f) => f.path.startsWith('/packages')), []);
+  const manifest = JSON.parse(String(trackedPackages(contract, '0.0.0').get('packages/ts/package.json')));
+  assert.deepEqual(manifest.exports['./render'], { types: './render/render.d.ts', import: './render/render.mjs', require: './render/render.cjs' });
+  assert.ok(manifest.files.includes('render'));
+  assert.ok(manifest.exports['./wasm'] !== undefined);
+});
+
+test('the Go tests import the package of another repository whose classes places names, also when no other test names it (GN-15f, GN-6ar, B2.304)', () => {
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const cases = caseFiles.get('contracts/cases.json') as { pair: { id: string }[]; read: { id: string }[] };
+  // The cases that make an instance of the owner name its package themselves; without them places alone names it.
+  cases.pair = cases.pair.filter((kase) => kase.id !== 'a_reference_of_the_owner_twice');
+  cases.read = cases.read.filter((kase) => !kase.id.startsWith('a_held_source'));
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(go, /case \*sample\.KeyedMap\[any\]:/);
+  assert.match(go, /\n\t"github\.com\/polyspec\/sample\/packages\/go"\n/);
+});
+
+test('an out row of the kind int makes an instance by a constructor that takes int64, the i64 of the content (U-7, B2.305)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const ratio = contract.units.find((u: any) => u.id === 'ratio');
+  ratio.members.find((m: any) => m.id === 'ratio.constructor').parameters[0].type = 'int64';
+  ratio.members.find((m: any) => m.id === 'ratio.value').returns = 'int64';
+  const data = contract.units.find((u: any) => u.id === 'data');
+  data.out.splice(2, 0, { kind: 'int', make: { php: 'int', python: 'ratio.constructor', node: 'ratio.constructor', go: 'int', wasm: 'ratio.constructor' } });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['python', 'node', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_sample::Ratio::new\(value\.value\(\)\)/, path);
+  }
+});
+
+test('a case value of another JSON kind than its type is written as that value for the binding to refuse (B-4, G-5, B2.306)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const refused = { kind: 'invalid_argument_type', status: null, category: 'type', message: null };
+  cases['buffer_from_end'].push({ id: 'a_count_that_is_a_text_fails', start: 'ab', count: '60', raises: refused }, { id: 'a_count_that_is_a_bool_fails', start: 'ab', count: true, raises: refused });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'php'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\.from_end\("60"\)/);
+  assert.match(python, /\.from_end\(True\)/);
+  const node = [...out].filter(([path]) => path.startsWith('packages/ts/generated/tests/')).map(([, body]) => String(body)).join('\n');
+  assert.match(node, /\.fromEnd\('60'\)/);
+  assert.match(node, /\.fromEnd\(true\)/);
+});
+
 test('Go writes no dispatch of a call for a callback that only a parameter with keeps takes (GN-6aw, GN-6aa, B2.301)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

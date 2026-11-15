@@ -553,7 +553,7 @@ function composerRequires(contract: Contract, dependencies: CoreDependencies, fo
 
 function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDependencies = new Map(), foreign: ReadonlyMap<string, Contract> = new Map()): string {
   const dependencies = npmDependencies(contract, coreDependencies, foreign);
-  const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
+  const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown; types?: string; import?: string; require?: string; files?: string[] }> };
   const node = contract.targets.includes('node');
   const wasm = contract.targets.includes('wasm');
   const browser = { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' };
@@ -567,6 +567,12 @@ function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDepen
     };
   }
   if (wasm) exports['./wasm'] = browser;
+  // GN-3c, D7: an entry other than . and ./wasm that names its own files is an export of files that the repository
+  // writes beside the generated ones; scaffold writes its conditions and its files as the contract declares them.
+  const extra = Object.entries(npm.entries).filter(([path, entry]) => path !== '.' && path !== './wasm' && (entry.types ?? entry.import ?? entry.require) !== undefined);
+  for (const [path, entry] of extra) {
+    exports[path] = { ...(entry.types === undefined ? {} : { types: entry.types }), ...(entry.import === undefined ? {} : { import: entry.import }), ...(entry.require === undefined ? {} : { require: entry.require }) };
+  }
   return `${JSON.stringify({
     name: npm.package,
     version: core.version,
@@ -579,6 +585,7 @@ function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDepen
     files: [
       ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
+      ...extra.flatMap(([, entry]) => entry.files ?? []),
     ],
     // GN-3c: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
     // loads, and builds it for the Rust triples of the platforms.
