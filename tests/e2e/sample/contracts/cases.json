@@ -211,6 +211,27 @@
           "name": "a"
         }
       }
+    },
+    {
+      "id": "b277_nested_made_path",
+      "tag": {
+        "new": "tag.new",
+        "args": {
+          "name": {
+            "text": [
+              "sqlite://",
+              {
+                "case_path": "owned/data.db"
+              }
+            ]
+          }
+        },
+        "then": [
+          {
+            "call": "tag.name"
+          }
+        ]
+      }
     }
   ],
   "tag_new": [
@@ -224,6 +245,95 @@
       "id": "the_name_of_a_tag",
       "name": "a",
       "result": "a"
+    },
+    {
+      "id": "b277_raw_path",
+      "name": {
+        "text": [
+          "sqlite://",
+          {
+            "case_path": "owned/data.db"
+          }
+        ]
+      },
+      "result": {
+        "text": [
+          "sqlite://",
+          {
+            "case_path": "owned/data.db"
+          }
+        ]
+      },
+      "files": {
+        "owned/witness.txt": "root witness"
+      }
+    },
+    {
+      "id": "b277_json_path",
+      "name": {
+        "text": [
+          "{\"path\":",
+          {
+            "case_path": "owned/data.db",
+            "as": "json-string"
+          },
+          ",\"static\":\"<>&\"}"
+        ]
+      },
+      "result": {
+        "text": [
+          "{\"path\":",
+          {
+            "case_path": "owned/data.db",
+            "as": "json-string"
+          },
+          ",\"static\":\"<>&\"}"
+        ]
+      }
+    },
+    {
+      "id": "b277_made_path",
+      "receiver": {
+        "new": "tag.new",
+        "args": {
+          "name": {
+            "text": [
+              "sqlite://",
+              {
+                "case_path": "owned/data.db"
+              }
+            ]
+          }
+        },
+        "then": [
+          {
+            "call": "tag.name"
+          }
+        ]
+      },
+      "result": {
+        "text": [
+          "sqlite://",
+          {
+            "case_path": "owned/data.db"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b277_literal_controls",
+      "name": {
+        "text": [
+          "part",
+          "\u0000\ud83d\ude42"
+        ]
+      },
+      "result": {
+        "text": [
+          "part",
+          "\u0000\ud83d\ude42"
+        ]
+      }
     }
   ],
   "echo": [
@@ -630,6 +740,106 @@
       "result": {
         "kind": "text",
         "value": "awaited"
+      }
+    },
+    {
+      "id": "b277_function_root_a",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": {
+                  "text": [
+                    "sqlite://",
+                    {
+                      "case_path": "owned/data.db"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": {
+                "text": [
+                  "sqlite://",
+                  {
+                    "case_path": "owned/data.db"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "files": {
+        "owned/witness.txt": "root witness"
+      }
+    },
+    {
+      "id": "b277_function_root_b",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": {
+                  "text": [
+                    "sqlite://",
+                    {
+                      "case_path": "owned/data.db"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": {
+                "text": [
+                  "sqlite://",
+                  {
+                    "case_path": "owned/data.db"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "files": {
+        "owned/witness.txt": "root witness"
       }
     }
   ],

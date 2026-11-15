@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8b800cb14d0d51ffe51c6bd0724d2da4e4da58414eece31bff9bc269e4911de4 -->
+<!-- source-sha256: e99f2449e25c66a74981eec4ebc3cb426fa3b9eb28f55e7335272340224c4182 -->
 # 생성기
 
 [English](generator.md)
@@ -2034,7 +2034,7 @@
   대해 platform errno가 없음을 기대한다). PHP가 PHP 표현이 없는 값을 `case-test`로 실행할 때도 이 검사를
   적용한다. 이 기대값을 버리면 잘못된 error payload도 시험을 통과하므로 alias 정규화가 이를 보존한다.
 
-- **GN-13l** B2.277 계획이며 아직 구현하지 않았다. 타입 `text` 자리의 case 값은
+- **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.
   `as`가 없으면 풀린 경로를 그대로 넣고, 유일한 명시적 mode인 `json-string`은 완전한 따옴표 붙은 JSON
@@ -2044,8 +2044,10 @@
   가리키는 파일은 없어도 된다. 관찰한 결과, 환경 변수 확장,
   일반 formatter, 실행 가능한 표현식에서 part를 얻지 않는다. 기대 text는 literal의 모든 byte, 공백, key
   순서를 유지하고 parsed JSON이 아닌 text로 비교한다. 이 형태는 typed text 자리에서만 해석하며 실제
-  record와 map 데이터는 바꾸지 않는다. 지원하지 않는 scalar와 alias-text 사용은 객체를 문자열로 강제
-  변환하지 않고 이름으로 실패하며 alias-token 확장을 더하지 않는다. 기존 plain text, `ill_formed`, typed
+  record와 map 데이터는 바꾸지 않는다. 지원하지 않는 scalar 사용과 모든 alias 생성자 projection은
+  객체를 문자열로 강제 변환하지 않고 이름으로 실패한다. alias kind와 관계없이 optional, list, map, record
+  parameter를 거쳐 도달한 typed text에도 이 제한을 적용하며 실제 map과 record 데이터는 데이터로 유지한다.
+  alias-token 확장은 더하지 않는다. 기존 plain text, `ill_formed`, typed
   `path`의 의미는 유지한다. 새 text 변환을 나중에 수행하는 private helper는 숨은 인자나 private closure로
   같은 case owner를 전달한다. 전역 root를 풀지 않고 기존 case 밖의 수명을 더하지 않는다. 이 형태를 쓰지
   않는 helper는 바꾸지 않는다.

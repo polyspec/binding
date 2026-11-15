@@ -5,8 +5,10 @@
 
 ## Unreleased
 
-- Specify pending typed text composition from literals and case-owned paths, exact JSON string tokens and
-  independent native quote/root witnesses (GN-13l, B2.277), without adding WASM filesystem access.
+- Typed text cases compose Unicode literals and case-owned relative paths, optionally as complete minimal
+  UTF-8 JSON string tokens (GN-13l, B2.277). Exact expected text is preserved; private helpers carry the captured
+  case root, and fixed-byte quote goldens and old-root/file witnesses are generated. Alias tokens and existing
+  plain text remain unchanged. WASM uses its Node host root only as text and gains no filesystem access.
 
 - Reject Windows drive prefixes in every component of case-owned relative paths before fixture preparation
   (GN-6y, B2.276). Nested and drive-relative components previously passed the shared validator; non-drive colons

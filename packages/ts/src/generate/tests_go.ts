@@ -32,6 +32,7 @@ import {
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
+  caseTextParts, CASE_JSON_STRING_GOLDENS,
 } from './samples.ts';
 
 interface Values {
@@ -39,6 +40,8 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
+  // GN-13l: only a rendered owned-path term activates the private text helpers, never words in an ordinary literal.
+  usesCaseText?: boolean;
   // GN-13e, B2.121: whether a test compares a result that holds an instance of a value class of another repository.
   readsForeign?: boolean;
   // GN-6aa: the callback units whose fixture a case value inside another value makes.
@@ -60,15 +63,39 @@ class Body {
   functions: string[] = [];
   // The count of the locals of a test, which the bodies of its funcs share, so that no local has the name of another.
   private readonly counter: { next: number };
-  constructor(counter: { next: number } = { next: 0 }) {
+  private readonly root: Body;
+  private textContext: { owner: string; path: string } | undefined;
+  constructor(counter: { next: number } = { next: 0 }, root?: Body) {
     this.counter = counter;
+    this.root = root ?? this;
   }
   fresh(prefix = 'made'): string {
     return `${prefix}${this.counter.next++}`;
   }
   // GN-6ae: the statements of a block inside the test: the body of a func, or the block of a call of after.
   child(): Body {
-    return new Body(this.counter);
+    return new Body(this.counter, this.root);
+  }
+  // GN-13l: callbacks share the test's captured owner and directory, even when one of their parameters is t.
+  caseTextContext(): { owner: string; path: string } {
+    if (this.root.textContext === undefined) {
+      const owner = this.fresh('_caseTextOwner');
+      const path = this.fresh('_caseTextRoot');
+      this.root.textContext = { owner, path };
+      this.root.lines.unshift(`${owner} := t`, `${path} := casePath(${owner}, ".")`);
+    }
+    return this.root.textContext;
+  }
+  hasCaseTextContext(): boolean {
+    return this.root.textContext !== undefined;
+  }
+  // Late fixture checks may first require the capture after ordinary body lines were copied. Publish only the
+  // private prolog in that case; ordinary value construction and check builders retain their existing order.
+  completeCaseTextContext(lines: string[], captured: boolean): void {
+    const context = this.root.textContext;
+    if (!captured && context !== undefined) {
+      lines.unshift(`${context.owner} := t`, `${context.path} := casePath(${context.owner}, ".")`);
+    }
   }
   // A call whose results are bound to locals and whose error fails the test.
   bind(call: string, results: number, rule: string): string[] {
@@ -167,6 +194,16 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     }
   }
   if (typeof type === 'string') {
+    const textParts = caseTextParts(json);
+    if (textParts !== undefined) {
+      if (type !== 'text') throw new Unsupported(`a composed case text stands at a place of the type text alone (GN-13l), not ${type}`);
+      return textParts.map((part) => {
+        if (typeof part === 'string') return goString(part);
+        v.usesCaseText = true;
+        const context = b.caseTextContext();
+        return `_caseTextPath(${context.owner}, ${context.path}, ${goString(part.relative)}, ${String(part.jsonString)})`;
+      }).join(' + ');
+    }
     if (type === 'text') return textValue(json);
     if (type === 'latin1') return goString(String(json));
     if (type === 'bool') return String(json === true);
@@ -1292,6 +1329,7 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
       continue;
     }
     const { receiver, args } = call;
+    const captured = b.hasCaseTextContext();
     const lines = [...raisedLine(kase.args), ...b.lines];
     if (kase.faults !== undefined || b.armed) lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
     if (kase.faults !== undefined) {
@@ -1304,6 +1342,7 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
     }
     lines.push(...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
+    b.completeCaseTextContext(lines, captured);
     (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
@@ -1321,6 +1360,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args)) };
     });
+    const captured = b.hasCaseTextContext();
     const lines = typeof call === 'string'
       ? [`t.Fatal(${goString(call)})`]
       : [
@@ -1333,6 +1373,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
         ...afterLines(v, b, fn, kase.id, kase.after, call.receiver),
         ...serviceCheck(kase.service),
       ];
+    if (typeof call !== 'string') b.completeCaseTextContext(lines, captured);
     out.main.push(`
 func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
@@ -1440,9 +1481,11 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
         refused = `${fn.member.id}: ${error.message} (GN-13e)`;
       }
     }
+    const captured = b.hasCaseTextContext();
     const lines = refused === undefined
       ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service)]
       : [`t.Fatal(${goString(refused)})`];
+    if (refused === undefined) b.completeCaseTextContext(lines, captured);
     (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
@@ -1777,6 +1820,124 @@ func caseFile(t *testing.T, relative string, content string) {
 }
 `;
 
+// GN-13l: a path term uses the owner and root captured before case values and callbacks are constructed.
+const CASE_TEXT_PATH = String.raw`
+func _caseTextPath(owner *testing.T, root string, relative string, jsonString bool) string {
+	owner.Helper()
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	if !_caseTextUTF8.ValidString(path) || strings.IndexByte(path, 0) >= 0 {
+		owner.Fatalf("GN-13l: case path %q is not UTF-8 text without NUL", path)
+	}
+	if !jsonString {
+		return path
+	}
+	quoted, err := _caseJSONString(path)
+	if err != nil {
+		owner.Fatal(err)
+	}
+	return quoted
+}
+`;
+
+// GN-13l: native JSON quoting with the HTML option disabled. Only real separator escapes are decoded; an escaped
+// backslash and its following u2028/u2029 text remain an escaped backslash and literal text.
+const CASE_JSON_STRING = String.raw`
+func _caseJSONString(value string) (string, error) {
+	if !_caseTextUTF8.ValidString(value) {
+		return "", errors.New("GN-13l: case text is not valid UTF-8")
+	}
+	var encoded strings.Builder
+	encoder := _caseTextJSON.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return "", err
+	}
+	quoted := strings.TrimSuffix(encoded.String(), "\n")
+	var result strings.Builder
+	result.Grow(len(quoted))
+	for index := 0; index < len(quoted); {
+		if quoted[index] != '\\' {
+			result.WriteByte(quoted[index])
+			index++
+			continue
+		}
+		if strings.HasPrefix(quoted[index:], "\\u2028") {
+			result.WriteString("\u2028")
+			index += 6
+			continue
+		}
+		if strings.HasPrefix(quoted[index:], "\\u2029") {
+			result.WriteString("\u2029")
+			index += 6
+			continue
+		}
+		result.WriteByte(quoted[index])
+		index++
+		if index < len(quoted) {
+			result.WriteByte(quoted[index])
+			index++
+		}
+	}
+	return result.String(), nil
+}
+`;
+
+function caseJSONGoldenTests(): string {
+  const rows = CASE_JSON_STRING_GOLDENS.map(({ inputHex, expectedHex }) => `\t\t{${goString(inputHex)}, ${goString(expectedHex)}},`).join('\n');
+  return `
+func TestGN13lCaseJSONStringGoldens(t *testing.T) {
+	for index, golden := range [][2]string{
+${rows}
+	} {
+		input, err := hex.DecodeString(golden[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		quoted, err := _caseJSONString(string(input))
+		if err != nil {
+			t.Fatalf("GN-13l: golden %d: %v", index, err)
+		}
+		if actual := hex.EncodeToString([]byte(quoted)); actual != golden[1] {
+			t.Errorf("GN-13l: golden %d is %s, expected %s", index, actual, golden[1])
+		}
+	}
+	if _, err := _caseJSONString(string([]byte{0xff})); err == nil {
+		t.Fatal("GN-13l: invalid UTF-8 was accepted")
+	}
+}
+`;
+}
+
+// The witness constructs text through the same value writer as contract cases, then invokes a callback whose t
+// parameter shadows the test owner and whose public helper names shadow unreserved names. Existing caseFile and casePath independently establish the owned file and root.
+function caseTextWitness(v: Values): string {
+  const b = new Body();
+  const relative = 'owned/composed-text.txt';
+  const rawBody = b.child();
+  const raw = value(v, rawBody, 'text', { text: [{ case_path: relative }] });
+  const quotedBody = b.child();
+  const quoted = value(v, quotedBody, 'text', { text: [{ case_path: relative, as: 'json-string' }] });
+  const rawCallback = b.fresh('_caseTextRawCallback');
+  const jsonCallback = b.fresh('_caseTextJSONCallback');
+  return `
+func TestGN13lCaseTextCapturesTheOwnedRoot(t *testing.T) {
+${indent([
+    `caseFile(t, ${goString(relative)}, "7769746e657373")`, ...b.lines,
+    `${rawCallback} := func(t, caseTextPath, caseJSONString string) string {`, ...rawBody.lines.map((line) => `\t${line}`), `\treturn ${raw}`, '}',
+    `${jsonCallback} := func(t, caseTextPath, caseJSONString string) string {`, ...quotedBody.lines.map((line) => `\t${line}`), `\treturn ${quoted}`, '}',
+    `expected := casePath(t, ${goString(relative)})`,
+    `actual := ${rawCallback}("shadowed owner", "shadowed path helper", "shadowed JSON helper")`,
+    'if actual != expected {', '\tt.Fatalf("GN-13l: captured path %q, expected owned path %q", actual, expected)', '}',
+    'content, err := os.ReadFile(actual)',
+    'if err != nil || string(content) != "witness" {', '\tt.Fatalf("GN-13l: owned file content is %q (%v)", content, err)', '}',
+    'var decoded string',
+    `if err := _caseTextJSON.Unmarshal([]byte(${jsonCallback}("shadowed owner", "shadowed path helper", "shadowed JSON helper")), &decoded); err != nil || decoded != expected {`,
+    '\tt.Fatalf("GN-13l: quoted captured path is %q (%v), expected %q", decoded, err, expected)', '}',
+  ], 1)}
+}
+`;
+}
+
 // GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
 // the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
 // waits for; a missing variable or a status that is not 0 fails the test.
@@ -2028,10 +2189,16 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 }
 
 // The standard packages and the packages of the module that a test file names.
-function testImports(model: Model, module: string, text: string, scope: GoScope): string {
+function testImports(model: Model, module: string, text: string, scope: GoScope, extraStd: readonly { path: string; alias: string }[] = []): string {
   const std = ['context', 'encoding/hex', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  // Owned-text helpers declare their imports without interpreting ordinary literals as code.
+  std.push(...extraStd.map(({ path, alias }) => `${alias} ${goString(path)}`));
   std.push('"testing"');
-  std.sort();
+  std.sort((a, b) => {
+    const aPath = a.slice(a.indexOf('"'));
+    const bPath = b.slice(b.indexOf('"'));
+    return aPath < bPath ? -1 : aPath > bPath ? 1 : 0;
+  });
   const own = [
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
@@ -2087,6 +2254,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   const pkg = goPackage(model.contract, module);
   // The helpers are in the file without a build tag, which every run compiles.
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
+  const composedText = v.usesCaseText === true;
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bmust\(/.test(all) ? [MUST] : []),
@@ -2094,25 +2262,27 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
     ...(v.readsForeign === true ? [foreignReadHelper(v)] : []),
     ...(out.warns === true ? [WARNINGS] : []),
-    ...(/\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),
-    ...(/\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
+    ...(composedText || /\b(casePath|caseFile)\(t, /.test(all) ? [CASE_PATH] : []),
+    ...(composedText || /\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
+    ...(composedText ? [CASE_TEXT_PATH, caseTextWitness(v)] : []),
     ...(/\bservice(Address|State)\(t, /.test(all) ? [SERVICE] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');
-  const file = (tag: string | undefined, tests: string[], extra = ''): string => {
+  const file = (tag: string | undefined, tests: string[], extra = '', extraStd: readonly { path: string; alias: string }[] = []): string => {
     const body = `${extra}${tests.join('\n')}\n`;
     return `${goHeader()}
 ${tag === undefined ? '' : `\n//go:build ${tag}\n`}
 // The generated tests of the Go package ${pkg} (G-5).
 package ${pkg}
 
-${testImports(model, module, body, scope)}${body}`;
+${testImports(model, module, body, scope, extraStd)}${body}`;
   };
-  const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers)]];
+  const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers, composedText ? [{ path: 'encoding/json', alias: '_caseTextJSON' }, { path: 'unicode/utf8', alias: '_caseTextUTF8' }] : [])]];
   if (/\bsameValue\(/.test(all)) files.push(['zz_generated_value_comparison_test.go', file(undefined, [], `${SAME_VALUE}${FLOAT_COMPARISON_TEST}`.trimEnd())]);
+  if (composedText) files.push(['zz_generated_case_json_string_test.go', file(undefined, [], `${CASE_JSON_STRING}${caseJSONGoldenTests()}`.trimEnd(), [{ path: 'encoding/json', alias: '_caseTextJSON' }, { path: 'unicode/utf8', alias: '_caseTextUTF8' }])]);
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
   if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);

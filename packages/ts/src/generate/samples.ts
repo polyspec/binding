@@ -53,6 +53,12 @@ export interface Context {
   machineFunctionNew?: (fixture: FunctionFixture) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
+  // GN-13l: a text path uses the root captured by this case, including in private deferred helpers.
+  caseTextPath?: (relative: string, jsonString: boolean) => string;
+  // GN-13l: optional generator-only dependency scope. A writer tracks actual text-path use, not marker text.
+  caseTextExpression?: (make: () => string) => string;
+  // GN-13l: alias projections keep their closed value forms even when a constructor takes typed text.
+  caseTextAlias?: boolean;
   // GN-6aq: the expression of a cancellation of the language that fired before the call, or one that never fires.
   cancelNew?: (fired: boolean) => string;
   // GN-13j: the expression of the address of the service of a case, which the test reads from its variable.
@@ -174,6 +180,37 @@ export function casePathOf(value: unknown): string {
   }
   return value;
 }
+
+const wellFormedCaseText = (text: string): boolean => !/[\uD800-\uDFFF]/u.test(text);
+
+export type CaseTextPart = string | { relative: string; jsonString: boolean };
+
+// GN-13l: recognize this form only at a typed text place. Records and maps do not reserve its keys.
+export function caseTextParts(value: unknown): CaseTextPart[] | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value) || !Object.hasOwn(value, 'text')) return undefined;
+  const refused = (): never => { throw new Unsupported(`a composed case text is {"text": [<Unicode literal> | {"case_path": <relative>, "as"?: "json-string"}, ...]} with no other keys (GN-13l), not ${shown(value)}`); };
+  const parts = (value as { text?: unknown }).text;
+  if (Object.keys(value).length !== 1 || !Array.isArray(parts) || parts.length === 0) return refused();
+  return parts.map((part): CaseTextPart => {
+    if (typeof part === 'string') return wellFormedCaseText(part) ? part : refused();
+    if (typeof part !== 'object' || part === null || Array.isArray(part)) return refused();
+    const record = part as Record<string, unknown>;
+    if (!Object.hasOwn(record, 'case_path') || Object.keys(record).some((key) => key !== 'case_path' && key !== 'as')) return refused();
+    const relative = record['case_path'];
+    if (typeof relative !== 'string' || !wellFormedCaseText(relative) || relative.includes('\0')) return refused();
+    if (Object.hasOwn(record, 'as') && record['as'] !== 'json-string') return refused();
+    return { relative: casePathOf(relative), jsonString: record['as'] === 'json-string' };
+  });
+}
+
+// GN-13l: independent fixed UTF-8 byte oracles, not output of a target's quoting helper.
+export const CASE_JSON_STRING_GOLDENS: readonly { inputHex: string; expectedHex: string }[] = [
+  { inputHex: '225c2f3c3e26', expectedHex: '225c225c5c2f3c3e2622' },
+  { inputHex: 'ed959ceab880e280a8e280a9', expectedHex: '22ed959ceab880e280a8e280a922' },
+  { inputHex: '5c75323032385c7532303239', expectedHex: '225c5c75323032385c5c753230323922' },
+  { inputHex: '5c7532303238e280a85c7532303239e280a9', expectedHex: '225c5c7532303238e280a85c5c7532303239e280a922' },
+  { inputHex: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', expectedHex: '225c75303030305c75303030315c75303030325c75303030335c75303030345c75303030355c75303030365c75303030375c625c745c6e5c75303030625c665c725c75303030655c75303030665c75303031305c75303031315c75303031325c75303031335c75303031345c75303031355c75303031365c75303031375c75303031385c75303031395c75303031615c75303031625c75303031635c75303031645c75303031655c753030316622' },
+];
 
 // GN-13i: the files of a case, which its test writes into the directory of the test before it makes the values of the
 // case: an object from a relative path in the form of a case value of a path (GN-6y) to its bytes, a text for its UTF-8
@@ -380,15 +417,31 @@ export function serviceSteps(given: unknown, target: string): ServiceSteps | und
 // GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
 // each value is given to the steps, and the whole value to their end.
 export function fromJson(model: Model, ctx: Context, type: Type, value: unknown, out = false): string {
-  const steps = ctx.steps;
-  if (steps === undefined) return valueForm(model, ctx, type, value, out);
-  steps.depth += 1;
+  const make = (): string => {
+    const steps = ctx.steps;
+    if (steps === undefined) return valueForm(model, ctx, type, value, out);
+    steps.depth += 1;
+    try {
+      const expr = valueForm(model, ctx, type, value, out);
+      return steps.depth === 1 ? steps.done(expr) : steps.bind(expr);
+    } finally {
+      steps.depth -= 1;
+      if (steps.depth === 0) steps.drop();
+    }
+  };
+  return ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
+}
+
+// A synchronous alias projection may call writer closures that hold this same context. Restore the scope even
+// when a named refusal interrupts rendering, so a later ordinary typed-TEXT case retains its supported form.
+function aliasCaseProjection(ctx: Context, make: () => string): string {
+  const previous = ctx.caseTextAlias;
+  ctx.caseTextAlias = true;
   try {
-    const expr = valueForm(model, ctx, type, value, out);
-    return steps.depth === 1 ? steps.done(expr) : steps.bind(expr);
+    return make();
   } finally {
-    steps.depth -= 1;
-    if (steps.depth === 0) steps.drop();
+    if (previous === undefined) delete ctx.caseTextAlias;
+    else ctx.caseTextAlias = previous;
   }
 }
 
@@ -399,6 +452,18 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     throw new Unsupported(`a case value {"service": "${value.which}"} stands at a place of the type text or latin1 alone (GN-13j), not at ${shown(type)}`);
   }
   if (typeof type === 'string') {
+    const composed = caseTextParts(value);
+    if (composed !== undefined) {
+      if (ctx.caseTextAlias === true) throw new Unsupported('a composed case text is not an aliased typed-text value (GN-13l)');
+      if (type !== 'text') throw new Unsupported(`a composed case text belongs to type text only (GN-13l), not ${shown(type)}`);
+      const literal = (part: string): string => ctx.lang === 'python' ? pyString(part) : ctx.lang === 'node' ? jsString(part) : phpText(part);
+      const parts = composed.map((part) => {
+        if (typeof part === 'string') return literal(part);
+        if (ctx.caseTextPath === undefined) throw new Unsupported(`a case-owned text path is not generated for ${ctx.target ?? ctx.lang} (GN-13l)`);
+        return ctx.caseTextPath(part.relative, part.jsonString);
+      });
+      return `(${parts.join(ctx.lang === 'php' ? ' . ' : ' + ')})`;
+    }
     // GN-13j: the address of the service of the case, or the scope of the case in the target.
     if ((type === 'text' || type === 'latin1') && value instanceof ServiceValue) {
       const given = serviceValueOf(value, ctx.target ?? ctx.lang);
@@ -503,11 +568,12 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   // members of its out rows make; a result that holds one is compared with that instance, both read through the
   // members of the in row of the owner (GN-13e, B2.121).
   if (alias?.library !== undefined && alias.unit.kind === 'class') {
-    return foreignClassValue(model, ctx, alias, alias.library, value, `the class ${alias.unit.id} of ${alias.library}`);
+    const library = alias.library;
+    return aliasCaseProjection(ctx, () => foreignClassValue(model, ctx, alias, library, value, `the class ${alias.unit.id} of ${library}`));
   }
   if (alias !== undefined) {
     if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
-    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, unit, alias.library);
+    return aliasCaseProjection(ctx, () => valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, unit, alias.library));
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
@@ -563,7 +629,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
   // U-1, GN-13: a value of a class of origin value is made by the member that its out row of the kind names.
-  if (unit?.kind === 'class' && unit.origin === 'value' && !out) return valueClassFromJson(model, ctx, unit, value);
+  if (unit?.kind === 'class' && unit.origin === 'value' && !out) return aliasCaseProjection(ctx, () => valueClassFromJson(model, ctx, unit, value));
   // U-1, GN-13: a value of another class is the [key, value] pairs that fill it, as those of a kind map do.
   const filled = objectUnit(model, type);
   if (filled !== undefined && Array.isArray(value) && !out) return pairsInto(model, ctx, filled, value);
@@ -667,6 +733,7 @@ export function foreignSteps(alias: ValueAlias, lang: Lang, value: unknown, wher
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
+  if (kind === 'text' && caseTextParts(record['value']) !== undefined) throw new Unsupported('a composed case text is not an alias text value (GN-13l)');
   const makes = classMakes(alias, lang).filter((make) => make.kind === kind);
   const [make] = makes;
   if (make === undefined || makes.length > 1) throw new Unsupported(`the kind ${kind} of ${where} is made in ${lang} by ${makes.length === 0 ? 'no out row' : `${String(makes.length)} out rows`} of its owner, not by one member, so no case value of that kind is one of the class (GN-6x, G-5)`);
@@ -1007,6 +1074,7 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
       }
       case 'text':
       case 'bytes': {
+        if (caseTextParts(held) !== undefined) throw new Unsupported(`a composed case text is not an alias ${kind} value (GN-13l)`);
         const bytes = caseBytes(held);
         out.push(textToken(bytes, form === 'text'));
         break;
@@ -1148,7 +1216,10 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   };
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
   if (kind === 'bool') return fromJson(model, ctx, 'bool', held);
-  if (kind === 'text') return fromJson(model, ctx, 'text', held);
+  if (kind === 'text') {
+    if (caseTextParts(held) !== undefined) throw new Unsupported('a composed case text is not an alias-text value (GN-13l)');
+    return fromJson(model, ctx, 'text', held);
+  }
   if (kind === 'bytes') return fromJson(model, ctx, 'bytes', held);
   if (kind === 'float') {
     const float = fromJson(model, ctx, 'float', held);
@@ -1282,6 +1353,11 @@ export function keptOf(model: Model, holds: 'entries' | 'value', where: string):
 // U-2: an argument whose value is undefined is left out: a positional one after it goes by its name in Python and PHP,
 // and Node passes undefined in its place; a field is no member of the options record.
 export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) => string | undefined, extra?: string): string {
+  const make = (): string => callArgsForm(model, ctx, fn, value, extra);
+  return ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
+}
+
+function callArgsForm(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) => string | undefined, extra?: string): string {
   const name = (a: Arg, text: string): string => `${langName(ctx.lang, a.name, 'variable')}${ctx.lang === 'python' ? '=' : ': '}${text}`;
   const positional: string[] = [];
   let skipped = false;

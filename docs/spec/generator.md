@@ -2507,7 +2507,7 @@ the design ids are those of the binding design.
   without a PHP form through `case-test`. Alias normalization retains these expectations because discarding
   them would allow an incorrect error payload to pass the test.
 
-- **GN-13l** Planned in B2.277, not implemented: a case value at a place of type `text` may be
+- **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.
   A path object omitting `as` inserts the raw resolved path; its only explicit mode is `json-string`, which inserts
@@ -2516,8 +2516,10 @@ the design ids are those of the binding design.
   Every path uses the same case-owned root as GN-13i files, initialized before receiver, argument and callback
   construction; a referenced file need not exist. No observed result, environment expansion, general formatter or executable expression supplies a part.
   Expected text keeps every literal byte, whitespace and key order and is compared as text, never as parsed JSON.
-  This form is interpreted only at typed text places; genuine record and map data is unchanged. Unsupported scalar
-  and alias-text uses fail by name instead of coercing the object to a string; alias-token expansion is not added.
+  This form is interpreted only at typed text places; genuine record and map data is unchanged. It fails by name
+  in unsupported scalar places and every aliased constructor projection instead of coercing the object to a string.
+  This includes typed text reached through optional, list, map or record parameters, regardless of alias kind;
+  genuine map and record data remains data. Alias-token expansion is not added.
   Existing plain text, `ill_formed` and typed `path` keep their meanings. Private helpers that defer a new text
   conversion carry the same case owner through a hidden argument or a private closure; they resolve no global
   root and add no lifetime beyond the existing case. Helpers that do not use this form remain unchanged.
