@@ -1820,3 +1820,24 @@ describe('CK-16 the awaitable of a member that waits (GN-6m)', () => {
     assert.match(run((c) => { waiting(c).name = ['wait']; }).join('\n'), /the Python awaitable await of gate\.enter_slowly is a reserved word of Python/);
   });
 });
+
+describe('CK-96 a key of a member case without a meaning (G-5, B2.312)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-96');
+  };
+  test('the sample, whose cases give the files of a case as @files and receivers by their factory, has none', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('the files of a case under files, not @files, are named with the case and the member', () => {
+    const found = run((cases) => {
+      const kase = cases['tag_name'].find((k: any) => k.id === 'b277_raw_path');
+      kase.files = kase['@files'];
+      delete kase['@files'];
+    });
+    assert.equal(found.length, 1);
+    assert.match(found[0]?.message ?? '', /^the case b277_raw_path of tag\.name has the key files, which is no parameter of tag\.name, no key of its result and no key of a case \(G-5\)$/);
+  });
+});

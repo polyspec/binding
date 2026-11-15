@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: c038e1def142ff7e2e6a745f433ae5d3f62d21d281d0a4188f257d5300da97d3 -->
+<!-- source-sha256: 8c7e931a72ab61f9767c440b084182566d2a1ad139d86fdfab79b0b71fab4918 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -301,6 +301,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
   다른 키는 없다. 각 `call`은 receiver의 class의 method이고 `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
+- **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
+  case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
+  key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `raises`, `after`, `then`, `faults`, `service`,
+  `@files`, `repeat`, `awaits`. `binding check`는 다른 key를 그 key, case, member와 함께 보고한다. 이유: 생성기는 아는
+  key만 읽으므로, `@files` 대신 쓴 `files`나 `cases`의 행이 이름하지 않은 key 아래의 결과 같은 다른 이름의 key는 아무
+  말 없이 모든 시험에서 빠지고, case는 말하는 것보다 적게 검사한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

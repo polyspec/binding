@@ -133,6 +133,9 @@ const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boo
   wasm: { words: new Set(JS_RESERVED), caseless: false, positions: ['class', 'function', 'parameter'] },
 };
 
+// CK-96: the keys of a member case that G-5 gives a meaning, besides the parameters of the member and its result.
+const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', 'repeat', 'awaits'];
+
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];
   findTodos(raw, '', todos);
@@ -1505,6 +1508,7 @@ class Checker {
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);
+        this.caseKeys(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         this.caseScope(row.member, record, `/cases/${i}`);
@@ -1568,6 +1572,25 @@ class Checker {
           if (aliasRaised.get(unit.id)?.has(kind) !== true) this.report('CK-22', `${path}/in_raises/${r}`, `no case of the alias ${unit.id} raises the kind ${kind} (K-1, U-7)`);
         }
       }
+    }
+  }
+
+  // CK-96: every key of a member case is a parameter of the member in snake_case, a parameter of a factory of its class
+  // when the case gives its receiver by those, the key of its result, or a key that G-5 gives a meaning; a key of
+  // another name, such as a meta key without its @, would be left out of every generated test without a word.
+  caseKeys(memberId: string, record: Record<string, unknown>, resultKey: string, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const snake = (name: Name): string => convert(name, 'python', 'variable');
+    const allowed = new Set<string>([...CASE_META_KEYS, resultKey, ...(found.member.parameters ?? []).map((p) => snake(p.name))]);
+    // A member with a receiver, or a member of a value class without core_type, which has no core path.
+    const receives = (m: { kind: string; core?: unknown }): boolean => m.kind !== 'constructor' && (m.core === undefined || (typeof m.core === 'object' && m.core !== null && (m.core as { receiver?: unknown }).receiver !== undefined));
+    if (receives(found.member) && record['receiver'] === undefined) {
+      const factory = (m: { kind: string; core?: unknown }): boolean => m.kind === 'constructor' || !receives(m);
+      for (const m of found.unit.members ?? []) if (factory(m)) for (const p of m.parameters ?? []) allowed.add(snake(p.name));
+    }
+    for (const key of Object.keys(record)) {
+      if (!allowed.has(key)) this.report('CK-96', path, `the case ${String(record['id'])} of ${memberId} has the key ${key}, which is no parameter of ${memberId}, no key of its result and no key of a case (G-5)`);
     }
   }
 
