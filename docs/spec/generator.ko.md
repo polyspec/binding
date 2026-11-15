@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d430f63a08e27d0dfb5beea411cde08729437fe166ee8943e89109ea8a1fdb06 -->
+<!-- source-sha256: dd9519e4f482891a53c7b1260b3185ca18255944394918bbb3f4feaa88b602c5 -->
 # 생성기
 
 [English](generator.md)
@@ -32,7 +32,9 @@
   그런 문장으로 실패한 target은 그 항목으로 거부된 target이어서 다른 target을 멈추지 않는다. binding 자신의 결함만 stack
   trace를 찍는다. target 하나를 build하고 시험하는 저장소는 `--target`으로 그 target만 생성하므로, 다른
   target의 거부에 막히지 않는다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두
-  이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다.
+  이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다. 명령은 각 target을 1 GiB stack을
+  가진 자기 thread에서 생성하고 그것을 기다린다. 그래서 코어의 깊이 한계를 넘게 중첩된 case 값(수백 단계, 단계마다 생성기의
+  frame 여럿)도 case가 주는 대로 생성된다. main thread의 stack은 그보다 작고, 그것을 넘친 생성은 깊이에 따라 우연히 실패한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.

@@ -49,7 +49,10 @@ the design ids are those of the binding design.
   stack trace. A repository that builds and tests one
   target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
   one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
-  usage line would say that the command was written wrong when it was not.
+  usage line would say that the command was written wrong when it was not. The command generates each target on a
+  thread of its own with a stack of 1 GiB and waits for it, so a case value nested past the depth limit of its core
+  (hundreds of levels, each several frames of the generator) is generated as the case gives it; the stack of the main
+  thread holds less, and a generation that overflowed it would fail by chance of the depth.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
