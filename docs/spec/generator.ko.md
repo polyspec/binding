@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5ecca0eec943909ed8047cff03f1398b8670b1a704f6ef493931b04e71632833 -->
+<!-- source-sha256: f4fe7ac44a281e6bdf5470410b1f634273202c1bb523e6326853c29d69cbe95c -->
 # 생성기
 
 [English](generator.md)
@@ -137,8 +137,9 @@
   class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 다른 라이브러리의 계약이 다른
   자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도
   없다. `scaffold`는 라이브러리의 계약을 그것을 이름하는 라이브러리의 코어에서 의존 줄의 `path`로 읽고, 나머지는
-  `cargo metadata`로 읽는다. Cargo가 실패하면 계약 자신이 이름하는 라이브러리로 package를 쓰고 상태 1과 GN-15f의 안내로
-  실패한다. 그때는 callback unit만이 이름하는 라이브러리를 알 수 없기 때문이다.
+  `cargo metadata`로 읽는다. Cargo가 실패하면 아무 파일도 쓰지 않고 상태 1, Cargo의 오류와 GN-15f의 안내로
+  실패한다. 그때는 callback unit만이 이름하는 라이브러리와 라이브러리의 Go module을 알 수 없고, 그것 없이 쓴
+  manifest(라이브러리의 require가 빠진 `go.mod`)는 완전한 것처럼 읽히기 때문이다.
   버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
   `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`; `package.json`과 `composer.json`은 package의 버전 `X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
   레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만; `package.json`과 `composer.json`은 package와 `*`), 개발
@@ -2098,6 +2099,15 @@
   기대 callback이 서로의 root를 확인할 수 없다. WASM은 Node 시험 host가 소유한 root에서 text를 합성할 수
   있고, typed OS path나 Rust filesystem 접근을 얻지 않는다. GN-6y와 CK-15는 유지하며 실제 filesystem과
   database case는 선언된 적용 범위를 유지한다.
+
+- **GN-13m** case의 디렉터리(GN-6y, GN-13i, GN-13l)는 실제 경로로 이름한다: 각 target은 자신이 만든 디렉터리 경로의
+  심볼릭 링크를 그 안의 경로를 이름하기 전에 한 번 푼다(Python `os.path.realpath`, Node와 WASM `realpathSync`, PHP
+  `realpath`, Go `filepath.EvalSymlinks`). 풀지 못하면 그 경로를 대며 시험이 실패한다. 그래서 인자, 서비스 주소의 텍스트
+  (GN-13j, 예 `{"text": ["sqlite://", {"case_path": "a.db"}]}`), 기대 결과에 있는 case의 경로는 코어가 디렉터리를 스스로
+  풀어 돌려준 경로와 같은 텍스트다. case는 디렉터리를 `case_path`와 `path` 값으로만 이름하며, 텍스트 안의 자리표시는
+  그것을 대신하지 않는다. 이유: 시스템의 임시 디렉터리는 심볼릭 링크를 거쳐 닿을 수 있어(macOS의 `/var`와 `/private/var`)
+  경로를 푸는 코어는 시험이 만든 경로와 다른 텍스트를 주고, 풀지 않은 경로의 기대 텍스트는 올바른 결과를 실패시킨다.
+  풀린 형식 하나면 결과를 다시 쓰는 규칙 없이 기대 텍스트가 정확하다.
 
 ## 끝에서 끝까지 확인
 

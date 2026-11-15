@@ -67,8 +67,13 @@ const PHP_CASE_PATH = `
     private function casePath(string $relative): string
     {
         if ($this->caseDir === null) {
-            $this->caseDir = sys_get_temp_dir() . '/case-' . bin2hex(random_bytes(8));
-            mkdir($this->caseDir);
+            $made = sys_get_temp_dir() . '/case-' . bin2hex(random_bytes(8));
+            mkdir($made);
+            $real = realpath($made);
+            if ($real === false) {
+                $this->fail('GN-13m: the directory of the case ' . $made . ' has no real path');
+            }
+            $this->caseDir = $real;
         }
         return $this->caseDir . '/' . $relative;
     }

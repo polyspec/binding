@@ -173,8 +173,9 @@ the design ids are those of the binding design.
   library that only the contract of another library names in another place, such as the type of a member of a class
   that this contract does not take, is in no manifest. `scaffold` reads the contract of a library by the `path` of its
   dependency line, from the core of the library that names it, and the others through `cargo metadata`; when Cargo
-  fails, it writes the packages with the libraries that the contract itself names and fails with status 1 and the
-  instruction of GN-15f, because the libraries that only a callback unit names are then not known. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
+  fails, it writes no file and fails with status 1, the error of Cargo and the instruction of GN-15f, because the
+  libraries that only a callback unit names and the Go modules of the libraries are then not known, and a manifest
+  written without them (a `go.mod` without the requirement of a library) would read as complete. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
   is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
   dependency `polyspec-<library>==X.Y.Z`; `package.json` and `composer.json` the version `X.Y.Z` of the package). Every other line (a path, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
@@ -2582,6 +2583,17 @@ the design ids are those of the binding design.
   so matching wrong input and expected callbacks cannot confirm one another's root.
   WASM may compose text from the root owned by its Node test host; this adds no typed OS path or Rust filesystem
   access. GN-6y and CK-15 remain in force; real filesystem or database cases retain their declared applicability.
+
+- **GN-13m** The directory of a case (GN-6y, GN-13i, GN-13l) is named by its real path: each target resolves the
+  symbolic links of the path of the directory that it makes, once, before it names a path inside it (Python
+  `os.path.realpath`, Node and WASM `realpathSync`, PHP `realpath`, Go `filepath.EvalSymlinks`), and a failure to
+  resolve it fails the test with the path. So a path of a case in an argument, in the text of an address of a service
+  (GN-13j, such as `{"text": ["sqlite://", {"case_path": "a.db"}]}`) and in an expected result is the same text as the
+  path that a core gives back after it resolved the directory itself. A case names the directory only through
+  `case_path` and a value of `path`; no placeholder inside a text stands for it. Why: the temporary directory of a
+  system can be reached through a symbolic link (`/var` and `/private/var` of macOS), so a core that resolves the path
+  gives a text that differs from the path the test made, and an expected text with the unresolved path would fail a
+  correct result; one resolved form makes the expected text exact without a rule that rewrites results.
 
 ## End-to-end check
 

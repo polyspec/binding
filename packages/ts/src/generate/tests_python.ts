@@ -133,7 +133,8 @@ const PYTHON_CASE_PATH = `
         if not hasattr(self, "_case_dir"):
             self._case_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self._case_dir.cleanup)
-        return os.path.join(self._case_dir.name, *relative.split("/"))
+            self._case_root = os.path.realpath(self._case_dir.name)
+        return os.path.join(self._case_root, *relative.split("/"))
 `;
 
 // GN-13i: a file of a case, written inside the directory of the test with the directories of its path before the values

@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 function casePath(relative) {
-  caseDir ??= mkdtempSync(join(tmpdir(), 'case-'));
+  caseDir ??= realpathSync(mkdtempSync(join(tmpdir(), 'case-')));
   return join(caseDir, ...relative.split('/'));
 }
 `;
@@ -261,7 +261,7 @@ export const nodeServiceEnd = (service: unknown): string => {
 
 // GN-6y, GN-13i: the imports of node:fs and node:os that the directory of a test and the files of a case use.
 export const nodeCaseImports = (usesCaseFile: boolean, usesCaseText = false): string =>
-  `\nimport { ${usesCaseFile ? `mkdirSync, mkdtempSync, ${usesCaseText ? 'readFileSync, ' : ''}rmSync, writeFileSync` : 'mkdtempSync, rmSync'} } from 'node:fs';\nimport { tmpdir } from 'node:os';`;
+  `\nimport { ${usesCaseFile ? `mkdirSync, mkdtempSync, ${usesCaseText ? 'readFileSync, ' : ''}realpathSync, rmSync, writeFileSync` : 'mkdtempSync, realpathSync, rmSync'} } from 'node:fs';\nimport { tmpdir } from 'node:os';`;
 
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;

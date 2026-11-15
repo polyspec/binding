@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- `binding scaffold` writes no file when `cargo metadata` fails, and fails with the error of Cargo (GN-3e, B2.299).
+  It wrote the packages with a `go.mod` that lacked the requirement of a library whose contract Cargo did not find.
+
+- Every target names the directory of a case by its real path (GN-13m, B2.297). On macOS the test made
+  `/var/folders/...`, and a core that resolved a path inside it, such as the file of a SQLite database, gave back
+  `/private/var/folders/...`, so an expected text with `case_path` failed a correct result.
+
 ## 0.0.10
 
 - A value alias of Python names the token `py_` also for the null of an out value and for an omitted default

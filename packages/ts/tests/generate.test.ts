@@ -1688,22 +1688,20 @@ test('a branch dependency of the core generates every target, and only the check
   }
 });
 
-test('a scaffold whose cargo metadata fails names the Go module alone and writes the other packages (GN-15f, GN-3e)', () => {
+test('a scaffold whose cargo metadata fails writes no file and fails with the error of Cargo (GN-15f, GN-3e, B2.299)', () => {
   const { root, env } = plotCopy();
   try {
     const manifest = join(root, 'plot/packages/rust/Cargo.toml');
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
-    // A cargo that fails as it does without network for a Git dependency that was never fetched.
-    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: failed to get polyspec-points as a dependency of package polyspec-plot" >&2\nexit 101\n', { mode: 0o755 });
+    // A cargo that fails as it does for a Cargo.lock that the version of a manifest no longer matches.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: the lock file needs to be updated but --locked was passed" >&2\nexit 101\n', { mode: 0o755 });
     const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
     const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')], { encoding: 'utf8', env });
     assert.equal(scaffold.status, 1);
-    assert.match(scaffold.stderr, new RegExp(`\\nbinding: packages/go: not written: points: the contract of the library is not found, so binding scaffold cannot tell whether go\\.mod requires its Go module \\(GN-15f\\): ${advice}\\nbinding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names \\(GN-3e\\): ${advice}\\n$`));
+    assert.match(scaffold.stderr, /error: the lock file needs to be updated but --locked was passed\n/);
+    assert.match(scaffold.stderr, new RegExp(`\\nbinding: the contracts of the libraries that the contract names are not all found, so binding scaffold writes no file \\(GN-3e\\): ${advice}\\n$`));
     assert.doesNotMatch(scaffold.stderr, /\n {4}at /);
-    assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
-    for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
-      assert.equal(existsSync(join(root, 'plot/packages', written)), true, written);
-    }
+    assert.deepEqual(readdirSync(join(root, 'plot/packages')), ['rust']);
     // check and generate read the contracts for every target, so they fail with the same instruction.
     for (const args of [['check', join(root, 'plot/packages/rust/interface.json')], ['generate', '--root', join(root, 'plot'), '--out', join(root, 'out')]]) {
       const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
@@ -4530,6 +4528,18 @@ test('B2.277: composed typed text reaches all five writers with private root and
     assert.deepEqual(refused, [], path);
     assert.match(generated, call, path);
   }
+});
+
+test('the directory of a case is named by its real path in every target, so a path that a core resolves equals the expected text (GN-13m, B2.297)', () => {
+  const fixture = b277TextFixture();
+  const out = generate({ ...fixture, version: '0.0.0', coreLib: 'polyspec_sample', targets: FIVE as Inputs['targets'] & string[] });
+  for (const [path, resolve] of [
+    ['packages/python/generated/tests/test_generated.py', /self\._case_root = os\.path\.realpath\(self\._case_dir\.name\)/],
+    ['packages/ts/generated/tests/generated.test.mjs', /caseDir \?\?= realpathSync\(mkdtempSync\(join\(tmpdir\(\), 'case-'\)\)\);/],
+    ['packages/ts/wasm/generated/tests/generated.test.mjs', /caseDir \?\?= realpathSync\(mkdtempSync\(join\(tmpdir\(\), 'case-'\)\)\);/],
+    ['packages/php-ext/generated/tests/GeneratedTest.php', /\$real = realpath\(\$made\);[\s\S]*?\$this->caseDir = \$real;/],
+    ['packages/go/zz_generated_test.go', /filepath\.EvalSymlinks\(t\.TempDir\(\)\)/],
+  ] as [string, RegExp][]) assert.match(text(out, path), resolve, path);
 });
 
 test('B2.277: private module helpers and cached function fixtures carry the case root (GN-13l)', () => {

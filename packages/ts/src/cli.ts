@@ -512,16 +512,19 @@ if (command === 'check') {
 if (command === 'scaffold') {
   // --out writes the same files under another directory, as for generate.
   const target = resolve(options.get('--out') ?? root);
+  // GN-3e: without the contracts that Cargo finds, the libraries that only a callback unit names and the Go modules of
+  // the libraries are not known, so scaffold writes no file rather than manifests that read as complete.
+  if (metadataFailure !== undefined) {
+    process.stderr.write(`binding: the contracts of the libraries that the contract names are not all found, so binding scaffold writes no file (GN-3e): ${metadataFailure}\n`);
+    process.exit(1);
+  }
   for (const [path, text] of tracked.files) {
     mkdirSync(dirname(join(target, path)), { recursive: true });
     writeFileSync(join(target, path), text);
   }
   // GN-3e: a package that cannot be written is named with its reason after the others are written.
   for (const { path, message } of tracked.refused) process.stderr.write(`binding: ${path}: not written: ${message}\n`);
-  // GN-3e: without the contracts that Cargo finds, the libraries that only a callback unit of another library names are
-  // not known, so the packages are written with the libraries that the contract itself names and the run fails.
-  if (metadataFailure !== undefined) process.stderr.write(`binding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names (GN-3e): ${metadataFailure}\n`);
-  process.exit(tracked.refused.length > 0 || metadataFailure !== undefined ? 1 : 0);
+  process.exit(tracked.refused.length > 0 ? 1 : 0);
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };

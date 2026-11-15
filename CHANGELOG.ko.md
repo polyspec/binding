@@ -1,10 +1,18 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 0083937b5d1581a4acba8c9f21e5fdba85387bd2d9f933309881d2231448be61 -->
+<!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `binding scaffold`는 `cargo metadata`가 실패하면 아무 파일도 쓰지 않고 Cargo의 오류로 실패한다(GN-3e, B2.299).
+  전에는 Cargo가 계약을 찾지 못한 라이브러리의 require가 빠진 `go.mod`와 함께 package를 썼다.
+
+- 모든 target은 case 디렉터리를 실제 경로로 이름한다(GN-13m, B2.297). macOS에서 시험은 `/var/folders/...`를 만들었고,
+  그 안의 경로(SQLite 데이터베이스 파일 등)를 푼 코어는 `/private/var/folders/...`를 돌려주어 `case_path`를 쓴 기대
+  텍스트가 올바른 결과를 실패시켰다.
 
 ## 0.0.10
 

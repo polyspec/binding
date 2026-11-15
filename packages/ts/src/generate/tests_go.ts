@@ -1804,7 +1804,11 @@ var caseDirs sync.Map
 func casePath(t *testing.T, relative string) string {
 	dir, ok := caseDirs.Load(t)
 	if !ok {
-		dir = t.TempDir()
+		real, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatalf("GN-13m: the directory of the case has no real path: %v", err)
+		}
+		dir = real
 		caseDirs.Store(t, dir)
 		t.Cleanup(func() { caseDirs.Delete(t) })
 	}
