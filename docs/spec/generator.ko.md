@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 295bf38d16bd5366feb70daf624d905793734cf597652248e3b78e093183a7ea -->
+<!-- source-sha256: b2ddcec08a87eb2877e8fc8c236f0c23427b91ca54d3adec38b62b8dc0e2799f -->
 # 생성기
 
 [English](generator.md)
@@ -862,6 +862,10 @@
   디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
   거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e). case는 값을 만들기 전에 자기 파일을 같은
   디렉터리에 쓴다(GN-13i).
+  B2.276 계획이며 아직 구현하지 않았다. slash로 나눈 모든 component에서도 `^[A-Za-z]:`에 맞는 drive
+  prefix를 거부한다. Windows 경로 결합은 중첩되거나 drive 상대인 component라도 drive를 지정하면 앞의
+  root를 대체할 수 있기 때문이다. `report:2026/file`처럼 그 밖의 colon은 이 validator가 계속 허용한다.
+  이 어휘 규칙은 모든 host에 적용하며 Windows filesystem 검증을 뜻하지 않는다.
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
   코어 오류 variant를 가리키거나 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 돌려준다. 그런 경로의 오류는
   `core.failure`가 참이면, 그리고 그것이 없으면 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 kind 또는 언어

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Specify the pending rejection of Windows drive prefixes in every component of case-owned relative paths
+  (GN-6y, B2.276), preserving non-drive colons and the existing path guards.
+
 - `FloatOut::safe_integer` and `OutValue::predicate` recognize finite integral floats in the inclusive safe
   integer range, including negative zero (B2.272). `Predicate::applies_to` replaces the single-kind `kind` API.
   The checker accepts ordered incoming cases only when every reachable branch agrees on the outgoing kind,
