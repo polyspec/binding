@@ -2507,6 +2507,30 @@ the design ids are those of the binding design.
   without a PHP form through `case-test`. Alias normalization retains these expectations because discarding
   them would allow an incorrect error payload to pass the test.
 
+- **GN-13l** Planned in B2.277, not implemented: a case value at a place of type `text` may be
+  `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
+  whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.
+  A path object omitting `as` inserts the raw resolved path; its only explicit mode is `json-string`, which inserts
+  a complete quoted JSON string token. A relative path obeys GN-6y and contains no NUL or unpaired surrogate.
+  Literal strings and the private JSON quoting helper permit every Unicode control character, including NUL.
+  Every path uses the same case-owned root as GN-13i files, initialized before receiver, argument and callback
+  construction; a referenced file need not exist. No observed result, environment expansion, general formatter or executable expression supplies a part.
+  Expected text keeps every literal byte, whitespace and key order and is compared as text, never as parsed JSON.
+  This form is interpreted only at typed text places; genuine record and map data is unchanged. Unsupported scalar
+  and alias-text uses fail by name instead of coercing the object to a string; alias-token expansion is not added.
+  Existing plain text, `ill_formed` and typed `path` keep their meanings. Private helpers that defer a new text
+  conversion carry the same case owner through a hidden argument or a private closure; they resolve no global
+  root and add no lifetime beyond the existing case. Helpers that do not use this form remain unchanged.
+
+  A JSON string token escapes quote, backslash and U+0000–001F, using `\b`, `\t`, `\n`, `\f`, `\r` for their named
+  controls and lower-case `\u00xx` for the others. Slash, non-ASCII Unicode, `<`, `>`, `&`, U+2028 and U+2029 remain
+  literal UTF-8; malformed Unicode is refused, never replaced. Fixed native input and expected UTF-8 hex vectors
+  verify this exact spelling independently of each helper, including literal backslash-u sequences. An independent
+  witness writes through the old GN-13i helper and reads through the composed path using standard filesystem I/O,
+  so matching wrong input and expected callbacks cannot confirm one another's root.
+  WASM may compose text from the root owned by its Node test host; this adds no typed OS path or Rust filesystem
+  access. GN-6y and CK-15 remain in force; real filesystem or database cases retain their declared applicability.
+
 ## End-to-end check
 
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,

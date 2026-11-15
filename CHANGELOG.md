@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Specify pending typed text composition from literals and case-owned paths, exact JSON string tokens and
+  independent native quote/root witnesses (GN-13l, B2.277), without adding WASM filesystem access.
+
 - Reject Windows drive prefixes in every component of case-owned relative paths before fixture preparation
   (GN-6y, B2.276). Nested and drive-relative components previously passed the shared validator; non-drive colons
   and the existing path guards retain their meanings. The owning Node validator tests pass on committed input;

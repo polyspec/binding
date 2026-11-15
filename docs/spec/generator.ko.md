@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e722287114b4e1e9f75a39e00d66f4ef2c708ef877b11bffac9a69ea3f639a9c -->
+<!-- source-sha256: 8b800cb14d0d51ffe51c6bd0724d2da4e4da58414eece31bff9bc269e4911de4 -->
 # 생성기
 
 [English](generator.md)
@@ -2033,6 +2033,31 @@
   errno가 없음을 기대한다. 숫자는 그 값을 기대하고, symbol은 GN-13 member 시험처럼 해석한다(WASM은 symbol에
   대해 platform errno가 없음을 기대한다). PHP가 PHP 표현이 없는 값을 `case-test`로 실행할 때도 이 검사를
   적용한다. 이 기대값을 버리면 잘못된 error payload도 시험을 통과하므로 alias 정규화가 이를 보존한다.
+
+- **GN-13l** B2.277 계획이며 아직 구현하지 않았다. 타입 `text` 자리의 case 값은
+  `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
+  가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.
+  `as`가 없으면 풀린 경로를 그대로 넣고, 유일한 명시적 mode인 `json-string`은 완전한 따옴표 붙은 JSON
+  string token을 넣는다. 상대 경로는 GN-6y를 따르고 NUL과 짝 없는 surrogate를 담지 않는다. literal 문자열과
+  private JSON quoting helper는 NUL을 포함한 모든 Unicode 제어 문자를 허용한다. 모든 경로는
+  GN-13i 파일과 같은 case 소유 root에서 푼다. root는 receiver, argument, callback을 만들기 전에 준비하며,
+  가리키는 파일은 없어도 된다. 관찰한 결과, 환경 변수 확장,
+  일반 formatter, 실행 가능한 표현식에서 part를 얻지 않는다. 기대 text는 literal의 모든 byte, 공백, key
+  순서를 유지하고 parsed JSON이 아닌 text로 비교한다. 이 형태는 typed text 자리에서만 해석하며 실제
+  record와 map 데이터는 바꾸지 않는다. 지원하지 않는 scalar와 alias-text 사용은 객체를 문자열로 강제
+  변환하지 않고 이름으로 실패하며 alias-token 확장을 더하지 않는다. 기존 plain text, `ill_formed`, typed
+  `path`의 의미는 유지한다. 새 text 변환을 나중에 수행하는 private helper는 숨은 인자나 private closure로
+  같은 case owner를 전달한다. 전역 root를 풀지 않고 기존 case 밖의 수명을 더하지 않는다. 이 형태를 쓰지
+  않는 helper는 바꾸지 않는다.
+
+  JSON string token은 따옴표, backslash, U+0000–001F를 escape한다. 이름이 있는 제어 문자는 `\b`, `\t`,
+  `\n`, `\f`, `\r`로 쓰고 나머지는 소문자 `\u00xx`로 쓴다. slash, 비-ASCII Unicode, `<`, `>`, `&`,
+  U+2028, U+2029는 UTF-8 그대로 둔다. 잘못된 Unicode는 대체하지 않고 거부한다. 고정 native 입력과 기대
+  UTF-8 hex vector가 literal backslash-u 수열을 포함해 각 helper와 독립적으로 이 정확한 표기를 검증한다.
+  독립 witness는 기존 GN-13i helper로 쓰고 표준 filesystem I/O로 합성 경로에서 읽으므로, 같은 잘못된 입력과
+  기대 callback이 서로의 root를 확인할 수 없다. WASM은 Node 시험 host가 소유한 root에서 text를 합성할 수
+  있고, typed OS path나 Rust filesystem 접근을 얻지 않는다. GN-6y와 CK-15는 유지하며 실제 filesystem과
+  database case는 선언된 적용 범위를 유지한다.
 
 ## 끝에서 끝까지 확인
 

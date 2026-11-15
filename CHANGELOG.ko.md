@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b99910b135d8afc9ffc43dbf446a4357ee815b0c8d28392db2b4ba05047f50b8 -->
+<!-- source-sha256: 4f8ed18145c61205fa7017de779fdecf1e43f0ff6110d3d9116faa40daf7a22f -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
 <!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: a3373d8f3a810afe286b11824ed9de200f99d3ff647682005170d3b8d9f3f9d9 -->
@@ -21,6 +21,9 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- literal과 case 소유 경로의 typed text 합성, 정확한 JSON string token, 독립 native quote/root witness의
+  미구현 규칙을 명세했다(GN-13l, B2.277). WASM filesystem 접근은 더하지 않는다.
 
 - fixture 준비 전에 case 소유 상대 경로의 모든 component에서 Windows drive prefix를 거부한다
   (GN-6y, B2.276). 이전에는 중첩 및 drive 상대 component가 공통 validator를 통과했다. drive가 아닌 colon과
