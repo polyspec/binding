@@ -1590,6 +1590,28 @@ test('the PHP stub writes an optional of the PHP type mixed as mixed, and its do
   assert.match(stub, /@return mixed\|null/);
 });
 
+test('scaffold writes an extra export of packages.node.entries with its conditions and files, which the schema accepts (GN-3c, B2.303)', async () => {
+  const { checkContract } = await import('../src/check.ts');
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  contract.packages.node.entries['./render'] = { formats: ['import', 'require'], types: './render/render.d.ts', import: './render/render.mjs', require: './render/render.cjs', files: ['render'] };
+  assert.deepEqual(checkContract(contract).filter((f) => f.path.startsWith('/packages')), []);
+  const manifest = JSON.parse(String(trackedPackages(contract, '0.0.0').get('packages/ts/package.json')));
+  assert.deepEqual(manifest.exports['./render'], { types: './render/render.d.ts', import: './render/render.mjs', require: './render/render.cjs' });
+  assert.ok(manifest.files.includes('render'));
+  assert.ok(manifest.exports['./wasm'] !== undefined);
+});
+
+test('the Go tests import the package of another repository whose classes places names, also when no other test names it (GN-15f, GN-6ar, B2.304)', () => {
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const cases = caseFiles.get('contracts/cases.json') as { pair: { id: string }[]; read: { id: string }[] };
+  // The cases that make an instance of the owner name its package themselves; without them places alone names it.
+  cases.pair = cases.pair.filter((kase) => kase.id !== 'a_reference_of_the_owner_twice');
+  cases.read = cases.read.filter((kase) => !kase.id.startsWith('a_held_source'));
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(go, /case \*sample\.KeyedMap\[any\]:/);
+  assert.match(go, /\n\t"github\.com\/polyspec\/sample\/packages\/go"\n/);
+});
+
 test('Go writes no dispatch of a call for a callback that only a parameter with keeps takes (GN-6aw, GN-6aa, B2.301)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

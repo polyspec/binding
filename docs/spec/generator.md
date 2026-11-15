@@ -139,6 +139,9 @@ the design ids are those of the binding design.
   machine, and it builds no platform package, no binary of a PHP extension and no commit of a Go module (GN-15g).
   Why: which files the release of a binding carries is a rule of this specification and of that repository, and a
   tool that runs the recipes of a repository holds no rule of it.
+  An entry of `packages.node.entries` other than `.` and `./wasm` that names `types`, `import` or `require` is an export
+  of files that the repository writes itself: scaffold writes those conditions as the export of the entry in
+  `package.json` and adds its `files` to the files of the package, so CK-19 accepts the manifest (B2.303).
 - **GN-3d** The PHP binding crate links on macOS by its `build.rs` alone (BD-9): the script emits
   `cargo:rustc-cdylib-link-arg=-undefined` and `cargo:rustc-cdylib-link-arg=dynamic_lookup` when `CARGO_CFG_TARGET_OS`
   is `macos`, emits nothing for another target, and fails when that variable cannot be read (P-3). The crate's `[lib]`
@@ -1930,6 +1933,8 @@ the design ids are those of the binding design.
   checkout resolves through its development link, an untracked `go.work` that names the checkout of that repository
   (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
+  The file of the generated tests imports each package of another repository that its helper `places` names for the
+  value classes of a value alias of that repository, also when no test names the package (B2.304).
 - **GN-15g** The static library of the Go module (B-8, L-1, K-3): the platforms of a Go module are `linux_amd64`
   and `linux_arm64`, whose library is built for the GNU C library (`<arch>-unknown-linux-gnu`), `linux_amd64_musl`
   and `linux_arm64_musl`, whose library is built for musl (`<arch>-unknown-linux-musl`), and `darwin_arm64`; the

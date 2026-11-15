@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ca120eebc7a4115cdc79b3d3ae64923050291443e0b29a0411f414265e0a214a -->
+<!-- source-sha256: 85c7a5fad727d53d7277ebae29ca1d21af0f316331483f576003d362b9813e8b -->
 # 생성기
 
 [English](generator.md)
@@ -107,6 +107,9 @@
   레포의 recipe다(GN-19). 공용 도구(`@polyspec/kit`)의 release utility는 `vX.Y.Z` tag를 달고 package manager 하나가 기계 하나에서
   pack하는 archive를 만들며, 플랫폼 패키지도 PHP 확장의 binary도 Go 모듈의 commit(GN-15g)도 만들지 않는다. 이유: 바인딩의
   release가 어떤 파일을 싣는지는 이 명세와 그 레포의 규칙이고, 레포의 recipe를 실행하는 도구는 레포의 규칙을 갖지 않는다.
+  `.`과 `./wasm`이 아닌 `packages.node.entries`의 항목이 `types`, `import`, `require`를 이름하면 그것은 저장소가 직접 쓰는
+  파일의 export다. scaffold는 그 조건을 `package.json`에서 그 항목의 export로 쓰고 그 `files`를 package의 files에 더하므로
+  CK-19가 manifest를 받아들인다(B2.303).
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
   `macos`일 때 `cargo:rustc-cdylib-link-arg=-undefined`와 `cargo:rustc-cdylib-link-arg=dynamic_lookup`을 내고, 다른 target에서는
   아무것도 내지 않으며, 그 변수를 읽을 수 없으면 실패한다(P-3). 그 crate의 `[lib]`은 `test = false`와 `doctest = false`를
@@ -1575,6 +1578,8 @@
   `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
   `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
+  생성된 테스트 파일은 다른 저장소의 value alias의 value class를 위해 helper `places`가 이름하는 그 저장소의 각 package를,
+  어떤 테스트도 그 package를 이름하지 않을 때에도 import한다(B2.304).
 - **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 라이브러리를 GNU C library용
   (`<arch>-unknown-linux-gnu`)으로 빌드하는 `linux_amd64`와 `linux_arm64`, musl용(`<arch>-unknown-linux-musl`)으로
   빌드하는 `linux_amd64_musl`과 `linux_arm64_musl`, 그리고 `darwin_arm64`이다. `_musl`이 없는 플랫폼은 GN-3c의
