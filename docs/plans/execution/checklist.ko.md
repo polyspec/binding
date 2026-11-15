@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 2c0052dbb8d632b5bd8afcb23a777f66f0079a590f0d5a4aaa092efa8dbd8de5 -->
+<!-- source-sha256: 04f18b8e64855fe0255ad8d4d9bb343b0bbafa990e6ca90a3c641afdd898381e -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -155,3 +155,4 @@
 | B2.279 | GN-19i는 binding을 가진 저장소의 workflow `assets.yml`을 make target마다 `run:` step 하나와 build step의 `if: ${{ !cancelled() }}`로 설명하는데, B2.278의 규칙은 CI job에서 이를 거부한다. `assets.yml`의 각 job이 matrix 값을 make 변수로 받는 저장소의 recipe 하나를 실행하도록 GN-19i를 바꾸고, `binding release-recipes`가 그 job recipe를 쓰는지(GN-19h) 생성기 시험과 함께 정하며, binding을 가진 저장소에 대한 변경을 기록한다. | `docs/spec/generator.md`(.ko); `packages/ts/src/release/recipes.ts`; `packages/ts/tests/release-recipes.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/release-recipes.test.ts | [o] |
 | B2.280 | 0.0.7 release: 앞선 tag 없는 bump commit 뒤 `## Unreleased`에 기록된 변경을 두 changelog의 `## 0.0.7` 절에 합쳐 tag `v0.0.7`이 그것을 release한다. manifest는 이미 0.0.7을 가진다. | `CHANGELOG.md`(.ko) | make docs-check; make lint-rust; make test-ts | [o] |
 | B2.281 | 저장소의 binding을 생성해서 찾은 생성기 결함 셋: GN-13i의 case 키 `files`는 contract가 쓸 수 있는 이름(매개변수나 기댓값)이므로 spec에서 먼저 case의 파일에 snake_case 이름 밖의 키(`@files`)를 준다. Node와 WASM의 B-10 시험은 async가 아닌 함수 안에서 factory를 await한다. cleanup이 없는 class의 Go release 함수는 gofmt의 형식이 아니다. 생성기 시험에 Red case를 먼저 두고 고친다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/samples.ts`, `tests_node.ts`, `tests_wasm.ts`, `go.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | node --test packages/ts/tests/generate.test.ts | [o] |
+| B2.282 | 0.0.8 release: 개발 의존성 @polyspec/kit은 lock과 함께 0.0.114다. `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `Cargo.lock`의 버전은 0.0.8이고, B2.281의 변경은 두 changelog의 `## 0.0.8` 절이다. | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock`; `package.json`; `package-lock.json` | make docs-check; make lint-rust; make test-ts | [o] |

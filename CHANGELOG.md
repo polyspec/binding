@@ -5,6 +5,23 @@
 
 ## Unreleased
 
+## 0.0.8
+
+- The development dependency @polyspec/kit is 0.0.114.
+
+- The key of the files that the test of a case writes is `@files` (GN-13i, B2.281), no longer `files`. A key that
+  begins with `@` is no snake_case name, so a parameter, a field or an expected value of a case named `files` keeps
+  its meaning: a case whose expected value `files` was a list failed its test as files of a wrong form, and a case of
+  a member with a parameter `files` failed as a case without that parameter. A case file that gives files to write
+  renames its key `files` to `@files`.
+
+- The Node and WASM test of B-10 makes an object whose factory waits inside an async function that the test awaits
+  (B2.281). It made the object with `await` inside a function that was not async, a syntax error that stopped the
+  whole test file from loading. A WASM receiver made by steps that wait is awaited, as in Node.
+
+- The Go release function of a class without cleanup writes its body on its own line (B2.281). Written on the line of
+  its header, a function longer than gofmt keeps on one line failed `gofmt -l`.
+
 ## 0.0.7
 
 - The development dependency @polyspec/kit is 0.0.113, whose CI jobs each run one recipe.

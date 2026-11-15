@@ -1,10 +1,26 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 71d0851ac6bff81d33b19fd8afd7465847eb258289d7a6bf1039bd452d79d9fe -->
+<!-- source-sha256: 56de334bb27fc16be3d51118a0a73d90171bfdc396745c49b9bfd87a165eea5c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.8
+
+- 개발 의존성 @polyspec/kit은 0.0.114다.
+
+- case의 시험이 쓰는 파일의 키는 `files`가 아니라 `@files`다(GN-13i, B2.281). `@`로 시작하는 키는 snake_case 이름이
+  아니므로, `files`라는 이름의 매개변수, field, case의 기댓값은 그 뜻을 유지한다. 기댓값 `files`가 list인 case는
+  잘못된 형식의 파일로 시험이 실패했고, 매개변수 `files`를 가진 member의 case는 그 매개변수가 없는 case로 실패했다.
+  쓸 파일을 주는 case 파일은 키 `files`를 `@files`로 바꾼다.
+
+- Node와 WASM의 B-10 시험은 factory가 기다리는 객체를 시험이 await하는 async 함수 안에서 만든다(B2.281). 전에는
+  async가 아닌 함수 안에서 `await`로 객체를 만들었고, 이 syntax error가 시험 파일 전체의 load를 막았다. 기다리는
+  단계로 만드는 WASM receiver는 Node처럼 await한다.
+
+- class의 cleanup이 없는 Go release 함수는 본문을 자기 줄에 쓴다(B2.281). header의 줄에 쓰면 gofmt가 한 줄로 두는
+  길이를 넘는 함수가 `gofmt -l`에서 실패했다.
 
 ## 0.0.7
 
