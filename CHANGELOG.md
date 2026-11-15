@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Committed verification of owned text composition passes (B2.277): the owning Node selection (19 tests),
+  `make test-ts` (730 tests) and the sample end-to-end check of all five targets. Native fixed-byte quote
+  goldens and callback root witnesses pass; PHP runs on 8.4.27. The Go generated suite (209 tests) and the
+  released-module consumer (158 tests) also pass.
+
 - Committed verification of portable case-owned path validation passes (B2.276): the owning Node selection
   (2 tests) refuses drive prefixes in every component and retains ordinary relative paths.
 

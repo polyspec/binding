@@ -1,10 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6b7de8b2ba8e934e7652c794d951318ad9d68423034ea2f26802643ec1811e4e -->
+<!-- source-sha256: 6960bd4f75a56d52a0bca00ec39019d33a0e26667782ed276cbb481e71c696ec -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 소유 text 합성을 commit된 소스에서 검증했다(B2.277). 소유 Node 시험 19개, `make test-ts` 730개와
+  다섯 대상 sample end-to-end 검사가 통과했다. Native 고정 byte 인용 golden과 callback root witness가
+  통과했고 PHP는 8.4.27에서 실행했다. Go 생성 시험 209개와 release module 소비 시험 158개도 통과했다.
 
 - Case 소유 경로의 이식 가능한 검증을 commit된 소스에서 확인했다(B2.276). 소유 Node 시험 2개가
   모든 component의 drive prefix 거부와 일반 상대 경로 유지를 검증했다.
