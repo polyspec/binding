@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: cca17b257c46c751a32e0b43cb0448e70aed7385ef61fcdc5431da03fa135b13 -->
+<!-- source-sha256: ccca991ff865864a123ad55015c19e8b3c1cdc8a828c06d229a496f72c24847e -->
 # 생성기
 
 [English](generator.md)
@@ -1847,8 +1847,12 @@
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
   타입과 값으로(`dict`의 항목은 순서대로, NaN은 NaN과 같다), PHP는 객체를 클래스와 property로 바꾼 뒤 `assertSame`으로, Go는
-  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교하되, case가 NaN을 담으면 NaN이 NaN과 같다는 점만 다른
-  `sameValue`로 비교한다. `reflect.DeepEqual`은 NaN을 자기 자신과 다르다고 보기 때문이다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
+  tuple 반환의 부분마다 `reflect.DeepEqual`로 비교하되, case가 NaN이나 영의 어느 부호를 담으면 NaN은 NaN과 같고
+  중첩 float의 음의 영과 양의 영은 다르게 보는 `sameValue`로 비교한다. 비공개 생성 비교 시험은 영의 두 부호를
+  독립적으로 만들고 부호가 바뀐 결과가 다름을 요구한다. 기존 sample Go 시험도 전송한 float의 bit를 비교한다.
+  `reflect.DeepEqual`이 NaN을 자기 자신과 다르게 보고 영의 두 부호는 같게 보므로 결과 검증을 시험하기 위해서다.
+  NaN payload는 계속 검사하지 않는다.
+  결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의

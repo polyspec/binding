@@ -1,6 +1,7 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: e8e38e336e37b9859517e2696d224467afd72945c845b06eebf510cda29d6962 -->
+<!-- source-sha256: 9ee1f5bf540ad28be3c367b4eee16e0c6259328e0c28f2934990475cea076af3 -->
 <!-- source-sha256: ce81894a5941019d28c78360c49ae8c66790018f5d53fbc7ff89192a1978b488 -->
+<!-- source-sha256: 7501caf7ce4c3683f328b64375d0be394394edc007c4f370dd0d571f3bb85d0c -->
 <!-- source-sha256: a3a550defb21ab5b0e06517692e054b62447f287992eb296638d25bca7fcdcee -->
 <!-- source-sha256: 289dbc73aaea910337a066b6851a71b0eef03944d10d5b75472a853942db6f11 -->
 <!-- source-sha256: 494a564c6b77df9f6e2f241a40323f6703ff6b7144e0af0eba81a9a4e1581bf3 -->
@@ -161,4 +162,5 @@
 | B2.270-1 | sample host-value core가 열린 container handle과 과도한 비순환 깊이를 구별하고, native Python, Node, WASM, PHP 시험이 순환 거부와 공유 container 허용, Map iterator를 한 번 읽음을 검증한다(GN-6at). | tests/e2e/sample/packages/rust/src/lib.rs; tests/e2e/sample/cases.test.mjs; cases.wasm.test.mjs; test_cases.py; CasesTest.php; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | make e2e REPO=tests/e2e/sample | [o] |
 | B2.271 | 생성 alias-case 시험이 정확한 class와 kind뿐 아니라 선언된 error status와 errno도 검증한다(GN-13k). 현재 alias 정규화가 status와 errno를 버려 Python, Node, WASM, PHP, Go의 PHP case-test 정수 case와 일반 alias 호출이 잘못된 metadata로도 통과할 수 있다. | packages/ts/src/generate/samples.ts; tests_python.ts; tests_node.ts; tests_wasm.ts; tests_php.ts; tests_go.ts; packages/ts/tests/generate.test.ts; docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | make test-ts | [~] |
 | B2.272 | safe_integer를 FloatOut에도 적용한다. 음의 영을 포함해 ±(2^53−1)의 닫힌 범위에 있는 유한한 정수 float는 참이고, 소수, 무한대, NaN, 1e16은 거짓이다. Predicate::applies_to가 단일 kind API를 대신한다. 순서가 있는 incoming case는 도달 가능한 모든 분기가 outgoing kind를 돌려줄 때만 허용하므로 safe_integer=false가 integral_float=false를 뜻할 필요가 없다. 모호하거나 미분류인 분기는 계속 거부하고 생성 case도 같은 output 형태를 고른다. 우선순위: B2.271 뒤. | packages/core/rust/src/value.rs; packages/ts/src/values.ts; check.ts; generate/samples.ts; owning tests; docs/core-api.md(.ko); docs/spec/contract-check.md(.ko); CHANGELOG.md(.ko) | make test-rust; make test-ts; make e2e REPO=tests/e2e/sample | [~] |
+| B2.273 | 생성 Go 결과 검증은 중첩 값과 NaN도 담은 case를 포함해 음의 영과 양의 영을 구분한다(GN-13e). 기존 IEEE 754 전송은 바꾸지 않는다. | packages/ts/src/generate/tests_go.ts, packages/ts/tests/generate.test.ts, tests/e2e/sample/contracts/cases.json, tests/e2e/sample/cases_test.go, docs/spec/generator.md(.ko), CHANGELOG.md(.ko) | make test-ts; make e2e REPO=tests/e2e/sample | [~] |
 | B2.274 | GN-19i는 PHP 외 asset의 독립 platform job과 PHP extension의 platform × PHP minor job을 허용한다. 각 PHP job은 실제 native PHP minor를 선택하고 검증하며 고유한 assets-php-<platform>-<minor> artifact를 upload한다. release는 모든 artifact를 모은 뒤 필요한 asset을 검증한다. workflow는 레포가 계속 소유하고 생성 recipe의 interface는 바꾸지 않는다. 우선순위: B2.273 뒤. | docs/spec/generator.md(.ko); CHANGELOG.md(.ko) | make docs-check | [o] |

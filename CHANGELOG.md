@@ -14,6 +14,11 @@
   collection (GN-19i, B2.274). The provider-owned expected-minor and runtime/header checks are explicitly pending
   B2.275; the generated recipe interface has not yet changed. The paired rule passes `make docs-check` on its
   committed input.
+- Generated Go result assertions distinguish both zero signs, including nested values and values beside NaN
+  (GN-13e, B2.273). The comparison previously treated both signs as equal. A private generated test constructs
+  the two signs independently and rejects a sign-changing result; sample cases exercise negative-zero and NaN
+  results, and the native Go sample runner compares transported float bits independently. The IEEE 754
+  transport and the policy that all NaN values compare equal are unchanged.
 
 - Alias-case tests preserve declared status and errno expectations in Python, Node, WASM, PHP and Go
   (GN-13k, B2.271), including PHP values passed through `case-test`. Alias normalization previously discarded

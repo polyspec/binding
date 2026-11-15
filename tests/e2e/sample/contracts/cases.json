@@ -1580,6 +1580,16 @@
       "id": "the_float_is_kept",
       "value": 0.5,
       "result": 0.5
+    },
+    {
+      "id": "negative_zero_keeps_its_sign",
+      "value": -0,
+      "result": -0
+    },
+    {
+      "id": "not_a_number_is_kept",
+      "value": { "float": "nan" },
+      "result": { "float": "nan" }
     }
   ],
   "held_source_new": [

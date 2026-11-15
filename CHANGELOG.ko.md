@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 615c19e617c3f5654423747fd56edc92b97becb20761b11f6a16e0528e43a6f4 -->
+<!-- source-sha256: 62a79153fc210a04922ce5742abaab3537f9b624603a2789facc91ef0db749dd -->
 <!-- source-sha256: e5e7454cf84dd0af7437d6590290707c852b5940fb3aa932032631e2efcef6de -->
+<!-- source-sha256: 04660adfc9fcae21584ae827da9aa35518736e7098e18797934776d3602bb811 -->
 <!-- source-sha256: 63b5b213a03c601083c98c8fff206fb86a85d59e1ce79fa118166f999b21b566 -->
 <!-- source-sha256: 1ef3e80fe92896db0dfdd22941a51446047c2694e3000563eda3090dd5df7c1e -->
 <!-- source-sha256: 67c9292f6008ab43aa1138bc5fb57cbd81b451d5d2c922ca600d654414bd0560 -->
@@ -29,6 +30,10 @@
   (GN-19i, B2.274). provider 소유의 기대 minor 및 runtime/header 검사는 B2.275의 미구현 항목으로
   명시했으며, 생성 recipe의 interface는 아직 바꾸지 않았다. commit한 입력에서 규칙의 두 문서가
   `make docs-check`를 통과했다.
+- 생성한 Go 결과 검증이 중첩 값과 NaN 옆의 값을 포함해 영의 두 부호를 구분한다(GN-13e, B2.273).
+  이전 비교는 두 부호를 같게 보았다. 비공개 생성 시험이 두 부호를 독립적으로 만들고 부호가 바뀐 결과를 거부한다.
+  Sample case는 음의 영과 NaN 결과를 실행하고 native Go sample runner는 전송한 float의 bit를 독립적으로
+  비교한다. IEEE 754 전송과 모든 NaN을 같게 비교하는 정책은 바뀌지 않는다.
 
 - Python, Node, WASM, PHP, Go의 alias-case 시험이 선언된 status와 errno 기대값을 보존하며, PHP의
   `case-test` 값에도 적용한다(GN-13k, B2.271). 이전에는 alias 정규화가 이 필드를 버려 시험이 정확한 class와
