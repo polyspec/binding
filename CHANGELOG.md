@@ -5,6 +5,24 @@
 
 ## Unreleased
 
+- `binding release-recipes` writes the build recipe of each job of the workflow `assets.yml` of a repository,
+  `release-assets-platform`, `release-assets-php` and `release-assets-npm` (GN-19i, B2.279), which a fixed recipe
+  `ci-assets-<job>` of the repository runs after `make release-recipes`, so each job has one run step. A build of the
+  platform job runs past a failed build and the job names each failed one; the PHP job needs `EXPECTED_PHP_MINOR` and
+  builds for the `php` of PATH; the npm job stops when the install of the wasm-bindgen CLI fails. The recipes no longer
+  define `install-llvm`, which ran `sudo apt-get` or `brew install`: the job provisions LLVM before its recipe.
+
+- Every job of `.github/workflows/ci.yml` runs one recipe of the Makefile, `make ci-check`, `make ci-e2e` or
+  `make ci-e2e-amd64`, with the values of its matrix entry as make variables, and a local run is the same call
+  (B2.278). The recipe installs first and stops at a failed install, runs its checks to their end, then reports
+  and cleans up in every case: `ci-check` names the outcome of its install in the summary without `toJSON(steps)`,
+  and `ci-e2e` runs `make go-musl-check` only after a passed `make e2e`, in a work directory of its own that it
+  removes. No run step of the workflow has a condition, an environment or an expression of the runner other than a
+  matrix value and `toJSON(needs)` of `ci-passed`; `packages/ts/tests/ci-workflow.test.ts` reads the steps of each
+  job and runs the three recipes with a stand-in of make. The job of `.github/workflows/release.yml` likewise runs
+  `make ci-release`, which reads RUN and AUTO from the environment of the job and tags, checks the tag out, installs, builds, publishes and undrafts,
+  each after the one before passed, and reads TAG itself.
+
 - Committed verification of owned text composition passes (B2.277): the owning Node selection (19 tests),
   `make test-ts` (730 tests) and the sample end-to-end check of all five targets. Native fixed-byte quote
   goldens and callback root witnesses pass; PHP runs on 8.4.27. The Go generated suite (209 tests) and the

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
 import { WASM_BINDGEN } from '../src/generate/packages.ts';
-import { releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
+import { ASSET_JOBS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -25,7 +25,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
   assert.equal(recipes.path, 'packages/release.mk');
-  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets']);
+  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm']);
   for (const target of recipes.targets) assert.match(recipes.text, new RegExp(`^${target}:`, 'm'), target);
   assert.match(recipes.text, /-p polyspec-sample-go\b/);
   assert.match(recipes.text, /-p polyspec-sample-php-ext\b/);
@@ -41,7 +41,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   // A contract without a target has none of its recipes; a component has its file beside its packages and its targets
   // carry its name, so that two contracts of one repository give two sets of targets.
   const php = releaseRecipes({ ...contract, targets: ['php'] });
-  assert.deepEqual(php.targets, ['release-php-ext', 'release-binding-check', 'release-platform-assets']);
+  assert.deepEqual(php.targets, ['release-php-ext', 'release-binding-check', 'release-platform-assets', 'release-assets-php']);
   assert.doesNotMatch(php.text, /^(release-wheel|release-npm|release-go|install-wasm-bindgen)/m);
   const component = releaseRecipes({ ...contract, core: { ...contract.core, path: 'packages/forms/rust' } });
   assert.equal(component.path, 'packages/forms/release.mk');
@@ -49,7 +49,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   assert.match(component.text, /--manifest-path packages\/forms\/ts\/Cargo\.toml/);
   assert.match(component.text, /\$\(CURDIR\)\/packages\/forms\/rust\/interface\.json/);
   // Every step of a release that GN-19h names is a target of a contract with every target.
-  assert.deepEqual([...RELEASE_STEPS].sort(), [...recipes.targets].sort());
+  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS].sort(), [...recipes.targets].sort());
 });
 
 /** A copy of the fixture repository with its recipes, a Makefile that includes them and the stand-ins of one case. */
@@ -232,7 +232,7 @@ test('the PHP extension is built with the libclang and the clang of the LLVM of 
   delete box.env['PHP_MINOR'];
   // An LLVM that is not there, or a clang of another major release, stops the recipe before cargo builds.
   for (const [llvmRoot, env, message] of [
-    [join(box.root, '.no-llvm'), {}, /needs the libclang and the clang of LLVM 21 \(config\/toolchain\.json\) in .*\.no-llvm; make install-llvm installs it/],
+    [join(box.root, '.no-llvm'), {}, /needs the libclang and the clang of LLVM 21 \(config\/toolchain\.json\) in .*\.no-llvm/],
     [box.llvm, { CLANG_MAJOR: '22' }, /bin\/clang is clang 22\.1\.8, not 21 \(config\/toolchain\.json\)/],
   ] as const) {
     writeFileSync(box.env['CALLS'] as string, '');
@@ -502,4 +502,63 @@ test('binding check reports a Makefile that does not include the recipes, a reci
   // A repository without a Makefile has no recipes of make to check.
   rmSync(makefile);
   assert.doesNotMatch(check(), /CK-94/);
+});
+
+// B2.279: a job of the workflow assets.yml of a repository runs one recipe of its Makefile, ci-assets-<job>, which installs
+// the tools of the repository, runs make release-recipes and then the build recipe release-assets-<job> of this file. The
+// build recipe holds the order and the conditions of the job: an install that it needs comes first and stops it when it
+// fails, and each build runs to its end; its status is that of every build.
+test('B2.279: the recipes run no sudo and install nothing into the machine; the LLVM of the PHP extension is provisioned before the recipe (GN-19d, GN-19i)', () => {
+  const text = releaseRecipes(fixtureContract()).text;
+  assert.doesNotMatch(text, /\bsudo\b/, 'a recipe runs sudo');
+  assert.doesNotMatch(text, /\bbrew install\b|\bapt-get\b/, 'a recipe installs into the machine');
+  assert.doesNotMatch(text, /^install-llvm:/m, 'the recipes define install-llvm, which installs LLVM into the machine');
+});
+
+test('B2.279: release-assets-platform runs the builds of the platform of the host, each to its end, and fails when one failed (GN-19i)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  assert.ok(releaseRecipes(fixtureContract()).targets.includes('release-assets-platform'));
+  const run = box.make('release-assets-platform');
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  callIndex(calls, 'cargo', 'build');
+  callIndex(calls, 'uv', 'build');
+  callIndex(calls, 'napi', 'build');
+  // A failed wheel stops neither the Go library nor the npm platform package, and the job fails.
+  standIn(box.bin, 'uv', 'process.exit(1);');
+  writeFileSync(box.env['CALLS'] as string, '');
+  const failed = box.make('release-assets-platform');
+  assert.notEqual(failed.status, 0, 'release-assets-platform passes after a failed wheel');
+  assert.match(failed.output, /release-assets-platform: failed: release-wheel/);
+  const after = box.calls();
+  callIndex(after, 'cargo', 'build');
+  callIndex(after, 'napi', 'build');
+});
+
+test('B2.279: release-assets-php builds the extension for the PHP of PATH with the minor of the matrix entry (GN-19d, GN-19i)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  const usage = box.make('release-assets-php', `LLVM_ROOT=${box.llvm}`);
+  assert.equal(usage.status, 2, usage.output);
+  assert.match(usage.output, /release-assets-php needs EXPECTED_PHP_MINOR/);
+  assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0);
+  const run = box.make('release-assets-php', 'EXPECTED_PHP_MINOR=8.4', `LLVM_ROOT=${box.llvm}`);
+  assert.equal(run.status, 0, run.output);
+  const build = box.calls().find((call) => call.tool === 'cargo' && call.args[0] === 'build');
+  assert.equal(build?.env['PHP'], join(box.bin, 'php'));
+  assert.ok(existsSync(join(box.root, 'var/release/assets/php-ext/php_polyspec_sample-v0.0.3_php8.4-x86_64-linux-glibc-nts.zip')));
+});
+
+test('B2.279: release-assets-npm installs the wasm-bindgen CLI first, stops when that fails, and packs the npm package (GN-19e, GN-19i)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  standIn(box.bin, 'mise', '');
+  const run = box.make('release-assets-npm', `MISE=${join(box.bin, 'mise')}`);
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  assert.ok(callIndex(calls, 'mise', 'install') < callIndex(calls, 'cargo', 'build'));
+  assert.ok(existsSync(join(box.root, 'var/release/assets/npm/polyspec-sample-0.0.3.tgz')));
+  standIn(box.bin, 'mise', 'process.exit(1);');
+  writeFileSync(box.env['CALLS'] as string, '');
+  const failed = box.make('release-assets-npm', `MISE=${join(box.bin, 'mise')}`);
+  assert.notEqual(failed.status, 0);
+  assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0, 'release-assets-npm builds after a failed install');
 });

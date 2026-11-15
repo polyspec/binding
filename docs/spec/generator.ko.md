@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: eef375f475bba891c69ab00588a9e3c12085483d9e9fa07f021b06905f658fed -->
+<!-- source-sha256: 493c2002680d20268d95396ad692bd8b9002b01d257b455eb48f139794c6b36c -->
 # 생성기
 
 [English](generator.md)
@@ -2217,11 +2217,12 @@
   `tests/e2e/relay`는 json의 첫 release tag까지 목록에 있다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
-  job `e2e`의 각 항목은 끝에서 끝까지 확인 뒤에 자기 work 디렉터리로 `make go-musl-check`를 실행하므로, 각 Go 모듈의
-  release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). job `e2e-amd64`는 `ubuntu-26.04`에서
-  `tests/e2e/sample`의 `make e2e`와 그 뒤의 `make go-musl-check`를 실행한다. `ubuntu-26.04-arm`에서 돌지 않는 유일한
-  job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고 실행하기
-  때문이다. 두 job은 `make install-tools` 전에 pin한 `shivammathur/setup-php`로 `.php-version`의 PHP를 설정하며,
+  job `e2e`의 각 항목은 `make ci-e2e REPO=<레포> DEPS="<레포들>"`를 실행한다. 이 recipe는 모든 도구를 설치하고, 자기 work
+  디렉터리에서 끝에서 끝까지 확인을 실행하며, 확인이 통과하면 그 디렉터리로 `make go-musl-check`를 실행하므로, 각 Go 모듈의
+  release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). 끝에서 work 디렉터리를 지운다. job
+  `e2e-amd64`는 `ubuntu-26.04`에서 `tests/e2e/sample`에 같은 recipe인 `make ci-e2e-amd64`를 실행한다. `ubuntu-26.04-arm`에서
+  돌지 않는 유일한 job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고
+  실행하기 때문이다. 두 job의 로컬 실행은 같은 호출이다. 두 job은 recipe 전에, 그 recipe의 `make install-tools`보다 먼저, pin한 `shivammathur/setup-php`로 `.php-version`의 PHP를 설정하며,
   extension은 `config/phpunit`의 PHPUnit이 요구하는 것(`dom`, `filter`, `json`, `libxml`, `mbstring`, `phar`,
   `tokenizer`, `xmlwriter`)이다. `make install-tools`는 PATH의 `php`를 그대로 감싸고 실행은 그 minor를 `.php-version`과
   비교하는데, runner image의 PHP는 다른 minor라서 그것으로는 실행이 어떤 target보다 먼저 멈추기 때문이다. workflow는
@@ -2366,7 +2367,9 @@
   | `release-go-module` | `go` | GN-19f, `TAG`의 tag에 대해 |
   | `release-binding-check` | 모든 계약 | GN-19g |
   | `release-platform-assets` | 모든 계약 | GN-19g, `TAG`의 asset upload |
-  | `install-llvm` | `php` | `config/toolchain.json`의 LLVM을 설치한다 |
+  | `release-assets-platform` | `go`, `python`, `node` | GN-19i, job `platform`의 빌드 |
+  | `release-assets-php` | `php` | GN-19i, `EXPECTED_PHP_MINOR`에 대한 job `php` 항목의 빌드 |
+  | `release-assets-npm` | `node`나 `wasm` | GN-19i, job `npm`의 빌드 |
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
@@ -2380,7 +2383,8 @@
     실행한다. 생성된 파일은 추적되지 않으므로 tag의 checkout에는 그것이 하나도 없기 때문이다.
   - `release-php-ext`는 `LLVM_ROOT`의 LLVM의 `LIBCLANG_PATH`와 `CLANG_PATH`로 빌드한다. `LLVM_ROOT`의 기본값은 Linux에서
     `/usr/lib/llvm-<major>`, macOS에서 Homebrew formula `llvm@<major>`다. 그 LLVM에 clang이나 libclang이 없거나 clang이
-    다른 major release이면 Cargo가 빌드하기 전에 실패한다(GN-14a). PHP의 minor와 build마다 자기 `CARGO_TARGET_DIR`에서
+    다른 major release이면 Cargo가 빌드하기 전에 실패한다(GN-14a). 어떤 recipe도 LLVM을 설치하거나 `sudo`를 실행하지 않는다.
+    job이 recipe 전에 LLVM을 준비한다(GN-19i). PHP의 minor와 build마다 자기 `CARGO_TARGET_DIR`에서
     빌드한다. 확장은 그 PHP의 header로 compile되기 때문이다.
   - `release-npm-platform`은 `napi create-npm-dirs`와 `napi artifacts`에 npm 패키지 안의 폴더
     `<npm 패키지>/npm/<platform>/npm`을 준다. napi CLI는 `--package-json-path`의 패키지 밖의 폴더를 거부한다.
@@ -2394,24 +2398,31 @@
 - **GN-19i** 플랫폼마다 asset을 빌드하는 workflow는 레포의 workflow(`assets.yml`)이고, 레포의 CI와 release workflow가
   그것을 부른다(`workflow_call`, tag의 입력 `ref`와 먼저 `make release-binding-check`를 실행하는 입력 `release`).
   독립 job이 PHP 외 asset을 플랫폼마다 한 번 빌드하고, PHP extension을 GN-19a의 플랫폼과 PHP minor마다 한 번
-  빌드한다. 각 job은 그 플랫폼의 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 각 단계를 make target
-  하나로 실행하고, 첫 빌드 단계 뒤의 빌드 단계는 앞 단계가 실패해도 실행한다(`if: ${{ !cancelled() }}`).
-  - job `platform`은 도구를 설치하고, `make release-recipes`(`binding release-recipes`를 실행하는 레포의 target),
-    `make release-go-static`, `make release-wheel`, `make release-npm-platform`을 실행하며,
+  빌드한다. 각 job은 그 플랫폼의 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 돌고, run step은 matrix 항목의
+  값을 make 변수로 받는 `make ci-assets-<job>` 하나다. 다른 step은 모두 runner를 준비하거나(checkout, bootstrap, 항목의 PHP,
+  job `php`에서 `config/toolchain.json`의 LLVM) 결과를 옮기는(`if: ${{ !cancelled() }}`인 `actions/upload-artifact`)
+  `uses:` step이다. job의 로컬 실행은 같은 호출이다.
+  recipe `ci-assets-<job>`은 레포 Makefile의 고정 recipe다. GN-19h의 파일은 새 checkout에서 `make release-recipes`가 쓰기
+  전에는 없기 때문이다. 이 recipe는 레포의 도구를 설치하고 설치가 실패하면 멈추며, `make release-recipes`를 실행한 뒤 그
+  파일의 빌드 recipe `release-assets-<job>`을 별도 make로 실행하므로 방금 쓴 파일을 읽는다. 빌드 recipe가 job의 순서와
+  조건을 가진다. 어떤 recipe도 `sudo`를 실행하거나 기계에 설치하지 않는다.
+  - `ci-assets-platform`은 `make release-assets-platform`으로 끝난다. 이 recipe는 계약의 target에 따라 `release-go-static`,
+    `release-wheel`, `release-npm-platform`을 하나씩 끝까지 실행하고 실패한 빌드를 모두 적으며 실패한다. job은
     `var/release/assets`를 artifact `assets-<platform>`으로 upload한다.
-  - job `php`는 플랫폼과 PHP minor의 matrix를 갖는다. 각 entry는 native PHP runtime 하나를 선택하고 도구를
-    설치하며, `make release-recipes`, `make install-llvm`, `make release-php-ext PHP=<selected executable> EXPECTED_PHP_MINOR=<matrix minor>`를
-    실행하고 `var/release/assets`를 고유한 artifact `assets-php-<platform>-<minor>`로 upload한다. setup action의
-    선언만으로는 빌드가 사용한 native runtime을 검증하지 못한다.
-  - job `npm`은 `make release-recipes`, `make install-wasm-bindgen`, `make release-npm`을 실행하고 artifact
-    `assets-npm`을 upload한다.
+  - `ci-assets-php PHP_MINOR=${{ matrix.minor }}`는 `make release-assets-php EXPECTED_PHP_MINOR=<minor>`로 끝난다. 이
+    recipe는 항목이 recipe 전에 선택한 native runtime인 PATH의 `php`에 대해 `release-php-ext`를 실행한다. job은
+    `var/release/assets`를 고유한 artifact `assets-php-<platform>-<minor>`로 upload한다. setup action의 선언만으로는 빌드가
+    사용한 native runtime을 검증하지 못한다.
+  - `ci-assets-npm`은 `make release-assets-npm`으로 끝난다. 이 recipe는 먼저 wasm-bindgen CLI를 설치하고(`wasm`이 있는
+    계약에서 `install-wasm-bindgen`) 실패하면 멈추며, 다음에 `release-npm`을 실행한다. job은 artifact `assets-npm`을
+    upload한다.
 
   각 PHP matrix entry는 `EXPECTED_PHP_MINOR`를 준다. 생성 recipe가 GN-19d에 따라 native 선택을
   검증하고 기록하므로 레포는 이 검사를 wrapper target에 복사하지 않는다.
 
   release workflow는 모든 asset artifact를 `var/release/assets`에 내려받고, draft release가 생긴 뒤
   `make release-go-module`과 `make release-platform-assets`를 실행한다. 뒤의 target은 필요한 asset 전체를
-  검증한다. binding은 workflow를 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의 단계는
-  레포의 target을 적기 때문이다. 이유: 각 PHP job이 runtime 선택 하나와 artifact 하나를 소유하므로 병렬 minor
+  검증한다. binding은 workflow도 recipe `ci-assets-<job>`도 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의
+  설치는 레포의 것이기 때문이다. 이유: 각 PHP job이 runtime 선택 하나와 artifact 하나를 소유하므로 병렬 minor
   빌드가 서로의 결과를 대체하지 않고, PHP 외 asset은 플랫폼마다 한 번만 빌드한다. 레포가 workflow 구성을
   바꾸어도 GN-19h의 recipe가 binding 안에 빌드 명령을 유지한다.

@@ -19,6 +19,10 @@ export const MANYLINUX = 'manylinux_2_34';
 
 export const RELEASE_STEPS = ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets'] as const;
 
+// GN-19i: the build recipe of each job of the workflow assets.yml, which the recipe ci-assets-<job> of the repository runs
+// after make release-recipes.
+export const ASSET_JOBS = ['release-assets-platform', 'release-assets-php', 'release-assets-npm'] as const;
+
 export interface Recipes {
   // The path of the file of recipes from the root of the repository, beside the packages of the contract.
   path: string;
@@ -78,20 +82,6 @@ binding_release_pack = (cd $(1) && $(NPM) pack --ignore-scripts --pack-destinati
 endif
 `;
 
-const INSTALL_LLVM = `ifndef BINDING_RELEASE_LLVM
-BINDING_RELEASE_LLVM := 1
-# install-llvm installs the LLVM of config/toolchain.json with the package manager of the platform, which the build of the
-# PHP extension needs: the formula llvm@<major> of Homebrew on macOS, and clang-<major> and libclang-<major>-dev of apt on
-# Linux, where a runner holds them already.
-.PHONY: install-llvm
-install-llvm:
-	@test -n "$(LLVM_MAJOR)" || { echo 'install-llvm: config/toolchain.json pins no major release of LLVM (llvm.version)' >&2; exit 2; }
-	@if test -x "$(LLVM_ROOT)/bin/clang" && ls "$(LLVM_ROOT)/lib" | grep -q '^libclang'; then echo "install-llvm: LLVM $(LLVM_MAJOR) is installed in $(LLVM_ROOT)"; \\
-	elif test "$$(uname -s)" = Darwin; then set -x; $(ONLINE) brew install llvm@$(LLVM_MAJOR); \\
-	else set -x; sudo apt-get install --yes clang-$(LLVM_MAJOR) libclang-$(LLVM_MAJOR)-dev; fi
-endif
-`;
-
 const INSTALL_WASM_BINDGEN = `ifndef BINDING_RELEASE_WASM_BINDGEN
 BINDING_RELEASE_WASM_BINDGEN := 1
 # install-wasm-bindgen installs the wasm-bindgen CLI alone with the mise of the checkout at the digest of mise.lock, for a
@@ -133,7 +123,7 @@ export function releaseRecipes(contract: Contract): Recipes {
     `${comment.split('\n').map((line) => `# ${line}`).join('\n')}\n.PHONY: ${name(step)}\n${name(step)}:${prerequisites === '' ? '' : ` ${prerequisites}`}`;
   const sections: string[] = [];
   const defined: string[] = [];
-  const add = (step: (typeof RELEASE_STEPS)[number], text: string): void => {
+  const add = (step: (typeof RELEASE_STEPS)[number] | (typeof ASSET_JOBS)[number], text: string): void => {
     defined.push(name(step));
     sections.push(text);
   };
@@ -195,7 +185,7 @@ ${require('BINDING_RUN', 'the command that starts binding')}
 	@test -n "$(PHP)" || { echo '${step} needs PHP: the PHP to build for, for example make ${step} PHP=php' >&2; exit 2; }
 	@test -z "$(EXPECTED_PHP_MINOR)" || printf '%s\\n' "$(EXPECTED_PHP_MINOR)" | grep -Eq '^[0-9]+\\.[0-9]+$$' || { echo '${step}: EXPECTED_PHP_MINOR must be major.minor (for example 8.4)' >&2; exit 2; }
 	@test -n "$(LLVM_MAJOR)" || { echo '${step}: config/toolchain.json pins no major release of LLVM (llvm.version)' >&2; exit 2; }
-	@test -x "$(LLVM_ROOT)/bin/clang" && ls "$(LLVM_ROOT)/lib" 2>/dev/null | grep -q '^libclang' || { echo '${step}: the bindgen of ext-php-rs needs the libclang and the clang of LLVM $(LLVM_MAJOR) (config/toolchain.json) in $(LLVM_ROOT); make install-llvm installs it' >&2; exit 2; }
+	@test -x "$(LLVM_ROOT)/bin/clang" && ls "$(LLVM_ROOT)/lib" 2>/dev/null | grep -q '^libclang' || { echo '${step}: the bindgen of ext-php-rs needs the libclang and the clang of LLVM $(LLVM_MAJOR) (config/toolchain.json) in $(LLVM_ROOT), which the job provisions before the recipe (GN-19i)' >&2; exit 2; }
 	@test "$$("$(LLVM_ROOT)/bin/clang" -dumpversion | cut -d. -f1)" = "$(LLVM_MAJOR)" || { echo "${step}: $(LLVM_ROOT)/bin/clang is clang $$("$(LLVM_ROOT)/bin/clang" -dumpversion), not $(LLVM_MAJOR) (config/toolchain.json)" >&2; exit 2; }
 ${generate('php')}
 	@$(call binding_release_host,${step}); \\
@@ -373,11 +363,38 @@ ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loo
 	gh release upload "$$TAG" "$$@"
 `);
 
+
+  // GN-19i: the build recipes of the jobs of assets.yml. Each build of a job runs as a make of its own to its end, and the
+  // recipe names the builds that failed; an install that a build needs comes first and stops the recipe when it fails.
+  const runAll = (job: string, steps: string[]): string => `\t@failed=; for goal in ${steps.join(' ')}; do $(MAKE) --no-print-directory "$$goal" || failed="$$failed $$goal"; done; \\
+\tif [ -n "$$failed" ]; then echo "${job}: failed:$$failed" >&2; exit 1; fi`;
+  const platformSteps = [...(has('go') ? ['release-go-static'] : []), ...(has('python') ? ['release-wheel'] : []), ...(has('node') ? ['release-npm-platform'] : [])].map(name);
+  if (platformSteps.length > 0) {
+    const job = name('release-assets-platform');
+    add('release-assets-platform', `${head('release-assets-platform', `release-assets-platform is the build of the job platform of assets.yml (GN-19i): ${platformSteps.join(', ')} on the
+platform of the host, each to its end; it fails naming each build that failed.`, '')}
+${runAll(job, platformSteps)}
+`);
+  }
+  if (has('php')) {
+    const job = name('release-assets-php');
+    add('release-assets-php', `${head('release-assets-php', `release-assets-php is the build of an entry of the job php of assets.yml (GN-19i): release-php-ext for the PHP of
+PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry.`, '')}
+	@test -n "$(EXPECTED_PHP_MINOR)" || { echo '${job} needs EXPECTED_PHP_MINOR: the PHP minor of the entry, for example make ${job} EXPECTED_PHP_MINOR=8.4' >&2; exit 2; }
+	$(MAKE) --no-print-directory ${name('release-php-ext')} PHP=php EXPECTED_PHP_MINOR=$(EXPECTED_PHP_MINOR)
+`);
+  }
+  if (has('node') || has('wasm')) {
+    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i)${has('wasm') ? ': it installs the wasm-bindgen CLI first and stops\nwhen that fails, then' : ':'} runs ${name('release-npm')}.`, '')}
+${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(MAKE) --no-print-directory ${name('release-npm')}
+`);
+  }
+
   const header = `# Generated by binding release-recipes from ${contract.core.path}/interface.json; do not edit, and do not track it.
 # The release recipes of the binding (binding GN-19h): the Makefile of the repository includes this file after it defines
 # BINDING_RUN, the command that starts binding, NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target
 # that installs binding, if it has one; it runs binding release-recipes to write the file again.
 `;
-  const shared = `${SHARED}${has('php') ? `\n${INSTALL_LLVM}` : ''}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
+  const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };
 }

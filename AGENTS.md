@@ -65,14 +65,15 @@ rules of this repository.
 - Own: `.github/workflows/ci.yml` runs on the push of `main` and on a manual run, one job per matrix entry: `ts` runs
   `typecheck-ts`, `unit-ts` and `release-coverage`, and `rust` runs `test-rust-features`, `test-rust-plain`,
   `clippy-rust-features`, `clippy-rust`, `fmt-rust` and `fmt-e2e`, so the jobs run every target of `make check` once. Each job runs
-  them with `make ci-targets`, which runs every target to its end and writes the report `var/ci/<name>/`, and the last
+  them with `make ci-check`, whose `make ci-targets` runs every target to its end and writes the report `var/ci/<name>/`, and the last
   job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, except `e2e-amd64` on
   `ubuntu-26.04` (GN-14g), pin every action by its
-  commit, set no `timeout-minutes` and run every command of a step as one make target, and `.github/actions/bootstrap` is
+  commit and set no `timeout-minutes`, and `.github/actions/bootstrap` is
   the bootstrap of every job. The job `e2e` runs the end-to-end check of each repository of `tests/e2e`, one entry of its
-  matrix per repository with the repositories that its core depends on (`DEPS`), installs every tool with
-  `make install-tools`, runs in a work directory outside the checkout, then runs `make go-musl-check` on it and uploads
-  the record `var/report/e2e/`; the job `e2e-amd64` does the same for `tests/e2e/sample` on linux/amd64; an entry
+  matrix per repository with the repositories that its core depends on (`DEPS`): `make ci-e2e` installs every tool with
+  `make install-tools`, runs `make e2e` in a work directory of its own outside the checkout, then runs `make go-musl-check` on it
+  when the check passed, and the job uploads
+  the record `var/report/e2e/`; the job `e2e-amd64` does the same for `tests/e2e/sample` on linux/amd64 (`make ci-e2e-amd64`); an entry
   whose run fails stays in the matrix. A contract of `tests/e2e` whose core depends on a repository that is not in
   `tests/e2e` has no entry until a tracked file of the contract names a release tag of that repository, and
   `tests/e2e/not-in-ci.json` lists it with its reason and the condition that ends it (GN-14g). The end-to-end check of another repository is no job of the workflow: it needs a
@@ -82,6 +83,25 @@ rules of this repository.
   released form of the Go module (GN-14f).
   Enforced by: `npm test` in `packages/ts`, whose `tests/ci-workflow.test.ts` reads the workflow; `make ci-passed` judges
   the jobs of a run.
+- Own: Every job of a workflow of this repository (`.github/workflows/ci.yml`, a workflow that it calls, and
+  `.github/workflows/release.yml`) has exactly one
+  `run:` step, `make ci-<job>` with make variables only, and the recipe `ci-<job>` of the Makefile holds the order and
+  the conditions of the job: it installs first and stops when an install fails, then runs its checks, each to its end,
+  then cleans up and reports in every case, and its status is that of its installs and its checks. A value of the
+  matrix is passed as `NAME=${{ matrix.key }}`, and no other expression appears in a run line, except
+  `${{ toJSON(needs) }}` in the one run step of `ci-passed`, the job that judges the results of the other jobs and
+  exists only in CI. A value that the trigger gives, such as the run id of `release`, is a job-level `env:` that the recipe reads. Every other step is a `uses:` step that provisions the runner or carries a result (the checkout,
+  a setup action, `.github/actions/bootstrap`, `actions/upload-artifact`), and only a `uses:` step has an `if:`. What
+  a step would compute from `steps` or from the outcome of another step, such as the outcome of a setup step in the
+  summary or whether `make go-musl-check` runs, the recipe computes itself. A local run of a job is the same call, such
+  as `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage"` or `make ci-e2e
+  REPO=tests/e2e/sample`; a release is `make ci-release RUN=<id>`. A recipe runs no `sudo` and changes no setting of
+  the machine. Why: an expression or a
+  condition of a step is evaluated by the runner of GitHub, so a job whose content is in its YAML cannot run the same
+  way on another machine, and a run that differs from CI is a diagnosis and not evidence of CI; a step that runs a
+  tool directly would also miss the settings of the Makefile.
+  Enforced by: `npm test` in `packages/ts`, whose `tests/ci-workflow.test.ts` reads the steps of each job and runs the
+  recipes `ci-check`, `ci-e2e`, `ci-e2e-amd64` and `ci-release` with a stand-in of make, and reads the job of `release.yml`.
 - Own: `config/release.json` classifies every package file (`make release-coverage`). A tag `vX.Y.Z` releases the
   generator `packages/ts` as the npm archive `polyspec-binding-X.Y.Z.tgz` of the GitHub Release, which `npm pack` builds
   with the prepack script `npm run build`, and the crate `binding_core` of `packages/core/rust` as the Git tag, which a
@@ -90,7 +110,7 @@ rules of this repository.
   sets X.Y.Z in `packages/ts/package.json` with its lock and in `packages/core/rust/Cargo.toml`, and renames
   `## Unreleased` of both changelogs to `## X.Y.Z`, with a new empty `## Unreleased` above it. When the CI run of that
   push to `main` succeeds, `.github/workflows/release.yml` starts by itself, and `gh workflow run release.yml -f run=<id>`
-  starts it again: `make release-tag` creates and pushes the annotated tag `vX.Y.Z` at that commit, and `make
+  starts it again: its one step `make ci-release` runs `make release-tag`, which creates and pushes the annotated tag `vX.Y.Z` at that commit, and `make
   release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. No
   tag is created by hand. Why: the release is the commit that a successful run checked, and its version is the version of
   every manifest that it releases.

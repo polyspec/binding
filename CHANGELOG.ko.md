@@ -1,10 +1,26 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6960bd4f75a56d52a0bca00ec39019d33a0e26667782ed276cbb481e71c696ec -->
+<!-- source-sha256: 71d0851ac6bff81d33b19fd8afd7465847eb258289d7a6bf1039bd452d79d9fe -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `binding release-recipes`는 레포의 workflow `assets.yml`의 각 job의 빌드 recipe `release-assets-platform`,
+  `release-assets-php`, `release-assets-npm`을 쓴다(GN-19i, B2.279). 레포의 고정 recipe `ci-assets-<job>`이
+  `make release-recipes` 뒤에 그것을 실행하므로 각 job은 run step 하나를 가진다. platform job의 빌드는 실패한 빌드 뒤에도
+  계속되고 job은 실패한 빌드를 모두 적는다. PHP job은 `EXPECTED_PHP_MINOR`가 필요하고 PATH의 `php`로 빌드한다. npm job은
+  wasm-bindgen CLI 설치가 실패하면 멈춘다. recipe는 `sudo apt-get`이나 `brew install`을 실행하던 `install-llvm`을 더는
+  정의하지 않는다. job이 recipe 전에 LLVM을 준비한다.
+
+- `.github/workflows/ci.yml`의 모든 job은 Makefile의 recipe 하나, `make ci-check`, `make ci-e2e`, `make ci-e2e-amd64`를
+  matrix 항목의 값을 make 변수로 주어 실행하며, 로컬 실행은 같은 호출이다(B2.278). recipe는 먼저 설치하고 설치가
+  실패하면 멈추며, 검사를 끝까지 실행하고, 마지막에 보고와 정리를 항상 한다. `ci-check`는 `toJSON(steps)` 없이
+  summary에 설치 결과를 적고, `ci-e2e`는 `make e2e`가 통과한 뒤에만 자기 work 디렉터리에서 `make go-musl-check`를
+  실행하고 그 디렉터리를 지운다. workflow의 run step에는 조건, 환경, 그리고 matrix 값과 `ci-passed`의
+  `toJSON(needs)` 외의 runner 식이 없다. `packages/ts/tests/ci-workflow.test.ts`가 각 job의 step을 읽고 세 recipe를
+  make의 대역으로 실행한다. `.github/workflows/release.yml`의 job도 `make ci-release`를
+  실행하며, job 환경의 RUN과 AUTO를 읽고, 이 recipe는 tag, tag checkout, 설치, build, publish, undraft를 앞 단계가 통과한 뒤에만 실행하고 TAG를 직접 읽는다.
 
 - 소유 text 합성을 commit된 소스에서 검증했다(B2.277). 소유 Node 시험 19개, `make test-ts` 730개와
   다섯 대상 sample end-to-end 검사가 통과했다. Native 고정 byte 인용 golden과 callback root witness가

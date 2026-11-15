@@ -1,28 +1,33 @@
 # The checks of binding on GitHub: the push of main and every manual run (workflow_dispatch) run one job per entry of the
-# matrix, and each entry runs its `targets` with `make ci-targets`. The entries together run every target that `make check`
-# runs (the type check and the tests of packages/ts, the tests of binding_core with all features and with none, its
-# clippy with both and its format), each once, and `make release-coverage`. A failure never stops the run: the matrix
-# does not cancel the other entries (fail-fast: false), every step after the first runs after a failed step
-# (`if: ${{ !cancelled() }}`), and `make ci-targets` runs every target to its end. Each matrix job writes the job summary
-# and uploads its report var/ci/<name>/: the status, the first failure lines and the full log of each target. The last job,
-# ci-passed, passes only when every other job of this workflow passed; a release takes the id of such a run and tags its
-# commit (.github/workflows/release.yml). Every step that runs a command runs one make target, the jobs run on
-# ubuntu-26.04-arm (e2e-amd64 on ubuntu-26.04), the actions are pinned by commit and no step has a time limit.
+# matrix. Every job has one run step, make ci-<job> with the values of its matrix entry as make variables, so a local
+# run of the same call is the run of the job (AGENTS.md, B2.278): the recipe of the Makefile holds the order and the
+# conditions of the job, and every other step is a uses step that provisions the runner (checkout, the bootstrap, PHP)
+# or carries a result (upload-artifact), the only steps with a condition. The entries of check together run every
+# target that `make check` runs (the type check and the tests of packages/ts, the tests of binding_core with all
+# features and with none, its clippy with both and its format), each once, and `make release-coverage`. A failure
+# never stops the run: the matrix does not cancel the other entries (fail-fast: false), the recipe runs every check to
+# its end, and the upload runs after a failed step (`if: ${{ !cancelled() }}`). make ci-check installs the tools of its
+# entry, runs its targets with make ci-targets, writes the job summary and the report var/ci/<name>/ (the status, the
+# first failure lines and the full log of each target) and the job uploads it. The last job, ci-passed, passes only
+# when every other job of this workflow passed; a release takes the id of such a run and tags its commit
+# (.github/workflows/release.yml). The jobs run on ubuntu-26.04-arm (e2e-amd64 on ubuntu-26.04), the actions are
+# pinned by commit and no step has a time limit.
 #
-# Each job runs the bootstrap right after the checkout (uses: ./.github/actions/bootstrap), then installs the tools of its
-# entry with make install-tools: the Rust toolchain of rust-toolchain.toml, which the tests of packages/ts also run for
-# cargo fmt. A job that runs the end-to-end check first sets up the PHP of .php-version with setup-php, because make
-# install-tools wraps the php of the PATH as it is and the PHP of the runner image is another minor; its extensions are
-# those that the PHPUnit of config/phpunit requires. No job waits for another job or reads its build output.
+# Each job runs the bootstrap right after the checkout (uses: ./.github/actions/bootstrap); its recipe then installs
+# the tools of its entry with make install-tools: the Rust toolchain of rust-toolchain.toml, which the tests of
+# packages/ts also run for cargo fmt. A job that runs the end-to-end check first sets up the PHP of .php-version with
+# setup-php, because make install-tools wraps the php of the PATH as it is and the PHP of the runner image is another
+# minor; its extensions are those that the PHPUnit of config/phpunit requires. No job waits for another job or reads
+# its build output.
 #
-# The job e2e runs the end-to-end check (make e2e) of each repository of tests/e2e, one entry of its matrix per
-# repository with the repositories that its core depends on (DEPS), on every tool of the checkout (make install-tools)
-# and in a work directory outside the checkout. It is the run of the five targets, and of the released form of the Go
-# module (GN-14f), on Linux, followed by its consumer on musl (make go-musl-check, GN-15g); an entry whose run fails
-# stays in the matrix and fails ci-passed. Each entry uploads the
-# record var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job, and a
-# contract of tests/e2e whose core depends on a repository that is not in tests/e2e has no entry until a tracked file of
-# the contract names a release tag of that repository: tests/e2e/not-in-ci.json lists it with its reason (GN-14g).
+# The job e2e runs make ci-e2e for each repository of tests/e2e, one entry of its matrix per repository with the
+# repositories that its core depends on (DEPS): it installs every tool, runs the end-to-end check (make e2e) in a work
+# directory of its own outside the checkout, which is the run of the five targets, and of the released form of the Go
+# module (GN-14f), on Linux, then its consumer on musl (make go-musl-check, GN-15g) when the check passed, and removes
+# the work directory. An entry whose run fails stays in the matrix and fails ci-passed. Each entry uploads the record
+# var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job, and a contract of
+# tests/e2e whose core depends on a repository that is not in tests/e2e has no entry until a tracked file of the
+# contract names a release tag of that repository: tests/e2e/not-in-ci.json lists it with its reason (GN-14g).
 name: ci
 
 on:
@@ -52,18 +57,8 @@ jobs:
         id: checkout
       - uses: ./.github/actions/bootstrap
         id: bootstrap
-        if: ${{ !cancelled() }}
-      - id: tools
-        if: ${{ !cancelled() }}
-        run: make install-tools TOOLS="${{ matrix.tools }}"
       - id: check
-        if: ${{ !cancelled() }}
-        run: make ci-targets TARGETS="${{ matrix.targets }}" CI_REPORT=var/ci/${{ matrix.name }}
-      - id: summary
-        if: ${{ !cancelled() }}
-        env:
-          CI_STEPS: ${{ toJSON(steps) }}
-        run: make ci-summary CI_REPORT=var/ci/${{ matrix.name }}
+        run: make ci-check NAME=${{ matrix.name }} TOOLS="${{ matrix.tools }}" TARGETS="${{ matrix.targets }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         id: report
         if: ${{ !cancelled() }}
@@ -107,24 +102,15 @@ jobs:
         id: checkout
       - uses: ./.github/actions/bootstrap
         id: bootstrap
-        if: ${{ !cancelled() }}
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         id: php
-        if: ${{ !cancelled() }}
         with:
           php-version-file: .php-version
           extensions: dom, filter, json, libxml, mbstring, phar, tokenizer, xmlwriter
           tools: none
           coverage: none
-      - id: tools
-        if: ${{ !cancelled() }}
-        run: make install-tools
       - id: e2e
-        if: ${{ !cancelled() }}
-        run: make e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}" WORK=${{ runner.temp }}/e2e
-      - id: musl
-        if: ${{ steps.e2e.outcome == 'success' }}
-        run: make go-musl-check WORK=${{ runner.temp }}/e2e
+        run: make ci-e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         id: report
         if: ${{ !cancelled() }}
@@ -142,24 +128,15 @@ jobs:
         id: checkout
       - uses: ./.github/actions/bootstrap
         id: bootstrap
-        if: ${{ !cancelled() }}
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         id: php
-        if: ${{ !cancelled() }}
         with:
           php-version-file: .php-version
           extensions: dom, filter, json, libxml, mbstring, phar, tokenizer, xmlwriter
           tools: none
           coverage: none
-      - id: tools
-        if: ${{ !cancelled() }}
-        run: make install-tools
       - id: e2e
-        if: ${{ !cancelled() }}
-        run: make e2e REPO=tests/e2e/sample WORK=${{ runner.temp }}/e2e
-      - id: musl
-        if: ${{ steps.e2e.outcome == 'success' }}
-        run: make go-musl-check WORK=${{ runner.temp }}/e2e
+        run: make ci-e2e-amd64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         id: report
         if: ${{ !cancelled() }}

@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 0cef7de1de645eaf82df7a1efcde8580a9457d4b6b517c4f2bcb6cda741197e5 -->
+<!-- source-sha256: 746a0adfd57d017fb2a0baf00fb713d44a209a87383e4f50c1e0e9d63939e43d -->
 # 개발
 
 [English](AGENTS.md)
@@ -59,14 +59,14 @@
 - Own: `.github/workflows/ci.yml`은 `main`의 push와 수동 실행에서 돈다. matrix 항목마다 job 하나다. `ts`는 `typecheck-ts`,
   `unit-ts`, `release-coverage`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
   `clippy-rust`, `fmt-rust`, `fmt-e2e`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
-  `make ci-targets`로 실행한다. `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
+  `make ci-check`로 실행하고, 그 `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
   `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고(`e2e-amd64`만
   `ubuntu-26.04`에서 돈다, GN-14g), 모든 action을 commit으로
-  고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은
+  고정하며, `timeout-minutes`를 두지 않는다. `.github/actions/bootstrap`은
   모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
-  하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. 이 job은 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
-  work 디렉터리에서 실행한 뒤 그것으로 `make go-musl-check`를 실행하고, 기록 `var/report/e2e/`를 upload한다. job
-  `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다. 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
+  하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. `make ci-e2e`는 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
+  자기 work 디렉터리에서 `make e2e`를 실행한 뒤 확인이 통과하면 그것으로 `make go-musl-check`를 실행하며, job은 기록
+  `var/report/e2e/`를 upload한다. job `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다(`make ci-e2e-amd64`). 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
   없는 레포에 의존하는 `tests/e2e`의 계약은 그 계약의 추적되는 파일이 그 레포의 release tag를 적을 때까지 항목이 없고,
   `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적는다(GN-14g). 다른 레포의
   끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 그 레포의 checkout이 필요하고, 위의 규칙이 commit을 push하거나
@@ -75,6 +75,20 @@
   형태(GN-14f)를 실행하는 것은 job `e2e`뿐이다.
   Enforced by: `packages/ts`의 `npm test`. 그 `tests/ci-workflow.test.ts`가 workflow를 읽는다. `make ci-passed`가 한
   실행의 job을 판정한다.
+- Own: 이 레포의 workflow(`.github/workflows/ci.yml`, 그것이 부르는 workflow, `.github/workflows/release.yml`)의 모든 job은 `run:` step을 정확히
+  하나 가지며, 그 step은 make 변수만 받는 `make ci-<job>`이다. Makefile의 recipe `ci-<job>`이 job의 순서와 조건을 가진다.
+  recipe는 먼저 설치하고 설치가 실패하면 멈추며, 다음에 검사를 하나씩 끝까지 실행하고, 마지막에 정리와 보고를 항상 한다.
+  recipe의 상태는 설치와 검사의 상태다. matrix 값은 `NAME=${{ matrix.key }}`로 넘기고, run 줄에는 다른 식이 없다. 예외는
+  `ci-passed`의 run step 하나에 있는 `${{ toJSON(needs) }}`다. `ci-passed`는 다른 job의 결과를 판정하고 CI에만 있는 job이다.trigger가 주는 값, 예를 들어 `release`의 run id는 job 수준 `env:`이며 recipe가 그것을 읽는다.
+  다른 step은 모두 runner를 준비하거나 결과를 옮기는 `uses:` step이며(checkout, setup action, `.github/actions/bootstrap`,
+  `actions/upload-artifact`), `if:`는 `uses:` step에만 있다. step이 `steps`나 다른 step의 결과에서 계산하던 것, 예를 들어
+  summary에 적는 setup step의 결과나 `make go-musl-check`를 실행할지는 recipe가 직접 계산한다. job의 로컬 실행은 같은
+  호출이다. 예: `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage"`, `make ci-e2e
+  REPO=tests/e2e/sample`. release는 `make ci-release RUN=<id>`다. recipe는 `sudo`를 실행하지 않고 기계의 설정을 바꾸지 않는다. 이유: step의 식과 조건은 GitHub의
+  runner가 평가하므로, 내용이 YAML에 있는 job은 다른 기계에서 같은 방식으로 실행할 수 없고, CI와 다른 실행은 진단일 뿐 CI의
+  증거가 아니다. 도구를 바로 실행하는 step은 Makefile의 설정도 받지 못한다.
+  Enforced by: `packages/ts`의 `npm test`. 그 `tests/ci-workflow.test.ts`가 각 job의 step을 읽고, recipe `ci-check`,
+  `ci-e2e`, `ci-e2e-amd64`, `ci-release`를 make의 대역으로 실행하고, `release.yml`의 job을 읽는다.
 - Own: `config/release.json`은 모든 package 파일을 분류한다(`make release-coverage`). tag `vX.Y.Z`는 생성기
   `packages/ts`를 GitHub Release의 npm archive `polyspec-binding-X.Y.Z.tgz`로 release하고, `npm pack`이 prepack script
   `npm run build`로 그것을 만든다. `packages/core/rust`의 crate `binding_core`는 Git tag로 release하고, Cargo 의존은 그것을
@@ -82,7 +96,7 @@
   release asset으로 받기 때문이다. version-bump commit `chore(release): Release X.Y.Z`는 `packages/ts/package.json`과 그
   lock, `packages/core/rust/Cargo.toml`에 X.Y.Z를 적고, 두 changelog의 `## Unreleased`를 `## X.Y.Z`로 바꾸고 그 위에 빈
   `## Unreleased`를 둔다. `main`으로의 그 push의 CI 실행이 성공하면 `.github/workflows/release.yml`이 스스로 시작하고,
-  `gh workflow run release.yml -f run=<id>`가 그것을 다시 시작한다. `make release-tag`가 그 commit에 annotated tag
+  `gh workflow run release.yml -f run=<id>`가 그것을 다시 시작한다. 그 step 하나인 `make ci-release`가 실행하는 `make release-tag`가 그 commit에 annotated tag
   `vX.Y.Z`를 만들어 push하고, `make release-assets`, `make release-publish`, `make release-undraft`가 archive를 만들고
   GitHub Release를 만든다. tag를 손으로 만들지 않는다. 이유: release는 성공한 실행이 확인한 commit이고, 그 version은 그것이
   release하는 모든 manifest의 version이다.

@@ -2740,11 +2740,14 @@ the design ids are those of the binding design.
   its dependency as `DEPS`, before a commit is pushed or merged. Why: a job cannot check out a repository at a
   release that does not exist, an entry that names a missing directory fails for a reason that is no defect of the
   commit, and a contract that is silently left out of the job would look checked.
-  After the end-to-end check each entry of the job `e2e` runs `make go-musl-check` on its work directory, so the
-  released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g). The job `e2e-amd64`
-  runs `make e2e` of `tests/e2e/sample` and then `make go-musl-check` on `ubuntu-26.04`, the one job that does not
+  Each entry of the job `e2e` runs `make ci-e2e REPO=<repository> DEPS="<repositories>"`, which installs every tool,
+  runs the end-to-end check in a work directory of its own and, when the check passed, `make go-musl-check` on that
+  directory, so the released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g); it
+  removes the work directory at its end. The job `e2e-amd64` runs `make ci-e2e-amd64`, the same recipe for
+  `tests/e2e/sample`, on `ubuntu-26.04`, the one job that does not
   run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only
-  an amd64 machine links and runs them. Before `make install-tools` both jobs set up the PHP of `.php-version` with
+  an amd64 machine links and runs them. A local run of either job is the same call. Before their recipe, whose
+  `make install-tools` comes first, both jobs set up the PHP of `.php-version` with
   the pinned `shivammathur/setup-php`, with the extensions that the PHPUnit of `config/phpunit` requires (`dom`,
   `filter`, `json`, `libxml`, `mbstring`, `phar`, `tokenizer`, `xmlwriter`), because `make install-tools` wraps the
   `php` of the PATH as it is and the run compares its minor with `.php-version`: the PHP of the runner image is
@@ -2908,7 +2911,9 @@ the design ids are those of the binding design.
   | `release-go-module` | `go` | GN-19f, for the tag of `TAG` |
   | `release-binding-check` | every contract | GN-19g |
   | `release-platform-assets` | every contract | GN-19g, the upload of the assets of `TAG` |
-  | `install-llvm` | `php` | installs the LLVM of `config/toolchain.json` |
+  | `release-assets-platform` | `go`, `python` or `node` | GN-19i, the builds of the job `platform` |
+  | `release-assets-php` | `php` | GN-19i, the build of an entry of the job `php` for `EXPECTED_PHP_MINOR` |
+  | `release-assets-npm` | `node` or `wasm` | GN-19i, the build of the job `npm` |
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
 
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
@@ -2925,7 +2930,8 @@ the design ids are those of the binding design.
     its target, because the generated files are not tracked, so a checkout of a tag holds none of them.
   - `release-php-ext` builds with `LIBCLANG_PATH` and `CLANG_PATH` of the LLVM of `LLVM_ROOT`, which is
     `/usr/lib/llvm-<major>` on Linux and the Homebrew formula `llvm@<major>` on macOS by default, and fails before
-    Cargo builds when that LLVM has no clang or no libclang or its clang is of another major release (GN-14a). Each PHP
+    Cargo builds when that LLVM has no clang or no libclang or its clang is of another major release (GN-14a). No recipe
+    installs LLVM or runs `sudo`: the job provisions the LLVM before its recipe (GN-19i). Each PHP
     minor and build of PHP builds in its own `CARGO_TARGET_DIR`, because the extension is compiled against the headers
     of that PHP.
   - `release-npm-platform` gives `napi create-npm-dirs` and `napi artifacts` the folder
@@ -2943,24 +2949,32 @@ the design ids are those of the binding design.
   its workflows of CI and of the release call (`workflow_call`, with the input `ref` of the tag and the input `release`
   that runs `make release-binding-check` first). Independent jobs build the non-PHP assets once per platform and the
   PHP extensions once per platform and PHP minor of GN-19a. Every job runs on the runner of its platform
-  (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`), each step as one make target, and the build steps after the first
-  also after a failed one (`if: ${{ !cancelled() }}`).
-  - The job `platform` installs its tools, runs `make release-recipes` (the target of the repository that runs
-    `binding release-recipes`), `make release-go-static`, `make release-wheel` and `make release-npm-platform`, and
+  (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`) and has one run step, `make ci-assets-<job>` with the values of its
+  matrix entry as make variables; every other step is a `uses:` step that provisions the runner (the checkout, the
+  bootstrap, the PHP of the entry, the LLVM of `config/toolchain.json` for the job `php`) or carries a result
+  (`actions/upload-artifact` under `if: ${{ !cancelled() }}`). A local run of a job is the same call.
+  The recipe `ci-assets-<job>` is a fixed recipe of the Makefile of the repository, because the file of GN-19h does
+  not exist in a fresh checkout before `make release-recipes` writes it: it installs the tools of the repository and
+  stops when an install fails, runs `make release-recipes`, and then the build recipe `release-assets-<job>` of that
+  file, a make of its own that reads the file just written. The build recipe holds the order and the conditions of the
+  job; no recipe runs `sudo` or installs into the machine.
+  - `ci-assets-platform` ends with `make release-assets-platform`, which runs `release-go-static`, `release-wheel` and
+    `release-npm-platform` of the targets of the contract, each to its end, and fails naming each failed build; the job
     uploads `var/release/assets` as the artifact `assets-<platform>`.
-  - The job `php` has a matrix of platform and PHP minor. Each entry selects one native PHP runtime, installs its tools,
-    runs `make release-recipes`, `make install-llvm` and `make release-php-ext PHP=<selected executable> EXPECTED_PHP_MINOR=<matrix minor>`, and uploads
-    `var/release/assets` as the distinct artifact `assets-php-<platform>-<minor>`. A setup action declaration alone
-    does not prove which native runtime a build used.
-  - The job `npm` runs `make release-recipes`, `make install-wasm-bindgen` and `make release-npm` and uploads the
-    artifact `assets-npm`.
+  - `ci-assets-php PHP_MINOR=${{ matrix.minor }}` ends with `make release-assets-php EXPECTED_PHP_MINOR=<minor>`, which
+    runs `release-php-ext` for the `php` of PATH, the native runtime that the entry selected before the recipe; the
+    job uploads `var/release/assets` as the distinct artifact `assets-php-<platform>-<minor>`. A setup action
+    declaration alone does not prove which native runtime a build used.
+  - `ci-assets-npm` ends with `make release-assets-npm`, which installs the wasm-bindgen CLI first (`install-wasm-bindgen`,
+    for a contract with `wasm`) and stops when that fails, then runs `release-npm`; the job uploads the artifact
+    `assets-npm`.
 
   Each PHP matrix entry supplies `EXPECTED_PHP_MINOR`; the generated recipe checks and records its native
   selection as GN-19d specifies, so no repository copies this check into a wrapper target.
 
   The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module`
   and `make release-platform-assets` after the draft release exists; the latter validates the complete required asset
-  set. binding writes no workflow: GitHub reads a workflow only from the tracked tree, and the steps of a job name
-  the targets of the repository. Why: each PHP job owns one runtime selection and one artifact, so parallel minor
+  set. binding writes no workflow and no recipe `ci-assets-<job>`: GitHub reads a workflow only from the tracked tree, and
+  the installs of a job are those of the repository. Why: each PHP job owns one runtime selection and one artifact, so parallel minor
   builds cannot replace one another's results, while the non-PHP assets are built only once per platform. The recipes
   of GN-19h keep the build commands in binding when a repository changes its workflow layout.

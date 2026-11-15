@@ -164,6 +164,40 @@ ci-summary: ## Write summary.md of CI_REPORT again from its record, also for a r
 ci-passed: ## Fail unless every job of RESULTS, the JSON of toJSON(needs), has the result success
 	$(NODE) $(KIT)/ci-passed.mjs
 
+# The jobs of ci.yml. Each job of the workflow runs one recipe, make ci-<job> with the values of its matrix entry as make
+# variables, and a local run is the same call: the recipe holds the order and the conditions of the job, so a run
+# needs no runner of GitHub. A recipe installs first and stops when an install fails, then runs its checks, each to its
+# end, then cleans up and reports in every case; its status is that of its installs and its checks.
+#
+# ci-check installs the tools of TOOLS and runs TARGETS with ci-targets into the report var/ci/<NAME>, then writes
+# summary.md with ci-summary in every case, naming the install as the setup step tools with its outcome (CI_STEPS).
+.PHONY: ci-check ci-e2e ci-e2e-amd64
+ci-check: ## Run the check job of ci.yml: NAME=<entry> TARGETS="<target>..." [TOOLS="<tool>..."]
+	@test -n "$(NAME)" && test -n "$(TARGETS)" || { echo 'ci-check: NAME and TARGETS are required, for example make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts"' >&2; exit 2; }
+	@tools=success; status=1; \
+	$(MAKE) --no-print-directory install-tools TOOLS="$(TOOLS)" || tools=failure; \
+	if [ "$$tools" = success ]; then $(MAKE) --no-print-directory ci-targets TARGETS="$(TARGETS)" CI_REPORT=var/ci/$(NAME) && status=0; fi; \
+	CI_STEPS="{\"tools\":{\"outcome\":\"$$tools\"}}" $(MAKE) --no-print-directory ci-summary CI_REPORT=var/ci/$(NAME) || status=1; \
+	exit $$status
+
+# ci-e2e installs every tool, then runs make e2e of REPO with DEPS in a work directory of its own under the temporary
+# directory of the system, outside the checkout, and make go-musl-check on that directory only after make e2e passed,
+# because it reads what the run of make e2e wrote there (GN-14f, GN-15g). It removes the work directory at its end, at
+# its failure and on SIGINT and SIGTERM, after the command that uses it has ended (HR-87). The record of make e2e is in
+# var/report/e2e. The directory is named by its real path, as scripts/e2e-work.mts names one.
+ci-e2e: ## Run the e2e job of ci.yml: REPO=<repository of tests/e2e> [DEPS="<repository>..."]
+	@test -n "$(REPO)" || { echo 'ci-e2e: REPO is required, for example make ci-e2e REPO=tests/e2e/sample' >&2; exit 2; }
+	$(MAKE) --no-print-directory install-tools
+	@work="$$(cd "$$(mktemp -d "$${TMPDIR:-/tmp}/binding-ci-e2e.XXXXXX")" && pwd -P)" || exit 1; \
+	trap 'rm -rf "$$work"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	echo "ci-e2e: work directory $$work"; \
+	$(MAKE) --no-print-directory e2e REPO=$(REPO) DEPS="$(DEPS)" WORK="$$work" && \
+	$(MAKE) --no-print-directory go-musl-check WORK="$$work"
+
+# GN-14g, GN-15g: the job e2e-amd64 runs the job e2e of the sample on linux/amd64.
+ci-e2e-amd64: ## Run the e2e-amd64 job of ci.yml: the e2e job of tests/e2e/sample
+	$(MAKE) --no-print-directory ci-e2e REPO=tests/e2e/sample DEPS=
+
 # ---- Release (config/release.json, .github/workflows/release.yml) -----------------------------------------------------
 # The steps of release.yml, in this order: release-tag tags the commit of the successful CI run RUN of ci.yml on main with
 # vX.Y.Z of the top section of CHANGELOG.md and appends TAG and VERSION to GITHUB_ENV; release-checkout checks that tag
@@ -204,6 +238,29 @@ release-publish: ## Create the GitHub Release of TAG as a draft with the archive
 release-undraft: ## Make the draft release of TAG public
 	@test -n "$$TAG" || { echo "release-undraft: TAG is required, for example make release-undraft TAG=v0.0.1"; exit 1; }
 	RELEASE_RECORDS=var/release $(NODE) $(KIT)/release.mjs undraft "$$TAG"
+
+# ci-release is the one job of release.yml (B2.278): it tags the commit of the CI run RUN (AUTO=1 releases only a version
+# commit), and when a tag was created, checks it out, installs the lock, the packages and the tools of the tagged tree,
+# builds the archives, creates the draft release and makes it public, each step only after the one before it passed.
+# release-tag writes TAG into a file of this run, which the recipe reads and removes, so no step reads a variable that
+# the runner keeps between steps. Each later step is a make of its own, which reads the Makefile of the tag. A run
+# that creates no tag ends with status 0.
+.PHONY: ci-release
+ci-release: ## Run the release job of release.yml: RUN=<id of a successful CI run> [AUTO=1]; reads and writes GitHub with gh
+	@test -n "$(RUN)" || { echo 'ci-release: RUN is required, for example make ci-release RUN=123' >&2; exit 2; }
+	@env_file="$$(mktemp "$${TMPDIR:-/tmp}/binding-ci-release.XXXXXX")" || exit 1; \
+	trap 'rm -f "$$env_file"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	GITHUB_ENV="$$env_file" RUN="$(RUN)" $(MAKE) --no-print-directory release-tag RUN="$(RUN)" AUTO="$(AUTO)" || exit 1; \
+	tag="$$(sed -n 's/^TAG=//p' "$$env_file" | tail -n 1)"; \
+	if [ -z "$$tag" ]; then echo 'ci-release: release-tag created no tag; nothing to release'; exit 0; fi; \
+	TAG="$$tag" $(MAKE) --no-print-directory release-checkout && \
+	$(MAKE) --no-print-directory bootstrap && \
+	$(MAKE) --no-print-directory install-tools TOOLS=npm && \
+	$(MAKE) --no-print-directory release-prepare && \
+	$(MAKE) --no-print-directory release-tools && \
+	TAG="$$tag" $(MAKE) --no-print-directory release-assets && \
+	TAG="$$tag" $(MAKE) --no-print-directory release-publish && \
+	TAG="$$tag" $(MAKE) --no-print-directory release-undraft
 
 release-coverage: ## Require every package file of the checkout to be classified in config/release.json; offline
 	$(NODE) $(KIT)/release.mjs coverage

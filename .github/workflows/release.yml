@@ -3,8 +3,10 @@
 # it is the version commit of that version. A dispatch with the id of a successful CI run releases the commit of that run.
 # release-tag tags the commit with vX.Y.Z and appends TAG and VERSION to GITHUB_ENV; the later steps check the tag out,
 # install its tools, build the archives of config/release.json, create the GitHub Release of the tag as a draft and make it
-# public. The run of ci is the evidence; the release runs no test again. Every step that runs a command runs one make
-# target, the job runs on ubuntu-26.04-arm, the actions are pinned by commit and no step has a time limit.
+# public. The run of ci is the evidence; the release runs no test again. The job has one run step, make ci-release, which
+# reads the id of the run and AUTO from the environment of the job (AGENTS.md, B2.278), whose recipe holds the order of these steps and
+# reads TAG itself, so a maintainer runs the same call. The job runs on ubuntu-26.04-arm, the actions are pinned by
+# commit and no step has a time limit.
 name: release
 
 on:
@@ -34,6 +36,7 @@ jobs:
     runs-on: ubuntu-26.04-arm
     env:
       RUN: ${{ inputs.run || github.event.workflow_run.id }}
+      AUTO: ${{ github.event_name == 'workflow_run' && '1' || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # The whole history, so origin/main is there for the ancestry check of release-tag.
@@ -42,28 +45,5 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
       - uses: ./.github/actions/bootstrap
-      - name: tag the commit of the CI run
-        run: make release-tag ${{ github.event_name == 'workflow_run' && 'AUTO=1' || '' }}
-      - name: check out the tag
-        if: ${{ env.TAG != '' }}
-        run: make release-checkout
-      - uses: ./.github/actions/bootstrap
-        if: ${{ env.TAG != '' }}
-      - name: prepare the release
-        if: ${{ env.TAG != '' }}
-        run: make release-prepare
-      - name: install the tools of the release
-        if: ${{ env.TAG != '' }}
-        run: make release-tools
-      - name: put the installed tools on PATH
-        if: ${{ env.TAG != '' }}
-        run: make release-tools-path
-      - name: build the assets
-        if: ${{ env.TAG != '' }}
-        run: make release-assets
-      - name: create the draft release
-        if: ${{ env.TAG != '' }}
-        run: make release-publish
-      - name: make the release public
-        if: ${{ env.TAG != '' }}
-        run: make release-undraft
+      - name: make ci-release
+        run: make ci-release
