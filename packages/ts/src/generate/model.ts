@@ -340,6 +340,9 @@ export interface Model {
   // converts through the kept wrapper, because the trait that the core keeps may require Send and Sync, which the
   // struct of a call of these targets is not.
   keptUnits?: ReadonlySet<string>;
+  // GN-6bt: the conversion of a unit of a cycle of records and variants that is generated, whose places of a unit of the
+  // cycle take a made value (out, in) or record the value of the language (kids) instead of calling a conversion.
+  cycleWalk?: { units: readonly Unit[]; index: number; mode: 'out' | 'in' | 'kids'; base: Model };
   // T-3: the records of other repositories that this contract's types name, in the order they are first named.
   foreignRecords: ForeignRecord[];
   // The contracts of the libraries that the contract names (T-3).

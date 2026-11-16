@@ -8,6 +8,7 @@ import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, p
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
+import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -74,6 +75,8 @@ export function convertIn(model: Model, type: Type, value: string, subject: stri
   // owner thread.
   if (unit?.origin === 'callback' && convertsKept(model, type, unit)) return `kept_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
+  const leaf = cycleLeaf(model, PHP_CYCLE, type, value, subject);
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
@@ -129,6 +132,8 @@ function convertOut(model: Model, type: Type, value: string): string {
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
+  const leaf = cycleLeaf(model, PHP_CYCLE, type, value, '');
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `${unitFn('out', unit, aliasOf(model, type)?.library)}(${value})`;
   throw new Unsupported(`no PHP output conversion for ${JSON.stringify(type)}`);
@@ -569,34 +574,56 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const name = recordFn(unit);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
+  const props = fields.map((f) => langName('php', f.name, 'variable'));
+  const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
+  const constructor = recordConstructor(name, fields, props, args);
+  const cycle = library === undefined ? cycleOf(phpCycles(model), unit) : undefined;
+  if (cycle !== undefined) return `${cycleUnitRust(model, PHP_CYCLE, unit, cycle, 'Fail', (typed, mode) => recordParts(typed, layout, unit, index, mode))}${constructor}`;
+  const { ins, outs, phpName } = recordParts(model, layout, unit, index, 'in', library);
+  return `
+/// T-4: a value of the record ${phpName} is an instance of the class itself.
+fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+${ins}
+}
+
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+${outs}
+}
+${library === undefined ? constructor : ''}`;
+}
+
+// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function recordParts(model: Model, layout: PhpLayout, unit: Unit, index: number, mode: 'in' | 'kids', library?: string): { ins: string; outs: string; phpName: string } {
+  const core = unit.core_type ?? '';
+  const fields = unit.fields ?? [];
+  const kids = mode === 'kids';
   const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
   const phpName = `${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
   // T-3: the class of another repository's record is registered by that repository's extension, found by its name.
   const entry = library === undefined ? `RECORDS[${index}].get().copied()` : `ClassEntry::try_find(${rustString(phpName)}).map(Class)`;
   const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
   const props = fields.map((f) => langName('php', f.name, 'variable'));
-  const reads = fields.map((f, i) => `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = {
+  const reads = fields.map((f, i) => {
+    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
+    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
+    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = {
         let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
-    };${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
+    };${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(props[i] ?? ''), 'binding_error')}` : ''}`;
+  });
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
-  const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
-  const constructor = recordConstructor(name, fields, props, args);
-  return `
-/// T-4: a value of the record ${phpName} is an instance of the class itself.
-fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
-    let Some(Class(entry)) = ${entry} else {
+  return {
+    phpName,
+    ins: `    let Some(Class(entry)) = ${entry} else {
         return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
     let Some(object) = value.object().filter(|object| object.instance_of(entry)) else {
         return Err(type_error(subject, ${rustString(phpName)}));
     };
 ${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
-}
-
-fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
-    let value = value.borrow();
+    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+    outs: `    let value = value.borrow();
     let Some(Class(entry)) = ${entry} else {
         return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
@@ -606,10 +633,30 @@ ${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(Bindin
         Ok(())
     });
     written?;
-    object.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+    object.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))`,
+  };
 }
-${library === undefined ? constructor : ''}`;
-}
+
+// GN-6bt: the host of the walks of a cycle in PHP; a value of the language that the walk keeps is a shallow copy of
+// its Zval.
+const PHP_CYCLE: CycleHost = {
+  lang: 'Zval',
+  made: 'Zval',
+  inValue: '&Zval',
+  give: (owned) => `&${owned}`,
+  own: (place) => `Zval::shallow_clone(${place})`,
+  result: (type) => `Result<${type}, Fail>`,
+  internal: (detail) => `binding_error(BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
+  inGenerics: '',
+  inParams: '',
+  inArgs: '',
+  outGenerics: '',
+  outParams: '',
+  outArgs: '',
+};
+
+// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
+const phpCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
 
 function recordConstructor(name: string, fields: Unit['fields'] & object, props: string[], args: string[]): string {
   // GN-6v: a case without fields takes no argument and holds nothing.
@@ -654,18 +701,44 @@ const phpRecords = (model: Model): Unit[] => [...model.resultRecords, ...caseUni
 // T-9, GN-6v: a value of a variant is an instance of the final class of one of its cases, whose properties are judged
 // as they enter (T-8); a value leaves as an instance of the class of its case, by a match without a wildcard.
 function variantRust(model: Model, layout: PhpLayout, variant: Variant): string {
+  const cycle = cycleOf(phpCycles(model), variant.unit);
+  if (cycle !== undefined) return cycleUnitRust(model, PHP_CYCLE, variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, layout, variant, mode));
   const name = recordFn(variant.unit);
   const core = variant.unit.core_type ?? '';
   const phpName = `${phpNamespace(layout, variant.unit.module)}\\${langName('php', variant.unit.name, 'class')}`;
+  const { ins, outs } = variantParts(model, layout, variant, 'in');
+  return `
+/// T-9: a value of the variant ${phpName} is an instance of the class of one of its cases; its properties are judged as they enter (T-8).
+fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+${ins}
+}
+
+/// T-9: a value of the variant ${phpName} leaves as an instance of the class of its case.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+${outs}
+}
+`;
+}
+
+// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function variantParts(model: Model, layout: PhpLayout, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
+  const phpName = `${phpNamespace(layout, variant.unit.module)}\\${langName('php', variant.unit.name, 'class')}`;
   const index = (kase: VariantCase): number => phpRecords(model).indexOf(kase.unit);
+  const kids = mode === 'kids';
   const ins = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => `            let ${f.variable}: ${caseType(model, f)} = {
+    const reads = fields.map((f) => {
+      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
+      const variable = `${kids ? '_' : ''}${f.variable}`;
+      const read = `${convertIn(model, f.field.type, 'field', 'subject')}?`;
+      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = {
                 let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
-                ${caseRead(f, `${convertIn(model, f.field.type, 'field', 'subject')}?`)}
-            };${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`);
+                ${held ? read : caseRead(f, read)}
+            };${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`;
+    });
     return `    if ${fields.length === 0 ? `case_entry(${index(kase)}, object).is_some()` : `let Some(entry) = case_entry(${index(kase)}, object)`} {
-${reads.map((r) => `${r.replace(/^    /gm, '')}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
+${reads.map((r) => `${r.replace(/^    /gm, '')}\n`).join('')}        return ${kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`};
     }`;
   });
   const arms = variant.cases.map((kase) => {
@@ -673,23 +746,16 @@ ${reads.map((r) => `${r.replace(/^    /gm, '')}\n`).join('')}        return Ok($
     const values = fields.map((f) => `(${rustString(langName('php', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?)`);
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => case_object(${index(kase)}, vec![${values.join(', ')}]),`;
   });
-  return `
-/// T-9: a value of the variant ${phpName} is an instance of the class of one of its cases; its properties are judged as they enter (T-8).
-fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
-    let Some(object) = value.object() else {
+  return {
+    ins: `    let Some(object) = value.object() else {
         return Err(type_error(subject, ${rustString(phpName)}));
     };
 ${ins.join('\n')}
-    Err(type_error(subject, ${rustString(phpName)}))
-}
-
-/// T-9: a value of the variant ${phpName} leaves as an instance of the class of its case.
-fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
-    match value.borrow() {
+    Err(type_error(subject, ${rustString(phpName)}))`,
+    outs: `    match value.borrow() {
 ${arms.join('\n')}
-    }
-}
-`;
+    }`,
+  };
 }
 
 // T-9: the class of a case that an object is an instance of, and an instance of the class of a case with the values of

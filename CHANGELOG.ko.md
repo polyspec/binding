@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8971dcfde4730bc4276d304f1566fa479da31bfcb2bc176f5b70df5a5d82e05c -->
+<!-- source-sha256: ad2f6f50abfd88b070786e7eadd3bf83729b1d562d3db3b23408f728cd9e81fc -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -7,6 +7,7 @@
 
 ## Unreleased
 
+- 깊게 중첩된 record나 variant가 debug WASM에서 trap했다. cycle의 record나 variant의 변환 `out_<unit>`과 `in_<unit>`이 단계마다 자기 자신을 불러, template의 case `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식이 1 MiB stack을 다 써 "memory access out of bounds"로 끝났다. 이제 다섯 target에서 변환이 heap의 work stack으로 값을 loop에서 걷고 cycle의 변환을 부르지 않는다(GN-6bt, B2.377). `make test-ts`로 확인했다: 새 시험은 변경 전에 실패했다. `tests/e2e/variants`의 다섯 crate의 `cargo clippy`와, 2000단계 중첩된 figure를 더한 그 생성 Node 시험으로도 확인했다.
 - async 함수가 아닌 function fixture의 step은 raise하는 호출의 결과를 Node와 WASM에서 바로 읽는다. member를 await하는 case의 시험은 그 함수에 `await settled(...)`를 써서, 시험 파일 전체가 load되지 않는 문법 오류를 냈다(GN-6m, GN-13p, B2.324).
 - method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.324).
 - function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.323).

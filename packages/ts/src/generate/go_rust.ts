@@ -25,6 +25,7 @@ import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
 import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
+import { type Cycle, coreWalk, cycleOf, cycles, holdsCycle, walkModel, walkUnit } from './cycles.ts';
 
 // GN-17: the C symbol prefix of the static library, the PHP extension name of P-1 and one underscore,
 // polyspec_<repository>_. A name of a repository holds no two underscores in a row, so the first two underscores of a
@@ -131,6 +132,8 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (alias !== undefined) return `${unitFn('in', alias.unit, alias.library)}(${input})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
+  const leaf = goCycleLeaf(model, type, input, subject);
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'variant') return `${unitFn('in', unit)}(${input}, ${subject})`;
   if (unit?.kind === 'record') return `${unitFn('in', unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
@@ -165,6 +168,8 @@ export function convertOut(model: Model, type: Type, value: string): string {
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `${unitFn('out', alias.unit, alias.library)}(output, ${value})`;
   const unit = unitOf(model, type);
+  const leaf = goCycleLeaf(model, type, value, '');
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'enum' || unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${plainName(unit)}(output, ${value})`;
   throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
@@ -541,13 +546,37 @@ function variantRust(model: Model, variant: Variant): string {
   const name = recordFn(variant.unit);
   const core = variant.unit.core_type ?? '';
   const goType = goName(variant.unit.name);
+  const cycle = cycleOf(goCycles(model), variant.unit);
+  if (cycle !== undefined) return goCycleUnit(model, variant.unit, cycle, (typed, mode) => variantParts(typed, variant, mode));
+  const { ins, outs } = variantParts(model, variant, 'in');
+  return `
+/// T-9: a value of the variant ${goType}: the number of its case in the contract, then the fields of the case (B-8).
+fn in_${name}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
+${ins}
+}
+
+/// T-9: a value of the variant ${goType} leaves as the number of its case and the fields of the case.
+fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
+${outs}
+}
+`;
+}
+
+// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
+  const goType = goName(variant.unit.name);
+  const kids = mode === 'kids';
   const ins = variant.cases.map((kase, number) => {
     const fields = caseFields(model, variant, kase);
     const reads = fields.map((f) => {
       const subject = rustString(goName(f.field.name));
-      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, 'input', subject)}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, subject, 'binding_error')}` : ''}`;
+      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
+      const variable = `${kids ? '_' : ''}${f.variable}`;
+      const read = `${convertIn(model, f.field.type, 'input', subject)}?`;
+      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? read : caseRead(f, read)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, subject, 'binding_error')}` : ''}`;
     });
-    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
     return `        ${number} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
   });
   const arms = variant.cases.map((kase, number) => {
@@ -555,20 +584,197 @@ function variantRust(model: Model, variant: Variant): string {
     const writes = [`            uint_out(output, ${number}_u64);`, ...fields.map((f) => `            ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))};`)];
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
   });
-  return `
-/// T-9: a value of the variant ${goType}: the number of its case in the contract, then the fields of the case (B-8).
-fn in_${name}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
-    match uint_in(input)? {
+  return {
+    ins: `    match uint_in(input)? {
 ${ins.join('\n')}
         _ => Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(goType)}) })),
+    }`,
+    outs: `    match value.borrow() {
+${arms.join('\n')}
+    }`,
+  };
+}
+
+// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
+const goCycles = (model: Model): Cycle[] => cycles(model, [...model.records, ...model.variants.map((v) => v.unit)]);
+
+const GO_MISSING = 'binding_error(BindingError::Internal { detail: String::from("GN-6bt: a conversion of a cycle found no made value of a place") })';
+
+// GN-6bt: a place of a unit of the cycle in a conversion of the cycle: the made bytes (out), the made value, after
+// whose bytes the input goes on (in), or the start of its bytes, kept for the walk, or the end of them when they were
+// converted before (kids).
+function goCycleLeaf(model: Model, type: Type, value: string, subject: string): string | undefined {
+  const at = walkUnit(model, type);
+  const walk = model.cycleWalk;
+  if (at === undefined || walk === undefined) return undefined;
+  if (walk.mode === 'out') return `made_write(output, made, ${value})`;
+  if (walk.mode === 'in') return `cycle${walk.index}_u${at}(made_take(${value}, made)).ok_or_else(|| ${GO_MISSING})`;
+  return `kid_in(${value}, kids, ${at}, ${subject === '' ? '""' : subject})`;
+}
+
+// GN-6bt: the helpers of the walks that every cycle of the crate uses, written once.
+const GO_CYCLE_SHARED = `
+/// GN-6bt: writes the next made bytes of a conversion of a cycle, for its next place of a unit of the cycle, whose
+/// value was converted before.
+fn made_write<V>(output: &mut Vec<u8>, made: &std::cell::RefCell<std::vec::IntoIter<Vec<u8>>>, _value: V) {
+    if let Some(bytes) = made.borrow_mut().next() {
+        output.extend_from_slice(&bytes);
     }
 }
 
-/// T-9: a value of the variant ${goType} leaves as the number of its case and the fields of the case.
-fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
-    match value.borrow() {
-${arms.join('\n')}
+/// GN-6bt: the next made value of a conversion of a cycle, for its next place of a unit of the cycle; the input goes
+/// on after the bytes of the value.
+fn made_take<'a, M>(input: &mut &'a [u8], made: &std::cell::RefCell<std::vec::IntoIter<(M, &'a [u8])>>) -> Option<M> {
+    let (value, end) = made.borrow_mut().next()?;
+    *input = end;
+    Some(value)
+}
+
+/// GN-6bt: the value of a place of a unit of a cycle that the walk in converts before the value that holds it.
+struct CycleFound;
+
+/// GN-6bt: the places of units of a cycle that a walk in has converted, by the end of their bytes, and the first that
+/// it has not, by the start of its bytes, the number of its unit and its subject.
+struct CycleKids<'a> {
+    ends: Vec<&'a [u8]>,
+    next: std::cell::Cell<usize>,
+    missing: std::cell::RefCell<Option<(&'a [u8], usize, String)>>,
+}
+
+/// GN-6bt: a place of a unit of a cycle in the walk in: the input goes on after its bytes when they were converted
+/// before, and the walk converts it first when they were not.
+fn kid_in<'a>(input: &mut &'a [u8], kids: &CycleKids<'a>, unit: usize, subject: &str) -> Result<CycleFound, Fail> {
+    let at = kids.next.get();
+    kids.next.set(at.saturating_add(1));
+    if let Some(end) = kids.ends.get(at) {
+        *input = end;
+        return Ok(CycleFound);
     }
+    *kids.missing.borrow_mut() = Some((*input, unit, subject.to_owned()));
+    Err(binding_error(BindingError::Internal { detail: String::from("GN-6bt: a value of a cycle is converted before the value that holds it") }))
+}
+
+/// GN-6bt: a frame of the walk in: the start of the bytes of a value of a unit of a cycle, and the values of units of
+/// the cycle that it holds and that are converted, each with the end of its bytes.
+struct CycleFrame<'a, M> {
+    start: &'a [u8],
+    unit: usize,
+    subject: String,
+    made: Vec<(M, &'a [u8])>,
+}
+`;
+
+// GN-6bt: the walks of a cycle in Go: out writes the bytes of each value of a unit of the cycle after it made those of
+// the values that it holds; in reads the bytes of a value up to the first value of a unit of the cycle that it holds and
+// is not converted, converts that one first, and converts the value when the bytes of each are known.
+function goCycleWalks(cycle: Cycle): string {
+  const k = cycle.index;
+  const internal = (detail: string): string => `binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6bt: ${detail}`)}) })`;
+  const outArms = cycle.units.map((unit, at) => `            Cycle${k}::U${at}(value) => node_out_${rustField(unit.name)}(&mut bytes, value, &made),`);
+  const kidsArms = cycle.units.map((unit, at) => `            ${at} => kids_${rustField(unit.name)}(&mut at, &top.subject, &kids),`);
+  const inArms = cycle.units.map((unit, at) => `            ${at} => Cycle${k}Made::U${at}(Box::new(node_in_${rustField(unit.name)}(&mut at, &frame.subject, &made)?)),`);
+  return `
+/// GN-6bt: the conversion out of a value of the cycle: the bytes of each value of a unit of the cycle are made after
+/// those of the values that it holds, from a work stack on the heap.
+fn cycle${k}_out(output: &mut Vec<u8>, root: Cycle${k}<'_>) {
+    let mut stack = vec![(root, cycle${k}_kids(root).into_iter(), Vec::new())];
+    while let Some(top) = stack.last_mut() {
+        if let Some(kid) = top.1.next() {
+            stack.push((kid, cycle${k}_kids(kid).into_iter(), Vec::new()));
+            continue;
+        }
+        let Some((node, _kids, made)) = stack.pop() else {
+            return;
+        };
+        let made = std::cell::RefCell::new(made.into_iter());
+        let mut bytes = Vec::new();
+        match node {
+${outArms.join('\n')}
+        }
+        match stack.last_mut() {
+            Some(parent) => parent.2.push(bytes),
+            None => output.extend_from_slice(&bytes),
+        }
+    }
+}
+
+/// GN-6bt: the conversion in of a value of the cycle: each value of a unit of the cycle is converted after those that
+/// it holds, from a work stack on the heap.
+fn cycle${k}_in(input: &mut &[u8], unit: usize, subject: &str) -> Result<Cycle${k}Made, Fail> {
+    let start = *input;
+    let mut stack = vec![CycleFrame { start, unit, subject: subject.to_owned(), made: Vec::new() }];
+    loop {
+        let Some(top) = stack.last_mut() else {
+            return Err(${internal('the walk in has no frame')});
+        };
+        let kids = CycleKids { ends: top.made.iter().map(|(_value, end)| *end).collect(), next: std::cell::Cell::new(0), missing: std::cell::RefCell::new(None) };
+        let mut at = top.start;
+        let found = match top.unit {
+${kidsArms.join('\n')}
+            _ => Err(${internal('no unit of the cycle has this number')}),
+        };
+        if let Some((start, unit, subject)) = kids.missing.into_inner() {
+            stack.push(CycleFrame { start, unit, subject, made: Vec::new() });
+            continue;
+        }
+        found?;
+        let Some(frame) = stack.pop() else {
+            return Err(${internal('the walk in has no frame')});
+        };
+        let made = std::cell::RefCell::new(frame.made.into_iter());
+        let mut at = frame.start;
+        let value = match frame.unit {
+${inArms.join('\n')}
+            _ => return Err(${internal('no unit of the cycle has this number')}),
+        };
+        match stack.last_mut() {
+            Some(parent) => parent.made.push((value, at)),
+            None => {
+                *input = at;
+                return Ok(value);
+            }
+        }
+    }
+}
+`;
+}
+
+// GN-6bt: the conversions of a unit of a cycle in Go, as cycleUnitRust writes them for the other targets.
+function goCycleUnit(model: Model, unit: Unit, cycle: Cycle, parts: (typed: Model, mode: 'in' | 'kids') => { ins: string; outs: string }): string {
+  const name = rustField(unit.name);
+  const core = unit.core_type ?? '';
+  const at = cycle.units.findIndex((u) => u.id === unit.id);
+  const { outs } = parts(walkModel(model, cycle, 'out'), 'in');
+  const { ins } = parts(walkModel(model, cycle, 'in'), 'in');
+  const { ins: kids } = parts(walkModel(model, cycle, 'kids'), 'kids');
+  const first = cycle.units[0]?.id === unit.id;
+  // A record reads no subject of its own; its fields name theirs.
+  const subject = unit.kind === 'record' ? '_subject' : 'subject';
+  const k = cycle.index;
+  return `${first && k === 0 ? GO_CYCLE_SHARED : ''}${first ? `${coreWalk(model, cycle)}${goCycleWalks(cycle)}` : ''}
+/// GN-6bt: the bytes of ${unit.id} of the cycle, made with the made bytes of the places of units of the cycle.
+fn node_out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>, made: &std::cell::RefCell<std::vec::IntoIter<Vec<u8>>>) {
+${outs}
+}
+
+/// GN-6bt: the value of ${unit.id} of the cycle, converted with the made values of the places of units of the cycle.
+fn node_in_${name}<'a>(input: &mut &'a [u8], ${subject}: &str, made: &std::cell::RefCell<std::vec::IntoIter<(Cycle${k}Made, &'a [u8])>>) -> Result<${core}, Fail> {
+${ins}
+}
+
+/// GN-6bt: reads the value of ${unit.id} of the cycle as node_in does, up to the first place of a unit of the cycle
+/// whose bytes are not converted yet.
+fn kids_${name}<'a>(input: &mut &'a [u8], ${subject}: &str, kids: &CycleKids<'a>) -> Result<(), Fail> {
+${kids}
+}
+
+/// T-4, T-9: a value of ${unit.id}; the walk of the cycle converts it (GN-6bt).
+fn in_${name}(input: &mut &[u8]${unit.kind === 'record' ? '' : ', subject: &str'}) -> Result<${core}, Fail> {
+    cycle${k}_u${at}(Some(cycle${k}_in(input, ${at}, ${unit.kind === 'record' ? '""' : 'subject'})?)).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6bt: the walk in made a value of another unit") }))
+}
+
+fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
+    cycle${k}_out(output, Cycle${k}::U${at}(value.borrow()));
 }
 `;
 }
@@ -577,11 +783,14 @@ ${arms.join('\n')}
 // GN-15f, GN-4c: a record of another repository has the helpers in_<record> and out_<record> of the module of its
 // library.
 // T-4: the reads of the fields of a record from the input, in contract order.
-function recordReads(model: Model, unit: Unit, input: string): string[] {
+function recordReads(model: Model, unit: Unit, input: string, kids = false): string[] {
   return (unit.fields ?? []).map((f) => {
     const subject = rustString(goName(f.name));
-    if (pointed(f)) return `    let ${rustLocal(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, input, subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustLocal(f.name), subject, 'binding_error')}` : ''}`;
-    return `    let ${rustLocal(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, input, subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustLocal(f.name), subject, 'binding_error')}` : ''}`;
+    const local = `${kids ? '_' : ''}${rustLocal(f.name)}`;
+    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
+    const narrow = (name: string): string => (narrows(f.type) && !kids ? `\n    ${narrowed(name, subject, 'binding_error')}` : '');
+    if (pointed(f)) return `    let ${local}${held ? '' : `: Option<${rustType(model, f.type, true)}>`} = ${convertIn(model, { optional: f.type }, input, subject)}?;${narrow(local)}`;
+    return `    let ${local}${held ? '' : `: ${rustType(model, f.type, true)}`} = ${boxed(model, f.type, convertIn(model, f.type, input, subject))}?;${narrow(local)}`;
   });
 }
 
@@ -610,6 +819,13 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     return false;
   };
   const writesOut = !entersOnly && !fields.some((f) => holdsFunction(f.type));
+  const cycle = library === undefined ? cycleOf(goCycles(model), unit) : undefined;
+  if (cycle !== undefined) {
+    return goCycleUnit(model, unit, cycle, (typed, mode) => ({
+      ins: `${recordReads(typed, unit, 'input', mode === 'kids').join('\n')}\n    ${mode === 'kids' ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => fieldInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+      outs: `    let value = value.borrow();\n${fields.map((f) => `    ${convertOut(typed, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && (scalar(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(typed, f.type))) ? '' : '&'}value.${rustField(f.name)}`)};`).join('\n')}`,
+    }));
+  }
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
