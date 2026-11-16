@@ -16,7 +16,7 @@ import { carriers } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { goString } from '../src/generate/go.ts';
-import { bindingCoreFinding, hostRequirements, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -1784,6 +1784,15 @@ test('binding scaffold reads the contract of a path dependency and writes its Go
   }
 });
 
+// GN-15l: a stand-in of go mod download -json all for the module of its directory: each release that its go.mod
+// requires, with a hash made from the module and the version, or with an Error when the version is v9.9.9.
+const goStandIn = `#!/bin/sh
+sed -n 's/^require \\([^ ]*\\) \\(v[^ ]*\\)$/\\1 \\2/p' go.mod | while read -r module version; do
+  if [ "$version" = v9.9.9 ]; then printf '{"Path":"%s","Version":"%s","Error":"%s@%s: module lookup disabled by GOPROXY=off"}\\n' "$module" "$version" "$module" "$version"; exit 1; fi
+  printf '{"Path":"%s","Version":"%s","Sum":"h1:zip-%s=","GoModSum":"h1:mod-%s="}\\n' "$module" "$version" "$version" "$version"
+done
+`;
+
 // The plot and the points of the end-to-end check in a directory, with a cargo whose metadata names the core of points,
 // as Cargo names the checkout of a git dependency.
 const plotCopy = (): { root: string; env: NodeJS.ProcessEnv } => {
@@ -1792,6 +1801,9 @@ const plotCopy = (): { root: string; env: NodeJS.ProcessEnv } => {
   execFileSync('mkdir', ['-p', join(root, 'bin')]);
   const metadata = JSON.stringify({ packages: [{ name: 'polyspec-points', manifest_path: join(root, 'points/packages/rust/Cargo.toml') }] });
   writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  // GN-15l: a go whose go mod download -json all gives the sums of the release that the go.mod of its directory
+  // requires, as Go gives them from its module cache.
+  writeFileSync(join(root, 'bin/go'), goStandIn, { mode: 0o755 });
   return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
 };
 
@@ -1962,6 +1974,9 @@ const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
   execFileSync('mkdir', ['-p', join(root, 'bin')]);
   const metadata = JSON.stringify({ packages: ['sample', 'points'].map((name) => ({ name: `polyspec-${name}`, manifest_path: join(root, `${name}/packages/rust/Cargo.toml`) })) });
   writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  // GN-15l: a go whose go mod download -json all gives the sums of the release that the go.mod of its directory
+  // requires, as Go gives them from its module cache.
+  writeFileSync(join(root, 'bin/go'), goStandIn, { mode: 0o755 });
   return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
 };
 
@@ -11683,4 +11698,52 @@ test('B2.385: the K-2 tests take a case whose callback rows give results before 
   const g = go.search(/func TestK2Tolerant[A-Za-z]*LetsTheError/);
   assert.ok(g >= 0);
   assert.match(go.slice(g, go.indexOf('\n}\n', g)), /Tolerant\([^\n]*, "a"\)/);
+});
+
+test('the go.sum of a go.mod that requires a release holds the sums of Go, sorted, and none for the development form (GN-15l, B2.400)', () => {
+  const goMod = '// header\nmodule github.com/polyspec/template/packages/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/json/packages/go v0.0.31\n\tgithub.com/polyspec/points/packages/go v0.0.0\n)\n\nreplace github.com/polyspec/points/packages/go => ../../points/packages/go\n';
+  assert.deepEqual(releaseRequires(goMod), ['github.com/polyspec/json/packages/go v0.0.31']);
+  assert.equal(goSumModule(goMod), 'module github.com/polyspec/template/packages/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.31\n');
+  const json = { Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.31', Sum: 'h1:AJeTIg16kCtqvxeI+P9vlbIrmGZo+Y7iI5N1t47O1Ec=', GoModSum: 'h1:LKpskKEB7fS5dyNZyExoC6Js1KpFH4uYg1zcyIzZtbQ=' };
+  assert.equal(goSumOf(goMod, [json]), 'github.com/polyspec/json/packages/go v0.0.31 h1:AJeTIg16kCtqvxeI+P9vlbIrmGZo+Y7iI5N1t47O1Ec=\ngithub.com/polyspec/json/packages/go v0.0.31/go.mod h1:LKpskKEB7fS5dyNZyExoC6Js1KpFH4uYg1zcyIzZtbQ=\n');
+  // A module of the build list that go.mod does not require gives its go.mod line alone.
+  const other = { Path: 'example.com/a', Version: 'v1.0.0', Sum: 'h1:a=', GoModSum: 'h1:b=' };
+  assert.equal(goSumOf(goMod, [json, other])?.split('\n')[0], 'example.com/a v1.0.0/go.mod h1:b=');
+  assert.equal(goSumOf('module m\n\ngo 1.27.3\n\nrequire x/y v0.0.0\n', []), undefined);
+});
+
+test('a module that Go cannot give is a named failure, never an empty or partial go.sum (GN-15l, B2.400)', () => {
+  const goMod = 'module m\n\ngo 1.27.3\n\nrequire x/y v0.0.31\n';
+  assert.throws(() => goSumOf(goMod, [{ Path: 'x/y', Version: 'v0.0.31', Error: 'x/y@v0.0.31: module lookup disabled by GOPROXY=off' }]), /go mod download gave no sum: x\/y@v0\.0\.31: module lookup disabled by GOPROXY=off/);
+  assert.throws(() => goSumOf(goMod, []), /gave no sum of x\/y v0\.0\.31, which go\.mod requires/);
+  assert.throws(() => goSumOf(goMod, [{ Path: 'x/y', Version: 'v0.0.31', Sum: 'h1:a=' }]), /no go\.mod sum of x\/y v0\.0\.31/);
+});
+
+test('scaffold writes the go.sum beside the go.mod, CK-19 compares it, and a module that Go cannot give is not written (GN-15l, B2.400)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    const path = 'polyspec-points = { path = "../../../points/packages/rust" }';
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(path, 'polyspec-points = { git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }'));
+    const contract = join(root, 'plot/packages/rust/interface.json');
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const goSum = join(root, 'plot/packages/go/go.sum');
+    const scaffold = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(scaffold.status, 0, scaffold.stderr);
+    assert.equal(readFileSync(goSum, 'utf8'), 'github.com/polyspec/points/packages/go v0.1.2 h1:zip-v0.1.2=\ngithub.com/polyspec/points/packages/go v0.1.2/go.mod h1:mod-v0.1.2=\n');
+    assert.doesNotMatch(run('check', contract).stderr, /go\.sum/);
+    writeFileSync(goSum, 'github.com/polyspec/points/packages/go v0.1.2/go.mod h1:mod-v0.1.2=\n');
+    assert.match(run('check', contract).stderr, /plot\/packages\/go\/go\.sum: CK-19 differs from what binding scaffold writes \(L-2\)\n/);
+    rmSync(goSum);
+    assert.match(run('check', contract).stderr, /plot\/packages\/go\/go\.sum: CK-19 is missing \(L-2\)\n/);
+    // A release that Go cannot give: scaffold names the go.sum with the cause and writes none.
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('tag = "v0.1.2"', 'tag = "v9.9.9"'));
+    const missing = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /binding: packages\/go\/go\.sum: not written: go mod download gave no sum: github\.com\/polyspec\/points\/packages\/go@v9\.9\.9: module lookup disabled by GOPROXY=off\n/);
+    assert.equal(existsSync(goSum), false);
+    assert.match(run('check', contract).stderr, /plot\/packages\/go\/go\.sum: CK-19 binding scaffold does not write it: go mod download gave no sum/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

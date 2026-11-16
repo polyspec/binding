@@ -2184,6 +2184,19 @@ the design ids are those of the binding design.
   `-framework Security -framework CoreFoundation -liconv` of session-store, whose crate security-framework refers to
   them, so its Go tests did not link, and `-liconv` of json, which links only while no object that it holds is pulled
   in.
+- **GN-15l** The `go.sum` of the Go module: binding scaffold writes `packages/go/go.sum` beside the `go.mod` that it
+  writes (L-2) when that `go.mod` requires a release (`<module> vX.Y.Z`, GN-15f), and CK-19 compares it as it compares
+  the `go.mod`. It holds the hash of each module that `go.mod` requires and the hash of the `go.mod` of each module of
+  its build list, sorted as Go writes them; a requirement at `v0.0.0`, the development form, has no sum and no line,
+  and a `go.mod` without a release requirement has no `go.sum`. The hashes are the `Sum` and `GoModSum` that
+  `go mod download -json all` gives for a module of those requirements, run with `GOWORK=off` and the `GOPROXY`,
+  `GOFLAGS` and module cache of the environment: they are the hashes that Go verifies against the checksum database
+  when it downloads, so binding computes none of its own, and offline (`GOPROXY=off`) Go reads the module cache alone.
+  A module that Go cannot give, offline or missing, refuses the `go.sum` with the error of Go: scaffold writes no
+  `go.sum` and names it as not written, and CK-19 names it as not written, never an empty or partial `go.sum`. Why: a
+  `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
+  `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
+  `go.mod`, and session-store, whose `go.mod` requires php-serialization, had none, so its module did not build alone.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
@@ -3280,6 +3293,11 @@ the design ids are those of the binding design.
   its tree has a change, and the first line of the table and of the report names the commit and that the tree is clean.
   Why: a run on a tree that lacked four fixes of the lane (B2.367, B2.386, B2.387, B2.390) gave cells that looked like
   defects of the lane, which were no evidence of it.
+  The path patch is the way that Cargo documents for a dependency that is not released, and it changes only the
+  source of `binding_core`: a cell is evidence of the commit of the consumer with the generator and the `binding_core`
+  of this tree, not of the consumer with a released tag of binding. The two agree only when this commit is tagged
+  unchanged, and the CI of each consumer after the tag is the final evidence; the second line of the table and
+  `evidence` of the report state it. Why: a reader of a table that passed would otherwise take it for the release.
   Before it compiles, it records the connections of the copy: `cargo tree -i polyspec-binding-core`, which must name
   the path of this tree, the path of the CLI, and the Go build tags of the generated files. Then each binding crate
   runs `cargo check --all-targets` with the test features of its manifest (GN-5) and without them, WASM on

@@ -202,6 +202,12 @@ export function provenanceProblem(head: string, status: string, expected: string
 }
 
 // The first line of the report and of the table: the commit of the CLI that the run ran and whether its tree is clean.
+// What a run is evidence of: the path patch of Cargo, the documented way to use a dependency that is not released,
+// changes only the source of binding_core, so a cell is the commit of the consumer with the generator and the core of
+// this tree, not the consumer with a released tag; the two agree only when this commit is tagged unchanged, and the CI
+// of each consumer after the tag is the final evidence.
+export const EVIDENCE = 'evidence: the commit of each consumer + the generator of this tree + its binding_core by the path patch of Cargo, not the consumer with a released tag; the two agree only when this commit is tagged unchanged, and the CI of each consumer after the tag is the final evidence';
+
 export const provenanceLine = (commit: string, clean: boolean): string => `binding ${commit} (${clean ? 'clean' : 'with uncommitted changes'})`;
 
 // A cell of the table: the target of a consumer, or the preparation of its copy.
@@ -249,5 +255,5 @@ export function table(cells: readonly Cell[], provenance: string): string {
     ...c.failures.flatMap((f) => [`  ${f.step}`, ...f.errors.map((line) => `    ${line}`)]),
   ]);
   const summary = failed.length === 0 ? 'passed: every cell' : `failed: ${failed.map((c) => `${c.consumer} ${c.cell}`).join(', ')}`;
-  return [provenance, header, ...rows, '', ...causes, ...(causes.length > 0 ? [''] : []), summary].join('\n');
+  return [provenance, EVIDENCE, header, ...rows, '', ...causes, ...(causes.length > 0 ? [''] : []), summary].join('\n');
 }

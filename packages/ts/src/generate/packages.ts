@@ -669,6 +669,60 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
   return `\n${require}${replaces.length === 0 ? '' : `\n${replaces.join('\n')}\n`}`;
 }
 
+// GN-15l: the requirements of a go.mod that name a release, `<module> vX.Y.Z`; a requirement at v0.0.0 is the
+// development form, which a replace or the go.work of a checkout resolves, and has no sum.
+export function releaseRequires(goMod: string): string[] {
+  const lines = goMod.split('\n');
+  const found: string[] = [];
+  let block = false;
+  for (const line of lines) {
+    if (/^require \($/.test(line)) block = true;
+    else if (block && line === ')') block = false;
+    const entry = block ? /^\t(\S+) (v\S+)$/.exec(line) : /^require (\S+) (v\S+)$/.exec(line);
+    if (entry !== null && entry[2] !== 'v0.0.0') found.push(`${entry[1] ?? ''} ${entry[2] ?? ''}`);
+  }
+  return found;
+}
+
+// GN-15l: the go.mod of the module that `go mod download -json all` reads for the sums: the module and go lines of the
+// go.mod that scaffold writes, with its release requirements alone.
+export function goSumModule(goMod: string): string {
+  const module = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
+  const go = /^go (\S+)$/m.exec(goMod)?.[1] ?? '';
+  return `module ${module}\n\ngo ${go}\n\n${releaseRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
+}
+
+// One object of `go mod download -json`.
+export interface GoDownload {
+  Path: string;
+  Version?: string;
+  Sum?: string;
+  GoModSum?: string;
+  Error?: string;
+}
+
+// GN-15l: the go.sum beside a go.mod that requires a release: the hash of each required module and the hash of the
+// go.mod of each module of its build list, as Go verifies them, sorted as Go writes them. undefined for a go.mod
+// without a release requirement. A module that Go could not give is a failure that names it, never a partial go.sum.
+export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string | undefined {
+  const required = releaseRequires(goMod);
+  if (required.length === 0) return undefined;
+  const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
+  if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);
+  const lines: string[] = [];
+  for (const d of downloads.filter((d) => d.Version !== undefined)) {
+    if (d.GoModSum === undefined) throw new Error(`go mod download gave no go.mod sum of ${d.Path} ${d.Version ?? ''}`);
+    lines.push(`${d.Path} ${d.Version ?? ''}/go.mod ${d.GoModSum}`);
+  }
+  for (const requirement of required) {
+    const [path, version] = requirement.split(' ');
+    const d = downloads.find((x) => x.Path === path && x.Version === version);
+    if (d?.Sum === undefined) throw new Error(`go mod download gave no sum of ${requirement}, which go.mod requires`);
+    lines.push(`${requirement} ${d.Sum}`);
+  }
+  return `${lines.sort().join('\n')}\n`;
+}
+
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
 // the path of the manifest, the item and the value it must have, compared deeply.
 export interface HostRequirement {
