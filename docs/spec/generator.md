@@ -385,7 +385,14 @@ the design ids are those of the binding design.
   and no list of the parts of the crate that call helpers is kept beside the code. Why: the parts were listed by hand,
   and a call added outside them, `text_in` and `type_error` in the constructor of a library class of PHP, compiled
   only for a contract that also had a text parameter; a contract without one failed the build. The Go crate keeps
-  its list, because a helper that only a test feature uses is compiled under that feature (GN-4).
+  its list, because a helper that only a test feature uses is compiled under that feature (GN-4). The same rule holds
+  in these four crates: an item or a statement of the text under one feature (`#[cfg(feature = "<feature>")]`), such as
+  a `codec-test` entry point of an alias (`_alias_in_<alias>`, `alias_in_<alias>`), reads for that feature alone, so a
+  helper that only such items read, directly or through another helper, is compiled under their features, and one
+  that any other part of the text reads stays without a feature. The `in` conversion of an alias with kinds that no
+  member takes (only a result gives it) is such a helper. Why: the sample of B2.421 had such an alias, `blob`, whose
+  `in_blob` the crates held without a feature, and cargo clippy of the PHP, Python, Node and WASM crates without
+  features failed with "function `in_blob` is never used" (B2.430).
 - **GN-4e** A `use` declaration of a generated crate (`lib.rs` of each of the five targets) imports a name exactly
   when the crate writes that name bare: a token of the name, read as GN-4 reads tokens, that no `::` precedes, outside
   the `use` declarations. A name that the crate writes only by its path, such as `pyo3::types::PyDict`, is not

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1121c0941ad025eb8cd8a4e7f5f2f74619b30020f8adfb9e0cb7b255d866efa7 -->
+<!-- source-sha256: c395b0ccf37446d220342131afd8203ae7dad84783a78119efe177b6c87f80e0 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -26,6 +26,7 @@
 
 ## 0.0.18
 
+- PHP, Python, Node, WASM crate는 하나의 feature 아래 item만 읽는 helper, 예를 들어 `codec-test` entry point만 부르는 alias의 `in` 변환을 Go crate처럼 그 feature 아래에서 컴파일한다(GN-4d, GN-4): sample의 alias `blob`(B2.421)은 kinds가 있지만 어떤 member도 받지 않아, CI의 e2e (sample)과 e2e-amd64가 php, python, node, wasm에서 "cargo clippy (status 101): error: function `in_blob` is never used"로 실패했다(B2.430). member가 받는 alias의 변환은 feature 없이 남는다. `packages/ts`에서 `node --test --test-name-pattern=B2.430 tests/generate.test.ts`로 검증했고 이 시험은 변경 전에 실패했다. 또 `tests/e2e/sample` 사본의 생성된 네 crate를 test feature를 켜고, 그리고 feature 없이 `cargo clippy --all-targets -- -D warnings`로 검증했다.
 - end-to-end sample에 UTF-8 bytes가 text로 나가는 값 alias 결과가 생겼다(GN-13be, B2.421): `php_value`의 out row와 in row를 가진 alias `blob`, member `store.get_blob`, 그리고 commit된 "y"를 그것으로 읽는 `after`를 가진 `store.transaction`의 case다. 그래서 CI가 B2.420이 고친 그런 결과의 생성된 Go를 실행한다. GN-6as는 이제 row가 container를 만들지 않는 alias의 `make_<name>`은 row에 대한 match 하나이고 loop와 작업 stack이 없다고 말한다. 그런 값은 깊이가 1이기 때문이다. 전에는 모든 make 함수가 작업 stack으로 걷는다고 말했지만, generator는 이미 그런 alias에 그렇게 하지 않았다. generator는 바뀌지 않는다. `packages/ts`에서 `node --test --test-name-pattern=B2.421 tests/generate.test.ts`로 확인했다.
 - 다섯 target의 생성된 시험은 binding이 callback에 넘기는 값을 결과처럼 value alias의 out row로 쓴다(GN-13be): callback fixture의 row와 function value의 row의 인자, 그리고 fixture가 기대하는 호출의 인자다. 이들은 호출의 인자처럼 쓰였다. 그래서 row가 UTF-8 bytes를 text로 만드는 alias의 인자는 bytes로 기대되었고, binding이 그 text로 한 호출은 어떤 row에도 맞지 않았다(B2.422). `packages/ts`에서 `node --test --test-name-pattern=B2.422 tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 - checkout이 kit 0.0.114 대신 0.0.118을 설치한다(B2.428). 그것이 설치하는 kit에서 `make install-packages`, `make docs-check`, `make hooks-check`, `make lint-rust`, `make typecheck-ts`, `make test-ts`로 검증했다.

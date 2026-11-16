@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 35d28ffdabf0259785ea9b9d36b90ec5e24861e6e694c48b1a7d60eb08f18629 -->
+<!-- source-sha256: e32b8fcb44e83c30670d5e15ca66e9d7d78f4cfb76e836675a5ef4b8aa88edcf -->
 # 생성기
 
 [English](generator.md)
@@ -314,7 +314,13 @@
   남고, helper를 부르는 부분의 목록을 코드 옆에 따로 두지 않는다. 이유: 그 부분들을 손으로 나열했고, 그 밖에 더한
   호출, PHP library class의 생성자에 있는 `text_in`과 `type_error`는 text parameter도 있는 계약에서만 컴파일되었다.
   text parameter가 없는 계약은 빌드에 실패했다. Go crate는 목록을 유지한다. test feature만 쓰는 helper는 그 feature
-  아래에서 컴파일되기 때문이다(GN-4).
+  아래에서 컴파일되기 때문이다(GN-4). 이 네 crate에도 같은 규칙이 적용된다. 하나의 feature 아래
+  (`#[cfg(feature = "<feature>")]`)에 있는 텍스트의 item이나 statement, 예를 들어 alias의 `codec-test` entry point
+  (`_alias_in_<alias>`, `alias_in_<alias>`)는 그 feature에 대해서만 읽는다. 그래서 그런 item만 직접 또는 다른 helper를
+  거쳐 읽는 helper는 그 feature들 아래에서 컴파일되고, 텍스트의 다른 부분이 읽는 helper는 feature 없이 남는다. kinds가
+  있지만 어떤 member도 받지 않는(result로만 주어지는) alias의 `in` 변환이 그런 helper다. 이유: B2.421의 sample에 그런
+  alias `blob`이 있었고, crate는 `in_blob`을 feature 없이 가졌으며, PHP, Python, Node, WASM crate의 feature 없는 cargo
+  clippy가 "function `in_blob` is never used"로 실패했다(B2.430).
 - **GN-4e** 생성된 crate(다섯 target 각각의 `lib.rs`)의 `use` 선언은 crate가 그 이름을 bare로 쓸 때에만 그 이름을
   import한다. bare란 `use` 선언 밖에서, GN-4가 token을 읽는 방식으로 읽은 그 이름의 token 앞에 `::`가 없는 것이다.
   crate가 `pyo3::types::PyDict`처럼 경로로만 쓰는 이름은 import하지 않는다. 유일한 예외는 crate가 method만을 위해

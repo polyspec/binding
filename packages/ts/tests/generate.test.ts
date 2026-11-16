@@ -12383,3 +12383,18 @@ test('B2.418: every name that a generated Rust file imports is written bare in t
   assert.ok(files > 0);
   assert.deepEqual([...new Set(unused)], []);
 });
+
+test('B2.430: the in conversion of an alias that only the codec-test entry points call is compiled under codec-test, and one that a member takes is not, in PHP, Python, Node and WASM (GN-4d)', () => {
+  // The fixture itself: blob has kinds and no member takes it (store.get_blob gives it); data is taken by members.
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    const before = (name: string): string => {
+      const at = lib.search(new RegExp(`\\nfn ${name}\\b`));
+      assert.ok(at >= 0, `${path}: fn ${name}`);
+      return lib.slice(lib.lastIndexOf('\n', at - 1) + 1, at);
+    };
+    assert.equal(before('in_blob'), '#[cfg(feature = "codec-test")]', path);
+    assert.notEqual(before('in_data'), '#[cfg(feature = "codec-test")]', path);
+  }
+});

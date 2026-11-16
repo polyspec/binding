@@ -438,9 +438,55 @@ export function withUsedImports(source: string): string {
 
 // GN-4d: a crate with the helpers of `block` (and of the modules of the libraries) that its own text reads. `render`
 // writes the whole crate around the helpers that it is given; it is written once without them, and that text is the code
-// whose reads select the helpers, so a call that any part of the crate makes keeps the helper that it calls.
+// whose reads select the helpers, so a call that any part of the crate makes keeps the helper that it calls. GN-4: the
+// text of an item under one feature (`#[cfg(feature = "<feature>")]`) reads for that feature alone, so a helper that only
+// such items read is compiled under their features.
 export function withUsedHelpers(block: string, modules: Readonly<Record<string, string>>, render: (used: string) => string): string {
-  return render(usedHelpers(block, render(''), {}, modules));
+  const { code, gated } = featureItems(render(''));
+  return render(usedHelpers(block, code, gated, modules));
+}
+
+// GN-4: Rust code split into the text outside the items and statements under one feature and, per feature, the text of
+// those items. An item ends at its block, or at a `;` or `,` of its own level, or before a bracket that closes around it.
+const ITEM_KEYWORDS = new Set(['fn', 'impl', 'struct', 'enum', 'trait', 'mod', 'const', 'static', 'type', 'use', 'let', 'macro_rules']);
+
+export function featureItems(source: string): { code: string; gated: Record<string, string> } {
+  const tokens = rustTokens(source);
+  const { close } = brackets(tokens);
+  const index = new Map(tokens.map((token, i) => [token.at, i]));
+  const spans: { from: number; to: number; feature: string }[] = [];
+  for (const found of source.matchAll(/#\[cfg\(feature = "([^"]+)"\)\]/g)) {
+    const first = index.get(found.index);
+    if (first === undefined || tokens[first + 1]?.text !== '[' || spans.some((s) => found.index >= s.from && found.index < s.to)) continue;
+    let i = (close[first + 1] ?? tokens.length) + 1;
+    while (tokens[i]?.text === '#' && tokens[i + 1]?.text === '[') i = (close[i + 1] ?? tokens.length) + 1;
+    let end = source.length;
+    // An item or a let, whose generics and types hold commas, ends at its block or its `;` alone; a field or an arm ends
+    // at its comma too.
+    let head = i;
+    while (['pub', 'async', 'unsafe', 'extern', '""'].includes(tokens[head]?.text ?? '') || (tokens[head]?.text === '(' && tokens[head - 1]?.text === 'pub')) head = tokens[head]?.text === '(' ? (close[head] ?? head) + 1 : head + 1;
+    const commaEnds = !ITEM_KEYWORDS.has(tokens[head]?.text ?? '');
+    for (; i < tokens.length; i += 1) {
+      const word = tokens[i]?.text ?? '';
+      if (CLOSE.has(word)) { end = tokens[i]?.at ?? source.length; break; }
+      if (word === ';' || (word === ',' && commaEnds)) { end = (tokens[i]?.at ?? source.length) + 1; break; }
+      if (OPEN.has(word)) {
+        const shut = close[i] ?? tokens.length;
+        if (word === '{' && tokens[shut + 1]?.text !== 'else' && tokens[shut + 1]?.text !== '.' && tokens[shut + 1]?.text !== '?') { end = (tokens[shut]?.at ?? source.length - 1) + 1; break; }
+        i = shut;
+      }
+    }
+    spans.push({ from: found.index, to: end, feature: found[1] ?? '' });
+  }
+  const gated: Record<string, string> = {};
+  let code = '';
+  let at = 0;
+  for (const span of spans) {
+    code += source.slice(at, span.from);
+    gated[span.feature] = `${gated[span.feature] ?? ''}\n${source.slice(span.from, span.to)}`;
+    at = span.to;
+  }
+  return { code: code + source.slice(at), gated };
 }
 
 // The helpers of a block of Rust items that `code` uses, directly or through another helper, in their order in the
