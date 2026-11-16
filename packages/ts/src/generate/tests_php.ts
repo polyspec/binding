@@ -6,7 +6,7 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -542,8 +542,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample);
     const qualified = (args: string): string => invoke(fn, args, recv);
+    // GN-13t: an argument of a class is the case value of a case of the member, where one gives it.
+    const classGiven = classCaseArgs(model, fn);
     const call = (override: Map<unknown, string>): string =>
-      qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
+      qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? otherValue(model, ctx, arg, classGiven)));
     const reachable = fn.receiver === undefined || sample !== undefined;
     // GN-6z: a value of a function type that is not a Closure is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
@@ -904,7 +906,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
     if (callback !== undefined && cbUnit !== undefined && reachable) {
       const with_ = (how: CallbackHow): string =>
-        qualified(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? placeholder(model, ctx, arg.type, true) : caseValue(model, ctx, arg, reaching))));
+        qualified(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
       append(`
     public function testK2${name}RefusesACallbackWithoutItsMembers(): void
     {

@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -207,8 +207,10 @@ export function wasmTests(model: Model): string {
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample);
     const target = (args: string): string => invoke(fn, args, recv);
+    // GN-13t: an argument of a class is the case value of a case of the member, where one gives it.
+    const classGiven = classCaseArgs(model, fn);
     const call = (override: Map<unknown, string>): string =>
-      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
+      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? otherValue(model, ctx, arg, classGiven)));
     // A method is tested on an instance, which a case of the class gives (GN-13).
     const reachable = fn.receiver === undefined || sample !== undefined;
     // GN-6z: a value of a function type that is not a function is refused as it enters.
@@ -216,7 +218,7 @@ export function wasmTests(model: Model): string {
     if (functionArg !== undefined && reachable) {
       emit(`
 test('GN-6z: ${name} refuses a ${langName('wasm', functionArg.name, 'variable')} that is not a function', () => {
-  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : otherValue(model, ctx, arg, classGiven))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
     }
     for (const arg of reachable ? fn.args : []) {
@@ -422,7 +424,7 @@ test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${nodeCaseFile
     const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
     if (callback !== undefined && cbUnit !== undefined && reachable) {
       const with_ = (how: CallbackHow): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? placeholder(model, ctx, arg.type, true) : caseValue(model, ctx, arg, reaching))));
+        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
       emit(`
 test('K-2: ${name} refuses a callback without its members', () => {
   assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');

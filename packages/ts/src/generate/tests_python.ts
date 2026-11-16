@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -636,8 +636,10 @@ export function pythonTests(model: Model, module: string): string {
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
     const target = (args: string): string => invoke(fn, args, recv);
+    // GN-13t: an argument of a class is the case value of a case of the member, where one gives it.
+    const classGiven = classCaseArgs(model, fn);
     const call = (override: Map<unknown, string>): string =>
-      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
+      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? otherValue(model, ctx, arg, classGiven)));
     const reachable = fn.receiver === undefined || sample !== undefined;
     for (const arg of reachable ? fn.args : []) {
       methodMark = caseTextUses;
@@ -931,7 +933,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
     if (callback !== undefined && cbUnit !== undefined && reachable) {
       const with_ = (how: CallbackHow): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? placeholder(model, ctx, arg.type, true) : caseValue(model, ctx, arg, reaching))));
+        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
       append(`
     def test_k2_${name}_refuses_a_callback_without_its_members(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
@@ -951,7 +953,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       // GN-6q: a member that reaches language code calls the callback on the worker thread of asyncio.to_thread.
       if (fn.reaches === true) {
         usesAsyncio = true;
-        const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : reaching === undefined ? placeholder(model, ctx, arg.type, true) : caseValue(model, ctx, arg, reaching)));
+        const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching)));
         const awaited = invoke(fn, args, recv).replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
         append(`
     def test_gn6q_${name}_awaits_a_callback_on_the_thread_of_to_thread(self) -> None:
@@ -967,7 +969,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       append(`
     def test_gn6z_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
-            ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type, true))))}
+            ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : otherValue(model, ctx, arg, classGiven, true))))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
     }
     for (const kase of stringCases(model, fn)) {

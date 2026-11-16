@@ -12415,3 +12415,33 @@ test('B2.430: an item under a feature ends at its block or its `;` alone, so a c
   assert.throws(() => featureItems('struct S {\n    #[cfg(feature = "codec-test")]\n    pair: HashMap<u8, Later>,\n}\n'), /GN-4: .*ends inside a bracket/);
   assert.throws(() => featureItems('match x {\n    #[cfg(feature = "codec-test")]\n    1 => helper(),\n    _ => other(),\n}\n'), /GN-4: .*ends inside a bracket/);
 });
+
+test('B2.434: the B-3 test of a member gives an argument of a class the case value of a case of the member, not the placeholder of its constructor, in every target (GN-13t)', () => {
+  // crud-ui: FormTemplate.from_json of a JSON null, the placeholder of GN-13, was refused (invalid_form_input), so the
+  // B-3 test failed in its argument before the call that it checks. Here the core of tag would refuse the placeholder
+  // name "a", and the one case of shout makes the tag of the name "q".
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'classes').members.find((m: any) => m.id === 'classes.shout').parameters.push({ name: ['suffix'], type: 'text', required: true });
+  const cases = read('contracts/cases.json');
+  cases.shout = [{ id: 'a_tag_is_shouted', tag: { new: 'tag.new', args: { name: 'q' } }, suffix: 'b' }];
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const body = (path: string, start: RegExp, end: string): string => {
+    const all = text(out, path);
+    const at = all.search(start);
+    assert.ok(at >= 0, `${path}: no B-3 test of the suffix of shout`);
+    return all.slice(at, all.indexOf(end, at + 1));
+  };
+  const checks: [string, RegExp, string, RegExp][] = [
+    ['packages/python/generated/tests/test_generated.py', /def test_b3_shout_suffix_refuses/, '\n    def ', /pkg\.shout\(pkg\.Tag\("q"\), /],
+    ['packages/ts/generated/tests/generated.test.mjs', /test\('B-3: shout refuses [^\n]*suffix/, '\n});', /pkg\.shout\(new pkg\.Tag\(['"]q['"]\), /],
+    ['packages/ts/wasm/generated/tests/generated.test.mjs', /test\('B-3: shout refuses [^\n]*suffix/, '\n});', /pkg\.shout\(new pkg\.Tag\(['"]q['"]\), /],
+    ['packages/php-ext/generated/tests/GeneratedTest.php', /function testB3shoutSuffix/i, '\n    }\n', /shout\(new [\\A-Za-z]*Tag\("q"\), /],
+    ['packages/go/zz_generated_test.go', /func TestB3Shout[A-Za-z]*Suffix/, '\n}\n', /NewTag\("q"\)/],
+  ];
+  for (const [path, start, end, made] of checks) {
+    const test = body(path, start, end);
+    assert.match(test, made, `${path}: ${test}`);
+    assert.doesNotMatch(test, /Tag\(['"]a['"]\)/, path);
+  }
+});

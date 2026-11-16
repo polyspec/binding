@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A generated test that gives one argument of a member a value of its own and the others placeholders (B-2, B-3, B-8, T-1, T-2, U-2, GN-6z, and K-2 without a case of GN-13y) gives an argument of a class the case value of that argument in the first case of the member, one that does not raise before one that raises, in the five targets (GN-13t); the placeholder of GN-13 stands there only when the member has no such case. It made the argument from the first constructor with placeholder arguments, and crud-ui refused `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so 22 B-3 tests of its Python generator failed in the argument before the call that they check (B2.434). Verified by `node --test --test-name-pattern=B2.434 tests/generate.test.ts` in `packages/ts`, which failed before the change.
+
 ## 0.0.18
 
 - AGENTS.md names the gates before a version-bump commit, `make docs-check`, `make lint-rust`, `make typecheck-ts` and `make test-ts`, and states that only the job `e2e` of CI lints the generated crates of `tests/e2e` (B2.431).

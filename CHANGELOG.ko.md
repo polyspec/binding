@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1e4b229f2346f7742bde0d1a9bd9f5e0a3240248d803bab2ed118fb8385a1946 -->
+<!-- source-sha256: ff0b9941f16780e2c3119af0e146a75b4372133b0cc50ad36cba57e5897b96ef -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -23,6 +23,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- member의 한 인자에 자기 값을 주고 나머지에 placeholder를 주는 생성 시험(B-2, B-3, B-8, T-1, T-2, U-2, GN-6z, 그리고 GN-13y의 case가 없는 K-2)은 다섯 target에서 class의 인자에 그 member의 첫 case의 그 인자 case 값을 준다. raise하지 않는 case가 raise하는 case보다 먼저다(GN-13t). member에 그런 case가 없을 때만 GN-13의 placeholder가 그 자리에 선다. 전에는 placeholder 인자의 첫 constructor로 인자를 만들었고, crud-ui는 JSON null의 `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, 그 Python 생성기의 B-3 시험 22개가 검사하는 호출 전에 인자에서 실패했다(B2.434). `packages/ts`에서 `node --test --test-name-pattern=B2.434 tests/generate.test.ts`로 확인했고, 변경 전에는 실패했다.
 
 ## 0.0.18
 
