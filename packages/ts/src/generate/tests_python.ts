@@ -753,13 +753,15 @@ export function pythonTests(model: Model, module: string): string {
       methodMark = caseTextUses;
       usesOutcome = true;
       usesKept ||= keptClass !== undefined;
+      // GN-13z: the outcomes are compared by _same, which reads an instance of a value class of another repository by
+      // the members of its in row, because its class need not declare __eq__ (B2.358).
+      usesSame = true;
       const argName = langName('python', pair.arg.name, 'variable');
       append(`
     def test_${pair.rule === 'U-2' ? `u2_${name}_${argName}_left_out_is_its_default` : `t1_${name}_${argName}_takes_a_text_as_its_utf8_bytes`}(self) -> None:
-        self.assertEqual(
-            _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.left)))}),
-            _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.right)))}),
-        )`);
+        left = _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.left)))})
+        right = _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.right)))})
+        self.assertTrue(_same(left, right), f"{left!r} is not {right!r}")`);
     }
     for (const kase of raisingCases(model, fn)) {
       methodMark = caseTextUses;

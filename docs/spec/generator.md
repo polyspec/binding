@@ -2841,6 +2841,10 @@ the design ids are those of the binding design.
   another argument before it calls the callback, and the crud-ui validator refused a placeholder `data` with
   `invalid_form_input`, so the test expected a callback that the core never reached; a case whose fixture lists calls
   states arguments with which the core calls it.
+- **GN-13z** The Python U-2 and T-1 tests compare the two outcomes by `_same`, which compares an instance of a value
+  class of another repository by what the members of its in row read (B2.121), and not by `assertEqual`. Why: the class
+  of the owner need not declare `__eq__`, and `polyspec.json.Value` does not, so two equal results compared by identity
+  and differed (crud-ui validator), where Node and WASM, which compare by their tokens, passed.
 - **GN-13s** A Python function of the module that makes a receiver (GN-13f) takes the test case as its first
   parameter `self`, and its call passes `self`, when one of its steps calls a helper of the test case, such as
   `self._case_path` for a `path` argument or `self._future`. Why: a function of the module has no `self` of its own,

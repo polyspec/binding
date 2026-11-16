@@ -2782,7 +2782,7 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   assert.match(text(out, 'packages/python/generated/python/polyspec/relay/_native.pyi'), /def size\(value: object = \.\.\.\) -> int: \.\.\./);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function size\(value\?: unknown\): number;/);
   // U-2: the empty object is the instance that the out row of the kind map makes from an empty map.
-  assert.match(text(out, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\(lambda filled: \(foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)\),/);
+  assert.match(text(out, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(\(lambda filled: \(foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)\)\n/);
   for (const target of ['node', 'wasm'] as const) {
     assert.match(text(out, RELAY_TESTS[target]), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(\(\(\) => \{ const filled = new foreign_json\.OrderedMap\(\); return foreign_json\.Value\.object\(filled\); \}\)\(\)\)\)/, target);
   }
@@ -2793,7 +2793,7 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
   const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
-  assert.match(text(own, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\{\}\)\),/);
+  assert.match(text(own, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(\{\}\)\)\n/);
   assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
   assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(new \\stdClass\(\)\)\),/);
   assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
@@ -4390,8 +4390,8 @@ test('a member that writes its receiver takes a source and a default in one call
   }
   // The generated tests call the member with the default left out and given, and with a text and its bytes.
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
-  assert.match(python, /_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c"\)\),\n\s+_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c", 1\)\),/);
-  assert.match(python, /_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("a\\xe9"\)\),\n\s+_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\(bytes\.fromhex\("61c3a9"\)\)\),/);
+  assert.match(python, /left = _outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c"\)\)\n\s+right = _outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c", 1\)\)\n/);
+  assert.match(python, /left = _outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("a\\xe9"\)\)\n\s+right = _outcome\(lambda: pkg\.Buffer\("ab"\)\.append\(bytes\.fromhex\("61c3a9"\)\)\)\n/);
   assert.match(python, /def test_b5c_buffer_refuses_a_poisoned_object\(self\) -> None:/);
 });
 
@@ -8847,7 +8847,7 @@ test('the members of a value class without core_type and a primitive run their c
   // U-2: an instance of a value class without core_type has no equality of its own in Python, so the test of a default
   // of its constructor compares what the instance keeps, read through its properties, and its class.
   assert.match(python, /\ndef _kept\(instance, names\):\n {4}return \(type\(instance\), \*\(getattr\(instance, name\) for name in names\)\)\n/);
-  const defaulted = /def test_u2_boxed_new_value_left_out_is_its_default\(self\) -> None:\n {8}self\.assertEqual\(\n {12}_outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\),\n {12}_outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\),\n {8}\)/.exec(python);
+  const defaulted = /def test_u2_boxed_new_value_left_out_is_its_default\(self\) -> None:\n {8}left = _outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\)\n {8}right = _outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\)\n {8}self\.assertTrue\(_same\(left, right\)/.exec(python);
   assert.ok(defaulted !== null, 'the test of the default of Boxed compares the instances themselves');
   assert.notEqual(defaulted[1], defaulted[2]);
   assert.match(python, /def test_gn13e_boxed_value_an_int_is_kept_as_it_was_given\(self\) -> None:\n {8}result = pkg\.Boxed\((.+)\)\.value\n {8}expected = \1\n/);
@@ -11158,4 +11158,22 @@ test('B2.357: the K-2 tests of a member give the other arguments of a case whose
   const g = go.search(/func TestK2Resolve[A-Za-z]*LetsTheError/);
   assert.ok(g >= 0);
   assert.match(go.slice(g, go.indexOf('\n}\n', g)), /Resolve\([^\n]*, "q"\)/);
+});
+
+test('B2.358: the Python U-2 test compares the outcomes by _same, which reads a value class of another repository by its in row (GN-13z)', () => {
+  // crud-ui validator: two equal results of polyspec.json.Value, which declares no __eq__, differed by identity.
+  const { contract, caseFiles, foreign } = valueClassSample();
+  contract.units.find((u: any) => u.id === 'consumer').members.push({
+    id: 'consumer.relay_or', name: ['relay_or'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['value'], type: { library: 'owner', unit: 'value' }, required: true }, { name: ['depth'], type: 'int64', required: false, default: { literal: 1 }, default_core: 'polyspec_consumer::DEPTH' }],
+    returns: { library: 'owner', unit: 'value' }, raises: [], wait: 'none', core: 'polyspec_consumer::relay_or',
+  });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const at = python.indexOf('def test_u2_relay_or_depth_left_out_is_its_default');
+  assert.ok(at >= 0, 'no U-2 test of relay_or');
+  const body = python.slice(at, python.indexOf('\n    def ', at + 1));
+  assert.match(body, /self\.assertTrue\(_same\(left, right\)/);
+  assert.doesNotMatch(body, /assertEqual/);
+  assert.match(python, /\ndef _same\(actual, expected\):[\s\S]*_read_foreign\(actual\) == _read_foreign\(expected\)/);
 });
