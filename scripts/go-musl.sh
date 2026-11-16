@@ -13,7 +13,8 @@
 # is gcc and musl-dev of Alpine at the exact versions of config/toolchain.json (goMusl). The modules come from the
 # module proxy that the run kept in <work>/go-release/proxy, the downloads that go.sum of the consumer pins, so no Git
 # takes part. It prints the output of every build-output event of go test -json, where go reports an error of a
-# build, such as one of the linker (B2.416), and fails unless a test ran and none failed. The container has a
+# build, such as one of the linker (B2.416), and fails unless a test ran and none failed. A work directory without
+# the consumer of a released form, such as that of a refusal fixture (GN-14k), fails before the container starts. The container has a
 # name that starts with polyspec- and is removed when it ends (docker run --rm), also on SIGINT and SIGTERM (HR-87).
 set -eu
 
@@ -24,6 +25,10 @@ fi
 work=$1
 lock=$2
 toolchain=$3
+if [ ! -d "$work/go-release/consumer" ]; then
+  echo "go-musl-check: $work holds no released form of a Go module (go-release/consumer): make e2e on Linux makes it for a contract with the Go target, and a refusal fixture (GN-14k) makes none" >&2
+  exit 2
+fi
 # The image and the packages of Alpine, from goMusl of config/toolchain.json: one value on each line of its own.
 value() { awk -v k="\"$1\":" '$1 == k { v = $2; gsub(/[",]/, "", v); print v }' "$toolchain"; }
 image=$(value image)

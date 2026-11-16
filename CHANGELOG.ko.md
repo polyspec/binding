@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f234567d0c5364d095ef918196c261805d47c4cc6c94e660be954b1e54ae94ca -->
+<!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
@@ -29,6 +29,7 @@
 
 ## 0.0.15
 
+- `make ci-e2e`는 refusal fixture(`refused.json`이 있는 레포)에는 `make go-musl-check`를 돌리지 않는다. 그 run은 refusal에서 끝나 Go module의 released form을 만들지 않으며, job `e2e (lent)`가 `can't cd to /work/go-release/consumer`로 실패했다. `scripts/go-musl.sh`는 그 consumer가 없는 work 디렉터리를 컨테이너가 시작하기 전에 이름으로 말한다(GN-14g, GN-14k). `node --test tests/ci-workflow.test.ts tests/go-musl.test.ts`로 확인했다.
 - `make go-musl-check`는 `go test -json`의 모든 `build-output` event의 출력을 찍으므로 log가 `ld: cannot find -lunwind` 같은 실패한 빌드의 오류를 적는다. 전에는 `FAIL ... [build failed]` frame만 찍었다(GN-14f). `scripts/go-musl.sh`를 stand-in과 함께 돌리는 `node --test tests/go-musl.test.ts`로 확인했다.
 - Go module의 release는 각 musl platform의 라이브러리 옆에 Rust toolchain의 `libunwind.a`를 싣는다. rustc는 musl target의 native-static-libs에 그 std가 `-bundle`로 링크하는 LLVM unwinder인 `-lunwind`를 적고, Alpine의 gcc와 musl-dev는 그것을 가져오지 않으므로 `make go-musl-check`가 `ld: cannot find -lunwind`에서 멈췄다. `release-go-static`은 그것을 `lib/rustlib/<triple>/lib/self-contained`에서 복사하고, `binding release-go-module`은 그것이 없는 platform을 거부하고 그것을 commit하며, end-to-end check는 자기 released form에 그것을 싣는다(GN-15k). `release-go-module`과 `release-recipes`의 unit test로, 그리고 Apple container의 고정된 Alpine image에서 확인했다: sample의 module은 그 파일 없이 `cannot find -lunwind`로 실패했고 그것과 함께 시험이 통과했다.
 - `binding go-link`는 `-L<dir>/debug -l<library> <libraries>`를, 즉 정적 라이브러리를 그것이 필요로 하는 라이브러리 앞에 쓴다. cgo는 `CGO_LDFLAGS`를 패키지의 모든 `#cgo LDFLAGS` 앞에 두므로 `--as-needed`의 GNU ld가 `-lm`을 버렸고, end-to-end check의 consumer의 Go 시험이 linux glibc에서 `undefined reference to pow`로 실패했다(GN-15k). `node --test tests/go-link.test.ts`와 macOS의 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`로 확인했고, GNU ld의 링크는 CI e2e가 확인한다.

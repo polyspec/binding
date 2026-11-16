@@ -3369,7 +3369,8 @@ the design ids are those of the binding design.
   exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
   every package of the fetched modules with that proxy as `GOPROXY`, prints the output of every `build-output` event of
   `go test -json`, where go reports the error of a build such as one of the linker (B2.416), and fails unless a test
-  ran and none failed. The
+  ran and none failed. A work directory without the consumer of a released form, such as the one of a refusal fixture
+  (GN-14k), fails with its name before the container starts (B2.417). The
   modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
   the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.
   Why a container: the end-to-end check runs on a machine of the GNU C library, and only a program that a C compiler
@@ -3407,7 +3408,7 @@ the design ids are those of the binding design.
   commit, and a contract that is silently left out of the job would look checked.
   Each entry of the job `e2e` runs `make ci-e2e REPO=<repository> DEPS="<repositories>"`, which installs every tool,
   runs the end-to-end check in a work directory of its own and, when the check passed, `make go-musl-check` on that
-  directory, so the released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g); it
+  directory, except for a refusal fixture (GN-14k), whose run ends at the refusal and makes no released form, so the released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g); it
   removes the work directory at its end. The job `e2e-amd64` runs `make ci-e2e-amd64`, the same recipe for
   `tests/e2e/sample`, on `ubuntu-26.04`, the one job that does not
   run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only

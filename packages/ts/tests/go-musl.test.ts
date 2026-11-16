@@ -78,3 +78,11 @@ test('B2.416: go-musl-check prints the output of each build-output event, the er
   assert.match(ran.output, /# example\.invalid\/consumer\.test/);
   assert.match(ran.output, /\(musl\): 0 passed, 0 failed, exit 1/);
 });
+
+test('B2.417: go-musl-check names a work directory without the consumer of a released form and starts no container (GN-14k, GN-14f)', (t) => {
+  const b = box(t, false);
+  const ran = b.run();
+  assert.equal(ran.status, 2, ran.output);
+  assert.match(ran.output, new RegExp(`go-musl-check: ${b.work} holds no released form of a Go module \\(go-release/consumer\\)`));
+  assert.doesNotMatch(ran.output, /can't cd/);
+});

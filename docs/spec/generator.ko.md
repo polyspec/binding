@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9a7add5d68613ea07284893f69e642a8a0d910be7c921b55c04e2df201afe142 -->
+<!-- source-sha256: 6b37cfa49d9794b99d9472681f623a223187ab41c2a4bf404b98556b222f1142 -->
 # 생성기
 
 [English](generator.md)
@@ -2747,7 +2747,8 @@
   `mise.lock`의 Go와 `goMusl`의 정확한 버전인 Alpine의 `gcc`와 `musl-dev`로(`docs/operations/dependencies.md`), 그
   proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, go가 linker의 것 같은 빌드 오류를 보고하는
   `go test -json`의 모든 `build-output` event의 출력을 찍으며(B2.416), 시험이 하나도 실행되지 않거나 하나라도 실패하면
-  실패한다. 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
+  실패한다. released form의 소비자가 없는 work 디렉터리(refusal fixture(GN-14k)의 것 같은)는 컨테이너가 시작하기 전에 그
+  이름과 함께 실패한다(B2.417). 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
   `DOCKER_HOST`의 Docker가 있는 기계에서 돌고, 그 기계는 작업 디렉터리를 `WORK`에 가지며, 컨테이너 이름은
   `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end 검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고
   musl 기계가 실행한 프로그램만이 musl의 라이브러리가 링크되고 실행된다는 것을 보인다.
@@ -2777,7 +2778,7 @@
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
   job `e2e`의 각 항목은 `make ci-e2e REPO=<레포> DEPS="<레포들>"`를 실행한다. 이 recipe는 모든 도구를 설치하고, 자기 work
-  디렉터리에서 끝에서 끝까지 확인을 실행하며, 확인이 통과하면 그 디렉터리로 `make go-musl-check`를 실행하므로, 각 Go 모듈의
+  디렉터리에서 끝에서 끝까지 확인을 실행하며, 확인이 통과하면 그 디렉터리로 `make go-musl-check`를 실행하므로(run이 refusal에서 끝나 release 형태를 만들지 않는 refusal fixture(GN-14k)는 제외), 각 Go 모듈의
   release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). 끝에서 work 디렉터리를 지운다. job
   `e2e-amd64`는 `ubuntu-26.04`에서 `tests/e2e/sample`에 같은 recipe인 `make ci-e2e-amd64`를 실행한다. `ubuntu-26.04-arm`에서
   돌지 않는 유일한 job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고
