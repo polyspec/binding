@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1be3f10bf276ec6499eddcecc5a89f2b1fc4e3c99bceb3eb111a946a40d3bacd -->
+<!-- source-sha256: e875236084f3d584d3d25747ead82454517ebbe10aa2c11085258cb7c7ee2c62 -->
 # 생성기
 
 [English](generator.md)
@@ -2655,7 +2655,7 @@
   바뀌지 않는다. 배포 형태(GN-14f)의 원본도 같은 파일을 뺀다. 코어의 시험(GN-14)은 모든 target의 단계이며 남는다.
   이유: 레포의 시험은 레포의 runner가 주는 입력, 예를 들어 환경 변수로 주는 case 파일의 경로를 읽는데 실행은 그것을
   모르며, 한 target이 다른 target보다 더 많이 실행하면 같은 계약에 다른 결과를 낸다.
-- **GN-14h** `refused.json`을 가진 `tests/e2e`의 레포는 컴파일러가 그 바인딩을 거부하는지의 검사다(B2.402).
+- **GN-14k** `refused.json`을 가진 `tests/e2e`의 레포는 컴파일러가 그 바인딩을 거부하는지의 검사다(B2.402).
   `refused.json`은 target마다 rustc 코드 하나를 적고, 실행은 생성 뒤 각 target의 바인딩 crate를
   `cargo check -p <crate>`(WASM은 `--target wasm32-unknown-unknown`)로 검사한다. 그 검사는 그 코드로, 다른 오류 없이
   실패해야 한다. 그 거부가 그 target의 시험이며 실행은 거기서 끝난다. 통과하거나, 그 코드 없이 또는 다른 오류와 함께
