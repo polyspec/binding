@@ -2142,8 +2142,8 @@ addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name,
   return `${header('//')}
 'use strict';
 
-// T-2: the addon is in the npm package of the machine's platform, which the release names in optionalDependencies; a
-// build in a checkout puts the file beside this entry instead.
+// T-2: the addon is in the npm package of the machine's platform, which the consumer names by its asset URL in
+// optionalDependencies (GN-3c); a build in a checkout puts the file beside this entry instead.
 const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
 function loadAddon() {
   try {

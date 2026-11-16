@@ -17,10 +17,10 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'scripts/e2e-lint.mts', why: 'the script of the checkout imports it, which names the lints of a binding crate' },
   { path: 'scripts/e2e-llvm.mts', why: 'the script of the checkout imports it, which names the libclang and the clang of the PHP target' },
   { path: 'scripts/e2e-npm.mts', why: 'the script of the checkout imports it, which names the npm packages that a run packs' },
+  { path: 'scripts/e2e-refusal.mts', why: 'the script of the checkout imports it, which judges the refusal of a fixture that the compiler must refuse (GN-14k)' },
   { path: 'scripts/e2e-work.mts', why: 'the script of the checkout makes the work directory of the run with it and runs the commands of the run in it' },
   { path: 'scripts/php-minor.mts', why: 'the script of the checkout imports it, which compares the minor of var/tools/bin/php with .php-version' },
   { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
-  { path: 'scripts/e2e-refusal.mts', why: 'the script of the checkout imports it, which judges whether the compiler refused a binding of a refusal fixture (GN-14k)' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
   { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
   { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },
@@ -47,5 +47,6 @@ export const NOT_READ: readonly Input[] = [
   { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
   { path: 'scripts/consumers.mts', why: 'make consumers-check imports it, which names the steps and the table of the compile check of consumers (GN-14i); a run of make e2e does not' },
   { path: 'scripts/consumers-check.mts', why: 'make consumers-check runs it (GN-14i); a run of make e2e does not' },
+  { path: 'scripts/e2e-npm-install.mts', why: 'the script of the tree of the commit runs it from that tree to install the npm packages as a consumer of a release does (GN-3c); the script of the checkout does not import it' },
   { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
 ];

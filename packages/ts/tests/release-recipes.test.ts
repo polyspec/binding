@@ -327,13 +327,14 @@ test('the npm platform package is written in npm/<platform> of the npm package a
   assert.deepEqual(readdirSync(join(box.root, 'var/release/assets/npm')), ['polyspec-sample-darwin-arm64-0.0.3.tgz']);
 });
 
-test('the npm package names its platform packages in optionalDependencies of the packed copy and holds the bound WASM module (GN-19e)', (t) => {
+test('the npm package packs the tracked manifest, which names no platform package, and holds the bound WASM module (GN-19e, GN-3c)', (t) => {
   const box = sandbox(t, 'aarch64-unknown-linux-gnu');
   const run = box.make('release-npm');
   assert.equal(run.status, 0, run.output);
   const packed = JSON.parse(readFileSync(join(box.root, 'var/release/assets/npm/polyspec-sample-0.0.3.tgz'), 'utf8')) as { optionalDependencies?: Record<string, string> };
-  assert.deepEqual(packed.optionalDependencies, { '@polyspec/sample-linux-x64-gnu': '0.0.3', '@polyspec/sample-linux-arm64-gnu': '0.0.3', '@polyspec/sample-darwin-arm64': '0.0.3' });
-  // The tracked manifest names none (GN-3c).
+  // No registry holds a platform package before 0.1, so a version range would be skipped by npm: the consumer names
+  // each platform package by its asset URL, and the packed manifest names none (GN-3c).
+  assert.equal(packed.optionalDependencies, undefined);
   assert.equal((JSON.parse(readFileSync(join(box.root, 'packages/ts/package.json'), 'utf8')) as { optionalDependencies?: unknown }).optionalDependencies, undefined);
   const bound = box.calls().find((call) => call.tool === 'wasm-bindgen' && call.args[0] === '--target');
   assert.match(bound?.args.join(' ') ?? '', /--out-dir \S*\/var\/release\/target\/npm\/package\/package\/wasm\/generated --out-name sample_wasm \S*\/wasm32-unknown-unknown\/release\/polyspec_sample_wasm\.wasm$/);
