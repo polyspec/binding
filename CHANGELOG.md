@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A function fixture names its parameters (`names`), and a step of it or of a fixture inside it calls on a named argument and passes one as `{"bound": <name>}`, on the five targets; the end-to-end sample copies a value of a nested scope into the scope around it with the new member `scope.copy` (GN-13n, B2.319).
+
 ## 0.0.12
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.

@@ -2107,7 +2107,41 @@ class Checker {
     const form = record(value);
     const fixture = record(form?.['function']);
     if (form === undefined || fixture === undefined || Object.keys(form).length !== 1) return report(`${what} is not a function fixture {"function": {"calls": [<step>], "result" | "raise": <value>}}`);
-    for (const key of Object.keys(fixture)) if (!['calls', 'result', 'raise', 'awaits'].includes(key)) report(`the function fixture ${what} has no key ${key}`);
+    for (const key of Object.keys(fixture)) if (!['calls', 'result', 'raise', 'awaits', 'names'].includes(key)) report(`the function fixture ${what} has no key ${key}`);
+    // GN-13n: names, a name for each parameter by position, which the steps of this fixture and of the fixtures inside
+    // it give as on and as a value {"bound": <name>}.
+    const scope = new Map<string, string>();
+    const names = fixture['names'];
+    if (names !== undefined && (!Array.isArray(names) || names.length > fn.parameters.length)) report(`the names of the function fixture ${what} are not a list of at most ${fn.parameters.length} names, one for each parameter by position`);
+    else for (const [i, name] of (names ?? []).entries()) {
+      const type = fn.parameters[i];
+      const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.units.get(type.unit)?.value : undefined;
+      if (typeof name !== 'string' || !/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/.test(name)) report(`the name ${JSON.stringify(name)} of the function fixture ${what} is not a snake_case name`);
+      else if (unit === undefined || (unit.kind !== 'class' && unit.kind !== 'interface')) report(`the name ${name} of the function fixture ${what} names the parameter ${i}, whose type is no class or interface of this contract`);
+      else if (scope.has(name) || this.boundScope.some((outer) => outer.has(name))) report(`the name ${name} of the function fixture ${what} is given by a function fixture around it too`);
+      else scope.set(name, unit.id);
+    }
+    this.boundScope.push(scope);
+    try {
+      this.functionSteps(fn, fixture, what, report);
+    } finally {
+      this.boundScope.pop();
+    }
+  }
+
+  // GN-13n: the names that the function fixtures around the value in reading give, the innermost last, each to the
+  // id of the unit of its parameter.
+  boundScope: Map<string, string>[] = [];
+
+  // GN-13n: the unit of the parameter that a name of the function fixtures around the value gives, or undefined.
+  boundUnit(name: string): string | undefined {
+    for (const scope of [...this.boundScope].reverse()) if (scope.has(name)) return scope.get(name);
+    return undefined;
+  }
+
+  // G-5 (GN-6ae): the steps of a function fixture.
+  functionSteps(fn: Extract<Type, { function: unknown }>['function'], fixture: Record<string, unknown>, what: string, report: (message: string) => void): void {
+    const record = (given: unknown): Record<string, unknown> | undefined => (typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined);
     // GN-6ae: awaits, the marker of a function that returns an awaitable.
     const awaits = Object.hasOwn(fixture, 'awaits');
     if (awaits && fixture['awaits'] !== true) report(`the awaits of the function fixture ${what} is ${JSON.stringify(fixture['awaits'])}, not true`);
@@ -2128,9 +2162,12 @@ class Checker {
       for (const key of Object.keys(step)) if (!['on', 'call', 'args', 'result'].includes(key)) report(`${at} has no key ${key}`);
       const on = step['on'];
       const type = typeof on === 'string' && /^(0|[1-9][0-9]*)$/.test(on) ? fn.parameters[Number(on)] : undefined;
-      const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.units.get(type.unit)?.value : undefined;
+      // GN-13n: on may be a name that this fixture or a fixture around it gives.
+      const named = typeof on === 'string' && type === undefined ? this.boundUnit(on) : undefined;
+      const unitId = named ?? (typeof type === 'object' && 'unit' in type && type.library === undefined ? type.unit : undefined);
+      const unit = unitId === undefined ? undefined : this.units.get(unitId)?.value;
       if (unit?.kind !== 'class') {
-        report(`${at} is on ${String(on)}, which is no parameter of the function whose type is a class of this contract`);
+        report(`${at} is on ${String(on)}, which is neither a parameter of the function whose type is a class of this contract nor a name of a function fixture around it whose parameter is one`);
         continue;
       }
       const outer = this.stepAwaits;
@@ -2162,6 +2199,15 @@ class Checker {
     for (const parameter of found.member.parameters ?? []) {
       const key = convert(parameter.name, 'python', 'variable');
       if (this.takesCode(parameter.type)) this.codeValue(parameter.type, args[key], `${key} of ${at}`, report);
+      // GN-13n: {"bound": <name>} is an argument that a function fixture around the call gives by that name, of the
+      // class of the parameter or of a class that implements it.
+      const given = args[key];
+      const name = typeof given === 'object' && given !== null && !Array.isArray(given) && Object.keys(given).length === 1 ? (given as { bound?: unknown }).bound : undefined;
+      if (name === undefined) continue;
+      const bound = typeof name === 'string' ? this.boundUnit(name) : undefined;
+      const wanted = typeof parameter.type === 'object' && 'unit' in parameter.type && parameter.type.library === undefined ? parameter.type.unit : undefined;
+      if (bound === undefined) report(`${key} of ${at} is ${JSON.stringify(given)}, and no function fixture around it gives that name`);
+      else if (wanted === undefined || (bound !== wanted && !(this.units.get(bound)?.value.implements ?? []).some((ref) => ref.library === undefined && ref.unit === wanted))) report(`${key} of ${at} is the argument ${String(name)} of the class ${bound}, which is no value of the type of ${key}`);
     }
     return found.member;
   }

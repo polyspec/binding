@@ -119,6 +119,13 @@ def _kept(instance, names):
     return (type(instance), *(getattr(instance, name) for name in names))
 `;
 
+// GN-13n: the arguments that the function fixtures of the test in progress keep by name.
+const PYTHON_BOUND = `
+
+# GN-13n: the arguments that the function fixtures of the test in progress keep by name.
+_bound: dict[str, object] = {}
+`;
+
 // GN-6ae: the exception that a function fixture of the test in progress raises.
 const PYTHON_RAISED = `
 
@@ -421,21 +428,28 @@ export function pythonTests(model: Model, module: string): string {
   // exception that the test of the case holds. A fixture with awaits is a coroutine function, whose steps await the
   // awaited form of a member that waits. Two fixtures of one body are one function.
   let usesRaised = false;
+  let usesBound = false;
   const functions = new Map<string, { name: string; needsRoot: boolean }>();
   const functionExpression = (helper: { name: string; needsRoot: boolean }): string => {
     if (!helper.needsRoot) return helper.name;
     usesFunctools = true;
     return withRoot(`functools.partial(${helper.name}, _case_text_root)`, true);
   };
+  // GN-13n: the arguments that function fixtures keep by name, in the store of the module.
+  ctx.boundValue = (name) => {
+    usesBound = true;
+    return `_bound[${pyString(name)}]`;
+  };
   ctx.machineFunctionNew = (fixture) => {
-    const lines = fixture.steps.flatMap((step, i) => {
-      const on = `args[${step.on}]`;
+    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = args[${i}]`);
+    const lines = [...kept, ...fixture.steps.flatMap((step, i) => {
+      const on = typeof step.on === 'number' ? `args[${step.on}]` : (ctx.boundValue?.(step.on) ?? '');
       const call = fixture.awaits && awaits(step.fn) ? `await ${invokeAwaited(step.fn, step.args, on)}` : invoke(step.fn, step.args, on);
       if (step.expected === undefined) return [call];
       if ('refused' in step.expected) return [`raise AssertionError(${pyString(step.expected.refused)})`];
       usesSame = true;
       return [`result_${i} = ${call}`, `expected_${i} = ${step.expected.text}`, `if not _same(result_${i}, expected_${i}):`, `    raise AssertionError(f"{result_${i}!r} is not {expected_${i}!r}")`];
-    });
+    })];
     usesRaised ||= 'exception' in fixture.end;
     lines.push('result' in fixture.end ? `return ${fixture.end.result}` : 'raise' in fixture.end ? `raise ${fixture.end.raise}` : 'raise _raised[0]');
     const needsRoot = rootNeeded();
@@ -577,7 +591,7 @@ export function pythonTests(model: Model, module: string): string {
             ${call(new Map([[arg, '1']]))}
         self.assertEqual(caught.exception.kind, "invalid_callback")`);
       if (!arg.type.function.async_allowed || fn.machine !== true) continue;
-      const awaitable = ctx.machineFunctionNew?.({ parameters: arg.type.function.parameters.length, awaits: true, steps: [], end: { result: 'None' } }) ?? '';
+      const awaitable = ctx.machineFunctionNew?.({ names: [], parameters: arg.type.function.parameters.length, awaits: true, steps: [], end: { result: 'None' } }) ?? '';
       append(`
     def test_gn6ae_${name}_${argName}_refuses_an_awaitable_without_an_event_loop(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
@@ -920,7 +934,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     const rootCallback = (): string => caseTextExpression(() => {
       const value = ctx.caseTextPath?.(relative, false);
       if (value === undefined) throw new Unsupported('GN-13l: the Python case-root callback is missing');
-      const callback = ctx.machineFunctionNew?.({ parameters: 0, awaits: false, steps: [], end: { result: value } });
+      const callback = ctx.machineFunctionNew?.({ names: [], parameters: 0, awaits: false, steps: [], end: { result: value } });
       if (callback === undefined) throw new Unsupported('GN-13l: the Python function-fixture callback is missing');
       return callback;
     });
@@ -960,7 +974,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.future
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

@@ -31,7 +31,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
+  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
   caseTextParts, CASE_JSON_STRING_GOLDENS,
   fixtureType,
 } from './samples.ts';
@@ -188,6 +188,9 @@ function mapLocal(b: Body, sink: string[], type: string, sets: string[]): string
 // A case value (JSON) as a Go value of the contract type; an instance value makes its instance in the body.
 function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (json === null) return 'nil';
+  // GN-13n: the argument that a function fixture around the value keeps under the name.
+  const bound = boundName(json);
+  if (bound !== undefined) return `bound_${bound}`;
   // GN-13j: the address of the service of the case, or the scope of the case in Go.
   if (json instanceof ServiceValue) {
     if (type !== 'text' && type !== 'latin1' && !(typeof type === 'object' && 'optional' in type)) throw new Unsupported(`a case value {"service": "${json.which}"} stands at a place of the type text or latin1 alone (GN-13j), not at ${JSON.stringify(type)}`);
@@ -646,11 +649,14 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
   const fixture = (json as { function?: Record<string, unknown> } | null)?.function;
   if (typeof fixture !== 'object' || fixture === null) throw new Unsupported(`a case value of a function type is a function fixture, not ${JSON.stringify(json)} (GN-6ae)`);
   const inner = b.child();
+  // GN-13n: an argument that the fixture keeps by name is a variable of the func, which the funcs inside it close over.
+  for (const [i, name] of (Array.isArray(fixture['names']) ? fixture['names'].map(String) : []).entries()) inner.lines.push(`bound_${name} := arg${i}`, `_ = bound_${name}`);
   for (const step of Array.isArray(fixture['calls']) ? (fixture['calls'] as Record<string, unknown>[]) : []) {
     const fn = memberById(v.model, String(step['call']));
     const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
     if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${JSON.stringify(step['args'])}, which are not the parameters of a member (GN-6ae)`);
-    const on = `arg${Number(step['on'])}`;
+    const given = String(step['on']);
+    const on = /^(0|[1-9][0-9]*)$/.test(given) ? `arg${given}` : `bound_${given}`;
     if (Object.hasOwn(step, 'result')) {
       // CK-22: a step that names a result returns an error that names its member when the call returned another value.
       const lines = comparedCall(v, inner.child(), fn, on, args, { value: step['result'] }, 'return nil, err', (i) => `return nil, fmt.Errorf("GN-6ae: ${fn.member.id} returned %#v, not %#v", value${i}, want)`);

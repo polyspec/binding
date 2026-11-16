@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- function fixture는 parameter에 이름을 붙이고(`names`), 그것이나 그 안의 fixture의 step은 이름 붙은 인자 위에서 부르고 그것을 `{"bound": <name>}`로 넘긴다. 다섯 타깃에서 그렇다. end-to-end sample은 새 member `scope.copy`로 중첩 scope의 값을 둘러싼 scope에 복사한다(GN-13n, B2.319).
+
 ## 0.0.12
 
 - `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포의 case는 어떤 시험도 읽지 않는 key `words`를 가졌고 이를 지운다.

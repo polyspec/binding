@@ -2431,6 +2431,40 @@
           "optional_reason": "T-5"
         },
         {
+          "id": "scope.copy",
+          "name": [
+            "copy"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "into"
+              ],
+              "type": {
+                "unit": "scope"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Scope::copy",
+            "receiver": "&self"
+          }
+        },
+        {
           "id": "scope.nested",
           "name": [
             "nested"
@@ -2817,6 +2851,11 @@
       "member": "scope.get",
       "file": "contracts/cases.json",
       "group": "scope_get"
+    },
+    {
+      "member": "scope.copy",
+      "file": "contracts/cases.json",
+      "group": "scope_copy"
     },
     {
       "member": "scope.nested",

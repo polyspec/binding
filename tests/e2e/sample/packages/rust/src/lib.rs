@@ -1251,6 +1251,13 @@ impl Scope {
         entries_of(&self.parent).get(key).cloned()
     }
 
+    /// Writes the value of a key that this scope sees as a pending entry of `into`, when it sees one.
+    pub fn copy(&self, into: &Self, key: &str) {
+        if let Some(value) = self.get(key) {
+            into.put(key, &value);
+        }
+    }
+
     /// Runs `function` with an inner scope over the pending entries of this scope, as [`Store::transaction`] does: the
     /// entries of the inner scope become pending entries of this scope when the function returns.
     pub fn nested<F>(self, function: F) -> Scoped<F>

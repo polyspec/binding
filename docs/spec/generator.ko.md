@@ -2130,6 +2130,13 @@
 - **GN-13ka** raise하면서 `status`를 이름하지 않는 member case는 alias case처럼(GN-13k) status 기대를 선언하지 않는다.
   어떤 타깃도 그 error의 status를 검사하지 않는다. 이유: kind의 status는 코어의 것이고, 선언되지 않은 값을 검사하면
   시험에 `undefined`가 쓰여 Go가 컴파일하지 않는다.
+- **GN-13n** function fixture(GN-6ae)는 `"names": ["<name>", ...]`, 즉 위치 순서로 앞의 parameter마다 하나의 snake_case
+  이름을 가질 수 있고, 각 parameter는 이 계약의 class나 interface이다. 그 fixture와 그 안의 모든 fixture의 step에서 `on`은
+  위치뿐 아니라 그런 이름일 수 있고, step의 parameter 자리의 case 값 `{"bound": "<name>"}`은 그 이름의 인자이며, 그
+  parameter의 class이거나 그것을 구현하는 class이다. 한 이름은 step을 둘러싼 fixture 가운데 한 번만 주어진다. 함수는
+  불릴 때 이름 붙은 인자를 보관한다. Python과 PHP는 시험의 저장소에, Node, WASM, Go는 함수의 변수에 보관하고, 그 안의
+  함수가 그 변수를 닫아 쓴다. 이유: member는 함수가 받은 값, 예를 들어 중첩 scope의 step이 써 넣는 transaction의 scope를
+  받을 수 있는데, 위치는 가장 안쪽 함수의 인자만 이름한다.
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.

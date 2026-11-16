@@ -330,9 +330,16 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // result, throws the instance of an error unit, or throws the exception that the test of the case holds. PHP has no
   // awaitable, so a fixture with awaits is the same plain function.
   let usesRaised = false;
+  let usesBound = false;
+  // GN-13n: the arguments that function fixtures keep by name, in a static array of the test class.
+  ctx.boundValue = (name) => {
+    usesBound = true;
+    return `self::$bound[${phpText(name)}]`;
+  };
   ctx.machineFunctionNew = (fixture) => {
-    const steps = fixture.steps.map((step) => {
-      const call = invoke(step.fn, step.args, `$args[${step.on}]`);
+    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = $args[${i}]; `).join('');
+    const steps = kept + fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `$args[${step.on}]` : (ctx.boundValue?.(step.on) ?? ''));
       if (step.expected === undefined) return `${call}; `;
       if ('refused' in step.expected) return `self::fail(${phpText(step.expected.refused)}); `;
       usesSame = true;
@@ -916,7 +923,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     const rootCallback = (): string => caseTextExpression(() => {
       const value = ctx.caseTextPath?.(relative, false);
       if (value === undefined) throw new Unsupported('GN-13l: the PHP case-root callback is missing');
-      const callback = ctx.machineFunctionNew?.({ parameters: 0, awaits: false, steps: [], end: { result: value } });
+      const callback = ctx.machineFunctionNew?.({ names: [], parameters: 0, awaits: false, steps: [], end: { result: value } });
       if (callback === undefined) throw new Unsupported('GN-13l: the PHP function-fixture callback is missing');
       return callback;
     });
@@ -956,7 +963,10 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
+{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesBound ? `
+    /** GN-13n: the arguments that the function fixtures of the test in progress keep by name. @var array<string, mixed> */
+    private static array $bound = [];
+` : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}

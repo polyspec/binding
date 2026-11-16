@@ -1140,6 +1140,80 @@
           "result": null
         }
       ]
+    },
+    {
+      "id": "a_step_gives_an_argument_of_an_outer_function_to_a_member",
+      "rule": "GN-13n",
+      "work": {
+        "function": {
+          "names": [
+            "outer"
+          ],
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "names": [
+                      "inner"
+                    ],
+                    "calls": [
+                      {
+                        "on": "inner",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      },
+                      {
+                        "on": "inner",
+                        "call": "scope.copy",
+                        "args": {
+                          "into": {
+                            "bound": "outer"
+                          },
+                          "key": "b"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "outer",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "copied"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "copied"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "b"
+          },
+          "result": "2"
+        }
+      ]
     }
   ],
   "store_once": [
@@ -1264,6 +1338,7 @@
   ],
   "scope_put": [],
   "scope_get": [],
+  "scope_copy": [],
   "scope_nested": [],
   "data_in": [
     {

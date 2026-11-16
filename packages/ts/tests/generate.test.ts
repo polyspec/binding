@@ -10588,3 +10588,21 @@ test('the cases of an alias row with only are tests of the targets that it lists
   assert.equal(named('python'), true);
   assert.equal(named('php'), false);
 });
+
+test('a function fixture keeps its named arguments, and a step of a fixture inside it calls on one and passes one (GN-13n, B2.319)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const py = text(sample, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /_bound\["outer"\] = args\[0\]/);
+  assert.match(py, /_bound\["inner"\]\.copy\(_bound\["outer"\], "b"\)/);
+  const php = text(sample, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /self::\$bound\["outer"\] = \$args\[0\]; .*self::\$bound\["inner"\]->copy\(self::\$bound\["outer"\], "b"\);/);
+  assert.match(php, /private static array \$bound = \[\];/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const js = text(sample, path);
+    assert.match(js, /const bound_outer = args\[0\]; /, path);
+    assert.match(js, /bound_inner\.copy\(bound_outer, 'b'\)/, path);
+  }
+  const go = text(sample, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\tbound_outer := arg0\n/);
+  assert.match(go, /bound_inner\.Copy\(bound_outer, "b"\)/);
+});

@@ -1332,8 +1332,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
       [takes(['text']), { function: { calls: [] } }, /the function fixture convert has a result or a raise, one of them/],
       [takes(['text']), { function: { calls: [], result: 'b', raise: 'exception' } }, /the function fixture convert has a result or a raise, one of them/],
       [scoped, { function: { calls: [{ ...step, raises: {} }], result: 'b' } }, /step 0 of convert has no key raises/],
-      [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is no parameter of the function whose type is a class of this contract/],
-      [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is no parameter/],
+      [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is neither a parameter of the function whose type is a class of this contract nor a name of a function fixture around it whose parameter is one/],
+      [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is neither a parameter/],
       [scoped, { function: { calls: [{ ...step, call: 'forms.parse' }], result: 'b' } }, /step 0 of convert calls forms\.parse, which is no method of session/],
       [scoped, { function: { calls: [{ ...step, args: { path: 'a' } }], result: 'b' } }, /the args of step 0 of convert are not the parameters file of session\.load/],
       [scoped, { function: { calls: [], raise: { error: 'store_error', kind: 'store' } } }, /the function fixture convert raises store_error, which the function does not recognize \(U-3\)/],
@@ -1847,4 +1847,22 @@ test('a row of cases that names an alias may have only, which names a target whe
   assert.deepEqual(run({ targets: ['python', 'node', 'go', 'wasm'], reason: 'G-5' }), []);
   const found = run({ targets: ['ruby'], reason: 'G-5' });
   assert.ok(found.length > 0, JSON.stringify(found));
+});
+
+test('a function fixture names its parameters, which its steps and those inside it give as on and as a bound value (GN-13n, CK-22, B2.319)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (kase: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    const kase = cases.store_transaction.find((c: any) => c.id === 'a_step_gives_an_argument_of_an_outer_function_to_a_member');
+    change(kase);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  assert.deepEqual(run(() => {}), []);
+  const inner = (kase: any): any => kase.work.function.calls[0].args.work.function;
+  const unknown = run((kase) => { inner(kase).calls[1].args.into = { bound: 'other' }; });
+  assert.ok(unknown.some((f) => f.check === 'CK-22' && /into of step 1 of .* is \{"bound":"other"\}, and no function fixture around it gives that name/.test(f.message)), JSON.stringify(unknown));
+  const shadow = run((kase) => { inner(kase).names = ['outer']; });
+  assert.ok(shadow.some((f) => f.check === 'CK-22' && /the name outer of the function fixture .* is given by a function fixture around it too/.test(f.message)), JSON.stringify(shadow));
+  const on = run((kase) => { inner(kase).calls[0].on = 'nobody'; });
+  assert.ok(on.some((f) => f.check === 'CK-22' && /is on nobody, which is neither a parameter/.test(f.message)), JSON.stringify(on));
 });

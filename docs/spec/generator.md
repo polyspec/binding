@@ -2626,6 +2626,14 @@ the design ids are those of the binding design.
 - **GN-13ka** A member case that raises and names no `status` declares no status expectation, as an alias case
   does (GN-13k): no target checks the status of its error. Why: the status of a kind belongs to the core, and a
   check of an undeclared value writes `undefined` into the test, which Go does not compile.
+- **GN-13n** A function fixture (GN-6ae) may have `"names": ["<name>", ...]`, a snake_case name for each of its
+  first parameters by position, each of a class or an interface of this contract. In the steps of that fixture and of
+  every fixture inside it, `on` may be such a name as well as a position, and the case value `{"bound": "<name>"}` at
+  a parameter of a step is the argument of that name, of the class of the parameter or of a class that implements it.
+  A name is given once among the fixtures around a step. The function keeps each named argument when it is called:
+  Python and PHP in a store of the test, Node, WASM and Go in a variable of the function, which the functions inside
+  it close over. Why: a member may take a value that the function got, such as the scope of a transaction that a step
+  of a nested scope writes into, and a position names only an argument of the innermost function.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.

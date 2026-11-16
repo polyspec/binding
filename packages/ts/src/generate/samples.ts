@@ -51,6 +51,8 @@ export interface Context {
   steps?: Steps | undefined;
   // GN-6ae: how the generated test writes the function of a function fixture.
   machineFunctionNew?: (fixture: FunctionFixture) => string;
+  // GN-13n: the expression of the argument that a function fixture around the value keeps under the name.
+  boundValue?: (name: string) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
   // GN-13l: a text path uses the root captured by this case, including in private deferred helpers.
@@ -80,7 +82,10 @@ export interface FunctionFixture {
   parameters: number;
   // CK-22: the function returns an awaitable, in a language that has one.
   awaits: boolean;
-  steps: { on: number; fn: Fn; args: string; expected?: { text: string } | { refused: string } }[];
+  // GN-13n: the names of the parameters by position, which the function keeps in the store of the test.
+  names: string[];
+  // GN-13n: on is a position of a parameter, or a name that this fixture or one around it gives.
+  steps: { on: number | string; fn: Fn; args: string; expected?: { text: string } | { refused: string } }[];
   end: { result: string } | { raise: string } | { exception: true };
 }
 
@@ -112,7 +117,7 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   }
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   // GN-6ae: a function that makes no step and returns no value.
-  if (machineFunction(type) && ctx.machineFunctionNew !== undefined) return ctx.machineFunctionNew({ parameters: type.function.parameters.length, awaits: false, steps: [], end: { result: ctx.lang === 'python' ? 'None' : 'null' } });
+  if (machineFunction(type) && ctx.machineFunctionNew !== undefined) return ctx.machineFunctionNew({ names: [], parameters: type.function.parameters.length, awaits: false, steps: [], end: { result: ctx.lang === 'python' ? 'None' : 'null' } });
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   // GN-6z: a function that returns the placeholder of its return type, whatever its arguments.
@@ -420,6 +425,12 @@ export function serviceSteps(given: unknown, target: string): ServiceSteps | und
 // GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
 // each value is given to the steps, and the whole value to their end.
 export function fromJson(model: Model, ctx: Context, type: Type, value: unknown, out = false): string {
+  // GN-13n: {"bound": <name>}, the argument that a function fixture around the value keeps under the name.
+  const bound = boundName(value);
+  if (bound !== undefined) {
+    if (ctx.boundValue === undefined) throw new Unsupported(`a case value {"bound": "${bound}"} names an argument of a function fixture, which this language does not keep yet (GN-13n)`);
+    return ctx.boundValue(bound);
+  }
   const make = (): string => {
     const steps = ctx.steps;
     if (steps === undefined) return valueForm(model, ctx, type, value, out);
@@ -858,6 +869,14 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
   }
 }
 
+// GN-13n: the name of a case value {"bound": <name>}, or undefined for another value.
+export function boundName(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
+  const name = (value as { bound?: unknown }).bound;
+  return keys.length === 1 && typeof name === 'string' ? name : undefined;
+}
+
 // GN-6ae: the function of a function fixture, {"function": {"calls": [<step>], "result" | "raise"}} (CK-22 has judged
 // the form): a step is a call of a method of the class of the parameter at its position, whose arguments are case
 // values of the parameters of that method, a function fixture among them.
@@ -868,16 +887,18 @@ function functionFixture(model: Model, ctx: Context, type: Extract<Type, { funct
     const fn = memberById(model, String(step['call']));
     const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
     if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${shown(step['args'])}, which are not the parameters of a member (GN-6ae)`);
-    return { on: Number(step['on']), fn, args: callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, args)), ...(Object.hasOwn(step, 'result') ? { expected: stepExpected(model, ctx, fn, step['result']) } : {}) };
+    const on = String(step['on']);
+    return { on: /^(0|[1-9][0-9]*)$/.test(on) ? Number(on) : on, fn, args: callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, args)), ...(Object.hasOwn(step, 'result') ? { expected: stepExpected(model, ctx, fn, step['result']) } : {}) };
   });
   const raise = fixture['raise'];
   const awaits = fixture['awaits'] === true;
-  if (raise === undefined) return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { result: fromJson(model, ctx, type.returns, fixture['result'] ?? null) } });
-  if (raise === 'exception') return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { exception: true } });
+  const names = Array.isArray(fixture['names']) ? fixture['names'].map(String) : [];
+  if (raise === undefined) return ctx.machineFunctionNew({ names, parameters: type.parameters.length, awaits, steps, end: { result: fromJson(model, ctx, type.returns, fixture['result'] ?? null) } });
+  if (raise === 'exception') return ctx.machineFunctionNew({ names, parameters: type.parameters.length, awaits, steps, end: { exception: true } });
   const { error, kind } = raise as { error: string; kind: string };
   const unit = model.contract.units.find((u) => u.id === error);
   if (unit === undefined || ctx.errorNew === undefined) throw new Unsupported(`a function fixture raises the error unit ${error}, which is not generated for this language yet (GN-6ae, GN-13)`);
-  return ctx.machineFunctionNew({ parameters: type.parameters.length, awaits, steps, end: { raise: ctx.errorNew(unit, kind, FIXTURE_RAISED) } });
+  return ctx.machineFunctionNew({ names, parameters: type.parameters.length, awaits, steps, end: { raise: ctx.errorNew(unit, kind, FIXTURE_RAISED) } });
 }
 
 // GN-6ae (CK-22): whether an argument of a case is a function fixture that names awaits, so that the test of a language

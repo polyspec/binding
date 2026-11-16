@@ -128,9 +128,13 @@ export function wasmTests(model: Model): string {
   // GN-6ae: the function of a function fixture, as for Node: each step calls a method on one of its arguments; it then
   // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
   // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
+  // GN-13n: an argument that a function fixture keeps by name is a constant of the function, which the functions
+  // inside it close over.
+  ctx.boundValue = (name) => `bound_${name}`;
   ctx.machineFunctionNew = (fixture) => {
-    const steps = fixture.steps.map((step) => {
-      const call = invoke(step.fn, step.args, `args[${step.on}]`);
+    const kept = fixture.names.map((name, i) => `const bound_${name} = args[${i}]; `).join('');
+    const steps = kept + fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `args[${step.on}]` : `bound_${step.on}`);
       // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
       if (step.expected === undefined) return `${call}; `;
       if ('refused' in step.expected) return `assert.fail(${jsString(step.expected.refused)}); `;
