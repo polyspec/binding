@@ -134,7 +134,7 @@ const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boo
 };
 
 // CK-96: the keys of a member case that G-5 gives a meaning, besides the parameters of the member and its result.
-const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', '@listener', 'repeat', 'awaits', 'targets'];
+const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'with', 'raises', 'after', 'then', 'faults', 'service', '@files', '@listener', 'repeat', 'awaits', 'targets'];
 
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];
@@ -1461,12 +1461,18 @@ class Checker {
   // run cases (B-3 on a case's values, B-4) would otherwise be left out without a word. A constant has no cases.
   caseLinks(): void {
     const linked = new Set(this.contract.cases.map((kase) => kase.member));
+    const unlinked: { member: Member; path: string }[] = [];
     for (const { member, unit, path } of this.members.values()) {
       if (member.kind === 'constant' || unit.kind === 'error' || unit.origin === 'callback' || unit.origin === 'host') continue;
       if (member.visibility !== 'public' || unit.visibility !== 'public') continue;
-      if (!linked.has(member.id)) this.report('CK-22', path, `${member.id} names no case file and group in cases (K-1)`);
+      if (!linked.has(member.id)) unlinked.push({ member, path });
     }
     if (this.caseFiles !== undefined) this.caseKinds(this.caseFiles);
+    // B2.365: a member that a step of a function fixture or a call of after calls has a case there, so a member of a
+    // class that only a callback gives needs no row of its own.
+    for (const { member, path } of unlinked) {
+      if (!this.stepCalled.has(member.id)) this.report('CK-22', path, `${member.id} names no case file and group in cases, and no step of a function fixture and no call of after of a case calls it (K-1)`);
+    }
   }
 
   // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that its raises
@@ -1625,6 +1631,15 @@ class Checker {
       else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
     }
     this.instanceArgs(found.member, record, report, 'the case');
+    // GN-13pa: with names instance values of the case, which the test makes after the receiver.
+    if (record['with'] !== undefined) {
+      if (!method) report(`${memberId} has no receiver, so the case gives no with`);
+      else for (const [name, value] of this.caseWith(record)) {
+        if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/.test(name) || name === 'receiver') report(`the name ${JSON.stringify(name)} of with is not a snake_case name other than receiver`);
+        else if (value === undefined) report(`with ${name} is no instance value {"new": <member id>, ...} of a member that makes a class of this contract`);
+        else this.instanceValue(value.unit, value.value, report, `with ${name}`);
+      }
+    }
     this.armedThen = undefined;
     this.namedThen = undefined;
     // CK-92: the test of the case is generated for each target of its member and of its row, so every member that its
@@ -1694,6 +1709,22 @@ class Checker {
     const found = this.members.get(memberId);
     const keeps = (only: { targets: readonly string[] } | undefined, lang: string): boolean => only === undefined || only.targets.includes(lang);
     return this.contract.targets.filter((lang) => found !== undefined && keeps(found.unit.only, lang) && keeps(found.member.only, lang));
+  }
+
+  // GN-13pa: the values of with of a case by name, each with the class that the member of its new makes, or undefined
+  // when the value is no such instance value; empty when with is no object.
+  caseWith(record: Record<string, unknown>): Map<string, { unit: string; value: unknown } | undefined> {
+    const given = record['with'];
+    const out = new Map<string, { unit: string; value: unknown } | undefined>();
+    if (typeof given !== 'object' || given === null || Array.isArray(given)) return out;
+    for (const [name, value] of Object.entries(given)) {
+      const id = typeof value === 'object' && value !== null ? (value as { new?: unknown }).new : undefined;
+      const found = typeof id === 'string' ? this.members.get(id) : undefined;
+      const returns = found?.member.returns;
+      const unit = found === undefined ? undefined : found.member.kind === 'constructor' ? found.unit.id : typeof returns === 'object' && 'unit' in returns && returns.library === undefined ? returns.unit : undefined;
+      out.set(name, unit === undefined || this.units.get(unit)?.value.kind !== 'class' ? undefined : { unit, value });
+    }
+    return out;
   }
 
   // CK-92: the members that the instance values of the case that caseInstances reads call, or undefined.
@@ -2051,7 +2082,10 @@ class Checker {
       // GN-13p: a step of a function fixture of the case may call on its receiver, an instance of the unit of a method.
       const found = this.members.get(memberId);
       const method = found !== undefined && typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
-      this.boundScope.push(method ? new Map([['receiver', found.unit.id]]) : new Map());
+      // GN-13pa: and on a value that the case names under with.
+      const scope = new Map<string, string>(method ? [['receiver', found.unit.id]] : []);
+      if (method) for (const [name, value] of this.caseWith(record)) if (value !== undefined) scope.set(name, value.unit);
+      this.boundScope.push(scope);
       try {
         for (const parameter of member?.parameters ?? []) {
           const key = snake(parameter.name);
@@ -2178,6 +2212,9 @@ class Checker {
   // which count as cases of that member (K-1).
   callRaised = new Map<string, Set<string>>();
 
+  // B2.365: the members that a step of a function fixture or a call of after of a case calls, which have a case there.
+  stepCalled = new Set<string>();
+
   // GN-13o: the raises of a step or of a call of after, {"kind": <kind>} of a kind of the raises of its member.
   callRaises(member: Member, call: Record<string, unknown>, at: string, report: (message: string) => void): void {
     if (!Object.hasOwn(call, 'raises')) return;
@@ -2256,6 +2293,7 @@ class Checker {
       const outer = this.stepAwaits;
       this.stepAwaits = awaits;
       const called = this.methodCall(unit.id, step, at, report);
+      if (called !== undefined) this.stepCalled.add(called.id);
       if (called !== undefined) this.callRaises(called, step, at, report);
       this.stepAwaits = outer;
     }
@@ -2388,6 +2426,8 @@ class Checker {
     // GN-13o: a call of after may be on an argument that a function fixture of the case names, kept after the function
     // returned, and may raise a kind in place of a result.
     const names = new Map<string, string>();
+    // GN-13pa: or on a value that the case names under with.
+    if (method) for (const [name, value] of this.caseWith(record)) if (value !== undefined) names.set(name, value.unit);
     for (const parameter of found.member.parameters ?? []) this.fixtureNames(parameter.type, record[convert(parameter.name, 'python', 'variable')], names);
     for (const [i, item] of after.entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
@@ -2399,11 +2439,12 @@ class Checker {
       }
       const unitId = on === undefined ? found.unit.id : typeof on === 'string' ? names.get(on) : undefined;
       if (unitId === undefined) {
-        report(`after ${i} is on ${JSON.stringify(on)}, which no function fixture of the case names`);
+        report(`after ${i} is on ${JSON.stringify(on)}, which no function fixture of the case and no with of the case names`);
         continue;
       }
       const called = this.methodCall(unitId, call, `after ${i}`, report);
       if (called === undefined) continue;
+      this.stepCalled.add(called.id);
       if (Object.hasOwn(call, 'raises')) this.callRaises(called, call, `after ${i}`, report);
       else if (!Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
       // B2.374: a member without a result states the result null, which each language tests as no value.

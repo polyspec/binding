@@ -10893,6 +10893,28 @@ test('a step of a function fixture calls on the receiver of the case, which the 
     assert.ok(busy.includes("(...args) => { assert.equal((outcome(() => bound.receiver.count())).kind, 'busy'"), `${path}:\n${busy}`);
   }
 });
+test('B2.365: the test makes each value of with after the receiver and keeps it, and a step after a step that raised calls on it, as does a call of after (GN-13pa)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const body = (all: string, from: string, length = 1200): string => {
+    const at = all.indexOf(from);
+    assert.ok(at >= 0, from);
+    return all.slice(at, at + length);
+  };
+  const pyAll = text(sample, 'packages/python/generated/tests/test_generated.py');
+  const py = body(pyAll, 'def test_gn13e_store_transaction_a_store_of_with_is_called');
+  assert.match(py, /made0 = pkg\.Store\(\)\n {8}_bound\["receiver"\] = made0\n {8}made1 = pkg\.Store\(\)\n {8}_bound\["other"\] = made1\n {8}receiver = _bound\["receiver"\]\n {8}result = receiver\.transaction\((_function_\d+)\)\n[\s\S]*after_0 = _bound\["other"\]\.get\("a"\)/);
+  const fn = /result = receiver\.transaction\((_function_\d+)\)/.exec(py)?.[1] ?? '';
+  assert.match(body(pyAll, `def ${fn}(`, 400), /assert _outcome\(lambda: _bound\["receiver"\]\.count\(\)\)\[::2\] == \("error", "busy"\), "G-5: step 0 fails with busy"\n {4}result_1 = _bound\["other"\]\.count\(\)\n/);
+  const php = body(text(sample, 'packages/php-ext/generated/tests/GeneratedTest.php'), 'function testGn13eStoreTransactionAStoreOfWithIsCalled');
+  assert.match(php, /self::\$bound\["receiver"\] = \$made0;\n {8}\$made1 = new \\Polyspec\\Sample\\Store\(\);\n {8}self::\$bound\["other"\] = \$made1;\n[\s\S]*self::outcome\(fn \(\) => self::\$bound\["receiver"\]->count\(\)\), "G-5: step 0 fails with busy"\); self::assertSame\(self::same\(0\), self::same\(self::\$bound\["other"\]->count\(\)\)\);[\s\S]*self::same\(self::\$bound\["other"\]->get\("a"\)\)/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const js = body(text(sample, path), "a_store_of_with_is_called_after_a_step_that_raised_and_after_the_function'");
+    assert.match(js, /bound\.receiver = made0;\n {2}const made1 = new pkg\.Store\(\);\n {2}bound\.other = made1;\n[\s\S]*bound\.receiver\.count\(\)\)\)\.kind, 'busy', 'G-5: step 0 fails with busy'\); assert\.deepStrictEqual\(ordered\(bound\.other\.count\(\)\), ordered\(0\)\);[\s\S]*ordered\(bound\.other\.get\('a'\)\)/, path);
+  }
+  const go = body(text(sample, 'packages/go/zz_generated_test.go'), 'func TestGN13eStoreTransactionAStoreOfWithIsCalled', 1600);
+  assert.match(go, /\tbound_receiver := made0\n\t_ = bound_receiver\n\tmade2, failure3 := NewStore\(\)\n[\s\S]*\tbound_other := made2\n\t_ = bound_other\n/);
+  assert.match(go, /_, (failure\d+) := bound_receiver\.Count\(\)\n\t\tif kinded, ok := \1\.\(interface\{ Kind\(\) string \}\); !ok \|\| kinded\.Kind\(\) != "busy" \{[\s\S]*value0, err := bound_other\.Count\(\)[\s\S]*made0\.Transaction\([\s\S]*bound_other\.Get\("a"\)/);
+});
 const sampleRead = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
 const sampleOut = (contract: any, cases: any, targets: string[]): Map<string, string | Buffer> =>
   generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: targets as Inputs['targets'] & string[] });

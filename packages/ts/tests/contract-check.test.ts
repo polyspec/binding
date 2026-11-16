@@ -1954,7 +1954,7 @@ test('a call of after on a kept argument, and a step, may raise a kind, which co
   const stepped = run((kase) => { kase.after = []; kase.work.function.calls[0] = { on: 'kept', call: 'scope.size', args: {}, raises: { kind: 'ended' } }; });
   assert.deepEqual(stepped, []);
   const unknown = run((kase) => { kase.after[0].on = 'other'; });
-  assert.ok(unknown.some((f) => /after 0 is on "other", which no function fixture of the case names/.test(f.message)), JSON.stringify(unknown));
+  assert.ok(unknown.some((f) => /after 0 is on "other", which no function fixture of the case and no with of the case names/.test(f.message)), JSON.stringify(unknown));
   const kind = run((kase) => { kase.after[0].raises = { kind: 'missing' }; });
   assert.ok(kind.some((f) => /after 0 raises the kind missing, which is no kind of the raises of scope\.size/.test(f.message)), JSON.stringify(kind));
 });
@@ -1967,6 +1967,42 @@ test('a step of a function fixture of a case of a method may call on its receive
   cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it').work.function.calls.at(-1).call = 'scope.get';
   const found = checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
   assert.ok(found.some((f) => /calls scope\.get, which is no method of store/.test(f.message)), JSON.stringify(found));
+});
+
+test('B2.365: a member that a step of a function fixture or a call of after calls has a case there, so it needs no row of cases (CK-22)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (members: string[]): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    contract.cases = contract.cases.filter((row: any) => !members.includes(row.member));
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) }).filter((f) => f.check === 'CK-22');
+  };
+  // scope.size and scope.put are called by steps, scope.size also by a call of after, and store.get by calls of after.
+  assert.deepEqual(run(['scope.size', 'scope.put', 'store.get']), []);
+  const uncalled = run(['store.attempt']);
+  assert.ok(uncalled.some((f) => /^store\.attempt names no case file and group in cases, and no step of a function fixture and no call of after of a case calls it \(K-1\)$/.test(f.message)), JSON.stringify(uncalled));
+});
+
+test('B2.365: a case of a method names instance values under with, which its steps and its calls of after call on (GN-13pa, CK-22)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const named = (cases: any): any => cases.store_transaction.find((c: any) => c.id === 'a_store_of_with_is_called_after_a_step_that_raised_and_after_the_function');
+  assert.deepEqual(run(() => {}), []);
+  const wrong = run((cases) => { named(cases).work.function.calls[1].call = 'scope.size'; });
+  assert.ok(wrong.some((f) => /step 1 of .* calls scope\.size, which is no method of store/.test(f.message)), JSON.stringify(wrong));
+  const after = run((cases) => { named(cases).after[0].on = 'nobody'; });
+  assert.ok(after.some((f) => /after 0 is on "nobody", which no function fixture of the case and no with of the case names/.test(f.message)), JSON.stringify(after));
+  const value = run((cases) => { named(cases).with.other = { new: 'scope.size' }; });
+  assert.ok(value.some((f) => /with other is no instance value \{"new": <member id>, \.\.\.\} of a member that makes a class of this contract/.test(f.message)), JSON.stringify(value));
+  const reserved = run((cases) => { named(cases).with = { receiver: { new: 'store.new', args: {} } }; });
+  assert.ok(reserved.some((f) => /the name "receiver" of with is not a snake_case name other than receiver/.test(f.message)), JSON.stringify(reserved));
+  const shadow = run((cases) => { named(cases).work.function.names = ['other']; });
+  assert.ok(shadow.some((f) => /the name other of the function fixture .* is given by a function fixture around it too/.test(f.message)), JSON.stringify(shadow));
+  const once = run((cases) => { cases.store_once[0].with = { other: { new: 'store.new', args: {} } }; });
+  assert.ok(once.some((f) => /store\.once has no receiver, so the case gives no with/.test(f.message)), JSON.stringify(once));
 });
 
 describe('CK-96 a key that the tests of the repository read is declared in reads of its row (B2.319)', () => {

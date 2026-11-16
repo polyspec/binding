@@ -311,7 +311,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   socket, so its test of such a case can only fail.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
-  `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
+  `cases`, or is called by a step of a function fixture or a call of `after` of a case (generator GN-13o, GN-13pa),
+  which is its case: a member of a class that only a callback gives, such as the transaction of an ORM, has no
+  receiver that a case of its own makes, so its cases are the calls that reach it (B2.365); G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
   reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
   that the rows of its `raises` give. The `cases` row of a member may name `result`, the snake_case key of its cases
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
@@ -367,10 +369,15 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   language reads as it reads a property, B2.361), `args` are exactly its parameters, the `result` of a member without
   a result is `null`, which each language tests as no value (`undefined` in Node and WASM, B2.374), and the generated
   test calls it on the receiver after the call of the case, also after a call that raised, and requires `result`.
+  A case of a method may name `with`, `{"<name>": <instance value>}` (generator GN-13pa): each value is `{"new":
+  <member id>, ...}` of a member that makes a class of this contract and is judged as an instance value of that class,
+  each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a
+  function fixture and a call of `after` may then name it as `on`, a step argument may be `{"bound": <name>}`, and a
+  `with` of a case of a member without a receiver is reported.
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which
   makes the receiver; the key of its result (CK-22); or a key of a case: `id`, `rule`, `note`, `receiver`, `raises`,
-  `after`, `then`, `faults`, `service`, `@files`, `@listener`, `repeat`, `awaits` and `targets` (CK-97); or a key that the row of `cases` names in
+  `with` (generator GN-13pa), `after`, `then`, `faults`, `service`, `@files`, `@listener`, `repeat`, `awaits` and `targets` (CK-97); or a key that the row of `cases` names in
   `reads`. `reads` is a list of snake_case keys of the cases of the group that the tests of the repository itself
   read and no generator reads, such as the input bytes and the expected tree that its core tests and its hand-written
   host tests compare: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases", "result":

@@ -1723,6 +1723,9 @@ export interface Receiver {
   args: Map<Arg, unknown>;
   // GN-13p: the test keeps the receiver under the name receiver, which a step of a function fixture calls on.
   bound?: true;
+  // GN-13pa: the instance values that the case names under with, which the test makes after the receiver, in the
+  // order of the case, and keeps under their names for the steps of its function fixtures and its calls of after.
+  with?: { name: string; receiver: Receiver }[];
   // G-5 (GN-13f): the instance value of a case. The instance that the factory is called on when it is a method, the
   // steps into its result when the result holds the instance (from), and the calls on the instance that prepare it.
   on?: Receiver;
@@ -2010,13 +2013,15 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     }
     return form.name(local);
   };
-  const expr = isPlain(receiver) ? form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') : make(receiver);
+  const expr = isPlain(receiver) && receiver.with === undefined ? form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') : make(receiver);
   // GN-13p: a receiver that a step of a function fixture calls on is kept under the name receiver.
-  if (receiver.bound !== true) return { lines, expr };
+  if (receiver.bound !== true && receiver.with === undefined) return { lines, expr };
   const { boundSet, boundValue } = form.ctx;
-  if (boundSet === undefined || boundValue === undefined) throw new Unsupported(`a step of a function fixture calls on the receiver of the case, which ${form.ctx.target ?? form.ctx.lang} does not keep yet (GN-13p)`);
-  lines.push(boundSet('receiver', expr));
-  return { lines, expr: boundValue('receiver') };
+  if (boundSet === undefined || boundValue === undefined) throw new Unsupported(`a step of a function fixture calls on the receiver of the case or on a value of its with, which ${form.ctx.target ?? form.ctx.lang} does not keep yet (GN-13p, GN-13pa)`);
+  if (receiver.bound === true) lines.push(boundSet('receiver', expr));
+  // GN-13pa: each value of with is made after the receiver and kept under its name.
+  for (const named of receiver.with ?? []) lines.push(boundSet(named.name, make(named.receiver)));
+  return { lines, expr: receiver.bound === true ? boundValue('receiver') : expr };
 }
 
 // The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
@@ -2059,8 +2064,27 @@ export const callsOnReceiver = (value: unknown): boolean => {
 
 export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn = fn): Receiver | undefined {
   const made = receiverMade(model, fn, record, of);
+  if (made === undefined || of !== fn) return made;
+  // GN-13pa: the instance values that the case names under with.
+  const named = withOf(model, fn, record);
   // GN-13p: the test keeps the receiver of a case whose function fixture calls on it.
-  return made !== undefined && of === fn && callsOnReceiver(record) ? { ...made, bound: true } : made;
+  return { ...made, ...(callsOnReceiver(record) ? { bound: true as const } : {}), ...(named === undefined ? {} : { with: named }) };
+}
+
+// GN-13pa: the values of with of a case of a method, {"<name>": <instance value>}, each an instance of the class that
+// the member of its new makes; undefined when the case has no with.
+function withOf(model: Model, fn: Fn, record: Record<string, unknown>): { name: string; receiver: Receiver }[] | undefined {
+  const given = record['with'];
+  if (given === undefined) return undefined;
+  const where = `the case ${String(record['id'])} of ${fn.member.id}`;
+  if (typeof given !== 'object' || given === null || Array.isArray(given)) throw new Unsupported(`${where}: with is {"<name>": <instance value>} (GN-13pa)`);
+  return Object.entries(given).map(([name, value]) => {
+    const id = (value as { new?: unknown } | null)?.new;
+    const factory = typeof id === 'string' ? memberById(model, id) : undefined;
+    const returns = factory?.returns;
+    const unitId = factory?.kind === 'constructor' ? factory.unit.id : typeof returns === 'object' && 'unit' in returns && returns.library === undefined ? returns.unit : '';
+    return { name, receiver: instanceOf(model, unitId, value, `${where}, with ${name}`) };
+  });
 }
 
 function receiverMade(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn): Receiver | undefined {
