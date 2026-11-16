@@ -69,9 +69,20 @@ pub struct Search<'a> {
     pub key: String,
 }
 
+/// A holding of a lookup that the core keeps: the record of a parameter with keeps whose callback field is optional with
+/// a default, the shape of the options of an engine whose constructor keeps its loader (B2.402).
+pub struct Holding<'a> {
+    /// The key.
+    pub key: String,
+    /// The lookup that holds the value, if any.
+    pub lookup: Option<Box<dyn Lookup + 'a>>,
+}
+
 thread_local! {
     /// The searches that `keep` kept beyond their calls.
     static KEPT: RefCell<Vec<Search<'static>>> = const { RefCell::new(Vec::new()) };
+    /// The holdings that `hold` kept, as its parameter with keeps allows.
+    static HELD: RefCell<Vec<Holding<'static>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The value of the key of the search, which its lookup must hold; the search is kept after the call.
@@ -88,4 +99,13 @@ pub fn keep(mut search: Search<'static>) -> Result<String, Failure<Error>> {
     };
     KEPT.with(|kept| kept.borrow_mut().push(search));
     value
+}
+
+/// The key of the holding; the holding is kept after the call, as its parameter with keeps states, so its binding
+/// compiles in every target (B2.402).
+#[must_use]
+pub fn hold(holding: Holding<'static>) -> String {
+    let key = holding.key.clone();
+    HELD.with(|held| held.borrow_mut().push(holding));
+    key
 }

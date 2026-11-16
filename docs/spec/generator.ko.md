@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 77bf9334795607388bc3e1b4f612b747a68634fb361c20118586ccbf09f999b5 -->
+<!-- source-sha256: b939dd43e6778c50f6f7b5195789adaba729b03a877d61700d2320b0acc7bb66 -->
 # 생성기
 
 [English](generator.md)
@@ -604,7 +604,7 @@
   (`polyspec_x::Options<'a>`). 계약은 `core_type`에 그 경로를 적고, 생성기는 그 타입을 적는 곳에 lifetime을 적는다. callback이
   모든 target에서 호출의 lifetime이다. callback이 호출의 환경에 사는 Node에서는 `'env`, Python, PHP, WASM, Go에서는
   `'call`이며, callback 호출의 struct(`Cb<Unit><'call>`)가 entry point의 지역 변수 `call_`을 빌리는 `PhantomData<&'call ()>`를
-  가지므로 컴파일러는 그것을 `'static`으로 읽을 수 없다(B2.402). 이유: `'static`이면 코어가 `keeps` 없는 parameter의
+  가지므로 컴파일러는 그것을 `'static`으로 읽을 수 없다(B2.402). 코어가 갖는 값, 즉 `keeps`를 가진 record parameter의 field와 그 기본값은 anchor가 없고 `'static`으로 남는다. crate는 자신이 부르는 anchor를 모두 정의하며, target이 kept wrapper로 변환하는 unit의 것도 그렇다. 이유: `'static`이면 코어가 `keeps` 없는 parameter의
   callback을 가졌다가 호출 뒤에 부를 수 있었다. Go는 그때 끝난 호출의 `cgo.Handle`로 그것을 실행했고, 이는 crash하거나
   다른 호출의 객체에 조용히 닿는다. 다른 target은 어떤 호출도 지키지 않는 언어 객체를 가졌다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
   record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출

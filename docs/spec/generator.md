@@ -747,7 +747,7 @@ the design ids are those of the binding design.
   where it names the type: the lifetime of the call in every target, `'env` in Node, whose callback lives in the
   environment of the call, and `'call` in Python, PHP, WASM and Go, where the struct of the call of a callback
   (`Cb<Unit><'call>`) holds a `PhantomData<&'call ()>` that borrows `call_`, a local of the entry point, so the
-  compiler cannot read it as `'static` (B2.402). Why: with `'static` a core could keep a callback of a parameter without
+  compiler cannot read it as `'static` (B2.402). A value that the core keeps, a field of a record parameter with `keeps` and its default too, has no anchor and stays `'static`; the crate defines each anchor that it calls, also of a unit that a target converts through its kept wrapper. Why: with `'static` a core could keep a callback of a parameter without
   `keeps` and call it after the call; Go then ran it through the `cgo.Handle` of a call that had ended, which crashes
   or silently reaches the objects of another call, and the other targets held a language object that no call
   guarded. Such a record is generated where the binding makes it from the arguments of the call, as a record

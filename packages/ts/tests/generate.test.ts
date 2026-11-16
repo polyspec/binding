@@ -11819,3 +11819,22 @@ test('B2.402: a lent record that holds a callback takes the lifetime of the call
   assert.ok(text(out, libs['go'] ?? '').includes('= in_search(call_, &mut input)?;'));
   assert.ok(text(out, 'packages/ts/generated/lib.rs').includes("polyspec_sample::Search<'env>"));
 });
+
+test('B2.402: a callback that only a kept record field with a default holds is kept, and every target defines each anchor of a lent callback that it calls (GN-6d)', () => {
+  // template: Engine.new(options) keeps engine_options, whose loader field is optional with a default; Python read the
+  // field with the model of a lent value and called lent_loader, which it never defined (E0425).
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/lent/${path}`, import.meta.url), 'utf8'));
+  // As in template, the callback unit enters through the kept record alone: the lent search and its keep are left out.
+  const contract = read('packages/rust/interface.json');
+  contract.units = contract.units.filter((u: any) => u.id !== 'search');
+  for (const u of contract.units) if (u.members !== undefined) u.members = u.members.filter((m: any) => m.id !== 'lent.keep');
+  contract.cases = contract.cases.filter((c: any) => c.member !== 'lent.keep');
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_lent', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs', 'packages/ts/generated/lib.rs']) {
+    const lib = text(out, path);
+    const called = new Set([...lib.matchAll(/\b(lent_\w+)\(call_,/g)].map((m) => m[1]));
+    for (const name of called) assert.ok(lib.includes(`\nfn ${name}<'call>(`), `${path}: ${name} is called and not defined`);
+    // The kept holding is 'static and its lookup is no lent callback; the lent search still takes the call.
+    assert.ok(!/let lookup: Option<Box<dyn polyspec_lent::Lookup \+ 'static>> = [^\n]*lent_lookup/.test(lib), `${path}: a kept lookup is anchored to the call`);
+  }
+});

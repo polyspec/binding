@@ -43,5 +43,26 @@
         "message": "no value for a"
       }
     }
+  ],
+  "hold": [
+    {
+      "id": "a_kept_holding_gives_its_key",
+      "holding": {
+        "lookup": {
+          "callback": {
+            "lookup.find": []
+          }
+        },
+        "key": "a"
+      },
+      "result": "a"
+    },
+    {
+      "id": "a_holding_without_a_lookup_gives_its_key",
+      "holding": {
+        "key": "b"
+      },
+      "result": "b"
+    }
   ]
 }
