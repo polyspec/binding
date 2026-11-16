@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5ed068d62e99fc92dee526edca1f16b6464c116d1936648cc1b8c0b7352e258a -->
+<!-- source-sha256: d0988e434acdc3a913930710d947dd34d5bbb87612060ac84a68853776cdcbad -->
 # 생성기
 
 [English](generator.md)
@@ -2380,7 +2380,10 @@
   값은 bytes를 만드는 row나 text를 만드는 row 중 하나에 맞고, text가 그 언어가 주는 것이다: 결과가 optional `php_value`인
   session-store `memory_store.get`이 Python에서 비교되지 않았다(시험 2개). Go 시험은 case의 결과에만 out row를 따랐다. 그래서
   `Set("a", []byte("y"))` 뒤 `after`의 `Get("a")`에서 `[]byte("y")`를 기대했는데, 그 호출은 문자열 "y"를 담은 `*any`를 준다.
-  function fixture의 step도 같은 방식으로 쓰였다(B2.420).
+  function fixture의 step도 같은 방식으로 쓰였다(B2.420). binding이 callback에 넘기는 값은 결과처럼 binding을 떠나므로,
+  모든 target에서 같은 방식으로 out row를 따른다: callback fixture나 function value의 row의 인자, 그리고 fixture가 기대하는
+  호출의 인자다. 이유: 이들은 호출의 인자처럼 쓰였다. 그래서 row가 UTF-8 bytes를 text로 만드는 alias의 인자는 bytes로
+  기대되었고, binding이 그 text로 한 호출은 어떤 row에도 맞지 않았다(B2.422).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

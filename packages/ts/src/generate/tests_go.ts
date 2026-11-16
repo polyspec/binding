@@ -602,6 +602,18 @@ const funcHead = (v: Values, type: FunctionType, name: (index: number) => string
 const keptReturn = (v: Values, returns: Type, err: string): string =>
   (returns === 'none' ? `return ${err}` : `var zero ${typeName(v, returns)}; return zero, ${err}`);
 
+// GN-13be: a value that the binding hands to a callback or to a func, in a row and in an expected call, leaves the
+// binding as a result does, so it takes the forms of the Go out rows of an alias.
+function handedValue(v: Values, b: Body, type: Type, json: unknown): string {
+  const outer = v.result === true;
+  v.result = true;
+  try {
+    return value(v, b, type, json);
+  } finally {
+    v.result = outer;
+  }
+}
+
 // GN-6z: the func of a function value of a case, {"function": [<row>]} (CK-22 has judged the form): a row is
 // {"args": {"0": ..., "1": ...}} by position, with "result" (absent for a return of none) and "once". The func answers
 // by a fixture of one member, the call itself, which records every call; a call that no row answers returns an error.
@@ -618,7 +630,7 @@ function keptFunctionValue(v: Values, b: Body, type: FunctionType, json: unknown
     const given = (row['args'] ?? {}) as Record<string, unknown>;
     const args = type.parameters.map((part, i) => {
       if (!(String(i) in given)) throw new Unsupported(`a row of a function value gives no argument ${String(i)} (G-5)`);
-      return typed(part, value(v, b, part, given[String(i)] ?? null));
+      return typed(part, handedValue(v, b, part, given[String(i)] ?? null));
     });
     const result = row['result'] === undefined || row['result'] === null || type.returns === 'none' ? 'nil' : typed(type.returns, value(v, b, type.returns, row['result']));
     return `{member: "call", args: []any{${args.join(', ')}}, result: ${result}, once: ${String(row['once'] === true)}}`;
@@ -1046,7 +1058,7 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
   // T-3: a callback unit of another repository names the types of its owner's contract.
   const named = fixtureType(v.model, fixture.unit);
   const memberName = (i: number): string => goString(langName('go', members[i]?.name ?? [], 'callable'));
-  const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(named(p.type), value(v, b, named(p.type), args[i] ?? null))).join(', ')}}`;
+  const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(named(p.type), handedValue(v, b, named(p.type), args[i] ?? null))).join(', ')}}`;
   const rows = fixture.rows.map((row) => {
     const given = members[row.member]?.returns;
     const returns = given === undefined ? 'none' : named(given);
@@ -1075,7 +1087,7 @@ function fixtureChecks(fixtures: { fixture: Fixture; name: string }[], v: Values
     const named = fixtureType(v.model, fixture.unit);
     const lines = [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}'];
     if (fixture.calls !== undefined) {
-      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(named(p.type), value(v, b, named(p.type), call.args[i] ?? null)))].join(', ')}}`);
+      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(named(p.type), handedValue(v, b, named(p.type), call.args[i] ?? null)))].join(', ')}}`);
       // reflect.DeepEqual tells a nil slice from an empty one, so no expected call is read as the length 0.
       if (calls.length === 0) lines.push(`if len(${name}.calls) != 0 {`, `\tt.Fatalf("G-5: the calls %v are not none", ${name}.calls)`, '}');
       else lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${name}.calls, want) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${name}.calls, want)`, '}');

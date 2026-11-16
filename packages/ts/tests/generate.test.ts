@@ -11592,6 +11592,60 @@ test('B2.420: a Go result of an alias in after takes the bytes that leave as a t
   assert.ok(body.includes('if want := (*any)(ptr[any]([]byte("\\xff"))); '), 'other bytes stay a []byte');
 });
 
+test('B2.422: a value that a binding hands to a callback takes the out rows of its alias in all five targets (GN-13be)', () => {
+  // The args of a callback row and of a row of a function value, and the expected calls of a fixture, leave the
+  // binding as a result does: UTF-8 bytes that the utf8 row makes a text are the text, other bytes stay bytes.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'bytes');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'text', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  const lookup = sample.units.find((u: any) => u.id === 'lookup');
+  sample.units.push({ ...lookup, id: 'keeper', name: ['keeper'], core: 'polyspec_sample::Keeper', members: [{ ...lookup.members[0], id: 'keeper.take', name: ['take'], parameters: [{ name: ['value'], type: { unit: 'data' }, required: true }], core: { path: 'polyspec_sample::Keeper::take', receiver: '&mut self' } }] });
+  const functions = sample.units.find((u: any) => u.id === 'sample');
+  functions.members.push(
+    { id: 'sample.handed', name: ['handed'], kind: 'function', visibility: 'public', parameters: [{ name: ['keeper'], type: { unit: 'keeper' }, required: true }], returns: 'text', raises: [], wait: 'none', core: 'polyspec_sample::handed' },
+    { id: 'sample.mapped', name: ['mapped'], kind: 'function', visibility: 'public', parameters: [{ name: ['convert'], type: { function: { parameters: [{ unit: 'data' }], returns: 'text', async_allowed: false } }, required: true }], returns: 'text', raises: [], wait: 'none', core: 'polyspec_sample::mapped' },
+  );
+  sample.cases.push({ member: 'sample.handed', file: 'contracts/cases.json', group: 'handed', result: 'text' }, { member: 'sample.mapped', file: 'contracts/cases.json', group: 'mapped', result: 'text' });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, any[]>;
+  const y = { kind: 'bytes', value: { hex: '79' } };
+  const ff = { kind: 'bytes', value: { hex: 'ff' } };
+  file['handed'] = [{
+    id: 'the_keeper_takes_the_values',
+    keeper: { callback: { 'keeper.take': [{ args: { value: y }, result: 'a' }, { args: { value: ff }, result: 'b' }] }, calls: [{ member: 'keeper.take', args: { value: y } }, { member: 'keeper.take', args: { value: ff } }] },
+    result: 'ab',
+  }];
+  file['mapped'] = [{ id: 'the_function_takes_the_values', convert: { function: [{ args: { 0: y }, result: 'a' }, { args: { 0: ff }, result: 'b' }] }, result: 'ab' }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go', 'python', 'node', 'wasm', 'php'] });
+  const body = (path: string, name: string, end: string): string => {
+    const all = text(out, path);
+    const at = all.indexOf(name);
+    assert.ok(at >= 0, `${path}: ${name}`);
+    return all.slice(at, all.indexOf(end, at));
+  };
+  // [path, the names of the two tests, the end of a test, the text "y", the bytes 79, the bytes ff]
+  const targets = [
+    ['packages/go/zz_generated_test.go', ['TheKeeperTakesTheValues(t', 'TheFunctionTakesTheValues(t'], '\n}\n', '"y"}', '[]byte("y")', '[]byte("\\xff")'],
+    ['packages/python/generated/tests/test_generated.py', ['the_keeper_takes_the_values(', 'the_function_takes_the_values('], '\n\n', '("y",)', 'bytes.fromhex("79")', 'bytes.fromhex("ff")'],
+    ['packages/ts/generated/tests/generated.test.mjs', ['the_keeper_takes_the_values\'', 'the_function_takes_the_values\''], '\n});', "['y']", "Buffer.from('79', 'hex')", "Buffer.from('ff', 'hex')"],
+    ['packages/ts/wasm/generated/tests/generated.test.mjs', ['the_keeper_takes_the_values\'', 'the_function_takes_the_values\''], '\n});', "['y']", "Buffer.from('79', 'hex')", "Buffer.from('ff', 'hex')"],
+    ['packages/php-ext/generated/tests/GeneratedTest.php', ['TheKeeperTakesTheValues(', 'TheFunctionTakesTheValues('], '\n    }\n', '["y"]', 'hex2bin("79")', 'hex2bin("ff")'],
+  ] as const;
+  for (const [path, names, end, textY, bytesY, bytesFf] of targets) {
+    // The keeper test gives "y" in its row and in its expected call, the function test in its row.
+    for (const [name, count] of [[names[0], 2], [names[1], 1]] as const) {
+      const found = body(path, name, end);
+      assert.equal(found.split(textY).length - 1, count, `${path}: utf8 bytes are a text: ${found}`);
+      assert.ok(!found.includes(bytesY), `${path}: utf8 bytes are no bytes: ${found}`);
+      assert.ok(found.includes(bytesFf), `${path}: other bytes stay bytes: ${found}`);
+    }
+  }
+});
+
 test('B2.379: a member of a callback interface with a default may be left out by the host object, which gets the default (U-3, GN-6d)', () => {
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   for (const [id, trait] of [['lookup', 'Lookup'], ['source', 'Source']] as const) {

@@ -2923,7 +2923,11 @@ the design ids are those of the binding design.
   language gives: session-store `memory_store.get`, whose result is an optional `php_value`, was not compared in
   Python (2 tests). The Go test took the out rows only for the result of the case, so after `Set("a", []byte("y"))`
   it expected `[]byte("y")` from `Get("a")` in `after`, which gives a `*any` that holds the string "y"; a step of a
-  function fixture was written the same way (B2.420).
+  function fixture was written the same way (B2.420). A value that the binding hands to a callback leaves the binding
+  as a result does, so it takes the out rows the same way in each target: an argument of a row of a callback fixture
+  or of a function value, and an argument of an expected call of a fixture. Why: these were written as an argument of
+  a call is, so an argument of an alias whose row makes UTF-8 bytes a text was expected as bytes, and the call that the
+  binding made with the text matched no row (B2.422).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
