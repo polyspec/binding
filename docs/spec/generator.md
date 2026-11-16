@@ -2922,7 +2922,13 @@ the design ids are those of the binding design.
   `errors.kinds` of the contract, which gives every kind its category (E-1), and a case that writes it keeps its own.
   Why: the contract check takes `{"kind": <kind>}` alone, and the tests named the class of the category of the case, so
   hyper `csrf.mask`, whose cases give the kind alone, made Node write `error.constructor === pkg. &&` 180 times, which
-  does not parse; Python, PHP, WASM and Go read the same empty category.
+  does not parse; Python, PHP, WASM and Go read the same empty category. A kind that the binding raises itself (E-1a:
+  `invalid_number`, `invalid_argument_type` and the others of `binding_core::BindingError`) is in no row of
+  `errors.kinds` and takes its fixed category of E-1a. A `raises` without `category` whose kind is neither of
+  `errors.kinds` nor of E-1a names no class; `binding check` refuses it (CK-22), and the generator refuses it by name
+  and never writes an empty class name. Why: the crud-ui list-render cases that expect `invalid_number` or
+  `invalid_argument_type` gave the kind alone, took no category from `errors.kinds`, and the Python test wrote
+  `self.assertRaises(pkg.) as caught`, which does not parse, at twelve places (B2.433).
 - **GN-13be** A result of a value alias that a test compares as a value (a step of a function fixture, a call of
   `after`, or a place of a type that holds the alias) takes the out row of each place that the value meets: the row of
   its kind whose predicate the value holds, or its row without a predicate. A byte string whose row makes a text, the

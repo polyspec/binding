@@ -2164,6 +2164,23 @@ test('B2.374: CK-22 requires the result null of a call of after of a member with
   assert.deepEqual(messages(1), ['the case a_new_ledger_has_one_key of ledger.size: after 0 calls ledger.note, which has no result, so its result is null (G-5, GN-6ae)']);
 });
 
+test('B2.433: CK-22 refuses the raises of a case without a category whose kind is of neither errors.kinds nor E-1a (GN-13bd)', () => {
+  // crud-ui list-render: {"raises": {"kind": "invalid_number"}} passed, and a kind of no row would name no class.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const messages = (raises: unknown): string[] => {
+    const cases = read('contracts/cases.json');
+    cases.resolve.find((c: any) => c.id === 'a_key_without_a_value_is_missing').raises = raises;
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => f.message).filter((m) => /GN-13bd/.test(m));
+  };
+  // A kind of E-1a and a kind of errors.kinds give their category; a written category names its class.
+  assert.deepEqual(messages({ kind: 'invalid_number' }), []);
+  assert.deepEqual(messages({ kind: 'invalid_argument_type' }), []);
+  assert.deepEqual(messages({ kind: 'missing' }), []);
+  assert.deepEqual(messages({ kind: 'no_such_kind', category: 'value' }), []);
+  assert.deepEqual(messages({ kind: 'no_such_kind' }), ['the case a_key_without_a_value_is_missing of sample.resolve raises the kind no_such_kind without a category, which is no kind of errors.kinds nor of E-1a, so its test names no class (CK-22, GN-13bd)']);
+});
+
 test('B2.376: CK-22 takes a case of any member with the same conversion and form of call as the case of a kind', () => {
   // orm: query.get_count and the other members of a Tx raise kinds whose conversion db.transaction already shows.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));

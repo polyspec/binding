@@ -4,10 +4,10 @@
 // U+00FF).
 
 import type { Lang, Name, Type } from '../contract.ts';
-import type { Contract, Member, Service, Unit } from '../contract.ts';
+import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -2249,11 +2249,15 @@ export function mapEntries(value: unknown): [string, unknown][] {
 }
 
 // B2.372 (K-1, E-1): the raises of a case with the category of its kind, which the case may leave out, since the
-// contract gives every kind its category (errors.kinds); a case that writes it keeps its own.
-export function withCategory<T extends { kind: string; category?: string }>(model: Model, raises: T): T & { category: string } {
+// contract gives every kind its category (errors.kinds); a case that writes it keeps its own. B2.433 (GN-13bd): a kind
+// that the binding raises itself takes its fixed category of E-1a, and a kind of neither names no class.
+export function withCategory<T extends { kind: string; category?: string }>(model: Model, raises: T, at: string): T & { category: string } {
   if (typeof raises.category === 'string') return raises as T & { category: string };
-  const kind = model.kinds.find((k) => kindText(k.variant) === raises.kind);
-  return { ...raises, category: kind?.category ?? '' };
+  // A row of this library whose class was refused, which the model leaves out, still gives its category.
+  const own = model.contract.errors.kinds.find((row) => row.library === undefined && kindsOf(row).includes(raises.kind))?.category;
+  const category = model.kinds.find((k) => kindText(k.variant) === raises.kind)?.category ?? own ?? (Object.keys(BINDING_KINDS) as Category[]).find((c) => BINDING_KINDS[c].includes(raises.kind));
+  if (category === undefined) throw new Unsupported(`${at} raises the kind ${raises.kind} without a category, which is no kind of errors.kinds nor of E-1a (GN-13bd)`);
+  return { ...raises, category };
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
@@ -2263,7 +2267,7 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const given = record['raises'] as RaisingCase['raises'] | 'callback' | undefined;
     // GN-6ae: a case that expects the exception of a function fixture is one of callbackCases.
     if (given === undefined || given === 'callback') continue;
-    const raises = withCategory(model, given);
+    const raises = withCategory(model, given, `the case ${String(record['id'])} of ${fn.member.id}`);
     const args = argsOf(fn, record);
     if (args === undefined) {
       const missing = fn.args.map((a) => caseName(a.name)).filter((name) => !(name in record));
@@ -2764,7 +2768,7 @@ export interface CaseTest {
   alias: ValueAlias;
   value: unknown;
   reason: string;
-  raises?: RaisingCase['raises'];
+  raises?: RaisingCase['raises'] | 'callback';
 }
 
 export function phpCaseTests(model: Model): CaseTest[] {
@@ -2774,8 +2778,9 @@ export function phpCaseTests(model: Model): CaseTest[] {
     // binding scaffold, which reads no contract of another library, finds them too.
     for (const record of (model.cases.get(fn.member.id) ?? []) as Record<string, unknown>[]) {
       const args = fn.special === undefined ? argsOf(fn, record) : undefined;
-      const given = record['raises'] as RaisingCase['raises'] | undefined;
-      const raises = given === undefined ? undefined : withCategory(model, given);
+      const given = record['raises'] as RaisingCase['raises'] | 'callback' | undefined;
+      // GN-6ae: raises "callback" names no kind, and the case still raises.
+      const raises = given === undefined || given === 'callback' ? given : withCategory(model, given, `the case ${String(record['id'])} of ${fn.member.id}`);
       if (args === undefined || (raises === undefined && record['faults'] !== undefined)) continue;
       const kase = { id: String(record['id']), args, ...(raises === undefined ? {} : { raises }) };
       for (const [arg, value] of kase.args) {

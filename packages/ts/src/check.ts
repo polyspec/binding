@@ -2477,6 +2477,14 @@ class Checker {
       if (raises !== 'callback') report(`raises ${JSON.stringify(raises)}, which is neither {"kind": <kind>, ...} nor "callback"`);
       else if (!(found.member.parameters ?? []).some((p) => this.raisesException(record[convert(p.name, 'python', 'variable')]))) report('raises "callback", and no function fixture of its arguments raises "exception"');
     }
+    // B2.433 (GN-13bd): a raises without a category takes the category of its kind from errors.kinds or E-1a, and a
+    // kind of neither leaves its test with no class to name.
+    if (typeof raises === 'object' && raises !== null && !Array.isArray(raises)) {
+      const { kind, category } = raises as Record<string, unknown>;
+      if (typeof kind === 'string' && category === undefined && !this.kindCategories().has(kind) && !(kind in BINDING_KINDS)) {
+        this.report('CK-22', `${path}/raises`, `the case ${String(record['id'])} of ${memberId} raises the kind ${kind} without a category, which is no kind of errors.kinds nor of E-1a, so its test names no class (CK-22, GN-13bd)`);
+      }
+    }
     const after = record['after'];
     if (after === undefined) return;
     const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
