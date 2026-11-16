@@ -2236,8 +2236,8 @@ export const numberTypes = (model: Model): (typeof NUMBER_TYPES)[number][] => {
 };
 
 // GN-13g: the conversion of each number type of the parameters, for a Go value of any type. The value of the Go type of
-// a number type passes the conversion that a parameter of that type uses; a value of another type is kind
-// invalid_number. Every path is written in full, so that no import is used only under the feature codec-test.
+// a number type passes the conversion that a parameter of that type uses; another Go number is kind invalid_number, and
+// a bool, a string or any other value is kind invalid_argument_type (GN-12a). Every path is written in full, so that no import is used only under the feature codec-test.
 function numberInRust(model: Model): string {
   const types = numberTypes(model);
   if (types.length === 0) return '';
@@ -2245,7 +2245,8 @@ function numberInRust(model: Model): string {
     const code = NUMBER_TYPES.indexOf(type);
     const own = { uint: '(0, 1, Some(word)) => safe_uint_in(&mut &word[..], &subject).map(drop),', int: '(1, 1, Some(word)) => safe_int_in(&mut &word[..], &subject).map(drop),', int64: '(2, 1, Some(_word)) => Ok(()),', float: '(3, 3, Some(_word)) => Ok(()),' }[type];
     const expected = { uint: 'Uint', int: 'Int', int64: 'Int', float: 'Float' }[type];
-    return `        ${own}\n        (${code}, _, _) => Err(invalid(binding_core::NumberType::${expected})),`;
+    const goType = { uint: 'uint64', int: 'int64', int64: 'int64', float: 'float64' }[type];
+    return `        ${own}\n        (${code}, 0 | 4 | 5, _) => Err(type_error(&subject, "${goType}")),\n        (${code}, _, _) => Err(invalid(binding_core::NumberType::${expected})),`;
   }).join('\n');
   return `
 /// GN-13g: a Go value of any type judged by the conversion of a number type of the contract (B-2). The encoding is the

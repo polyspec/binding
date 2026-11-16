@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 92758246b4211aa1ee812ba18e5eef42c85c5c8d8e4f7be978cc7f0f3bd5eda7 -->
+<!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -90,6 +90,7 @@
 - callback을 받는 member의 K-2 시험은 callback row가 결과를 주는 case를 callback이 raise하는 case보다 먼저 쓴다. core는 그 raise에 스스로 답할 수 있다. sample `tolerant`의 첫 case로는 모든 target에서 실패했다(GN-13y, B2.385).
 - Go 시험은 case value의 field를 case 파일의 키, 곧 계약의 snake_case 이름으로 읽는다. template `expr.Ternary`의 `else`처럼 Python 키워드인 field는 `else_`로 찾았으므로, 그 시험은 field가 없는 case value로 실패했다(GN-6bk, B2.386).
 - Go 시험은 함수의 error와 panic을 그 함수를 실행하는 호출에서만 요구한다. member가 저장만 하는 `keeps` parameter는 그 member에 그런 시험이 없다. 이전에는 거기서 `<nil> is not the error of the function`으로 실패했다(GN-6z, B2.387).
+- `int`, `uint`, `int64`, `float` 자리에서 언어의 숫자가 아닌 값(문자열, 값이 필요한 자리의 null, boolean, Python `bool`, Node와 WASM에서 `int`, `uint`, `float` 자리의 `bigint`)은 `bool`, bytes, path 자리처럼 모든 target에서 category `type`의 kind `invalid_argument_type`이다. 자기 타입의 규칙을 어긴 숫자(소수, NaN, 무한대, 정수 자리의 음의 0, 범위 밖의 값, Python과 PHP에서 정수 자리의 float나 `float` 자리의 정수)는 category `value`의 kind `invalid_number`로 남는다. json 저장소가 전한 대로 모든 target이 거부한 모든 값에 `invalid_number`를 냈으므로, 숫자에 text나 bool을 주는 case는 이제 `invalid_argument_type`을 기대한다(GN-12a, GN-13, GN-13d, GN-13g, B2.412).
 
 ## 0.0.13
 

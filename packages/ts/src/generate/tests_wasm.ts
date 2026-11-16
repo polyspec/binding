@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -10,11 +10,13 @@ import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NOD
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
+// B-2: the numbers that break the rule of each number type (kind invalid_number), and the values of another type than
+// the number that the place takes (kind invalid_argument_type, GN-12a), a null only where it is no absent value.
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '-1', '2 ** 53'],
-  int: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)'],
-  float: ['true', "'7'", 'null'],
+  uint: ['NaN', 'Infinity', '-Infinity', '1.5', '-1', '2 ** 53'],
+  int: ['NaN', 'Infinity', '-Infinity', '1.5', '2 ** 53', '-(2 ** 53)'],
 };
+const OTHER_TYPES: Record<string, string[]> = { uint: ['true', "'7'", '7n'], int: ['true', "'7'", '7n'], int64: ['true', "'7'"], float: ['true', "'7'", '7n'] };
 
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
@@ -222,8 +224,16 @@ test('GN-6z: ${name} refuses a ${langName('wasm', functionArg.name, 'variable')}
       const number = isNumber(arg.type);
       if (number !== undefined) {
         emit(`
+test('GN-12a: ${name} refuses a ${argName} of another type than ${number}', () => {
+  for (const bad of [${[...(OTHER_TYPES[number] ?? []), ...(numberRefusesNull(arg) ? ['null'] : [])].join(', ')}]) {
+    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type', String(bad));
+  }
+});`);
+      }
+      if (number !== undefined && BAD_NUMBERS[number] !== undefined) {
+        emit(`
 test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
-  for (const bad of [${(BAD_NUMBERS[number] ?? []).join(', ')}]) {
+  for (const bad of [${BAD_NUMBERS[number].join(', ')}]) {
     assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number', String(bad));
   }
 });`);

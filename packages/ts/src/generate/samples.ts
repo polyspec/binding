@@ -2372,6 +2372,10 @@ export const isNumber = (type: Type): string | undefined => {
   return typeof base === 'string' && ['uint', 'int', 'int64', 'float'].includes(base) ? base : undefined;
 };
 
+// GN-12a: whether a null at a number parameter is a value of another type, which the B-2 test gives: an optional takes
+// it as the absent value (GN-6i), and a parameter with a default as the argument left out (GN-10).
+export const numberRefusesNull = (arg: Arg): boolean => !(typeof arg.type === 'object' && 'optional' in arg.type) && arg.default === undefined;
+
 export const textKind = (type: Type): 'text' | 'latin1' | undefined => {
   let base = type;
   while (typeof base === 'object' && ('optional' in base || 'list' in base)) base = 'optional' in base ? base.optional : base.list;

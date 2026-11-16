@@ -489,7 +489,7 @@ test('Go: a Go value of another type at a number parameter reaches the conversio
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample___number_in\(/);
-  // The value of the Go type passes the range of GN-12a, any other is kind invalid_number of its type.
+  // The value of the Go type passes the range of GN-12a, another Go number is kind invalid_number of its type, and a bool, a string or any other value invalid_argument_type.
   assert.match(rust, /\(1, 1, Some\(word\)\) => safe_int_in\(&mut &word\[\.\.\], &subject\)\.map\(drop\),/);
   assert.match(rust, /\(3, 3, Some\(_word\)\) => Ok\(\(\)\),/);
   assert.match(rust, /\(1, _, _\) => Err\(invalid\(binding_core::NumberType::Int\)\),/);
@@ -500,7 +500,7 @@ test('Go: a Go value of another type at a number parameter reaches the conversio
   assert.doesNotMatch(codec, /func UintIn/);
   const tests = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
   assert.match(tests, /func TestB2IntInRefusesAValueOfAnotherType\(t \*testing\.T\) \{/);
-  assert.match(tests, /for _, value := range \[\]any\{true, "7", 1\.5, math\.NaN\(\), math\.Inf\(1\), math\.Inf\(-1\), int64\(9007199254740992\), int64\(-9007199254740992\)\}/);
+  assert.match(tests, /for _, value := range \[\]any\{1\.5, math\.NaN\(\), math\.Inf\(1\), math\.Inf\(-1\), int64\(9007199254740992\), int64\(-9007199254740992\)\}/);
   assert.match(tests, /func TestB2FloatInRefusesAValueOfAnotherType/);
   assert.match(tests, /for _, value := range \[\]any\{1\.5, math\.NaN\(\), math\.Inf\(1\)\}/);
 });
@@ -11837,4 +11837,60 @@ test('B2.402: a callback that only a kept record field with a default holds is k
     // The kept holding is 'static and its lookup is no lent callback; the lent search still takes the call.
     assert.ok(!/let lookup: Option<Box<dyn polyspec_lent::Lookup \+ 'static>> = [^\n]*lent_lookup/.test(lib), `${path}: a kept lookup is anchored to the call`);
   }
+});
+
+test('B2.412: a value of another type at a number place is kind invalid_argument_type, and a number that breaks its type is invalid_number, in every target (GN-12a, GN-13, GN-13g)', () => {
+  const { contract } = load();
+  const fn = contract.units[0].members[0];
+  fn.parameters = [{ name: ['code'], type: 'int' }, { name: ['scale'], type: 'float' }, { name: ['big'], type: 'int64' }, { name: ['count'], type: 'uint' }];
+  fn.returns = 'text';
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  // The conversions: another language type is type_error, a number that breaks its type is InvalidNumber.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(rustFn(lib, 'safe_integer'), /type_error\(subject, "number"\)/, `${path}: a value that is no number at an integer place`);
+    assert.match(rustFn(lib, 'safe_integer'), /InvalidNumber/, `${path}: a number that is no safe integer`);
+    assert.match(rustFn(lib, 'float_in'), /type_error\(subject, "number"\)/, `${path}: a value that is no number at a float place`);
+    assert.doesNotMatch(rustFn(lib, 'float_in'), /InvalidNumber/, `${path}: every number is a float`);
+    assert.match(rustFn(lib, 'int64_in'), /type_error\(subject, "number or bigint"\)/, `${path}: a value that is neither at an int64 place`);
+  }
+  for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    for (const name of ['int_in', 'uint_in', 'int64_in']) {
+      assert.match(rustFn(lib, name), /type_error\((?:value, )?subject, "int"\)/, `${path}: ${name} refuses another type`);
+      assert.match(rustFn(lib, name), /InvalidNumber/, `${path}: ${name} refuses a float or a number outside the range`);
+    }
+    assert.match(rustFn(lib, 'float_in'), /type_error\((?:value, )?subject, "float"\)/, `${path}: float_in refuses another type`);
+    assert.match(rustFn(lib, 'float_in'), /InvalidNumber/, `${path}: float_in refuses an integer`);
+  }
+  assert.match(rustFn(text(out, 'packages/python/generated/lib.rs'), 'is_number'), /!value\.is_instance_of::<PyBool>\(\)/, 'Python: a bool is no number');
+  // The generated tests: true, "7" and null of another type, the numbers of B-2 apart.
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const test = text(out, path);
+    assert.match(test, /refuses a code of another type than int', \(\) => \{\n {2}for \(const bad of \[true, '7', 7n, null\]\) \{\n[^\n]*error\.kind === 'invalid_argument_type'/, path);
+    assert.match(test, /refuses a code that is not int', \(\) => \{\n {2}for \(const bad of \[NaN, Infinity, -Infinity, 1\.5, 2 \*\* 53, -\(2 \*\* 53\)\]\) \{\n[^\n]*error\.kind === 'invalid_number'/, path);
+    assert.match(test, /refuses a scale of another type than float', \(\) => \{\n {2}for \(const bad of \[true, '7', 7n, null\]\)/, path);
+    assert.doesNotMatch(test, /refuses a scale that is not float/, `${path}: every number is a float`);
+  }
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /_code_refuses_another_type_than_int\(self\) -> None:\n\s+for bad in \[True, "7", None\]:\n(?:[^\n]*\n){4}\s+self\.assertEqual\(caught\.exception\.kind, "invalid_argument_type"\)/);
+  assert.match(python, /_code_refuses_what_is_not_int\(self\) -> None:\n\s+for bad in \[float\("nan"\), float\("inf"\), 1\.5, 2\*\*53, -\(2\*\*53\), 2\*\*63\]:/);
+  assert.match(python, /_scale_refuses_what_is_not_float\(self\) -> None:\n\s+for bad in \[1\]:/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /codeRefusesAnotherTypeThanint\(\): void\n\s+\{\n\s+foreach \(\[true, '7', null\] as \$bad\) \{(?:\n[^\n]*){5}\n\s+self::assertSame\('invalid_argument_type', \$error->kind\(\)\);/);
+  assert.match(php, /codeRefusesWhatIsNotint\(\): void\n\s+\{\n\s+foreach \(\[NAN, INF, -INF, 1\.5, 2 \*\* 53, -\(2 \*\* 53\)\] as \$bad\)/);
+  assert.match(php, /scaleRefusesWhatIsNotfloat\(\): void\n\s+\{\n\s+foreach \(\[1\] as \$bad\)/);
+  // Go: only the codec-test function takes a value of another Go type.
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'number_in');
+  assert.match(ffi, /\(1, 0 \| 4 \| 5, _\) => Err\(type_error\(&subject, "int64"\)\),/);
+  assert.match(ffi, /\(3, 0 \| 4 \| 5, _\) => Err\(type_error\(&subject, "float64"\)\),/);
+  assert.match(ffi, /\(1, _, _\) => Err\(invalid\(binding_core::NumberType::Int\)\),/);
+  const codec = text(go, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(codec, /func TestB2IntInRefusesAValueOfAnotherType\(t \*testing\.T\) \{\n\tfor _, value := range \[\]any\{true, "7"\} \{\n(?:\t[^\n]*\n){1}\t\tif failure, ok := err\.\(\*\w+\); !ok \|\| failure\.Kind\(\) != "invalid_argument_type"/);
+  assert.match(codec, /func TestB2IntInRefusesANumberOutsideItsType\(t \*testing\.T\) \{\n\tfor _, value := range \[\]any\{1\.5, math\.NaN\(\)/);
 });

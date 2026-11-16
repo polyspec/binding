@@ -1508,8 +1508,25 @@ the design ids are those of the binding design.
   where Node and WASM gave `invalid_argument_type` before; a key of a kind that the contract does not list stays kind
   `invalid_argument_type` (T-2). Why: a refused number has the kind of B-2 at every place, so the same key gives the
   same kind in every target.
+  The kind of a refused value at an `int`, `uint`, `int64` or `float` place, in every target, follows one rule, as at
+  every primitive place: a value that is no number of the language type that the place takes is kind
+  `invalid_argument_type` (category `type`), as a value of another type at a `bool`, bytes or path place is, and a
+  number that breaks the rule of its type (a fraction, NaN, an infinity, a negative zero at an integer place, a value
+  outside the range) is kind `invalid_number` (B-2). The number types of the languages are a `number` in Node and WASM,
+  and for `int64` a `bigint` too; an `int` or a `float` in Python, where a `bool` is no number although it is a
+  subclass of `int`; an `int` or a `float` in PHP. So a string, a null or an undefined where a value is required, a
+  boolean, an object, and in Node and WASM a `bigint` at an `int`, `uint` or `float` place are kind
+  `invalid_argument_type`, while a Python or PHP float at an integer place, and a Python or PHP integer at a `float`
+  place, are numbers and stay kind `invalid_number`. A null at an optional number place is the absent value (GN-6i), no refusal.
+  Go: a parameter, a field, an item and an optional of a number type hold only values of its Go type, so no value of
+  another type reaches the binding through a call; nil at an optional is the absent value, and a value of another
+  type reaches the conversion only through `<Type>In` of GN-13g. Why: the core states `invalid_number` as a number
+  that breaks the number rule of its contract type (B-2), and every target gave it for any refused value, also for a
+  value of another type, which the other primitive places refuse as kind `invalid_argument_type`; the json
+  repository reported the difference (T3.25-1).
   Node and WASM: an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
-  integers, and anything else is kind `invalid_number` (B-2); an `int64` result is a `bigint`, so that the whole range
+  integers; a `bigint` outside that range or a number that is no safe integer is kind `invalid_number` (B-2), and
+  any other value is kind `invalid_argument_type`; an `int64` result is a `bigint`, so that the whole range
   of i64 leaves, as the declarations say (`number | bigint` in, `bigint` out). A case file gives an integer outside
   the safe integers as its JSON token, which `binding` reads as a `bigint` and every test writes by its decimal
   token, a Node test as a `bigint` literal (G-5). An argument of the type `int` or `uint` outside the safe integers,
@@ -2420,8 +2437,9 @@ the design ids are those of the binding design.
 ## Generated tests (G-5)
 
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
-  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 for uint and int and −2^53 for int, GN-12a) as kind
-  `invalid_number` of the value class, and for every `keyed_map` parameter whose contract lists `int` keys the key
+  of G-5 (NaN, the infinities, 1.5, -1 for uint, 2^53 for uint and int and −2^53 for int, GN-12a, and an integer for
+  float in Python and PHP) as kind `invalid_number` of the value class, and true, "7" and, where the place takes no
+  absent value, null as kind `invalid_argument_type` of the type class (GN-12a), and for every `keyed_map` parameter whose contract lists `int` keys the key
   2^53 as kind `invalid_number` (GN-12a);
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
   `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
@@ -2620,9 +2638,10 @@ the design ids are those of the binding design.
   A case value of another JSON kind than the type of its place, which a case of B-4 gives for the binding to refuse
   (a text or a bool for a number, a number or a bool for a text, a number or a text for a bool), is written as the
   value of its JSON kind and never converted to the type (B2.306). A value that is no number at a place of a number type (`int`,
-  `int64`, `uint`, `float`), a text or a bool included, is kind `invalid_number` of B-2 in every target, as a fraction
-  or a negative number for a `uint` is, so a case that gives one expects `invalid_number` (B2.347). Why: the number
-  conversion of every target refuses every value that is no number of its type with the one kind of B-2.
+  `int64`, `uint`, `float`), a text or a bool included, is kind `invalid_argument_type` in every target, and a fraction
+  or a negative number for a `uint` is kind `invalid_number` of B-2 (GN-12a), so a case that gives a text or a bool
+  there expects `invalid_argument_type`. Why: B-2 states `invalid_number` for a number that breaks the rule of its
+  type, and a value of another type has the kind of every other primitive place (T3.25-1).
 
 - **GN-13e** Every target runs each contract case of a member that does not raise, has no `faults` and is no hook
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
@@ -2813,8 +2832,9 @@ the design ids are those of the binding design.
   error` of `internal/binding` (`UintIn`, `IntIn`, `Int64In`, `FloatIn`) over the entry point `<prefix>__number_in`.
   The function encodes the Go value as a host value: a bool, a Go integer in the range of int64, a Go integer above
   it, a Go float, a Go string, or any other value. The entry point judges it by the conversion of that number type
-  of the binding: a value of the Go type of the number type passes the range of GN-12a, and a value of another type
-  is kind `invalid_number` of B-2 with the subject. So the error is the one that a call with that argument gives in
+  of the binding: a value of the Go type of the number type passes the range of GN-12a, another Go number (an
+  integer at a `float`, a float at an integer type, an integer above the range of i64) is kind `invalid_number` of
+  B-2, and a bool, a string or any other value is kind `invalid_argument_type` (GN-12a), each with the subject. So the error is the one that a call with that argument gives in
   the other targets. `zz_generated_codec_test.go` checks the B-2 values of GN-13 for each such type, and a value of
   the type (7, or 1.5 and NaN for a float) passes. A test of another repository that has a host value of another type
   for a number parameter, such as a legacy case with an input type, passes it through this function, because the Go

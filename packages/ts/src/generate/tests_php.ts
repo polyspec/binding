@@ -6,16 +6,18 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', '2 ** 53', 'null'],
-  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)', 'null'],
-  float: ['true', "'7'", '1', 'null'],
+  uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
+  int: ['NAN', 'INF', '-INF', '1.5', '2 ** 53', '-(2 ** 53)'],
+  float: ['1'],
 };
+// GN-12a: the values of another type than a number, kind invalid_argument_type; a null only where it is no absent value.
+const OTHER_TYPES = ['true', "'7'"];
 
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
 
@@ -562,8 +564,23 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const argName = langName('php', arg.name, 'variable');
       const number = isNumber(arg.type);
       if (number !== undefined) {
-        // U-2: null is an argument with a default that was left out (GN-10), so it is no bad number of one.
-        const bad = (BAD_NUMBERS[number] ?? []).filter((b) => !(b === 'null' && ((typeof arg.type === 'object' && 'optional' in arg.type) || arg.default !== undefined)));
+        // U-2: null is an argument with a default that was left out (GN-10), so it is no value of another type there.
+        append(`
+    public function testB2${name}${argName}RefusesAnotherTypeThan${number}(): void
+    {
+        foreach ([${[...OTHER_TYPES, ...(numberRefusesNull(arg) ? ['null'] : [])].join(', ')}] as $bad) {
+            try {
+                ${call(new Map([[arg, '$bad']]))};
+                self::fail('no error for ' . var_export($bad, true));
+            } catch (${cls('type')} $error) {
+                self::assertSame(${cls('type')}::class, $error::class);
+                self::assertSame('invalid_argument_type', $error->kind());
+            }
+        }
+    }`);
+      }
+      const bad = number === undefined ? undefined : BAD_NUMBERS[number];
+      if (bad !== undefined) {
         append(`
     public function testB2${name}${argName}RefusesWhatIsNot${number}(): void
     {
