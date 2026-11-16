@@ -678,7 +678,7 @@ function entryRust(model: Model, fn: Fn): string {
     // GN-6d (B2.402): a value that the core keeps is 'static; any other lasts for the call.
     const kept = arg.field ? fn.record?.param.keeps === true : fn.params.some((p) => p.keeps === true && p.name.join('_') === arg.name.join('_'));
     const typed = kept ? { ...model, callbackLife: "'static" } : model;
-    const converted = arg.default === undefined ? (arg.field || keptDirect ? boxed(typed, arg.type, convertIn(typed, arg.type, variable, subject)) : convertIn(typed, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
+    const converted = arg.default === undefined ? (arg.field || keptDirect ? boxed(typed, arg.type, convertIn(typed, arg.type, variable, subject)) : convertIn(typed, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(typed, arg.type, 'value', subject))})`);
     lines.push(held === undefined
       ? `        let ${variable}: ${keptDirect ? rustType(typed, arg.type, true) : argType(typed, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py_, ${variable}, ${subject})?;`);

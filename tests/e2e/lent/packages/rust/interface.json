@@ -186,6 +186,30 @@
           ],
           "wait": "none",
           "core": "polyspec_lent::keep"
+        },
+        {
+          "id": "lent.hold",
+          "name": [
+            "hold"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "holding"
+              ],
+              "type": {
+                "unit": "holding"
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_lent::hold"
         }
       ]
     },
@@ -217,6 +241,40 @@
           "required": true
         }
       ]
+    },
+    {
+      "id": "holding",
+      "name": [
+        "holding"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_lent::Holding",
+      "fields": [
+        {
+          "name": [
+            "key"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "lookup"
+          ],
+          "type": {
+            "optional": {
+              "unit": "lookup"
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "GN-6d"
+        }
+      ]
     }
   ],
   "changes": [],
@@ -225,6 +283,11 @@
       "member": "lent.keep",
       "file": "contracts/cases.json",
       "group": "keep"
+    },
+    {
+      "member": "lent.hold",
+      "file": "contracts/cases.json",
+      "group": "hold"
     }
   ]
 }

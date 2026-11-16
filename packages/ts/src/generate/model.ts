@@ -2638,7 +2638,8 @@ export const CALL_LIFE = "'_";
 // of the local scope_ of the entry point.
 export function lentRust(model: Model, lib: string): string {
   if (model.callbackLife !== CALL_LIFE) return '';
-  return lentCallbacks(model).filter((cb) => lib.includes(`${lentFn(cb.unit, cb.library)}(call_,`)).map((cb) => {
+  // Each anchor that the crate calls is defined, also of a unit that a target converts through its kept wrapper.
+  return takenCallbacks(model).filter((cb) => lib.includes(`${lentFn(cb.unit, cb.library)}(call_,`)).map((cb) => {
     const type: Type = { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) };
     const boxType = (life: string): string => rustType({ ...model, callbackLife: life, keptCallbacks: false, keptUnits: new Set<string>() }, type, true);
     return `
