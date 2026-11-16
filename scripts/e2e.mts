@@ -109,7 +109,7 @@ const { componentBase, isHost, namedLibraries, place } = await import('../packag
 const { GO_PLATFORMS, goLinkFile } = await import('../packages/ts/src/generate/go.ts');
 // GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
 // module are those of `binding release-go-module`.
-const { consumerFiles, debugSections, goLinkDirective, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
+const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -1035,7 +1035,10 @@ if (targets.includes('go')) {
         for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
-        const carry = (built: string, carriedPlatform: string, libs: string): void => {
+        // GN-15k: a library of native-static-libs that the Rust toolchain ships in the self-contained directory of the
+        // target is carried beside the static library, as release-go-static copies it (libunwind.a of musl).
+        const carry = (built: string, carriedPlatform: string, libs: string, triple: string): void => {
+          for (const file of carriedLibraries(libs)) copyFileSync(join(selfContained(rustcPrint('sysroot'), triple), file), join(moduleDir, 'internal/ffi/lib', carriedPlatform, file));
           const linkPath = join(moduleDir, `internal/binding/zz_generated_link_${goLinkFile(carriedPlatform)}.go`);
           const directive = goLinkDirective(carriedPlatform);
           const linkText = readFileSync(linkPath, 'utf8');
@@ -1049,11 +1052,11 @@ if (targets.includes('go')) {
           if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform} holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
           process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform}: ${String(size)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
         };
-        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform, hostLibs);
+        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform, hostLibs, rustcPrint('host-tuple'));
         // On Linux the library of musl of the arch of the run, which make go-musl-check links on musl.
         if (muslTriple !== undefined) {
           const triple = `${muslTriple}-unknown-linux-musl`;
-          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`, releaseBuild(triple));
+          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`, releaseBuild(triple), triple);
         }
         // The packages that a consumer can import: the directories of the module with a Go file that is no test,
         // outside internal.

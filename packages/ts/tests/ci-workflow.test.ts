@@ -222,6 +222,23 @@ test('B2.278: make ci-e2e installs every tool, stops at a failed install, runs g
   assert.deepEqual(usage.calls, []);
 });
 
+test('B2.417: make ci-e2e runs no go-musl-check for a refusal fixture, whose run makes no released form, and still fails its failed e2e (GN-14k, GN-14g)', (t) => {
+  const { run, temp } = recipes(t);
+  const fixture = join(temp, '..', 'tests/e2e/lent');
+  mkdirSync(fixture, { recursive: true });
+  writeFileSync(join(fixture, 'refused.json'), '{}\n');
+  const goals = (calls: Call[]): string[] => calls.map((c) => c.goal);
+
+  const passed = run('ci-e2e', ['REPO=tests/e2e/lent']);
+  assert.equal(passed.status, 0, passed.output);
+  assert.deepEqual(goals(passed.calls), ['install-tools', 'e2e'], passed.output);
+  assert.match(passed.output, /ci-e2e: tests\/e2e\/lent is a refusal fixture \(refused\.json\), whose run makes no released form of a Go module, so go-musl-check does not run \(GN-14k\)/);
+
+  const failed = run('ci-e2e', ['REPO=tests/e2e/lent'], ['e2e']);
+  assert.notEqual(failed.status, 0, 'make ci-e2e passes after a failed e2e of a refusal fixture');
+  assert.deepEqual(goals(failed.calls), ['install-tools', 'e2e']);
+});
+
 test('B2.278: make ci-e2e-amd64 is make ci-e2e of tests/e2e/sample (GN-14g)', (t) => {
   const { run } = recipes(t);
   const ran = run('ci-e2e-amd64', []);

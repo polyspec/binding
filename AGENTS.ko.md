@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 4ec5da0dc790a2b2eae632026e3486dfeb00605cc015507ebee503a64c655b10 -->
+<!-- source-sha256: 4dce39be61d180b4debcde32c1952a3141a95d6c5c23d10315a37a20736a1652 -->
 # 개발
 
 [English](AGENTS.md)
@@ -65,7 +65,7 @@
   고정하며, `timeout-minutes`를 두지 않는다. `.github/actions/bootstrap`은
   모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
   하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. `make ci-e2e`는 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
-  자기 work 디렉터리에서 `make e2e`를 실행한 뒤 확인이 통과하면 그것으로 `make go-musl-check`를 실행하며, job은 기록
+  자기 work 디렉터리에서 `make e2e`를 실행한 뒤 확인이 통과하고 레포가 release 형태를 만들지 않는 refusal fixture(GN-14k)가 아니면 그것으로 `make go-musl-check`를 실행하며, job은 기록
   `var/report/e2e/`를 upload한다. job `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다(`make ci-e2e-amd64`). 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
   없는 레포에 의존하는 `tests/e2e`의 계약은 그 계약의 추적되는 파일이 그 레포의 release tag를 적을 때까지 항목이 없고,
   `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적는다(GN-14g). 다른 레포의

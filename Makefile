@@ -200,7 +200,9 @@ ci-check: ## Run the check job of ci.yml: NAME=<entry> TARGETS="<target>..." [TO
 
 # ci-e2e installs every tool, then runs make e2e of REPO with DEPS in a work directory of its own under the temporary
 # directory of the system, outside the checkout, and make go-musl-check on that directory only after make e2e passed,
-# because it reads what the run of make e2e wrote there (GN-14f, GN-15g). It removes the work directory at its end, at
+# because it reads what the run of make e2e wrote there (GN-14f, GN-15g). A refusal fixture, a REPO with refused.json,
+# runs no go-musl-check: its run ends at the refusal of the compiler and makes no released form of a Go module (GN-14k,
+# GN-14g). It removes the work directory at its end, at
 # its failure and on SIGINT and SIGTERM, after the command that uses it has ended (HR-87). The record of make e2e is in
 # var/report/e2e. The directory is named by its real path, as scripts/e2e-work.mts names one.
 ci-e2e: ## Run the e2e job of ci.yml: REPO=<repository of tests/e2e> [DEPS="<repository>..."]
@@ -209,8 +211,10 @@ ci-e2e: ## Run the e2e job of ci.yml: REPO=<repository of tests/e2e> [DEPS="<rep
 	@work="$$(cd "$$(mktemp -d "$${TMPDIR:-/tmp}/binding-ci-e2e.XXXXXX")" && pwd -P)" || exit 1; \
 	trap 'rm -rf "$$work"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	echo "ci-e2e: work directory $$work"; \
-	$(MAKE) --no-print-directory e2e REPO=$(REPO) DEPS="$(DEPS)" WORK="$$work" && \
-	$(MAKE) --no-print-directory go-musl-check WORK="$$work"
+	$(MAKE) --no-print-directory e2e REPO=$(REPO) DEPS="$(DEPS)" WORK="$$work" || exit $$?; \
+	if [ -f "$(REPO)/refused.json" ]; then \
+	echo "ci-e2e: $(REPO) is a refusal fixture (refused.json), whose run makes no released form of a Go module, so go-musl-check does not run (GN-14k)"; \
+	else $(MAKE) --no-print-directory go-musl-check WORK="$$work"; fi
 
 # GN-14g, GN-15g: the job e2e-amd64 runs the job e2e of the sample on linux/amd64.
 ci-e2e-amd64: ## Run the e2e-amd64 job of ci.yml: the e2e job of tests/e2e/sample

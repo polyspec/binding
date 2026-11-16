@@ -72,7 +72,7 @@ rules of this repository.
   the bootstrap of every job. The job `e2e` runs the end-to-end check of each repository of `tests/e2e`, one entry of its
   matrix per repository with the repositories that its core depends on (`DEPS`): `make ci-e2e` installs every tool with
   `make install-tools`, runs `make e2e` in a work directory of its own outside the checkout, then runs `make go-musl-check` on it
-  when the check passed, and the job uploads
+  when the check passed and the repository is no refusal fixture (GN-14k), whose run makes no released form, and the job uploads
   the record `var/report/e2e/`; the job `e2e-amd64` does the same for `tests/e2e/sample` on linux/amd64 (`make ci-e2e-amd64`); an entry
   whose run fails stays in the matrix. A contract of `tests/e2e` whose core depends on a repository that is not in
   `tests/e2e` has no entry until a tracked file of the contract names a release tag of that repository, and
