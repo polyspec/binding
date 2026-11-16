@@ -13,6 +13,7 @@
 - The trait of a callback unit of another library fails with the core error of its owner, the struct that `errors.code` names; it took the code enum of the kinds, which the core of the owner does not declare (GN-6bl, B2.345).
 - A Python function of the module that makes a receiver takes the test case as `self` when a step calls a helper of it, such as `self._case_path`; the step raised NameError (GN-13s, B2.346).
 - The generator spec states that a value that is no number at a place of a number type, a text or a bool included, is kind `invalid_number` of B-2 in every target, as the conversions already refuse it (GN-13d, B2.347).
+- The Python and PHP tests close each instance with a cleanup member that a case made at the end of the test, apart from the case; the instance was dropped and its destructor warned (GN-13u, B2.348).
 
 ## 0.0.12
 

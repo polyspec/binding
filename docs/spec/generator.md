@@ -2696,6 +2696,12 @@ the design ids are those of the binding design.
   parameter `self`, and its call passes `self`, when one of its steps calls a helper of the test case, such as
   `self._case_path` for a `path` argument or `self._future`. Why: a function of the module has no `self` of its own,
   so the step raised NameError before the case ran.
+- **GN-13u** A Python or PHP test closes each instance that it made for a case (GN-13f) whose class has a cleanup
+  member (B-10) at the end of the test, apart from the assertions of the case: Python by `self.addCleanup`, PHP by a
+  method with the attribute `After`. The call of the cleanup member gives no result and no failure to the test, and
+  an instance that the case already closed is closed again without effect. Why: an instance dropped without its
+  cleanup call warns by B-10 (ResourceWarning, E_WARNING), which is a defect of the test and not of the binding, and a
+  warning that a test suppressed would hide the same warning of a real defect.
 
 
 ## End-to-end check

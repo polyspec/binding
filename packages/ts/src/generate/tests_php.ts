@@ -92,6 +92,24 @@ const PHP_CASE_PATH = `
     }
 `;
 
+// GN-13u: the instances that a test made, closed by their cleanup member after the test; the result is not judged.
+const PHP_CLOSED = `
+
+    /** @var list<array{object, string}> */
+    private static array $made = [];
+
+    #[\\PHPUnit\\Framework\\Attributes\\After]
+    public function closeMade(): void
+    {
+        foreach (self::$made as [$made, $cleanup]) {
+            try {
+                $made->$cleanup();
+            } catch (\\Throwable) {
+            }
+        }
+        self::$made = [];
+    }`;
+
 // GN-13l: quote a valid Unicode path as one complete JSON string token.
 const PHP_CASE_TEXT_PATH = `
     private static function caseJsonString(string $value): string
@@ -293,6 +311,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     arm: (local, member, faults) => `$${local} = \\${layout.namespace}\\Internal\\armFaults(${phpText(member)}, ${phpText(faults)});`,
     left: (local, what) => `self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($${local}), ${phpText(`G-5: ${what}`)});`,
     state: (service, state, step, scope, value) => phpState(service, state, step, scope, value),
+    closing: (name, cleanup) => {
+      usesClosed = true;
+      return `self::$made[] = [${name}, ${phpText(langName('php', cleanup.member.name, 'callable'))}];`;
+    },
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -323,6 +345,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;
   };
   let usesOutcome = false;
+  let usesClosed = false;
   let usesSame = false;
   let usesTokens = false;
   // GN-6ae: the function of a function fixture: each step calls a method on one of its arguments, and a step that
@@ -1003,7 +1026,7 @@ ${renderedMethods.join('\n')}${usesTokens ? PHP_TOKENS : ''}${usesSame ? `
             return [$value::class, self::same(\\get_object_vars($value))];
         }
         return $value;
-    }${phpRead}` : ''}${usesOutcome ? `
+    }${phpRead}` : ''}${usesClosed ? PHP_CLOSED : ''}${usesOutcome ? `
 
     /**
      * G-5: what a call gives: its result, or the class and the kind of its failure, as the text that states the types.

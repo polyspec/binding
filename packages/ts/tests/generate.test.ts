@@ -10690,3 +10690,15 @@ test('a Python helper that makes a receiver takes the test case when a step call
     assert.match(python, new RegExp(`${name}\\(self\\b`), name);
   }
 });
+
+test('the Python and PHP tests close an instance with a cleanup member that a case made, apart from the case (GN-13u, B2.348)', () => {
+  // A lease made by tag.lease for lease.holder was dropped without release, and its destructor warned (B-10).
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'php'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /made1 = made0\.lease\(\)\n\s+self\.addCleanup\(_closed, made1, "release"\)/);
+  assert.match(python, /\ndef _closed\(made, cleanup\):\n    try:\n        getattr\(made, cleanup\)\(\)\n    except Exception:/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\$made1 = \$made0->lease\(\);\s+self::\$made\[\] = \[\$made1, "release"\];/);
+  assert.match(php, /#\[\\PHPUnit\\Framework\\Attributes\\After\]\n    public function closeMade\(\): void\n/);
+});

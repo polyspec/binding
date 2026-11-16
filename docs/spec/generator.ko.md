@@ -2193,6 +2193,11 @@
 - **GN-13s** receiver를 만드는 Python 모듈 함수(GN-13f)는, 그 단계 중 하나가 시험 case의 helper(`path` 인자의
   `self._case_path`나 `self._future`)를 부르면 시험 case를 첫 parameter `self`로 받고, 그 호출은 `self`를 넘긴다.
   이유: 모듈 함수에는 자신의 `self`가 없으므로, 그 단계가 case가 돌기 전에 NameError를 냈다.
+- **GN-13u** Python이나 PHP 시험은 case를 위해 만든 instance(GN-13f) 중 class에 cleanup member(B-10)가 있는 것을
+  시험 끝에 case의 assertion과 따로 닫는다: Python은 `self.addCleanup`으로, PHP는 attribute `After`가 붙은 method로
+  닫는다. cleanup member의 호출은 시험에 결과도 실패도 주지 않고, case가 이미 닫은 instance는 효과 없이 다시 닫힌다.
+  이유: cleanup 호출 없이 버린 instance는 B-10에 따라 경고하는데(ResourceWarning, E_WARNING), 이는 binding이 아니라
+  시험의 결함이며, 시험이 억제한 경고는 실제 결함의 같은 경고도 숨긴다.
 
 
 ## 끝에서 끝까지 확인

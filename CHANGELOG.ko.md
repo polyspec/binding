@@ -14,6 +14,7 @@
 - 다른 library의 callback unit의 trait은 소유자의 코어 오류, 즉 `errors.code`가 이름하는 struct로 실패한다. 이전에는 소유자의 코어가 선언하지 않은 kinds의 code enum을 썼다(GN-6bl, B2.345).
 - receiver를 만드는 Python 모듈 함수는 단계가 `self._case_path` 같은 시험 case의 helper를 부르면 시험 case를 `self`로 받는다. 그 단계가 NameError를 냈다(GN-13s, B2.346).
 - generator spec은 숫자 타입 자리의 숫자가 아닌 값(text나 bool 포함)이 모든 target에서 B-2의 kind `invalid_number`라고 명시한다. 변환은 이미 그렇게 거부한다(GN-13d, B2.347).
+- Python과 PHP 시험은 case가 만든 cleanup member가 있는 instance를 시험 끝에 case와 따로 닫는다. 이전에는 instance를 버려 소멸자가 경고했다(GN-13u, B2.348).
 
 ## 0.0.12
 

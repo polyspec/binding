@@ -1753,6 +1753,9 @@ export interface MadeForm {
   // and the statement that requires every fault of that arming to have fired; `what` names the step in the message.
   arm: (local: string, member: string, faults: string) => string;
   left: (local: string, what: string) => string;
+  // GN-13u: the statement that closes an instance that the test made, at the end of the test and apart from its
+  // assertions, by the cleanup member of its class (B-10); a target without it closes nothing.
+  closing?: (name: string, cleanup: Fn) => string;
   // GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
   state?: (service: CaseService, state: string, step: 'setup' | 'change' | 'check', scope: string, value: string) => string;
 }
@@ -1782,10 +1785,16 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
       if (isInstanceValue(raw)) return make(instanceAt(model, arg.type, raw, `${fn.member.id}.${arg.name.join('_')}`));
       return caseValue(model, form.ctx, arg, args);
     });
+  // GN-13u: an instance of a class with a cleanup member that the test made is closed at the end of the test.
+  const closed = (local: string, fn: Fn, picked: boolean): void => {
+    const cleanup = picked || form.closing === undefined ? undefined : objectUnit(model, fn.kind === 'constructor' ? { unit: fn.unit.id } : fn.returns)?.cleanup;
+    if (cleanup !== undefined && form.closing !== undefined) lines.push(form.closing(form.name(local), cleanup));
+  };
   const make = (r: Receiver): string => {
     if (isPlain(r)) {
       const local = fresh();
       lines.push(form.bind(local, form.invoke(r.factory, argsText(r.factory, r.args), '')));
+      closed(local, r.factory, false);
       return form.name(local);
     }
     const on = r.on === undefined ? '' : make(r.on);
@@ -1798,6 +1807,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     }
     const local = fresh();
     lines.push(form.bind(local, expr));
+    closed(local, r.factory, (r.pick ?? []).length > 0);
     for (const [i, step] of (r.then ?? []).entries()) {
       const call = form.invoke(step.fn, argsText(step.fn, step.args), step.on === 'receiver' ? onName : form.name(local));
       // G-5: the faults of the call are armed for its member just before it, and every one must have fired after it.
