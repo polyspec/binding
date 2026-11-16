@@ -242,7 +242,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `generated` and a `core_type`. A parameter typed by the interface, or by an `optional` of it, names no `core`
   borrow, and no return, field, `yields` or member of a callback interface names the interface, because the binding
   converts an instance of an implementing class to the `core_type` only as it enters a call. In a case an argument at
-  such a parameter is an instance value (GN-13f) of a class that implements the interface, or `null` in an `optional`.
+  such a parameter is an instance value (GN-13f) of a class that implements the interface, or `null` in an `optional`;
+  an argument of a step or of a call of `after` may also be `{"bound": <name>}` of such a class, which a function
+  fixture around it or a `with` of the case names (GN-13n, GN-13pa, B2.383). Why: the bound value is an instance that
+  the call made, so it is already of the class, and orm passes the `tx` of `db.transaction` to `query.connect` so.
 - **CK-78** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
   origin `generated` or `value` that names no `core_type` names `only` (Q-4) with none of the targets that generate
   no such class. Python, Node, WASM and Go generate it. PHP takes its own `stdClass` and references (generator GN-6e) and

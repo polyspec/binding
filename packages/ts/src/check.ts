@@ -2346,7 +2346,8 @@ class Checker {
     }
     for (const parameter of found.member.parameters ?? []) {
       const key = convert(parameter.name, 'python', 'variable');
-      if (this.takesCode(parameter.type)) this.codeValue(parameter.type, args[key], `${key} of ${at}`, report);
+      // B2.383: {"bound": <name>} is judged by GN-13n below, also for a parameter of a generated interface (CK-77).
+      if (this.takesCode(parameter.type) && !(typeof args[key] === 'object' && args[key] !== null && !Array.isArray(args[key]) && Object.keys(args[key] as object).length === 1 && Object.hasOwn(args[key] as object, 'bound'))) this.codeValue(parameter.type, args[key], `${key} of ${at}`, report);
       // GN-13n: {"bound": <name>} is an argument that a function fixture around the call gives by that name, of the
       // class of the parameter or of a class that implements it.
       const given = args[key];
@@ -2455,6 +2456,9 @@ class Checker {
     // GN-13pa: or on a value that the case names under with.
     if (method) for (const [name, value] of this.caseWith(record)) if (value !== undefined) names.set(name, value.unit);
     for (const parameter of found.member.parameters ?? []) this.fixtureNames(parameter.type, record[convert(parameter.name, 'python', 'variable')], names);
+    // B2.383: an argument of a call of after may be {"bound": <name>} of those names.
+    this.boundScope.push(names);
+    try {
     for (const [i, item] of after.entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
       for (const key of Object.keys(call)) if (!['call', 'args', 'result', 'on', 'raises'].includes(key)) report(`after ${i} has no key ${key}`);
@@ -2475,6 +2479,9 @@ class Checker {
       else if (!Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
       // B2.374: a member without a result states the result null, which each language tests as no value.
       else if (called.returns === 'none' && call['result'] !== null) report(`after ${i} calls ${called.id}, which has no result, so its result is null`);
+    }
+    } finally {
+      this.boundScope.pop();
     }
   }
 

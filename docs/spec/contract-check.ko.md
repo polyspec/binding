@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 7527207a383a44af0c769bc4be3fd8c9c830acd561aebba635b59947d2e68c1c -->
+<!-- source-sha256: 5e79e1fdca915ce59d6db9513c7341395a041dd57799150c1948287bce2b1c9e -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -204,7 +204,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `core_type`을 갖는다. 그 interface나 그것의 `optional`로 type된 parameter는 `core` 빌림을 이름하지 않고, 어떤 반환,
   field, `yields`, callback interface의 member도 그 interface를 이름하지 않는다. binding은 구현 class의 instance를 호출에
   들어올 때에만 `core_type`으로 변환하기 때문이다. case에서 그런 parameter의 argument는 그 interface를 구현하는
-  class의 instance 값(GN-13f)이거나, `optional`에서는 `null`이다.
+  class의 instance 값(GN-13f)이거나, `optional`에서는 `null`이다. step이나 `after` 호출의 argument는 그런 class의
+  `{"bound": <name>}`일 수도 있으며, 그 이름은 바깥의 function fixture나 case의 `with`가 준다(GN-13n, GN-13pa, B2.383).
+  이유: bound 값은 호출이 만든 instance이므로 이미 그 class이고, orm은 `db.transaction`의 `tx`를 그렇게 `query.connect`에 넘긴다.
 - **CK-78** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
   `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM, Go가 그것을
   생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e) 그런 class를 생성하지 않는다. 이것은 그 target의 규칙이며

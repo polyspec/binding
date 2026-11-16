@@ -2136,3 +2136,19 @@ test('B2.382: CK-22 takes one case of a kind of another library for all its kind
   // A kind of this library still takes its own case.
   assert.deepEqual(findings(true, true).sort(), ['no case of consumer.fetch raises the kind ended (K-1, B-4)', 'no case of consumer.fetch raises the kind refused (K-1, B-4)', 'no case of consumer.fetch raises the kind unreadable (K-1, B-4)', 'no case of consumer.fetch raises the kind unsupported (K-1, B-4)']);
 });
+
+test('B2.383: a value of a generated interface may be {"bound": <name>} of a class that implements it (CK-77, GN-13pa)', () => {
+  // orm passes the tx that a function fixture names to query.connect, whose connection is a generated interface.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (with_: unknown, named: unknown): string[] => {
+    const cases = read('contracts/cases.json');
+    cases.tag_names.push({ id: 'a_tag_names_a_bound_tag', receiver: { new: 'tag.new', args: { name: 'b' } }, with: with_, named: { new: 'tag.new', args: { name: 'b' } }, result: true,
+      after: [{ call: 'tag.names', args: { named }, result: true }] });
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => `${f.check} ${f.message}`);
+  };
+  assert.deepEqual(run({ n: { new: 'tag.new', args: { name: 'b' } } }, { bound: 'n' }), []);
+  // A name that nothing gives is still reported, once, by GN-13n.
+  const unknown = run({ n: { new: 'tag.new', args: { name: 'b' } } }, { bound: 'm' });
+  assert.equal(unknown.length, 1, unknown.join('\n'));
+  assert.match(unknown[0] ?? '', /no function fixture around it gives that name/);
+});
