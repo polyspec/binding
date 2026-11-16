@@ -85,7 +85,7 @@ export interface FunctionFixture {
   // GN-13n: the names of the parameters by position, which the function keeps in the store of the test.
   names: string[];
   // GN-13n: on is a position of a parameter, or a name that this fixture or one around it gives.
-  steps: { on: number | string; fn: Fn; args: string; expected?: { text: string } | { refused: string } }[];
+  steps: { on: number | string; fn: Fn; args: string; expected?: { text: string } | { refused: string }; raises?: string }[];
   end: { result: string } | { raise: string } | { exception: true };
 }
 
@@ -888,7 +888,9 @@ function functionFixture(model: Model, ctx: Context, type: Extract<Type, { funct
     const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
     if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${shown(step['args'])}, which are not the parameters of a member (GN-6ae)`);
     const on = String(step['on']);
-    return { on: /^(0|[1-9][0-9]*)$/.test(on) ? Number(on) : on, fn, args: callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, args)), ...(Object.hasOwn(step, 'result') ? { expected: stepExpected(model, ctx, fn, step['result']) } : {}) };
+    // GN-13o: a step that names raises fails with that kind, which the function requires before its next step.
+    const kind = (step['raises'] as { kind?: unknown } | undefined)?.kind;
+    return { ...(typeof kind === 'string' ? { raises: kind } : {}), on: /^(0|[1-9][0-9]*)$/.test(on) ? Number(on) : on, fn, args: callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, args)), ...(Object.hasOwn(step, 'result') ? { expected: stepExpected(model, ctx, fn, step['result']) } : {}) };
   });
   const raise = fixture['raise'];
   const awaits = fixture['awaits'] === true;
@@ -1557,6 +1559,11 @@ export interface After {
   fn: Fn;
   args: Map<Arg, unknown>;
   result: unknown;
+  // GN-13o: the name of an argument that a function fixture of the case kept, on which the call is made after the
+  // function returned, in place of the receiver of the case.
+  on?: string;
+  // GN-13o: the kind that the call fails with, in place of a result.
+  raises?: string;
 }
 
 // The callables whose tests are generated: the functions, then the members of each class unit.
@@ -1965,7 +1972,8 @@ function afterOf(model: Model, fn: Fn, record: Record<string, unknown>): { after
       const method = memberById(model, String(call['call']));
       const args = method === undefined ? undefined : argsOf(method, (call['args'] ?? {}) as Record<string, unknown>);
       if (method === undefined || args === undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: after calls ${String(call['call'])} with ${shown(call['args'])}, which are not the parameters of a member (GN-6ae)`);
-      return { fn: method, args, result: call['result'] };
+      const kind = (call['raises'] as { kind?: unknown } | undefined)?.kind;
+      return { fn: method, args, result: call['result'], ...(typeof call['on'] === 'string' ? { on: call['on'] } : {}), ...(typeof kind === 'string' ? { raises: kind } : {}) };
     }),
   };
 }

@@ -1214,6 +1214,41 @@
           "result": "2"
         }
       ]
+    },
+    {
+      "id": "a_scope_that_a_function_kept_has_ended_after_it",
+      "rule": "GN-13o",
+      "work": {
+        "function": {
+          "names": [
+            "kept"
+          ],
+          "calls": [
+            {
+              "on": "kept",
+              "call": "scope.size",
+              "args": {},
+              "result": 0
+            }
+          ],
+          "result": {
+            "kind": "null"
+          }
+        }
+      },
+      "result": {
+        "kind": "null"
+      },
+      "after": [
+        {
+          "on": "kept",
+          "call": "scope.size",
+          "args": {},
+          "raises": {
+            "kind": "ended"
+          }
+        }
+      ]
     }
   ],
   "store_once": [
@@ -1338,6 +1373,7 @@
   ],
   "scope_put": [],
   "scope_get": [],
+  "scope_size": [],
   "scope_copy": [],
   "scope_nested": [],
   "data_in": [

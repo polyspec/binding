@@ -2634,6 +2634,15 @@ the design ids are those of the binding design.
   Python and PHP in a store of the test, Node, WASM and Go in a variable of the function, which the functions inside
   it close over. Why: a member may take a value that the function got, such as the scope of a transaction that a step
   of a nested scope writes into, and a position names only an argument of the innermost function.
+- **GN-13o** A step of a function fixture and a call of `after` may name `"raises": {"kind": <kind>}` in place of
+  `result`, a kind of the raises of the member of the call: the call must fail with that kind, which the test or the
+  function requires before its next call. A call of `after` may name `"on": "<name>"`, a name that a function fixture
+  of the case gives (GN-13n), and is then a call on the argument that the function kept, after the function returned,
+  in place of the receiver of the case; a member without a receiver takes such a call too. Python and PHP keep the
+  argument in the store of the test, Node and WASM in the store of the module, and Go in a variable of the test. A
+  kind that such a call raises counts as a case of the member of the call for CK-22. Why: a kind that a value reaches
+  only after the callback that got it ended, such as a transaction that ended, or only while another call runs, has
+  no case of the member itself, because the case of the member cannot make that value.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.

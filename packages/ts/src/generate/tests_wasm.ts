@@ -64,6 +64,7 @@ export function wasmTests(model: Model): string {
   let usesGlue = false;
   let usesStepGlue = false;
   let usesOrdered = false;
+  let usesBound = false;
   let usesTokens = false;
   let usesFixture = false;
   // GN-6n: a call of a member that waits is awaited where it is made, as for Node.
@@ -128,13 +129,18 @@ export function wasmTests(model: Model): string {
   // GN-6ae: the function of a function fixture, as for Node: each step calls a method on one of its arguments; it then
   // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
   // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
-  // GN-13n: an argument that a function fixture keeps by name is a constant of the function, which the functions
-  // inside it close over.
-  ctx.boundValue = (name) => `bound_${name}`;
+  // GN-13n: the arguments that function fixtures keep by name, in the store of the module, which the calls of after
+  // read after the function returned (GN-13o).
+  ctx.boundValue = (name) => {
+    usesBound = true;
+    return `bound.${name}`;
+  };
   ctx.machineFunctionNew = (fixture) => {
-    const kept = fixture.names.map((name, i) => `const bound_${name} = args[${i}]; `).join('');
-    const steps = kept + fixture.steps.map((step) => {
-      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `args[${step.on}]` : `bound_${step.on}`);
+    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = args[${i}]; `).join('');
+    const steps = kept + fixture.steps.map((step, i) => {
+      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `args[${step.on}]` : (ctx.boundValue?.(step.on) ?? ''));
+      // GN-13o: a step that names raises fails with that kind.
+      if (step.raises !== undefined) return `${form.fails(call, step.raises, `step ${i} fails with ${step.raises}`)} `;
       // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
       if (step.expected === undefined) return `${call}; `;
       if ('refused' in step.expected) return `assert.fail(${jsString(step.expected.refused)}); `;
@@ -156,11 +162,15 @@ export function wasmTests(model: Model): string {
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
-    (after ?? []).map((call) => {
+    (after ?? []).map((call, i) => {
+      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
+      const on = call.on === undefined ? receiver : (ctx.boundValue?.(call.on) ?? '');
+      const made = invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on);
+      if (call.raises !== undefined) return `\n  ${form.fails(made, call.raises, `after ${i} fails with ${call.raises}`)}`;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
       usesOrdered = true;
-      return `\n  assert.deepStrictEqual(ordered(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}), ordered(${expected.text}));`;
+      return `\n  assert.deepStrictEqual(ordered(${made}), ordered(${expected.text}));`;
     }).join('');
   // GN-6ae: a case with after holds its receiver, which the calls of after observe.
   const heldReceiver = (receiverMade: { lines: string; expr: string }, after: After[] | undefined): { lines: string; expr: string } =>
@@ -535,7 +545,7 @@ import assert from 'node:assert/strict';
 import test${usesStepGlue || usesCaseFile ? `, { ${[...(usesStepGlue ? ['before'] : []), ...(usesCaseFile ? ['afterEach'] : [])].join(', ')} }` : ''} from 'node:test';${usesCaseFile ? `${nodeCaseImports(true, usesCaseText)}\nimport { dirname, join } from 'node:path';` : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesOutcome ? `
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesOrdered ? ordered : ''}${usesBound ? '\n// GN-13n: the arguments that the function fixtures of the test in progress keep by name.\nconst bound = {};\n' : ''}${usesTokens ? nodeTokens(forms) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

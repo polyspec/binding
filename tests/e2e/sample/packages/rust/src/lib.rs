@@ -35,6 +35,8 @@ pub enum Error {
     },
     /// The lookup refused the key: language code raised the error unit `refused_error`, which `find` recognizes (U-3).
     Refused,
+    /// The transaction or the nested scope of a scope has ended, and the scope is used after it (GN-13o).
+    Ended,
     /// An invariant of the sample does not hold (X-1).
     Internal {
         /// What does not hold.
@@ -67,6 +69,7 @@ impl Error {
             Self::Unsupported { .. } => "unsupported",
             Self::Unreadable { .. } => "unreadable",
             Self::Refused => "refused",
+            Self::Ended => "ended",
             Self::Internal { .. } => "internal",
         }
     }
@@ -79,6 +82,7 @@ impl fmt::Display for Error {
             Self::Unsupported { what } => write!(f, "not data: {what}"),
             Self::Unreadable { .. } => f.write_str("the text could not be read"),
             Self::Refused => f.write_str("the lookup refused the key"),
+            Self::Ended => f.write_str("the scope has ended"),
             Self::Internal { detail } => write!(f, "the sample is broken: {detail}"),
         }
     }
@@ -110,6 +114,7 @@ impl Kinds for Error {
             Self::Missing { .. }
             | Self::Unsupported { .. }
             | Self::Refused
+            | Self::Ended
             | Self::Internal { .. } => None,
         }
     }
@@ -1184,10 +1189,9 @@ impl Store {
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped {
-            audit: true,
-            ..Scoped::new(self.entries, function)
-        }
+        let mut scoped = Scoped::new(self.entries, function);
+        scoped.audit = true;
+        scoped
     }
 
     /// Runs `function` with a new scope whose entries are dropped, and gives whether it returned: the core drops the
@@ -1203,6 +1207,7 @@ impl Store {
             scope: Scope {
                 parent: self.entries,
                 pending: Entries::default(),
+                open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             },
             function,
             begun: false,
@@ -1234,6 +1239,8 @@ where
 pub struct Scope {
     parent: Entries,
     pending: Entries,
+    /// Whether the transaction or the nested scope of this scope still runs; its machine clears it when it ends.
+    open: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Scope {
@@ -1251,6 +1258,18 @@ impl Scope {
         entries_of(&self.parent).get(key).cloned()
     }
 
+    /// The count of the pending entries of this scope.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Ended`] when the transaction or the nested scope of this scope has ended.
+    pub fn size(&self) -> Result<u64, Error> {
+        if !self.open.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Error::Ended);
+        }
+        Ok(u64::try_from(entries_of(&self.pending).len()).unwrap_or(u64::MAX))
+    }
+
     /// Writes the value of a key that this scope sees as a pending entry of `into`, when it sees one.
     pub fn copy(&self, into: &Self, key: &str) {
         if let Some(value) = self.get(key) {
@@ -1265,6 +1284,15 @@ impl Scope {
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         Scoped::new(self.pending, function)
+    }
+}
+
+impl<F> Drop for Scoped<F> {
+    /// The scope of the machine ends with it: a call on a scope that a function kept fails (GN-13o).
+    fn drop(&mut self) {
+        self.scope
+            .open
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -1301,6 +1329,7 @@ impl<F> Scoped<F> {
             scope: Scope {
                 parent,
                 pending: Entries::default(),
+                open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             },
             function,
             stage: Stage::Begin,

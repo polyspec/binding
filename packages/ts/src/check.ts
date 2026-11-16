@@ -1546,7 +1546,10 @@ class Checker {
     }
     const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
     for (const { member, unit, path } of this.members.values()) {
-      const kinds = raised.get(member.id);
+      // GN-13o: a kind that a step or a call of after expects is a case of the member of that call.
+      const own = raised.get(member.id);
+      const called = this.callRaised.get(member.id);
+      const kinds = own === undefined && called === undefined ? undefined : new Set([...(own ?? []), ...(called ?? [])]);
       if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
       for (const [r, variant] of (member.raises ?? []).entries()) {
         const row = rows.get(variant);
@@ -2129,6 +2132,44 @@ class Checker {
     }
   }
 
+  // GN-13o: the kinds that the steps of function fixtures and the calls of after expect, by the member of the call,
+  // which count as cases of that member (K-1).
+  callRaised = new Map<string, Set<string>>();
+
+  // GN-13o: the raises of a step or of a call of after, {"kind": <kind>} of a kind of the raises of its member.
+  callRaises(member: Member, call: Record<string, unknown>, at: string, report: (message: string) => void): void {
+    if (!Object.hasOwn(call, 'raises')) return;
+    const raises = call['raises'];
+    const kind = typeof raises === 'object' && raises !== null && !Array.isArray(raises) && Object.keys(raises).length === 1 ? (raises as { kind?: unknown }).kind : undefined;
+    const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
+    const kinds = new Set((member.raises ?? []).flatMap((variant) => { const row = rows.get(variant); return row === undefined ? [] : kindsOf(row); }));
+    if (typeof kind !== 'string') return report(`the raises of ${at} is ${JSON.stringify(raises)}, not {"kind": <kind>}`);
+    if (!kinds.has(kind)) return report(`${at} raises the kind ${kind}, which is no kind of the raises of ${member.id}`);
+    if (Object.hasOwn(call, 'result')) report(`${at} names a result and raises, one of them`);
+    const found = this.callRaised.get(member.id) ?? new Set<string>();
+    found.add(kind);
+    this.callRaised.set(member.id, found);
+  }
+
+  // GN-13o: the names that the function fixtures of a value of the type give, each to the id of the unit of its
+  // parameter, at any depth of their steps.
+  fixtureNames(type: Type, value: unknown, into: Map<string, string>): void {
+    const record = (given: unknown): Record<string, unknown> | undefined => (typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined);
+    if (typeof type !== 'object' || !('function' in type)) return;
+    const fixture = record(record(value)?.['function']);
+    if (fixture === undefined) return;
+    for (const [i, name] of (Array.isArray(fixture['names']) ? fixture['names'] : []).entries()) {
+      const at = type.function.parameters[i];
+      if (typeof name === 'string' && typeof at === 'object' && 'unit' in at && at.library === undefined) into.set(name, at.unit);
+    }
+    for (const item of Array.isArray(fixture['calls']) ? fixture['calls'] : []) {
+      const step = record(item);
+      const found = typeof step?.['call'] === 'string' ? this.members.get(step['call']) : undefined;
+      const args = record(step?.['args']);
+      for (const parameter of found?.member.parameters ?? []) this.fixtureNames(parameter.type, args?.[convert(parameter.name, 'python', 'variable')], into);
+    }
+  }
+
   // GN-13n: the names that the function fixtures around the value in reading give, the innermost last, each to the
   // id of the unit of its parameter.
   boundScope: Map<string, string>[] = [];
@@ -2159,7 +2200,7 @@ class Checker {
     for (const [i, item] of calls.entries()) {
       const step = record(item) ?? {};
       const at = `step ${i} of ${what}`;
-      for (const key of Object.keys(step)) if (!['on', 'call', 'args', 'result'].includes(key)) report(`${at} has no key ${key}`);
+      for (const key of Object.keys(step)) if (!['on', 'call', 'args', 'result', 'raises'].includes(key)) report(`${at} has no key ${key}`);
       const on = step['on'];
       const type = typeof on === 'string' && /^(0|[1-9][0-9]*)$/.test(on) ? fn.parameters[Number(on)] : undefined;
       // GN-13n: on may be a name that this fixture or a fixture around it gives.
@@ -2172,7 +2213,8 @@ class Checker {
       }
       const outer = this.stepAwaits;
       this.stepAwaits = awaits;
-      this.methodCall(unit.id, step, at, report);
+      const called = this.methodCall(unit.id, step, at, report);
+      if (called !== undefined) this.callRaises(called, step, at, report);
       this.stepAwaits = outer;
     }
   }
@@ -2293,12 +2335,28 @@ class Checker {
     const after = record['after'];
     if (after === undefined) return;
     const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
-    if (!method) return report(`${memberId} has no receiver, so the case names no after`);
     if (!Array.isArray(after)) return report('after is not a list of calls');
+    // GN-13o: a call of after may be on an argument that a function fixture of the case names, kept after the function
+    // returned, and may raise a kind in place of a result.
+    const names = new Map<string, string>();
+    for (const parameter of found.member.parameters ?? []) this.fixtureNames(parameter.type, record[convert(parameter.name, 'python', 'variable')], names);
     for (const [i, item] of after.entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (!['call', 'args', 'result'].includes(key)) report(`after ${i} has no key ${key}`);
-      if (this.methodCall(found.unit.id, call, `after ${i}`, report) !== undefined && !Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
+      for (const key of Object.keys(call)) if (!['call', 'args', 'result', 'on', 'raises'].includes(key)) report(`after ${i} has no key ${key}`);
+      const on = call['on'];
+      if (on === undefined && !method) {
+        report(`${memberId} has no receiver, so after ${i} names on, an argument that a function fixture of the case names`);
+        continue;
+      }
+      const unitId = on === undefined ? found.unit.id : typeof on === 'string' ? names.get(on) : undefined;
+      if (unitId === undefined) {
+        report(`after ${i} is on ${JSON.stringify(on)}, which no function fixture of the case names`);
+        continue;
+      }
+      const called = this.methodCall(unitId, call, `after ${i}`, report);
+      if (called === undefined) continue;
+      if (Object.hasOwn(call, 'raises')) this.callRaises(called, call, `after ${i}`, report);
+      else if (!Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
     }
   }
 

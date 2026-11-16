@@ -445,6 +445,8 @@ export function pythonTests(model: Model, module: string): string {
     const lines = [...kept, ...fixture.steps.flatMap((step, i) => {
       const on = typeof step.on === 'number' ? `args[${step.on}]` : (ctx.boundValue?.(step.on) ?? '');
       const call = fixture.awaits && awaits(step.fn) ? `await ${invokeAwaited(step.fn, step.args, on)}` : invoke(step.fn, step.args, on);
+      // GN-13o: a step that names raises fails with that kind.
+      if (step.raises !== undefined) return [madeForm.fails(call, step.raises, `step ${i} fails with ${step.raises}`)];
       if (step.expected === undefined) return [call];
       if ('refused' in step.expected) return [`raise AssertionError(${pyString(step.expected.refused)})`];
       usesSame = true;
@@ -475,8 +477,12 @@ export function pythonTests(model: Model, module: string): string {
     return '\n        self.assertEqual(_native._thrown_count(), 0)';
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
-  const afterChecks = (after: After[] | undefined, receiver: string): string =>
+  const afterChecks = (after: After[] | undefined, held: string): string =>
     (after ?? []).map((call, i) => {
+      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
+      const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
+      if (call.raises !== undefined) return `\n        ${madeForm.fails(invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on), call.raises, `after ${i} fails with ${call.raises}`)}`;
+      const receiver = on;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n        self.fail(${pyString(expected.refused)})`;
       usesSame = true;

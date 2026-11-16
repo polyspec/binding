@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A step of a function fixture and a call of `after` may raise a kind, and a call of `after` may be on an argument that a function fixture kept, after the function returned; such a kind counts as a case of the member of the call for CK-22, on the five targets. The end-to-end sample gives `scope.size`, which fails with the new kind `ended` on a scope that a function kept after its transaction ended (GN-13o, B2.320).
+
 - A function fixture names its parameters (`names`), and a step of it or of a fixture inside it calls on a named argument and passes one as `{"bound": <name>}`, on the five targets; the end-to-end sample copies a value of a nested scope into the scope around it with the new member `scope.copy` (GN-13n, B2.319).
 
 ## 0.0.12

@@ -338,8 +338,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   ctx.machineFunctionNew = (fixture) => {
     const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = $args[${i}]; `).join('');
-    const steps = kept + fixture.steps.map((step) => {
+    const steps = kept + fixture.steps.map((step, i) => {
       const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `$args[${step.on}]` : (ctx.boundValue?.(step.on) ?? ''));
+      // GN-13o: a step that names raises fails with that kind.
+      if (step.raises !== undefined) return `${form.fails(call, step.raises, `step ${i} fails with ${step.raises}`)} `;
       if (step.expected === undefined) return `${call}; `;
       if ('refused' in step.expected) return `self::fail(${phpText(step.expected.refused)}); `;
       usesSame = true;
@@ -357,8 +359,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `\n        self::assertSame(0, \\${layout.namespace}\\Internal\\thrownCount());`;
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
-  const afterChecks = (after: After[] | undefined, receiver: string): string =>
-    (after ?? []).map((call) => {
+  const afterChecks = (after: After[] | undefined, held: string): string =>
+    (after ?? []).map((call, i) => {
+      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
+      const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
+      if (call.raises !== undefined) return `\n        ${form.fails(invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on), call.raises, `after ${i} fails with ${call.raises}`)}`;
+      const receiver = on;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n        self::fail(${phpText(expected.refused)});`;
       usesSame = true;

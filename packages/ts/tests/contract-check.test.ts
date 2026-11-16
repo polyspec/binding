@@ -1331,7 +1331,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
       [takes(['text']), { function: { calls: [], result: 'b', once: true } }, /the function fixture convert has no key once/],
       [takes(['text']), { function: { calls: [] } }, /the function fixture convert has a result or a raise, one of them/],
       [takes(['text']), { function: { calls: [], result: 'b', raise: 'exception' } }, /the function fixture convert has a result or a raise, one of them/],
-      [scoped, { function: { calls: [{ ...step, raises: {} }], result: 'b' } }, /step 0 of convert has no key raises/],
+      [scoped, { function: { calls: [{ ...step, fails: {} }], result: 'b' } }, /step 0 of convert has no key fails/],
       [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is neither a parameter of the function whose type is a class of this contract nor a name of a function fixture around it whose parameter is one/],
       [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is neither a parameter/],
       [scoped, { function: { calls: [{ ...step, call: 'forms.parse' }], result: 'b' } }, /step 0 of convert calls forms\.parse, which is no method of session/],
@@ -1387,7 +1387,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const after = { call: 'session.load', args: { file: 'a', convert: returning }, result: null };
     assert.deepEqual(kase({ after: [after] }, returning), []);
     assert.match(kase({ after: after }, returning)[0]?.message ?? '', /after is not a list of calls/);
-    assert.match(kase({ after: [{ ...after, raises: {} }] }, returning)[0]?.message ?? '', /after 0 has no key raises/);
+    assert.match(kase({ after: [{ ...after, fails: {} }] }, returning)[0]?.message ?? '', /after 0 has no key fails/);
     assert.match(kase({ after: [{ ...after, call: 'forms.parse' }] }, returning)[0]?.message ?? '', /after 0 calls forms\.parse, which is no method of session/);
     assert.match(kase({ after: [{ ...after, args: {} }] }, returning)[0]?.message ?? '', /the args of after 0 are not the parameters file, convert of session\.load/);
     assert.match(kase({ after: [{ call: 'session.load', args: after.args }] }, returning)[0]?.message ?? '', /after 0 names no result/);
@@ -1865,4 +1865,22 @@ test('a function fixture names its parameters, which its steps and those inside 
   assert.ok(shadow.some((f) => f.check === 'CK-22' && /the name outer of the function fixture .* is given by a function fixture around it too/.test(f.message)), JSON.stringify(shadow));
   const on = run((kase) => { inner(kase).calls[0].on = 'nobody'; });
   assert.ok(on.some((f) => f.check === 'CK-22' && /is on nobody, which is neither a parameter/.test(f.message)), JSON.stringify(on));
+});
+
+test('a call of after on a kept argument, and a step, may raise a kind, which counts as a case of its member (GN-13o, CK-22, B2.320)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (kase: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    change(cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it'));
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  assert.deepEqual(run(() => {}), []);
+  const uncounted = run((kase) => { kase.after = []; });
+  assert.ok(uncounted.some((f) => f.check === 'CK-22' && /no case of scope\.size raises the kind ended/.test(f.message)), JSON.stringify(uncounted));
+  const stepped = run((kase) => { kase.after = []; kase.work.function.calls[0] = { on: 'kept', call: 'scope.size', args: {}, raises: { kind: 'ended' } }; });
+  assert.deepEqual(stepped, []);
+  const unknown = run((kase) => { kase.after[0].on = 'other'; });
+  assert.ok(unknown.some((f) => /after 0 is on "other", which no function fixture of the case names/.test(f.message)), JSON.stringify(unknown));
+  const kind = run((kase) => { kase.after[0].raises = { kind: 'missing' }; });
+  assert.ok(kind.some((f) => /after 0 raises the kind missing, which is no kind of the raises of scope\.size/.test(f.message)), JSON.stringify(kind));
 });

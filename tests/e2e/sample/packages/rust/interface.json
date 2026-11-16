@@ -120,6 +120,10 @@
         "class": "refused_error"
       },
       {
+        "variant": "polyspec_sample::Error::Ended",
+        "category": "type"
+      },
+      {
         "variant": "polyspec_sample::Error::Internal",
         "category": "internal"
       }
@@ -2431,6 +2435,24 @@
           "optional_reason": "T-5"
         },
         {
+          "id": "scope.size",
+          "name": [
+            "size"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Ended"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Scope::size",
+            "receiver": "&self"
+          }
+        },
+        {
           "id": "scope.copy",
           "name": [
             "copy"
@@ -2851,6 +2873,11 @@
       "member": "scope.get",
       "file": "contracts/cases.json",
       "group": "scope_get"
+    },
+    {
+      "member": "scope.size",
+      "file": "contracts/cases.json",
+      "group": "scope_size"
     },
     {
       "member": "scope.copy",

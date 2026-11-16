@@ -10599,10 +10599,28 @@ test('a function fixture keeps its named arguments, and a step of a fixture insi
   assert.match(php, /private static array \$bound = \[\];/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const js = text(sample, path);
-    assert.match(js, /const bound_outer = args\[0\]; /, path);
-    assert.match(js, /bound_inner\.copy\(bound_outer, 'b'\)/, path);
+    assert.match(js, /bound\.outer = args\[0\]; /, path);
+    assert.match(js, /bound\.inner\.copy\(bound\.outer, 'b'\)/, path);
   }
   const go = text(sample, 'packages/go/zz_generated_test.go');
-  assert.match(go, /\tbound_outer := arg0\n/);
+  assert.match(go, /\tbound_outer = arg0\n/);
   assert.match(go, /bound_inner\.Copy\(bound_outer, "b"\)/);
+});
+
+test('a call of after on an argument that a function fixture kept fails with a kind, and so does a step that names raises (GN-13o, B2.320)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  assert.match(text(sample, 'packages/python/generated/tests/test_generated.py'), /assert _outcome\(lambda: _bound\["kept"\]\.size\(\)\)\[::2\] == \("error", "ended"\)/);
+  assert.match(text(sample, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertStringContainsString\("'kind' => 'ended'", self::outcome\(fn \(\) => self::\$bound\["kept"\]->size\(\)\)/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.match(text(sample, path), /bound\.kept\.size\(\)\)\)?\.kind, 'ended'/, path);
+  const go = text(sample, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\tvar bound_kept \*Scope\n/);
+  assert.match(go, /_, (failure\d+) := bound_kept\.Size\(\)\n\t+if kinded, ok := \1\.\(interface\{ Kind\(\) string \}\); !ok \|\| kinded\.Kind\(\) != "ended" \{/);
+  // A step that names raises fails with its kind inside the function.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const cases = read('sample/contracts/cases.json');
+  const kase = cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it');
+  kase.work.function.calls[0] = { on: 'kept', call: 'scope.size', args: {}, raises: { kind: 'ended' } };
+  const out = generateTargets({ contract: read('sample/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'go'] as Inputs['targets'] & string[] });
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\n {4}_bound\["kept"\] = args\[0\]\n {4}assert _outcome\(lambda: _bound\["kept"\]\.size\(\)\)\[::2\] == \("error", "ended"\), "G-5: step 0 fails with ended"\n/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /return nil, fmt\.Errorf\("GN-13o: scope\.size gave %#v, not the kind ended"/);
 });

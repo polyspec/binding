@@ -89,6 +89,13 @@ class Body {
     }
     return this.root.textContext;
   }
+  // GN-13n: a variable of the test that a function fixture keeps an argument in, which the calls of after read after
+  // the function returned (GN-13o); declared once, at the start of the test.
+  bound(name: string, type: string): string {
+    const variable = `bound_${name}`;
+    if (!this.root.lines.includes(`var ${variable} ${type}`)) this.root.lines.unshift(`var ${variable} ${type}`, `_ = ${variable}`);
+    return variable;
+  }
   hasCaseTextContext(): boolean {
     return this.root.textContext !== undefined;
   }
@@ -650,7 +657,7 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
   if (typeof fixture !== 'object' || fixture === null) throw new Unsupported(`a case value of a function type is a function fixture, not ${JSON.stringify(json)} (GN-6ae)`);
   const inner = b.child();
   // GN-13n: an argument that the fixture keeps by name is a variable of the func, which the funcs inside it close over.
-  for (const [i, name] of (Array.isArray(fixture['names']) ? fixture['names'].map(String) : []).entries()) inner.lines.push(`bound_${name} := arg${i}`, `_ = bound_${name}`);
+  for (const [i, name] of (Array.isArray(fixture['names']) ? fixture['names'].map(String) : []).entries()) inner.lines.push(`${b.bound(name, typeName(v, type.parameters[i] as Type))} = arg${i}`);
   for (const step of Array.isArray(fixture['calls']) ? (fixture['calls'] as Record<string, unknown>[]) : []) {
     const fn = memberById(v.model, String(step['call']));
     const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
@@ -664,6 +671,13 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
       continue;
     }
     const call = invoke(v, fn, callArgs(v, inner, fn, (arg) => caseValue(v, inner, arg, args)), on);
+    // GN-13o: a step that names raises fails with that kind, or the func returns an error that names it.
+    const kind = (step['raises'] as { kind?: unknown } | undefined)?.kind;
+    if (typeof kind === 'string') {
+      const failed = inner.fresh('failure');
+      inner.lines.push(`${[...Array.from({ length: goResultCount(fn) }, () => '_'), failed].join(', ')} := ${call}`, `if kinded, ok := ${failed}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(kind)} {`, `\treturn nil, fmt.Errorf("GN-13o: ${fn.member.id} gave %#v, not the kind ${kind}", ${failed})`, '}');
+      continue;
+    }
     inner.lines.push(`if ${'_, '.repeat(goResultCount(fn))}err := ${call}; err != nil {`, '\treturn nil, err', '}');
   }
   const raise = fixture['raise'];
@@ -899,9 +913,16 @@ const testName = casePascal;
 // GN-6ae (CK-22): the calls of after of a case, each in a block of its own on the receiver of the case, with the
 // result that the case names.
 function afterLines(v: Values, b: Body, fn: Fn, id: string, after: After[] | undefined, receiver: string): string[] {
-  return (after ?? []).flatMap((call) => {
+  return (after ?? []).flatMap((call, i) => {
+    // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
+    const on = call.on === undefined ? receiver : `bound_${call.on}`;
+    if (call.raises !== undefined) {
+      const failed = b.fresh('failure');
+      const made = invoke(v, call.fn, callArgs(v, b, call.fn, (arg) => caseValue(v, b, arg, call.args)), on);
+      return ['{', `\t${[...Array.from({ length: goResultCount(call.fn) }, () => '_'), failed].join(', ')} := ${made}`, `\tif kinded, ok := ${failed}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(call.raises)} {`, `\t\tt.Fatalf("GN-13o: after ${i}: %#v is not of kind ${call.raises}", ${failed})`, '\t}', '}'];
+    }
     try {
-      const lines = comparedCall(v, b.child(), call.fn, receiver, call.args, call.result === undefined ? undefined : { value: call.result }, 't.Fatalf("GN-6ae: after: %v", err)', (i) => `t.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`);
+      const lines = comparedCall(v, b.child(), call.fn, on, call.args, call.result === undefined ? undefined : { value: call.result }, 't.Fatalf("GN-6ae: after: %v", err)', (i) => `t.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`);
       return ['{', ...lines.map((line) => `\t${line}`), '}'];
     } catch (error) {
       if (!(error instanceof Unsupported)) throw error;
