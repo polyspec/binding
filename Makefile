@@ -82,6 +82,17 @@ e2e: ## Run the end-to-end check of the generator: REPO=<checkout> [WORK=<direct
 go-musl-check: ## Run the consumer of the released Go module of a Linux e2e run on musl: WORK=<work directory on the machine of DOCKER_HOST>
 	$(ONLINE) sh scripts/go-musl.sh "$(WORK)" "$(CURDIR)/mise.lock" "$(CURDIR)/config/toolchain.json"
 
+# GN-14i: the compile check of the generated bindings of consumer repositories with the CLI and the binding_core of this
+# tree. DIRS names consumer checkouts or package directories inside one (packages/<component>); each committed tree is
+# copied outside its checkout, and the run writes var/report/consumers/<run>. The run is evidence of EXPECT, of the commit
+# of the MANIFEST.txt of DIST, or else of the HEAD of CONSUMERS_LANE, the checkout of the lane beside this one, and stops
+# before the first consumer when this tree is another commit or has changes. It fetches nothing; offline.
+CONSUMERS_LANE ?= $(abspath $(CURDIR)/../binding-0.0.15)
+.PHONY: consumers-check
+consumers-check: ## Compile the generated bindings of consumers with this tree and print a consumer x target table: DIRS="<dir>..." [EXPECT=<commit> | DIST=<dir>]
+	@test -n "$(DIRS)" || { echo 'consumers-check: DIRS is required, for example make consumers-check DIRS="../json ../hyper"' >&2; exit 2; }
+	$(NODE) scripts/consumers-check.mts$(foreach dir,$(DIRS), --dir $(dir))$(if $(EXPECT), --expect $(EXPECT))$(if $(DIST), --dist $(DIST)) --lane $(CONSUMERS_LANE)
+
 # The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
 # check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.
 define run_all

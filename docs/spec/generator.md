@@ -3223,6 +3223,45 @@ the design ids are those of the binding design.
   another minor, and with it the run stops before any target. The workflow runs on the push of `main` and on a manual run; a development
   branch such as `v1/rust-core` is checked by a manual run of its head (`gh workflow run ci.yml --ref <branch>`),
   because a run on every push of that branch would start the whole suite for each merge of a lane.
+- **GN-14i** `make consumers-check DIRS="<dir>..."` (`scripts/consumers-check.mts`, its steps and its table in
+  `scripts/consumers.mts`) compiles the generated bindings of consumer repositories with the CLI and the
+  `binding_core` of this tree, in one run. A directory is a checkout, whose contract is
+  `packages/rust/interface.json`, or a package directory `packages/<component>` inside one, whose contract is
+  `packages/<component>/rust/interface.json` (L-1). For each directory the run copies the committed tree of its
+  checkout (`git archive HEAD`) into a work directory of the run under the temporary directory, outside the
+  checkout, and runs in the copy, in this order: the prerequisites of the target `bindings-check` (or `binding-check`) of the
+  consumer's Makefile, each by `make -C <copy> <goal> NODE=<node of the run>`, such as `binding-cases` of hyper, which
+  writes the case files that its contract names, then `binding scaffold`, the path patch
+  `[patch."https://github.com/polyspec/binding.git"]` of `polyspec-binding-core` to `packages/core/rust` of this
+  tree in the root `Cargo.toml`, `cargo update -p polyspec-binding-core --offline`, naming each release of it that the lock holds
+  (or `cargo generate-lockfile --offline` without a lock), `binding check`, and `binding generate --target <t>` for each target of the contract.
+  The run is evidence of one commit of binding: `EXPECT=<commit>`, the commit that the line `binding commit <commit>`
+  of `MANIFEST.txt` of `DIST=<directory>` names, or else the HEAD of `CONSUMERS_LANE`, the checkout of the lane. Before
+  the first consumer, and before any copy, it stops with a named error when the CLI of this tree is another commit or
+  its tree has a change, and the first line of the table and of the report names the commit and that the tree is clean.
+  Why: a run on a tree that lacked four fixes of the lane (B2.367, B2.386, B2.387, B2.390) gave cells that looked like
+  defects of the lane, which were no evidence of it.
+  Before it compiles, it records the connections of the copy: `cargo tree -i polyspec-binding-core`, which must name
+  the path of this tree, the path of the CLI, and the Go build tags of the generated files. Then each binding crate
+  runs `cargo check --all-targets` with the test features of its manifest (GN-5) and without them, WASM on
+  `wasm32-unknown-unknown`; the Go target gets `CGO_LDFLAGS` from `binding go-link` (GN-15k) and runs `go vet` and
+  `go test -c -o /dev/null`, which links, without tags and with the tags of the generated files (`goBuildTags`).
+  A tree without `binding go-link` fails the Go cell by name, and the Go commands run without a link flag of the run.
+  Every command runs offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`): the other polyspec repositories that a consumer
+  depends on resolve as its `Cargo.toml` and `go.mod` resolve them, Go through the `go.work` of the committed tree
+  with its `go.work.sum` (`GOWORK=off` without one), from the caches of the machine, and a dependency
+  that is not there is a named failure of its cell. Each consumer and target runs to its end; the consumers run in
+  parallel, a bounded number at a time, and each cargo and go command takes its share of the processors. The run
+  prints the table of each consumer and target (`prepare`, `php`, `python`, `node`, `go`, `wasm`), each failed cell
+  with its failed steps, their first error lines and its log, writes the logs, `table.txt` and `report.json` into
+  `var/report/consumers/<run>/`, and fails when a cell failed. It removes the copy of a consumer as soon as the cells of that consumer end, and
+  the work directory at its end, so only the report and the logs stay. The copy gets only the changes that take this binding,
+  as in GN-14d: a defect of a consumer is a named failure, never repaired in the copy, and whether a failure is the
+  consumer's or binding's is read from the failed step and its errors. Why: a change of the generator or of
+  `binding_core` reaches every consumer, and a defect that only a consumer's contract shows is found by a compile of
+  its bindings, which `make e2e` does only for the repository that it runs; one run over the consumers shows them
+  together before a release, and a run that changed the checkout or fetched what the consumer did not lock would
+  show another tree than the consumer's.
 
 ## The release of a repository that holds a binding
 

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
+<!-- source-sha256: a104cb50753f0dabee51b5f8bd8bb922820093ff06b0d5e680132d0bba673051 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -13,6 +13,7 @@
 
 ## 0.0.15
 
+- `make consumers-check DIRS="<dir>..."`는 소비자 레포의 생성된 바인딩을 이 tree의 CLI와 `binding_core`로 한 번의 실행에서 컴파일한다: 각각의 commit된 tree를 복사하고, path patch로 이 바인딩을 offline으로 받으며, 각 target을 생성하고, 각 바인딩 crate를 시험 feature로 한 번, 없이 한 번 검사하고 Go package를 `go vet`과 `go test -c`로 검사하며, 실패한 칸마다 첫 오류 줄과 함께 소비자 × target 표를 출력한다(GN-14i, B2.391).
 - 함수 parameter는 그 member가 나중 member가 부르도록 함수를 보관만 할 때 `keeps: true`를 적을 수 있다(hyper `pages.register`, 이것을 `page_request.next`가 부른다). 그 member는 `Failure` 없는 코어 오류를 돌려주고, 함수를 부르는 member가 `core.failure: true`를 적는다. 전에는 `binding check`가 함수의 `keeps`를 거부했으므로 함수의 실패가 그것을 보관하는 member에 자리했다. end-to-end functions가 `registry.register`에 그것을 적는다(GN-6aa, GN-7, CK-90, B2.378).
 - method의 case는 `with`, 곧 `{"<name>": {"new": <member id>, ...}}`로 instance value에 이름을 붙이고, 시험은 그것을 receiver 다음에 만들어 그 이름으로 보관한다. 다섯 타깃에서 그렇다. 어떤 깊이의 function fixture의 step도 그런 값 위에서 부르거나 그것을 `{"bound": <name>}`로 넘기고, `after`의 호출은 함수가 반환한 뒤 그것 위에서 부른다. step이나 `after`의 호출이 부르는 member는 CK-22에서 거기서 case를 가지므로, callback만 주는 class, 예를 들어 ORM의 transaction의 member에는 `cases`의 행이 필요 없다. end-to-end sample은 `busy`를 낸 step 뒤와 transaction 뒤에 `with`의 두 번째 store를 부른다(GN-13pa, CK-22, CK-96, B2.365).
 - 깊게 중첩된 record나 variant가 debug WASM에서 trap했다. cycle의 record나 variant의 변환 `out_<unit>`과 `in_<unit>`이 단계마다 자기 자신을 불러, template의 case `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식이 1 MiB stack을 다 써 "memory access out of bounds"로 끝났다. 이제 다섯 target에서 변환이 heap의 work stack으로 값을 loop에서 걷고 cycle의 변환을 부르지 않는다(GN-6bt, B2.377). `make test-ts`로 확인했다: 새 시험은 변경 전에 실패했다. `tests/e2e/variants`의 다섯 crate의 `cargo clippy`와, 2000단계 중첩된 figure를 더한 그 생성 Node 시험으로도 확인했다.
