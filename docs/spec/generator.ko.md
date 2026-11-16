@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: de953b984baa37ca1ffe3c40fe47d06134b3570cec15d6aa73e861ba127a040b -->
+<!-- source-sha256: 03b1bc9d1d1819c4f68e66b82160b3702861981763a4fd51f6dad2056fe07b58 -->
 # 생성기
 
 [English](generator.md)
@@ -2314,6 +2314,11 @@
 - **GN-13x** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
   쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
   타입이 없는 double은 컴파일되지 않는다.
+- **GN-13y** callback을 받는 member의 K-2 시험(member가 없는 callback, callback의 예외, 다른 타입의 callback 결과)은
+  모든 target에서, callback fixture가 호출을 나열하는 그 member의 첫 case의 다른 인자를 주고, 그런 case가 없을 때만
+  placeholder를 준다. 이유: core는 callback을 부르기 전에 다른 인자를 판정할 수 있는데, crud-ui validator는 placeholder
+  `data`를 `invalid_form_input`으로 거부해서, 시험은 core가 닿지 않은 callback을 기대했다. fixture가 호출을 나열하는
+  case는 core가 callback을 부르는 인자를 말한다.
 - **GN-13s** receiver를 만드는 Python 모듈 함수(GN-13f)는, 그 단계 중 하나가 시험 case의 helper(`path` 인자의
   `self._case_path`나 `self._future`)를 부르면 시험 case를 첫 parameter `self`로 받고, 그 호출은 `self`를 넘긴다.
   이유: 모듈 함수에는 자신의 `self`가 없으므로, 그 단계가 case가 돌기 전에 NameError를 냈다.

@@ -11139,3 +11139,23 @@ test('B2.356: a case value of a text with an unpaired surrogate of a value class
     assert.match(test, /55296/, `${lang}: the code unit 0xD800`);
   }
 });
+
+test('B2.357: the K-2 tests of a member give the other arguments of a case whose callback is called, not placeholders (GN-13y, K-2)', () => {
+  // crud-ui validator: a placeholder data was refused (invalid_form_input) before the core called the callback.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  // The key of each case of resolve is q, which no placeholder of a text is.
+  cases.resolve = JSON.parse(JSON.stringify(cases.resolve).replaceAll('"key":"a"', '"key":"q"'));
+  const sample = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['node', 'python', 'go'] });
+  const node = text(sample, 'packages/ts/generated/tests/generated.test.mjs');
+  const at = node.indexOf("test('K-2: resolve lets the exception of a callback through'");
+  assert.ok(at >= 0);
+  assert.match(node.slice(at, node.indexOf('\n});', at)), /pkg\.resolve\([^\n]*, ['"]q['"]\)/);
+  const python = text(sample, 'packages/python/generated/tests/test_generated.py');
+  const py = python.indexOf('def test_k2_resolve_lets_the_exception_of_a_callback_through');
+  assert.match(python.slice(py, python.indexOf('\n    def ', py + 1)), /pkg\.resolve\([^\n]*, ['"]q['"]\)/);
+  const go = text(sample, 'packages/go/zz_generated_test.go');
+  const g = go.search(/func TestK2Resolve[A-Za-z]*LetsTheError/);
+  assert.ok(g >= 0);
+  assert.match(go.slice(g, go.indexOf('\n}\n', g)), /Resolve\([^\n]*, "q"\)/);
+});

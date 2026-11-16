@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d47dfa341d9d8dec805ce8e288b5ffb8b0af71c145824e7bdaf170631606265e -->
+<!-- source-sha256: bd5b01357e007bc59ea6d9d4b1d2ca53a96c6be3c2422183c09739e1eace02cd -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -31,6 +31,7 @@
 - crate는 다른 저장소의 값 alias 소유자의 실패 변환을, Node, Python, WASM, Go에서 그 core로 들어가는 변환이 부르는 곳에서만 쓴다. `json_value`를 내보내기만 하는 orm처럼 alias가 나가기만 하는 crate가 `-D dead_code`에서 실패했다(GN-6bp, B2.354).
 - member로 값 alias의 list나 map을 만드는 PHP make는, orm의 `MapValue::new(&argument)`처럼 만든 값을 그 class 생성자의 형태(기본은 빌림)로 넘긴다. 이전에는 값을 넘겨서 core의 어느 서명도 생성자와 함께 받지 못했다(GN-6bq, B2.355).
 - 다른 저장소 값 class의 짝 없는 surrogate가 든 case text는 모든 target에서 json의 `Value.from_units`처럼 kind `text16`의 out row로 UTF-16 code unit에서 만든다. `Value.string("\ud800")`는 json이 거부했고, Go에서 컴파일되지 않았으며, PHP에서 U+FFFD가 되었다(GN-6br, B2.356).
+- callback을 받는 member의 K-2 시험은 callback fixture가 호출을 나열하는 case의 다른 인자를 주고, 그런 case가 없을 때만 placeholder를 준다. crud-ui validator는 callback을 부르기 전에 placeholder `data`를 거부했다(GN-13y, B2.357).
 
 ## 0.0.13
 

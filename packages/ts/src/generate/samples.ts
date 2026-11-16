@@ -2500,6 +2500,24 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
   });
 }
 
+// GN-13y, K-2: the arguments of the K-2 tests of a member that takes a callback: those of its first case whose callback
+// fixture lists the calls that the core made with them, or undefined, where the tests give placeholders. A core may
+// judge another argument before it calls the callback (crud-ui validator: a null data is invalid_form_input).
+export function callbackReachingArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> | undefined {
+  const callback = callbackArg(model, fn);
+  if (callback === undefined) return undefined;
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['receiver'] !== undefined || record['faults'] !== undefined || record['files'] !== undefined || record['service'] !== undefined) continue;
+    const args = argsOf(fn, record);
+    const given = args?.get(callback);
+    // A fixture whose calls are listed was called with these arguments, whatever the case then raises.
+    const calls = typeof given === 'object' && given !== null && 'callback' in given ? (given as { calls?: unknown[] }).calls : undefined;
+    if (args !== undefined && calls !== undefined && calls.length > 0) return args;
+  }
+  return undefined;
+}
+
 export function callbackArg(model: Model, fn: Fn): Arg | undefined {
   return fn.args.find((a) => unitOf(model, a.type)?.origin === 'callback');
 }

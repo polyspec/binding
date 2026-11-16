@@ -2835,6 +2835,12 @@ the design ids are those of the binding design.
 - **GN-13x** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
   `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
   when no case of it names a fixture, and a double without its type does not compile.
+- **GN-13y** The K-2 tests of a member that takes a callback (a callback without its members, the exception of a
+  callback, a callback result of another type) give the other arguments of the first case of the member whose callback
+  fixture lists calls, and give placeholders only where no such case exists, in every target. Why: a core may judge
+  another argument before it calls the callback, and the crud-ui validator refused a placeholder `data` with
+  `invalid_form_input`, so the test expected a callback that the core never reached; a case whose fixture lists calls
+  states arguments with which the core calls it.
 - **GN-13s** A Python function of the module that makes a receiver (GN-13f) takes the test case as its first
   parameter `self`, and its call passes `self`, when one of its steps calls a helper of the test case, such as
   `self._case_path` for a `path` argument or `self._future`. Why: a function of the module has no `self` of its own,
