@@ -417,6 +417,44 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   host object leaves the member out, so a default on a member that the core does not call through a host object
   states nothing, and a literal of another type would not compile in the trait method or would give the core a value
   that its type does not hold.
+- **CK-99** The core signatures (I-1, I-2, generator GN-4a, GN-6g, GN-7; B2.398, not yet run): `binding check` compares
+  the contract with the public API of the core as the compiler describes it, per target. Source: for each target, the
+  rustdoc JSON of the core crate at `core.path`, built with `cargo rustdoc --lib --locked --offline` and the features of
+  the target's build (GN-4a: `--no-default-features --features <core.features.<target>>` for a target with a row, the
+  default features otherwise), `--target wasm32-unknown-unknown` for `wasm` and the host for the other four, and the
+  rustdoc options `--cap-lints warn -Zunstable-options --output-format json`; one build serves the targets whose
+  features and Rust target are the same. The check reads the JSON only at the `format_version` that it names, and
+  another version is a finding. Facts compared:
+  - each core path of a member that the target generates (not left out by `only`), and each constant named by such a
+    member or by a `default_core`, resolves in that target's JSON from the crate root through its modules and
+    re-exports (`use`, glob `use`) to an item, and a method through the inherent and trait impls of its type; a path
+    that does not resolve is a finding with the member, the path and the target, so a constant that the core
+    defines under a feature the target's build lacks is reported for that target alone;
+  - a path of another crate, such as `std::string::ToString::to_string`, is resolved through the trait impls of the
+    receiver type in the core's JSON, which list the trait by its path; its signature is not in that JSON, so only
+    its existence is compared;
+  - the return type of each resolved function, through type aliases, is `core::result::Result` exactly when the
+    member's `core.result` holds (stated, or derived by GN-7), and its error type is `binding_core::Failure<_>`
+    exactly when `core.failure` holds (stated, or derived by GN-7 from a parameter without `keeps` that holds a
+    callback or a function); each disagreement is a finding with the member, the target, the contract's fact and the
+    core's type.
+
+  A core that cannot be read is a finding, never a pass: the pinned toolchain or its `wasm32-unknown-unknown` target
+  is missing, a dependency is not in the local Cargo cache (`--offline`), the build fails, or the JSON has another
+  `format_version`. The finding is `CK-99 core unreadable` with the target, the command and its error, and it names
+  `make install`. Why: the check read only the contract, so a `keeps` member whose core returns `Failure` without
+  `core.failure: true` (template, E0053 and E0308) and a constant of a feature that the WASM build turns off (orm,
+  E0425) passed it and failed only when a generated crate compiled; the compiler's description of the core is the one
+  source that states the same signatures and the same features as that compile, and binding still parses no Rust
+  source (R5). The JSON output of rustdoc is unstable in Rust 1.99 (`-Zunstable-options`, and `cargo
+  --output-format json` is refused on stable), so the check runs it with a nightly toolchain that the repository pins
+  with its components and the `wasm32-unknown-unknown` target, never with `RUSTC_BOOTSTRAP` on the stable toolchain,
+  which would turn on an unstable feature behind the back of the channel (P7); a new nightly is a pin change whose
+  `format_version` the check is changed to read in the same commit. `--cap-lints warn` keeps the lints of the core's
+  documentation out of the check: a core whose workspace denies warnings fails rustdoc on an ambiguous doc link (the
+  json core, `stringify` is a function and a macro), which says nothing of its signatures. Until B2.398 is done the
+  check does not run CK-99, and the build of every consumer (`make consumers-check`, B2.391) catches these mismatches
+  when it compiles.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

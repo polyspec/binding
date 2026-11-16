@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 5e79e1fdca915ce59d6db9513c7341395a041dd57799150c1948287bce2b1c9e -->
+<!-- source-sha256: 857a905074ef8d039623797d07632f53b59ea1f19d8a4f34f2cbecfe54f60d1b -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -351,6 +351,39 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   이유: default는 host 객체가 member를 뺄 때 trait method가 코어에 돌려주는 것이므로, 코어가 host 객체를 통해
   호출하지 않는 member의 default는 아무것도 말하지 않고, 다른 type의 literal은 trait method에서 컴파일되지 않거나
   코어에 그 type이 갖지 않는 값을 준다.
+- **CK-99** 코어 signature(I-1, I-2, generator GN-4a, GN-6g, GN-7; B2.398, 아직 실행하지 않음): `binding check`는 계약을
+  컴파일러가 기술하는 코어의 public API와 target마다 비교한다. 출처: target마다 `core.path`의 코어 crate의 rustdoc
+  JSON이며, `cargo rustdoc --lib --locked --offline`에 그 target의 빌드의 feature(GN-4a: 행이 있는 target은
+  `--no-default-features --features <core.features.<target>>`, 그 밖에는 default feature)를, `wasm`은
+  `--target wasm32-unknown-unknown`을, 다른 네 target은 host를, rustdoc 옵션
+  `--cap-lints warn -Zunstable-options --output-format json`을 주어 빌드한다; feature와 Rust target이 같은 target들은
+  빌드 하나를 함께 쓴다. 검사는 자신이 명시한 `format_version`의 JSON만 읽고, 다른 version은 finding이다. 비교하는
+  사실:
+  - target이 생성하는(`only`가 빼지 않은) member의 각 core path와, 그런 member나 `default_core`가 명시하는 각 상수는
+    그 target의 JSON에서 crate root부터 module과 re-export(`use`, glob `use`)를 거쳐 item으로 해석되고, method는 그
+    type의 inherent impl과 trait impl을 거쳐 해석된다; 해석되지 않는 path는 member, path, target을 담은 finding이므로,
+    target의 빌드에 없는 feature 아래에서 코어가 정의하는 상수는 그 target에서만 보고된다;
+  - `std::string::ToString::to_string` 같은 다른 crate의 path는 코어 JSON에서 receiver type의 trait impl을 거쳐
+    해석되며, trait impl은 trait을 그 path로 나열한다; 그 signature는 그 JSON에 없으므로 존재만 비교한다;
+  - 해석된 각 함수의 반환 type은 type alias를 거쳐, member의 `core.result`가 성립할 때(명시되었거나 GN-7로 도출될 때)에
+    한해 `core::result::Result`이고, 그 error type은 `core.failure`가 성립할 때(명시되었거나, callback이나 함수를 담은
+    `keeps` 없는 parameter로부터 GN-7로 도출될 때)에 한해 `binding_core::Failure<_>`이다; 어긋남마다 member, target,
+    계약의 사실, 코어의 type을 담은 finding이다.
+
+  읽을 수 없는 코어는 finding이며 결코 통과가 아니다: 고정된 toolchain이나 그 `wasm32-unknown-unknown` target이
+  없거나, dependency가 로컬 Cargo cache에 없거나(`--offline`), 빌드가 실패하거나, JSON의 `format_version`이 다른
+  경우다. finding은 target, 명령, 그 오류를 담은 `CK-99 core unreadable`이며 `make install`을 명시한다. 이유: 검사는
+  계약만 읽었으므로, `core.failure: true` 없이 코어가 `Failure`를 돌려주는 `keeps` member(template, E0053과 E0308)와
+  WASM 빌드가 끄는 feature의 상수(orm, E0425)가 검사를 통과했고, 생성된 crate가 컴파일될 때에야 실패했다; 컴파일러의
+  코어 기술은 그 compile과 같은 signature와 같은 feature를 말하는 유일한 출처이며, binding은 여전히 Rust 소스를
+  parse하지 않는다(R5). rustdoc의 JSON 출력은 Rust 1.99에서 unstable이므로(`-Zunstable-options`, 그리고 `cargo
+  --output-format json`은 stable에서 거부된다), 검사는 저장소가 component와 `wasm32-unknown-unknown` target과 함께
+  고정하는 nightly toolchain으로 실행하며, stable toolchain에 `RUSTC_BOOTSTRAP`을 주어 실행하지 않는다: 그것은 channel
+  몰래 unstable 기능을 켜는 것이다(P7); 새 nightly는 고정의 변경이며, 같은 commit에서 검사가 그 `format_version`을
+  읽도록 바뀐다. `--cap-lints warn`은 코어 문서의 lint를 검사 밖에 둔다: workspace가 warning을 deny하는 코어는 모호한
+  doc link에서 rustdoc이 실패하며(json 코어, `stringify`는 함수이자 macro다), 이는 signature에 대해 아무것도 말하지
+  않는다. B2.398이 끝날 때까지 검사는 CK-99를 실행하지 않으며, 모든 consumer의 빌드(`make consumers-check`, B2.391)가
+  compile할 때 이 어긋남을 잡는다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
