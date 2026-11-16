@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bc487104f6672f685ddaaef760a9cb609179dc44fca4cfb8a79a7457f4f7fe1f -->
+<!-- source-sha256: b55103bccee52e8ddf79e5d2b8a781383b0fa11df7466a7d435d0cddf56c1a1b -->
 # 생성기
 
 [English](generator.md)
@@ -2325,6 +2325,17 @@
   case를 가진다.
   Node와 WASM에서 step은 그 호출이 await하지 않으면 호출의 결과를 바로 읽는다. step의 함수는 그 호출 가운데 하나가
   await할 때만 async 함수이고, 다른 함수의 `await`는 문법 오류이기 때문이다.
+- **GN-13pa** method의 case는 `"with": {"<name>": <instance value>, ...}`를 이름할 수 있다. 각 값은 GN-13f의 instance
+  value로 `{"new": "<member id>", ...}` 꼴이고, 그 member는 이 계약의 class를 만들며, 이름은 `receiver`가 아닌
+  snake_case 이름이다. 시험은 각 값을 case의 receiver 다음에 `with`의 순서대로 만들고, GN-13n의 이름처럼 그 이름으로
+  보관한다. 어떤 깊이의 function fixture의 step도 그것을 `on`으로 이름할 수 있고, step의 인자는
+  `{"bound": "<name>"}`일 수 있으며, `after`의 호출도 그것을 `on`으로 이름할 수 있다(GN-13o). case의 어떤 function
+  fixture도 그 이름을 또 주지 않는다. 실패하는 step(GN-13o) 다음에는 그 함수의 다음 step이 이어지므로, case는 step이
+  내는 kind와 그 다음 step이 읽는 상태를 함께 보인다.
+  이유: callback만 주는 class, 예를 들어 ORM의 transaction에는 case가 callback 밖에서 만든 값으로 닿는다. 예를 들어
+  step이 transaction에 연결하고 `after`의 호출이 transaction이 끝난 뒤 실행하는 query가 그렇다. 이름이 없으면 그 값은
+  그것을 받는 호출마다 그 안에서 만들어져 다음 호출에서 같은 값이 아니다. 그런 step이나 `after`의 호출이 부르는
+  member는 거기서 case를 가진다(CK-22).
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열, `case_path`와 선택적인 `as`만 가진 경로 객체, case의 listener의

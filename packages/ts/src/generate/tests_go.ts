@@ -897,6 +897,11 @@ function made(v: Values, b: Body, r: Receiver): string {
   // GN-13p: a receiver that a step of a function fixture calls on is kept in a variable of the test.
   // It is made before the arguments of the call, so the funcs of the arguments close over the variable.
   if (r.bound === true) b.lines.push(`bound_receiver := ${local}`, '_ = bound_receiver');
+  // GN-13pa: each value of with is made after the receiver and kept in a variable of the test under its name.
+  for (const named of r.with ?? []) {
+    const value = made(v, b, named.receiver);
+    b.lines.push(`bound_${named.name} := ${value}`, `_ = bound_${named.name}`);
+  }
   return local;
 }
 

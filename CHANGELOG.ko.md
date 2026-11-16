@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: f266b04d7767d13e5c2ec294eab77d4ae1b289020336a6891df51fbd6979895f -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
+<!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -9,6 +10,7 @@
 ## Unreleased
 
 - 함수 parameter는 그 member가 나중 member가 부르도록 함수를 보관만 할 때 `keeps: true`를 적을 수 있다(hyper `pages.register`, 이것을 `page_request.next`가 부른다). 그 member는 `Failure` 없는 코어 오류를 돌려주고, 함수를 부르는 member가 `core.failure: true`를 적는다. 전에는 `binding check`가 함수의 `keeps`를 거부했으므로 함수의 실패가 그것을 보관하는 member에 자리했다. end-to-end functions가 `registry.register`에 그것을 적는다(GN-6aa, GN-7, CK-90, B2.378).
+- method의 case는 `with`, 곧 `{"<name>": {"new": <member id>, ...}}`로 instance value에 이름을 붙이고, 시험은 그것을 receiver 다음에 만들어 그 이름으로 보관한다. 다섯 타깃에서 그렇다. 어떤 깊이의 function fixture의 step도 그런 값 위에서 부르거나 그것을 `{"bound": <name>}`로 넘기고, `after`의 호출은 함수가 반환한 뒤 그것 위에서 부른다. step이나 `after`의 호출이 부르는 member는 CK-22에서 거기서 case를 가지므로, callback만 주는 class, 예를 들어 ORM의 transaction의 member에는 `cases`의 행이 필요 없다. end-to-end sample은 `busy`를 낸 step 뒤와 transaction 뒤에 `with`의 두 번째 store를 부른다(GN-13pa, CK-22, CK-96, B2.365).
 - async 함수가 아닌 function fixture의 step은 raise하는 호출의 결과를 Node와 WASM에서 바로 읽는다. member를 await하는 case의 시험은 그 함수에 `await settled(...)`를 써서, 시험 파일 전체가 load되지 않는 문법 오류를 냈다(GN-6m, GN-13p, B2.324).
 - method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.324).
 - function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.323).

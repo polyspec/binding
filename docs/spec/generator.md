@@ -2853,6 +2853,17 @@ the design ids are those of the binding design.
   the callback holds, and that kind has a case only when the callback reaches the receiver.
   In Node and WASM the step reads the outcome of its call at once unless that call awaits, because the function of
   the step is an async function only when one of its calls awaits, and `await` in another function is a syntax error.
+- **GN-13pa** A case of a method may name `"with": {"<name>": <instance value>, ...}`: each value is an instance
+  value of GN-13f of the form `{"new": "<member id>", ...}`, whose member makes a class of this contract, and its name
+  is a snake_case name other than `receiver`. The test makes each value after the receiver of the case, in the order of
+  `with`, and keeps it under its name as a name of GN-13n: a step of a function fixture at any depth may name it as
+  `on`, a step argument may be `{"bound": "<name>"}`, and a call of `after` may name it as `on` (GN-13o). No function
+  fixture of the case gives that name too. A step that raises (GN-13o) is followed by the next step of its function,
+  so a case shows a kind that a step raises and then the state that the next step reads.
+  Why: a class that only a callback gives, such as the transaction of an ORM, is reached by a value that the case
+  makes outside the callback, such as a query that a step connects to the transaction and a call of `after` runs
+  after the transaction ended; without a name that value is made inside each call that takes it and is not the same
+  value in the next call. A member that such a step or call of `after` calls has its case there (CK-22).
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings, path objects with only `case_path` and optional `as`, and the

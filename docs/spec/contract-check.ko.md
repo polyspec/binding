@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 82705a6fb61458d643fed53d4ba207cc08aea5c282cd8c10b5fb2e5193893d41 -->
+<!-- source-sha256: c936fe654d80b24b33b0456cad74297c812134f06cfb8924e336433291782ad8 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -264,7 +264,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   어떤 program도 쓰지 않는 상태를 가리키는 case는 시험이 실행될 때에야 실패하고, WASM의 코어에는 socket이 없으므로 그런
   case의 WASM 시험은 실패할 수밖에 없다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
-  constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
+  constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`이거나, case의 function fixture의 step이나 `after`의
+  호출이 부르는 member이고(생성기 GN-13o, GN-13pa), 그 호출이 그 member의 case다. callback만 주는 class, 예를 들어
+  ORM의 transaction의 member는 자기 case가 만드는 receiver가 없으므로, 그 case는 그것에 닿는 호출이다(B2.365). 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member의 `raises`
   행이 내는 kind마다 그 member의 경로에서 그 kind를 내는 case가 있다: 그 `raises`가 같은 library(그 library 자신, 또는 그
   owner, GN-7c)의 그 kind를 같은 호출 형태(`wait` `none`, 또는 다른 `wait`)로 내는 어느 member의 case든 된다(B2.376). 이유:
@@ -314,9 +316,14 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   B2.361) `args`는 정확히 그 parameter이며, 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
   시험하며(Node와 WASM에서는 `undefined`, B2.374), 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
+  method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
+  만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
+  `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
+  `after`의 호출은 그것을 `on`으로 이름할 수 있고, step의 인자는 `{"bound": <name>}`일 수 있다. receiver가 없는 member의
+  case의 `with`는 보고된다.
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
-  key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `raises`, `after`, `then`, `faults`, `service`,
+  key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `with`(생성기 GN-13pa), `raises`, `after`, `then`, `faults`, `service`,
   `@files`, `@listener`, `repeat`, `awaits`, `targets`(CK-97), 또는 `cases`의 행이 `reads`에 이름한 key. `reads`는 그 group의 case에서 저장소 자신의
   시험이 읽고 어떤 생성기도 읽지 않는 snake_case key의 list다. 예를 들어 core 시험과 손으로 쓴 host 시험이 비교하는
   입력 bytes와 기대 tree다: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases",
