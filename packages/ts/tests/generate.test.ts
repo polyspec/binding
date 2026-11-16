@@ -2788,13 +2788,14 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   }
   assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\size\(\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)\)/);
   assert.match(text(out, RELAY_TESTS.go), /func TestU2SizeWithoutValueIsTheCallWithItsDefault\(t \*testing\.T\) \{\n\tvalue0, err0 := Size\(nil\)\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueObject\(made0\)\n[^]*?\tvalue1, err1 := Size\(made2\)\n/);
-  // A value alias: the empty map of the language.
+  // A value alias: the empty map of the language; in PHP the stdClass, since the rows of data read an empty array as a
+  // list (GN-13v, B2.351).
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
   const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   assert.match(text(own, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\{\}\)\),/);
   assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
-  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(\[\]\)\),/);
+  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(new \\stdClass\(\)\)\),/);
   assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
   // Any other {empty} of a value type stays refused by name.
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'list' };
