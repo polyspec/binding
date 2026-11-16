@@ -409,9 +409,10 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
       `${t}}`,
     ];
   }
-  // GN-6bi: a pointer to a tuple is dereferenced in parentheses, because an index binds before the star.
+  // GN-6bi: a pointer to a tuple or to a func is dereferenced in parentheses, because an index and a call bind before
+  // the star.
   if ('optional' in type) {
-    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : typeof type.optional === 'object' && 'tuple' in type.optional ? `(*${expr})` : `*${expr}`, indent + 1, depth), `${t}}`];
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : typeof type.optional === 'object' && ('tuple' in type.optional || 'function' in type.optional) ? `(*${expr})` : `*${expr}`, indent + 1, depth), `${t}}`];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
   // GN-6ae: a func is a callback of the call, whose dispatch decodes the arguments, a class argument as a new

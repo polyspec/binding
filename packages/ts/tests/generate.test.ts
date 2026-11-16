@@ -11543,6 +11543,25 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.393: Go calls an optional func of a record field through the pointer in parentheses (GN-6bi, GN-6z)', () => {
+  // orm zz_generated_orm.go: `returned, err := *cfg.AuditSource()` failed go vet with `is not a function`, since a call
+  // binds before the star. The functions fixture with a record whose optional field holds a function type.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const convert = contract.units[0].members[0].parameters[0].type;
+  contract.units.push({ id: 'apply_options', name: ['apply', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_functions::ApplyOptions', fields: [
+    { name: ['convert'], type: { optional: convert }, default: { literal: null } },
+  ] });
+  contract.units[0].members.push({ id: 'functions.apply_with', name: ['apply', 'with'], kind: 'function', visibility: 'public', parameters: [
+    { name: ['value'], type: 'text', required: true }, { name: ['options'], type: { unit: 'apply_options' }, required: true },
+  ], returns: 'text', raises: ['polyspec_functions::Error::Empty'], wait: 'none', core: 'polyspec_functions::apply_with' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_functions.go');
+  assert.match(go, /Convert \*func\(string, \[\]int64\) \(string, error\)/);
+  assert.doesNotMatch(go, /:= \*options\.Convert\(/);
+  assert.match(go, /returned, err := \(\*options\.Convert\)\(arg0, arg1\)/);
+});
+
 test('B2.390: the work stack of a cycle walks a list and a map of a record field by the field and not by a borrow of its iterator (GN-6bt)', () => {
   // template wasm lib.rs: `for item0 in &value.body.iter() {` was E0277, since `&` takes the iterator and a reference
   // to an iterator is no iterator. A record of the cycle that holds a list, a map, an optional and a unit of it.

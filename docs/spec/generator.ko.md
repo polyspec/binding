@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 334df9342d0d1d88019c91d7cd3fdd29b208c36ccd6fc6660dfbb8ab2f42b80c -->
+<!-- source-sha256: e2fd52f7a92d7a7df007769f9b7d5266ef07d05185d123eba156c7f9bc215c32 -->
 # 생성기
 
 [English](generator.md)
@@ -807,6 +807,10 @@
   호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
 - **GN-6bi** Go는 `tuple`의 `optional` 타입인 field나 값을 괄호 안의 포인터로 인코딩한다: `(*options.Range)[0]`.
   이유: 인덱스가 별표보다 먼저 묶이므로 `*options.Range[0]`은 포인터를 인덱싱하고, Go는 이를 거부한다(cannot indirect).
+  함수 타입(GN-6z)의 `optional`은 `*func(...)`이고 없음은 nil이며, 그 func는 괄호 안의 포인터로 부른다:
+  `(*cfg.AuditSource)()`. nil이 아닌 포인터 뒤의 func는 모든 func처럼 검사하고, nil func는 kind
+  `invalid_argument_type`이다. 이유: 호출도 별표보다 먼저 묶이므로 `*cfg.AuditSource()`는 포인터를 부르고, Go는 이를
+  거부한다(`is not a function`). orm `config.audit_source`가 그렇게 `go vet`에 실패했다.
 - **GN-6bj** Go entry point는 record parameter의 local을 디코더가 묶은 이름 그대로 코어에 준다: `input`이라는
   parameter는 `input_`이다(GN-15). 이유: entry point는 `input`을 호출의 바이트에 묶으므로, parameter를 원래 이름으로
   부르는 코어 호출은 그 바이트를 넘긴다.

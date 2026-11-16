@@ -995,7 +995,11 @@ the design ids are those of the binding design.
   the env of the call escapes the body of the constructor (E0521).
 - **GN-6bi** Go encodes a field or a value of the type `optional` of a `tuple` through the pointer in parentheses,
   `(*options.Range)[0]`. Why: an index binds before the star, so `*options.Range[0]` indexes the pointer, which Go
-  refuses (cannot indirect).
+  refuses (cannot indirect). An `optional` of a function type (GN-6z) is `*func(...)`, nil for none, and its func is
+  called through the pointer in parentheses, `(*cfg.AuditSource)()`; the func behind a pointer that is not nil is
+  checked as every func is, a nil func is kind `invalid_argument_type`. Why: a call binds before the star too, so
+  `*cfg.AuditSource()` calls the pointer, which Go refuses (`is not a function`); orm `config.audit_source` failed
+  `go vet` so.
 - **GN-6bj** The Go entry point gives the core the local of a record parameter by the same name that its decoder
   binds, `input_` for a parameter named `input` (GN-15). Why: the entry point binds `input` to the bytes of the call,
   so a core call that names the parameter by its plain name passes those bytes.
