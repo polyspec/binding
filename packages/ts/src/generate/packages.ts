@@ -611,8 +611,8 @@ function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDepen
 }
 
 // T-2: the platforms of a release, as napi-rs names them, and the npm package of each that holds the Node addon. The
-// npm package of a library (or its host package, L-2a) holds no addon; the release writes these packages into
-// optionalDependencies of the manifest it packs, and npm installs the one of the machine's platform (GN-3c).
+// npm package of a library (or its host package, L-2a) holds no addon and names none of these packages; the
+// consumer names each by its asset URL in optionalDependencies, and npm installs the one of the machine's platform (GN-3c).
 export const NODE_PLATFORMS = [
   { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc', triple: 'x86_64-unknown-linux-gnu' },
   { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc', triple: 'aarch64-unknown-linux-gnu' },

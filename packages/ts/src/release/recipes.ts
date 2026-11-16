@@ -258,20 +258,19 @@ ${generate('node')}
 
   if (has('node') || has('wasm')) {
     const wasmDir = place(contract, 'packages/ts/wasm/generated').slice(npmDir.length + 1);
-    const platforms = has('node') ? ` ${PLATFORMS.map((p) => p.platform).join(' ')}` : '';
-    // The copy holds the files that npm pack of the package lists, and a manifest that names the platform packages.
+    // The copy holds the files that npm pack of the package lists, its manifest among them as it is tracked: no registry
+    // holds a platform package before 0.1, so the consumer names each by its asset URL (GN-3c).
     // npm pack --dry-run --json of the npm that devEngines pins (12.2.0) writes an object keyed by the name of the
     // package, {"<name>": {"id": ..., "files": [{"path": ...}]}}; a list without the package is refused by name.
-    const copy = 'const fs = require("fs"); const path = require("path"); const [from, list, to, ...platforms] = process.argv.slice(1); '
+    const copy = 'const fs = require("fs"); const path = require("path"); const [from, list, to] = process.argv.slice(1); '
       + 'const p = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8")); '
       + 'const packed = JSON.parse(fs.readFileSync(list, "utf8"))[p.name]; '
       + 'if (packed === undefined || !Array.isArray(packed.files)) { console.error("release-npm: npm pack --dry-run --json of " + from + " lists no files of the package " + p.name + " in " + list); process.exit(1); } '
-      + 'for (const file of packed.files.map((f) => f.path)) { fs.mkdirSync(path.dirname(path.join(to, file)), { recursive: true }); fs.copyFileSync(path.join(from, file), path.join(to, file)); } '
-      + 'if (platforms.length > 0) p.optionalDependencies = Object.fromEntries(platforms.map((platform) => [p.name + "-" + platform, p.version])); '
-      + 'fs.writeFileSync(path.join(to, "package.json"), JSON.stringify(p, null, 2) + "\\n");';
+      + 'for (const file of packed.files.map((f) => f.path)) { fs.mkdirSync(path.dirname(path.join(to, file)), { recursive: true }); fs.copyFileSync(path.join(from, file), path.join(to, file)); }';
     add('release-npm', `${head('release-npm', `release-npm packs ${npm} itself (GN-19e, GN-3c) from a copy of the files that npm pack of ${npmDir} lists${has('wasm') ? `, with the WASM
 module that cargo builds for release and the wasm-bindgen of WASM_BINDGEN binds, which must be the release ${WASM_BINDGEN} of the crate
-of the generated manifests (GN-18)` : ''}. ${has('node') ? 'The manifest of the copy names the platform package of each platform of the release at the version of the package in\noptionalDependencies; the tracked manifest names none.' : 'The package has no Node addon, so it names no platform package.'}`)}
+of the generated manifests (GN-18)` : ''}. The manifest of the copy is the tracked one and names no platform package: the consumer names each
+by its asset URL (GN-3c).`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('NODE', 'the Node.js of the checkout')}
 ${require('NPM', 'the npm of the checkout')}
@@ -280,7 +279,7 @@ ${has('wasm') ? `	@test "$$($(WASM_BINDGEN) --version)" = "wasm-bindgen ${WASM_B
 	rm -rf "$$work"; \\
 	mkdir -p "$$work/package" "$$work/pack"; \\
 	(cd ${npmDir} && $(NPM) pack --dry-run --json --ignore-scripts) > "$$work/files.json"; \\
-	$(NODE) -e '${copy}' ${npmDir} "$$work/files.json" "$$work/package"${platforms}; \\
+	$(NODE) -e '${copy}' ${npmDir} "$$work/files.json" "$$work/package"; \\
 ${has('wasm') ? `	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo build --release --locked -p ${crate('wasm')} --target wasm32-unknown-unknown; \\
 	$(WASM_BINDGEN) --target web --out-dir "$$work/package/${wasmDir}" --out-name ${contract.library.replaceAll('-', '_')}_wasm $(RELEASE_TARGET)/wasm32-unknown-unknown/release/${extension}_wasm.wasm; \\
 ` : ''}	$(call binding_release_pack,"$$work/package","$$work/pack")

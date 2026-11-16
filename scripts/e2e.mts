@@ -39,7 +39,7 @@ import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags } from './e2e-lint.mts';
 import { llvmOf } from './e2e-llvm.mts';
-import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
+import { npmPacked, type ConsumerPackage, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 import { phpMinorProblem } from './php-minor.mts';
@@ -688,12 +688,18 @@ if (targets.includes('node') || targets.includes('wasm')) {
   installed = stepOf(owner, `build the addon${npmPlan.length === 1 ? '' : 's'}, pack and install the npm package${npmPlan.length === 1 ? '' : 's'}`, () => {
     rmSync(nodeDir, { recursive: true, force: true });
     mkdirSync(nodeDir, { recursive: true });
-    // T-2: the addon is the npm package of this machine's platform, which a release names in optionalDependencies of
-    // the manifest it packs (GN-3c); the run packs it as a release does and installs both tarballs.
+    const assetsDir = join(work, 'node-assets');
+    rmSync(assetsDir, { recursive: true, force: true });
+    mkdirSync(assetsDir, { recursive: true });
+    // T-2: the addon is the npm package of this machine's platform, which the consumer names by its asset URL in
+    // optionalDependencies of its root manifest (GN-3c); the run packs it as a release does and installs the packages
+    // through one root manifest of that form, from a server of the assets on the loopback.
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+    const consumed: ConsumerPackage[] = [];
     for (const { source, addon } of npmPlan) {
       const p = source.prepared;
       const npm = (p.contract.packages['node'] as { package: string }).package;
+      const version = (JSON.parse(readFileSync(join(packageDir(p, 'ts'), 'package.json'), 'utf8')) as { version: string }).version;
       if (addon) {
         run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-node`, '--features', testFeatures(p, 'node')]);
         const platformDir = join(work, `node-platform-${p.contract.library}`);
@@ -701,18 +707,22 @@ if (targets.includes('node') || targets.includes('wasm')) {
         mkdirSync(platformDir, { recursive: true });
         const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
         copyFileSync(join(target, `debug/lib${lib(p.contract, 'node')}.${dylib}`), join(platformDir, addonName));
-        const version = (JSON.parse(readFileSync(join(packageDir(p, 'ts'), 'package.json'), 'utf8')) as { version: string }).version;
         writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
-        run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
+        run(npmTool, ['pack', '--pack-destination', assetsDir], { cwd: platformDir });
+        consumed.push({ name: npm, version, platform });
       }
-      run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: packageDir(p, 'ts') });
+      run(npmTool, ['pack', '--pack-destination', assetsDir], { cwd: packageDir(p, 'ts') });
+      consumed.push({ name: npm, version });
     }
-    writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
-    const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
-    const wanted = npmPlan.length + npmPlan.filter((planned) => planned.addon).length;
-    if (tarballs.length !== wanted) throw new Error(`npm pack wrote ${tarballs.length} packages, not the ${wanted} of the contracts and of their addons`);
-    // The other platforms' packages are optional and absent, as on a machine of this platform.
-    run(npmTool, ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
+    const tarballs = readdirSync(assetsDir).filter((name) => name.endsWith('.tgz'));
+    if (tarballs.length !== consumed.length) throw new Error(`npm pack wrote ${tarballs.length} packages, not the ${consumed.length} of the contracts and of their addons`);
+    const list = join(work, 'node-consumer.json');
+    writeFileSync(list, `${JSON.stringify(consumed, null, 2)}\n`);
+    run(process.execPath, [join(here, 'scripts/e2e-npm-install.mts'), assetsDir, nodeDir, npmTool, list]);
+    // The addon resolves from the consumer as the generated entry loads it.
+    for (const { name, platform: of } of consumed) {
+      if (of !== undefined) run(process.execPath, ['-e', `require.resolve(${JSON.stringify(`${name}-${of}`)})`], { cwd: nodeDir });
+    }
   });
   if (!installed && targets.includes('wasm') && owner[0] === 'node' && !failed('wasm')) {
     outcome('wasm').causes.push(`the npm package that holds the module was not installed: ${outcome('node').causes.join('; ')}`);

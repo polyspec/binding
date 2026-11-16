@@ -947,7 +947,7 @@ test('the scaffolded manifests name the napi configuration, the module type and 
   const npm = JSON.parse(String(out.get('packages/ts/package.json')));
   // The napi CLI names the addon <binaryName>.<platform>.node, the file that the entry loads, and builds the triples.
   assert.deepEqual(npm.napi, { binaryName: 'sample', targets: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin'] });
-  // The release writes the platform packages into the packed manifest, so a workspace lock can be installed (GN-3c).
+  // No manifest of the package names the platform packages: the consumer names them by their asset URLs (GN-3c).
   assert.equal(npm.optionalDependencies, undefined);
   // The .js glue of wasm-bindgen --target web is an ES module.
   assert.equal(npm.type, 'module');
@@ -1036,7 +1036,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 project\.license is missing, not "MIT"/);
     assert.match(missing.stderr, /ts\/package\.json: CK-19 license is missing, not "MIT"/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 license is missing, not "MIT"/);
-    // GN-3c: the release writes the platform packages into the packed manifest; the source manifest does not name them.
+    // GN-3c: no manifest of the package names the platform packages; the consumer names them by their asset URLs.
     assert.doesNotMatch(missing.stderr, /optionalDependencies/);
     // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
     assert.match(missing.stderr, /ts\/package\.json: CK-19 type is missing, not "module"/);

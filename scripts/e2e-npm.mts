@@ -57,3 +57,34 @@ export function npmPacked<T extends NpmSource>(mains: readonly T[], dependencies
   for (const main of packedMains) planned.push({ source: main, addon: main.targets.includes('node'), wasm: main.targets.includes('wasm') });
   return planned;
 }
+
+// GN-3c: the consumer of a release names the npm package of the library in dependencies and each platform package in
+// optionalDependencies, each by the URL of its asset, because no registry holds a polyspec package before 0.1. The
+// run installs its packages through one root manifest of that form.
+export interface ConsumerPackage {
+  // The npm name of the package, with its scope.
+  name: string;
+  version: string;
+  // The napi-rs platform of a platform package, absent for the package of the library.
+  platform?: string;
+}
+
+// The name that npm pack gives the tarball of a package: <scope>-<name>[-<platform>]-<version>.tgz, the scope without @.
+export function packFile(name: string, version: string, platform?: string): string {
+  return `${name.replace(/^@/, '').replace('/', '-')}${platform === undefined ? '' : `-${platform}`}-${version}.tgz`;
+}
+
+// The root manifest of a consumer whose assets are under base, a URL that ends with a slash: the package of each
+// library in dependencies and each platform package in optionalDependencies, so npm installs the one of the machine.
+export function consumerManifest(packages: readonly ConsumerPackage[], base: string): { private: true; dependencies: Record<string, string>; optionalDependencies: Record<string, string> } {
+  const dependencies: Record<string, string> = {};
+  const optionalDependencies: Record<string, string> = {};
+  for (const p of packages) {
+    if (p.platform === undefined) dependencies[p.name] = `${base}${packFile(p.name, p.version)}`;
+    else optionalDependencies[`${p.name}-${p.platform}`] = `${base}${packFile(p.name, p.version, p.platform)}`;
+  }
+  return { private: true, dependencies, optionalDependencies };
+}
+
+// The .npmrc of the consumer: npm takes a URL for a root dependency alone (its default allow-remote=none takes none).
+export const CONSUMER_NPMRC = 'allow-remote=root\n';

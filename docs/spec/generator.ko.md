@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e875236084f3d584d3d25747ead82454517ebbe10aa2c11085258cb7c7ee2c62 -->
+<!-- source-sha256: 4319f69aeb23016728fcd8f38ac4425a551a2a2dd1d802b7bd0447c4b96840bd -->
 # 생성기
 
 [English](generator.md)
@@ -87,13 +87,36 @@
 - **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
   `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
   `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는
-  addon을 갖지 않는다. 플랫폼 패키지는 바인딩을 가진 레포의 release가 빌드해 내고(K-3), 그 release는 패키지를 pack할 때 pack하는 manifest의
-  `optionalDependencies`에 모든 플랫폼 패키지를 그 release의 버전으로 적어 npm이 그 기계의 것을 설치하게 한다. source manifest와
-  workspace의 lock은 그것을 적지 않는다. 한 버전의 플랫폼 패키지는 그 버전의 release가 만들므로, 그것을 적은 lock은 그 release
-  전에는 설치할 수 없고, `npm ci`는 lock에 없는 의존을 적은 manifest를 거부한다.
+  addon을 갖지 않는다. 플랫폼 패키지는 바인딩을 가진 레포의 release가 빌드해 낸다(K-3). 패키지의 추적하는 manifest도 release가 pack하는 manifest도
+  플랫폼 패키지를 적지 않는다. release는 `optionalDependencies`를 쓰지 않는다. 플랫폼 패키지는 소비자가 적는다. 소비자의 root
+  `package.json`은 `dependencies`에 `<npm 패키지>`를 패키지의 asset URL로, `optionalDependencies`에 각 `<npm 패키지>-<platform>`을
+  그 플랫폼 패키지의 asset URL로 적으며, 모두 한 release의 것이다. 소비자는 `allow-remote=root`를 적은 `.npmrc`를 추적한다.
+  asset URL은 `https://github.com/<owner>/<repository>/releases/download/v<version>/<file>`이고, `<file>`은 `npm pack`이 지은
+  이름이다(GN-19e). 패키지는 `<scope>-<name>-<version>.tgz`, 플랫폼 패키지는 `<scope>-<name>-<platform>-<version>.tgz`이며
+  scope에는 `@`가 없다. `polyspec/sample`의 `@polyspec/sample` 0.0.3이면:
+
+  ```json
+  {
+    "dependencies": {
+      "@polyspec/sample": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-0.0.3.tgz"
+    },
+    "optionalDependencies": {
+      "@polyspec/sample-linux-x64-gnu": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-linux-x64-gnu-0.0.3.tgz",
+      "@polyspec/sample-linux-arm64-gnu": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-linux-arm64-gnu-0.0.3.tgz",
+      "@polyspec/sample-darwin-arm64": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-darwin-arm64-0.0.3.tgz"
+    }
+  }
+  ```
+
+  npm은 `os`, `cpu`, `libc`가 기계와 맞는 플랫폼 패키지를 설치하고 나머지는 건너뛰며, lock은 모두를 resolved URL과 `sha512`
+  integrity로 기록한다. 그래서 lock은 모든 플랫폼에서 같고 `npm ci`는 내려받은 것을 각각 lock과 대조한다. 이유: 0.1 전에는 어떤
+  registry도 polyspec 패키지를 갖지 않으므로(AGENTS) pack한 manifest의 `optionalDependencies`에 적은 버전 범위는 npm이 resolve할
+  수 있는 것을 가리키지 않고, npm은 resolve할 수 없는 optional 의존을 오류 없이 건너뛴다. 그래서 패키지를 URL로 설치한 소비자는
+  addon을 얻지 못했다. npm은 `allow-remote=root`에서 root 의존의 URL만 받으므로(기본값 `allow-remote=none`은 모든 URL을 거부한다),
+  pack한 manifest의 전이 의존도 URL을 적을 수 없다.
   생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
-  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치하므로, 진입점은
-  `optionalDependencies` 없이도 플랫폼 패키지를 찾는다.
+  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack하고, tarball을 loopback의
+  HTTP로 내어, 위 형식의 root `package.json` 하나와 그 `.npmrc`로 설치한다.
   target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
   `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
   플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. release는 둘을
@@ -2796,9 +2819,9 @@
   --npm-dir <패키지 안의 디렉터리>`와 `napi artifacts --package-json-path <package.json> --config-path <config>
   --output-dir <addons> --npm-dir <같은 디렉터리>`를 실행한다. 설정 파일이 플랫폼 하나만 적는 이유는, `napi artifacts`가
   다른 runner가 addon을 빌드하는 설정된 플랫폼에서 실패하기 때문이다. 그다음 `<npm-dir>/<platform>`에서
-  `npm pack --ignore-scripts --pack-destination <assets>`를 실행한다. 플랫폼 없는 항목은 사본의 manifest의
-  `optionalDependencies`에 플랫폼마다 `<npm 패키지>-<platform>`을 release의 버전으로 적은 뒤 라이브러리 자체의 패키지를
-  `npm pack --ignore-scripts`로 pack한다. 추적하는 manifest는 그것을 적지 않는다(GN-3c). 사본은 패키지의
+  `npm pack --ignore-scripts --pack-destination <assets>`를 실행한다. 플랫폼 없는 항목은 manifest가 추적하는 것
+  그대로인 사본에서 라이브러리 자체의 패키지를 `npm pack --ignore-scripts`로 pack한다. 그 manifest는 플랫폼 패키지를 적지
+  않으며, 소비자가 그것을 asset URL로 적는다(GN-3c). 사본은 패키지의
   `npm pack --dry-run --json --ignore-scripts`가 나열하는 파일을 담는다. 레포의 `devEngines`가 고정한 npm(12.2.0)은
   그 목록을 패키지 이름을 키로 하는 객체(`{"<name>": {"id": …, "filename": "<scope>-<name>-<version>.tgz", "files":
   [{"path": …}]}}`)로 쓰고, recipe는 그 형식만 읽으며 패키지를 이름으로 담지 않은 목록은 거부한다. npm의 release는

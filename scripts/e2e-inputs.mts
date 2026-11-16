@@ -47,5 +47,6 @@ export const NOT_READ: readonly Input[] = [
   { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
   { path: 'scripts/consumers.mts', why: 'make consumers-check imports it, which names the steps and the table of the compile check of consumers (GN-14i); a run of make e2e does not' },
   { path: 'scripts/consumers-check.mts', why: 'make consumers-check runs it (GN-14i); a run of make e2e does not' },
+  { path: 'scripts/e2e-npm-install.mts', why: 'the script of the tree of the commit runs it from that tree to install the npm packages as a consumer of a release does (GN-3c); the script of the checkout does not import it' },
   { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
 ];

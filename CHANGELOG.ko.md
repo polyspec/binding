@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 18c5de77231f28a946a33315a093e95620d64d0780fab15b503fb06d7d458e05 -->
+<!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: 6d32bdd5d5c54832a26c943516689a27b30f4bdd9bf93b5345bda94d7cfa5197 -->
 <!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
@@ -21,6 +21,7 @@
 
 ## 0.0.15
 
+- release는 pack한 npm manifest에 `optionalDependencies`를 쓰지 않는다. 소비자는 root `package.json`의 `dependencies`에 패키지를, `optionalDependencies`에 각 플랫폼 패키지를 release asset의 URL로 적고, 추적하는 `.npmrc`에 `allow-remote=root`를 둔다. release가 적던 버전 범위는 0.1 전에는 registry의 어떤 패키지도 가리키지 않아 npm이 건너뛰었고, 패키지를 URL로 설치한 소비자는 addon을 얻지 못했다. `make e2e`는 이제 loopback의 asset server에서 그 형식의 root manifest 하나로 설치한다(GN-3c, GN-19e, B2.405). `packages/ts`에서 `node --test --test-name-pattern=GN-3c tests/release-recipes.test.ts tests/e2e-npm.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다. CI의 job e2e가 첫 전체 실행이다.
 - `keeps` 없는 parameter의 record field에 있는 callback은 모든 target에서 호출 동안만 살므로, 그것을 호출 뒤까지 갖는 코어는 더는 컴파일되지 않는다. Python, PHP, WASM, Go는 그 record를 `'static`으로 적었고, Go는 그때 끝난 호출의 handle로 보관된 callback을 실행했다(GN-6d, B2.402). `packages/ts`의 `node --test --test-name-pattern=B2.402 tests/generate.test.ts`로 확인했으며, 변경 전에는 실패했다. 빌린 record를 갖는 코어의 레포 `tests/e2e/lent`도 확인한다: `make e2e`는 각 바인딩 crate의 `cargo check`가 E0597로, Node는 E0521로 실패하기를 요구한다(GN-14k).
 - `make dist`는 `packages/ts/dist`를 build하고 그 bin `dist/cli.js`에 mode 0755를 준다. 그래서 이 checkout을 연결한 레포가 `node_modules/.bin/binding`을 실행한다. tsc는 그것을 0644로 썼고 bin이 "Permission denied"로 실패했다(GN-14j, B2.364).
 - binding scaffold는 release를 require하는 `go.mod` 옆에 `go mod download -json all`이 주는 sum으로 `packages/go/go.sum`을 쓰고 CK-19가 그것을 비교한다. Go가 줄 수 없는 모듈은 이름 있는 실패이며 `go.sum`을 쓰지 않는다. 생성된 Go 모듈에는 `go.sum`이 없어서 레포의 `go.work` 밖에서 빌드되지 않았다(GN-15l, B2.400).

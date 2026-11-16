@@ -115,14 +115,39 @@ the design ids are those of the binding design.
   napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
   <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
   (L-2a), holds no addon; the release of the repository that holds the binding builds and publishes the platform
-  packages (K-3), and when it packs the
-  package it writes every platform package into `optionalDependencies` of the packed manifest at the version of the
-  release, so npm installs the one of the machine. The source manifest and the lock of a workspace do not name them:
-  the platform packages of a version are made by the release of that version, so a lock that named them could not be
-  installed before that release, and `npm ci` refuses a manifest whose dependencies its lock lacks. The generated
+  packages (K-3). Neither the tracked manifest of the package nor the manifest that the release packs names a
+  platform package: the release writes no `optionalDependencies`. The consumer names them. Its root `package.json`
+  has `dependencies` with `<npm package>` at the asset URL of the package and `optionalDependencies` with each
+  `<npm package>-<platform>` at the asset URL of its platform package, all of one release, and the consumer tracks a
+  `.npmrc` with `allow-remote=root`. An asset URL is
+  `https://github.com/<owner>/<repository>/releases/download/v<version>/<file>`, where `<file>` is the name that
+  `npm pack` gave (GN-19e): `<scope>-<name>-<version>.tgz` for the package and `<scope>-<name>-<platform>-<version>.tgz`
+  for a platform package, the scope without `@`. For `@polyspec/sample` 0.0.3 of `polyspec/sample`:
+
+  ```json
+  {
+    "dependencies": {
+      "@polyspec/sample": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-0.0.3.tgz"
+    },
+    "optionalDependencies": {
+      "@polyspec/sample-linux-x64-gnu": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-linux-x64-gnu-0.0.3.tgz",
+      "@polyspec/sample-linux-arm64-gnu": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-linux-arm64-gnu-0.0.3.tgz",
+      "@polyspec/sample-darwin-arm64": "https://github.com/polyspec/sample/releases/download/v0.0.3/polyspec-sample-darwin-arm64-0.0.3.tgz"
+    }
+  }
+  ```
+
+  npm installs the platform package whose `os`, `cpu` and `libc` match the machine and skips the others, and its lock
+  records every one with its resolved URL and its `sha512` integrity, so the lock is the same on every platform and
+  `npm ci` checks each download against it. Why: until version 0.1 no registry holds a polyspec package (AGENTS), so
+  a version range in `optionalDependencies` of the packed manifest names nothing that npm can resolve, and npm skips
+  an optional dependency that it cannot resolve without an error: a consumer that installed the package from its URL
+  got no addon. npm takes a URL only for a root dependency under `allow-remote=root` (its default `allow-remote=none`
+  refuses every URL), so a transitive dependency of the packed manifest could not name the URL either. The generated
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
   entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
-  release does and installs both tarballs, so the entry finds the platform package without `optionalDependencies`. The `package.json` that `scaffold` writes for a library with the target
+  release does, serves the tarballs over HTTP on the loopback, and installs them through one root `package.json` of
+  the form above with that `.npmrc`. The `package.json` that `scaffold` writes for a library with the target
   `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
   which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
   in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). A release reads
@@ -3421,9 +3446,8 @@ the design ids are those of the binding design.
   `napi create-npm-dirs --package-json-path <package.json> --config-path <config> --npm-dir <directory inside the
   package>` and `napi artifacts --package-json-path <package.json> --config-path <config> --output-dir <addons>
   --npm-dir <the same directory>`; then `npm pack --ignore-scripts --pack-destination <assets>` in `<npm-dir>/<platform>`.
-  The entry without a platform packs the package of the library itself with `npm pack --ignore-scripts` after it
-  wrote `<npm package>-<platform>` at the version of the release into `optionalDependencies` of the manifest of the
-  copy, for each platform; the tracked manifest names none (GN-3c). The copy holds the files that
+  The entry without a platform packs the package of the library itself with `npm pack --ignore-scripts` from a copy
+  whose manifest is the tracked one: it names no platform package, which the consumer names by its asset URL (GN-3c). The copy holds the files that
   `npm pack --dry-run --json --ignore-scripts` of the package lists. The npm that `devEngines` of the repository pins
   (12.2.0) writes that list as an object keyed by the name of the package (`{"<name>": {"id": …, "filename":
   "<scope>-<name>-<version>.tgz", "files": [{"path": …}]}}`), and the recipe reads that form alone and refuses a list
