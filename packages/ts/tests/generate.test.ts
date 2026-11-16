@@ -10638,10 +10638,13 @@ test('a raising case whose argument is no value of its Go type is no Go test and
   const cases = sampleRead('sample/contracts/cases.json');
   const refused = (id: string, amount: unknown): any => ({ id, start: 2, amount, raises: { kind: 'invalid_number', status: null, category: 'value', message: null } });
   cases.counter_add.push(refused('a_negative_amount_fails', -1), refused('a_fraction_fails', 1.5), refused('a_text_amount_fails', '1'), refused('a_bool_amount_fails', true));
+  // The receiver of a property takes the value through its factory, counter.new.
+  cases.counter_total.push({ id: 'a_negative_start_fails', start: -1, raises: { kind: 'invalid_number', status: null, category: 'value', message: null } });
   const out = sampleOut(contract, cases, ['python', 'node', 'go']);
   const test = text(out, 'packages/go/zz_generated_test.go');
   for (const id of ['ANegativeAmountFails', 'AFractionFails', 'ATextAmountFails', 'ABoolAmountFails']) assert.doesNotMatch(test, new RegExp(`func TestB4\\w*${id}\\(`));
   assert.match(test, /\/\/ GN-13q: the case a_negative_amount_fails of counter\.add is no Go test: -1 is no value of uint64/);
+  assert.doesNotMatch(test, /func TestB4\w*ANegativeStartFails\(/);
   const dynamic = [...out].filter(([path]) => !path.startsWith('packages/go/') && /test/i.test(path)).map(([, content]) => String(content)).join('\n');
   for (const id of ['a_negative_amount_fails', 'a_fraction_fails', 'a_text_amount_fails', 'a_bool_amount_fails']) assert.match(dynamic, new RegExp(id.replaceAll('_', '_?'), 'i'), id);
 });
@@ -10670,4 +10673,20 @@ test('a callback unit of another library fails with the core error of its owner,
   const lib = text(out, 'packages/ts/generated/lib.rs');
   assert.match(lib, /binding_core::Failure<polyspec_sample::SampleFailure>/);
   assert.doesNotMatch(lib, new RegExp(`binding_core::Failure<${enumPath.replaceAll(':', '\\:')}>`));
+});
+
+test('a Python helper that makes a receiver takes the test case when a step calls a helper of it (GN-13s, B2.346)', () => {
+  // A path argument is self._case_path(...), which a function of the module without self named: NameError.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'tag.new') member.parameters[0].type = 'path';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const helpers = [...python.matchAll(/\ndef (_made_\d+)\(([^)]*)\):  # noqa: ANN202\n((?: {4}.*\n)+)/g)];
+  assert.ok(helpers.some((h) => /self\._case_path\(/.test(h[3] ?? '')));
+  for (const [, name, params, body] of helpers) {
+    if (!/\bself\./.test(body ?? '')) continue;
+    assert.match(params ?? '', /^self\b/, name);
+    assert.match(python, new RegExp(`${name}\\(self\\b`), name);
+  }
 });

@@ -312,8 +312,11 @@ export function pythonTests(model: Model, module: string): string {
     const built = steps.apart(() => madeLines(model, madeForm, receiver));
     const needed = caseTextUses > mark;
     const helper = `_made_${helpers.length}`;
-    helpers.push(`\n\ndef ${helper}(${needed ? '_case_text_root' : ''}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
-    return withRoot(`${helper}(${needed ? '_case_text_root' : ''})`, needed);
+    // GN-13s: a step that calls a helper of the test case (self._case_path, self._future) takes the test case as self.
+    const takesSelf = [...built.lines, built.expr].some((line) => /\bself\./.test(line));
+    const params = [...(takesSelf ? ['self'] : []), ...(needed ? ['_case_text_root'] : [])].join(', ');
+    helpers.push(`\n\ndef ${helper}(${params}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
+    return withRoot(`${helper}(${params})`, needed);
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
   // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a

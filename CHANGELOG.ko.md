@@ -9,9 +9,11 @@
 - Go는 optional tuple을 괄호 안의 포인터로 인코딩한다(`(*options.Range)[0]`). `*options.Range[0]`은 포인터를 인덱싱했고 Go가 이를 거부했다(GN-6bi, B2.340).
 - Go entry point는 `input`이라는 record parameter의 local `input_`을 코어에 넘긴다. 이전에는 호출의 바이트인 `&input`을 넘겼다(GN-6bj, B2.341).
 - Go 시험은 callback unit의 모든 double과 함께 타입 `fixture`와 그 import를 선언한다. fixture를 부르는 case가 없는 계약은 컴파일되지 않았다(GN-13r, B2.342).
-- Go는 인자가 그 parameter의 Go 타입의 값이 아닌 raise case(uint에 -1이나 `"60"` 등)의 시험을 쓰지 않고, 시험 파일은 주석으로 case와 이유를 적는다. 이전 시험은 컴파일되지 않거나 다른 값으로 호출했다. 동적 target은 case를 유지한다(GN-13q, B2.343).
+- Go는 인자가 그 parameter의 Go 타입의 값이 아닌 raise case(uint에 -1이나 `"60"` 등)의 시험을 쓰지 않고, 시험 파일은 주석으로 case와 이유를 적는다. 이전 시험은 컴파일되지 않거나 다른 값으로 호출했다. 동적 target은 case를 유지한다(GN-13q, B2.343). receiver를 만드는 factory의 인자도 같이 판정한다.
 - `else` 같은 키워드인 Python 이름은 뒤에 밑줄을 붙인다(`else_`). dataclass가 SyntaxError였다(GN-6bk, B2.344).
 - 다른 library의 callback unit의 trait은 소유자의 코어 오류, 즉 `errors.code`가 이름하는 struct로 실패한다. 이전에는 소유자의 코어가 선언하지 않은 kinds의 code enum을 썼다(GN-6bl, B2.345).
+- receiver를 만드는 Python 모듈 함수는 단계가 `self._case_path` 같은 시험 case의 helper를 부르면 시험 case를 `self`로 받는다. 그 단계가 NameError를 냈다(GN-13s, B2.346).
+- generator spec은 숫자 타입 자리의 숫자가 아닌 값(text나 bool 포함)이 모든 target에서 B-2의 kind `invalid_number`라고 명시한다. 변환은 이미 그렇게 거부한다(GN-13d, B2.347).
 
 ## 0.0.12
 

@@ -1942,7 +1942,10 @@
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
   뺀다.
   B-4 case가 binding이 거부하도록 주는, 자리의 타입과 다른 JSON 종류의 case 값(숫자 자리의 text나 bool, text 자리의 숫자나
-  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306).
+  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306). 숫자 타입(`int`, `int64`, `uint`, `float`) 자리에 온 숫자가 아닌 값은
+  text나 bool도 포함해, `uint`의 소수나 음수처럼 모든 target에서 B-2의 kind `invalid_number`이다. 그래서 그런 값을 주는
+  case는 `invalid_number`를 기대한다(B2.347). 이유: 모든 target의 숫자 변환은 그 타입의 숫자가 아닌 모든 값을 B-2의
+  한 kind로 거부한다.
 
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
@@ -2178,7 +2181,7 @@
   그것을 대신하지 않는다. 이유: 시스템의 임시 디렉터리는 심볼릭 링크를 거쳐 닿을 수 있어(macOS의 `/var`와 `/private/var`)
   경로를 푸는 코어는 시험이 만든 경로와 다른 텍스트를 주고, 풀지 않은 경로의 기대 텍스트는 올바른 결과를 실패시킨다.
   풀린 형식 하나면 결과를 다시 쓰는 규칙 없이 기대 텍스트가 정확하다.
-- **GN-13q** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자가 그 parameter의 선언된 타입의 값이 아닌 case의
+- **GN-13q** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자나 그 receiver를 만드는 factory의 인자가 그 parameter의 선언된 타입의 값이 아닌 case의
   시험을 쓰지 않는다: text에 수나 bool, 수에 text나 bool, `uint`에 음수, 정수에 소수, bool에 수나 text. 시험 파일은
   그런 case마다 case, member, 이유를 적은 주석을 남긴다. 동적 target(Python, Node, WASM, PHP)은 그 case를 유지하고
   값을 그 JSON 종류로 주어 binding이 거부하게 한다(GN-13d). 이유: 그런 case는 어떤 값이든 받는 binding의 거부를
@@ -2187,6 +2190,10 @@
 - **GN-13r** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
   쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
   타입이 없는 double은 컴파일되지 않는다.
+- **GN-13s** receiver를 만드는 Python 모듈 함수(GN-13f)는, 그 단계 중 하나가 시험 case의 helper(`path` 인자의
+  `self._case_path`나 `self._future`)를 부르면 시험 case를 첫 parameter `self`로 받고, 그 호출은 `self`를 넘긴다.
+  이유: 모듈 함수에는 자신의 `self`가 없으므로, 그 단계가 case가 돌기 전에 NameError를 냈다.
+
 
 ## 끝에서 끝까지 확인
 

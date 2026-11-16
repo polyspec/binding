@@ -1344,7 +1344,9 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
   // B-4: every case that raises.
   for (const kase of raisingCases(model, fn)) {
     // GN-13q: a case whose argument is no value of its Go type is no Go test; the file names it and the reason.
-    const foreign = fn.args.map((a) => (kase.args.has(a) ? notGoValue(a.type, kase.args.get(a)) : undefined)).find((why) => why !== undefined);
+    const notOf = (f: Fn, args: ReadonlyMap<Arg, unknown>): string | undefined => f.args.map((a) => (args.has(a) ? notGoValue(a.type, args.get(a)) : undefined)).find((why) => why !== undefined);
+    const ofReceiver = (r: Receiver | undefined): string | undefined => (r === undefined ? undefined : notOf(r.factory, r.args) ?? ofReceiver(r.on));
+    const foreign = notOf(fn, kase.args) ?? ofReceiver(kase.receiver);
     if (foreign !== undefined) {
       out.main.push(`\n// GN-13q: the case ${kase.id} of ${fn.member.id} is no Go test: ${foreign}, which the Go compiler refuses.`);
       continue;

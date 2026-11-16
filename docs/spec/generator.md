@@ -2392,7 +2392,10 @@ the design ids are those of the binding design.
   out of the call.
   A case value of another JSON kind than the type of its place, which a case of B-4 gives for the binding to refuse
   (a text or a bool for a number, a number or a bool for a text, a number or a text for a bool), is written as the
-  value of its JSON kind and never converted to the type (B2.306).
+  value of its JSON kind and never converted to the type (B2.306). A value that is no number at a place of a number type (`int`,
+  `int64`, `uint`, `float`), a text or a bool included, is kind `invalid_number` of B-2 in every target, as a fraction
+  or a negative number for a `uint` is, so a case that gives one expects `invalid_number` (B2.347). Why: the number
+  conversion of every target refuses every value that is no number of its type with the one kind of B-2.
 
 - **GN-13e** Every target runs each contract case of a member that does not raise, has no `faults` and is no hook
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
@@ -2679,7 +2682,7 @@ the design ids are those of the binding design.
   gives a text that differs from the path the test made, and an expected text with the unresolved path would fail a
   correct result; one resolved form makes the expected text exact without a rule that rewrites results.
 - **GN-13q** A target whose language is statically typed (Go) writes no test for a case that raises and whose
-  argument is no value of the declared type of its parameter: a number or a bool for a text, a text or a bool for a
+  argument, or an argument of the factory of its receiver, is no value of the declared type of its parameter: a number or a bool for a text, a text or a bool for a
   number, a negative number for a `uint`, a fraction for an integer, a number or a text for a bool. The test file
   names each such case with a comment that gives the case, the member and the reason; the dynamic targets (Python,
   Node, WASM, PHP) keep the case and give the value as its JSON kind for the binding to refuse (GN-13d). Why: such a
@@ -2689,6 +2692,11 @@ the design ids are those of the binding design.
 - **GN-13r** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
   `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
   when no case of it names a fixture, and a double without its type does not compile.
+- **GN-13s** A Python function of the module that makes a receiver (GN-13f) takes the test case as its first
+  parameter `self`, and its call passes `self`, when one of its steps calls a helper of the test case, such as
+  `self._case_path` for a `path` argument or `self._future`. Why: a function of the module has no `self` of its own,
+  so the step raised NameError before the case ran.
+
 
 ## End-to-end check
 
