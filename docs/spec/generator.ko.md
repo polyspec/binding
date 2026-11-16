@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 85e1269857bed6d21440fd2779a10f9d1dbc2204d696fe106c32a375ea7b4a2b -->
+<!-- source-sha256: 6fa54c26fb17b74d2d79ee7a9b688422ee7f02f49f56f32bb737f17c48e87f01 -->
 # 생성기
 
 [English](generator.md)
@@ -1302,6 +1302,12 @@
   없는 값이고, 다른 타입의 값은 GN-13g의 `<Type>In`으로만 변환에 닿는다. 이유: core는 `invalid_number`를 계약 타입의
   숫자 규칙을 어긴 숫자로 정하는데(B-2), 모든 target이 다른 타입의 값에도, 즉 다른 원시 자리가 kind
   `invalid_argument_type`으로 거부하는 값에도 거부된 모든 값에 그것을 냈다. json 저장소가 그 차이를 전했다(T3.25-1).
+  거부된 값에는 두 층이 있고 바인딩은 첫 층만 검사한다(B2.425): 바인딩은 자리의 계약 타입을 검사해 위와 같이 그 타입
+  규칙의 kind를 주고, 계약이 맞는 타입의 값에 대해 정한 kind, 예를 들어 `uint`의 `list`에서 0~0xFFFF 밖의 code unit에
+  대한 `invalid_code_unit`은 타입을 통과한 값에 대해 core만 낸다. 그래서 `uint` 항목의 -1은 kind `invalid_number`, 거기의
+  `"a"`는 kind `invalid_argument_type`이고, 0x10000은 core에 닿아 core가 판정한다. 이유: 자리의 계약 타입은 core의 규칙을
+  담지 않으며, 그것을 판정하는 바인딩은 core의 규칙을 두 번 적게 된다. 잘못된 호출 모양이 언어의 오류로 남는 것도 같은
+  이유다(B2.426).
   Node와 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받는다. 그 범위 밖의 `bigint`나 안전
   정수가 아닌 number는 kind `invalid_number`이고(B-2), 그 밖의 값은 kind `invalid_argument_type`이다. `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
   `bigint`)과 같다. case 파일은 안전 정수 밖의 정수를 JSON token으로 주고, `binding`은 그것을 `bigint`로 읽으며 모든 시험은

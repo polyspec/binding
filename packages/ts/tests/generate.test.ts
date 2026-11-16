@@ -12136,6 +12136,37 @@ test('B2.412: a value of another type at a number place is kind invalid_argument
   assert.match(codec, /func TestB2IntInRefusesANumberOutsideItsType\(t \*testing\.T\) \{\n\tfor _, value := range \[\]any\{1\.5, math\.NaN\(\)/);
 });
 
+// A guard: it passed before any change, since the binding already checks only the contract type of the place.
+test('B2.425: an item of a list of uint is checked by its contract type only, -1 invalid_number, "a" invalid_argument_type, and 0x10000 reaches the core, in Python, PHP, Node and WASM (GN-12a)', () => {
+  const { contract } = load();
+  const fn = contract.units[0].members[0];
+  fn.parameters = [{ name: ['units'], type: { list: 'uint' } }];
+  fn.returns = 'text';
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const typeError = {
+    'packages/ts/generated/lib.rs': /safe_integer\(value, subject, NumberType::Uint\)\?/,
+    'packages/ts/wasm/generated/lib.rs': /safe_integer\(value, subject, NumberType::Uint\)\?/,
+    'packages/python/generated/lib.rs': /if !is_number\(value\) \{\n\s+return Err\(binding_error\(py_, type_error\(subject, "int"\)\)\);/,
+    'packages/php-ext/generated/lib.rs': /if let Some\(error\) = number_type_error\(value, subject, "int"\) \{\n\s+return Err\(error\);/,
+  };
+  for (const [path, refusesType] of Object.entries(typeError)) {
+    const lib = text(out, path);
+    // Every item of the list is converted as a uint.
+    assert.match(lib, /let units: Vec<u64> = list_in\([^\n]*uint_in\([^\n]*"units"\)\)\?;/, `${path}: the items are uint`);
+    const uint = rustFn(lib, 'uint_in');
+    // "a": a value that is no number is kind invalid_argument_type (type_error), before any range.
+    assert.match(uint, refusesType, `${path}: "a" is invalid_argument_type`);
+    // -1: a number outside 0 to 2^53 - 1 is kind invalid_number.
+    assert.match(uint, /BindingError::InvalidNumber \{ subject: subject\.to_owned\(\), expected: NumberType::Uint \}/, `${path}: -1 is invalid_number`);
+    // 0x10000: the binding states no bound of a code unit, so the value reaches the core, which judges it.
+    assert.doesNotMatch(uint, /0xffff|65_?535|CodeUnit/i, `${path}: 0x10000 passes the type check`);
+  }
+  assert.match(rustFn(text(out, 'packages/python/generated/lib.rs'), 'uint_in'), /Ok\(integer\) if integer <= 9_007_199_254_740_991 => Ok\(integer\)/);
+  assert.match(rustFn(text(out, 'packages/php-ext/generated/lib.rs'), 'uint_in'), /\(true, Some\(integer @ 0\.\.=9_007_199_254_740_991\)\) => Ok/);
+  assert.match(rustFn(text(out, 'packages/ts/generated/lib.rs'), 'uint_in'), /u64::try_from\(integer\)\.map_err\(\|_negative\| binding_error\(BindingError::InvalidNumber/);
+});
+
 // B2.413: the free functions that Rust text calls and declares; a call is a name before `(` that no `.`, `::`, `fn ` or
 // other name character precedes.
 const rustCalls = (source: string): Set<string> => new Set([...source.matchAll(/(?<![.:\w]|fn )([a-z_][a-z0-9_]*)\(/g)].map((m) => m[1] ?? ''));
