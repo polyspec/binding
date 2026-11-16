@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -1968,7 +1968,7 @@ ${constants}
 
 // The WASM generated files of a model.
 export function wasm(model: Model, files: Files): void {
-  files.set(`${ROOT}/lib.rs`, libRust(model));
+  files.set(`${ROOT}/lib.rs`, anchorCalls(((lib) => lib + lentRust(model, lib))(libRust(model))));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));
   files.set(`${ROOT}/index.d.ts`, indexDts(model));
   files.set(`${ROOT}/state.mjs`, stateMjs());

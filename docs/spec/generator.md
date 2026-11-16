@@ -694,8 +694,13 @@ the design ids are those of the binding design.
   binding makes the value for each call, so it has nothing to keep, and a borrowed list would not let the core call a
   member with the receiver `&mut self`. The core type of a record with a callback field has one lifetime parameter
   (`polyspec_x::Options<'a>`); the contract names it by its path in `core_type`, and the generator writes the lifetime
-  where it names the type: `'env` in Node, whose callback lives in the environment of the call, and `'static` in the
-  other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
+  where it names the type: the lifetime of the call in every target, `'env` in Node, whose callback lives in the
+  environment of the call, and `'call` in Python, PHP, WASM and Go, where the struct of the call of a callback
+  (`Cb<Unit><'call>`) holds a `PhantomData<&'call ()>` that borrows `call_`, a local of the entry point, so the
+  compiler cannot read it as `'static` (B2.402). Why: with `'static` a core could keep a callback of a parameter without
+  `keeps` and call it after the call; Go then ran it through the `cgo.Handle` of a call that had ended, which crashes
+  or silently reaches the objects of another call, and the other targets held a language object that no call
+  guarded. Such a record is generated where the binding makes it from the arguments of the call, as a record
   parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
   Node, PHP and WASM give on the native lifetime as GN-6z states. The contract states it on the parameter whose value
   the core keeps, with `keeps: true` (U-2): the parameter is a callback unit or a function type, or a record, a list
@@ -705,8 +710,8 @@ the design ids are those of the binding design.
   state it, because the lifetime is no part of the path in `core_type` and the generator reads no Rust: for a
   parameter with `keeps` the generator writes `'static` where it names the box and the core type of the record
   (`polyspec_x::Options<'static>`) in every target, and for a parameter without it the lifetime of the call. The
-  compiler judges the core (I-2): a core that keeps the value of a parameter without `keeps` does not compile in
-  Node, whose box lasts for `'env`. A callback inside a parameter with `keeps` outlives the call, so the
+  compiler judges the core (I-2): a core that keeps the value of a parameter without `keeps` does not compile in any
+  target, whose box lasts for `'env` or `'call`. A callback inside a parameter with `keeps` outlives the call, so the
   wrapper that holds the language object for the call does not suffice: Node, PHP and WASM hold the object as a
   `Native` of its owner thread (GN-6u), as a function type is held (GN-6z), and Go asks package `binding` for the
   `cgo.Handle` of a kept func (`Call.Keep`) that reads the number of the member first and runs that member of the

@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel } from './model.ts';
+import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust} from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
 import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
@@ -3580,7 +3580,7 @@ export function go(model: Model, files: Files): void {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));
     files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model, echo));
   }
-  files.set(`${FFI}/generated/lib.rs`, libRust(model));
+  files.set(`${FFI}/generated/lib.rs`, anchorCalls(((lib) => lib + lentRust(model, lib))(libRust(model))));
   for (const platform of GO_PLATFORMS) {
     files.set(`${BINDING}/zz_generated_link_${goLinkFile(platform)}.go`, goLink(model, platform));
     files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
