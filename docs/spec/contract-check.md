@@ -312,8 +312,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
-  reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
-  that the rows of its `raises` give. The `cases` row of a member may name `result`, the snake_case key of its cases
+  reads the case files: every group that `cases` names is in its file, and each kind that the rows of the `raises` of
+  a member give has a case that raises it on the path of that member: a case of any member whose `raises` gives the
+  kind from the same library (the library itself, or its owner, GN-7c) with the same form of call (`wait` `none`, or
+  another `wait`) (B2.376). Why: the generated code gives a kind its class, message, status and errno by one
+  conversion of the core error of each library, which every member of that form of call shares (B-4), so one case of
+  the path shows the conversion for all of them, while whether the core of each member gives the kind is what the
+  tests of the core show; a call with `wait` rejects by another path than a throw, and the kind of another library
+  leaves by the conversion of its owner, so each of those is a path of its own. The `cases` row of a member may name `result`, the snake_case key of its cases
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
   none (CK-1). The `receiver` of a case and an argument of a class type may be an instance value of GN-13f: its member exists and
   gives the class, through its `pick`; a method has its `receiver`; `args` are the parameters of the member; each call

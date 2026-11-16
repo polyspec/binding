@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8971dcfde4730bc4276d304f1566fa479da31bfcb2bc176f5b70df5a5d82e05c -->
+<!-- source-sha256: ecf5da8c2a33448078c7bb9bfefb355520667b5bb9370bab66b3ba33bec072c2 -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -43,6 +43,7 @@
 - `raises`가 category 없이 kind만 주는 case는 그 kind의 category를 계약에서 가져온다. hyper의 그런 case마다 Node가 parse되지 않는 `pkg. &&`를 썼다(GN-13bd, B2.372).
 - 결과가 없는 member의 `after` 호출은 `"result": null`을 쓰고 계약 검사가 그것을 요구한다. Node와 WASM 시험은 그 호출에 값이 없기를 요구한다. 이전에는 `undefined`를 `null`과 비교했다(CK-22, B2.374).
 - 값으로 비교하는 value alias의 결과는 값이 맞는 out row를 따른다. 그래서 text로 나가는 UTF-8 bytes는 그 text로 기대되며, 이전에는 Python이 그것을 거부했다(GN-13be, B2.375).
+- CK-22는 member의 경로, 곧 그 kind의 같은 library와 같은 호출 형태에서 kind를 내는 case를 어느 member의 것이든 받는다. 이전에는 member마다 case를 요구했다(B2.376).
 
 ## 0.0.13
 

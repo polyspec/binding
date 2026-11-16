@@ -2001,3 +2001,21 @@ test('B2.374: CK-22 requires the result null of a call of after of a member with
   assert.deepEqual(messages(null), []);
   assert.deepEqual(messages(1), ['the case a_new_ledger_has_one_key of ledger.size: after 0 calls ledger.note, which has no result, so its result is null (G-5, GN-6ae)']);
 });
+
+test('B2.376: CK-22 takes a case of any member with the same conversion and form of call as the case of a kind', () => {
+  // orm: query.get_count and the other members of a Tx raise kinds whose conversion db.transaction already shows.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const missing = (wait: string): string[] => {
+    const contract = read('packages/rust/interface.json');
+    const add = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'counter.add');
+    add.raises = ['polyspec_sample::Error::Unsupported'];
+    add.wait = wait;
+    if (wait !== 'none') add.only = { targets: ['python', 'node', 'php', 'go'], reason: 'Q-4' };
+    const cases = read('contracts/cases.json');
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => f.message).filter((m) => /counter\.add raises/.test(m));
+  };
+  // cell.constructor, a call without wait, raises unsupported: the same throw of the same conversion.
+  assert.deepEqual(missing('none'), []);
+  // A call with wait rejects by another path, which no case of unsupported takes.
+  assert.deepEqual(missing('blocking_io'), ['no case of counter.add raises the kind unsupported (K-1, B-4)']);
+});
