@@ -742,7 +742,7 @@ the design ids are those of the binding design.
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
   either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
   error object of the language is made on the owner thread only, where the failure is converted. Go declares the
-  parameter as `func(<parameters>) (<R>, error)`, and as `func(<parameters>) error` for `none`; a nil func is kind
+  parameter as `func(<parameters>) (<R>, error)`, and as `func(<parameters>) error` for `none`; where a func is required, a nil func is kind
   `invalid_argument_type`. A Go value is bound to no thread, so Go has no kind `wrong_thread` and no feature
   `thread-test`. The func enters as a func of the call and its index in it, and the C ABI asks the export
   `<prefix>__go_keep` for the `cgo.Handle` under which package `binding` holds the dispatch of the func from then
@@ -1095,11 +1095,7 @@ the design ids are those of the binding design.
   the env of the call escapes the body of the constructor (E0521).
 - **GN-6bi** Go encodes a field or a value of the type `optional` of a `tuple` through the pointer in parentheses,
   `(*options.Range)[0]`. Why: an index binds before the star, so `*options.Range[0]` indexes the pointer, which Go
-  refuses (cannot indirect). An `optional` of a function type (GN-6z) is `*func(...)`, nil for none, and its func is
-  called through the pointer in parentheses, `(*cfg.AuditSource)()`; the func behind a pointer that is not nil is
-  checked as every func is, a nil func is kind `invalid_argument_type`. Why: a call binds before the star too, so
-  `*cfg.AuditSource()` calls the pointer, which Go refuses (`is not a function`); orm `config.audit_source` failed
-  `go vet` so.
+  refuses (cannot indirect). An `optional` of a function type has no pointer to dereference (GN-15e).
 - **GN-6bj** The Go entry point gives the core the local of a record parameter by the same name that its decoder
   binds, `input_` for a parameter named `input` (GN-15). Why: the entry point binds `input` to the bytes of the call,
   so a core call that names the parameter by its plain name passes those bytes.
@@ -2210,10 +2206,15 @@ the design ids are those of the binding design.
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
   already means no value (GN-6i). A Go type that is a pointer whose nil is no value of the type takes no second
   pointer, as an `optional` and as a parameter or field with a default: a `map<T>` (`*Map[T]`), a `keyed_map<T>`
-  (`*KeyedMap[T]`), an instance of a class (`*<Class>`) and a value class of another repository (GN-6x). Its nil is
-  the missing value, and the C ABI writes the tag of an absent value for it, so `optional<keyed_map<T>>` is
-  `*KeyedMap[T]`. An `optional` of an `optional` keeps its second pointer, because the nil of the inner pointer is a
-  value of the outer type.
+  (`*KeyedMap[T]`), a function type (`func(...)`, GN-6z), an instance of a class (`*<Class>`) and a value class of
+  another repository (GN-6x). Its nil is the missing value, and the C ABI writes the tag of an absent value for it, so
+  `optional<keyed_map<T>>` is `*KeyedMap[T]` and an `optional` of a function type, such as orm `config.audit_source`,
+  is `func() (*Map[any], error)`, called as `cfg.AuditSource()`. A `list<T>` keeps its pointer, because a nil slice is
+  the empty list, and a text, a number or a bool keeps it, because its zero value is a value. Why: a func of Go is
+  nillable and its nil is no func, as the nil of a `*Map[T]` or of an instance is no map or instance, so a pointer
+  around it gave none two forms, a nil pointer and a nil func behind a pointer, which GN-6z made kind
+  `invalid_argument_type`; a Go caller leaves a func out as nil. An `optional` of an `optional` keeps its second
+  pointer, because the nil of the inner pointer is a value of the outer type.
 - **GN-15j** The locals of the generated Rust of Go (GN-15): an entry point binds `args`, `len`, `result`, `input`,
   `outcome`, `held` and `this`, and `in_<record>` takes `input`; the fields of a record are bound in both scopes. A
   parameter or a field of the contract with one of these names is bound as that name with a trailing underscore (`input_`), and a record

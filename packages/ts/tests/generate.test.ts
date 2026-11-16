@@ -11747,9 +11747,9 @@ test('B2.394: the Go walk of a value alias with a container and a nested row giv
   assert.match(plain, /fn make_wrapped\(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues[,)]/);
 });
 
-test('B2.393: Go calls an optional func of a record field through the pointer in parentheses (GN-6bi, GN-6z)', () => {
-  // orm zz_generated_orm.go: `returned, err := *cfg.AuditSource()` failed go vet with `is not a function`, since a call
-  // binds before the star. The functions fixture with a record whose optional field holds a function type.
+// B2.393, B2.399: the functions fixture with a record whose optional field holds a function type, and a member that
+// takes the record.
+const optionalFuncSample = (): Map<string, string | Buffer> => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');
   const convert = contract.units[0].members[0].parameters[0].type;
@@ -11759,11 +11759,29 @@ test('B2.393: Go calls an optional func of a record field through the pointer in
   contract.units[0].members.push({ id: 'functions.apply_with', name: ['apply', 'with'], kind: 'function', visibility: 'public', parameters: [
     { name: ['value'], type: 'text', required: true }, { name: ['options'], type: { unit: 'apply_options' }, required: true },
   ], returns: 'text', raises: ['polyspec_functions::Error::Empty'], wait: 'none', core: 'polyspec_functions::apply_with' });
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
-  const go = text(out, 'packages/go/zz_generated_functions.go');
-  assert.match(go, /Convert \*func\(string, \[\]int64\) \(string, error\)/);
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+};
+
+test('B2.393: Go calls an optional func of a record field as a func and not through a star (GN-15e, GN-6z)', () => {
+  // orm zz_generated_orm.go: `returned, err := *cfg.AuditSource()` failed go vet with `is not a function`, since a call
+  // binds before the star.
+  const go = text(optionalFuncSample(), 'packages/go/zz_generated_functions.go');
   assert.doesNotMatch(go, /:= \*options\.Convert\(/);
-  assert.match(go, /returned, err := \(\*options\.Convert\)\(arg0, arg1\)/);
+});
+
+test('B2.399: an optional func of Go is the func, nil for none, with no pointer around it (GN-15e, GN-6z)', () => {
+  // A *func had two forms of none, a nil pointer and a nil func behind a pointer (kind invalid_argument_type); a func
+  // is nillable and its nil is no func, as a map and an instance are.
+  const go = text(optionalFuncSample(), 'packages/go/zz_generated_functions.go');
+  assert.match(go, /\tConvert +func\(string, \[\]int64\) \(string, error\)\n/);
+  assert.doesNotMatch(go, /\*func\(/);
+  const at = go.indexOf('if options.Convert == nil {');
+  assert.ok(at >= 0);
+  const encode = go.slice(at, go.indexOf('call.Keep(enc', at));
+  // The nil of the field is none; the func of a present field is a func, whose tag follows the tag of the optional.
+  assert.equal((encode.match(/== nil \{/g) ?? []).length, 1, encode);
+  assert.match(encode, /enc\.Tag\(false\)\n\t*\} else \{\n\t*enc\.Tag\(true\)\n\t*enc\.Tag\(true\)\n/);
+  assert.match(go, /returned, err := options\.Convert\(arg0, arg1\)/);
 });
 
 test('B2.390: the work stack of a cycle walks a list and a map of a record field by the field and not by a borrow of its iterator (GN-6bt)', () => {

@@ -300,10 +300,10 @@ ${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
 }
 
 // GN-15e: whether the Go type of the type is a pointer whose nil is no value of the type, so that nil is the missing
-// value of its optional and of its place with a default: a map, a keyed map, an instance of a class and a value
-// class of another repository. The nil of an optional is a value of the type, so an optional is none.
+// value of its optional and of its place with a default: a map, a keyed map, a func, an instance of a class and a
+// value class of another repository. The nil of an optional is a value of the type, so an optional is none.
 export function nilAbsent(model: Model, type: Type): boolean {
-  if (typeof type === 'object' && ('map' in type || 'keyed_map' in type)) return true;
+  if (typeof type === 'object' && ('map' in type || 'keyed_map' in type || 'function' in type)) return true;
   if (type === 'cancel') return true;
   if (typeof type === 'object' && ('list' in type || 'optional' in type || 'tuple' in type)) return false;
   const alias = aliasOf(model, type);
@@ -384,6 +384,48 @@ func Cancel(enc *Writer, ctx context.Context) func() {
 
 // ---- Go encoding of the arguments and decoding of the result ----
 
+// GN-6ae: a func is a callback of the call, whose dispatch decodes the arguments, a class argument as a new instance,
+// and calls the func. The func is not nil here, and its tag is written.
+function goFunction(scope: GoScope, type: Extract<Type, { function: unknown }>, expr: string, indent: number, depth: number): string[] {
+  const t = '\t'.repeat(indent);
+  const parts = type.function.parameters;
+  const args = parts.map((_part, i) => `arg${i}`).join(', ');
+  const decoded = parts.flatMap((part, i) => [`${t}\tvar arg${i} ${goType(scope, part)}`, ...goDecode(scope, part, `arg${i}`, indent + 1, depth)]);
+  if (machineFunction(type)) {
+    return [
+      `${t}call.Callback(enc, binding.Function(func(dec *binding.Reader) (any, error) {`,
+      ...decoded,
+      `${t}\tif err := dec.Finish(); err != nil {`,
+      `${t}\t\treturn nil, err`,
+      `${t}\t}`,
+      `${t}\treturn ${expr}(${args})`,
+      `${t}}))`,
+    ];
+  }
+  // GN-6z: a func that the core may keep is a func of the call until the C ABI reads it, and package binding holds it
+  // from then on. Its dispatch decodes the arguments, calls the func and encodes its result; the error of the func is
+  // the error of the dispatch. The dispatch runs in a call of its own, which its parameter call names, so a result
+  // that the static library reads through a call (a value alias) is encoded in that call and not in the call of the
+  // member, which may have ended.
+  const returns = type.function.returns;
+  return [
+    `${t}call.Keep(enc, func(call *binding.Call, dec *binding.Reader, enc *binding.Writer) error {`,
+    ...decoded,
+    `${t}\tif err := dec.Finish(); err != nil {`,
+    `${t}\t\treturn err`,
+    `${t}\t}`,
+    ...(returns === 'none' ? [`${t}\treturn ${expr}(${args})`] : [
+      `${t}\treturned, err := ${expr}(${args})`,
+      `${t}\tif err != nil {`,
+      `${t}\t\treturn err`,
+      `${t}\t}`,
+      ...goEncode(scope, returns, 'returned', indent + 1, depth),
+      `${t}\treturn nil`,
+    ]),
+    `${t}})`,
+  ];
+}
+
 function goEncode(scope: GoScope, type: Type, expr: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   // T-1 cancel, GN-6aq: the key of a cancellation that ctx fires, which package binding keeps until the call returned.
@@ -409,62 +451,18 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
       `${t}}`,
     ];
   }
-  // GN-6bi: a pointer to a tuple or to a func is dereferenced in parentheses, because an index and a call bind before
-  // the star.
+  // GN-15e: an optional func is the func, nil for none, so the func of a present optional is not nil: it writes the
+  // tag of a func and its dispatch, without the check of a nil func.
+  if ('optional' in type && typeof type.optional === 'object' && 'function' in type.optional) {
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tenc.Tag(true)`, ...goFunction(scope, type.optional, expr, indent + 1, depth), `${t}}`];
+  }
+  // GN-6bi: a pointer to a tuple is dereferenced in parentheses, because an index binds before the star.
   if ('optional' in type) {
-    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : typeof type.optional === 'object' && ('tuple' in type.optional || 'function' in type.optional) ? `(*${expr})` : `*${expr}`, indent + 1, depth), `${t}}`];
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : typeof type.optional === 'object' && 'tuple' in type.optional ? `(*${expr})` : `*${expr}`, indent + 1, depth), `${t}}`];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
-  // GN-6ae: a func is a callback of the call, whose dispatch decodes the arguments, a class argument as a new
-  // instance, and calls the func; a nil func is kind invalid_callback.
-  if ('function' in type && !machineFunction(type)) {
-    // GN-6z: a func that the core may keep is a func of the call until the C ABI reads it, and package binding holds
-    // it from then on. Its dispatch decodes the arguments, calls the func and encodes its result; the error of the
-    // func is the error of the dispatch. A nil func is kind invalid_argument_type. The dispatch runs in a call of its
-    // own, which its parameter call names, so a result that the static library reads through a call (a value alias)
-    // is encoded in that call and not in the call of the member, which may have ended.
-    const parts = type.function.parameters;
-    const returns = type.function.returns;
-    const args = parts.map((_part, i) => `arg${i}`).join(', ');
-    return [
-      `${t}if ${expr} == nil {`,
-      `${t}\tenc.Tag(false)`,
-      `${t}} else {`,
-      `${t}\tenc.Tag(true)`,
-      `${t}\tcall.Keep(enc, func(call *binding.Call, dec *binding.Reader, enc *binding.Writer) error {`,
-      ...parts.flatMap((part, i) => [`${t}\t\tvar arg${i} ${goType(scope, part)}`, ...goDecode(scope, part, `arg${i}`, indent + 2, depth)]),
-      `${t}\t\tif err := dec.Finish(); err != nil {`,
-      `${t}\t\t\treturn err`,
-      `${t}\t\t}`,
-      ...(returns === 'none' ? [`${t}\t\treturn ${expr}(${args})`] : [
-        `${t}\t\treturned, err := ${expr}(${args})`,
-        `${t}\t\tif err != nil {`,
-        `${t}\t\t\treturn err`,
-        `${t}\t\t}`,
-        ...goEncode(scope, returns, 'returned', indent + 2, depth),
-        `${t}\t\treturn nil`,
-      ]),
-      `${t}\t})`,
-      `${t}}`,
-    ];
-  }
-  if ('function' in type) {
-    const parts = type.function.parameters;
-    return [
-      `${t}if ${expr} == nil {`,
-      `${t}\tenc.Tag(false)`,
-      `${t}} else {`,
-      `${t}\tenc.Tag(true)`,
-      `${t}\tcall.Callback(enc, binding.Function(func(dec *binding.Reader) (any, error) {`,
-      ...parts.flatMap((part, i) => [`${t}\t\tvar arg${i} ${goType(scope, part)}`, ...goDecode(scope, part, `arg${i}`, indent + 2, depth)]),
-      `${t}\t\tif err := dec.Finish(); err != nil {`,
-      `${t}\t\t\treturn nil, err`,
-      `${t}\t\t}`,
-      `${t}\t\treturn ${expr}(${parts.map((_part, i) => `arg${i}`).join(', ')})`,
-      `${t}\t}))`,
-      `${t}}`,
-    ];
-  }
+  // GN-6z: a nil func is kind invalid_argument_type, which the tag of no func gives the C ABI.
+  if ('function' in type) return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goFunction(scope, type, expr, indent + 1, depth), `${t}}`];
   // U-7: a value of an alias is the call that walks it and its first level.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
   // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
