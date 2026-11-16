@@ -1601,6 +1601,15 @@ ${implementorsOf(model, iface).map((o) => `    // SAFETY: napi unwraps the nativ
 // A value of a class that comes in is unwrapped as a ClassInstance, by its type tag: napi-rs gives a reference `&T` only
 // in the argument conversion that it generates, which these functions do not use, because they take the raw values and
 // judge them (T-8), and a reference made in the body of a call is refused.
+// GN-6b: the static __new of a class without a constructor (U-1 constructible), which the Proxy of the entry calls for a
+// direct construction: it fails with kind direct_construction, and the addon makes the instances without it.
+const refusedConstruction = (jsClass: string): string => `
+    /// GN-6b: ${jsClass} has no public constructor (U-1 constructible), so a direct construction is kind direct_construction.
+    #[napi(js_name = "__new", enumerable = false)]
+    pub fn construct<'env>(env_: &'env Env) -> napi::Result<Unknown<'env>> {
+        Err(throw(env_, binding_error(BindingError::DirectConstruction { class: String::from(${rustString(jsClass)}) })))
+    }
+`;
 function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('node', object.unit.name, 'class');
   const struct = jsClass;
@@ -1630,7 +1639,7 @@ ${object.cleanup === undefined ? '' : `
     }
 `}
     #[napi]
-    impl ${struct} {${object.members.map((fn) => functionRust(model, fn).replaceAll('\n', '\n    ')).join('')}}
+    impl ${struct} {${[...(object.constructible ? [] : [refusedConstruction(jsClass)]), ...object.members.map((fn) => functionRust(model, fn))].map((text) => text.replaceAll('\n', '\n    ')).join('')}}
 }
 
 ${object.lock?.kind === 'shared' ? `/// GN-6h: calls read the value of ${jsClass} at the same time, so its core type is Sync.
@@ -2117,7 +2126,12 @@ ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${
 });`);
     }
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
-    const construct = constructor === undefined ? `addon.${cls}` : `new Proxy(addon.${cls}, {
+    // GN-6b: a class without a constructor (U-1 constructible) is constructed through __new too, which refuses it.
+    const construct = constructor === undefined ? `new Proxy(addon.${cls}, {
+  construct(target) {
+    return target.__new();
+  },
+})` : `new Proxy(addon.${cls}, {
   construct(target, args) {
 ${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).split('\n').map((l) => `  ${l}`).join('\n')}
   },

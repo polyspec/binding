@@ -1016,6 +1016,17 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
             ${invoke(fn, args, 'held')}
         self.assertEqual(caught.exception.kind, "consumed")`);
   }
+  // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is kind direct_construction.
+  for (const object of model.objects.filter((o) => !o.constructible)) {
+    const label = langName('python', object.unit.name, 'class');
+    append(`
+    def test_gn6b_${langName('python', object.unit.name, 'variable')}_is_no_direct_construction(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${ref(object.unit)}${label}()
+        self.assertIs(type(caught.exception), pkg.${cls('type')})
+        self.assertEqual(caught.exception.kind, "direct_construction")
+        self.assertEqual(str(caught.exception), ${pyString(`${label} has no public constructor`)})`);
+  }
   // GN-6p, B-10: an object destroyed without its cleanup call warns with ResourceWarning, and after it does not.
   let usesWarnings = false;
   for (const object of model.objects) {

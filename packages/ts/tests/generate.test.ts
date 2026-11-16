@@ -6069,6 +6069,41 @@ function classSample(targets: string[]): any {
   return sample;
 }
 
+// GN-6b, B2.410: a direct construction of a class with constructible: false fails with the kind direct_construction
+// (category type) in every target that runs code for it, and the binding still makes the instances itself.
+test('a direct construction of a class without a constructor is kind direct_construction (GN-6b, U-1)', () => {
+  const alone = classSample(['wasm']);
+  const tag = alone.units.find((u: any) => u.id === 'tag');
+  tag.constructible = false;
+  // U-1: the constructor becomes a static member, which makes the instances that the tests take.
+  const made = tag.members.find((m: any) => m.kind === 'constructor');
+  Object.assign(made, { id: 'tag.make', name: ['make'], kind: 'static', returns: { unit: 'tag' } });
+  alone.cases = [];
+  const out = generate({ contract: alone, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const refused = /Err\(binding_error\((py_, )?BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)/;
+  // Node: the static __new of the addon fails, and the Proxy of the entry calls it for any arguments.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /#\[napi\(js_name = "__new", enumerable = false\)\]\n {8}pub fn construct<'env>\(env_: &'env Env\) -> napi::Result<Unknown<'env>> \{\n {12}Err\(throw\(env_, binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)/);
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /const Tag = new Proxy\(addon\.Tag, \{\n {2}construct\(target\) \{\n {4}return target\.__new\(\);\n {2}\},\n\}\);/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-6b: new Tag\(\) is kind direct_construction', \(\) => \{\n {2}assert\.throws\(\(\) => new pkg\.Tag\(\), \(error\) => error\.constructor === pkg\.\w+ && error\.kind === 'direct_construction' && error\.message === 'Tag has no public constructor'\);/);
+  // Python: #[new] fails for any arguments; an instance of a result is made without it.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /#\[new\]\n {4}#\[pyo3\(signature = \(\*_args, \*\*_kwargs\)\)\]\n {4}fn new\(py_: Python<'_>, _args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, pyo3::types::PyDict>>\) -> PyResult<Self> \{/);
+  assert.match(python, refused);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn6b_tag_is_no_direct_construction\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.\w+\) as caught:\n {12}pkg\.Tag\(\)/);
+  // PHP: a public __construct that fails, not the private one whose engine Error carries no kind.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /pub fn __construct\(\) -> Result<Self, PhpException> \{\n {8}Err\(binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)/);
+  const stub = [...out.keys()].filter((path) => path.startsWith('packages/php-ext/generated/') && path.endsWith('.stub.php')).map((path) => text(out, path)).join('\n');
+  assert.match(stub, /final class Tag[^\n]*\n {4}\{\n(?: {8}\/\*\*[\s\S]*?\*\/\n)? {8}public function __construct\(\) \{\}/);
+  assert.doesNotMatch(stub, /final class Tag[^\n]*\n {4}\{\n {8}private function __construct/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn6bTagIsNoDirectConstruction\(\): void\n {4}\{\n {8}try \{\n {12}new \\[\w\\]+\\Tag\(\);/);
+  // WASM: the constructor calls the export that fails, unless the module makes the instance.
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /\}\n\n {4}\/\/\/ GN-6b: [^\n]*\n {4}\/\/\/ [^\n]*\n {4}#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn new_tag\(\) -> Result<\(\), JsValue> \{\n {8}Err\(throw\(binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)\n {4}\}\n\n {4}\/\/\/ T-5: drops/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__Tag_new\(\)\);\n {4}this\.#handle = args\[1\];/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-6b: new Tag\(\) is kind direct_construction'/);
+});
+
 test('WASM: a value alias, its in_raises and a callback unit are generated as for Node (U-7, U-3, GN-18b, GN-18c)', () => {
   const full = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
@@ -6155,7 +6190,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   alone.cases = [];
   const kept = generate({ contract: alone, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   assert.doesNotMatch(text(kept, 'packages/ts/wasm/generated/lib.rs'), /\nfn (in_tag|handle_of)\(/);
-  assert.match(text(kept, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) throw new TypeError\('Tag has no public constructor'\);/);
+  assert.match(text(kept, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__Tag_new\(\)\);/);
   assert.match(text(kept, 'packages/ts/wasm/generated/index.d.ts'), /export declare class Tag \{\n {2}private constructor\(\);/);
   // A contract without a class unit registers the library classes alone.
   const { contract, caseFiles } = load();

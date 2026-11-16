@@ -870,6 +870,14 @@ test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.me
   assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
 });`);
   }
+  // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is kind direct_construction.
+  for (const object of model.objects.filter((o) => !o.constructible)) {
+    const label = langName('node', object.unit.name, 'class');
+    emit(`
+test('GN-6b: new ${label}() is kind direct_construction', () => {
+  assert.throws(() => new pkg.${label}(), (error) => error.constructor === pkg.${cls('type')} && error.kind === 'direct_construction' && error.message === ${jsString(`${label} has no public constructor`)});
+});`);
+  }
   // GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning; the test turns on gc() and
   // awaits the warning event of the process with the message of its class, because the objects of earlier tests warn too.
   let usesGc = false;

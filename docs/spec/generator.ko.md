@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b939dd43e6778c50f6f7b5195789adaba729b03a877d61700d2320b0acc7bb66 -->
+<!-- source-sha256: 71abdcffcda0567054a4a15d38673acbfaeb255d2df4ccc98124179ec8ccabdb -->
 # 생성기
 
 [English](generator.md)
@@ -431,7 +431,16 @@
   `&T`를, optional이나 list의 항목은 그 둘 중 하나의 참조를 준다): 변환 `out_<class>`는 `impl CoreForm<T>`를 받아 소유한 값은 그대로 두고
   빌린 값은 복제하므로, 인스턴스는 코어를 빌리지 않는다. crate는 그 코드가 `out_<class>`를 적을 때 그것을 쓴다. 클래스를
   주는 호출이나 record, variant, alias의 변환이 적을 때이고, tuple 안 list의 변환이 받는 함수(`list_out(py, items,
-  out_<class>)`)로 적을 때도 그렇다. 그 밖에는 쓰지 않는데, lint가 dead code를 거부하기 때문이다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
+  out_<class>)`)로 적을 때도 그렇다. 그 밖에는 쓰지 않는데, lint가 dead code를 거부하기 때문이다. `constructible: false`면 인스턴스를 만드는 생성자가 없다:
+  바인딩이 모든 인스턴스를 코어의 결과에서 스스로 만들고, 언어 코드의 직접 생성은 그 범주의 다른 바인딩 실패와 같이 kind
+  `direct_construction`(범주 `type`)으로 실패하며 그 메시지가 클래스를 이름 짓는다. Python의 `#[new]`가 그렇게 실패하고, PHP는
+  그렇게 실패하는 public `__construct`를 선언하며, Node 진입점의 `Proxy`는 그렇게 실패하는 static `__new`를 부르고, WASM
+  생성자는 모듈이 인스턴스를 만드는 때가 아니면 그렇게 실패하는 export `__<Class>_new`를 부른다(T-5). Go에는 거부할 직접 생성이
+  없다: `<Class>`의 struct literal이나 zero value는 바인딩의 코드를 실행하지 않고 값을 담지 않으므로, 그것을 받는 호출이 kind
+  `invalid_argument_type`으로 실패한다(GN-15a). Why: json 저장소가 발견했듯이(T3.25-1) 직접 생성은 kind 없이 실패했다. Node에서는
+  napi-rs의 일반 Error로, Python에서는 pyo3의 TypeError로, PHP에서는 private 생성자에 대한 엔진의 Error로 실패했는데, 코어는
+  바로 그것을 위해 `direct_construction`을 정의한다. private PHP 생성자는 kind를 실을 수 없는데, 엔진이 그것에 던지는 Error가
+  kind를 싣지 않기 때문이다.
   property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을
   하는 `<name>`을 정의한다. 진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다.

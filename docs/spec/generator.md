@@ -532,7 +532,17 @@ the design ids are those of the binding design.
   `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. A
   crate writes `out_<class>` when its code names it: a call, or the conversion of a record, a variant or an alias, that
   gives the class, also as the function that a list conversion takes (`list_out(py, items, out_<class>)`) for a list
-  inside a tuple, and no other time, because the lints deny dead code. `constructible: false` leaves no constructor (PHP declares it private). A property is a
+  inside a tuple, and no other time, because the lints deny dead code. `constructible: false` leaves no constructor that makes an instance: the binding makes
+  every instance itself from a result of the core, and a direct construction by language code fails with the kind
+  `direct_construction` (category `type`) whose message names the class, as any binding failure of that category does.
+  Python's `#[new]` fails so, PHP declares a public `__construct` that fails so, the `Proxy` of the Node entry calls the
+  static `__new`, which fails so, and the WASM constructor calls the export `__<Class>_new`, which fails so, unless the
+  module makes the instance (T-5). Go has no direct construction to refuse: a struct literal or the zero value of
+  `<Class>` runs no code of the binding and holds no value, so a call that takes it fails with kind
+  `invalid_argument_type` (GN-15a). Why: the json repository found (T3.25-1) that a direct construction failed without a
+  kind, in Node with the plain Error of napi-rs, in Python with the TypeError of pyo3 and in PHP with the Error of the
+  engine for a private constructor, while the core defines `direct_construction` for it; a private PHP constructor
+  cannot carry the kind, because the Error that the engine throws for it carries none. A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
   declarations, and the entry defines `<name>` over it with the checks of G-7. The entry writes that function as a
