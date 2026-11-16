@@ -1255,11 +1255,11 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const refused: [unknown, RegExp][] = [
       ['a', /store is not \{"callback"/],
       [{ callback: { 'store.write': [row] } }, /store\.write is no member of store/],
-      [{ callback: { 'store.read': [{ args: { name: 'a' }, result: null }] } }, /the args of row 0 of store\.read are not the parameters key/],
+      [{ callback: { 'store.read': [{ args: { key: 'a', name: 'a' }, result: null }] } }, /the args of row 0 of store\.read have no parameter name of store\.read/],
       [{ callback: { 'store.read': [{ args: { key: 'a' }, result: null, raise: { error: 'too_large', kind: 'too_large' } }] } }, /has a result and a raise/],
       [{ callback: { 'store.read': [{ args: { key: 'a' }, raise: { error: 'store_error', kind: 'store' } }] } }, /raises store_error, which store\.read does not recognize/],
       [{ callback: { 'store.read': [{ ...row, times: 2 }] } }, /row 0 of store\.read has no key times/],
-      [{ callback: { 'store.read': [row] }, calls: [{ member: 'store.read', args: {} }] }, /the args of call 0 are not the parameters key/],
+      [{ callback: { 'store.read': [row] }, calls: [{ member: 'store.read', args: {} }] }, /the args of call 0 give no key of store\.read/],
     ];
     for (const [store, message] of refused) {
       const found = withStore(store);
@@ -1334,7 +1334,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
       [scoped, { function: { calls: [{ ...step, on: '1' }], result: 'b' } }, /step 0 of convert is on 1, which is neither a parameter of the function whose type is a class of this contract nor a name of a function fixture around it whose parameter is one/],
       [scoped, { function: { calls: [{ ...step, on: 'session' }], result: 'b' } }, /step 0 of convert is on session, which is neither a parameter/],
       [scoped, { function: { calls: [{ ...step, call: 'forms.parse' }], result: 'b' } }, /step 0 of convert calls forms\.parse, which is no method of session/],
-      [scoped, { function: { calls: [{ ...step, args: { path: 'a' } }], result: 'b' } }, /the args of step 0 of convert are not the parameters file of session\.load/],
+      [scoped, { function: { calls: [{ ...step, args: { file: 'a', path: 'a' } }], result: 'b' } }, /the args of step 0 of convert have no parameter path of session\.load/],
       [scoped, { function: { calls: [], raise: { error: 'store_error', kind: 'store' } } }, /the function fixture convert raises store_error, which the function does not recognize \(U-3\)/],
       [scoped, { function: { calls: [], raise: 'error' } }, /the function fixture convert raises "error", which is neither "exception" nor \{"error", "kind"\}/],
       [scoped, { function: { calls: [], result: 'b', awaits: true } }, /the function fixture convert names awaits, and its function type has no async_allowed: true/],
@@ -1364,6 +1364,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c' } }), waits)), []);
     assert.match(cases(withParam(both, 'convert', outer({}, { function: { calls: [], result: 'c', awaits: true } }), waits))[0]?.message ?? '', /the function fixture work of step 0 of convert names awaits, and the fixture of its step does not/);
   });
+  // B2.408 (CK-101) keeps the messages of B2.406 by what is wrong: a step without args of a member without parameters is
+  // a call of it, and a row without args names the parameter that it lacks.
   test('a step or a row without args, or of a member without parameters, is refused by what is wrong (G-5, B2.406)', () => {
     const takes = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
     const nullary = (c: any): void => {
@@ -1372,10 +1374,76 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const messages = (value: unknown): string => withParam(takes, 'convert', value, nullary).map((f) => f.message).join('\n');
     const fixture = (step: object): object => ({ function: { calls: [step], result: 'b' } });
     assert.doesNotMatch(messages(fixture({ on: '0', call: 'session.reset', args: {} })), /step 0 of convert/);
-    assert.match(messages(fixture({ on: '0', call: 'session.reset' })), /step 0 of convert gives no args; session\.reset takes no parameters, so its args are \{\}/);
-    assert.match(messages(fixture({ on: '0', call: 'session.reset', args: { file: 'a' } })), /the args of step 0 of convert are not \{\}, and session\.reset takes no parameters/);
-    assert.match(messages(fixture({ on: '0', call: 'session.load' })), /step 0 of convert gives no args; session\.load takes the parameters file/);
-    assert.match(withParam(stores, 'stores', [{ callback: { 'store.read': [{ result: null }] } }]).map((f) => f.message).join('\n'), /row 0 of store\.read gives no args; store\.read takes the parameters key/);
+    assert.doesNotMatch(messages(fixture({ on: '0', call: 'session.reset' })), /step 0 of convert/);
+    assert.match(messages(fixture({ on: '0', call: 'session.reset', args: { file: 'a' } })), /the args of step 0 of convert have no parameter file of session\.reset/);
+    assert.match(messages(fixture({ on: '0', call: 'session.load' })), /the args of step 0 of convert give no file of session\.load/);
+    assert.match(withParam(stores, 'stores', [{ callback: { 'store.read': [{ result: null }] } }]).map((f) => f.message).join('\n'), /the args of row 0 of store\.read give no key of store\.read/);
+  });
+  describe('CK-101 the args of every call form (G-5, B2.408)', () => {
+    // session.open makes a session from parameters that all have a default, session.reset takes none, session.tune takes
+    // one with a default and one without, and store.flush is a callback member without parameters.
+    const members = (c: any): void => {
+      unit(c, 'session').members.push(
+        { id: 'session.open', name: ['open'], kind: 'constructor', visibility: 'public', wait: 'none', parameters: [{ name: ['level'], type: 'uint', default: { literal: 1 } }], returns: 'self', raises: [], core: { path: 'sample::Session::open' } },
+        { id: 'session.reset', name: ['reset'], kind: 'method', visibility: 'public', wait: 'none', parameters: [], returns: 'none', raises: [], core: { path: 'sample::Session::reset', receiver: '&self' } },
+        { id: 'session.tune', name: ['tune'], kind: 'method', visibility: 'public', wait: 'none', parameters: [{ name: ['level'], type: 'uint', default: { literal: 1 } }, { name: ['mode'], type: 'text', required: true }], returns: 'none', raises: [], core: { path: 'sample::Session::tune', receiver: '&self' } },
+      );
+      unit(c, 'store').members.push({ id: 'store.flush', name: ['flush'], kind: 'method', visibility: 'public', parameters: [], returns: 'none', core: { path: 'sample::Store::flush', receiver: '&mut self' } });
+    };
+    // The findings of the case of forms.parse that gives the parameter `key` the value, or of a case of session.load
+    // with `after`.
+    const ofCase = (found: Finding[]): string => found.filter((f) => f.check === 'CK-22' && f.message.startsWith('the case ')).map((f) => f.message).join('\n');
+    const parse = (parameter: object, key: string, value: unknown): string => ofCase(withParam(parameter, key, value, members));
+    const held = { name: ['held'], type: { unit: 'session' } };
+    const convert = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
+    const store = { name: ['store'], type: { unit: 'store' } };
+    const after = (calls: unknown[]): string => {
+      const c = contract();
+      members(c);
+      const files = new Map<string, Record<string, unknown[]>>();
+      for (const row of c.cases) {
+        const document = files.get(row.file) ?? {};
+        document[row.group] = row.member === 'session.load' ? [...(document[row.group] ?? []), { id: 'observed', receiver: { new: 'session.open' }, file: 'a', result: null, after: calls }] : (document[row.group] ?? []);
+        files.set(row.file, document);
+      }
+      return ofCase(checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files })).split('\n').filter((m) => /after 0/.test(m)).join('\n');
+    };
+    // Each call form with the args `args` (left out when undefined) of a call of `call`, and the text of the place that
+    // the messages name.
+    const forms: [string, (call: string, args: unknown) => string, string][] = [
+      ['new', (call, args) => parse(held, 'held', { new: call === 'session.open' ? call : 'session.open', ...(args === undefined ? {} : { args }) }), 'held of the case'],
+      ['from', (call, args) => parse(held, 'held', { from: 'session.open', pick: [], ...(args === undefined ? {} : { args }) }), 'held of the case'],
+      ['then', (call, args) => parse(held, 'held', { new: 'session.open', then: [{ call, ...(args === undefined ? {} : { args }) }] }), 'then 0 of held of the case'],
+      ['step', (call, args) => parse(convert, 'convert', { function: { calls: [{ on: '0', call, ...(args === undefined ? {} : { args }) }], result: 'b' } }), 'step 0 of convert'],
+      ['after', (call, args) => after([{ call, ...(args === undefined ? {} : { args }), result: null }]), 'after 0'],
+    ];
+    for (const [form, run, at] of forms) {
+      // new and from call session.open, whose parameter has a default; the other forms call session.reset and session.tune.
+      const own = form === 'new' || form === 'from';
+      test(`${form}: args may be left out for a member whose parameters all have a default, or that takes none`, () => {
+        assert.equal(run(own ? 'session.open' : 'session.reset', undefined), '');
+        assert.equal(run(own ? 'session.open' : 'session.tune', own ? {} : { mode: 'a' }), '');
+      });
+      if (!own) test(`${form}: a missing parameter without a default is refused by the message of every form`, () => {
+        assert.match(run('session.tune', undefined), new RegExp(`the args of ${at} give no mode of session\\.tune`));
+        assert.match(run('session.tune', { level: 2 }), new RegExp(`the args of ${at} give no mode of session\\.tune`));
+      });
+      test(`${form}: a key that is no parameter is refused`, () => {
+        const [call, owner] = own ? ['session.open', 'session\\.open'] : ['session.reset', 'session\\.reset'];
+        assert.match(run(call, { file: 'a' }), new RegExp(`the args of ${at} have no parameter file of ${owner}`));
+      });
+    }
+    // The arguments that the core passes are every parameter, so a row leaves out args only when its member takes none.
+    test('callback: a row of a member without parameters may leave out args', () => {
+      assert.equal(parse(store, 'store', { callback: { 'store.flush': [{ result: null }] } }), '');
+    });
+    test('callback: a row and a call of calls give every parameter, by the message of every form', () => {
+      assert.match(parse(store, 'store', { callback: { 'store.read': [{ result: null }] } }), /the args of row 0 of store\.read give no key of store\.read/);
+      assert.match(parse(store, 'store', { callback: { 'store.read': [row] }, calls: [{ member: 'store.read' }] }), /the args of call 0 give no key of store\.read/);
+    });
+    test('callback: a key that is no parameter is refused', () => {
+      assert.match(parse(store, 'store', { callback: { 'store.flush': [{ args: { key: 'a' }, result: null }] } }), /the args of row 0 of store\.flush have no parameter key of store\.flush/);
+    });
   });
   test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
     const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
@@ -1401,7 +1469,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.match(kase({ after: after }, returning)[0]?.message ?? '', /after is not a list of calls/);
     assert.match(kase({ after: [{ ...after, fails: {} }] }, returning)[0]?.message ?? '', /after 0 has no key fails/);
     assert.match(kase({ after: [{ ...after, call: 'forms.parse' }] }, returning)[0]?.message ?? '', /after 0 calls forms\.parse, which is no method of session/);
-    assert.match(kase({ after: [{ ...after, args: {} }] }, returning)[0]?.message ?? '', /the args of after 0 are not the parameters file, convert of session\.load/);
+    assert.match(kase({ after: [{ ...after, args: {} }] }, returning)[0]?.message ?? '', /the args of after 0 give no file of session\.load/);
     assert.match(kase({ after: [{ call: 'session.load', args: after.args }] }, returning)[0]?.message ?? '', /after 0 names no result/);
   });
   test('a group that is not in its file', () => {

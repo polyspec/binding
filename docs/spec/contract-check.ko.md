@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 84a4321c827c810ca4afda54a6fcfe6b9d63edbbccc2ac3c03b5f54160959323 -->
+<!-- source-sha256: 48e3896f03e135b508fe16d414ceb0a7de2f08f6608a693fa7f64fd73eeabef5 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -285,7 +285,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   그 category와 kind를 그 library의 행에서 가져온다(GN-7c). CK-22는 자기 category가 없는 그런 행을 건너뛰어서, 다른
   library의 어느 kind에도 case를 요구하지 않았다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
   snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다: 그 member가 있고 `pick`을 거쳐 그 class를
-  주며, 메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 그 class의 메서드이거나, `"on": "receiver"`이면 receiver를 가진 값의 `receiver`의 class의 메서드이며, 그 `raises`는 주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 그 `faults`는 주어지면 그 메서드의 case의 faults이고, `faults`와 `raises`를 함께 가진 호출은 그 점들이 채우는 kind를 기대한다. 인스턴스 값이 fault를 장전하는 case는 `faults`를 가진 case처럼 case와 그 호출들의 점이 `fills`에 가진 kind만 채운다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인 `{"cancel": "fired"}`이거나 발동하지
+  주며, 메서드는 `receiver`를 갖고, `args`는 member의 호출의 인자이며(CK-101), `then`의 호출은 `args`가 다시 호출의 인자이고(CK-101) 그 class의 메서드이거나, `"on": "receiver"`이면 receiver를 가진 값의 `receiver`의 class의 메서드이며, 그 `raises`는 주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 그 `faults`는 주어지면 그 메서드의 case의 faults이고, `faults`와 `raises`를 함께 가진 호출은 그 점들이 채우는 kind를 기대한다. 인스턴스 값이 fault를 장전하는 case는 `faults`를 가진 case처럼 case와 그 호출들의 점이 `fills`에 가진 kind만 채운다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인 `{"cancel": "fired"}`이거나 발동하지
   않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다. case는 실패 주입점(G-5)을
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<기호>", "bytes": <n>,
   "nth": <n>}]`로 장전할 수 있다. `<library>`는 snake_case로 쓴 라이브러리 이름이며 이 계약이나 검사가 받은 라이브러리의
@@ -300,8 +300,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `{"id", "value", "raises"}`(그리고 `note`, `rule`)이고 `raises.kind`는 `in_raises`의 kind이며, `in_raises`의 kind마다
   하나가 있다.
   callback interface를 parameter로 받는 member의 case는 그것을 callback fixture로 준다(G-5, GN-13):
-  `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 그 member의
-  parameter를 정확히 주며, 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `result`와 `raise`를 함께 가진 행,
+  `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 코어가 그 member에
+  넘기는 인자를 주며(CK-101), 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `result`와 `raise`를 함께 가진 행,
   member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
@@ -314,14 +314,14 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   타입의 fixture만 그것을 적고, 그 값은 `true`이며, step의 인자의 fixture는 그 step의 fixture가 그것을 적을 때만 적는다.
   기다리지 않는 함수는 자기 step의 호출을 기다릴 수 없기 때문이다. step은 `{"on": "<위치>", "call": "<member id>", "args": {...}}`이고
   `result` 말고 다른 키는 없다. `on`은 함수의 parameter의 위치 `"0"`, `"1"` 등이다. 함수 타입의 parameter에는 이름이 없기 때문이다. 그
-  parameter의 타입은 이 계약의 class unit이다. `call`은 그 class의 method이고, `args`는 정확히 그 method의 parameter이며,
+  parameter의 타입은 이 계약의 class unit이다. `call`은 그 class의 method이고, `args`는 그 method의 호출의 인자이며(CK-101),
   step의 함수 타입 인자는 다시 함수 fixture다. step은 그 호출이 돌려주는 값인 `"result": <값>`도 적을 수 있다. 생성된
   함수는 다음 step 전에 그 값을 요구하므로, case는 함수가 도는 동안 class 인자가 쥔 것을 검증한다. `raise`는 언어의 예외인 텍스트 `"exception"`이거나 함수가 인식하는(U-3) error
   unit의 `{"error": <unit>, "kind": <kind>}`다. case의 `raises`는 텍스트 `"callback"`일 수 있다. 그 case는 인자의 함수
   fixture가 `"raise": "exception"`으로 던지는 예외를 기대하며, step의 어느 깊이에도 그런 fixture가 없는 case는 거부된다.
   method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
-  다른 키는 없다. 각 `call`은 receiver의 class의 method나 property이고(property는 `args`가 `{}`이며 각 언어는 property를 읽듯 그것을 읽는다,
-  B2.361) `args`는 정확히 그 parameter이며, 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
+  다른 키는 없다. 각 `call`은 receiver의 class의 method나 property이고(각 언어는 property를 읽듯 그것을 읽는다,
+  B2.361) `args`는 그 호출의 인자이며(CK-101), 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
   시험하며(Node와 WASM에서는 `undefined`, B2.374), 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
@@ -329,6 +329,16 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
   `after`의 호출은 그것을 `on`으로 이름할 수 있고, step의 인자는 `{"bound": <name>}`일 수 있다. receiver가 없는 member의
   case의 `with`는 보고된다.
+- **CK-101** 호출의 `args`(G-5)는 모든 형태에서 한 규칙을 따른다. 시험이 하는 호출, 곧 인스턴스 값의 `new`와 `from`과
+  그 `then`의 각 호출(generator GN-13f), 함수 fixture의 step, `after`의 호출(CK-22)은 `args`에 그 member의 parameter
+  이름만 snake_case로 적고, `default`가 없는 parameter는 모두 적는다. `default`가 있는 parameter는 빠질 수 있고 생성된
+  호출도 그것을 뺀다(U-2). `args` 자체도 빠질 수 있으며 그것은 `{}`다. 그래서 property나 parameter가 모두 `default`를 가진
+  member의 호출은 `args`가 필요 없다. 코어가 넘기는 인자, 곧 callback fixture의 행과 그 `calls`의 호출(CK-22)은 코어가
+  callback에 주는 것, 곧 모든 parameter이므로, 그 `args`는 정확히 member의 parameter이고 member가 parameter를 받지
+  않을 때만 빠질 수 있다. 어느 형태에서든 parameter가 아닌 키, 빠진 parameter, 객체가 아닌 `args`는 같은 메시지로
+  지적된다. 이유: 형태마다 규칙이 둘이었고, step과 `after`의 호출은 소비자 계약의 case가 `new`와 `from`에 약 2000곳에서
+  쓰는, `args` 없는 형태를 거부했다. 한 규칙이 그 형태를 유효하게 두며, callback의 행만 다른 까닭은 fixture가 그것을
+  받은 인자와 비교하기 때문이다(B2.408).
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
   key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `with`(생성기 GN-13pa), `raises`, `after`, `then`, `faults`, `service`,

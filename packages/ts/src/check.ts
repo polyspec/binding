@@ -1992,15 +1992,8 @@ class Checker {
     if (!method && record['receiver'] !== undefined) report(`${what}: ${member.id} has no receiver, so the value gives none`);
     if (method && record['receiver'] !== undefined) this.instanceValue(found.unit.id, record['receiver'], report, `the receiver of ${what}`);
     const args = (target: Member, given: unknown, whose: string): void => {
-      const keys = given === undefined ? {} : typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
-      if (keys === undefined) return report(`the args of ${whose} are not an object of the parameters of ${target.id}`);
-      const names = (target.parameters ?? []).map((p) => convert(p.name, 'python', 'variable'));
-      for (const key of Object.keys(keys)) if (!names.includes(key)) report(`the args of ${whose} have no parameter ${key} of ${target.id}`);
-      for (const parameter of target.parameters ?? []) {
-        const key = convert(parameter.name, 'python', 'variable');
-        if (parameter.default === undefined && !Object.hasOwn(keys, key)) report(`the args of ${whose} give no ${key} of ${target.id}`);
-      }
-      this.instanceArgs(target, keys, report, whose);
+      const keys = callArgs(whose, given, target.parameters ?? [], target.id, 'call', report);
+      if (keys !== undefined) this.instanceArgs(target, keys, report, whose);
     };
     args(member, record['args'], what);
     const then = record['then'];
@@ -2377,16 +2370,12 @@ class Checker {
       report(`${at} calls ${String(call['call'])}, which is no method of ${unitId}`);
       return undefined;
     }
-    const given = call['args'];
-    const args = typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
-    const names = (found.member.parameters ?? []).map((p) => convert(p.name, 'python', 'variable'));
-    const wrong = argsMismatch(at, given, names, found.member.id);
-    if (wrong !== undefined || args === undefined) {
-      report(wrong ?? `the args of ${at} are not an object`);
-      return found.member;
-    }
+    const args = callArgs(at, call['args'], found.member.parameters ?? [], found.member.id, 'call', report);
+    if (args === undefined) return found.member;
     for (const parameter of found.member.parameters ?? []) {
       const key = convert(parameter.name, 'python', 'variable');
+      // CK-101: a parameter with a default that the call leaves out has no value to judge.
+      if (!Object.hasOwn(args, key)) continue;
       // B2.383: {"bound": <name>} is judged by GN-13n below, also for a parameter of a generated interface (CK-77).
       if (this.takesCode(parameter.type) && !(typeof args[key] === 'object' && args[key] !== null && !Array.isArray(args[key]) && Object.keys(args[key] as object).length === 1 && Object.hasOwn(args[key] as object, 'bound'))) this.codeValue(parameter.type, args[key], `${key} of ${at}`, report);
       // GN-13n: {"bound": <name>} is an argument that a function fixture around the call gives by that name, of the
@@ -2541,9 +2530,7 @@ class Checker {
       const found = members.get(owner);
       if (found === undefined) return report(`${owner} is no member of ${unit.id}`);
       if ((found.parameters ?? []).some((p) => this.nativeArgument(p.type))) return report(`${owner} takes an object of the language, which a row cannot give`);
-      const names = (found.parameters ?? []).map((p) => snake(p.name));
-      const wrong = argsMismatch(at, given, names, owner);
-      if (wrong !== undefined) report(wrong);
+      callArgs(at, given, found.parameters ?? [], owner, 'received', report);
     };
     for (const [owner, list] of Object.entries(rows as Record<string, unknown>)) {
       if (!Array.isArray(list)) {
@@ -2831,13 +2818,20 @@ export function libraryParts(contract: Contract): { repository: string; componen
   return { repository: contract.library.slice(0, -component.length - 1), component };
 }
 
-// G-5, B2.406: why the args of a call or a row are not exactly the parameters `names` of `owner`, or undefined when
-// they are. A call without args, and a member without parameters, are named as such, since args {} is the form of a
-// call of a member that takes none.
-function argsMismatch(at: string, given: unknown, names: readonly string[], owner: string): string | undefined {
-  const takes = names.length === 0 ? `${owner} takes no parameters, so its args are {}` : `${owner} takes the parameters ${names.join(', ')}`;
-  if (given === undefined) return `${at} gives no args; ${takes}`;
-  const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
-  if (keys !== undefined && keys.length === names.length && names.every((n) => keys.includes(n))) return undefined;
-  return names.length === 0 ? `the args of ${at} are not {}, and ${owner} takes no parameters` : `the args of ${at} are not the parameters ${names.join(', ')} of ${owner}`;
+// G-5, CK-101: the args `given` of a call of `owner` at `at`, judged by one rule for every form, or undefined when they
+// are no object. A call that the test makes (`call`) gives only parameters and every parameter without a default; the
+// arguments that the core passes (`received`) are every parameter. In both, args that are left out are {}.
+function callArgs(at: string, given: unknown, parameters: readonly Parameter[], owner: string, form: 'call' | 'received', report: (message: string) => void): Record<string, unknown> | undefined {
+  const args = given === undefined ? {} : typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
+  if (args === undefined) {
+    report(`the args of ${at} are not an object of the parameters of ${owner}`);
+    return undefined;
+  }
+  const names = parameters.map((p) => convert(p.name, 'python', 'variable'));
+  for (const key of Object.keys(args)) if (!names.includes(key)) report(`the args of ${at} have no parameter ${key} of ${owner}`);
+  for (const [i, parameter] of parameters.entries()) {
+    const key = names[i] as string;
+    if ((form === 'received' || parameter.default === undefined) && !Object.hasOwn(args, key)) report(`the args of ${at} give no ${key} of ${owner}`);
+  }
+  return args;
 }

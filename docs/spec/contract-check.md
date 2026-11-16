@@ -337,8 +337,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   category of its own, so no kind of another library was asked a case. The `cases` row of a member may name `result`, the snake_case key of its cases
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
   none (CK-1). The `receiver` of a case and an argument of a class type may be an instance value of GN-13f: its member exists and
-  gives the class, through its `pick`; a method has its `receiver`; `args` are the parameters of the member; each call
-  of `then` is a method of the class, or, with `"on": "receiver"`, a method of the class of the `receiver` of a value
+  gives the class, through its `pick`; a method has its `receiver`; `args` are the arguments of a call of the member (CK-101); each call
+  of `then`, whose `args` are again those of a call (CK-101), is a method of the class, or, with `"on": "receiver"`, a method of the class of the `receiver` of a value
   that has one, and its `raises`, when given, is `{"kind": <kind>}` of a kind of that method's `raises`; its
   `faults`, when given, are faults of a case of that method, and a call with both `faults` and `raises` expects a kind
   that its points fill. A case whose instance values arm faults fills, as a case with `faults` does, only the kinds
@@ -358,7 +358,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `{"id", "value", "raises"}` (and `note`, `rule`) whose `raises.kind` is a kind of `in_raises`, and every kind of
   `in_raises` has one. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
   `{"callback": {<member id>: [<row>]}}` whose member ids are members of that interface, whose rows and `calls` give
-  in `args` exactly the parameters of their member, and whose rows have no key but `args`, `result`, `raise`, `once`
+  in `args` the arguments that the core passes to their member (CK-101), and whose rows have no key but `args`, `result`, `raise`, `once`
   and `async`; a row with a `result` and a `raise`, a `raise` of an error unit that the member does not recognize
   (U-3), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the
   language (a class, a callback, a function, a host value), which a row cannot give, are reported. The same holds at
@@ -376,7 +376,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   await cannot await the call of its step. A step is `{"on": "<position>", "call": "<member id>",
   "args": {...}}` with no other key but `result`: `on` is the position of a parameter of the function, `"0"`, `"1"` and so on,
   because a parameter of a function type has no name, and the type of that parameter is a class unit of this
-  contract; `call` is a method of that class; `args` are exactly the parameters of that method, and an argument of
+  contract; `call` is a method of that class; `args` are the arguments of a call of that method (CK-101), and an argument of
   a function type of a step is again a function fixture. A step may also name `"result": <value>`, the value that
   its call returns: the generated function requires it before its next step, so a case verifies what a class
   argument holds while the function runs. `raise` is the text `"exception"`, an exception of the
@@ -384,8 +384,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   of a case may be the text `"callback"`: the case expects the exception that a function fixture of its arguments
   raises by `"raise": "exception"`, and a case without such a fixture, at any depth of its steps, is refused. A case
   of a method may name `after`, a list of `{"call": "<member id>", "args": {...}, "result": <value>}` with no other
-  key: each `call` is a method or a property of the class of the receiver (a property with `args` `{}`, which each
-  language reads as it reads a property, B2.361), `args` are exactly its parameters, the `result` of a member without
+  key: each `call` is a method or a property of the class of the receiver (a property, which each
+  language reads as it reads a property, B2.361), `args` are the arguments of a call of it (CK-101), the `result` of a member without
   a result is `null`, which each language tests as no value (`undefined` in Node and WASM, B2.374), and the generated
   test calls it on the receiver after the call of the case, also after a call that raised, and requires `result`.
   A case of a method may name `with`, `{"<name>": <instance value>}` (generator GN-13pa): each value is `{"new":
@@ -393,6 +393,18 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a
   function fixture and a call of `after` may then name it as `on`, a step argument may be `{"bound": <name>}`, and a
   `with` of a case of a member without a receiver is reported.
+- **CK-101** The `args` of a call (G-5) follow one rule in every form. A call that the test makes, `new` and `from`
+  of an instance value and each call of its `then` (generator GN-13f), a step of a function fixture and a call of
+  `after` (CK-22), names in `args` only parameters of its member in snake_case and every parameter without a
+  `default`; a parameter with a `default` may be left out, which the generated call leaves out (U-2), and `args` may be
+  left out, which is `{}`, so a call of a property or of a member whose parameters all have a default needs none. The
+  arguments that the core passes, a row of a callback fixture and a call of its `calls` (CK-22), are what the core
+  gives to the callback, every parameter, so their `args` are exactly the parameters of the member, and are left out
+  only when the member takes none. Every form reports a key that is no parameter, a missing parameter and `args` that
+  are not an object with the same message. Why: the forms had two rules, and a step or a call of `after` refused the
+  form without `args` that the cases of consumer contracts give to `new` and `from` at about 2000 places; one rule
+  keeps that form valid, and the rows of a callback differ only because a fixture compares them with the arguments it
+  receives (B2.408).
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which
   makes the receiver; the key of its result (CK-22); or a key of a case: `id`, `rule`, `note`, `receiver`, `raises`,
