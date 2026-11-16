@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1e4b229f2346f7742bde0d1a9bd9f5e0a3240248d803bab2ed118fb8385a1946 -->
+<!-- source-sha256: 0023e5e81bd280b33a92184fb33f3a1bda6f4179575d95a11b9874257df753e5 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -23,6 +23,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `make e2e-lint`가 commit 전에 `tests/e2e` 레포들의 생성된 crate를 lint하고, AGENTS.md가 그것을 version-bump commit 전의 gate로 적는다(B2.432): CI의 job `e2e` matrix의 각 레포를 그 DEPS와 함께(classes, sample과 함께 consumer, functions, kept, points와 함께 plot, sample, shapes, variants; 컴파일러가 crate를 거부하는 `lent`와 CI에 없는 `relay`는 빠진다) HEAD의 end-to-end check를 `--until lint`로 돌린다. 그것은 그 commit의 CLI로 생성하고, core를 `cargo test` 대신 `cargo check`로 확인하고, core와 각 binding crate를 test feature와 함께, 그리고 feature 없이 `cargo clippy -D warnings`로 lint하고 거기서 멈추므로, package를 만들지 않고 test를 돌리지 않는다. npm은 offline으로 돌고 Cargo는 자기 cache와 이 checkout을 읽는다. `REPOS`가 그중 일부를 고른다. 실행의 Node.js 확인은 그것을 링크일 수 있는 `var/tools`의 실제 경로와 비교한다. 검증: `packages/ts`에서 `tests/e2e-lint-target.test.ts`의 `node --test --test-name-pattern=B2.432`(그 stand-in cargo는 feature 없는 lint를 `function in_blob is never used`로 실패시킨다), 그리고 `make e2e-lint REPOS=tests/e2e/sample`.
 
 ## 0.0.18
 

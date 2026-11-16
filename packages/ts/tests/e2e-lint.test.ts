@@ -24,7 +24,7 @@ test('each binding crate is linted with its test features and without a feature,
 test('the script of the end-to-end check runs the lints of bindingLints and names each in the outcome of its target (GN-14)', () => {
   const script = new URL('../../../scripts/e2e.mts', import.meta.url);
   const source = String(readFileSync(script));
-  assert.match(source, /for \(const lint of bindingLints\(/);
+  assert.match(source, /lintBindingCrates\(mainsOf\(t\)/);
   // No lint of a binding crate is written beside the list, where it could keep one form only.
   assert.doesNotMatch(source, /run\('cargo', \['clippy'[^\n]*crateSuffix/);
 });
