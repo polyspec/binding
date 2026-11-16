@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: f66c6319f1fe87f2a6205f3beeb6ea814aaceebb4323e3dea52279df56cd66da -->
+<!-- source-sha256: 8c1b783e4c707ef3632f77bfc04e2d92879a29a494802be4bceaf7292fa98e84 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -351,7 +351,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   이유: default는 host 객체가 member를 뺄 때 trait method가 코어에 돌려주는 것이므로, 코어가 host 객체를 통해
   호출하지 않는 member의 default는 아무것도 말하지 않고, 다른 type의 literal은 trait method에서 컴파일되지 않거나
   코어에 그 type이 갖지 않는 값을 준다.
-- **CK-99** case의 값은 그 자리의 type의 값이다(T-1). case가 값을 주는 모든 자리에서 그렇다: 인자, 결과, list의 항목
+- **CK-100** case의 값은 그 자리의 type의 값이다(T-1). case가 값을 주는 모든 자리에서 그렇다: 인자, 결과, list의 항목
   (반복 형태 `{"kind": "list", "value": ...}`의 값도), tuple의 부분, map이나 keyed map의 항목, optional의 값, record의
   field와 tag가 가리키는 variant의 case의 field. `uint` 자리에서는 음이 아닌 정수, `int`에서는 정수, `int64`에서는 i64
   범위의 정수, `float`에서는 숫자, `bool`에서는 bool, `text`나 `latin1`에서는 text다. `binding check`는 다른 값을 case,

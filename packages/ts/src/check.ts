@@ -1799,12 +1799,12 @@ class Checker {
     const raises = record['raises'];
     const refusesNumber = typeof raises === 'object' && raises !== null && (raises as Record<string, unknown>)['kind'] === 'invalid_number';
     const writable = (value: bigint): boolean => value >= -(2n ** 63n) && value < 2n ** 63n;
-    // CK-99, GN-13w, B4: a case that raises invalid_number or invalid_argument_type may give an argument itself, or
+    // CK-100, GN-13w, B4: a case that raises invalid_number or invalid_argument_type may give an argument itself, or
     // the value of its optional, outside its type: the binding refuses it with that kind before the core runs, the
     // dynamic targets give it as its JSON kind and Go writes no test of it. At any other place a target writes it.
     const refusesType = typeof raises === 'object' && raises !== null && ['invalid_number', 'invalid_argument_type'].includes(String((raises as Record<string, unknown>)['kind']));
     const shown = (value: unknown): string => (typeof value === 'bigint' ? String(value) : JSON.stringify(value));
-    // CK-99: why a value is no value of a scalar type of T-1 in every target, or undefined when it is one. A value in
+    // CK-100: why a value is no value of a scalar type of T-1 in every target, or undefined when it is one. A value in
     // an object form ({"float": ...}, {"ill_formed": ...}, a service or a composed text) is judged where its form is.
     const outside = (type: string, value: unknown): string | undefined => {
       if (typeof value === 'object' || value === undefined) return undefined;
@@ -1832,7 +1832,7 @@ class Checker {
         }
         const why = outside(type, value);
         if (why !== undefined && !(argument && refusesType)) {
-          this.report('CK-99', path, `${where}: ${what} ${shown(value)} is ${why}, no value of the type ${type} (T-1), which a target writes as a literal of that type; only an argument of a case that raises invalid_number or invalid_argument_type is outside its type (GN-13w)`);
+          this.report('CK-100', path, `${where}: ${what} ${shown(value)} is ${why}, no value of the type ${type} (T-1), which a target writes as a literal of that type; only an argument of a case that raises invalid_number or invalid_argument_type is outside its type (GN-13w)`);
         }
         return;
       }
@@ -1850,7 +1850,7 @@ class Checker {
         // G-5: a map given as an array of [key, value], whose order the case keeps.
         else if (Array.isArray(value)) for (const entry of value) if (Array.isArray(entry) && entry.length === 2) walk(item, entry[1], `${what}.${String(entry[0])}`, false);
       } else if ('unit' in type && (type.library === undefined || type.library === this.contract.library)) {
-        // CK-64, CK-99: a record is the object of its fields, and a variant the object of its tag and the fields of
+        // CK-64, CK-100: a record is the object of its fields, and a variant the object of its tag and the fields of
         // the case that the tag names (T-9).
         const unit = this.unit(type.unit);
         if (unit?.kind === 'record') fields(unit.fields ?? [], value, what);

@@ -1819,12 +1819,12 @@ describe('B2.359: CK-64 takes an argument outside the safe integers in a case of
   });
 });
 
-describe('B2.397: CK-99 a case value is a value of its declared type at every place (T-1, GN-13w)', () => {
+describe('B2.397: CK-100 a case value is a value of its declared type at every place (T-1, GN-13w)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
   const run = (change: (cases: any) => void): string[] => {
     const cases = read('contracts/cases.json');
     change(cases);
-    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-99').map((f) => f.message);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-100').map((f) => f.message);
   };
   const refused = (kind: string): object => ({ kind, status: null, category: kind === 'invalid_number' ? 'value' : 'type', message: 'the argument is not a value of its type' });
   test('the committed cases pass', () => {

@@ -417,7 +417,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   host object leaves the member out, so a default on a member that the core does not call through a host object
   states nothing, and a literal of another type would not compile in the trait method or would give the core a value
   that its type does not hold.
-- **CK-99** A case value is a value of the type of its place (T-1), at every place where a case gives one: an
+- **CK-100** A case value is a value of the type of its place (T-1), at every place where a case gives one: an
   argument, the result, an item of a list (also the value of its repeat form `{"kind": "list", "value": ...}`), a part
   of a tuple, an entry of a map or keyed map, the value of an optional, and a field of a record or of the case of a
   variant that its tag names. At a place of `uint` it is an integer that is not negative, of `int` an integer, of
