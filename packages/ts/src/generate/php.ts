@@ -1409,7 +1409,13 @@ pub struct ${struct} {
 }
 
 #[php_impl]
-impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).join('')}}
+impl ${struct} {${object.constructible ? '' : `
+    /// GN-6b: ${phpName} has no public constructor (U-1 constructible), so a direct construction is kind
+    /// direct_construction; a private constructor would give the Error of the engine, which carries no kind.
+    pub fn __construct() -> Result<Self, PhpException> {
+        Err(binding_error(BindingError::DirectConstruction { class: String::from(${rustString(langName('php', object.unit.name, 'class'))}) }))
+    }
+`}${object.members.map((fn) => functionRust(model, layout, fn)).join('')}}
 ${object.cleanup === undefined ? '' : `
 /// GN-6p, B-10: an object freed without its cleanup call warns, and dropping the value releases its resource.
 impl Drop for ${struct} {
@@ -2247,7 +2253,8 @@ ${lines.join('\n')}    }
     }
     for (const object of model.objects.filter((o) => o.unit.module === module)) {
       const members = object.members.map((fn) => method(fn, '        '));
-      if (!object.constructible) members.unshift('        private function __construct() {}\n');
+      // GN-6b: a class without a constructor (U-1 constructible) declares the public constructor that fails.
+      if (!object.constructible) members.unshift('        /** GN-6b: no public constructor; a direct construction is kind direct_construction. */\n        public function __construct() {}\n');
       items.push(`${doc(object.unit, 'T-5.', '    ')}    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object, implementsClause(model, object, 'php', (unit) => `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`))}
     {
 ${members.join('\n')}    }

@@ -1025,6 +1025,22 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
         }${refused('type', 'consumed', invoke(fn, args, '$held'))}
     }`);
   }
+  // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is kind direct_construction.
+  for (const object of model.objects.filter((o) => !o.constructible)) {
+    const label = langName('php', object.unit.name, 'class');
+    append(`
+    public function testGn6b${label}IsNoDirectConstruction(): void
+    {
+        try {
+            new \\${phpNamespace(layout, object.unit.module)}\\${label}();
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame(${cls('type')}::class, $error::class);
+            self::assertSame('direct_construction', $error->kind());
+            self::assertSame(${phpText(`${label} has no public constructor`)}, $error->getMessage());
+        }
+    }`);
+  }
   // GN-6p, B-10: an object freed without its cleanup call raises E_WARNING, and after it none.
   for (const object of model.objects) {
     const cleanup = object.cleanup;

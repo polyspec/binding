@@ -901,6 +901,13 @@ pub mod class_${name} {
     use super::*;
 ${members.replace(/\n(?=.)/g, '\n    ')}}
 `}
+${object.constructible ? '' : `/// GN-6b: ${jsClass} has no public constructor (U-1 constructible), so a direct construction, which the constructor of
+/// the ES module hands here, is kind direct_construction.
+#[wasm_bindgen(js_name = ${rustString(`__${jsClass}_new`)})]
+pub fn new_${name}() -> Result<(), JsValue> {
+    Err(throw(binding_error(BindingError::DirectConstruction { class: String::from(${rustString(jsClass)}) })))
+}
+`}
 /// T-5: drops the value of an instance of ${jsClass} that the engine collected (the FinalizationRegistry of the ES module).${object.cleanup === undefined ? `
 #[wasm_bindgen(js_name = ${rustString(`__free_${jsClass}`)})]
 pub fn free_${name}(this: u32) {
@@ -1683,7 +1690,8 @@ ${checked(fn, `${name}()`, name, (call) => `return ${call}`)}
     const cls = langName('wasm', o.unit.name, 'class');
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
     const construct = constructor === undefined
-      ? `    if (args[0] !== MAKE) throw new TypeError('${cls} has no public constructor');
+      // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is refused by the module.
+      ? `    if (args[0] !== MAKE) enter(${internal}, () => glue.__${cls}_new());
     this.#handle = args[1];`
       : `    if (args[0] === MAKE) {
       this.#handle = args[1];

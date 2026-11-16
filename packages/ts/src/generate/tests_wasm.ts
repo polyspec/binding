@@ -500,6 +500,14 @@ test('GN-6o: ${langName('wasm', fn.unit.name, 'class')}.${langName('wasm', fn.me
   assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
 });`);
   }
+  // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is kind direct_construction.
+  for (const object of model.objects.filter((o) => !o.constructible)) {
+    const label = langName('wasm', object.unit.name, 'class');
+    emit(`
+test('GN-6b: new ${label}() is kind direct_construction', () => {
+  assert.throws(() => new pkg.${label}(), (error) => error.constructor === pkg.${cls('type')} && error.kind === 'direct_construction' && error.message === ${jsString(`${label} has no public constructor`)});
+});`);
+  }
   // GN-6p, B-10: an instance collected without its cleanup call warns as the Node binding does; the test turns on gc()
   // and awaits the warning event of the process.
   let usesGc = false;

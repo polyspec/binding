@@ -885,7 +885,17 @@ function objectRust(model: Model, layout: PythonLayout, object: ObjectClass, giv
   const pyClass = langName('python', object.unit.name, 'class');
   const struct = `Py${pyClass}`;
   const core = object.unit.core_type ?? '';
-  const members = object.members.map((fn) => functionRust(model, fn)).join('');
+  // GN-6b: a class without a constructor (U-1 constructible) fails a direct construction with kind direct_construction;
+  // the binding makes its instances without __new__.
+  const refused = object.constructible ? '' : `
+    /// GN-6b: ${pyClass} has no public constructor (U-1 constructible), so a direct construction is kind direct_construction.
+    #[new]
+    #[pyo3(signature = (*_args, **_kwargs))]
+    fn new(py_: Python<'_>, _args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, pyo3::types::PyDict>>) -> PyResult<Self> {
+        Err(binding_error(py_, BindingError::DirectConstruction { class: String::from(${rustString(pyClass)}) }))
+    }
+`;
+  const members = refused + object.members.map((fn) => functionRust(model, fn)).join('');
   return `
 /// T-5: ${pyClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
 #[pyclass(name = ${rustString(pyClass)}, module = ${rustString(unitModule(layout, object.unit))}, frozen)]
