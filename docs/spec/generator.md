@@ -1370,7 +1370,33 @@ the design ids are those of the binding design.
   with the receiver `&self`, which the generated code calls with the error that the core returned, by a second match
   without a wildcard. The property is a `@property` over a private attribute in Python, a read-only own property of the
   instance in Node, as `kind`, `status` and `errno` are, and a method over a private property of the declaring class in
-  PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The type of a
+  PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The
+  constructor of a category class and of an error unit, by which language code makes an error with the message, the
+  kind, the status and the errno (GN-10), judges its arguments before it makes the error: the message is a text
+  (B-3), the kind is a text and one of the kinds of the class, and the status and the errno are each absent, null
+  (`None`, `undefined`) or an integer, not a bool. The kinds of a class are those that the binding raises as an
+  instance of that class itself: for an error unit, the kinds of the rows of `errors.kinds` whose `class` names it,
+  without those of the units that extend it, which the binding raises as instances of those units; for a category
+  class, the kinds of the rows of its category without `class` (own rows and rows with `library`), the kinds of E-1a
+  of its category, and the kinds of the `in` of a value alias of another repository whose category is its (U-7 (a')).
+  A kind whose row names an error unit is no kind of the category class, and a unit without a row of its own takes no
+  kind. The constructor reads the kinds of the class that is made (`new.target`, `type(self)`, the class of `$this`),
+  or of its nearest generated ancestor for a class of language code that extends one, because the constructor of a
+  unit calls that of its parent with the same kind. A value of another type, and a kind that is no kind of the class,
+  is kind `invalid_argument_type` in the class of category `type`; a message that breaks a rule of text is kind
+  `invalid_text` (B-3). Go makes an error unit by `Raised<Unit>(kind, message)` (GN-15d), which returns `(*<Unit>,
+  error)` and gives the same errors for a kind that is no kind of the unit and a message that is not UTF-8. Every
+  error that the binding raises has a kind of its class, so its raises, made with the constructor or without it
+  (B-4), are not refused. Why: the json repository (T3.25-1) found that `new ParseError('Expected JSON value', 0)`
+  made an error in Node whose kind was the number 0; no target judged the arguments, Python had type hints only, and
+  PHP without strict_types turned 0 into "0". A wrong kind is kind `invalid_argument_type` and no kind of category
+  `value`: E-1a gives `invalid_argument_type` to a value that is no language form of the type of its parameter, and
+  the type of `kind` is the closed set of the kinds of the class, as a string that is no case of an enum is kind
+  `invalid_argument_type` (T-6); the kinds of category `value` of E-1a are each the failure of a rule of numbers or of
+  text (B-2, B-3), which a kind text keeps. The kinds of a class are those of its own raises, because an error that
+  the binding gives of a kind whose row names a unit is always an instance of that unit, so an instance of the
+  category class or of a parent of that kind would escape the `catch` of the unit that every such error of the binding
+  meets. The type of a
   property is bool, int, int64, uint, float, text or bytes, an optional of one, or `list<text>`, whose function returns
   any iterable of text items, as the output of a list does (T-2). A property with `raises` names a function that
   returns `Result<T, E>` of the core error `E`. The generated code reads every property when it makes the error, so an
@@ -1467,7 +1493,8 @@ the design ids are those of the binding design.
   class has the public constructor `__construct(string $message, string $kind, ?int $status = null, ?int $errno =
   null)`, which every error unit inherits, so that PHP code makes an error with its kind as Python, Node and WASM code
   does (GN-7a); without it a kind could be set only in the scope of the class that declares it, which is no public
-  API. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
+  API. The constructor takes each argument as any value (`&Zval`) and judges it by GN-7a, so that no conversion
+  turns a value of another type into a string or an integer: the parsed `string $kind` took the kind `0` as `"0"`. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
   enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
   refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
   (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and
@@ -2126,7 +2153,7 @@ the design ids are those of the binding design.
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
   the C ABI read from the core error. A kind whose row names the unit is created as that struct. For each error unit
   that a member of a callback unit of the library recognizes, package `errors` also has `Raised<Unit>(kind,
-  message)`, which gives `Raised<Unit>` of `internal/binding`, because Go code of another module, which implements
+  message)`, which gives `Raised<Unit>` of `internal/binding`, both returning `(*<Unit>, error)` (GN-7a), because Go code of another module, which implements
   that callback unit as a callback unit of another repository (GN-6s), cannot import `internal/binding` and makes the
   error that the owner's core recognizes through this function. The function is public API of the library, as the
   types of package `errors` are.
@@ -2526,7 +2553,11 @@ the design ids are those of the binding design.
   `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
   message and the kind (GN-10); Go by
   `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
-  value. The generated test of each language makes the fixture
+  value, and whose error fails the test (GN-7a). A row with `"raise": "exception"` throws, in place of a result, an exception of the
+  language that is no error of the library, with the message `G-5: exception`: a Python `RuntimeError`, a Node and
+  WASM `Error`, a PHP `\RuntimeException`, a Go `errors.New`. Why: a row shows by it a failure of language code that
+  the member does not recognize (U-3); the end-to-end sample showed it by an instance of `refused_error` with the kind
+  `unlisted`, which the constructor refuses since GN-7a. The generated test of each language makes the fixture
   from one implementation that binding writes into the test module, so a repository writes no fixture code: a call
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a

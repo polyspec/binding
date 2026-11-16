@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 71abdcffcda0567054a4a15d38673acbfaeb255d2df4ccc98124179ec8ccabdb -->
+<!-- source-sha256: 48e64398ffada0d17157102a1ce089532181dcb5d1948473204aa342525fb882 -->
 # 생성기
 
 [English](generator.md)
@@ -1125,7 +1125,27 @@
   receiver가 `&self`인 코어 오류의 함수를 가리키고, 생성 코드는 코어가 돌려준 오류로 그 함수를 wildcard 없는 두 번째
   match에서 부른다. property는 Python에서 private 속성 위의 `@property`, Node에서 `kind`·`status`·`errno`와 같은
   인스턴스의 읽기 전용 own property, PHP에서 선언한 클래스의 private property 위의 메서드다. 언어 코드가 직접 만든
-  인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. property의 타입은 bool, int, int64, uint, float, text,
+  인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. 언어 코드가 message, kind, status, errno로 오류를 만드는
+  category 클래스와 오류 unit의 생성자(GN-10)는 오류를 만들기 전에 인자를 판정한다: message는 text이고(B-3), kind는 text이며
+  그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. 클래스의
+  kind는 binding이 바로 그 클래스의 인스턴스로 일으키는 kind다: 오류 unit은 `class`가 그 unit을 가리키는 `errors.kinds` 행의
+  kind이며, 그 unit을 상속하는 unit의 행은 binding이 그 unit의 인스턴스로 일으키므로 들지 않는다. category 클래스는 그
+  category의 `class` 없는 행(자기 행과 `library`가 있는 행)의 kind, 그 category의 E-1a kind, 그리고 category가 그것인 다른
+  레포 value alias의 `in`의 kind다(U-7 (a')). 행이 오류 unit을 가리키는 kind는 category 클래스의 kind가 아니고, 자기 행이 없는
+  unit은 어떤 kind도 받지 않는다. 생성자는 만들어지는 클래스(`new.target`, `type(self)`, `$this`의 클래스)의 kind를 읽고,
+  생성된 클래스를 상속하는 언어 코드의 클래스는 가장 가까운 생성된 조상의 kind를 읽는다. unit의 생성자가 같은 kind로 parent의
+  생성자를 부르기 때문이다. 다른 타입의 값과 그 클래스의 kind가 아닌 kind는 category `type` 클래스의 kind
+  `invalid_argument_type`이고, text 규칙을 어긴 message는 kind `invalid_text`다(B-3). Go는 오류 unit을 `Raised<Unit>(kind,
+  message)`로 만들며(GN-15d), 이 함수는 `(*<Unit>, error)`를 돌려주고 unit의 kind가 아닌 kind와 UTF-8이 아닌 message에 같은
+  오류를 준다. binding이 일으키는 모든 오류는 그 클래스의 kind를 가지므로, 생성자로 만들든 생성자 없이 만들든(B-4) 그 raise는
+  거부되지 않는다. 이유: json 레포(T3.25-1)가 Node에서 `new ParseError('Expected JSON value', 0)`가 kind가 숫자 0인 오류를
+  만든다는 것을 찾았다. 어느 target도 인자를 판정하지 않았고, Python은 type hint뿐이었으며, strict_types 없는 PHP는 0을
+  "0"으로 바꿨다. 틀린 kind는 kind `invalid_argument_type`이며 category `value`의 kind가 아니다: E-1a는 parameter 타입의 언어
+  형태가 아닌 값에 `invalid_argument_type`을 주고, `kind`의 타입은 그 클래스 kind의 닫힌 집합이다. enum의 case가 아닌
+  문자열이 kind `invalid_argument_type`인 것과 같다(T-6). E-1a의 category `value` kind는 각각 숫자나 text 규칙의 실패이며
+  (B-2, B-3), kind text는 그 규칙을 지킨다. 클래스의 kind가 자기 raise의 kind인 이유는, 행이 unit을 가리키는 kind의 binding
+  오류는 언제나 그 unit의 인스턴스이므로, 그 kind의 category 클래스나 parent 인스턴스는 binding의 그런 오류가 모두 만나는
+  unit의 `catch`를 벗어나기 때문이다. property의 타입은 bool, int, int64, uint, float, text,
   bytes이거나 그 optional이거나 `list<text>`이며, `list<text>`의 함수는 list 출력과 같이 text 항목의 아무 iterable을
   돌려준다(T-2). `raises`가 있는 property는 코어 오류 `E`의 `Result<T, E>`를 돌려주는 함수를 가리킨다. 생성 코드는 오류를
   만들 때 모든 property를 읽으므로, 그 함수의 `Err`는 변환에 실패한 property 값과 같이 코어가 돌려준 오류 대신 그 자신의
@@ -1202,7 +1222,8 @@
   같다. 그래서 등록이나 호출이 읽는 클래스는 모두 있고, 확장은 없는 클래스 때문에 panic하지 않는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. 모든 category 클래스는 공개 생성자 `__construct(string $message,
   string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든 오류 unit이 이를 상속한다. 그래서 PHP 코드는
   Python·Node·WASM 코드처럼 kind를 가진 오류를 만든다(GN-7a). 이 생성자가 없으면 kind는 그것을 선언한 클래스의 scope에서만
-  적을 수 있는데, 그것은 공개 API가 아니다. 확장이 일으키는 오류의 객체는 생성자 없이 만든다(B-4). enum은 backed enum이다(T-6). PHP는 키워드나 타입 이름을 enum case 이름으로
+  적을 수 있는데, 그것은 공개 API가 아니다. 생성자는 각 인자를 아무 값(`&Zval`)으로 받아 GN-7a로 판정한다. 그래서 어떤 변환도 다른 타입의 값을 문자열이나
+  정수로 바꾸지 않는다: parse한 `string $kind`는 kind `0`을 `"0"`으로 받았다. 확장이 일으키는 오류의 객체는 생성자 없이 만든다(B-4). enum은 backed enum이다(T-6). PHP는 키워드나 타입 이름을 enum case 이름으로
   받지만 ext-php-rs의 매크로 `php_enum`은 `#[php(name)]`이 주는 이름까지 대소문자 없이 거부하므로, 그런 case는 뒤에 `_`를 붙인다
   (`Kind::Object_`, `Kind::List_`). backed 값은 계약의 값 그대로다.
   ext-php-rs의 `php_function`과 `php_module` 펼침이 `Option::map_or`와 `Result::unwrap_or`를 부르므로 함수와 module 진입은
@@ -1748,7 +1769,7 @@
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
   그 struct로 만든다. 라이브러리의 callback unit의 member가 recognize하는 오류 unit마다 패키지 `errors`에는
-  `internal/binding`의 `Raised<Unit>`을 주는 `Raised<Unit>(kind, message)`도 있다. 그 callback unit을 다른 레포의
+  `internal/binding`의 `Raised<Unit>`을 주는 `Raised<Unit>(kind, message)`도 있으며, 둘 다 `(*<Unit>, error)`를 돌려준다(GN-7a). 그 callback unit을 다른 레포의
   callback unit으로(GN-6s) 구현하는 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 소유자의 코어가
   recognize하는 오류를 이 함수로 만든다. 이 함수는 패키지 `errors`의 타입과 같이 라이브러리의 공개 API다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
@@ -2061,7 +2082,10 @@
   답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
   unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·PHP·WASM은
   메시지와 kind를 받는 그 클래스의 생성자로 만든다(GN-10). Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
-  `Raised<Unit>(kind, message)`로 만든다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
+  `Raised<Unit>(kind, message)`로 만들고, 그 오류는 시험을 실패시킨다(GN-7a). `"raise": "exception"`인 행은 결과 대신 라이브러리의 오류가 아닌 그 언어의 예외를 메시지
+  `G-5: exception`으로 던진다: Python `RuntimeError`, Node와 WASM `Error`, PHP `\RuntimeException`, Go `errors.New`. 이유:
+  행은 이것으로 member가 recognize하지 않는 언어 코드의 실패를 보인다(U-3). end-to-end sample은 그것을 kind `unlisted`인
+  `refused_error`의 인스턴스로 보였는데, GN-7a부터 생성자가 그것을 거부한다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
   예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 다른 타입 안(record의 field, list의

@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, classKinds, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -1561,7 +1561,10 @@ function errorsPy(model: Model): string {
 class ${c.name}(builtins.${pythonBase(c.category)}):
     """The errors of category ${c.category} (E-2): kind, status and errno are attributes (E-3)."""
 
+    _polyspec_kinds: ClassVar[frozenset[str]] = frozenset({${classKinds(model, c.category).map(pyString).join(', ')}})
+
     def __init__(self, message: str, kind: str, status: int | None = None, errno: int | None = None) -> None:
+        _check_error(type(self).__name__, type(self)._polyspec_kinds, message, kind, status, errno)
         super().__init__(message)
         self.kind = kind
         self.status = status
@@ -1587,14 +1590,35 @@ class ${c.name}(builtins.${pythonBase(c.category)}):
 
 
 class ${name}(${base}):
-    """The errors of the unit ${u.unit.id} (E-2)."""${properties}`;
+    """The errors of the unit ${u.unit.id} (E-2)."""
+
+    _polyspec_kinds: ClassVar[frozenset[str]] = frozenset({${classKinds(model, u).map(pyString).join(', ')}})${properties}`;
   }).join('');
   return `${pyHeader()}
 """The error classes of ${model.contract.library} (E-2, B-4)."""
 
 import builtins
+from typing import ClassVar
 
 __all__ = [${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class'))].map(pyString).join(', ')}]${classes}${units}
+
+
+def _check_error(name: str, kinds: frozenset[str], message: object, kind: object, status: object, errno: object) -> None:
+    """GN-7a: the arguments of the constructor of a library class: the message is a str of Unicode scalar values (B-3),
+    the kind one of the kinds of the class that is made, and the status and the errno each None or an int, not a bool."""
+    if not isinstance(message, str):
+        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the message of {name} is not a str", "invalid_argument_type")
+    try:
+        message.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ${model.classes.find((c) => c.category === 'value')?.name ?? ''}(f"the message of {name} holds a surrogate", "invalid_text") from None
+    if not isinstance(kind, str):
+        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the kind of {name} is not a str", "invalid_argument_type")
+    if kind not in kinds:
+        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"{kind!r} is no kind of {name}", "invalid_argument_type")
+    for part, value in (("status", status), ("errno", errno)):
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+            raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the {part} of {name} is not an int or None", "invalid_argument_type")
 `;
 }
 

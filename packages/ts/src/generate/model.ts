@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, outerVariant, variantPattern } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, kindsOf, outerVariant, variantPattern } from '../contract.ts';
 import { createHash } from 'node:crypto';
 import { convert, sameName } from '../names.ts';
 import { rustString } from './text.ts';
@@ -2418,6 +2418,37 @@ export const aliasFailureFn = (alias: ValueAlias): string =>
 // The value aliases of other repositories, one per library: the first of each names the library's error enum.
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
   model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);
+
+// E-1a: the kinds of the errors that the binding raises itself (binding_core::BindingError), by their fixed category.
+export const BINDING_KINDS: Readonly<Record<Category, readonly string[]>> = {
+  value: ['invalid_number', 'invalid_text', 'invalid_path'],
+  type: ['direct_construction', 'invalid_callback', 'consumed', 'invalid_argument_type'],
+  io: [],
+  store: [],
+  busy: ['busy', 'wrong_thread'],
+  internal: ['internal'],
+};
+
+// GN-7a: the kinds that the binding raises as an instance of a class itself, which the constructor of that class
+// takes: for an error unit, the kinds of the rows whose class it is; for the class of a category, the kinds of the rows
+// of the category without a class, the kinds of E-1a of the category, and the kinds of the in of a value alias of
+// another repository of the category (U-7 (a')). A kind of a row of another library is that library's (GN-7c).
+export function classKinds(model: Model, of: Category | ErrorUnit): string[] {
+  const rowKinds = (kind: CoreKind): string[] => {
+    const row = model.contract.errors.kinds.find((r) => r.variant === kind.variant);
+    if (row === undefined) return [];
+    const owner = row.library === undefined ? row : model.foreign.get(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
+    return kindsOf(owner ?? row);
+  };
+  const kinds = typeof of === 'string'
+    ? [
+        ...model.kinds.filter((k) => k.unit === undefined && k.category === of).flatMap(rowKinds),
+        ...BINDING_KINDS[of],
+        ...foreignAliasLibraries(model).flatMap((alias) => (alias.error === undefined || alias.library === undefined ? [] : (model.foreign.get(alias.library)?.errors.kinds ?? []).filter((row) => row.category === of).flatMap((row) => kindsOf(row)))),
+      ]
+    : model.kinds.filter((k) => k.unit === of).flatMap(rowKinds);
+  return [...new Set(kinds)];
+}
 
 // GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
 // thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the

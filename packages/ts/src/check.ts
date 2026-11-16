@@ -2332,6 +2332,7 @@ class Checker {
       const error = record(raise)?.['error'];
       if (error === undefined || typeof record(raise)?.['kind'] !== 'string') report(`the function fixture ${what} raises ${JSON.stringify(raise)}, which is neither "exception" nor {"error", "kind"}`);
       else if (!(fn.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error)) report(`the function fixture ${what} raises ${String(error)}, which the function does not recognize (U-3)`);
+      else this.unitKind(String(error), record(raise)?.['kind'], `the function fixture ${what}`, report);
     }
     const calls = fixture['calls'];
     if (!Array.isArray(calls)) return report(`the calls of ${what} are not a list of steps`);
@@ -2516,6 +2517,16 @@ class Checker {
   }
 
   // G-5: a callback fixture of the callback interface `unit`.
+  // GN-7a: the kind of a raise of a fixture is one of the kinds of its error unit, the kinds of the rows whose class it
+  // is, which the constructor of the unit takes.
+  unitKind(error: string, kind: unknown, at: string, report: (message: string) => void): void {
+    const kinds = this.contract.errors.kinds.filter((row) => row.class === error).flatMap((row) => {
+      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
+      return kindsOf(owner ?? row);
+    });
+    if (!kinds.includes(String(kind))) report(`${at} raises ${error} with the kind ${JSON.stringify(kind)}, which is no kind of ${error} (GN-7a)`);
+  }
+
   callbackValue(unit: Unit, value: unknown, what: string, report: (message: string) => void): void {
     const snake = (name: Name): string => convert(name, 'python', 'variable');
     const members = new Map((unit.members ?? []).map((m) => [m.id, m]));
@@ -2546,10 +2557,11 @@ class Checker {
         const found = members.get(owner);
         if (row['async'] === true && found?.async_allowed !== true) report(`${at} is async, which ${owner} does not allow`);
         const raise = row['raise'];
-        if (raise !== undefined) {
+        if (raise !== undefined && raise !== 'exception') {
           const error = typeof raise === 'object' && raise !== null ? (raise as Record<string, unknown>)['error'] : undefined;
           const recognized = (found?.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error);
           if (!recognized) report(`${at} raises ${String(error)}, which ${owner} does not recognize (U-3)`);
+          else this.unitKind(String(error), (raise as Record<string, unknown>)['kind'], at, report);
         }
       }
     }

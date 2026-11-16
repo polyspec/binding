@@ -10,7 +10,7 @@ import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
-import { typeParameters } from './node.ts';
+import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1626,30 +1626,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
 
 function indexMjs(model: Model): string {
   const glue = wasmGlue(model);
-  const classes = model.classes.map((c) => `
-export class ${c.name} extends globalThis.${jsBase(c.category)} {
-  constructor(message, kind, status, errno) {
-    super(message);
-    Object.defineProperty(this, 'name', { value: ${jsString(c.name)}, configurable: true, writable: true });
-    Object.defineProperties(this, {
-      kind: { value: kind, enumerable: true },
-      status: { value: status, enumerable: true },
-      errno: { value: errno, enumerable: true },
-    });
-  }
-}`).join('\n');
-  // E-2: an error unit extends the class of its parent or of its category; the module defines its properties (I-3).
-  const units = model.errorUnits.map((u) => {
-    const name = langName('wasm', u.unit.name, 'class');
-    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('wasm', u.parent.unit.name, 'class');
-    return `
-export class ${name} extends ${parent} {
-  constructor(message, kind, status, errno) {
-    super(message, kind, status, errno);
-    Object.defineProperty(this, 'name', { value: ${jsString(name)}, configurable: true, writable: true });
-  }
-}`;
-  }).join('\n');
+  const { classes, units } = jsErrorClasses(model, 'wasm', 'export ', jsBase);
   const internal = model.classes.find((c) => c.category === 'internal')?.name ?? '';
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7); then the
   // call of the module, with the handle of the instance first for a member that has a receiver (T-5).

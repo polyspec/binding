@@ -1269,6 +1269,18 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const sync = withStore({ callback: { 'store.read': [{ ...row, async: true }] } }, (c) => { c.units.find((u: any) => u.id === 'store').members[0].async_allowed = false; });
     assert.match(sync.find((f) => f.check === 'CK-22')?.message ?? '', /is async, which store\.read does not allow/);
   });
+  test('B2.411: a raise of a callback row is an error unit with one of its kinds, or "exception" (GN-7a, GN-13)', () => {
+    assert.deepEqual(withStore({ callback: { 'store.read': [{ args: { key: 'a' }, raise: 'exception' }] } }), []);
+    const found = withStore({ callback: { 'store.read': [{ args: { key: 'a' }, raise: { error: 'too_large', kind: 'unlisted' } }] } });
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
+    assert.match(found[0]?.message ?? '', /row 0 of store\.read raises too_large with the kind "unlisted", which is no kind of too_large \(GN-7a\)/);
+  });
+  test('B2.411: a raise of a function fixture names one of the kinds of its error unit (GN-7a, GN-6ae)', () => {
+    const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }, 'text'], returns: { passthrough: 'T' }, async_allowed: false, errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' } } } };
+    const found = withParam(scoped, 'convert', { function: { calls: [], raise: { error: 'too_large', kind: 'unlisted' } } });
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
+    assert.match(found[0]?.message ?? '', /the function fixture convert raises too_large with the kind "unlisted", which is no kind of too_large \(GN-7a\)/);
+  });
   // forms.parse with one more parameter, and one case of it that gives the parameter the value.
   const withParam = (parameter: object, key: string, value: unknown, change?: (c: any) => void): Finding[] => {
     const c = contract();
