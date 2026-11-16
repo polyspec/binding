@@ -2643,6 +2643,12 @@ the design ids are those of the binding design.
   kind that such a call raises counts as a case of the member of the call for CK-22. Why: a kind that a value reaches
   only after the callback that got it ended, such as a transaction that ended, or only while another call runs, has
   no case of the member itself, because the case of the member cannot make that value.
+- **GN-13p** In a case of a method, a step of a function fixture at any depth may name `"on": "receiver"`, and a
+  step argument may be `{"bound": "receiver"}`: the receiver of the case, which the test keeps under the name
+  `receiver` when it makes it, as a name of GN-13n; no fixture gives that name itself. With `raises` (GN-13o) such a
+  step shows a kind that the receiver gives only while its own call runs. Why: a member may refuse a call on its
+  receiver while the callback of another of its calls runs, such as a pool whose one connection the transaction of
+  the callback holds, and that kind has a case only when the callback reaches the receiver.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.

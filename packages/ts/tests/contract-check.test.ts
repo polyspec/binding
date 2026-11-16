@@ -1884,3 +1884,13 @@ test('a call of after on a kept argument, and a step, may raise a kind, which co
   const kind = run((kase) => { kase.after[0].raises = { kind: 'missing' }; });
   assert.ok(kind.some((f) => /after 0 raises the kind missing, which is no kind of the raises of scope\.size/.test(f.message)), JSON.stringify(kind));
 });
+
+test('a step of a function fixture of a case of a method may call on its receiver (GN-13p, CK-22, B2.321)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it').work.function.calls.push({ on: 'receiver', call: 'store.get', args: { key: 'a' }, result: null });
+  assert.deepEqual(checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }), []);
+  cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it').work.function.calls.at(-1).call = 'scope.get';
+  const found = checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  assert.ok(found.some((f) => /calls scope\.get, which is no method of store/.test(f.message)), JSON.stringify(found));
+});

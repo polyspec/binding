@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.321).
+
 - function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.320).
 
 - function fixture는 parameter에 이름을 붙이고(`names`), 그것이나 그 안의 fixture의 step은 이름 붙은 인자 위에서 부르고 그것을 `{"bound": <name>}`로 넘긴다. 다섯 타깃에서 그렇다. end-to-end sample은 새 member `scope.copy`로 중첩 scope의 값을 둘러싼 scope에 복사한다(GN-13n, B2.319).

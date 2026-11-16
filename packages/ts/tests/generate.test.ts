@@ -7517,7 +7517,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -10623,4 +10623,20 @@ test('a call of after on an argument that a function fixture kept fails with a k
   const out = generateTargets({ contract: read('sample/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'go'] as Inputs['targets'] & string[] });
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\n {4}_bound\["kept"\] = args\[0\]\n {4}assert _outcome\(lambda: _bound\["kept"\]\.size\(\)\)\[::2\] == \("error", "ended"\), "G-5: step 0 fails with ended"\n/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /return nil, fmt\.Errorf\("GN-13o: scope\.size gave %#v, not the kind ended"/);
+});
+
+test('a step of a function fixture calls on the receiver of the case, which the test keeps (GN-13p, B2.321)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const cases = read('sample/contracts/cases.json');
+  const kase = cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it');
+  kase.work.function.calls.push({ on: 'receiver', call: 'store.get', args: { key: 'a' }, result: null });
+  const out = generateTargets({ contract: read('sample/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]) });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /_bound\["receiver"\] = pkg\.Store\(\)\n\s+receiver = _bound\["receiver"\]/);
+  assert.match(py, /_bound\["receiver"\]\.get\("a"\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::\$bound\["receiver"\] = new \\Polyspec\\Sample\\Store\(\);/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.match(text(out, path), /bound\.receiver = new pkg\.Store\(\);[\s\S]*bound\.receiver\.get\('a'\)/, path);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\tbound_receiver := made\d+\n\t_ = bound_receiver\n/);
+  assert.match(go, /bound_receiver\.Get\("a"\)/);
 });

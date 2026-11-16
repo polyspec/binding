@@ -124,6 +124,10 @@
         "category": "type"
       },
       {
+        "variant": "polyspec_sample::Error::Busy",
+        "category": "busy"
+      },
+      {
         "variant": "polyspec_sample::Error::Internal",
         "category": "internal"
       }
@@ -2209,6 +2213,24 @@
           "optional_reason": "T-5"
         },
         {
+          "id": "store.count",
+          "name": [
+            "count"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Busy"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Store::count",
+            "receiver": "&self"
+          }
+        },
+        {
           "id": "store.transaction",
           "name": [
             "transaction"
@@ -2853,6 +2875,11 @@
       "member": "store.get",
       "file": "contracts/cases.json",
       "group": "store_get"
+    },
+    {
+      "member": "store.count",
+      "file": "contracts/cases.json",
+      "group": "store_count"
     },
     {
       "member": "store.transaction",

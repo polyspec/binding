@@ -336,6 +336,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     usesBound = true;
     return `self::$bound[${phpText(name)}]`;
   };
+  ctx.boundSet = (name, expr) => `${ctx.boundValue?.(name) ?? ''} = ${expr};`;
   ctx.machineFunctionNew = (fixture) => {
     const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = $args[${i}]; `).join('');
     const steps = kept + fixture.steps.map((step, i) => {

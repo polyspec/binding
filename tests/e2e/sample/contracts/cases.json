@@ -855,6 +855,7 @@
       "result": null
     }
   ],
+  "store_count": [],
   "store_transaction": [
     {
       "id": "the_entries_of_a_function_that_returns_are_committed",
@@ -1247,6 +1248,37 @@
           "raises": {
             "kind": "ended"
           }
+        }
+      ]
+    },
+    {
+      "id": "a_store_is_busy_while_its_transaction_runs",
+      "rule": "GN-13p",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "receiver",
+              "call": "store.count",
+              "args": {},
+              "raises": {
+                "kind": "busy"
+              }
+            }
+          ],
+          "result": {
+            "kind": "null"
+          }
+        }
+      },
+      "result": {
+        "kind": "null"
+      },
+      "after": [
+        {
+          "call": "store.count",
+          "args": {},
+          "result": 0
         }
       ]
     }

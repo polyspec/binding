@@ -853,6 +853,9 @@ function made(v: Values, b: Body, r: Receiver): string {
       b.lines.push(goState(change.service, change.state, 'change', change.service.scope('go'), change.value));
     }
   }
+  // GN-13p: a receiver that a step of a function fixture calls on is kept in a variable of the test.
+  // It is made before the arguments of the call, so the funcs of the arguments close over the variable.
+  if (r.bound === true) b.lines.push(`bound_receiver := ${local}`, '_ = bound_receiver');
   return local;
 }
 

@@ -2144,6 +2144,12 @@
   PHP는 그 인자를 시험의 저장소에, Node와 WASM은 module의 저장소에, Go는 시험의 변수에 보관한다. 그런 호출이 raise하는
   kind는 CK-22에서 그 호출의 member의 case로 센다. 이유: 끝난 transaction처럼 값이 그것을 받은 callback이 끝난 뒤에만,
   또는 다른 호출이 도는 동안에만 이르는 kind는 member 자체의 case가 없다. member의 case는 그 값을 만들 수 없기 때문이다.
+- **GN-13p** method의 case에서, 어떤 깊이의 function fixture의 step도 `"on": "receiver"`를 이름할 수 있고, step의 인자는
+  `{"bound": "receiver"}`일 수 있다. 그것은 case의 receiver이고, 시험은 그것을 만들 때 GN-13n의 이름처럼 이름 `receiver`로
+  보관한다. 어떤 fixture도 그 이름을 스스로 주지 않는다. 그런 step은 `raises`(GN-13o)와 함께 receiver가 자기 호출이 도는
+  동안에만 주는 kind를 보인다. 이유: member는 그 호출 가운데 하나의 callback이 도는 동안 receiver 위의 호출을 거부할 수
+  있는데, 예를 들어 callback의 transaction이 하나뿐인 연결을 쥔 pool이 그렇고, 그 kind는 callback이 receiver에 닿을 때만
+  case를 가진다.
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.

@@ -2014,10 +2014,18 @@ class Checker {
       const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
       const where = `the case ${String(record['id'])} of ${memberId}`;
       const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
-      for (const parameter of member?.parameters ?? []) {
-        const key = snake(parameter.name);
-        if (!this.takesCode(parameter.type) || (!Object.hasOwn(record, key) && parameter.default !== undefined)) continue;
-        this.codeValue(parameter.type, record[key], key, report);
+      // GN-13p: a step of a function fixture of the case may call on its receiver, an instance of the unit of a method.
+      const found = this.members.get(memberId);
+      const method = found !== undefined && typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
+      this.boundScope.push(method ? new Map([['receiver', found.unit.id]]) : new Map());
+      try {
+        for (const parameter of member?.parameters ?? []) {
+          const key = snake(parameter.name);
+          if (!this.takesCode(parameter.type) || (!Object.hasOwn(record, key) && parameter.default !== undefined)) continue;
+          this.codeValue(parameter.type, record[key], key, report);
+        }
+      } finally {
+        this.boundScope.pop();
       }
     }
   }

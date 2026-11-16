@@ -440,6 +440,7 @@ export function pythonTests(model: Model, module: string): string {
     usesBound = true;
     return `_bound[${pyString(name)}]`;
   };
+  ctx.boundSet = (name, expr) => `${ctx.boundValue?.(name) ?? ''} = ${expr}`;
   ctx.machineFunctionNew = (fixture) => {
     const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = args[${i}]`);
     const lines = [...kept, ...fixture.steps.flatMap((step, i) => {

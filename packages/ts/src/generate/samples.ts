@@ -53,6 +53,8 @@ export interface Context {
   machineFunctionNew?: (fixture: FunctionFixture) => string;
   // GN-13n: the expression of the argument that a function fixture around the value keeps under the name.
   boundValue?: (name: string) => string;
+  // GN-13p: the statement that keeps a value under a name, which boundValue then gives.
+  boundSet?: (name: string, expr: string) => string;
   // GN-6y: the expression of a relative path of a case inside the directory of the test.
   casePath?: (relative: string) => string;
   // GN-13l: a text path uses the root captured by this case, including in private deferred helpers.
@@ -1578,6 +1580,8 @@ const classMembers = (model: Model, unit: Unit): Fn[] => model.objects.find((o) 
 export interface Receiver {
   factory: Fn;
   args: Map<Arg, unknown>;
+  // GN-13p: the test keeps the receiver under the name receiver, which a step of a function fixture calls on.
+  bound?: true;
   // G-5 (GN-13f): the instance value of a case. The instance that the factory is called on when it is a method, the
   // steps into its result when the result holds the instance (from), and the calls on the instance that prepare it.
   on?: Receiver;
@@ -1843,9 +1847,13 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     }
     return form.name(local);
   };
-  if (isPlain(receiver)) return { lines, expr: form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') };
-  const expr = make(receiver);
-  return { lines, expr };
+  const expr = isPlain(receiver) ? form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') : make(receiver);
+  // GN-13p: a receiver that a step of a function fixture calls on is kept under the name receiver.
+  if (receiver.bound !== true) return { lines, expr };
+  const { boundSet, boundValue } = form.ctx;
+  if (boundSet === undefined || boundValue === undefined) throw new Unsupported(`a step of a function fixture calls on the receiver of the case, which ${form.ctx.target ?? form.ctx.lang} does not keep yet (GN-13p)`);
+  lines.push(boundSet('receiver', expr));
+  return { lines, expr: boundValue('receiver') };
 }
 
 // The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
@@ -1877,7 +1885,22 @@ function argumentKeys(fn: Fn): Set<string> {
 // returns the class, the first in contract order. `of` is the member whose case the record is: a key of one of its
 // parameters holds an argument of that member, so it gives no parameter of a factory; and a factory that takes no key
 // of the case fits every case, so it is the factory only when no factory that takes a key is.
+// GN-13p: whether a step of a function fixture of the value, at any depth, calls on the receiver of the case.
+export const callsOnReceiver = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) return false;
+  if (Array.isArray(value)) return value.some(callsOnReceiver);
+  const fixture = (value as { function?: { calls?: unknown } }).function;
+  if (typeof fixture === 'object' && fixture !== null && Array.isArray(fixture.calls) && fixture.calls.some((step) => (step as { on?: unknown } | null)?.on === 'receiver')) return true;
+  return Object.values(value).some(callsOnReceiver);
+};
+
 export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn = fn): Receiver | undefined {
+  const made = receiverMade(model, fn, record, of);
+  // GN-13p: the test keeps the receiver of a case whose function fixture calls on it.
+  return made !== undefined && of === fn && callsOnReceiver(record) ? { ...made, bound: true } : made;
+}
+
+function receiverMade(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn): Receiver | undefined {
   if (fn.receiver === undefined) return undefined;
   // GN-13f: a case that gives its receiver as an instance value.
   if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);

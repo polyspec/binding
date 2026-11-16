@@ -37,6 +37,8 @@ pub enum Error {
     Refused,
     /// The transaction or the nested scope of a scope has ended, and the scope is used after it (GN-13o).
     Ended,
+    /// The store is counted while a transaction of it runs (GN-13p).
+    Busy,
     /// An invariant of the sample does not hold (X-1).
     Internal {
         /// What does not hold.
@@ -70,6 +72,7 @@ impl Error {
             Self::Unreadable { .. } => "unreadable",
             Self::Refused => "refused",
             Self::Ended => "ended",
+            Self::Busy => "busy",
             Self::Internal { .. } => "internal",
         }
     }
@@ -83,6 +86,7 @@ impl fmt::Display for Error {
             Self::Unreadable { .. } => f.write_str("the text could not be read"),
             Self::Refused => f.write_str("the lookup refused the key"),
             Self::Ended => f.write_str("the scope has ended"),
+            Self::Busy => f.write_str("a transaction of the store runs"),
             Self::Internal { detail } => write!(f, "the sample is broken: {detail}"),
         }
     }
@@ -115,6 +119,7 @@ impl Kinds for Error {
             | Self::Unsupported { .. }
             | Self::Refused
             | Self::Ended
+            | Self::Busy
             | Self::Internal { .. } => None,
         }
     }
@@ -1156,6 +1161,8 @@ fn entries_of(
 #[derive(Debug, Clone, Default)]
 pub struct Store {
     entries: Entries,
+    /// Whether a transaction of the store runs; the machine of the transaction clears it when it ends.
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Store {
@@ -1171,6 +1178,18 @@ impl Store {
         entries_of(&self.entries).get(key).cloned()
     }
 
+    /// The count of the committed entries.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] while a transaction of the store runs.
+    pub fn count(&self) -> Result<u64, Error> {
+        if self.running.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Error::Busy);
+        }
+        Ok(u64::try_from(entries_of(&self.entries).len()).unwrap_or(u64::MAX))
+    }
+
     /// Runs `function` with a new scope over the store, as a state machine (GN-6ab): the scope is begun by an I/O
     /// future, the function is language code that the driver calls on its thread, and its value, which may be an
     /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
@@ -1179,7 +1198,11 @@ impl Store {
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped::new(self.entries, function)
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut scoped = Scoped::new(self.entries, function);
+        scoped.running = Some(self.running);
+        scoped
     }
 
     /// Runs `function` as [`Store::transaction`] does and then writes the entry `audited` of the store by an I/O
@@ -1312,6 +1335,8 @@ pub struct Scoped<F> {
     outcome: Option<Result<binding_core::Passthrough, Failure<Error>>>,
     /// Whether the machine writes the entry `audited` of its parent before it ends ([`Store::audited`]).
     audit: bool,
+    /// The flag of the store whose transaction the machine runs, which it clears when it ends ([`Store::count`]).
+    running: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl<F> Scoped<F> {
@@ -1327,12 +1352,16 @@ impl<F> Scoped<F> {
             called: None,
             outcome: None,
             audit: false,
+            running: None,
         }
     }
 
     /// Ends the machine and its scope: a call on a scope that a function kept fails from here on (GN-13o).
     fn end(&mut self) {
         self.stage = Stage::Ended;
+        if let Some(running) = &self.running {
+            running.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
         self.scope
             .open
             .store(false, std::sync::atomic::Ordering::SeqCst);
