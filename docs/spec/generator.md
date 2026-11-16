@@ -1249,6 +1249,11 @@ the design ids are those of the binding design.
   unit as GN-15d states, in package `errors` whatever its module. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
+- **GN-7b** PHP: the binding stores a property `p` of an error unit in the private property `polyspec_p` of the class
+  that declares it, and the method `p()` of the class reads it (I-3). Why: the PHP API of the property is its method,
+  and `Exception` has properties of its own (`message`, `code`, `file`, `line`, `trace`, `previous`), whose private
+  `trace` refused the write of the property `trace` of crud-ui `compose_load_error`, so every raise of the error failed
+  with "Cannot access private property" (255 tests); a name of the binding meets no property of `Exception`.
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);` against the core error that the
   member's core path returns (the `E` of `Failure<E>`), so a path that is no variant of that type does not compile

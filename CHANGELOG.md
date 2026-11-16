@@ -37,6 +37,7 @@
 - The callback and function fixtures of the PHP and Python tests compare the arguments of a call with a row by the comparison of the results, `same` and `_same`; PHP `===` held for one instance alone, so the host functions of template that take an `Environment` raised `UnexpectedCall` (GN-13bb, B2.370).
 - A case gives a float that JSON writes as an integer by `{"float": "<decimal>"}`, at any number place, and a case with `targets` is a test of those targets alone, with a case of the same arguments for every other target (CK-97); Node and WASM refuse a negative zero at an integer place as `invalid_number`, as PHP and Python refuse `-0.0`, where they took it as 0 (GN-12a, GN-13bc, B2.360).
 - A call of `after` may read a property of the receiver, with `args` `{}`, which every target already read as it reads a property; the contract check says so, and a test keeps it (CK-22, B2.361).
+- PHP stores a property `p` of an error unit as the private `polyspec_p`, which its method `p()` reads; the property `trace` of crud-ui `compose_load_error` met the private `trace` of `Exception`, and every raise of the error failed (GN-7b, B2.362).
 
 ## 0.0.13
 

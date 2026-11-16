@@ -2927,7 +2927,7 @@ test('an error unit is the class of the kinds that name it, with the properties 
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /ClassBuilder::new\("Polyspec\\\\Consumer\\\\AbsentError"\)\n        \.extends\(\(registered_class_0, "\\\\Polyspec\\\\Consumer\\\\ConsumerValueError"\)\)\n        \.flags\(ClassFlags::Final\)/);
   assert.match(php, /\.method\(FunctionBuilder::new\("key", absent_error_key_method\)\.returns\(DataType::String, false, true\), MethodFlags::Public\)/);
-  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("polyspec_length", property\)\)/);
   assert.match(php, /let class = category_scope\(this\.get_class_entry\(\)\);/);
   assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /final class AbsentError extends \\Polyspec\\Consumer\\ConsumerValueError\n    \{\n        public function key\(\): string\|null \{\}\n\n        public function length\(\): int\|null \{\}/);
   // B-4: the generated test of a raising case names the exact class.
@@ -3278,7 +3278,7 @@ test('an error unit extends its parent, and what is not generated is refused by 
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.ok(php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\MissingError")') < php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\AbsentError")'));
   assert.match(php, /\.extends\(\(registered_class_6, "\\\\Polyspec\\\\Consumer\\\\MissingError"\)\)/);
-  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("key", property\)\)[^]*with_scope\(registered_class\(7\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("polyspec_key", property\)\)[^]*with_scope\(registered_class\(7\), \|\| object\.set_property\("polyspec_length", property\)\)/);
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /class MissingError extends ConsumerValueError \{[^]*class AbsentError extends MissingError \{/);
   const refused = (change: (contract: any) => void, message: RegExp): void =>
     assert.throws(() => generated(change), (error: Error) => error.constructor.name === 'Unsupported' && message.test(error.message), String(message));
@@ -11289,4 +11289,21 @@ test('B2.361: a call of after reads a property of the receiver, as each language
   assert.match(near(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /an_amount_is_added/), /\.total\b(?!\()/);
   assert.match(near(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /an_amount_is_added/), /\.total\b(?!\()/);
   assert.match(near(text(out, 'packages/go/zz_generated_test.go'), /AnAmountIsAdded/), /\.Total\(\)/);
+});
+
+test('B2.362: PHP stores a property of an error unit under a name of the binding, which no property of Exception has (I-3)', () => {
+  // crud-ui compose_load_error.trace: the private property trace of Exception refused the write of the property of
+  // the same name, so every raise of the error failed with "Cannot access private property".
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const unit = contract.units.find((u: any) => u.id === 'absent_error');
+  const member = unit.members.find((m: any) => m.id === 'absent_error.key');
+  member.id = 'absent_error.trace';
+  member.name = ['trace'];
+  const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /\.property\(private_property\("polyspec_trace"\)\)/);
+  assert.match(php, /object\.set_property\("polyspec_trace", property\)/);
+  assert.match(php, /read_unit_property\(ex, retval, \d+, "polyspec_trace"\)/);
+  assert.doesNotMatch(php, /private_property\("trace"\)|set_property\("trace"/);
+  // The PHP API is the method trace().
+  assert.match(php, /FunctionBuilder::new\("trace", absent_error_trace_method\)/);
 });

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 46f13c7b3acafa8796f6818fa7e1405d812b4de2f3e853ba782e85b955d40c2a -->
+<!-- source-sha256: b2d2e1a78d202b8def61c278065e20809f64d1e8d0a16346a6b06ffaada45e4b -->
 # 생성기
 
 [English](generator.md)
@@ -1019,6 +1019,11 @@
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
   category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
+- **GN-7b** PHP: binding은 오류 unit의 property `p`를 그것을 선언한 class의 private property `polyspec_p`에 저장하고,
+  class의 method `p()`가 그것을 읽는다(I-3). 이유: property의 PHP API는 그 method이고, `Exception`은 자기 property
+  (`message`, `code`, `file`, `line`, `trace`, `previous`)를 가진다. 그중 private `trace`가 crud-ui `compose_load_error`의
+  property `trace` 쓰기를 거부해서, 그 오류를 낼 때마다 "Cannot access private property"로 실패했다(시험 255개). binding의
+  이름은 `Exception`의 어느 property와도 겹치지 않는다.
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 코어 오류(`Failure<E>`의
   `E`)에 대한 단언 `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);`을 둔다. 그 타입의 variant가
   아닌 경로는 컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 하나를 돌려주므로, 여러 member가 내는

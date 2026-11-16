@@ -1452,6 +1452,9 @@ function libRust(model: Model, layout: PhpLayout): string {
   const parentIndex = (unit: ErrorUnit): number => (unit.parent === undefined ? model.classes.findIndex((c) => c.category === unit.category) : unitIndex(unit.parent));
   const parentPhpName = (unit: ErrorUnit): string =>
     unit.parent === undefined ? `${layout.namespace}\\${model.classes.find((c) => c.category === unit.category)?.name ?? ''}` : unitPhpName(unit.parent);
+  // B2.362: the name under which the binding stores a property of an error unit, which no property of Exception has
+  // (trace, message, code, file, line and previous are its own, and private trace refuses a write of the subclass).
+  const stored = (property: ErrorProperty): string => `polyspec_${langName('php', property.member.name, 'variable')}`;
   const propertyHandler = (unit: ErrorUnit, property: ErrorProperty): string => `${rustField(unit.unit.name)}_${rustField(property.member.name)}_method`;
   // Units without a property write and read none, so the helpers of the properties are left out (dead code fails
   // the build).
@@ -1461,7 +1464,7 @@ function libRust(model: Model, layout: PhpLayout): string {
 /// declares it.
 fn ${rustField(u.unit.name)}_properties(object: &mut ZendObject, error: &${model.coreError ?? '()'}) -> Result<(), Fail> {
 ${errorProperties(u).map(({ owner, property }) => {
-    const name = langName('php', property.member.name, 'variable');
+    const name = stored(property);
     return `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`)};
     let property = ${convertOut(model, property.returns, 'value')}?;
     if let Err(error) = with_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
@@ -1473,7 +1476,7 @@ ${errorProperties(u).map(({ owner, property }) => {
 `).join('')}${model.errorUnits.flatMap((u) => u.properties.map((property) => `
 ext_php_rs::zend_fastcall! {
     extern fn ${propertyHandler(u, property)}(ex: &mut ExecuteData, retval: &mut Zval) {
-        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| read_unit_property(ex, retval, ${unitIndex(u)}, ${rustString(langName('php', property.member.name, 'variable'))})));
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| read_unit_property(ex, retval, ${unitIndex(u)}, ${rustString(stored(property))})));
     }
 }
 `)).join('')}${!withProperties ? '' : `
@@ -1521,7 +1524,7 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
   const registerUnits = model.errorUnits.map((u) => `
     let registered = ClassBuilder::new(${rustString(unitPhpName(u))})
         .extends((registered_class_${parentIndex(u)}, ${rustString(`\\${parentPhpName(u)}`)}))${u.unit.final === true ? '\n        .flags(ClassFlags::Final)' : ''}${u.properties.map((p) => `
-        .property(private_property(${rustString(langName('php', p.member.name, 'variable'))}))
+        .property(private_property(${rustString(stored(p))}))
         .method(FunctionBuilder::new(${rustString(langName('php', p.member.name, 'callable'))}, ${propertyHandler(u, p)}).returns(DataType::${propertyType(p.returns)}, false, true), MethodFlags::Public)`).join('')}
         .registration(|class, tables| {
             remember(${unitIndex(u)}, class);
