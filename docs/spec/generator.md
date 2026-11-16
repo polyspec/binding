@@ -368,6 +368,14 @@ the design ids are those of the binding design.
   release of a class is the symbol `<prefix>__release_<class>` and the function `Release<Class>` of package
   `binding`, which name the class alone: with the words of the module before those of the class, the class `k` of
   the module `tag` and the class `tag_k` of the root had one function `ReleaseTagK`.
+- **GN-4d** The helpers of a crate of PHP, Python, Node and WASM are chosen from the text of the whole crate: the
+  generator writes the crate once without its helpers, and the names that this text reads (GN-4) select the helpers
+  that the crate holds, which it then writes with them. A call that any part of the crate makes, such as the
+  constructor of a library class (GN-7a) or the conversion of a number (GN-12a), so keeps the helper that it calls,
+  and no list of the parts of the crate that call helpers is kept beside the code. Why: the parts were listed by hand,
+  and a call added outside them, `text_in` and `type_error` in the constructor of a library class of PHP, compiled
+  only for a contract that also had a text parameter; a contract without one failed the build. The Go crate keeps
+  its list, because a helper that only a test feature uses is compiled under that feature (GN-4).
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

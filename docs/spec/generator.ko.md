@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 51e3bd47e644be01988e0343bc11c0c4124df03c52b64211021af69d2324c98c -->
+<!-- source-sha256: 341bb1c785b739c72f55edcbe3b680ece43a9fe6e7ad11881937216e56785ba2 -->
 # 생성기
 
 [English](generator.md)
@@ -300,6 +300,13 @@
   함수이고, lint `non_snake_case`는 그것을 읽지 않는다. class의 해제는 심볼 `<prefix>__release_<class>`와 package
   `binding`의 함수 `Release<Class>`이고, 둘 다 class만 이름한다. module의 단어를 class의 단어 앞에 두면 module `tag`의
   class `k`와 root의 class `tag_k`가 한 함수 `ReleaseTagK`를 가졌다.
+- **GN-4d** PHP, Python, Node, WASM crate의 helper는 crate 전체의 텍스트에서 고른다. generator는 crate를 helper 없이
+  한 번 쓰고, 이 텍스트가 읽는 이름(GN-4)으로 crate가 가질 helper를 고른 뒤, 그 helper와 함께 crate를 쓴다. 그래서
+  crate의 어느 부분이 부르는 것이든, 예를 들어 library class의 생성자(GN-7a)나 수의 변환(GN-12a)이 부르는 helper는
+  남고, helper를 부르는 부분의 목록을 코드 옆에 따로 두지 않는다. 이유: 그 부분들을 손으로 나열했고, 그 밖에 더한
+  호출, PHP library class의 생성자에 있는 `text_in`과 `type_error`는 text parameter도 있는 계약에서만 컴파일되었다.
+  text parameter가 없는 계약은 빌드에 실패했다. Go crate는 목록을 유지한다. test feature만 쓰는 helper는 그 feature
+  아래에서 컴파일되기 때문이다(GN-4).
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

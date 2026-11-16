@@ -12091,3 +12091,28 @@ test('B2.412: a value of another type at a number place is kind invalid_argument
   assert.match(codec, /func TestB2IntInRefusesAValueOfAnotherType\(t \*testing\.T\) \{\n\tfor _, value := range \[\]any\{true, "7"\} \{\n(?:\t[^\n]*\n){1}\t\tif failure, ok := err\.\(\*\w+\); !ok \|\| failure\.Kind\(\) != "invalid_argument_type"/);
   assert.match(codec, /func TestB2IntInRefusesANumberOutsideItsType\(t \*testing\.T\) \{\n\tfor _, value := range \[\]any\{1\.5, math\.NaN\(\)/);
 });
+
+// B2.413: the free functions that Rust text calls and declares; a call is a name before `(` that no `.`, `::`, `fn ` or
+// other name character precedes.
+const rustCalls = (source: string): Set<string> => new Set([...source.matchAll(/(?<![.:\w]|fn )([a-z_][a-z0-9_]*)\(/g)].map((m) => m[1] ?? ''));
+const rustFns = (source: string): Set<string> => new Set([...source.matchAll(/\bfn ([a-z_][a-z0-9_]*)\b/g)].map((m) => m[1] ?? ''));
+
+test('B2.413: a crate of a contract without a text parameter defines every helper that it calls, in every target (GN-4d)', () => {
+  const read = (repo: string): { contract: any; caseFiles: Map<string, unknown> } => ({
+    contract: JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/packages/rust/interface.json`, import.meta.url), 'utf8')),
+    caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/contracts/cases.json`, import.meta.url), 'utf8'))]]),
+  });
+  const kept = read('kept');
+  // The contract that failed CI takes no text: no parameter, field or result of it is text.
+  assert.doesNotMatch(JSON.stringify(kept.contract.units), /"type":"text"/);
+  // The helpers of each crate are the functions that the crate of the sample declares, which takes every form.
+  const crates = (out: Map<string, string | Buffer>): Map<string, string> => new Map([...out].filter(([path]) => path.endsWith('.rs')).map(([path, body]) => [path, String(body)]));
+  const helpers = new Map([...crates(generate({ ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }))].map(([path, body]) => [path, rustFns(body)]));
+  const out = crates(generate({ ...kept, version: '0.0.0', coreLib: 'polyspec_kept' }));
+  assert.ok(out.size > 0);
+  for (const [path, body] of out) {
+    const declared = rustFns(body);
+    const missing = [...rustCalls(body)].filter((name) => helpers.get(path)?.has(name) === true && !declared.has(name));
+    assert.deepEqual(missing, [], `${path} calls helpers that it does not define`);
+  }
+});
