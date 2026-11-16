@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c85d926a72c8209a2b7ad617140273c61ddb333456cad743aac57d1cb938aa7f -->
+<!-- source-sha256: 60a4a5392f4f3277a475aa3d9f13336b4028720d3e336cc970a022e41bfa6b2d -->
 <!-- source-sha256: 6d32bdd5d5c54832a26c943516689a27b30f4bdd9bf93b5345bda94d7cfa5197 -->
 <!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
 <!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
@@ -20,6 +20,7 @@
 
 ## 0.0.15
 
+- `keeps` 없는 parameter의 record field에 있는 callback은 모든 target에서 호출 동안만 살므로, 그것을 호출 뒤까지 갖는 코어는 더는 컴파일되지 않는다. Python, PHP, WASM, Go는 그 record를 `'static`으로 적었고, Go는 그때 끝난 호출의 handle로 보관된 callback을 실행했다(GN-6d, B2.402). `packages/ts`의 `node --test --test-name-pattern=B2.402 tests/generate.test.ts`로 확인했으며, 변경 전에는 실패했다. 빌린 record를 갖는 코어의 레포 `tests/e2e/lent`도 확인한다: `make e2e`는 각 바인딩 crate의 `cargo check`가 E0597로, Node는 E0521로 실패하기를 요구한다(GN-14h).
 - binding scaffold는 release를 require하는 `go.mod` 옆에 `go mod download -json all`이 주는 sum으로 `packages/go/go.sum`을 쓰고 CK-19가 그것을 비교한다. Go가 줄 수 없는 모듈은 이름 있는 실패이며 `go.sum`을 쓰지 않는다. 생성된 Go 모듈에는 `go.sum`이 없어서 레포의 `go.work` 밖에서 빌드되지 않았다(GN-15l, B2.400).
 - `make consumers-check DIRS="<dir>..."`는 소비자 레포의 생성된 바인딩을 이 tree의 CLI와 `binding_core`로 한 번의 실행에서 컴파일한다: 각각의 commit된 tree를 복사하고, path patch로 이 바인딩을 offline으로 받으며, 각 target을 생성하고, 각 바인딩 crate를 시험 feature로 한 번, 없이 한 번 검사하고 Go package를 `go vet`과 `go test -c`로 검사하며, 실패한 칸마다 첫 오류 줄과 함께 소비자 × target 표를 출력한다(GN-14i, B2.391).
 - core가 framework를 필요로 하는 저장소, 예를 들어 security-framework를 쓰는 session-store의 Go 시험이 `Undefined symbols: _AuthorizationCreate`로 링크되지 않았다. 생성된 `internal/binding`이 OS마다 고정 목록의 시스템 라이브러리를 링크했다(macOS는 `-lSystem -lc -lm`). 이제 주 link 파일은 `-l<library>`만 쓴다. `release-go-static`은 각 라이브러리를 `cargo rustc --print native-static-libs`로 빌드하고 rustc가 출력한 것을 그 옆의 `native-static-libs`에 쓰며, `binding release-go-module`이 그것을 각 platform의 link 파일에 쓴다. 새 명령 `binding go-link --manifest <Cargo.toml> --target-dir <dir> [--features <features>]`는 checkout의 host 라이브러리를 빌드하고 그 Go 시험의 `CGO_LDFLAGS`를 출력하며, `make e2e`가 그것을 쓴다(GN-15k, B2.367). `packages/ts`에서 `node --test --test-name-pattern=B2.367 tests/*.test.ts`로 확인했다: 그 시험들은 변경 전에 실패했다. darwin arm64에서 `tests/e2e/sample`의 사본으로도 확인했다: 그 `go test`는 출력된 `-L<dir>/debug -lc -lm -liconv -lSystem -lc -lm`로 링크되었다.

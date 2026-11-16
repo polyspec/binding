@@ -1,0 +1,230 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "lent",
+  "core": {
+    "crate": "polyspec-lent",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/lent",
+      "namespace": "Polyspec\\Lent"
+    },
+    "python": {
+      "package": "polyspec-lent",
+      "module": "polyspec.lent"
+    },
+    "node": {
+      "package": "@polyspec/lent",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/lent/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Lent\\LentValueError",
+        "python": "LentValueError",
+        "node": "LentValueError",
+        "wasm": "LentValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Lent\\LentTypeError",
+        "python": "LentTypeError",
+        "node": "LentTypeError",
+        "wasm": "LentTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Lent\\LentIoError",
+        "python": "LentIoError",
+        "node": "LentIoError",
+        "wasm": "LentIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Lent\\LentStoreError",
+        "python": "LentStoreError",
+        "node": "LentStoreError",
+        "wasm": "LentStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Lent\\LentBusyError",
+        "python": "LentBusyError",
+        "node": "LentBusyError",
+        "wasm": "LentBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Lent\\LentInternalError",
+        "python": "LentInternalError",
+        "node": "LentInternalError",
+        "wasm": "LentInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_lent::Error::Missing",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "faults": [],
+  "units": [
+    {
+      "id": "lookup",
+      "name": [
+        "lookup"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_lent::Lookup",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "lookup.find",
+          "name": [
+            "find"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_lent::Lookup::find",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lent",
+      "name": [
+        "lent"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "lent.keep",
+          "name": [
+            "keep"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "search"
+              ],
+              "type": {
+                "unit": "search"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_lent::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_lent::keep"
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "name": [
+        "search"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_lent::Search",
+      "fields": [
+        {
+          "name": [
+            "lookup"
+          ],
+          "type": {
+            "unit": "lookup"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "key"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "lent.keep",
+      "file": "contracts/cases.json",
+      "group": "keep"
+    }
+  ]
+}

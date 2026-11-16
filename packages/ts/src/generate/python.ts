@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -675,15 +675,18 @@ function entryRust(model: Model, fn: Fn): string {
     }
     // GN-6aa: a callback parameter with keeps moves into the core as its box, as a callback field of a record does.
     const keptDirect = !arg.field && unitOf(model, arg.type)?.origin === 'callback' && fn.params.some((p) => p.keeps === true && p.name.join('_') === arg.name.join('_'));
-    const converted = arg.default === undefined ? (arg.field || keptDirect ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
+    // GN-6d (B2.402): a value that the core keeps is 'static; any other lasts for the call.
+    const kept = arg.field ? fn.record?.param.keeps === true : fn.params.some((p) => p.keeps === true && p.name.join('_') === arg.name.join('_'));
+    const typed = kept ? { ...model, callbackLife: "'static" } : model;
+    const converted = arg.default === undefined ? (arg.field || keptDirect ? boxed(typed, arg.type, convertIn(typed, arg.type, variable, subject)) : convertIn(typed, arg.type, variable, subject)) : leftOut(arg, `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
     lines.push(held === undefined
-      ? `        let ${variable}: ${keptDirect ? rustType(model, arg.type, true) : argType(model, arg)} = ${converted}?;`
+      ? `        let ${variable}: ${keptDirect ? rustType(typed, arg.type, true) : argType(typed, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py_, ${variable}, ${subject})?;`);
     if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(variable, subject, '|error| binding_error(py_, error)')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
-    const recordLet = rustType(model, { unit: fn.record.unit.id });
+    const recordLet = rustType(fn.record.param.keeps === true ? { ...model, callbackLife: "'static" } : model, { unit: fn.record.unit.id });
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustIdent(langName('python', f.name, 'variable')))).join(', ');
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordLet} = ${recordType} { ${fields}${absentInits(fn.record.unit)} };`);
   }
@@ -1805,7 +1808,7 @@ export function python(model: Model, files: Files): void {
   const layout = pythonLayout(model);
   const pkg = `${PYTHON_PACKAGE}/${layout.modulePath}`;
   const crate = `${model.contract.library}-python`;
-  files.set(`${ROOT}/lib.rs`, libRust(model, layout));
+  files.set(`${ROOT}/lib.rs`, anchorCalls(((lib) => lib + lentRust(model, lib))(libRust(model, layout))));
   files.set(`${pkg}/_errors.py`, errorsPy(model));
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));

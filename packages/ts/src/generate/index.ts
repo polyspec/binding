@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, membersFor, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
+import { type Model, collectModel, forLanguage, membersFor, CALL_LIFE, Refusals, unitOf, waitsAsync, withFunctionAliases } from './model.ts';
 import { phpCaseTests, withServices } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -131,7 +131,7 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));
   if (targets.includes('node')) refusals.attempt(() => node(forLanguage(model, 'node'), files));
   if (targets.includes('php')) refusals.attempt(() => php(forLanguage(model, 'php'), files));
-  if (targets.includes('go')) refusals.attempt(() => go(membersFor(model, 'go'), files));
+  if (targets.includes('go')) refusals.attempt(() => go({ ...membersFor(model, 'go'), callbackLife: CALL_LIFE }, files));
   if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
   refusals.fail();
   // GN-6z: each crate defines the aliases of the function types that it names.

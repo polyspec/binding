@@ -17,6 +17,9 @@ import {
   interfaceOf, implementorsOf,
   takesFunction, cancelsAny,
   holdsCallback,
+  CALL_LIFE,
+  lentRust,
+  anchorCalls,
   takenCallbacks,
   lentCallbacks,
   absentInits, byValue } from './model.ts';
@@ -135,7 +138,8 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   const leaf = goCycleLeaf(model, type, input, subject);
   if (leaf !== undefined) return leaf;
   if (unit?.kind === 'variant') return `${unitFn('in', unit)}(${input}, ${subject})`;
-  if (unit?.kind === 'record') return `${unitFn('in', unit, libraryOf(type))}(${input})`;
+  // GN-6d (B2.402): a lent record that holds a callback takes call_, the lifetime of the call.
+  if (unit?.kind === 'record') return `${unitFn('in', unit, libraryOf(type))}(${model.callbackLife === CALL_LIFE && libraryOf(type) === undefined && (unit.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type)) ? 'call_, ' : ''}${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   // GN-6aa: a callback of a parameter with keeps is a kept func of package binding, held as a Native.
   if (callbackOf(model, type) !== undefined && unit !== undefined && model.keptCallbacks === true) return `kept_${plainName(unit)}(${input}, ${subject})`;
@@ -828,7 +832,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   }
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
-fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
+${entersOnly && model.callbackLife === CALL_LIFE ? `fn in_${name}<'call>(call_: &'call [u8; 0], input: &mut &[u8]) -> Result<${rustType({ ...model, callbackLife: "'call" }, { unit: unit.id })}, Fail> {` : `fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {`}
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => fieldInit(f.name)).join(', ')}${absentInits(unit)} })
 }

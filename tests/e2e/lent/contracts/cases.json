@@ -1,0 +1,47 @@
+{
+  "keep": [
+    {
+      "id": "the_lookup_of_the_search_gives_the_value",
+      "search": {
+        "lookup": {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": "b"
+              }
+            ]
+          }
+        },
+        "key": "a"
+      },
+      "result": "b"
+    },
+    {
+      "id": "a_key_that_the_lookup_does_not_hold_is_missing",
+      "search": {
+        "lookup": {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        },
+        "key": "a"
+      },
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for a"
+      }
+    }
+  ]
+}

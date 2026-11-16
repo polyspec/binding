@@ -6699,10 +6699,11 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   for (const [path, life] of [
-    ['packages/php-ext/generated/lib.rs', "'static"],
-    ['packages/python/generated/lib.rs', "'static"],
+    // B2.402: the box and the record last for the call: 'env in Node, the lifetime of call_ in the other targets.
+    ['packages/php-ext/generated/lib.rs', "'_"],
+    ['packages/python/generated/lib.rs', "'_"],
     ['packages/ts/generated/lib.rs', "'env"],
-    ['packages/ts/wasm/generated/lib.rs', "'static"],
+    ['packages/ts/wasm/generated/lib.rs', "'_"],
   ] as const) {
     const lib = text(out, path);
     const boxed = `Box<dyn polyspec_sample::Lookup + ${life}>`;
@@ -6749,7 +6750,7 @@ test('Go reads a record whose callback field is optional and writes no output co
   search.fields = [search.fields[1], { name: ['lookup'], type: { optional: { unit: 'lookup' } }, default: { literal: null } }];
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(lib, /\nfn in_search\(input: &mut &\[u8\]\) -> Result<polyspec_sample::Search<'static>, Fail> \{/);
+  assert.match(lib, /\nfn in_search<'call>\(call_: &'call \[u8; 0\], input: &mut &\[u8\]\) -> Result<polyspec_sample::Search<'call>, Fail> \{/);
   assert.doesNotMatch(lib, /\nfn out_search\(/);
 });
 
@@ -11462,7 +11463,7 @@ test('B2.373: a Go entry point gives the core a parameter named input by the loc
   const at = go.indexOf('fn polyspec_sample__seek');
   assert.ok(at >= 0);
   const body = go.slice(at, go.indexOf('\n}\n', at));
-  assert.match(body, /let input_: [\w:]+(?:<'static>)? = /);
+  assert.match(body, /let input_: [\w:]+(?:<'_>)? = /);
   assert.match(body, /polyspec_sample::seek\(&?input_\)/);
   assert.doesNotMatch(body, /polyspec_sample::seek\(&?input\)/);
 });
@@ -11764,4 +11765,25 @@ test('scaffold writes the go.sum beside the go.mod, CK-19 compares it, and a mod
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('B2.402: a lent record that holds a callback takes the lifetime of the call in every target, so a core that keeps it does not compile, and a kept one stays static (GN-6d)', () => {
+  // Go ran a callback that a core kept from a lent record through the cgo.Handle of a call that had ended, which
+  // crashes or reaches the objects of another call; with 'static the compiler let every target but Node keep it.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const libs: Record<string, string> = { python: 'packages/python/generated/lib.rs', wasm: 'packages/ts/wasm/generated/lib.rs', php: 'packages/php-ext/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(out, path);
+    assert.ok(lib.includes("fn lent_lookup<'call>(_call: &'call [u8; 0], callback: Box<dyn polyspec_sample::Lookup + 'static>) -> Box<dyn polyspec_sample::Lookup + 'call> {\n    callback\n}"), target);
+    assert.ok(!lib.includes("polyspec_sample::Search<'static>"), `${target}: a lent Search is not 'static`);
+    assert.ok(!lib.includes("Box<dyn polyspec_sample::Lookup + 'static>> ="), `${target}: a lent list of lookups is not 'static`);
+    assert.match(lib, /\n( +)let scope_ = \[0u8; 0\];\n\1let call_ = &scope_;\n/, target);
+    assert.ok(lib.includes('.map(|callback| lent_lookup(call_, Box::new(callback)))'), target);
+    // The kept path stays 'static (GN-6aa).
+    assert.ok(lib.includes("polyspec_sample::Supply<'static>"), `${target}: a kept Supply is 'static`);
+  }
+  assert.ok(text(out, libs['go'] ?? '').includes("fn in_search<'call>(call_: &'call [u8; 0], input: &mut &[u8]) -> Result<polyspec_sample::Search<'call>, Fail> {"));
+  assert.ok(text(out, libs['go'] ?? '').includes('= in_search(call_, &mut input)?;'));
+  assert.ok(text(out, 'packages/ts/generated/lib.rs').includes("polyspec_sample::Search<'env>"));
 });

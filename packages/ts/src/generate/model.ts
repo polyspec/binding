@@ -2094,7 +2094,7 @@ export function forLanguage(model: Model, lang: Lang): Model {
   // GN-6aa: Node, PHP and WASM call a kept unit through its kept wrapper at every place; the struct of a call of Python
   // holds a Py<PyAny>, which is Send and Sync.
   const keptUnits = lang === 'node' || lang === 'php' || lang === 'wasm' ? { keptUnits: new Set(keptCallbacks(members).map((c) => c.unit.id)) } : {};
-  return { ...members, classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })), callbackLife: lang === 'node' ? "'env" : "'static", ...keptUnits };
+  return { ...members, classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })), callbackLife: lang === 'node' ? "'env" : CALL_LIFE, ...keptUnits };
 }
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
@@ -2270,7 +2270,10 @@ export const leftOut = (arg: Arg, call: string): string => (ownOption(arg) ? `${
 // GN-6aa: the conversion of a callback that enters inside another type, or as a field of a record, as a box of the core
 // trait; any other conversion as it is.
 export function boxed(model: Model, type: Type, converted: string): string {
-  if (unitOf(model, type)?.origin !== 'callback') return converted;
+  const unit = unitOf(model, type);
+  if (unit?.origin !== 'callback') return converted;
+  // GN-6d (B2.402): a lent callback takes the lifetime of the call from call_, which borrows a local of the entry point.
+  if (model.callbackLife === CALL_LIFE) return `${converted}.map(|callback| ${lentFn(unit, libraryOf(type))}(call_, Box::new(callback)))`;
   return `${converted}.map(|callback| -> ${rustType(model, type, true)} { Box::new(callback) })`;
 }
 
@@ -2612,3 +2615,52 @@ export const tupleOut = (parts: Type[], value: string, part: (type: Type, name: 
   const names = parts.map((_, i) => `part_${i}`);
   return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${parts.length}(${value.startsWith('&') ? value : `&${value}`}); ${made(parts.map((t, i) => `${part(t, names[i] ?? '', i)}?`))} }`;
 };
+
+// GN-6d (B2.402): the lifetime that Python, PHP, WASM and Go write where they name a lent record or box: the anonymous
+// lifetime, which the anchor of the call (lentRust) makes the lifetime of the call, so a core that keeps the value does
+// not compile, as in Node, whose box lasts for 'env.
+export const CALL_LIFE = "'_";
+
+// GN-6d (B2.402): the anchors of the lent callbacks: each gives the box of a callback the lifetime of call_, a borrow
+// of the local scope_ of the entry point.
+export function lentRust(model: Model, lib: string): string {
+  if (model.callbackLife !== CALL_LIFE) return '';
+  return lentCallbacks(model).filter((cb) => lib.includes(`${lentFn(cb.unit, cb.library)}(call_,`)).map((cb) => {
+    const type: Type = { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) };
+    const boxType = (life: string): string => rustType({ ...model, callbackLife: life, keptCallbacks: false, keptUnits: new Set<string>() }, type, true);
+    return `
+/// GN-6d (B2.402): the box of a lent ${cb.unit.id} lasts for the call, so the core cannot keep it.
+fn ${lentFn(cb.unit, cb.library)}<'call>(_call: &'call [u8; 0], callback: ${boxType("'static")}) -> ${boxType("'call")} {
+    callback
+}
+`;
+  }).join('');
+}
+
+// GN-6d (B2.402): the anchor of a lent callback unit, a function of the crate root, also for a unit of another library.
+const lentFn = (unit: { name: Name }, library?: string): string => `lent_${library === undefined ? '' : `${library.replaceAll('-', '_')}_`}${recordFn(unit)}`;
+
+// GN-6d (B2.402): call_ in an entry point is a borrow of the local scope_, declared before the guard call whose work
+// uses it; a function that takes call_ as a parameter declares none.
+export function anchorCalls(text: string): string {
+  const lines = text.split('\n');
+  const guards = new Set<number>();
+  const guard = /\bguard\((py_, )?(move )?\|\|/;
+  for (const [at, line] of lines.entries()) {
+    if (!/\bcall_\b/.test(line) || /\bfn \w+<'call>\(/.test(line)) continue;
+    let up = at;
+    while (up >= 0 && !guard.test(lines[up] ?? '') && !/^\s*(pub )?(unsafe )?(extern "C" )?(async )?fn /.test(lines[up] ?? '')) up -= 1;
+    const found = lines[up] ?? '';
+    if (up < 0 || !guard.test(found)) {
+      if (/\bcall_: &'call/.test(found)) continue;
+      throw new Error(`GN-6d: call_ outside a guard call: ${line.trim()}`);
+    }
+    guards.add(up);
+  }
+  for (const at of [...guards].sort((a, b) => b - a)) {
+    const line = lines[at] ?? '';
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    lines.splice(at, 0, `${indent}let scope_ = [0u8; 0];`, `${indent}let call_ = &scope_;`);
+  }
+  return lines.join('\n');
+}

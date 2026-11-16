@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e911c44e1d383769a4614935792849e6c0820992389fab4c639e7c8c2d7215df -->
+<!-- source-sha256: 95039ceed091b52f732b862683e5b93a5056fa675a4b6c1dfc20da685bde8091 -->
 # 생성기
 
 [English](generator.md)
@@ -559,7 +559,11 @@
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
   `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가진다
   (`polyspec_x::Options<'a>`). 계약은 `core_type`에 그 경로를 적고, 생성기는 그 타입을 적는 곳에 lifetime을 적는다. callback이
-  호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
+  모든 target에서 호출의 lifetime이다. callback이 호출의 환경에 사는 Node에서는 `'env`, Python, PHP, WASM, Go에서는
+  `'call`이며, callback 호출의 struct(`Cb<Unit><'call>`)가 entry point의 지역 변수 `call_`을 빌리는 `PhantomData<&'call ()>`를
+  가지므로 컴파일러는 그것을 `'static`으로 읽을 수 없다(B2.402). 이유: `'static`이면 코어가 `keeps` 없는 parameter의
+  callback을 가졌다가 호출 뒤에 부를 수 있었다. Go는 그때 끝난 호출의 `cgo.Handle`로 그것을 실행했고, 이는 crash하거나
+  다른 호출의 객체에 조용히 닿는다. 다른 target은 어떤 호출도 지키지 않는 언어 객체를 가졌다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
   record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
   뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6z대로 native 수명 위에서
   그것을 준다. 계약은 코어가 값을 갖는 parameter에 `keeps: true`로 그것을 적는다(U-2). 그 parameter는 callback unit이나 함수
@@ -567,8 +571,8 @@
   `keeps`가 있든 없든 `'static`이므로(GN-6z), 함수에서 `keeps`는 그 실패가 가는 자리만 바꾼다(GN-7). 계약이 적어야 하는
   이유는 lifetime이 `core_type`의 경로에 없고 생성기가 Rust를 읽지 않기 때문이다. `keeps`가 있는 parameter에 대해 생성기는
   모든 target에서 box와 record의 코어 타입을 적는 곳에 `'static`을 적고(`polyspec_x::Options<'static>`), 없는 parameter에는
-  호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env` 동안인
-  Node에서 컴파일되지 않는다. `keeps`가 있는 parameter 안의 callback은 호출보다
+  호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env`나
+  `'call` 동안인 어느 target에서도 컴파일되지 않는다. `keeps`가 있는 parameter 안의 callback은 호출보다
   오래 살므로, 호출 동안 언어 객체를 갖는 wrapper로는 모자란다. Node, PHP, WASM은 함수 타입(GN-6z)처럼 그 객체를 owner
   스레드의 `Native`(GN-6u)로 갖고, Go는 package `binding`에 member의 번호를 먼저 읽고 객체의 그 member를 실행하는 kept
   func의 `cgo.Handle`을 묻는다(`Call.Keep`). owner 스레드에서 member를 부르면 GN-6d대로 바꾸고, 다른 스레드에서 부르면 kind
@@ -2651,6 +2655,13 @@
   바뀌지 않는다. 배포 형태(GN-14f)의 원본도 같은 파일을 뺀다. 코어의 시험(GN-14)은 모든 target의 단계이며 남는다.
   이유: 레포의 시험은 레포의 runner가 주는 입력, 예를 들어 환경 변수로 주는 case 파일의 경로를 읽는데 실행은 그것을
   모르며, 한 target이 다른 target보다 더 많이 실행하면 같은 계약에 다른 결과를 낸다.
+- **GN-14h** `refused.json`을 가진 `tests/e2e`의 레포는 컴파일러가 그 바인딩을 거부하는지의 검사다(B2.402).
+  `refused.json`은 target마다 rustc 코드 하나를 적고, 실행은 생성 뒤 각 target의 바인딩 crate를
+  `cargo check -p <crate>`(WASM은 `--target wasm32-unknown-unknown`)로 검사한다. 그 검사는 그 코드로, 다른 오류 없이
+  실패해야 한다. 그 거부가 그 target의 시험이며 실행은 거기서 끝난다. 통과하거나, 그 코드 없이 또는 다른 오류와 함께
+  실패하는 검사는 그 target을 실패시킨다(`scripts/e2e-refusal.mts`). `tests/e2e/lent`가 그런 레포다. 그 코어는 빌린
+  record를 호출 뒤까지 가지며(GN-6d), 모든 target이 E0597로, Node는 E0521로 거부된다. 이유: 한 번의 검사는 호출의
+  lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
 - **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
   의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
   적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적을
