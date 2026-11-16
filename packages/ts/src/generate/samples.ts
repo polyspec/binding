@@ -607,6 +607,13 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       return type === 'latin1' ? phpLatin1(text) : phpText(text);
     }
     if (type === 'bool') return ctx.lang === 'python' ? (value === true ? 'True' : 'False') : String(value === true);
+    // GN-13bc, B2.360: {"float": "<decimal>"} is a float that JSON writes as an integer, such as 2.0 or -0.0, at any
+    // number place: PHP and Python write their float literal, Node and WASM the number, which holds no float type.
+    const decimal = typeof value === 'object' && value !== null ? floatToken(value) : undefined;
+    if (numeric && decimal !== undefined) {
+      if (ctx.lang === 'node') return Object.is(Number(decimal), -0) ? '-0' : String(Number(decimal));
+      return /[.eE]/.test(decimal) ? decimal : `${decimal}.0`;
+    }
     // G-5: a float that JSON cannot write is {"float": "nan" | "inf" | "-inf"}.
     if (type === 'float' && typeof value === 'object') {
       const name = (value as { float?: unknown }).float;
@@ -616,7 +623,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
         '-inf': { python: 'float("-inf")', node: '-Infinity', php: '-INF' },
       };
       const form = typeof name === 'string' ? forms[name] : undefined;
-      if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${shown(value)}`);
+      if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf" | "<decimal>"}, not ${shown(value)}`);
       return form[ctx.lang];
     }
     // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
@@ -850,6 +857,13 @@ export type ForeignStep =
   | { form: 'list'; make: Member; items: ForeignStep[] }
   | { form: 'repeat'; make: Member; repeat: number; inner: ForeignStep }
   | { form: 'map'; make: Member; map: Unit; construct: Member; insert: Member; pairs: [ForeignStep, ForeignStep][] };
+
+// GN-13bc: the decimal token of a case value {"float": "<decimal>"}, or undefined for any other value.
+export const floatToken = (value: object): string | undefined => {
+  const keys = Object.keys(value);
+  const token = (value as { float?: unknown }).float;
+  return keys.length === 1 && typeof token === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$/.test(token) ? token : undefined;
+};
 
 // GN-6br: whether a case text holds an unpaired surrogate, which is no text of every language (B2.81).
 const loneSurrogate = (value: unknown): value is string => typeof value === 'string' && /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);

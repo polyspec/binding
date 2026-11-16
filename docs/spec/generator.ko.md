@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 601ec6b0a6fe2c80d8fcb427835972c50a0b9e6c77807a113379791a9a2c341d -->
+<!-- source-sha256: 46f13c7b3acafa8796f6818fa7e1405d812b4de2f3e853ba782e85b955d40c2a -->
 # 생성기
 
 [English](generator.md)
@@ -1112,7 +1112,10 @@
 
 - **GN-12a** 모든 target(T-1, CK-64): 바인딩이 인자, list·tuple·map·optional의 항목, record의 field로 받는 `int` 값은
   안전 정수 −(2^53 − 1)~2^53 − 1이고 `uint` 값은 0~2^53 − 1이다. 그 범위 밖의 정수는 Node와 WASM처럼 PHP, Python, Go에서도
-  kind `invalid_number`다(B-2). Node와 WASM의 number는 더 큰 정수를 정확히 담지 못한다. 이유: 한 계약은 모든 target에서 같은
+  kind `invalid_number`다(B-2). Node와 WASM의 number는 더 큰 정수를 정확히 담지 못한다. `int`나 `uint` 자리의 음의 0은
+  Node와 WASM에서도 kind `invalid_number`다. 그것들은 부호로 음의 0을 0과 구별하고, PHP와 Python이 거기서 float `-0.0`을
+  거부하기 때문이다(B2.360). `403.0` 같은 정수 값 float는 Node와 WASM의 number 403이고 어느 target도 그것을 정수와 구별할
+  수 없으므로, 그 차이만 남는다(GN-13bc). 이유: 한 계약은 모든 target에서 같은
   결과를 주어야 하는데, 한 target이 받고 다른 target이 거부하는 정수는 결과를 둘로 만든다. `int64`는 모든 target에서 i64
   범위를 받는다. 계약이 `int` key를 나열한 `keyed_map`의 정수 key도 안전 정수다: 그 범위 밖의 정수 key와, Node·WASM에서
   정수가 아닌 number key는 모든 target에서 kind `invalid_number`다. 전에는 Node와 WASM이 `invalid_argument_type`을 냈다.
@@ -2129,6 +2132,16 @@
   `===`는 같은 instance일 때만 참이고, Python에서 `__eq__`가 없는 class의 `==`는 identity다. 그래서 binding이 만든, row의
   값과 같은 인자가 어느 row와도 맞지 않았다: 둘째 인자가 `Environment`인 template의 host function 셋이 매 호출마다
   `UnexpectedCall`을 냈다. 결과의 같은 비교는 B2.358이었다.
+- **GN-13bc** case 값 `{"float": "<decimal>"}`은 JSON이 정수로 쓰는 float이다. 예는 `{"float": "403.0"}`이나
+  `{"float": "-0.0"}`이고, 어느 숫자 자리에서나 쓸 수 있다. PHP와 Python은 자기 float literal을 쓰고, Node와 WASM은
+  number를 쓴다(음의 0은 `-0`). Go는 float 자리에서는 float를 쓰고, 정수 자리에서는 컴파일러가 변환을 거부하므로 시험을
+  쓰지 않고 case와 이유를 적은 주석을 남긴다(GN-13w). case는 `targets`, 즉 그 member의 target 목록을 가질 수 있다: 그것은
+  나열된 target만의 시험이고, 같은 인자를 가진 그 group의 case들은 각각 `targets`를 가지며 함께 member의 모든 target을
+  나열한다(CK-97). 이유: target들은 binding이 같게 만들 수 없는 곳에서 언어의 숫자 모델에 따라 갈린다. PHP나 Python의
+  float는 별도의 타입이라 정수 자리가 그것을 거부하지만(B-2), Node나 WASM의 number에는 float 타입이 없어서 `403.0`은
+  binding이 받는 number 403이다. JSON은 `403.0`을 `403`으로, `-0.0`을 `-0`으로 쓰므로 어떤 case도 float를 줄 수 없었고,
+  case 하나로 두 결과를 말할 수 없다. Node와 WASM이 구별할 수 있는 음의 0은 PHP와 Python처럼 거기서도 거부되므로
+  (GN-12a) `targets`가 필요 없다. 짝 case는 그 입력에서 모든 target이 시험되게 한다.
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

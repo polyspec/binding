@@ -31,7 +31,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
+  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType,
 } from './samples.ts';
@@ -162,7 +162,10 @@ function floatValue(value: unknown): string {
   if (typeof value === 'object' && value !== null) {
     const name = (value as { float?: unknown }).float;
     const form = typeof name === 'string' ? ({ nan: 'math.NaN()', inf: 'math.Inf(1)', '-inf': 'math.Inf(-1)' } as Record<string, string>)[name] : undefined;
-    if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+    const decimal = floatToken(value);
+    // GN-13bc: a decimal float is the number that it writes, with the run-time negative zero of a number.
+    if (form === undefined && decimal !== undefined) return floatValue(Number(decimal));
+    if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf" | "<decimal>"}, not ${JSON.stringify(value)}`);
     return form;
   }
   // G-5: the Go constant -0.0 is 0, so a negative zero is made at run time.
@@ -811,6 +814,9 @@ export function notGoValue(type: Type, json: unknown): string | undefined {
   if (typeof type === 'object' && 'optional' in type) return notGoValue(type.optional, json);
   if (typeof type !== 'string') return undefined;
   const number = typeof json === 'number';
+  // GN-13bc, B2.360: a float {"float": "<decimal>"} at an integer place is no value of the Go integer, whose
+  // conversion the compiler refuses, so Go has no call that gives it to the binding.
+  if (typeof json === 'object' && (type === 'uint' || type === 'int' || type === 'int64') && floatToken(json) !== undefined) return `the float ${floatToken(json) ?? ''} is no value of ${type === 'uint' ? 'uint64' : 'int64'}, which the Go compiler refuses`;
   // A value in an object form, such as {"int": ...} or {"float": "nan"}, is judged by value().
   if (typeof json === 'object') return undefined;
   // GN-12a, B2.359: an integer outside the safe integers, which the case file gives as a bigint (CK-64), is a Go

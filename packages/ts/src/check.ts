@@ -134,7 +134,7 @@ const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boo
 };
 
 // CK-96: the keys of a member case that G-5 gives a meaning, besides the parameters of the member and its result.
-const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', '@listener', 'repeat', 'awaits'];
+const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', '@listener', 'repeat', 'awaits', 'targets'];
 
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];
@@ -1511,6 +1511,7 @@ class Checker {
       if (row.only !== undefined && this.members.has(row.member) && !row.only.targets.some((lang) => this.targetsOf(row.member).includes(lang))) {
         this.report('CK-92', `/cases/${i}`, `the row of ${row.member} names in only ${row.only.targets.join(', ')}, where ${row.member} is not generated (GN-13h, Q-4)`);
       }
+      this.caseTargets(row.member, group, row.result ?? 'result', row.only?.targets, `/cases/${i}`);
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);
@@ -1700,6 +1701,32 @@ class Checker {
 
   // GN-13f: what the calls of then of the instance values of the case that caseInstances reads arm, or undefined.
   private armedThen: ThenFaults | undefined;
+
+  // CK-97, GN-13bc: a case with targets names targets of its member, and the cases of the group with the same input,
+  // each with targets, together name every target of the member, so no target leaves the input untested.
+  caseTargets(memberId: string, group: unknown[], resultKey: string, only: readonly string[] | undefined, path: string): void {
+    if (!this.members.has(memberId)) return;
+    const all: string[] = this.targetsOf(memberId).filter((lang) => only === undefined || only.includes(lang));
+    const outcome = new Set(['id', 'rule', 'note', 'raises', 'targets', 'after', resultKey]);
+    const input = (record: Record<string, unknown>): string => JSON.stringify(Object.keys(record).filter((key) => !outcome.has(key)).sort().map((key) => [key, record[key]]), (_key, value: unknown) => (typeof value === 'bigint' ? `${String(value)}n` : value));
+    const limited = group.flatMap((kase) => {
+      const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : undefined;
+      const targets = record?.['targets'];
+      return record !== undefined && targets !== undefined ? [{ record, targets }] : [];
+    });
+    for (const { record, targets } of limited) {
+      const where = `the case ${String(record['id'])} of ${memberId}`;
+      if (!Array.isArray(targets) || targets.length === 0 || targets.some((lang) => typeof lang !== 'string')) {
+        this.report('CK-97', path, `${where}: targets is a non-empty list of targets`);
+        continue;
+      }
+      const unknown = targets.filter((lang) => !all.includes(lang as string));
+      if (unknown.length > 0) this.report('CK-97', path, `${where}: targets names ${unknown.join(', ')}, where ${memberId} has no case (GN-13bc)`);
+      const covered = new Set(limited.filter((other) => Array.isArray(other.targets) && input(other.record) === input(record)).flatMap((other) => other.targets as string[]));
+      const left = all.filter((lang) => !covered.has(lang));
+      if (left.length > 0) this.report('CK-97', path, `${where}: no case of the same arguments gives the result of ${left.join(', ')}; a case with targets has a case for every other target (GN-13bc)`);
+    }
+  }
 
   // CK-64: an integer of a case at a place of the contract type int or uint is a safe integer, the range of T-1 that
   // every target gives (a Node number); a case file gives a larger one as its JSON token, which cli reads as a bigint.

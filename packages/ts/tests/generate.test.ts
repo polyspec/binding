@@ -11240,3 +11240,36 @@ test('B2.370: a callback fixture compares the arguments of a call by the value r
   assert.match(python, /if row\[0\] == name and _same\(args, row\[1\]\):/);
   assert.match(python, /\ndef _same\(actual, expected\):/);
 });
+
+test('B2.360: a float at an integer place is {"float": "<decimal>"}, each target writes it, and a case with targets is a test of those targets alone (GN-13bc, GN-12a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  const base = cases.repeat[0];
+  const floated = { ...base, times: { float: '2.0' } };
+  delete floated.result;
+  cases.repeat.push({ ...floated, id: 'a_float_times_is_refused', targets: ['php', 'python', 'go'], raises: { kind: 'invalid_number', status: null, category: 'value', message: 'times is not a value of the type uint' } });
+  cases.repeat.push({ ...floated, id: 'a_float_times_is_its_integer', targets: ['node', 'wasm'], result: base.result });
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(php, /AFloatTimesIsRefused[\s\S]{0,600}repeat\([^\n]*\b2\.0\b/);
+  assert.match(python, /a_float_times_is_refused[\s\S]{0,600}repeat\([^\n]*\b2\.0\b/);
+  assert.doesNotMatch(php, /AFloatTimesIsItsInteger/);
+  assert.doesNotMatch(python, /a_float_times_is_its_integer/);
+  assert.match(node, /a_float_times_is_its_integer[\s\S]{0,400}repeat\([^\n]*, 2[,)]/);
+  assert.doesNotMatch(node, /a_float_times_is_refused/);
+  // GN-13w: Go writes no test of a float at an integer place, and names the case with its reason.
+  assert.match(go, /a_float_times_is_refused[^\n]*float[^\n]*/);
+  assert.doesNotMatch(go, /func Test[A-Za-z0-9]*AFloatTimesIsRefused/);
+});
+
+test('B2.360: Node and WASM refuse a negative zero at an integer place, as PHP and Python refuse the float (GN-12a, B-2)', () => {
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(sample, path);
+    const body = lib.slice(lib.indexOf('fn safe_integer('), lib.indexOf('fn uint_in('));
+    assert.match(body, /double == 0\.0 && double\.is_sign_negative\(\)/, path);
+  }
+});

@@ -1820,6 +1820,33 @@ describe('B2.359: CK-64 takes an argument outside the safe integers in a case of
   });
 });
 
+describe('B2.360: CK-97 a case limited to targets has a case of the same arguments for every other target (GN-13bc)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): string[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => ['CK-96', 'CK-97'].includes(f.check)).map((f) => `${f.check} ${f.message}`);
+  };
+  const refused = { kind: 'invalid_number', status: null, category: 'value', message: 'times is not a value of the type uint' };
+  const split = (c: any, typed: string[], dynamic: string[] | undefined): void => {
+    const base = c.repeat[0];
+    const floated = { ...base, times: { float: '2.0' } };
+    delete floated.result;
+    c.repeat.push({ ...floated, id: 'a_float_times_is_refused', targets: typed, raises: refused });
+    if (dynamic !== undefined) c.repeat.push({ ...floated, id: 'a_float_times_is_its_integer', targets: dynamic, result: base.result });
+  };
+  test('a pair that covers every target passes', () => {
+    assert.deepEqual(run((c) => split(c, ['php', 'python', 'go'], ['node', 'wasm'])), []);
+  });
+  test('a case without its pair, or whose pair leaves a target out, is reported', () => {
+    assert.equal(run((c) => split(c, ['php', 'python'], undefined)).filter((m) => m.startsWith('CK-97')).length, 1);
+    assert.equal(run((c) => split(c, ['php', 'python'], ['node'])).filter((m) => m.startsWith('CK-97')).length, 2);
+  });
+  test('a target that is no target of the member is reported', () => {
+    assert.equal(run((c) => split(c, ['php', 'python', 'go', 'ruby'], ['node', 'wasm'])).filter((m) => m.startsWith('CK-97')).length, 1);
+  });
+});
+
 describe('CK-22 values of the type cancel (GN-13)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
   // shapes.measure with a parameter of the type cancel, given by its first case.

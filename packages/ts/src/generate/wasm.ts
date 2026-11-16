@@ -199,7 +199,8 @@ fn bool_in(value: &JsValue, subject: &str) -> Result<bool, Fail> {
 fn safe_integer(value: &JsValue, subject: &str, expected: NumberType) -> Result<i64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected });
     let double = value.as_f64().ok_or_else(invalid)?;
-    if !double.is_finite() || double.fract() != 0.0 || double.abs() > 9_007_199_254_740_991.0 {
+    // GN-12a, B2.360: a negative zero is a float, which PHP and Python refuse at an integer place, so it is refused here too.
+    if !double.is_finite() || double.fract() != 0.0 || double.abs() > 9_007_199_254_740_991.0 || (double == 0.0 && double.is_sign_negative()) {
         return Err(invalid());
     }
     #[allow(clippy::as_conversions, clippy::cast_possible_truncation, reason = "B-2: a safe integer, which i64 holds exactly")]

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3f711b79bdaad7f6466d913eb9cdd9a9bc10e4ed1177e1a484a5ccc8e2c382d0 -->
+<!-- source-sha256: d4c1f83a657a30b98edb7e8b9bbb1cb2871f306479718ae4077a7ca558e5620a -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -37,6 +37,7 @@
 - Python: 계약의 모든 module `m`은 공개 이름과 내부 이름을 함께 갖는 비공개 module `<root>._module_m`이고, package root가 그것을 다시 내보낸다. template의 module 파일 `format.py`가 package의 함수 `format`을 module로 바꿨다(GN-6bs, B2.368). module `<root>.m`과 내부 module `<root>._m`은 없어졌다.
 - Go: test feature의 build tag는 `polyspec_template_fault_test`처럼 library 이름을 갖는 `polyspec_<library>_<feature>`다. 한 module의 태그 `polyspec_fault_test`가 그것이 import하는 모든 polyspec module의 태그 파일을 켰고, 그 파일들은 release 라이브러리와 링크되지 않았다(GN-13ba, B2.369). Go 시험을 돌리는 저장소는 태그 이름을 바꾼다.
 - PHP와 Python 시험의 callback과 function fixture는 호출의 인자를 결과의 비교인 `same`과 `_same`으로 row와 비교한다. PHP `===`는 같은 instance일 때만 참이어서, `Environment`를 받는 template의 host function이 `UnexpectedCall`을 냈다(GN-13bb, B2.370).
+- case는 JSON이 정수로 쓰는 float를 어느 숫자 자리에서나 `{"float": "<decimal>"}`로 주고, `targets`를 가진 case는 그 target만의 시험이며 다른 모든 target에 같은 인자의 case가 있다(CK-97). Node와 WASM은 정수 자리의 음의 0을, PHP와 Python이 `-0.0`을 거부하듯 `invalid_number`로 거부한다. 이전에는 그것을 0으로 받았다(GN-12a, GN-13bc, B2.360).
 
 ## 0.0.13
 

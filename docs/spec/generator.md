@@ -1363,7 +1363,10 @@ the design ids are those of the binding design.
 - **GN-12a** Every target (T-1, CK-64): an `int` value that the binding takes, as an argument, an item of a list, a
   tuple, a map or an optional, or a field of a record, is a safe integer, −(2^53 − 1) to 2^53 − 1, and a `uint` value is
   0 to 2^53 − 1; an integer outside that range is kind `invalid_number` (B-2) in PHP, Python and Go as in Node and
-  WASM, whose number holds no larger integer exactly. Why: one contract gives the same result in every target, and an
+  WASM, whose number holds no larger integer exactly. A negative zero at an `int` or `uint` place is kind
+  `invalid_number` in Node and WASM too, which tell it from 0 by its sign, as PHP and Python refuse the float `-0.0`
+  there (B2.360); an integral float such as `403.0` is the number 403 of Node and WASM, which no target can tell from
+  the integer, so only that difference stays (GN-13bc). Why: one contract gives the same result in every target, and an
   integer that one target takes and another refuses would give two. An `int64` takes the range of i64 in every
   target. An integer key of a `keyed_map` whose contract lists `int` keys is a safe integer too: an integer key
   outside that range, and in Node and WASM a number key that is no integer, is kind `invalid_number` in every target,
@@ -2624,6 +2627,17 @@ the design ids are those of the binding design.
   for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
   made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
   an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
+- **GN-13bc** A case value `{"float": "<decimal>"}` is a float that JSON writes as an integer, such as `{"float": "403.0"}`
+  or `{"float": "-0.0"}`, at any number place: PHP and Python write their float literal, Node and WASM the number
+  (`-0` for a negative zero), and Go writes the float at a float place and no test at an integer place, where its
+  compiler refuses the conversion, with a comment that names the case and the reason (GN-13w). A case may have
+  `targets`, a list of targets of its member: it is a test of those targets alone, and the cases of its group with the
+  same arguments, each with `targets`, together list every target of the member (CK-97). Why: the targets differ by the
+  model of numbers of their language, where the binding cannot make them the same: a PHP or Python float is a type of
+  its own, which an integer place refuses (B-2), while a Node or WASM number has no float type, so `403.0` is the
+  number 403, which the binding takes; JSON writes `403.0` as `403` and `-0.0` as `-0`, so no case could give the
+  float, and one case cannot state the two results. A negative zero, which Node and WASM can tell apart, is refused
+  there as in PHP and Python (GN-12a), so it needs no `targets`. The pair keeps every target tested on the input.
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

@@ -2003,6 +2003,9 @@ export function membersFor(model: Model, lang: Lang): Model {
   const members = new Map([...model.functions, ...model.objects.flatMap((o) => o.members)].map((fn) => [fn.member.id, fn]));
   const caseOfLang = (id: string, item: unknown): boolean => {
     if (!(model.caseTargets?.get(item)?.includes(lang) ?? true)) return false;
+    // GN-13bc: a case with targets is a case of the targets that it lists alone (CK-97 requires its pair).
+    const listed = typeof item === 'object' && item !== null ? (item as Record<string, unknown>)['targets'] : undefined;
+    if (Array.isArray(listed) && !listed.includes(lang)) return false;
     const fn = members.get(id);
     if (fn === undefined || typeof item !== 'object' || item === null) return true;
     const given = item as Record<string, unknown>;

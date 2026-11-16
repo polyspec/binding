@@ -232,7 +232,8 @@ fn safe_integer(value: Unknown<'_>, subject: &str, expected: NumberType) -> Resu
         return Err(invalid());
     }
     let double = unsafe { value.cast::<f64>() }.map_err(internal)?;
-    if !double.is_finite() || double.fract() != 0.0 || double.abs() > 9_007_199_254_740_991.0 {
+    // GN-12a, B2.360: a negative zero is a float, which PHP and Python refuse at an integer place, so it is refused here too.
+    if !double.is_finite() || double.fract() != 0.0 || double.abs() > 9_007_199_254_740_991.0 || (double == 0.0 && double.is_sign_negative()) {
         return Err(invalid());
     }
     unsafe { value.cast::<i64>() }.map_err(internal)

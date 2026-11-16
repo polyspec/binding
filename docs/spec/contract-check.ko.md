@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: a10d95079497da4a8ae257da4303d25c076724e1079f7b5e7d946a5fdce0b5ea -->
+<!-- source-sha256: 0021132266a08856ede940721c4159c42cf2bb726475f71dc942dc171cf5a02e -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -307,7 +307,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
   key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `raises`, `after`, `then`, `faults`, `service`,
-  `@files`, `@listener`, `repeat`, `awaits`, 또는 `cases`의 행이 `reads`에 이름한 key. `reads`는 그 group의 case에서 저장소 자신의
+  `@files`, `@listener`, `repeat`, `awaits`, `targets`(CK-97), 또는 `cases`의 행이 `reads`에 이름한 key. `reads`는 그 group의 case에서 저장소 자신의
   시험이 읽고 어떤 생성기도 읽지 않는 snake_case key의 list다. 예를 들어 core 시험과 손으로 쓴 host 시험이 비교하는
   입력 bytes와 기대 tree다: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases",
   "result": "serialized", "reads": ["bytes", "data", "tree"]}`. `binding check`는 다른 key를 그 key, case, member와
@@ -316,6 +316,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   파일은 저장소의 시험도 읽으므로, 행이 그 시험이 읽는 key를 선언한다. `reads`는 계약이 아니라 행의 field다. 행이
   이미 group과 그 `result`를 이름하고, 한 member의 두 group이 다른 key를 가지기 때문이다(한 group에는 `bytes`, 다른
   group에는 `written`).
+- **CK-97** case의 `targets`(generator GN-13bc)는 그 member가 생성되는(그리고 그 행의 `only`가 나열하는) target의
+  비어 있지 않은 목록이고, 같은 인자를 가진 그 group의 case들은 각각 `targets`를 가지며 함께 그런 target을 모두 나열한다.
+  `binding check`는 targets가 다른 target을 이름하거나 입력이 어떤 target에 case를 남기지 않는 case를 보고한다. 이유:
+  `targets`를 가진 case는 언어의 숫자 모델에 따라 갈리는 결과를 말하고, 그 입력의 어느 case도 나열하지 않는 target은 run이
+  통과하는 동안 그 입력을 시험하지 않은 채로 둔다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
