@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.18
+
 - The end-to-end sample has a value alias result whose UTF-8 bytes leave as a text (GN-13be, B2.421): the alias `blob` with the out and in rows of `php_value`, the member `store.get_blob`, and a case of `store.transaction` whose `after` reads the committed "y" through it, so CI runs the generated Go of such a result, which B2.420 fixed. GN-6as now says that `make_<name>` of an alias whose rows make no container is one match over the rows, with no loop and no work stack, since such a value has a depth of one; it said that every make function walks with a work stack, which the generator already did not do for such an alias. The generator does not change. Verified by `node --test --test-name-pattern=B2.421 tests/generate.test.ts` in `packages/ts`.
 - The generated tests of the five targets write a value that the binding hands to a callback by the out rows of a value alias, as they write a result (GN-13be): the arguments of a row of a callback fixture and of a row of a function value, and the arguments of an expected call of a fixture. They were written as an argument of a call is, so an argument of an alias whose row makes UTF-8 bytes a text was expected as bytes, and the call that the binding made with the text matched no row (B2.422). Verified by `node --test --test-name-pattern=B2.422 tests/generate.test.ts` in `packages/ts`, which failed before the change.
 - The checkout installs kit 0.0.118 in place of 0.0.114 (B2.428). Verified by `make install-packages`, `make docs-check`, `make hooks-check`, `make lint-rust`, `make typecheck-ts` and `make test-ts` on the kit that it installs.
