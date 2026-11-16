@@ -2,7 +2,9 @@
 // a letter and a digit, as git abbreviates or writes a commit; a number or a word has no such token. Two places name a
 // commit because a tool requires it: the commit pin of a GitHub action on its `uses:` line, and a lock, which records
 // what its package manager resolved. A test input that the generator must refuse, the `rev` of a Cargo dependency
-// line, is no name of a commit either.
+// line, is no name of a commit either. Nor is the data of a copy of a consumer contract, a `.json` file under
+// `tests/fixtures/consumers/`: it holds the values of that contract as they are, such as the hex alphabet of a session
+// id of session-store, and names nothing of this repository (B2.418); the README beside it is read like any file.
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -16,11 +18,12 @@ const LOCKS = /(^|\/)(package-lock\.json|Cargo\.lock|composer\.lock|mise\.lock|a
 const TOKEN = /\b[0-9a-f]{7,40}\b/g;
 const ACTION_PIN = /^\s*(-\s+)?uses:\s+[\w.-]+\/[\w./-]+@([0-9a-f]{40})\b/;
 const REFUSED_REV = /\brev: '([0-9a-f]{7,40})'/g;
+const CONSUMER_DATA = /^packages\/ts\/tests\/fixtures\/consumers\/.+\.json$/;
 
 test('no tracked file names a Git commit, except the pin of an action and a lock (AGENTS)', () => {
   const found: string[] = [];
   let read = 0;
-  for (const path of tracked.filter((p) => !LOCKS.test(p))) {
+  for (const path of tracked.filter((p) => !LOCKS.test(p) && !CONSUMER_DATA.test(p))) {
     const bytes = readFileSync(join(root, path));
     if (bytes.includes(0)) continue;
     read += 1;
