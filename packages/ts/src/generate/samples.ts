@@ -851,11 +851,20 @@ export type ForeignStep =
   | { form: 'repeat'; make: Member; repeat: number; inner: ForeignStep }
   | { form: 'map'; make: Member; map: Unit; construct: Member; insert: Member; pairs: [ForeignStep, ForeignStep][] };
 
+// GN-6br: whether a case text holds an unpaired surrogate, which is no text of every language (B2.81).
+const loneSurrogate = (value: unknown): value is string => typeof value === 'string' && /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);
+const codeUnits = (text: string): number[] => Array.from({ length: text.length }, (_, at) => text.charCodeAt(at));
+
 export function foreignSteps(alias: ValueAlias, lang: Lang, value: unknown, where: string): ForeignStep {
-  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-  const kind = record?.['kind'];
-  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
-  if (kind === 'text' && caseTextParts(record['value']) !== undefined) throw new Unsupported('a composed case text is not an alias text value (GN-13l)');
+  let record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const given = record?.['kind'];
+  if (record === undefined || typeof given !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
+  if (given === 'text' && caseTextParts(record['value']) !== undefined) throw new Unsupported('a composed case text is not an alias text value (GN-13l)');
+  // GN-6br, B2.81: a text with an unpaired surrogate is made by the out row of the kind text16, from its UTF-16 code
+  // units, where the owner has one: the make of a text would refuse it or, in PHP, replace it by U+FFFD.
+  const lone = given === 'text' && loneSurrogate(record['value']) && classMakes(alias, lang).some((make) => make.kind === 'text16');
+  const kind = lone ? 'text16' : given;
+  if (lone) record = { ...record, value: codeUnits(String(record['value'])) };
   const makes = classMakes(alias, lang).filter((make) => make.kind === kind);
   const [make] = makes;
   if (make === undefined || makes.length > 1) throw new Unsupported(`the kind ${kind} of ${where} is made in ${lang} by ${makes.length === 0 ? 'no out row' : `${String(makes.length)} out rows`} of its owner, not by one member, so no case value of that kind is one of the class (GN-6x, G-5)`);

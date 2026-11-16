@@ -11112,3 +11112,30 @@ test('B2.355: the PHP make of a map by a member passes its argument as the const
   assert.ok(constructed !== undefined && made !== undefined, `constructor ${constructed}, make ${made}`);
   assert.equal(made.startsWith('&'), constructed.startsWith('&'), `constructor Entries::new(${constructed}), make Entries::new(${made})`);
 });
+
+test('B2.356: a case value of a text with an unpaired surrogate of a value class is made by the out row of the kind text16 (B2.81, U-1, GN-13)', () => {
+  // crud-ui validator: Value.string("\ud800") of json refused the text before the core ran (B-4 invalid_text), the Go
+  // test did not compile, and PHP wrote U+FFFD, which passed without the refusal.
+  const { contract, caseFiles, foreign } = valueClassSample();
+  contract.cases.push({ member: 'consumer.relay', file: 'contracts/cases.json', group: 'relay' });
+  (caseFiles.get('contracts/cases.json') as any).relay = [
+    { id: 'a_lone_surrogate_comes_back', value: { kind: 'text', value: '\ud800' }, result: { kind: 'text', value: '\ud800' } },
+    { id: 'a_text_comes_back', value: { kind: 'text', value: 'a' }, result: { kind: 'text', value: 'a' } },
+  ];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'wasm', 'go'] });
+  const tests: Record<string, string> = {
+    python: 'packages/python/generated/tests/test_generated.py',
+    node: 'packages/ts/generated/tests/generated.test.mjs',
+    wasm: 'packages/ts/wasm/generated/tests/generated.test.mjs',
+    php: 'packages/php-ext/generated/tests/GeneratedTest.php',
+    go: 'packages/go/zz_generated_test.go',
+  };
+  for (const [lang, path] of Object.entries(tests)) {
+    const body = text(out, path);
+    const at = body.search(/a_?lone_?surrogate_?comes_?back/i);
+    assert.ok(at >= 0, `${lang}: no test of the case`);
+    const test = body.slice(at, body.indexOf('\n}', at) === -1 ? undefined : body.indexOf({ python: '\n    def ', php: '\n    public function ', node: '\n});', wasm: '\n});', go: '\n}\n' }[lang] ?? '\n}', at + 1));
+    assert.match(test, /[Ff]rom_?[Uu]nits\(/, `${lang}: ${test.slice(0, 400)}`);
+    assert.match(test, /55296/, `${lang}: the code unit 0xD800`);
+  }
+});

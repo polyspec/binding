@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8fe8bf01c3498addea2bc52ffde697aaa13c259a5531561b2af3f081920ff718 -->
+<!-- source-sha256: de953b984baa37ca1ffe3c40fe47d06134b3570cec15d6aa73e861ba127a040b -->
 # 생성기
 
 [English](generator.md)
@@ -821,6 +821,11 @@
 - **GN-6bq** class의 member가 값 alias의 list나 map을 만들 때(GN-6bc), 그 member의 core path를 member의 entry point가
   넘기는 형태의 인자, 즉 T-1에 따라 만든 list나 map의 빌림으로 부른다. 이유: 생성자와 make는 같은 path를 부르므로 core의 서명 하나가 둘을 다 받아야 하는데, make는 생성자가 빌림을
   넘기는 자리에서 값을 넘겨서(orm `map_value`) 어느 서명도 둘을 다 컴파일하지 못했다.
+- **GN-6br** 다른 저장소의 값 class(GN-6x)의 case 값 `{"kind": "text", "value": <text>}`의 text에 짝 없는 surrogate가
+  있으면, 소유자에게 kind `text16`의 out row가 있을 때 모든 target에서 그 row로 text의 UTF-16 code unit으로부터
+  만든다. 다른 text는 kind `text`의 row로 만든다. 이유: text의 make는 언어의 text를 받는데 짝 없는 surrogate는 모든
+  언어의 text가 아니다: json은 core 전에 `Value.string("\ud800")`를 거부했고, Go는 그것을 컴파일하지 않으며, PHP는
+  U+FFFD를 써서 case가 말하는 거부 없이 통과했다. `text16`의 row(B2.81)는 소유자에게 case가 말하는 그대로의 text를 준다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

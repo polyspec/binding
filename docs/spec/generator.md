@@ -1014,6 +1014,12 @@ the design ids are those of the binding design.
   map by T-1. Why: the constructor and
   the make call the same path, so one signature of the core must take both; the make passed the value where the
   constructor passed the borrow (orm `map_value`), and no signature compiled both.
+- **GN-6br** A case value `{"kind": "text", "value": <text>}` of a value class of another repository (GN-6x) whose text
+  holds an unpaired surrogate is made by the out row of the kind `text16` of the owner, from the UTF-16 code units of
+  the text, in every target, where the owner has such a row; another text is made by the row of the kind `text`.
+  Why: the make of a text takes a text of the language, which an unpaired surrogate is not in every language: json
+  refused `Value.string("\ud800")` before the core ran, Go does not compile it, and PHP wrote U+FFFD, so the case
+  passed without the refusal that it states; the row of `text16` (B2.81) gives the owner the text as the case states it.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
