@@ -15,7 +15,7 @@
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
 
-import type { Contract, Member, Type, Unit } from '../contract.ts';
+import type { Contract, Member, Name, Type, Unit } from '../contract.ts';
 import { classIn } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
@@ -810,10 +810,13 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
 // GN-13w: why a case value is no value of its Go type, or undefined when it is one. Go is statically typed, so the
 // compiler refuses such a value at the call before the binding sees it; the case states the refusal of the binding
 // on the dynamic targets (GN-13d), and Go has no call to make for it.
-export function notGoValue(type: Type, json: unknown): string | undefined {
+// B2.397: with the model, a value anywhere inside the case value is judged too: an item of a list or of its repeat form,
+// a part of a tuple, an entry of a map or keyed map, and a field of a record or of a case of a variant, since Go writes
+// each as a literal of its type in the one expression of the argument.
+export function notGoValue(type: Type, json: unknown, model?: Model): string | undefined {
   if (json === null || json === undefined) return undefined;
-  if (typeof type === 'object' && 'optional' in type) return notGoValue(type.optional, json);
-  if (typeof type !== 'string') return undefined;
+  if (typeof type === 'object' && 'optional' in type) return notGoValue(type.optional, json, model);
+  if (typeof type !== 'string') return model === undefined ? undefined : notGoInside(model, type, json);
   const number = typeof json === 'number';
   // GN-13bc, B2.360: a float {"float": "<decimal>"} at an integer place is no value of the Go integer, whose
   // conversion the compiler refuses, so Go has no call that gives it to the binding.
@@ -833,6 +836,36 @@ export function notGoValue(type: Type, json: unknown): string | undefined {
   if (type === 'bool') return typeof json === 'boolean' ? undefined : `${JSON.stringify(json)} is no value of bool`;
   if (type === 'text' || type === 'latin1') return number || typeof json === 'boolean' ? `${JSON.stringify(json)} is no value of string` : undefined;
   return undefined;
+}
+
+function notGoInside(model: Model, type: Exclude<Type, string>, json: unknown): string | undefined {
+  const first = (items: readonly (readonly [Type, unknown])[]): string | undefined => {
+    for (const [t, item] of items) {
+      const why = notGoValue(t, item, model);
+      if (why !== undefined) return why;
+    }
+    return undefined;
+  };
+  const object = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
+  if ('list' in type) {
+    if (Array.isArray(json)) return first(json.map((item) => [type.list, item] as const));
+    return object?.['kind'] === 'list' ? notGoValue(type.list, object['value'], model) : undefined;
+  }
+  if ('tuple' in type) return Array.isArray(json) ? first(type.tuple.map((part, i) => [part, json[i]] as const)) : undefined;
+  if ('map' in type || 'keyed_map' in type) {
+    const item = 'map' in type ? type.map : type.keyed_map;
+    if (Array.isArray(json)) return first(json.filter((entry): entry is unknown[] => Array.isArray(entry) && entry.length === 2).map((entry) => [item, entry[1]] as const));
+    return object === undefined ? undefined : first(Object.values(object).map((entry) => [item, entry] as const));
+  }
+  if (!('unit' in type) || type.library !== undefined || object === undefined) return undefined;
+  const fields = (list: readonly { name: Name; type: Type }[]): string | undefined => first(list.filter((f) => Object.hasOwn(object, caseName(f.name))).map((f) => [f.type, object[caseName(f.name)]] as const));
+  const variant = variantOf(model, type);
+  if (variant !== undefined) {
+    const kase = variant.cases.find((c) => c.value === object[caseName(variant.unit.tag ?? [])]);
+    return kase === undefined ? undefined : fields(kase.unit.fields ?? []);
+  }
+  const unit = unitOf(model, type);
+  return unit?.kind === 'record' ? fields(unit.fields ?? []) : undefined;
 }
 
 function caseValue(v: Values, b: Body, arg: Arg, args: ReadonlyMap<Arg, unknown>): string | undefined {
@@ -1419,7 +1452,7 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
   // B-4: every case that raises.
   for (const kase of raisingCases(model, fn)) {
     // GN-13w: a case whose argument is no value of its Go type is no Go test; the file names it and the reason.
-    const notOf = (f: Fn, args: ReadonlyMap<Arg, unknown>): string | undefined => f.args.map((a) => (args.has(a) ? notGoValue(a.type, args.get(a)) : undefined)).find((why) => why !== undefined);
+    const notOf = (f: Fn, args: ReadonlyMap<Arg, unknown>): string | undefined => f.args.map((a) => (args.has(a) ? notGoValue(a.type, args.get(a), model) : undefined)).find((why) => why !== undefined);
     const ofReceiver = (r: Receiver | undefined): string | undefined => (r === undefined ? undefined : notOf(r.factory, r.args) ?? ofReceiver(r.on));
     const foreign = notOf(fn, kase.args) ?? ofReceiver(kase.receiver);
     if (foreign !== undefined) {

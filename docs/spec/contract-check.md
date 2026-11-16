@@ -424,15 +424,19 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `int64` an integer of the range of i64, of `float` a number, of `bool` a bool, and of `text` or `latin1` a text;
   `binding check` reports any other value with the case, the place, the value and the type. A value in an object form
   (`{"float": ...}`, `{"ill_formed": ...}`, a service value, a composed text) is judged by the rule of its form
-  (GN-13bc, GN-13j, GN-13l). An argument itself, or the value of its optional, may be outside its type in a case that
-  raises the kind `invalid_number` or `invalid_argument_type`: the binding refuses such an argument with that kind
-  before the core runs, the dynamic targets give it as its JSON kind and Go writes no test of it (GN-13w), so the case
-  is the one test of that refusal. A value inside such an argument, a result, and an argument of a case that raises
-  another kind stay reported, because a target writes them as literals of their type. Why: the crud-ui generator
+  (GN-13bc, GN-13j, GN-13l). A value anywhere inside an argument (the argument itself, the value of its optional, an
+  item, an entry or a field inside it) may be outside its type in a case that raises the kind `invalid_number` or
+  `invalid_argument_type`: the binding refuses such a value with that kind before the core runs, at every place of an
+  input, the dynamic targets give it as its JSON kind and Go writes no test of the case (GN-13w), so the case is the
+  one test of that refusal. A result, and an argument of a case that raises another kind, stay reported, because a
+  target writes them as literals of their type. Why: the crud-ui generator
   case `list-options-ignored` gave the field `total` of `ListOptions`, an `optional` of `uint`, the value -1;
   `binding check` passed it, and the Go test held `ptr(uint64(-1))`, which `go vet` refused as a constant that
   overflows `uint64`. A value outside its type at a place that a target writes is a defect of the case, and the
-  check names it before a target fails to build.
+  check names it before a target fails to build. The allowance holds inside an argument as at the argument itself
+  because session-store refuses `-1`, `1.5`, `"60"` and `true` in the uint fields `lifetime` and `lock_expire` of the
+  record argument `options` of `redis_sessions.new` with `invalid_number`; a check that took the top level alone
+  would refuse the one test of that refusal of the binding.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

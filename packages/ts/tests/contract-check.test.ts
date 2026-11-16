@@ -1843,8 +1843,12 @@ describe('B2.397: CK-100 a case value is a value of its declared type at every p
     assert.deepEqual(run((c) => { c.repeat[0].times = -1; delete c.repeat[0].result; c.repeat[0].raises = refused('invalid_number'); }), []);
     assert.deepEqual(run((c) => { c.repeat[0].times = 'two'; delete c.repeat[0].result; c.repeat[0].raises = refused('invalid_argument_type'); }), []);
   });
-  test('a value inside the argument of such a case, which Go writes, and an argument of a case of another kind, are reported', () => {
-    assert.equal(run((c) => { c.pad[1].options.width = -1; delete c.pad[1].result; c.pad[1].raises = refused('invalid_number'); }).length, 1);
+  test('a value nested inside the argument of such a case passes too, since Go writes no test of it (GN-13w, session-store)', () => {
+    assert.deepEqual(run((c) => { c.pad[1].options.width = -1; delete c.pad[1].result; c.pad[1].raises = refused('invalid_number'); }), []);
+    assert.deepEqual(run((c) => { c.width_sum[0].widths = [2, 'x']; delete c.width_sum[0].result; c.width_sum[0].raises = refused('invalid_number'); }), []);
+  });
+  test('the nested value in a case of another kind, and an argument of a case of another kind, are reported', () => {
+    assert.equal(run((c) => { c.pad[1].options.width = -1; delete c.pad[1].result; c.pad[1].raises = refused('unsupported'); }).length, 1);
     assert.equal(run((c) => { c.repeat[0].times = -1; delete c.repeat[0].result; c.repeat[0].raises = refused('unsupported'); }).length, 1);
   });
 });

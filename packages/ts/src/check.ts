@@ -1799,9 +1799,9 @@ class Checker {
     const raises = record['raises'];
     const refusesNumber = typeof raises === 'object' && raises !== null && (raises as Record<string, unknown>)['kind'] === 'invalid_number';
     const writable = (value: bigint): boolean => value >= -(2n ** 63n) && value < 2n ** 63n;
-    // CK-100, GN-13w, B4: a case that raises invalid_number or invalid_argument_type may give an argument itself, or
-    // the value of its optional, outside its type: the binding refuses it with that kind before the core runs, the
-    // dynamic targets give it as its JSON kind and Go writes no test of it. At any other place a target writes it.
+    // CK-100, GN-13w, B2.397: a case that raises invalid_number or invalid_argument_type may give a value outside its
+    // type anywhere inside an argument: the binding refuses it with that kind before the core runs, the dynamic targets
+    // give it as its JSON kind and Go writes no test of the case. A result, and a case of another kind, a target writes.
     const refusesType = typeof raises === 'object' && raises !== null && ['invalid_number', 'invalid_argument_type'].includes(String((raises as Record<string, unknown>)['kind']));
     const shown = (value: unknown): string => (typeof value === 'bigint' ? String(value) : JSON.stringify(value));
     // CK-100: why a value is no value of a scalar type of T-1 in every target, or undefined when it is one. A value in
@@ -1817,12 +1817,12 @@ class Checker {
       if (type === 'text' || type === 'latin1') return typeof value === 'string' ? undefined : 'no text';
       return undefined;
     };
-    const fields = (list: readonly { name: Name; type: Type }[], value: unknown, what: string): void => {
+    const fields = (list: readonly { name: Name; type: Type }[], value: unknown, what: string, argument: boolean): void => {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
       const given = value as Record<string, unknown>;
       for (const field of list) {
         const key = convert(field.name, 'python', 'variable');
-        if (Object.hasOwn(given, key)) walk(field.type, given[key], `${what}.${key}`, false);
+        if (Object.hasOwn(given, key)) walk(field.type, given[key], `${what}.${key}`, argument);
       }
     };
     const walk = (type: Type, value: unknown, what: string, argument: boolean): void => {
@@ -1832,7 +1832,7 @@ class Checker {
         }
         const why = outside(type, value);
         if (why !== undefined && !(argument && refusesType)) {
-          this.report('CK-100', path, `${where}: ${what} ${shown(value)} is ${why}, no value of the type ${type} (T-1), which a target writes as a literal of that type; only an argument of a case that raises invalid_number or invalid_argument_type is outside its type (GN-13w)`);
+          this.report('CK-100', path, `${where}: ${what} ${shown(value)} is ${why}, no value of the type ${type} (T-1), which a target writes as a literal of that type; only a value inside an argument of a case that raises invalid_number or invalid_argument_type is outside its type (GN-13w)`);
         }
         return;
       }
@@ -1840,24 +1840,24 @@ class Checker {
         if (value !== null) walk(type.optional, value, what, argument);
       } else if ('list' in type) {
         const repeat = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-        if (Array.isArray(value)) for (const [k, item] of value.entries()) walk(type.list, item, `${what}[${k}]`, false);
-        else if (repeat?.['kind'] === 'list') walk(type.list, repeat['value'], `${what}[]`, false);
+        if (Array.isArray(value)) for (const [k, item] of value.entries()) walk(type.list, item, `${what}[${k}]`, argument);
+        else if (repeat?.['kind'] === 'list') walk(type.list, repeat['value'], `${what}[]`, argument);
       } else if ('tuple' in type) {
-        if (Array.isArray(value)) for (const [k, item] of value.entries()) if (type.tuple[k] !== undefined) walk(type.tuple[k], item, `${what}[${k}]`, false);
+        if (Array.isArray(value)) for (const [k, item] of value.entries()) if (type.tuple[k] !== undefined) walk(type.tuple[k], item, `${what}[${k}]`, argument);
       } else if ('map' in type || 'keyed_map' in type) {
         const item = 'map' in type ? type.map : type.keyed_map;
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) for (const [k, entry] of Object.entries(value)) walk(item, entry, `${what}.${k}`, false);
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) for (const [k, entry] of Object.entries(value)) walk(item, entry, `${what}.${k}`, argument);
         // G-5: a map given as an array of [key, value], whose order the case keeps.
-        else if (Array.isArray(value)) for (const entry of value) if (Array.isArray(entry) && entry.length === 2) walk(item, entry[1], `${what}.${String(entry[0])}`, false);
+        else if (Array.isArray(value)) for (const entry of value) if (Array.isArray(entry) && entry.length === 2) walk(item, entry[1], `${what}.${String(entry[0])}`, argument);
       } else if ('unit' in type && (type.library === undefined || type.library === this.contract.library)) {
         // CK-64, CK-100: a record is the object of its fields, and a variant the object of its tag and the fields of
         // the case that the tag names (T-9).
         const unit = this.unit(type.unit);
-        if (unit?.kind === 'record') fields(unit.fields ?? [], value, what);
+        if (unit?.kind === 'record') fields(unit.fields ?? [], value, what, argument);
         else if (unit?.kind === 'variant' && unit.tag !== undefined && typeof value === 'object' && value !== null && !Array.isArray(value)) {
           const tag = (value as Record<string, unknown>)[convert(unit.tag, 'python', 'variable')];
           const kase = (unit.cases ?? []).find((c) => c.value === tag);
-          if (kase !== undefined) fields(kase.fields, value, what);
+          if (kase !== undefined) fields(kase.fields, value, what, argument);
         }
       }
     };
