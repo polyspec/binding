@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 85942fe18ef9b5779749cce12f50d3bfced12a36c244946e6d9999aab3f7c21a -->
+<!-- source-sha256: 8524207f60ba1fb3f3eb5afb7ab3a214f103b632584d4c9045379cb7aab4eb9b -->
 # 생성기
 
 [English](generator.md)
@@ -950,6 +950,12 @@
   parameter가 생성되는 곳에서만 assert한다. 이유: orm은 `default_retry`와 `default_pool_acquire_timeout_ms`에 `wasm` 없는
   `only`를 적는데, 그 constant는 코어가 feature `runtime`으로만 정의하고 WASM build에는 그 feature가 없어, WASM crate가 그것을
   assert하면 E0425였다.
+  값 alias(U-7)는 그 target의 생성된 member, record, class, callback, interface, error unit이 그것을 직접 또는 그것이
+  이름하는 alias를 거쳐, 타입이나 kind `nested:<value type>`의 행(GN-6bb)으로 이름할 때에만 그 target의 alias다. 그런 unit이 이름하지 않는 target에는 그 변환, host, 그것들이
+  필요로 하는 import와 throw table, `codec-test`의 entry, case가 없다. 그 target 없는 `only`를 가진 unit의 alias가 어떤
+  target에도 없는 것과 같다. 이유: orm에서 `orm_value`를 이름하는 member는 모두 `wasm` 없는 `only`를 적지만 alias에는
+  없어서, WASM crate가 host value의 import와 throw table을 쓰이지 않은 채 남기고, 변환이 쓰이지 않는다며 빠진
+  `codec-test`의 entry `__aliasInValue`를 남겼다(E0425).
   `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
   parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는

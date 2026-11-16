@@ -2039,7 +2039,7 @@ export function membersFor(model: Model, lang: Lang): Model {
     return !fn.params.some((p) => givesAbsent(p.type, given[langName('python', p.name, 'variable')]));
   };
   const records = (units: Unit[]): Unit[] => units.filter(unitHas).map((u) => unitForLanguage(u, lang));
-  return {
+  const built: Model = {
     ...model,
     functions: model.functions.filter(has).map(without),
     // Q-4, B2.395: a constant whose only names other targets is no constant of the language, nor its assertion.
@@ -2060,6 +2060,29 @@ export function membersFor(model: Model, lang: Lang): Model {
     cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => caseOfLang(id, item))])),
     aliasCases: new Map([...model.aliasCases].map(([id, items]) => [id, items.filter((item) => model.caseTargets?.get(item)?.includes(lang) ?? true)])),
   };
+  // Q-4, U-7, B2.396: a value alias that no generated member, record, class, callback, interface or error unit of the
+  // language names, directly or through an alias that it names, is no alias of the language: neither its conversions,
+  // its host, its entry of codec-test nor its cases.
+  const named = new Set<string>();
+  const key = (library: string | undefined, unit: string): string => `${library ?? ''}\u0000${unit}`;
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const item of value) walk(item); return; }
+    if (typeof value !== 'object' || value === null) return;
+    const node = value as Record<string, unknown>;
+    if (typeof node['unit'] === 'string') named.add(key(typeof node['library'] === 'string' ? node['library'] : undefined, node['unit']));
+    // GN-6bb: a row of the kind nested:<value type> names the value alias of another repository by that kind.
+    const nested = typeof node['kind'] === 'string' ? nestedType(model.contract, node['kind']) : undefined;
+    if (nested !== undefined) named.add(key(nested.library, nested.unit));
+    for (const item of Object.values(node)) walk(item);
+  };
+  walk([...built.functions, ...built.objects.flatMap((o) => o.members)].map((fn) => fn.member));
+  walk([...built.records, ...built.resultRecords, ...built.kept.map((k) => k.unit), ...built.callbacks.map((c) => c.unit), ...built.interfaces, ...built.errorUnits.map((u) => u.unit), ...built.variants.filter((v) => unitHas(v.unit)).map((v) => v.unit)]);
+  const used = new Set<ValueAlias>();
+  for (let more = true; more;) {
+    more = false;
+    for (const a of built.aliases) if (!used.has(a) && named.has(key(a.library, a.unit.id))) { used.add(a); walk(a.unit); more = true; }
+  }
+  return { ...built, aliases: built.aliases.filter((a) => used.has(a)) };
 }
 
 // The model as one language's emitter reads it: each error class and kind has the class name of that language (E-2),

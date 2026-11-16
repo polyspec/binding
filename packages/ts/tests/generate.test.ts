@@ -11543,6 +11543,40 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.396: a value alias that no generated member of a target uses is no alias of that target (Q-4, U-7)', () => {
+  // orm wasm lib.rs: the alias orm_value, whose every member has only without wasm, kept the imports of the host
+  // values and the throw table of the crate (unused, dead code) and the export __aliasInValue of codec-test, whose
+  // conversions in_value and out_value were left out as unused (E0425). The sample with only without wasm at every
+  // member that names its alias data.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.396' };
+  // As in orm, the value classes of the alias are of the other targets as a whole (orm map_value), and so is each
+  // member of a functions unit that names it.
+  for (const unit of contract.units) {
+    if (unit.kind === 'class' && unit.origin === 'value' && JSON.stringify(unit).includes('"unit":"data"')) unit.only = only;
+    else for (const member of unit.members ?? []) if (JSON.stringify(member).includes('"unit":"data"')) member.only = only;
+  }
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /mod exports/);
+  assert.doesNotMatch(wasm, /aliasInData|alias_in_data|\bHostValues?\b|\bOutValues?\b|\bfn data_in\b|\bfn data_out\b/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.d.ts') + text(out, 'packages/ts/wasm/generated/index.mjs'), /aliasInData/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/tests/generated/binding.test.mjs'), /aliasInData/);
+  // The other targets still use the alias, with its conversions and its entry of codec-test.
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /use binding_core::\{Handle, HostText, HostValue, HostValues/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /aliasInData|alias_in_data/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /_alias_in_data/);
+  // An alias of another repository that only the out row nested:<value type> of a used alias names is used (GN-6bb).
+  const nested = nestedSample();
+  const names = (value: unknown): boolean => /"unit":"data","library":"sample"/.test(JSON.stringify(value));
+  for (const unit of nested.contract.units) {
+    if (unit.id === 'wrapped') continue;
+    if (unit.kind !== 'functions') { if (names(unit)) unit.only = only; } else for (const member of unit.members) if (names(member)) member.only = only;
+  }
+  const lib = text(generate({ contract: nested.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: nested.caseFiles, foreign: nested.foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(lib, /library_sample::make_data\(/);
+});
+
 test('B2.395: a constant whose only leaves a target out is no constant of that target, nor its assertion of the core (Q-4, GN-6g)', () => {
   // orm wasm lib.rs: `const _: () = assert!(polyspec_orm::DEFAULT_RETRY == 3);` of a constant with only without wasm
   // was E0425, since the core builds for wasm without the feature that defines it. The functions fixture with such a

@@ -1166,7 +1166,15 @@ the design ids are those of the binding design.
   the tests of every other target; for a constant that is also its assertion against the constant of the core, and the
   default of a field or a parameter that names it is asserted only where that field or parameter is generated. Why:
   orm states `only` without `wasm` at `default_retry` and `default_pool_acquire_timeout_ms`, whose constants its core
-  defines only with the feature `runtime`, which the WASM build lacks, and the WASM crate asserted them (E0425). A parameter with `only` is a parameter of the targets that it lists alone: every
+  defines only with the feature `runtime`, which the WASM build lacks, and the WASM crate asserted them (E0425). A value alias (U-7) is an
+  alias of a target only when a generated member, record, class, callback, interface or error unit of that target
+  names it, directly or through an alias that it names, by a type or by a row of the kind `nested:<value type>`
+  (GN-6bb): a target where no such unit names it has none of its
+  conversions, its host, the imports and the throw table that they need, its entry of `codec-test` and its cases, the
+  way every target has none of the alias of a unit with `only` without that target. Why: every member of orm that
+  names `orm_value` states `only` without `wasm`, while the alias has none, so the WASM crate kept the imports of the
+  host values and the throw table, unused, and the entry `__aliasInValue` of `codec-test`, whose conversions were left
+  out as unused (E0425). A parameter with `only` is a parameter of the targets that it lists alone: every
   other target has no such parameter in its signature, its declarations and its rules of place, and its binding gives
   the core the parameter
   as left out (`None`). The parameter therefore has a default or an `optional` type, whose core parameter is an
