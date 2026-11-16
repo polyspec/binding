@@ -2060,27 +2060,40 @@ export function membersFor(model: Model, lang: Lang): Model {
     cases: new Map([...model.cases].map(([id, items]) => [id, items.filter((item) => caseOfLang(id, item))])),
     aliasCases: new Map([...model.aliasCases].map(([id, items]) => [id, items.filter((item) => model.caseTargets?.get(item)?.includes(lang) ?? true)])),
   };
-  // Q-4, U-7, B2.396: a value alias that no generated member, record, class, callback, interface or error unit of the
-  // language names, directly or through an alias that it names, is no alias of the language: neither its conversions,
-  // its host, its entry of codec-test nor its cases.
+  // Q-4, U-7, B2.396, B2.403: a value alias that no generated member, record, class, callback, interface or error unit
+  // of the language names, directly or through an alias that it names, is no alias of the language: neither its
+  // conversions, its host, its entry of codec-test nor its cases. Each unit is walked in the library that owns it, since
+  // a unit of another repository (a callback or interface that a parameter takes, a record, a value alias or a value
+  // class) names a unit of its own library without the library; a variant is walked as the emitters generate it.
   const named = new Set<string>();
   const key = (library: string | undefined, unit: string): string => `${library ?? ''}\u0000${unit}`;
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) { for (const item of value) walk(item); return; }
+  const walk = (value: unknown, library: string | undefined): void => {
+    if (Array.isArray(value)) { for (const item of value) walk(item, library); return; }
     if (typeof value !== 'object' || value === null) return;
     const node = value as Record<string, unknown>;
-    if (typeof node['unit'] === 'string') named.add(key(typeof node['library'] === 'string' ? node['library'] : undefined, node['unit']));
+    if (typeof node['unit'] === 'string') named.add(key(typeof node['library'] === 'string' ? node['library'] : library, node['unit']));
     // GN-6bb: a row of the kind nested:<value type> names the value alias of another repository by that kind.
-    const nested = typeof node['kind'] === 'string' ? nestedType(model.contract, node['kind']) : undefined;
+    const contract = library === undefined ? model.contract : model.foreign.get(library);
+    const nested = typeof node['kind'] === 'string' && contract !== undefined ? nestedType(contract, node['kind']) : undefined;
     if (nested !== undefined) named.add(key(nested.library, nested.unit));
-    for (const item of Object.values(node)) walk(item);
+    for (const item of Object.values(node)) walk(item, library);
   };
-  walk([...built.functions, ...built.objects.flatMap((o) => o.members)].map((fn) => fn.member));
-  walk([...built.records, ...built.resultRecords, ...built.kept.map((k) => k.unit), ...built.callbacks.map((c) => c.unit), ...built.interfaces, ...built.errorUnits.map((u) => u.unit), ...built.variants.filter((v) => unitHas(v.unit)).map((v) => v.unit)]);
+  walk([...built.functions, ...built.objects.flatMap((o) => o.members)].map((fn) => fn.member), undefined);
+  walk([...built.records, ...built.resultRecords, ...built.kept.map((k) => k.unit), ...built.callbacks.map((c) => c.unit), ...built.interfaces, ...built.errorUnits.map((u) => u.unit), ...built.variants.map((v) => v.unit)], undefined);
+  // T-3: a unit of another repository is walked with the named types of its contract resolved, as the model reads it.
+  const resolvedOf = new Map<string, Contract>();
+  const owned = (unit: Unit, library: string | undefined): Unit => {
+    const owner = library === undefined ? undefined : model.foreign.get(library);
+    if (library === undefined || owner === undefined) return unit;
+    if (!resolvedOf.has(library)) resolvedOf.set(library, resolveNamedTypes(owner));
+    return resolvedOf.get(library)?.units.find((u) => u.id === unit.id) ?? unit;
+  };
+  for (const c of built.foreignCallbacks) walk(owned(c.unit, c.library), c.library);
+  for (const r of built.foreignRecords) walk(owned(r.unit, r.library), r.library);
   const used = new Set<ValueAlias>();
   for (let more = true; more;) {
     more = false;
-    for (const a of built.aliases) if (!used.has(a) && named.has(key(a.library, a.unit.id))) { used.add(a); walk(a.unit); more = true; }
+    for (const a of built.aliases) if (!used.has(a) && named.has(key(a.library, a.unit.id))) { used.add(a); walk(owned(a.unit, a.library), a.library); more = true; }
   }
   return { ...built, aliases: built.aliases.filter((a) => used.has(a)) };
 }
