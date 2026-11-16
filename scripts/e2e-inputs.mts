@@ -20,6 +20,7 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'scripts/e2e-work.mts', why: 'the script of the checkout makes the work directory of the run with it and runs the commands of the run in it' },
   { path: 'scripts/php-minor.mts', why: 'the script of the checkout imports it, which compares the minor of var/tools/bin/php with .php-version' },
   { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
+  { path: 'scripts/e2e-refusal.mts', why: 'the script of the checkout imports it, which judges whether the compiler refused a binding of a refusal fixture (GN-14k)' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
   { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
   { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },
