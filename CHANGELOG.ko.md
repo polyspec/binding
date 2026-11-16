@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 705cabcd6376a5d8bf2becfe9f8f4ea53bc99d7944f3a33597f6f3cfb60cfc36 -->
+<!-- source-sha256: d89abd98d325a9529369bc0f5795a77d1daeb1288dbdc006091b329a3e3b49a7 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -16,6 +16,7 @@
 - generator spec은 숫자 타입 자리의 숫자가 아닌 값(text나 bool 포함)이 모든 target에서 B-2의 kind `invalid_number`라고 명시한다. 변환은 이미 그렇게 거부한다(GN-13d, B2.347).
 - Python과 PHP 시험은 case가 만든 cleanup member가 있는 instance를 시험 끝에 case와 따로 닫는다. 이전에는 instance를 버려 소멸자가 경고했다(GN-13u, B2.348).
 - Go는 orm `config`의 `audit_source`처럼 field가 함수 타입을 담는 record를 출력 변환 없이 생성한다. 이전에는 `no Go output conversion for {"function":...}`로 생성이 거부되었다(GN-6bm, B2.349).
+- orm의 `db.execute`처럼 반환이 none인 machine member는 Node와 WASM에서 코어의 결과를 묶지 않고 확인한다. 사용되지 않는 `let result`가 `-D warnings`에서 실패했다(GN-6bn, B2.350).
 
 ## 0.0.12
 

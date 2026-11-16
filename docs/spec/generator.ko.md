@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 083110768d544b4c01a0801b70562e0ed6d48161859e6ecef29f2b21c94e326b -->
+<!-- source-sha256: 1a372ba09dcb4377e7d0bee5f39f4797e4fc5c270f302dd7a2e00de68ac37c61 -->
 # 생성기
 
 [English](generator.md)
@@ -804,6 +804,10 @@
   `out_<record>`를 쓰지 않고, 그 field는 모든 함수처럼 들어오는 값으로 읽는다(GN-6z): 반환값은 Go func에서 코어로
   들어간다. 이유: 함수는 들어오기만 하므로 그런 record는 binding이 호출의 인자로 만들고 돌려주지 않는 값이며, 함수
   타입에는 출력 변환이 없어서 어느 member도 필요로 하지 않는 record의 writer가 거부되었다(G-4).
+- **GN-6bn** Node와 WASM의 machine(GN-6ab)의 끝은 출력 변환이 코어의 결과를 읽을 때만 그 결과를 묶는다: 반환이
+  none인 fallible member는 결과를 `?`로 확인만 하고 묶지 않으며, fallible이 아니고 결과를 읽지 않는 member는 그것을
+  `_result`로 이름한다. 이유: none의 변환은 값을 읽지 않으므로 묶인 결과는 사용되지 않는 변수이고, `-D warnings`가
+  그것을 거부한다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

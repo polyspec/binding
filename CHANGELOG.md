@@ -15,6 +15,7 @@
 - The generator spec states that a value that is no number at a place of a number type, a text or a bool included, is kind `invalid_number` of B-2 in every target, as the conversions already refuse it (GN-13d, B2.347).
 - The Python and PHP tests close each instance with a cleanup member that a case made at the end of the test, apart from the case; the instance was dropped and its destructor warned (GN-13u, B2.348).
 - Go generates a record whose field holds a function type, such as `audit_source` of the `config` of orm, without an output conversion; generation was refused with `no Go output conversion for {"function":...}` (GN-6bm, B2.349).
+- A machine member that returns none, such as `db.execute` of orm, checks the result of the core in Node and WASM without binding it; the unused `let result` failed `-D warnings` (GN-6bn, B2.350).
 
 ## 0.0.12
 

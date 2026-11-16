@@ -10715,3 +10715,20 @@ test('the Python and PHP tests close an instance with a cleanup member that a ca
   assert.match(php, /\$made1 = \$made0->lease\(\);\s+self::\$made\[\] = \[\$made1, "release"\];/);
   assert.match(php, /#\[\\PHPUnit\\Framework\\Attributes\\After\]\n    public function closeMade\(\): void\n/);
 });
+
+test('B2.350: a machine member that returns none binds no result of the core in Node and WASM (GN-6ab)', () => {
+  // orm db.execute, tx.execute and db.close: `let result = result.map_err(core_error)?;` was left unused, which
+  // -D warnings refuses.
+  const out = sampleWith((contract, cases) => {
+    const fn = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.resolve_driven');
+    fn.returns = 'none';
+    for (const c of cases.cases ?? []) if (c.member === 'sample.resolve_driven' && c.expect !== undefined && 'value' in c.expect) c.expect.value = null;
+  }, ['node', 'wasm']);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    const done = lib.slice(lib.indexOf('polyspec_sample::resolve_driven('));
+    const arm = done.slice(done.indexOf('binding_core::machine::Next::Done('), done.indexOf('binding_core::machine::Next::Done(') + 200);
+    assert.doesNotMatch(arm, /let result = result\.map_err/, path);
+    assert.match(arm, /Done\(result\) => \{\n\s+result\.map_err\((core_error|failure_error)\)\?;/, path);
+  }
+});

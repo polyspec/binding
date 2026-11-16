@@ -993,6 +993,10 @@ the design ids are those of the binding design.
   value goes from the Go func into the core. Why: a function only enters, so such a record is a value that the
   binding makes from the arguments of a call and never gives back, and a function type has no output conversion, so
   the writer of the record was refused (G-4) where no member needs it.
+- **GN-6bn** The end of a machine (GN-6ab) in Node and WASM binds the result of the core only when its output
+  conversion reads it: a fallible member that returns none checks the result with `?` and binds nothing, and a
+  member that is not fallible and reads no result names it `_result`. Why: the conversion of none reads no value, so a
+  bound result is an unused variable, which `-D warnings` refuses.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
