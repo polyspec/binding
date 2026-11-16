@@ -10,8 +10,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
-import { WASM_BINDGEN } from '../src/generate/packages.ts';
-import { ASSET_JOBS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
+import { generate } from '../src/generate/index.ts';
+import { NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
+import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -25,7 +26,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
   assert.equal(recipes.path, 'packages/release.mk');
-  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm']);
+  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon']);
   for (const target of recipes.targets) assert.match(recipes.text, new RegExp(`^${target}:`, 'm'), target);
   assert.match(recipes.text, /-p polyspec-sample-go\b/);
   assert.match(recipes.text, /-p polyspec-sample-php-ext\b/);
@@ -49,7 +50,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   assert.match(component.text, /--manifest-path packages\/forms\/ts\/Cargo\.toml/);
   assert.match(component.text, /\$\(CURDIR\)\/packages\/forms\/rust\/interface\.json/);
   // Every step of a release that GN-19h names is a target of a contract with every target.
-  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS].sort(), [...recipes.targets].sort());
+  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS].sort(), [...recipes.targets].sort());
 });
 
 /** A copy of the fixture repository with its recipes, a Makefile that includes them and the stand-ins of one case. */
@@ -97,14 +98,23 @@ function sandbox(t: TestContext, host: string, change: (contract: Contract) => v
   // cargo writes the library of the crate of -p into the target directory of CARGO_TARGET_DIR, under the target of --target.
   standIn(bin, 'cargo', `const crate = option('-p');
 if (args[0] === 'pkgid') { console.log('path+file:///repository#' + crate + '@0.0.3'); process.exit(0); }
+// cargo metadata names the target directory, CARGO_TARGET_DIR or the target of the workspace.
+const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(process.cwd(), 'target');
+if (args[0] === 'metadata') { console.log(JSON.stringify({ packages: [], target_directory: targetDir })); process.exit(0); }
 const lib = crate.replaceAll('-', '_');
-const name = crate.endsWith('-go') ? 'lib' + lib + '.a' : crate.endsWith('-wasm') ? lib + '.wasm' : crate.endsWith('-php-ext') ? 'libpolyspec_sample.' + (process.platform === 'darwin' ? 'dylib' : 'so') : 'lib' + lib;
-const dir = path.join(process.env.CARGO_TARGET_DIR, args.includes('--target') ? option('--target') : '', 'release');
+const cdylib = process.platform === 'darwin' ? 'dylib' : 'so';
+const name = crate.endsWith('-go') ? 'lib' + lib + '.a' : crate.endsWith('-wasm') ? lib + '.wasm' : crate.endsWith('-php-ext') ? 'libpolyspec_sample.' + cdylib : crate.endsWith('-node') ? 'lib' + lib + '.' + cdylib : 'lib' + lib;
+const dir = path.join(targetDir, args.includes('--target') ? option('--target') : '', args.includes('--release') ? 'release' : 'debug');
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, name), 'built');
 // rustc prints the native-static-libs of a static library to the diagnostics (GN-15k).
 if (args[0] === 'rustc' && args.includes('native-static-libs')) process.stderr.write('note: link against the following native artifacts\\nnote: native-static-libs: -lnative_' + (args.includes('--target') ? option('--target') : 'host').replaceAll('-', '_') + ' -lc\\n');`);
-  standIn(bin, 'binding', '');
+  // binding generate --target node writes the generated entry of the npm package, beside which the addon of a
+  // checkout lies (GN-3c).
+  standIn(bin, 'binding', `if (args[0] === 'generate' && option('--target') === 'node') {
+  fs.mkdirSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated'), { recursive: true });
+  fs.writeFileSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated/index.cjs'), 'generated');
+}`);
   standIn(bin, 'git', `console.log('1767323045');`);
   // uv build runs the PEP 517 backend of maturin 1.16, which passes --compatibility off unless MATURIN_PEP517_ARGS names
   // a compatibility, so a Linux wheel has the tag linux_<arch> (cp314-abi3-linux_x86_64 of a release run); a named
@@ -635,4 +645,36 @@ test('B2.279: release-assets-npm installs the wasm-bindgen CLI first, stops when
   const failed = box.make('release-assets-npm', `MISE=${join(box.bin, 'mise')}`);
   assert.notEqual(failed.status, 0);
   assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0, 'release-assets-npm builds after a failed install');
+});
+
+// B2.407: the generated entry loads <name>.<platform>.node beside itself when the platform package is not installed
+// (GN-3c); the recipe of the file of recipes puts it there, so no consumer writes the build, the name or the copy.
+test('B2.407: checkout-node-addon builds the addon of the checkout and puts <name>.<platform>.node beside the generated entry (GN-3c, GN-1d)', (t) => {
+  // The platform that the entry computes for each platform of T-2, from the expression of the generated entry.
+  const entry = generate({ contract: fixtureContract(), version: '0.0.3', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8')) as unknown]]), targets: ['node'] }).get('packages/ts/generated/index.cjs');
+  const expression = /^const platform = (.*);$/m.exec(String(entry))?.[1];
+  assert.ok(expression !== undefined, 'the generated entry computes no platform');
+  for (const platform of NODE_PLATFORMS) {
+    const computed = (new Function('process', `return ${expression};`) as (p: { platform: string; arch: string }) => string)({ platform: platform.os, arch: platform.cpu });
+    assert.equal(computed, platform.name, platform.triple);
+    const box = sandbox(t, platform.triple);
+    const run = box.make('checkout-node-addon', 'CARGOFLAGS=--offline');
+    assert.equal(run.status, 0, run.output);
+    const calls = box.calls();
+    const build = callIndex(calls, 'cargo', 'build');
+    assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'node')) < build);
+    assert.deepEqual(calls[build]?.args, ['build', '--offline', '--locked', '--all-features', '-p', 'polyspec-sample-node']);
+    const main = (JSON.parse(readFileSync(join(box.root, 'packages/ts/package.json'), 'utf8')) as { main: string }).main;
+    const beside = join(box.root, 'packages/ts', main, '..');
+    assert.deepEqual(readdirSync(beside).sort(), ['index.cjs', `sample.${computed}.node`]);
+    assert.equal(readFileSync(join(beside, `sample.${computed}.node`), 'utf8'), 'built');
+  }
+  // CK-94 takes the lines of the recipe: its build runs $(CARGO) with $(CARGOFLAGS) right after the subcommand (GN-1d).
+  assert.deepEqual(cargoFindings(releaseRecipes(fixtureContract()).text), []);
+  // A host that is no platform of T-2 is refused before cargo builds.
+  const other = sandbox(t, 'x86_64-apple-darwin');
+  const refused = other.make('checkout-node-addon');
+  assert.equal(refused.status, 2, refused.output);
+  assert.match(refused.output, /the host x86_64-apple-darwin is no platform of the release/);
+  assert.equal(other.calls().filter((call) => call.tool === 'cargo' && call.args[0] === 'build').length, 0);
 });

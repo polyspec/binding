@@ -619,6 +619,19 @@ export const NODE_PLATFORMS = [
   { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64', triple: 'aarch64-apple-darwin' },
 ] as const;
 
+// T-2, GN-3c: the JavaScript expression by which the generated entry and its tests compute the platform name of the
+// machine at run time; it gives the name of NODE_PLATFORMS of each platform from process.platform and process.arch,
+// which a test of the recipes checks against the table.
+export const NODE_PLATFORM_JS = "`${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`";
+
+// GN-3c: the <name> of the addon file <name>.<platform>.node, the npm name of the package without its scope, which
+// is napi.binaryName of the manifest, the file that the generated entry loads and the file that checkout-node-addon
+// writes beside it.
+export const addonName = (contract: Contract): string => {
+  const npm = (contract.packages['node'] as { package: string }).package;
+  return npm.slice(npm.indexOf('/') + 1);
+};
+
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
 

@@ -7,6 +7,7 @@ import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCh
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
@@ -14,10 +15,7 @@ import { type Files, header, jsString, rustString, closure, optionRef, usedHelpe
 
 const ROOT = 'packages/ts/generated';
 
-export const addonBase = (model: Model): string => {
-  const npm = (model.contract.packages['node'] as { package: string }).package;
-  return npm.slice(npm.indexOf('/') + 1);
-};
+export const addonBase = (model: Model): string => addonName(model.contract);
 
 // ---- Rust ----
 
@@ -2201,8 +2199,9 @@ addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name,
 'use strict';
 
 // T-2: the addon is in the npm package of the machine's platform, which the consumer names by its asset URL in
-// optionalDependencies (GN-3c); a build in a checkout puts the file beside this entry instead.
-const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+// optionalDependencies (GN-3c); a build in a checkout puts the file beside this entry instead (make
+// checkout-node-addon). The platform is the name of NODE_PLATFORMS, which the recipes give the triple of the host.
+const platform = ${NODE_PLATFORM_JS};
 function loadAddon() {
   try {
     return require(\`${(model.contract.packages['node'] as { package: string }).package}-\${platform}\`);

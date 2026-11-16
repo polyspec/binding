@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 51e3bd47e644be01988e0343bc11c0c4124df03c52b64211021af69d2324c98c -->
+<!-- source-sha256: 1c1530ccfa3c5245b842de1d87bebe14bdbc4823f6505927fa6cd71f8a0f1112 -->
 # 생성기
 
 [English](generator.md)
@@ -135,7 +135,15 @@
   addon을 얻지 못했다. npm은 `allow-remote=root`에서 root 의존의 URL만 받으므로(기본값 `allow-remote=none`은 모든 URL을 거부한다),
   pack한 manifest의 전이 의존도 URL을 적을 수 없다.
   생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
-  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack하고, tarball을 loopback의
+  `<name>.<platform>.node`를 로드한다. recipe 파일(GN-19h)의 recipe `checkout-node-addon`이 그 빌드다. 그것은 target
+  `node`의 바인딩을 생성하고, `$(CARGO) build $(CARGOFLAGS) --locked --all-features -p polyspec-<library>-node`를
+  실행하며(GN-1d), `$(CARGO) metadata`가 알려 주는 target directory의 cdylib를 생성된 진입점 옆의
+  `<name>.<platform>.node`로 복사한다. `<platform>`은 release recipe가 host의 triple에 주는 T-2의 이름이며(GN-19a),
+  generator가 가진 플랫폼 표 하나에서 나온다. 소비자는 이 줄을 하나도 쓰지 않는다. 그것은 crate의 모든 feature, 곧 GN-5의
+  test feature를 켠 debug 빌드로, 끝에서 끝까지 확인이 addon을 빌드하는 것과 같다. checkout의 빌드는 생성된 test와 그
+  checkout에 연결한 소비자가 로드하는 것이기 때문이다. release의 addon은 `release-npm-platform`만 빌드한다. 이유: 소비자마다
+  빌드, 플랫폼 이름, 복사를 손으로 썼고, php-serialization에는 그것이 없어서 그 checkout을 연결한 소비자가 addon load에
+  실패했다(T2.43). 경로를 정하는 쪽이 그 자리를 채우는 recipe도 주므로, 파일 이름의 규칙이 하나다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack하고, tarball을 loopback의
   HTTP로 내어, 위 형식의 root `package.json` 하나와 그 `.npmrc`로 설치한다.
   target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
   `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
@@ -2832,7 +2840,9 @@
   `uv build`를 통한 maturin, napi CLI, npm, `zip`, `llvm-strip`)가 하는 단계는 그 도구를 GN-19b~GN-19e의 인자로 시작하는
   recipe의 한 줄이다. binding은 그런 호출을 감싸는 명령을 주지 않는다. 그 recipe는 계약이 주는 이름 말고는 모든 레포에서
   같으므로, binding은 계약에 대해 그것을 레포의 Makefile이 include하는 make 파일로 쓴다(`binding release-recipes`,
-  GN-19h). `binding scaffold`는 recipe를 쓰지 않는다. 어느 도구도 하지 않고 바인딩의 꼴에서만 나오는 단계, 곧 Go 모듈의
+  GN-19h). `binding scaffold`는 recipe를 쓰지 않는다. 같은 파일에 checkout의 Node addon을 생성된 진입점 옆에 두는
+  recipe(`checkout-node-addon`, GN-3c)도 있다. binding이 그 경로를 정하기 때문이다. 경로를 정하는 쪽이 그 자리를 채우는
+  recipe도 준다(T2.43). 어느 도구도 하지 않고 바인딩의 꼴에서만 나오는 단계, 곧 Go 모듈의
   commit과 tag와 그 검사는 명령 `binding release-go-module`이다(GN-19f). 이유: 표준 도구의 호출을 감싸는 명령은 recipe를
   읽는 사람이 보아야 할 호출을 숨기고, 레포마다 손으로 복사한 recipe는 모든 레포에서 한꺼번에 틀렸다. 두 레포가 같은
   recipe를 복사했고 같은 결함을 가졌으며, GN-19h가 그 결함을 적는다.
@@ -2968,6 +2978,7 @@
   | `release-assets-php` | `php` | GN-19i, `EXPECTED_PHP_MINOR`에 대한 job `php` 항목의 빌드 |
   | `release-assets-npm` | `node`나 `wasm` | GN-19i, job `npm`의 빌드 |
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
+  | `checkout-node-addon` | `node` | GN-3c, checkout의 addon을 생성된 진입점 옆에 |
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의

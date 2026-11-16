@@ -8,7 +8,7 @@
 // written `$$name`, so a template literal of this file interpolates only the values of the contract.
 
 import type { Contract } from '../contract.ts';
-import { componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
+import { addonName, componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
 
 // The steps of a release in the order that GN-19h names them; a contract has those of its targets.
 // GN-19c: the manylinux policy of a Linux wheel. The PEP 517 backend of maturin passes --compatibility off unless it is
@@ -23,6 +23,10 @@ export const RELEASE_STEPS = ['release-go-static', 'release-wheel', 'release-php
 // after make release-recipes.
 export const ASSET_JOBS = ['release-assets-platform', 'release-assets-php', 'release-assets-npm'] as const;
 
+// GN-3c: the recipe that puts the Node addon of a checkout beside the generated entry, which loads it from there when
+// the platform package is not installed (B2.407).
+export const CHECKOUT_STEPS = ['checkout-node-addon'] as const;
+
 export interface Recipes {
   // The path of the file of recipes from the root of the repository, beside the packages of the contract.
   path: string;
@@ -33,12 +37,18 @@ export interface Recipes {
 
 // The platforms of a release (GN-19a): the Rust triple of the host, the napi name of its platform, the directory of the
 // Go module, the part of the name of a PHP extension archive, the musl triple whose Go library a Linux host also builds
-// (GN-19b), and the platform part of a wheel name that maturin writes (GN-19c).
+// (GN-19b), and the platform part of a wheel name that maturin writes (GN-19c). The napi name is that of the triple in
+// NODE_PLATFORMS, the one table of the platform names of T-2, which the generated entry computes too (GN-3c).
+const platformOf = (triple: string): string => {
+  const found = NODE_PLATFORMS.find((p) => p.triple === triple);
+  if (found === undefined) throw new Error(`${triple} is no platform of NODE_PLATFORMS`);
+  return found.name;
+};
 const PLATFORMS = [
-  { triple: 'x86_64-unknown-linux-gnu', platform: 'linux-x64-gnu', go: 'linux_amd64', pie: 'x86_64-linux-glibc', musl: 'x86_64-unknown-linux-musl', wheel: '*manylinux*_x86_64.whl' },
-  { triple: 'aarch64-unknown-linux-gnu', platform: 'linux-arm64-gnu', go: 'linux_arm64', pie: 'arm64-linux-glibc', musl: 'aarch64-unknown-linux-musl', wheel: '*manylinux*_aarch64.whl' },
-  { triple: 'aarch64-apple-darwin', platform: 'darwin-arm64', go: 'darwin_arm64', pie: 'arm64-darwin-bsdlibc', musl: '', wheel: '*macosx*_arm64.whl' },
-] as const;
+  { triple: 'x86_64-unknown-linux-gnu', go: 'linux_amd64', pie: 'x86_64-linux-glibc', musl: 'x86_64-unknown-linux-musl', wheel: '*manylinux*_x86_64.whl' },
+  { triple: 'aarch64-unknown-linux-gnu', go: 'linux_arm64', pie: 'arm64-linux-glibc', musl: 'aarch64-unknown-linux-musl', wheel: '*manylinux*_aarch64.whl' },
+  { triple: 'aarch64-apple-darwin', go: 'darwin_arm64', pie: 'arm64-darwin-bsdlibc', musl: '', wheel: '*macosx*_arm64.whl' },
+].map((p) => ({ ...p, platform: platformOf(p.triple) }));
 
 const SHARED = `# ---- Shared by the recipes of every contract of the repository ----------------------------------------------------
 ifndef BINDING_RELEASE_SHARED
@@ -125,7 +135,7 @@ export function releaseRecipes(contract: Contract): Recipes {
     `${comment.split('\n').map((line) => `# ${line}`).join('\n')}\n.PHONY: ${name(step)}\n${name(step)}:${prerequisites === '' ? '' : ` ${prerequisites}`}`;
   const sections: string[] = [];
   const defined: string[] = [];
-  const add = (step: (typeof RELEASE_STEPS)[number] | (typeof ASSET_JOBS)[number], text: string): void => {
+  const add = (step: (typeof RELEASE_STEPS)[number] | (typeof ASSET_JOBS)[number] | (typeof CHECKOUT_STEPS)[number], text: string): void => {
     defined.push(name(step));
     sections.push(text);
   };
@@ -408,6 +418,36 @@ PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP 
   if (has('node') || has('wasm')) {
     add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i)${has('wasm') ? ': it installs the wasm-bindgen CLI first and stops\nwhen that fails, then' : ':'} runs ${name('release-npm')}.`, '')}
 ${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(MAKE) --no-print-directory ${name('release-npm')}
+`);
+  }
+
+  if (has('node')) {
+    const step = name('checkout-node-addon');
+    const entryDir = place(contract, 'packages/ts/generated');
+    const file = `${addonName(contract)}.$$platform.node`;
+    // The script of Node.js that prints target_directory of the output of cargo metadata on its standard input; one
+    // argument in single quotes of the shell, so it holds no single quote.
+    const targetDir = 'let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")).target_directory; } catch (error) { d = undefined; } '
+      + `if (typeof d !== "string") { console.error("${step}: cargo metadata named no target_directory"); process.exit(1); } console.log(d);`;
+    add('checkout-node-addon', `${head('checkout-node-addon', `checkout-node-addon builds the Node addon of the checkout and puts it beside the generated entry as ${addonName(contract)}.<platform>.node,
+which the entry loads when the platform package is not installed (GN-3c), so a repository and a consumer linked to its
+checkout write no build, no platform name and no copy of their own. It is the build of the end-to-end check: a debug
+build with every feature of the crate, the test features of GN-5, which the generated tests call; a release builds its
+addon by release-npm-platform. The cdylib is taken from the target directory that cargo metadata names, and the
+platform is the name of T-2 that the release recipes give the triple of the host.`)}
+${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
+${require('NODE', 'the Node.js of the checkout')}
+${generate('node')}
+	@$(call binding_release_host,${step}); \\
+	test -f ${entryDir}/index.cjs || { echo "${step}: binding generate wrote no entry ${entryDir}/index.cjs" >&2; exit 1; }; \\
+	set -e; \\
+	(set -x; $(CARGO) build $(CARGOFLAGS) --locked --all-features -p ${crate('node')}); \\
+	metadata=$$($(CARGO) metadata --format-version 1 --no-deps --locked); \\
+	target=$$(printf '%s' "$$metadata" | $(NODE) -e '${targetDir}'); \\
+	set -x; \\
+	cp "$$target/debug/lib${extension}_node.$(BINDING_CDYLIB)" "${entryDir}/.${file}.part"; \\
+	mv "${entryDir}/.${file}.part" "${entryDir}/${file}"
 `);
   }
 

@@ -4,7 +4,7 @@
 import { type Model, callsCode, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction, machineFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
-import { isHost } from './packages.ts';
+import { isHost, NODE_PLATFORM_JS } from './packages.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
@@ -958,7 +958,7 @@ ${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, 
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {
-  const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+  const platform = ${NODE_PLATFORM_JS};
   try {
     return require(\`${npm}-\${platform}\`);
   } catch {
