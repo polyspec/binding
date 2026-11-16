@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 498458bb43092f8e52f90c0d2a63a7975431c91eea8d8c31345e755fc7c30c3c -->
+<!-- source-sha256: 78c4dcf60a3617a8e861c39d99b246a1ef4b7057500527916e4c7e4e39e3def6 -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
+<!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
 <!-- source-sha256: 6d1df45ce7d445bd052fccec065659cba5b44f64390113024fdc8de7268e0a98 -->
@@ -25,6 +26,7 @@
 ## 0.0.15
 
 - release는 pack한 npm manifest에 `optionalDependencies`를 쓰지 않는다. 소비자는 root `package.json`의 `dependencies`에 패키지를, `optionalDependencies`에 각 플랫폼 패키지를 release asset의 URL로 적고, 추적하는 `.npmrc`에 `allow-remote=root`를 둔다. release가 적던 버전 범위는 0.1 전에는 registry의 어떤 패키지도 가리키지 않아 npm이 건너뛰었고, 패키지를 URL로 설치한 소비자는 addon을 얻지 못했다. `make e2e`는 이제 loopback의 asset server에서 그 형식의 root manifest 하나로 설치한다(GN-3c, GN-19e, B2.405). `packages/ts`에서 `node --test --test-name-pattern=GN-3c tests/release-recipes.test.ts tests/e2e-npm.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다. CI의 job e2e가 첫 전체 실행이다.
+- `binding check`는 `args` 없는 호출이나 callback row, parameter 없는 member의 호출을 그대로 이름한다: 빈 목록을 적던 `are not the parameters  of query.for_update_no_wait` 대신 `step 1 of callback gives no args; query.for_update_no_wait takes no parameters, so its args are {}`라고 적는다(CK-22, G-5, B2.406). orm에서 `binding check`로 검증했다. int64를 텍스트로 주는 orm case의 CK-100 거절은 남는다. case 파일은 int64를 JSON integer로 적기 때문이다.
 - `keeps` 없는 parameter의 record field에 있는 callback은 모든 target에서 호출 동안만 살므로, 그것을 호출 뒤까지 갖는 코어는 더는 컴파일되지 않는다. Python, PHP, WASM, Go는 그 record를 `'static`으로 적었고, Go는 그때 끝난 호출의 handle로 보관된 callback을 실행했다(GN-6d, B2.402). `packages/ts`의 `node --test --test-name-pattern=B2.402 tests/generate.test.ts`로 확인했으며, 변경 전에는 실패했다. 빌린 record를 갖는 코어의 레포 `tests/e2e/lent`도 확인한다: `make e2e`는 각 바인딩 crate의 `cargo check`가 E0597로, Node는 E0521로 실패하기를 요구한다(GN-14k).
 - `make dist`는 `packages/ts/dist`를 build하고 그 bin `dist/cli.js`에 mode 0755를 준다. 그래서 이 checkout을 연결한 레포가 `node_modules/.bin/binding`을 실행한다. tsc는 그것을 0644로 썼고 bin이 "Permission denied"로 실패했다(GN-14j, B2.364).
 - binding의 모든 Cargo 호출은 저장소가 주는 cargo 명령을 실행한다: `binding check`, `scaffold`, `generate`, `go-link`는 `$(CARGO)` 값인 `--cargo <command>`를 요구하고, go-link는 `$(CARGOFLAGS)` 값인 `--cargo-flags`를 받는다. release recipe는 `$(CARGO)`를 각 build 뒤의 `$(CARGOFLAGS)`와 함께 실행하고 binding에 `--cargo "$(CARGO)"`를 넘기며, `binding check`는 Cargo를 다르게 실행하는 recipe 파일을 보고한다(CK-94). php-serialization과 session-store는 go-link와 recipe가 `PATH`의 `cargo`를 실행해 kit의 Rust 연결을 거치지 않는 것을, hyper는 생성기가 provider의 계약을 연결된 checkout이 아니라 lock의 tag에서 읽는 것을 찾았다(GN-1d, B2.401). `packages/ts`에서 `node --test --test-name-pattern=B2.401 tests/*.test.ts`로 확인했고, 그 시험은 변경 전에 실패했다.

@@ -1364,6 +1364,19 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c' } }), waits)), []);
     assert.match(cases(withParam(both, 'convert', outer({}, { function: { calls: [], result: 'c', awaits: true } }), waits))[0]?.message ?? '', /the function fixture work of step 0 of convert names awaits, and the fixture of its step does not/);
   });
+  test('a step or a row without args, or of a member without parameters, is refused by what is wrong (G-5, B2.406)', () => {
+    const takes = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
+    const nullary = (c: any): void => {
+      unit(c, 'session').members.push({ id: 'session.reset', name: ['reset'], kind: 'method', visibility: 'public', wait: 'none', parameters: [], returns: 'none', raises: [], core: { path: 'sample::Session::reset', receiver: '&self' } });
+    };
+    const messages = (value: unknown): string => withParam(takes, 'convert', value, nullary).map((f) => f.message).join('\n');
+    const fixture = (step: object): object => ({ function: { calls: [step], result: 'b' } });
+    assert.doesNotMatch(messages(fixture({ on: '0', call: 'session.reset', args: {} })), /step 0 of convert/);
+    assert.match(messages(fixture({ on: '0', call: 'session.reset' })), /step 0 of convert gives no args; session\.reset takes no parameters, so its args are \{\}/);
+    assert.match(messages(fixture({ on: '0', call: 'session.reset', args: { file: 'a' } })), /the args of step 0 of convert are not \{\}, and session\.reset takes no parameters/);
+    assert.match(messages(fixture({ on: '0', call: 'session.load' })), /step 0 of convert gives no args; session\.load takes the parameters file/);
+    assert.match(withParam(stores, 'stores', [{ callback: { 'store.read': [{ result: null }] } }]).map((f) => f.message).join('\n'), /row 0 of store\.read gives no args; store\.read takes the parameters key/);
+  });
   test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
     const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
     const kase = (extra: object, convert: unknown): Finding[] => {

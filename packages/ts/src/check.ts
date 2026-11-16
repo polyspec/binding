@@ -2380,8 +2380,9 @@ class Checker {
     const given = call['args'];
     const args = typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
     const names = (found.member.parameters ?? []).map((p) => convert(p.name, 'python', 'variable'));
-    if (args === undefined || Object.keys(args).length !== names.length || names.some((n) => !Object.hasOwn(args, n))) {
-      report(`the args of ${at} are not the parameters ${names.join(', ')} of ${found.member.id}`);
+    const wrong = argsMismatch(at, given, names, found.member.id);
+    if (wrong !== undefined || args === undefined) {
+      report(wrong ?? `the args of ${at} are not an object`);
       return found.member;
     }
     for (const parameter of found.member.parameters ?? []) {
@@ -2541,8 +2542,8 @@ class Checker {
       if (found === undefined) return report(`${owner} is no member of ${unit.id}`);
       if ((found.parameters ?? []).some((p) => this.nativeArgument(p.type))) return report(`${owner} takes an object of the language, which a row cannot give`);
       const names = (found.parameters ?? []).map((p) => snake(p.name));
-      const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
-      if (keys === undefined || keys.length !== names.length || names.some((n) => !keys.includes(n))) report(`the args of ${at} are not the parameters ${names.join(', ')} of ${owner}`);
+      const wrong = argsMismatch(at, given, names, owner);
+      if (wrong !== undefined) report(wrong);
     };
     for (const [owner, list] of Object.entries(rows as Record<string, unknown>)) {
       if (!Array.isArray(list)) {
@@ -2828,4 +2829,15 @@ export function libraryParts(contract: Contract): { repository: string; componen
   const component = match?.[1];
   if (component === undefined || !contract.library.endsWith(`-${component}`)) return { repository: contract.library };
   return { repository: contract.library.slice(0, -component.length - 1), component };
+}
+
+// G-5, B2.406: why the args of a call or a row are not exactly the parameters `names` of `owner`, or undefined when
+// they are. A call without args, and a member without parameters, are named as such, since args {} is the form of a
+// call of a member that takes none.
+function argsMismatch(at: string, given: unknown, names: readonly string[], owner: string): string | undefined {
+  const takes = names.length === 0 ? `${owner} takes no parameters, so its args are {}` : `${owner} takes the parameters ${names.join(', ')}`;
+  if (given === undefined) return `${at} gives no args; ${takes}`;
+  const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
+  if (keys !== undefined && keys.length === names.length && names.every((n) => keys.includes(n))) return undefined;
+  return names.length === 0 ? `the args of ${at} are not {}, and ${owner} takes no parameters` : `the args of ${at} are not the parameters ${names.join(', ')} of ${owner}`;
 }
