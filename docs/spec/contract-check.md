@@ -363,7 +363,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   of a case may be the text `"callback"`: the case expects the exception that a function fixture of its arguments
   raises by `"raise": "exception"`, and a case without such a fixture, at any depth of its steps, is refused. A case
   of a method may name `after`, a list of `{"call": "<member id>", "args": {...}, "result": <value>}` with no other
-  key: each `call` is a method of the class of the receiver, `args` are exactly its parameters, and the generated
+  key: each `call` is a method or a property of the class of the receiver (a property with `args` `{}`, which each
+  language reads as it reads a property, B2.361), `args` are exactly its parameters, and the generated
   test calls it on the receiver after the call of the case, also after a call that raised, and requires `result`.
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which

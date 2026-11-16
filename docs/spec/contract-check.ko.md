@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 0021132266a08856ede940721c4159c42cf2bb726475f71dc942dc171cf5a02e -->
+<!-- source-sha256: 414cdabd454712d2ecba7b6ea8a54e6a1e206f778247f4f8e44285bc16bfcb66 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -302,7 +302,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   unit의 `{"error": <unit>, "kind": <kind>}`다. case의 `raises`는 텍스트 `"callback"`일 수 있다. 그 case는 인자의 함수
   fixture가 `"raise": "exception"`으로 던지는 예외를 기대하며, step의 어느 깊이에도 그런 fixture가 없는 case는 거부된다.
   method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
-  다른 키는 없다. 각 `call`은 receiver의 class의 method이고 `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
+  다른 키는 없다. 각 `call`은 receiver의 class의 method나 property이고(property는 `args`가 `{}`이며 각 언어는 property를 읽듯 그것을 읽는다,
+  B2.361) `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의

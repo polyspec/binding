@@ -36,6 +36,7 @@
 - Go: the build tag of a test feature names the library, `polyspec_<library>_<feature>` such as `polyspec_template_fault_test`; the tag `polyspec_fault_test` of one module turned on the tagged files of every polyspec module that it imports, which did not link with their release libraries (GN-13ba, B2.369). A repository that runs its Go tests renames its tags.
 - The callback and function fixtures of the PHP and Python tests compare the arguments of a call with a row by the comparison of the results, `same` and `_same`; PHP `===` held for one instance alone, so the host functions of template that take an `Environment` raised `UnexpectedCall` (GN-13bb, B2.370).
 - A case gives a float that JSON writes as an integer by `{"float": "<decimal>"}`, at any number place, and a case with `targets` is a test of those targets alone, with a case of the same arguments for every other target (CK-97); Node and WASM refuse a negative zero at an integer place as `invalid_number`, as PHP and Python refuse `-0.0`, where they took it as 0 (GN-12a, GN-13bc, B2.360).
+- A call of `after` may read a property of the receiver, with `args` `{}`, which every target already read as it reads a property; the contract check says so, and a test keeps it (CK-22, B2.361).
 
 ## 0.0.13
 

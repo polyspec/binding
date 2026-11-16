@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { generateOnStack } from '../src/generate/stack.ts';
+import { checkContract } from '../src/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
@@ -11272,4 +11273,20 @@ test('B2.360: Node and WASM refuse a negative zero at an integer place, as PHP a
     const body = lib.slice(lib.indexOf('fn safe_integer('), lib.indexOf('fn uint_in('));
     assert.match(body, /double == 0\.0 && double\.is_sign_negative\(\)/, path);
   }
+});
+
+test('B2.361: a call of after reads a property of the receiver, as each language reads a property (GN-13f, CK-22)', () => {
+  // session-store memory_store: after reads renewals after the calls of the case.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  cases.counter_add[0].after = [{ call: 'counter.add', args: { amount: 1 }, result: 6 }, { call: 'counter.total', args: {}, result: 6 }];
+  assert.deepEqual(checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => /after/.test(f.message)).map((f) => f.message), []);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const near = (body: string, id: RegExp): string => { const at = body.search(id); assert.ok(at >= 0, String(id)); return body.slice(at, at + 2500); };
+  assert.match(near(text(out, 'packages/python/generated/tests/test_generated.py'), /an_amount_is_added/), /\.total\b(?!\()/);
+  assert.match(near(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /AnAmountIsAdded/), /->total\(\)/);
+  assert.match(near(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /an_amount_is_added/), /\.total\b(?!\()/);
+  assert.match(near(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /an_amount_is_added/), /\.total\b(?!\()/);
+  assert.match(near(text(out, 'packages/go/zz_generated_test.go'), /AnAmountIsAdded/), /\.Total\(\)/);
 });
