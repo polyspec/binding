@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- The file of recipes that `binding release-recipes` writes holds `checkout-node-addon` for a contract with the target `node` (GN-3c, GN-19h): it generates the Node binding, runs `$(CARGO) build $(CARGOFLAGS) --locked --all-features -p polyspec-<library>-node`, a debug build with the test features as the end-to-end check builds the addon, and copies the cdylib from the target directory that `$(CARGO) metadata` names to `<name>.<platform>.node` beside the generated entry, which the entry loads when the platform package is not installed. A repository and a consumer linked to its checkout write no build, platform name or copy of their own; php-serialization lacked them and a consumer that linked its checkout failed to load the addon (T2.43). The platform names come from the one table `NODE_PLATFORMS`, and the entry and its tests share one expression for the platform of the machine (B2.407). Verified by `node --test --test-name-pattern=B2.407 tests/release-recipes.test.ts` in `packages/ts`, which failed before the change with `No rule to make target 'checkout-node-addon'`, and on a `git archive` copy of `tests/e2e/sample` by `make checkout-node-addon` with real cargo and the 226 generated Node tests against the addon that it put there.
+
 ## 0.0.15
 
 - A generated crate of PHP, Python, Node and WASM holds every helper that it calls: the helpers are chosen from the text of the whole crate (GN-4d), where the PHP crate of a contract without a text parameter, such as tests/e2e/plot and tests/e2e/kept, failed cargo clippy with `cannot find function \`text_in\`` and `type_error` in the constructor of its library classes; verified by `make e2e` of plot, kept, sample, shapes, classes, variants, functions, consumer and lent.

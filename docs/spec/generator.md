@@ -170,7 +170,17 @@ the design ids are those of the binding design.
   got no addon. npm takes a URL only for a root dependency under `allow-remote=root` (its default `allow-remote=none`
   refuses every URL), so a transitive dependency of the packed manifest could not name the URL either. The generated
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
-  entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
+  entry, which a build in a checkout puts there. The recipe `checkout-node-addon` of the file of recipes (GN-19h) is
+  that build: it generates the binding of the target `node`, runs `$(CARGO) build $(CARGOFLAGS) --locked
+  --all-features -p polyspec-<library>-node` (GN-1d), and copies the cdylib from the target directory that `$(CARGO)
+  metadata` names to `<name>.<platform>.node` beside the generated entry, where `<platform>` is the name of T-2 that the
+  release recipes give the triple of the host (GN-19a), from the one table of the platforms that the generator holds; a
+  consumer writes none of these lines. It is a debug build with every feature of the crate, which are the test
+  features of GN-5, as the end-to-end check builds the addon, because the build of a checkout is the one that the
+  generated tests and a consumer linked to the checkout load; the addon of a release is built by
+  `release-npm-platform` alone. Why: each consumer wrote the build, the platform name and the copy by hand,
+  php-serialization lacked them, and a consumer that linked its checkout failed to load the addon (T2.43); the side
+  that states the path gives the recipe that fills it, so the name of the file has one rule. The end-to-end check packs the platform package of its machine as a
   release does, serves the tarballs over HTTP on the loopback, and installs them through one root `package.json` of
   the form above with that `.npmrc`. The `package.json` that `scaffold` writes for a library with the target
   `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
@@ -3496,7 +3506,9 @@ the design ids are those of the binding design.
   `llvm-strip`) is a line of a recipe that starts that tool with the arguments of GN-19b to GN-19e; binding gives no
   command that wraps such a call. Those recipes are the same in every repository but for the names that its contract
   gives, so binding writes them for the contract as a file of make that the Makefile of the repository includes
-  (`binding release-recipes`, GN-19h); `binding scaffold` writes no recipe. A step that no tool performs and that
+  (`binding release-recipes`, GN-19h); `binding scaffold` writes no recipe. The same file holds the recipe that puts
+  the Node addon of a checkout beside the generated entry (`checkout-node-addon`, GN-3c), because binding states that
+  path: the side that states a path gives the recipe that fills it (T2.43). A step that no tool performs and that
   follows from the form of a binding alone, the commit and the tag of a Go module with their checks, is the command
   `binding release-go-module` (GN-19f). Why: a command that wraps the call of a standard tool would hide the call that
   a reader of a recipe needs to see, and recipes that every repository copies by hand were wrong in all of them at
@@ -3648,6 +3660,7 @@ the design ids are those of the binding design.
   | `release-assets-php` | `php` | GN-19i, the build of an entry of the job `php` for `EXPECTED_PHP_MINOR` |
   | `release-assets-npm` | `node` or `wasm` | GN-19i, the build of the job `npm` |
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
+  | `checkout-node-addon` | `node` | GN-3c, the addon of the checkout beside the generated entry |
 
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
