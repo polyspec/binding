@@ -2019,3 +2019,27 @@ test('B2.376: CK-22 takes a case of any member with the same conversion and form
   // A call with wait rejects by another path, which no case of unsupported takes.
   assert.deepEqual(missing('blocking_io'), ['no case of counter.add raises the kind unsupported (K-1, B-4)']);
 });
+
+test('B2.376: CK-22 takes a case of a kind on the path of its library, its own or the library that owns it (GN-7c)', () => {
+  // A kind of another library leaves by the conversion of its owner, so a case of the same kind of this library does
+  // not show it, and the other way round; a row of another library takes its category from that library's row.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const own = 'polyspec_consumer::Error::Missing';
+  const other = 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Missing';
+  const reported = (fetch: string, copy: string): string[] => {
+    const contract = read('consumer/packages/rust/interface.json');
+    contract.errors.kinds.push({ variant: own, category: 'value' }, { variant: other, library: 'sample' });
+    const member = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+    member('consumer.fetch').raises.push(fetch);
+    member('consumer.copy').raises = [copy];
+    const cases = read('consumer/contracts/cases.json');
+    cases.fetch.push({ ...cases.fetch[0], id: 'a_missing_value', raises: { kind: 'missing', status: null, category: 'value', message: 'no value' } });
+    const dependencies = new Map([['sample', read('sample/packages/rust/interface.json')]]);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]), dependencies }).map((f) => f.message).filter((m) => /consumer\.copy/.test(m));
+  };
+  const finding = ['no case of consumer.copy raises the kind missing (K-1, B-4)'];
+  assert.deepEqual(reported(own, own), []);
+  assert.deepEqual(reported(other, other), []);
+  assert.deepEqual(reported(own, other), finding);
+  assert.deepEqual(reported(other, own), finding);
+});

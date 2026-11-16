@@ -1551,6 +1551,9 @@ class Checker {
     // of a call without wait, a rejection of one with wait). A case of any member that takes the same path shows the
     // kind for all of them.
     const pathOf = (member: Member, row: { library?: string }, kind: string): string => `${member.wait === undefined || member.wait === 'none' ? 'sync' : 'async'} ${row.library ?? ''} ${kind}`;
+    // GN-7c: a row of a kind of a library takes its category and its kinds from the row of that library.
+    const ownerRow = (row: (typeof this.contract.errors.kinds)[number]): (typeof this.contract.errors.kinds)[number] | undefined =>
+      row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
     const shown = new Set<string>();
     const kindsOfMember = (member: Member): Set<string> | undefined => {
       // GN-13o: a kind that a step or a call of after expects is a case of the member of that call.
@@ -1563,7 +1566,8 @@ class Checker {
       if (kinds === undefined) continue;
       for (const variant of member.raises ?? []) {
         const row = rows.get(variant);
-        if (row !== undefined) for (const kind of kindsOf(row)) if (kinds.has(kind)) shown.add(pathOf(member, row, kind));
+        const owner = row === undefined ? undefined : ownerRow(row);
+        if (row !== undefined && owner !== undefined) for (const kind of kindsOf(owner)) if (kinds.has(kind)) shown.add(pathOf(member, row, kind));
       }
     }
     for (const { member, unit, path } of this.members.values()) {
@@ -1571,9 +1575,10 @@ class Checker {
       if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
       for (const [r, variant] of (member.raises ?? []).entries()) {
         const row = rows.get(variant);
+        const owner = row === undefined ? undefined : ownerRow(row);
         // X-1: a kind of the category internal has the one case of its enum, below.
-        if (row?.category === undefined || row.category === 'internal') continue;
-        for (const kind of kindsOf(row)) {
+        if (row === undefined || owner?.category === undefined || owner.category === 'internal') continue;
+        for (const kind of kindsOf(owner)) {
           if (!shown.has(pathOf(member, row, kind))) {
             this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}${row.category === 'io' ? ', by an input or by a fault injection point of faults that fills it' : ''} (K-1, B-4)`);
           }

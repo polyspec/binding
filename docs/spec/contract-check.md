@@ -319,7 +319,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   conversion of the core error of each library, which every member of that form of call shares (B-4), so one case of
   the path shows the conversion for all of them, while whether the core of each member gives the kind is what the
   tests of the core show; a call with `wait` rejects by another path than a throw, and the kind of another library
-  leaves by the conversion of its owner, so each of those is a path of its own. The `cases` row of a member may name `result`, the snake_case key of its cases
+  leaves by the conversion of its owner, so each of those is a path of its own. A row of a kind of another library
+  takes its category and its kinds from the row of that library (GN-7c); CK-22 skipped such a row, which has no
+  category of its own, so no kind of another library was asked a case. The `cases` row of a member may name `result`, the snake_case key of its cases
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
   none (CK-1). The `receiver` of a case and an argument of a class type may be an instance value of GN-13f: its member exists and
   gives the class, through its `pick`; a method has its `receiver`; `args` are the parameters of the member; each call

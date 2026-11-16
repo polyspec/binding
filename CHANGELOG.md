@@ -42,6 +42,7 @@
 - A call of `after` of a member without a result states `"result": null`, which the contract check requires, and the Node and WASM tests require no value of it, where they compared `undefined` with `null` (CK-22, B2.374).
 - A result of a value alias compared as a value takes the out row that the value meets, so UTF-8 bytes that leave as a text are expected as that text, where Python refused them (GN-13be, B2.375).
 - CK-22 takes a case that raises a kind on the path of a member, the same library of the kind and the same form of call, from any member, where it asked a case of each member (B2.376).
+- CK-22 asks a case of a kind of another library, whose row takes its category from that library; it skipped such a row (GN-7c, B2.376).
 
 ## 0.0.13
 

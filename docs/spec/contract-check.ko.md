@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: a62eafd1eb3533e830893f8884f71ace6ff8cace1eb0cf24f0700f7a6cc22b4a -->
+<!-- source-sha256: b3503d5e45d27911d793885e38330c52fa8df12fcc1e5874697357efdd35090f -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -270,7 +270,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   생성 코드는 library마다 하나인 core 오류의 변환으로 kind에 class, message, status, errno를 주고, 같은 호출 형태의 모든
   member가 그 변환을 공유한다(B-4). 그래서 그 경로의 case 하나가 그들 모두의 변환을 보이고, 각 member의 core가 그 kind를
   내는지는 core의 시험이 보인다. `wait`를 가진 호출은 throw와 다른 경로로 reject하고, 다른 library의 kind는 그 owner의
-  변환으로 나가므로, 그 각각이 자기 경로다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
+  변환으로 나가므로, 그 각각이 자기 경로다. 다른 library의 kind 행은
+  그 category와 kind를 그 library의 행에서 가져온다(GN-7c). CK-22는 자기 category가 없는 그런 행을 건너뛰어서, 다른
+  library의 어느 kind에도 case를 요구하지 않았다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
   snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다: 그 member가 있고 `pick`을 거쳐 그 class를
   주며, 메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 그 class의 메서드이거나, `"on": "receiver"`이면 receiver를 가진 값의 `receiver`의 class의 메서드이며, 그 `raises`는 주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 그 `faults`는 주어지면 그 메서드의 case의 faults이고, `faults`와 `raises`를 함께 가진 호출은 그 점들이 채우는 kind를 기대한다. 인스턴스 값이 fault를 장전하는 case는 `faults`를 가진 case처럼 case와 그 호출들의 점이 `fills`에 가진 kind만 채운다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인 `{"cancel": "fired"}`이거나 발동하지
   않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다. case는 실패 주입점(G-5)을
