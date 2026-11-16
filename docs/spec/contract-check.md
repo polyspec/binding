@@ -176,7 +176,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-63** The WASM core (GN-4b): `core.features.wasm` names none of the features of platform I/O, `fs`,
   `blocking-io`, `process` and `net`.
 - **CK-64** An integer of a case at a place of the type `int` or `uint` (an argument, an item of a list, tuple,
-  map or optional of it, and the result) is a safe integer, the range of T-1 that every target gives (a Node
+  map or optional of it, a field of a record or of a case of a variant, and the result) is a safe integer, the range of T-1 that every target gives (a Node
   `number`). A larger integer is an `int64` in one target and no `int` in another, so the case would expect two
   results; a member that takes or gives the range of i64 declares `int64` (GN-12a). An argument of a case that raises
   the kind `invalid_number` is an integer of the range of i64 outside the safe integers too: every target refuses it
@@ -455,6 +455,26 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   json core, `stringify` is a function and a macro), which says nothing of its signatures. Until B2.398 is done the
   check does not run CK-99, and the build of every consumer (`make consumers-check`, B2.391) catches these mismatches
   when it compiles.
+- **CK-100** A case value is a value of the type of its place (T-1), at every place where a case gives one: an
+  argument, the result, an item of a list (also the value of its repeat form `{"kind": "list", "value": ...}`), a part
+  of a tuple, an entry of a map or keyed map, the value of an optional, and a field of a record or of the case of a
+  variant that its tag names. At a place of `uint` it is an integer that is not negative, of `int` an integer, of
+  `int64` an integer of the range of i64, of `float` a number, of `bool` a bool, and of `text` or `latin1` a text;
+  `binding check` reports any other value with the case, the place, the value and the type. A value in an object form
+  (`{"float": ...}`, `{"ill_formed": ...}`, a service value, a composed text) is judged by the rule of its form
+  (GN-13bc, GN-13j, GN-13l). A value anywhere inside an argument (the argument itself, the value of its optional, an
+  item, an entry or a field inside it) may be outside its type in a case that raises the kind `invalid_number` or
+  `invalid_argument_type`: the binding refuses such a value with that kind before the core runs, at every place of an
+  input, the dynamic targets give it as its JSON kind and Go writes no test of the case (GN-13w), so the case is the
+  one test of that refusal. A result, and an argument of a case that raises another kind, stay reported, because a
+  target writes them as literals of their type. Why: the crud-ui generator
+  case `list-options-ignored` gave the field `total` of `ListOptions`, an `optional` of `uint`, the value -1;
+  `binding check` passed it, and the Go test held `ptr(uint64(-1))`, which `go vet` refused as a constant that
+  overflows `uint64`. A value outside its type at a place that a target writes is a defect of the case, and the
+  check names it before a target fails to build. The allowance holds inside an argument as at the argument itself
+  because session-store refuses `-1`, `1.5`, `"60"` and `true` in the uint fields `lifetime` and `lock_expire` of the
+  record argument `options` of `redis_sessions.new` with `invalid_number`; a check that took the top level alone
+  would refuse the one test of that refusal of the binding.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

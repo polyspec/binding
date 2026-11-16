@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7dfd277cb2c68938a96385ba6f80be6ad5bc9f4e2fa8c106407ae2b27a573cc9 -->
+<!-- source-sha256: e911c44e1d383769a4614935792849e6c0820992389fab4c639e7c8c2d7215df -->
 # 생성기
 
 [English](generator.md)
@@ -2464,12 +2464,16 @@
   시작하지 않는다. `service`가 있는 case와 같다. 이유: 연결을 받아들인 뒤 닫는 서버는 데이터베이스 client의 끊긴
   연결처럼 코어가 handshake 중에 만나는 네트워크의 상태다. 닫힌 port는 이 상태를 주지 않는다. 시스템이 닫힌 port로의
   연결을 handshake 전에 거부하기 때문이다. 그 자리의 fault injection point는 어떤 socket도 지나지 않는 경로를 실행한다.
-- **GN-13w** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자나 그 receiver를 만드는 factory의 인자가 그 parameter의 선언된 타입의 값이 아닌 case의
-  시험을 쓰지 않는다: text에 수나 bool, 수에 text나 bool, `uint`에 음수, 정수에 소수, bool에 수나 text. 시험 파일은
+- **GN-13w** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자나 그 receiver를 만드는 factory의 인자가 그 parameter의 선언된 타입의 값이 아니거나
+  그 안 어디에든(list나 그 반복 형태의 항목, tuple의 부분, map의 entry, record나 variant의 case의 field) 그런 값을 담은
+  case의 시험을 쓰지 않는다. Go는 인자 전체를 그 타입의 literal 하나로 쓰기 때문이다: text에 수나 bool, 수에 text나 bool, `uint`에 음수, 정수에 소수, bool에 수나 text. 시험 파일은
   그런 case마다 case, member, 이유를 적은 주석을 남긴다. 동적 target(Python, Node, WASM, PHP)은 그 case를 유지하고
   값을 그 JSON 종류로 주어 binding이 거부하게 한다(GN-13d). 이유: 그런 case는 어떤 값이든 받는 binding의 거부를
   말하는데, Go 컴파일러는 binding이 돌기 전에 호출에서 그 값을 거부하므로 Go에는 그 case의 호출이 없다. 동적 target에서는
-  그 case가 그 거부의 유일한 시험이므로 옳은 case이고, 그래서 `binding check`는 그것을 보고하지 않는다.
+  그 case가 그 거부의 유일한 시험이므로 옳은 case이고, 그래서 `binding check`는 그것을 보고하지 않는다. 인자 안에 든
+  값도 같이 판단한다(B2.397). 모든 동적 target은 항목, entry, field를 인자와 같은 변환으로 바꾸어 코어가 돌기 전에 같은
+  kind로 거부하고, session-store는 `redis_sessions.new`의 record `options`의 uint field에 대해 그 거부를 말하기 때문이다.
+  Go는 list 항목에 대해 `[]uint64{2, -1}`을 썼고 그 컴파일러는 그것을 거부한다.
 - **GN-13x** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
   쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
   타입이 없는 double은 컴파일되지 않는다.

@@ -11024,6 +11024,24 @@ test('a raising case whose argument is no value of its Go type is no Go test and
   for (const id of ['a_negative_amount_fails', 'a_fraction_fails', 'a_text_amount_fails', 'a_bool_amount_fails']) assert.match(dynamic, new RegExp(id.replaceAll('_', '_?'), 'i'), id);
 });
 
+test('B2.397: a raising case whose value nested in an argument is no value of its Go type is no Go test (GN-13w, session-store)', () => {
+  // -1 in the optional uint field width of the record argument options, whose fields Go takes as arguments of their
+  // own, and -1 as an item of the list widths, which Go wrote as []uint64{2, -1} and refuses.
+  const contract = sampleRead('shapes/packages/rust/interface.json');
+  const cases = sampleRead('shapes/contracts/cases.json');
+  const refused = { kind: 'invalid_number', status: null, category: 'value', message: null };
+  cases.pad.push({ id: 'a_negative_width_fails', text: 'ab', options: { width: -1 }, raises: refused });
+  cases.width_sum.push({ id: 'a_negative_item_fails', widths: [2, -1], raises: refused });
+  const out = sampleOut(contract, cases, ['python', 'go']);
+  const test = text(out, 'packages/go/zz_generated_test.go');
+  assert.doesNotMatch(test, /uint64\(-1\)|uint64\{2, -1\}/);
+  for (const id of ['ANegativeWidthFails', 'ANegativeItemFails']) assert.doesNotMatch(test, new RegExp(`func TestB4\\w*${id}\\(`));
+  assert.match(test, /\/\/ GN-13w: the case a_negative_width_fails of shapes\.pad is no Go test: -1 is no value of uint64/);
+  assert.match(test, /\/\/ GN-13w: the case a_negative_item_fails of shapes\.width_sum is no Go test: -1 is no value of uint64/);
+  const dynamic = [...out].filter(([path]) => !path.startsWith('packages/go/') && /test/i.test(path)).map(([, content]) => String(content)).join('\n');
+  for (const id of ['a_?negative_?width_?fails', 'a_?negative_?item_?fails']) assert.match(dynamic, new RegExp(id, 'i'));
+});
+
 test('a Python name that is a keyword takes a trailing underscore (GN-6bk, B2.344)', () => {
   // else: list[Node] | None in a dataclass is a SyntaxError.
   const contract = sampleRead('sample/packages/rust/interface.json');

@@ -3008,13 +3008,18 @@ the design ids are those of the binding design.
   port does not give, because the system refuses a connection to a closed port before any handshake; a fault
   injection point in its place would run a path that no socket takes.
 - **GN-13w** A target whose language is statically typed (Go) writes no test for a case that raises and whose
-  argument, or an argument of the factory of its receiver, is no value of the declared type of its parameter: a number or a bool for a text, a text or a bool for a
+  argument, or an argument of the factory of its receiver, is no value of the declared type of its parameter, or holds
+  such a value anywhere inside it (an item of a list or of its repeat form, a part of a tuple, an entry of a map, a field
+  of a record or of a case of a variant), since Go writes the whole argument as one literal of its type: a number or a bool for a text, a text or a bool for a
   number, a negative number for a `uint`, a fraction for an integer, a number or a text for a bool. The test file
   names each such case with a comment that gives the case, the member and the reason; the dynamic targets (Python,
   Node, WASM, PHP) keep the case and give the value as its JSON kind for the binding to refuse (GN-13d). Why: such a
   case states the refusal of a binding that takes any value, and the Go compiler refuses the value at the call before
   the binding runs, so the case has no Go call; `binding check` does not report it, because the case is right for
-  the dynamic targets, where it is the only test of that refusal.
+  the dynamic targets, where it is the only test of that refusal. A value nested in the argument is judged the same way
+  (B2.397), because every dynamic target converts an item, an entry and a field with the same conversion as an argument
+  and refuses it with the same kind before the core runs, and session-store states that refusal for the uint fields of
+  the record `options` of `redis_sessions.new`; Go wrote `[]uint64{2, -1}` for a list item, which its compiler refuses.
 - **GN-13x** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
   `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
   when no case of it names a fixture, and a double without its type does not compile.
