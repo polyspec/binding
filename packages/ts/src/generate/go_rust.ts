@@ -1066,7 +1066,7 @@ fn passed_out(output: &mut Vec<u8>, value: binding_core::Passthrough) {
 
 // The core call of a member, the receiver first.
 function coreCall(model: Model, fn: Fn): string {
-  const args = coreCallArgs(model, fn, (p) => rustLocal(p.name), 'this');
+  const args = coreCallArgs(model, fn, (p) => rustLocal(p.name), 'this', (p) => rustLocal(p.name));
   return `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? args : ['this', ...args.slice(1)]).join(', ')})`;
 }
 

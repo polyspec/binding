@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Contract, Member, Service, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, buildModel, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -592,7 +592,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       ctx,
       unit,
       (unit.fields ?? []).map((f) => {
-        const key = langName('python', f.name, 'variable');
+        const key = caseName(f.name);
         // GN-6a: a field that may be left out is null when the case value leaves it out.
         if (!(key in fields) && caseLeftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
         if (!(key in fields)) throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
@@ -604,14 +604,14 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   // states it, and its fields.
   const variant = variantOf(model, type);
   if (variant !== undefined) {
-    const tag = langName('python', variant.unit.tag ?? [], 'variable');
+    const tag = caseName(variant.unit.tag ?? []);
     const fields = typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
     const kase = variant.cases.find((c) => c.value === fields?.[tag]);
     if (fields === undefined || kase === undefined) throw new Error(`a case value of the variant ${variant.unit.id} is an object whose ${tag} is the value of one of its cases, not ${shown(value)}`);
-    const extra = Object.keys(fields).find((key) => key !== tag && !(kase.unit.fields ?? []).some((f) => langName('python', f.name, 'variable') === key));
+    const extra = Object.keys(fields).find((key) => key !== tag && !(kase.unit.fields ?? []).some((f) => caseName(f.name) === key));
     if (extra !== undefined) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${extra}`);
     return caseNew(ctx, variant, kase, (kase.unit.fields ?? []).map((f) => {
-      const key = langName('python', f.name, 'variable');
+      const key = caseName(f.name);
       // GN-6v: a field that may be left out is null when the case value leaves it out.
       if (!(key in fields) && caseLeftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
       if (!(key in fields)) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${key}`);
@@ -1593,7 +1593,7 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
     if (typeof at === 'object' && 'optional' in at) return `${what} reads an optional, which only the step "?" steps into`;
     if (typeof step === 'string') {
       const unit = unitOf(model, at);
-      const field = unit?.kind === 'record' ? (unit.fields ?? []).find((f) => langName('python', f.name, 'variable') === step) : undefined;
+      const field = unit?.kind === 'record' ? (unit.fields ?? []).find((f) => caseName(f.name) === step) : undefined;
       if (field === undefined) return `${what} names the field ${step}, which ${shown(at)} has not`;
       at = field.type;
       continue;
@@ -1824,8 +1824,8 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
 export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
   const args = new Map<Arg, unknown>();
   for (const arg of fn.args) {
-    const snake = langName('python', arg.name, 'variable');
-    const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
+    const snake = caseName(arg.name);
+    const holderKey = arg.field && fn.record !== undefined ? caseName(fn.record.param.name) : undefined;
     // U-2 {empty: "object"}: a case without the key of a record that may be left out leaves out each of its fields.
     const holder = holderKey === undefined ? record : !(holderKey in record) && fn.record?.param.default !== undefined ? {} : record[holderKey];
     if (typeof holder !== 'object' || holder === null) return undefined;
@@ -1842,7 +1842,7 @@ export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknow
 // GN-13f: the keys of a case that hold the arguments of a member: the key of each parameter, and the key of the record
 // whose fields are its parameters.
 function argumentKeys(fn: Fn): Set<string> {
-  return new Set(fn.args.map((arg) => langName('python', arg.field && fn.record !== undefined ? fn.record.param.name : arg.name, 'variable')));
+  return new Set(fn.args.map((arg) => caseName(arg.field && fn.record !== undefined ? fn.record.param.name : arg.name)));
 }
 
 // T-5, GN-13f: the factory of a class unit whose parameters a case gives: a static member or the constructor that
@@ -2015,7 +2015,7 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     if (raises === undefined || raises === 'callback') continue;
     const args = argsOf(fn, record);
     if (args === undefined) {
-      const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
+      const missing = fn.args.map((a) => caseName(a.name)).filter((name) => !(name in record));
       throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)`);
     }
     const receiver = receiverOf(model, fn, record);
@@ -2092,7 +2092,7 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
     const key = keys?.get(kase) ?? 'result';
     const args = argsOf(fn, record);
     if (args === undefined) {
-      const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
+      const missing = fn.args.map((a) => caseName(a.name)).filter((name) => !(name in record));
       out.push({ id, args: new Map(), refused: `the case ${id} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)` });
       continue;
     }
@@ -2187,7 +2187,7 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     // GN-6w: an instance of a class that implements the interface stands for a fixture, as a value of the case.
     if (isInstanceValue(value)) continue;
     if (typeof value !== 'object' || value === null || typeof value.callback !== 'object' || value.callback === null) {
-      throw new Unsupported(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
+      throw new Unsupported(`${where} gives no {"callback": ...} for ${caseName(arg.name)} (G-5)`);
     }
     out.push({ arg, ...fixtureOf(model, unit, value, where) });
   }
@@ -2221,7 +2221,7 @@ export function fixtureOf(model: Model, unit: Unit, given: unknown, where: strin
   };
   const ordered = (member: number, args: Record<string, unknown> | undefined): unknown[] =>
     (members[member]?.parameters ?? []).map((p) => {
-      const key = langName('python', p.name, 'variable');
+      const key = caseName(p.name);
       if (args === undefined || !(key in args)) throw new Unsupported(`${where} gives no ${key} in the args of ${members[member]?.id ?? ''} (G-5)`);
       return args[key];
     });
@@ -2297,7 +2297,7 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
     const type = arg.type;
     // GN-6ae: the function of a member with machine is a function fixture, which the test writes with its own hook.
     if (typeof type !== 'object' || !('function' in type) || machineFunction(type)) return [];
-    const what = `the case ${id} of ${fn.member.id} for ${langName('python', arg.name, 'variable')}`;
+    const what = `the case ${id} of ${fn.member.id} for ${caseName(arg.name)}`;
     return [{ arg, members: [text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
   });
 }

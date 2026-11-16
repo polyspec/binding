@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Go encodes an optional tuple through the pointer in parentheses, `(*options.Range)[0]`; `*options.Range[0]` indexed the pointer, which Go refuses (GN-6bi, B2.340).
+- The Go entry point passes the local `input_` of a record parameter named `input` to the core; it passed `&input`, the bytes of the call (GN-6bj, B2.341).
+- The Go tests declare the type `fixture` and its import with every double of a callback unit; a contract without a case that names a fixture did not compile (GN-13r, B2.342).
+- Go writes no test for a raising case whose argument is no value of the Go type of its parameter, such as -1 or `"60"` for a uint, and the test file names the case and the reason in a comment; the test did not compile or called with another value. The dynamic targets keep the case (GN-13q, B2.343).
+- A Python name that is a keyword, such as the field `else`, takes a trailing underscore, `else_`; the dataclass was a SyntaxError (GN-6bk, B2.344).
+
 ## 0.0.12
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.

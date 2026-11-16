@@ -972,6 +972,17 @@ the design ids are those of the binding design.
   keeps it, as `keeps` declares (GN-6aa), without `keeps` in the contract. Why: the instance owns its core value
   (GN-6au), so a callback that the constructor gives the core outlives the call, and in Node a callback that borrows
   the env of the call escapes the body of the constructor (E0521).
+- **GN-6bi** Go encodes a field or a value of the type `optional` of a `tuple` through the pointer in parentheses,
+  `(*options.Range)[0]`. Why: an index binds before the star, so `*options.Range[0]` indexes the pointer, which Go
+  refuses (cannot indirect).
+- **GN-6bj** The Go entry point gives the core the local of a record parameter by the same name that its decoder
+  binds, `input_` for a parameter named `input` (GN-15). Why: the entry point binds `input` to the bytes of the call,
+  so a core call that names the parameter by its plain name passes those bytes.
+- **GN-6bk** A Python name of a parameter, a field or a callable that is a keyword of Python, such as `else`, takes a
+  trailing underscore, `else_`, in every place that names it: the dataclass, the stub, the native module and the
+  tests. Why: a keyword is no identifier, so `else: list[Node] | None` is a SyntaxError, and PEP 8 names the trailing
+  underscore for this case, which no name of the contract has. A key of a case file stays the snake_case name of
+  the contract, `else`, because a case file belongs to no language.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -2662,6 +2673,17 @@ the design ids are those of the binding design.
   system can be reached through a symbolic link (`/var` and `/private/var` of macOS), so a core that resolves the path
   gives a text that differs from the path the test made, and an expected text with the unresolved path would fail a
   correct result; one resolved form makes the expected text exact without a rule that rewrites results.
+- **GN-13q** A target whose language is statically typed (Go) writes no test for a case that raises and whose
+  argument is no value of the declared type of its parameter: a number or a bool for a text, a text or a bool for a
+  number, a negative number for a `uint`, a fraction for an integer, a number or a text for a bool. The test file
+  names each such case with a comment that gives the case, the member and the reason; the dynamic targets (Python,
+  Node, WASM, PHP) keep the case and give the value as its JSON kind for the binding to refuse (GN-13d). Why: such a
+  case states the refusal of a binding that takes any value, and the Go compiler refuses the value at the call before
+  the binding runs, so the case has no Go call; `binding check` does not report it, because the case is right for
+  the dynamic targets, where it is the only test of that refusal.
+- **GN-13r** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
+  `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
+  when no case of it names a fixture, and a double without its type does not compile.
 
 ## End-to-end check
 

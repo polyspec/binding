@@ -10588,3 +10588,73 @@ test('the cases of an alias row with only are tests of the targets that it lists
   assert.equal(named('python'), true);
   assert.equal(named('php'), false);
 });
+
+const sampleRead = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+const sampleOut = (contract: any, cases: any, targets: string[]): Map<string, string | Buffer> =>
+  generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: targets as Inputs['targets'] & string[] });
+
+test('Go encodes an optional tuple field through the parenthesized pointer (GN-6bi, B2.340)', () => {
+  // *options.Range[0] indexes the pointer before the star, which Go refuses: cannot indirect.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'search').fields.push({ name: ['range'], type: { optional: { tuple: ['uint', 'uint'] } } });
+  const cases = sampleRead('sample/contracts/cases.json');
+  for (const kase of cases.seek) kase.search.range = [1, 2];
+  const out = sampleOut(contract, cases, ['go']);
+  const go = [...out].filter(([path]) => path.endsWith('.go') && !path.endsWith('_test.go')).map(([, content]) => String(content)).join('\n');
+  assert.match(go, /enc\.Uint\(\(\*\w+\.Range\)\[0\]\)/);
+  assert.doesNotMatch(go, /\*\w+\.Range\[/);
+});
+
+test('a Go entry point passes the renamed local of a record parameter named input to the core (GN-6bj, B2.341)', () => {
+  // The local of the record takes input_, because the entry point binds input to its bytes; the core call named &input.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'index.supplied') member.parameters[0].name = ['input'];
+  const cases = sampleRead('sample/contracts/cases.json');
+  const renamed = JSON.parse(JSON.stringify(cases).replaceAll('"supply":', '"input":'));
+  for (const key of Object.keys(cases)) cases[key] = renamed[key];
+  const lib = text(sampleOut(contract, cases, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  const entry = lib.slice(lib.indexOf('contract member index.supplied'), lib.indexOf('contract member index.get'));
+  assert.match(entry, /let input_: /);
+  assert.doesNotMatch(entry, /supplied\(&?input\)/);
+  assert.match(entry, /supplied\(&?input_\)/);
+});
+
+test('the Go tests of a callback unit without a fixture case declare the type fixture with its double (GN-13r, B2.342)', () => {
+  // fixtureLookup embeds *fixture, which was declared only when a case body named a fixture.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  const cases = sampleRead('sample/contracts/cases.json');
+  const fixtured = new Set(Object.entries(cases).filter(([, kases]) => JSON.stringify(kases).includes('"callback"')).map(([group]) => group));
+  contract.cases = contract.cases.filter((row: any) => !fixtured.has(row.group));
+  for (const group of fixtured) delete cases[group];
+  const test = text(sampleOut(contract, cases, ['go']), 'packages/go/zz_generated_test.go');
+  assert.match(test, /type fixtureLookup struct\{ \*fixture \}/);
+  assert.match(test, /\ntype fixture struct/);
+  assert.match(test, /\n\t"fmt"\n/);
+});
+
+test('a raising case whose argument is no value of its Go type is no Go test and stays on the dynamic targets (GN-13q, B2.343)', () => {
+  // -1, 1.5 and "1" for a uint: Go does not compile the call, Python and Node give the value for the binding to refuse.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  const cases = sampleRead('sample/contracts/cases.json');
+  const refused = (id: string, amount: unknown): any => ({ id, start: 2, amount, raises: { kind: 'invalid_number', status: null, category: 'value', message: null } });
+  cases.counter_add.push(refused('a_negative_amount_fails', -1), refused('a_fraction_fails', 1.5), refused('a_text_amount_fails', '1'), refused('a_bool_amount_fails', true));
+  const out = sampleOut(contract, cases, ['python', 'node', 'go']);
+  const test = text(out, 'packages/go/zz_generated_test.go');
+  for (const id of ['ANegativeAmountFails', 'AFractionFails', 'ATextAmountFails', 'ABoolAmountFails']) assert.doesNotMatch(test, new RegExp(`func TestB4\\w*${id}\\(`));
+  assert.match(test, /\/\/ GN-13q: the case a_negative_amount_fails of counter\.add is no Go test: -1 is no value of uint64/);
+  const dynamic = [...out].filter(([path]) => !path.startsWith('packages/go/') && /test/i.test(path)).map(([, content]) => String(content)).join('\n');
+  for (const id of ['a_negative_amount_fails', 'a_fraction_fails', 'a_text_amount_fails', 'a_bool_amount_fails']) assert.match(dynamic, new RegExp(id.replaceAll('_', '_?'), 'i'), id);
+});
+
+test('a Python name that is a keyword takes a trailing underscore (GN-6bk, B2.344)', () => {
+  // else: list[Node] | None in a dataclass is a SyntaxError.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'search').fields.find((f: any) => f.name[0] === 'key').name = ['else'];
+  const cases = sampleRead('sample/contracts/cases.json');
+  for (const kase of cases.seek) { kase.search.else = kase.search.key; delete kase.search.key; }
+  const out = sampleOut(contract, cases, ['python']);
+  const python = [...out].filter(([path]) => path.endsWith('.py') || path.endsWith('.pyi')).map(([, content]) => String(content)).join('\n');
+  assert.match(python, /\belse_: str\b/);
+  assert.doesNotMatch(python, /^\s*else: str/m);
+  assert.doesNotMatch(python, /\belse=/);
+});

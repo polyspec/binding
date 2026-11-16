@@ -787,6 +787,15 @@
 - **GN-6bh** 콜백을 직접 또는 그 record의 field로 가진 class 생성자의 parameter는 계약에 `keeps`가 없어도 `keeps`가
   선언한 것처럼(GN-6aa) 그 콜백을 보관한다. 이유: 인스턴스는 그 코어 값을 소유하므로(GN-6au) 생성자가 코어에 준 콜백은
   호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
+- **GN-6bi** Go는 `tuple`의 `optional` 타입인 field나 값을 괄호 안의 포인터로 인코딩한다: `(*options.Range)[0]`.
+  이유: 인덱스가 별표보다 먼저 묶이므로 `*options.Range[0]`은 포인터를 인덱싱하고, Go는 이를 거부한다(cannot indirect).
+- **GN-6bj** Go entry point는 record parameter의 local을 디코더가 묶은 이름 그대로 코어에 준다: `input`이라는
+  parameter는 `input_`이다(GN-15). 이유: entry point는 `input`을 호출의 바이트에 묶으므로, parameter를 원래 이름으로
+  부르는 코어 호출은 그 바이트를 넘긴다.
+- **GN-6bk** parameter, field, callable의 Python 이름이 `else` 같은 Python 키워드이면, 그것을 부르는 모든 곳에서
+  뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
+  `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
+  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
@@ -2165,6 +2174,15 @@
   그것을 대신하지 않는다. 이유: 시스템의 임시 디렉터리는 심볼릭 링크를 거쳐 닿을 수 있어(macOS의 `/var`와 `/private/var`)
   경로를 푸는 코어는 시험이 만든 경로와 다른 텍스트를 주고, 풀지 않은 경로의 기대 텍스트는 올바른 결과를 실패시킨다.
   풀린 형식 하나면 결과를 다시 쓰는 규칙 없이 기대 텍스트가 정확하다.
+- **GN-13q** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자가 그 parameter의 선언된 타입의 값이 아닌 case의
+  시험을 쓰지 않는다: text에 수나 bool, 수에 text나 bool, `uint`에 음수, 정수에 소수, bool에 수나 text. 시험 파일은
+  그런 case마다 case, member, 이유를 적은 주석을 남긴다. 동적 target(Python, Node, WASM, PHP)은 그 case를 유지하고
+  값을 그 JSON 종류로 주어 binding이 거부하게 한다(GN-13d). 이유: 그런 case는 어떤 값이든 받는 binding의 거부를
+  말하는데, Go 컴파일러는 binding이 돌기 전에 호출에서 그 값을 거부하므로 Go에는 그 case의 호출이 없다. 동적 target에서는
+  그 case가 그 거부의 유일한 시험이므로 옳은 case이고, 그래서 `binding check`는 그것을 보고하지 않는다.
+- **GN-13r** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
+  쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
+  타입이 없는 double은 컴파일되지 않는다.
 
 ## 끝에서 끝까지 확인
 

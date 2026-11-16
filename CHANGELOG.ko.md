@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- Go는 optional tuple을 괄호 안의 포인터로 인코딩한다(`(*options.Range)[0]`). `*options.Range[0]`은 포인터를 인덱싱했고 Go가 이를 거부했다(GN-6bi, B2.340).
+- Go entry point는 `input`이라는 record parameter의 local `input_`을 코어에 넘긴다. 이전에는 호출의 바이트인 `&input`을 넘겼다(GN-6bj, B2.341).
+- Go 시험은 callback unit의 모든 double과 함께 타입 `fixture`와 그 import를 선언한다. fixture를 부르는 case가 없는 계약은 컴파일되지 않았다(GN-13r, B2.342).
+- Go는 인자가 그 parameter의 Go 타입의 값이 아닌 raise case(uint에 -1이나 `"60"` 등)의 시험을 쓰지 않고, 시험 파일은 주석으로 case와 이유를 적는다. 이전 시험은 컴파일되지 않거나 다른 값으로 호출했다. 동적 target은 case를 유지한다(GN-13q, B2.343).
+- `else` 같은 키워드인 Python 이름은 뒤에 밑줄을 붙인다(`else_`). dataclass가 SyntaxError였다(GN-6bk, B2.344).
+
 ## 0.0.12
 
 - `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포의 case는 어떤 시험도 읽지 않는 key `words`를 가졌고 이를 지운다.
