@@ -16,6 +16,7 @@
 - The Python and PHP tests close each instance with a cleanup member that a case made at the end of the test, apart from the case; the instance was dropped and its destructor warned (GN-13u, B2.348).
 - Go generates a record whose field holds a function type, such as `audit_source` of the `config` of orm, without an output conversion; generation was refused with `no Go output conversion for {"function":...}` (GN-6bm, B2.349).
 - A machine member that returns none, such as `db.execute` of orm, checks the result of the core in Node and WASM without binding it; the unused `let result` failed `-D warnings` (GN-6bn, B2.350).
+- A PHP test gives an empty map of a value alias whose `in` rows read a `stdClass` as a map as `new \stdClass()`; the empty array `[]` was read as an empty list, and 42 tests of template failed with `data_unsupported_type` (GN-13v, B2.351).
 
 ## 0.0.12
 

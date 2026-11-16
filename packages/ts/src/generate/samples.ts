@@ -1188,6 +1188,13 @@ export const HOST_VALUES = {
   object: { python: 'object()', node: 'new (class Other {})()', php: 'new class {}' },
 } as const satisfies Record<string, Record<Lang3, string>>;
 
+// GN-13v: whether the PHP in rows of a value alias read an empty array, whose keys are sequence keys, as a list, and
+// whether they read a stdClass as a map.
+type PhpCase = { kind?: string; when?: { predicate?: string; is?: boolean } };
+const phpRow = (alias: Unit, form: string): PhpCase[] | undefined => ((alias.in ?? []) as { php?: string; cases?: PhpCase[] }[]).find((row) => row.php === form)?.cases;
+const emptyArrayIsList = (alias: Unit): boolean => (phpRow(alias, 'array') ?? []).some((c) => c.kind === 'list' && (c.when === undefined || (c.when.predicate === 'sequence_keys' && c.when.is === true)));
+const stdClassIsMap = (alias: Unit): boolean => (phpRow(alias, 'stdClass') ?? []).some((c) => c.kind === 'map' && c.when === undefined);
+
 // GN-13: what a case value makes before it is returned: the instances of its ids, in the order of their first places,
 // the statements that fill them, in the order in which their first places end, and the ids that a place named.
 interface Making {
@@ -1269,6 +1276,9 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
       const v = valueOf(model, ctx, item, where, making, true);
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
+    // GN-13v: an empty PHP array has sequence keys, so a value alias whose in rows read such an array as a list takes
+    // an empty map as the stdClass that a row reads as a map.
+    if (lang === 'php' && entries.length === 0 && making.alias !== undefined && emptyArrayIsList(making.alias) && stdClassIsMap(making.alias)) return 'new \\stdClass()';
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[lang];
   }
   // GN-6af: an object is an instance of the value class that keeps a keyed map, and a reference one of the class that

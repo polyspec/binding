@@ -1124,7 +1124,7 @@ the design ids are those of the binding design.
   `Option` of its form, the binding passes `None` when it is left out, and the core decides that no value is the empty
   object. The declarations show `...` in Python, `null` in PHP, which a value class does not take as an array, and an
   optional parameter in TypeScript. The U-2 test of GN-13d and of Go gives in its place the case value
-  `{"kind": "map", "value": []}`: an empty `dict`, array, `Map` or Go `map` for a value alias, and for a value class of
+  `{"kind": "map", "value": []}`: an empty `dict`, array (a `stdClass` by GN-13v), `Map` or Go `map` for a value alias, and for a value class of
   another repository the instance that the member of the out row of the kind `map` makes from an empty map of its
   owner. Why: an options object of a value type, such as a json value, has an empty object as its natural absence, and
   the core already decides what `None` means. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
@@ -2715,6 +2715,12 @@ the design ids are those of the binding design.
 
 ## End-to-end check
 
+- **GN-13v** A PHP test gives the case value of an empty map, `{"kind": "map", "value": []}`, of a value alias as
+  `new \stdClass()` when the PHP `in` rows of the alias read an array with sequence keys as a list and a `stdClass`
+  as a map; a map with entries stays an array, and another alias keeps the empty array. Why: the keys of an empty
+  PHP array are sequence keys, so the row of `array` reads it as an empty list and the core refuses it as no map
+  (template `engine.render`, `data_unsupported_type`), while the row of `stdClass` reads the empty map that the case
+  states.
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout in the directory `WORK`,
   or, without `WORK`, in a directory that the run makes under the temporary directory of the system, named by its real

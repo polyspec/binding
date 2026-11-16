@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1a372ba09dcb4377e7d0bee5f39f4797e4fc5c270f302dd7a2e00de68ac37c61 -->
+<!-- source-sha256: 8500212bafeef42d2877cb6fbd836961ec95cfc04202be2fb4b066b59960a1f2 -->
 # 생성기
 
 [English](generator.md)
@@ -913,7 +913,7 @@
   코어 parameter는 그 형태의 `Option`이고, 바인딩은 생략된 값에 `None`을 넘기며, 값이 없으면 빈 객체라는 것은 코어가
   정한다. 선언은 Python에서 `...`, PHP에서 `null`(값 class는 배열을 받지 않기 때문이다), TypeScript에서 선택 parameter를
   보인다. GN-13d와 Go의 U-2 테스트는 그 자리에 case 값 `{"kind": "map", "value": []}`를 준다. 값 alias에서는 빈
-  `dict`, 배열, `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
+  `dict`, 배열(GN-13v에 따라 `stdClass`), `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
   만드는 instance다. 이유: json 값 같은 값 타입의 options 객체는 빈 객체가 자연스러운 부재이고, `None`이 무엇인지는
   이미 코어가 정한다. 이름을 대고 거부하는 것(G-4):
   기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, 값 타입의 다른 `{empty}` 기본값, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
@@ -2210,6 +2210,11 @@
 
 ## 끝에서 끝까지 확인
 
+- **GN-13v** PHP 시험은 값 alias의 빈 map case 값 `{"kind": "map", "value": []}`를, 그 alias의 PHP `in` row가 sequence
+  key의 array를 list로 읽고 `stdClass`를 map으로 읽을 때 `new \stdClass()`로 준다. 항목이 있는 map은 array로 남고,
+  다른 alias는 빈 array를 유지한다. 이유: 빈 PHP array의 key는 sequence key이므로 `array`의 row가 그것을 빈 list로
+  읽고 코어는 map이 아니라고 거부하지만(template `engine.render`, `data_unsupported_type`), `stdClass`의 row는 case가
+  말하는 빈 map을 읽는다.
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
   실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들어 그 실제 경로로 부르고, 실행이 끝날 때, 실패할 때, SIGINT와

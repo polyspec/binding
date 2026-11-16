@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d89abd98d325a9529369bc0f5795a77d1daeb1288dbdc006091b329a3e3b49a7 -->
+<!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -17,6 +17,7 @@
 - Python과 PHP 시험은 case가 만든 cleanup member가 있는 instance를 시험 끝에 case와 따로 닫는다. 이전에는 instance를 버려 소멸자가 경고했다(GN-13u, B2.348).
 - Go는 orm `config`의 `audit_source`처럼 field가 함수 타입을 담는 record를 출력 변환 없이 생성한다. 이전에는 `no Go output conversion for {"function":...}`로 생성이 거부되었다(GN-6bm, B2.349).
 - orm의 `db.execute`처럼 반환이 none인 machine member는 Node와 WASM에서 코어의 결과를 묶지 않고 확인한다. 사용되지 않는 `let result`가 `-D warnings`에서 실패했다(GN-6bn, B2.350).
+- PHP 시험은 `in` row가 `stdClass`를 map으로 읽는 값 alias의 빈 map을 `new \stdClass()`로 준다. 빈 array `[]`는 빈 list로 읽혀서 template 시험 42건이 `data_unsupported_type`으로 실패했다(GN-13v, B2.351).
 
 ## 0.0.12
 

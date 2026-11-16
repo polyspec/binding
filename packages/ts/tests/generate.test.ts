@@ -10732,3 +10732,20 @@ test('B2.350: a machine member that returns none binds no result of the core in 
     assert.match(arm, /Done\(result\) => \{\n\s+result\.map_err\((core_error|failure_error)\)\?;/, path);
   }
 });
+
+test('B2.351: a PHP case value of an empty map of a value alias is the form that its in rows read as a map (GN-13v)', () => {
+  // template engine.render a null assign: an empty PHP array is a list (sequence_keys), so the core refused it as no
+  // map (data_unsupported_type); the in rows of the alias read a stdClass as a map.
+  const out = sampleWith((_contract, cases) => {
+    cases.echo.push(
+      { id: 'an_empty_map_comes_back', value: { kind: 'map', value: [] }, result: { kind: 'map', value: [] } },
+      { id: 'an_inner_empty_map_comes_back', value: { kind: 'list', value: [{ kind: 'map', value: [] }] }, result: { kind: 'list', value: [{ kind: 'map', value: [] }] } },
+    );
+  }, ['php']);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const at = (name: string): string => { const i = php.indexOf(`function ${name}(`); return php.slice(i, php.indexOf('\n    }\n', i)); };
+  assert.match(at('testGn13esameAnEmptyMapComesBack'), /\\Sample\\same\(new \\stdClass\(\)\)/);
+  assert.match(at('testGn13esameAnInnerEmptyMapComesBack'), /\\Sample\\same\(\[new \\stdClass\(\)\]\)/);
+  // A map with a key stays an array, which the in rows read as a map.
+  assert.doesNotMatch(php, /\\Sample\\same\(\[\]\)/);
+});
