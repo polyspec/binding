@@ -231,11 +231,12 @@ fn bool_in(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
     unsafe { value.cast::<bool>() }.map_err(internal)
 }
 
-/// B-2: a number that is a safe integer; NaN, the infinities, fractions and any other value are kind invalid_number.
+/// B-2, GN-12a: a number that is a safe integer; NaN, the infinities and fractions are kind invalid_number, and a value
+/// that is no number is kind invalid_argument_type.
 fn safe_integer(value: Unknown<'_>, subject: &str, expected: NumberType) -> Result<i64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected });
     if value.get_type().map_err(internal)? != ValueType::Number {
-        return Err(invalid());
+        return Err(type_error(subject, "number"));
     }
     let double = unsafe { value.cast::<f64>() }.map_err(internal)?;
     // GN-12a, B2.360: a negative zero is a float, which PHP and Python refuse at an integer place, so it is refused here too.
@@ -254,10 +255,13 @@ fn int_in(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     safe_integer(value, subject, NumberType::Int)
 }
 
-/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2).
+/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2); any other value is kind
+/// invalid_argument_type (GN-12a).
 fn int64_in(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
-    if value.get_type().map_err(internal)? != ValueType::BigInt {
-        return safe_integer(value, subject, NumberType::Int);
+    match value.get_type().map_err(internal)? {
+        ValueType::BigInt => {}
+        ValueType::Number => return safe_integer(value, subject, NumberType::Int),
+        _ => return Err(type_error(subject, "number or bigint")),
     }
     let big = unsafe { value.cast::<BigInt>() }.map_err(internal)?;
     match big.get_i64() {
@@ -266,9 +270,10 @@ fn int64_in(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     }
 }
 
+/// B-2, GN-12a: every number is a float; a value that is no number is kind invalid_argument_type.
 fn float_in(value: Unknown<'_>, subject: &str) -> Result<f64, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Number {
-        return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float }));
+        return Err(type_error(subject, "number"));
     }
     unsafe { value.cast::<f64>() }.map_err(internal)
 }

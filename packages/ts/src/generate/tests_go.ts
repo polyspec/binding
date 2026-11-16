@@ -2715,6 +2715,7 @@ func TestT2TheEncodingKeepsTheOrderOfAMap(t *testing.T) {
 // in function alone.
 export function goCodecTest(model: Model, echo: { latin1: boolean; map: boolean; keyed: boolean }): string {
   const valueType = categoryType(model, 'value');
+  const typeType = categoryType(model, 'type');
   const latin1 = echo.latin1 ? `
 func TestB8Latin1RoundTrips(t *testing.T) {
 	runes := make([]rune, 0, 256)
@@ -2793,18 +2794,29 @@ ${kase.raises.status === undefined ? '' : `\t${kase.raises.status === null ? 'if
 }
 `;
   }).join('');
-  // GN-13g: the B-2 values of GN-13 of another Go type, and values of the type, through the conversion of each number type.
+  // GN-13g: the B-2 values of GN-13 of another Go type, the values that are no number (kind invalid_argument_type,
+  // GN-12a) apart from the Go numbers of another type (kind invalid_number), and values of the type, through the
+  // conversion of each number type.
   const sets: Record<string, [string[], string[]]> = {
-    uint: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', '-1', 'uint64(9007199254740992)'], ['7', 'uint64(9007199254740991)']],
-    int: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'int64(9007199254740992)', 'int64(-9007199254740992)'], ['7', '-7', 'int64(9007199254740991)']],
-    int64: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'uint64(math.MaxUint64)'], ['7', 'int64(math.MinInt64)', 'int64(math.MaxInt64)']],
-    float: [['true', '"7"', '7'], ['1.5', 'math.NaN()', 'math.Inf(1)']],
+    uint: [['1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', '-1', 'uint64(9007199254740992)'], ['7', 'uint64(9007199254740991)']],
+    int: [['1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'int64(9007199254740992)', 'int64(-9007199254740992)'], ['7', '-7', 'int64(9007199254740991)']],
+    int64: [['1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'uint64(math.MaxUint64)'], ['7', 'int64(math.MinInt64)', 'int64(math.MaxInt64)']],
+    float: [['7'], ['1.5', 'math.NaN()', 'math.Inf(1)']],
   };
   const numbers = numberTypes(model).map((type) => {
     const name = `${goName([type])}In`;
     const [refused, taken] = sets[type] ?? [[], []];
     return `
 func TestB2${name}RefusesAValueOfAnotherType(t *testing.T) {
+	for _, value := range []any{true, "7"} {
+		err := ${name}(value, "value")
+		if failure, ok := err.(*${typeType}); !ok || failure.Kind() != "invalid_argument_type" {
+			t.Fatalf("GN-12a: %#v: %#v", value, err)
+		}
+	}
+}
+
+func TestB2${name}RefusesANumberOutsideItsType(t *testing.T) {
 	for _, value := range []any{${refused.join(', ')}} {
 		err := ${name}(value, "value")
 		if failure, ok := err.(*${valueType}); !ok || failure.Kind() != "invalid_number" {

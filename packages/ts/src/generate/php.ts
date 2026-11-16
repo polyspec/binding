@@ -294,9 +294,18 @@ fn bool_in(value: &Zval, subject: &str) -> Result<bool, Fail> {
     Err(type_error(subject, "bool"))
 }
 
-/// B-2, GN-12a: an int (IS_LONG) that is a safe integer for the contract type int; any other value is kind
+/// GN-12a: a value at a number place that is no number of PHP, an int (IS_LONG) or a float (IS_DOUBLE), is kind
+/// invalid_argument_type; a number that breaks the rule of its type is kind invalid_number (B-2).
+fn number_type_error(value: &Zval, subject: &str, expected: &str) -> Option<Fail> {
+    (!value.is_long() && !value.is_double()).then(|| type_error(subject, expected))
+}
+
+/// B-2, GN-12a: an int (IS_LONG) that is a safe integer for the contract type int; another number is kind
 /// invalid_number.
 fn int_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
+    if let Some(error) = number_type_error(value, subject, "int") {
+        return Err(error);
+    }
     match (value.is_long(), value.long()) {
         (true, Some(integer)) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -305,6 +314,9 @@ fn int_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
 
 /// B-2, T-1: an int (IS_LONG) of the range of i64 for the contract type int64.
 fn int64_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
+    if let Some(error) = number_type_error(value, subject, "int") {
+        return Err(error);
+    }
     match (value.is_long(), value.long()) {
         (true, Some(integer)) => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -313,6 +325,9 @@ fn int64_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
 
 /// B-2, GN-12a: an int (IS_LONG) of 0 to 2^53 - 1 for the contract type uint.
 fn uint_in(value: &Zval, subject: &str) -> Result<u64, Fail> {
+    if let Some(error) = number_type_error(value, subject, "int") {
+        return Err(error);
+    }
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     match (value.is_long(), value.long()) {
         (true, Some(integer @ 0..=9_007_199_254_740_991)) => Ok(integer.unsigned_abs()),
@@ -320,7 +335,11 @@ fn uint_in(value: &Zval, subject: &str) -> Result<u64, Fail> {
     }
 }
 
+/// B-2, GN-12a: a float (IS_DOUBLE); an int is a number that is no float, kind invalid_number.
 fn float_in(value: &Zval, subject: &str) -> Result<f64, Fail> {
+    if let Some(error) = number_type_error(value, subject, "float") {
+        return Err(error);
+    }
     match (value.is_double(), value.double()) {
         (true, Some(float)) => Ok(float),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),

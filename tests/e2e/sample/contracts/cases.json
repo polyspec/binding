@@ -458,6 +458,39 @@
       "start": 2,
       "amount": 3,
       "result": 5
+    },
+    {
+      "id": "a_text_amount_is_another_type",
+      "start": 2,
+      "amount": "1",
+      "raises": {
+        "kind": "invalid_argument_type",
+        "status": null,
+        "category": "type",
+        "message": null
+      }
+    },
+    {
+      "id": "a_bool_amount_is_another_type",
+      "start": 2,
+      "amount": true,
+      "raises": {
+        "kind": "invalid_argument_type",
+        "status": null,
+        "category": "type",
+        "message": null
+      }
+    },
+    {
+      "id": "a_fraction_amount_is_no_uint",
+      "start": 2,
+      "amount": 1.5,
+      "raises": {
+        "kind": "invalid_number",
+        "status": null,
+        "category": "value",
+        "message": null
+      }
     }
   ],
   "counter_absorb": [],

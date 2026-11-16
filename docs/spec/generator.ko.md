@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 48e64398ffada0d17157102a1ce089532181dcb5d1948473204aa342525fb882 -->
+<!-- source-sha256: 51e3bd47e644be01988e0343bc11c0c4124df03c52b64211021af69d2324c98c -->
 # 생성기
 
 [English](generator.md)
@@ -1267,8 +1267,20 @@
   정수가 아닌 number key는 모든 target에서 kind `invalid_number`다. 전에는 Node와 WASM이 `invalid_argument_type`을 냈다.
   계약이 나열하지 않은 종류의 key는 그대로 kind `invalid_argument_type`이다(T-2). 이유: 거부된 수는 모든 자리에서 B-2의
   kind를 가지므로, 같은 key는 모든 target에서 같은 kind를 준다.
-  Node와 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
-  `invalid_number`다(B-2). `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
+  `int`, `uint`, `int64`, `float` 자리에서 거부된 값의 kind는 모든 target에서, 모든 원시 자리에서처럼 규칙 하나를 따른다:
+  그 자리가 받는 언어 타입의 숫자가 아닌 값은 `bool`, bytes, path 자리의 다른 타입 값처럼 kind
+  `invalid_argument_type`(category `type`)이고, 자기 타입의 규칙을 어긴 숫자(소수, NaN, 무한대, 정수 자리의 음의 0, 범위
+  밖의 값)는 kind `invalid_number`다(B-2). 언어의 숫자 타입은 Node와 WASM에서 `number`이고 `int64`에는 `bigint`도
+  들고, Python에서 `int`나 `float`인데 `bool`은 `int`의 subclass여도 숫자가 아니며, PHP에서 `int`나 `float`이다. 그래서
+  문자열, 값이 필요한 자리의 null이나 undefined, boolean, object, 그리고 Node와 WASM에서 `int`, `uint`, `float` 자리의
+  `bigint`는 kind `invalid_argument_type`이고, 정수 자리의 Python이나 PHP float와 `float` 자리의 Python이나 PHP 정수는 숫자이므로 kind
+  `invalid_number`로 남는다. optional 수 자리의 null은 없는 값이고(GN-6i) 거부가 아니다. Go: 수 타입의 parameter,
+  field, 항목, optional은 그 Go 타입의 값만 담으므로 다른 타입의 값은 호출로 binding에 닿지 않는다. optional의 nil은
+  없는 값이고, 다른 타입의 값은 GN-13g의 `<Type>In`으로만 변환에 닿는다. 이유: core는 `invalid_number`를 계약 타입의
+  숫자 규칙을 어긴 숫자로 정하는데(B-2), 모든 target이 다른 타입의 값에도, 즉 다른 원시 자리가 kind
+  `invalid_argument_type`으로 거부하는 값에도 거부된 모든 값에 그것을 냈다. json 저장소가 그 차이를 전했다(T3.25-1).
+  Node와 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받는다. 그 범위 밖의 `bigint`나 안전
+  정수가 아닌 number는 kind `invalid_number`이고(B-2), 그 밖의 값은 kind `invalid_argument_type`이다. `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
   `bigint`)과 같다. case 파일은 안전 정수 밖의 정수를 JSON token으로 주고, `binding`은 그것을 `bigint`로 읽으며 모든 시험은
   그 10진 token으로 쓴다. Node 시험은 `bigint` literal로 쓴다(G-5). 안전 정수 밖의 `int`나 `uint` 타입 인자는 `invalid_number`를 내는 case만 주는데(CK-64), 모든 시험에서
   그 십진 token이다: Node와 WASM에서는 그 타입의 호출자가 넘기는 number literal이고 안전 정수 밖에 남는다. Go에서는
@@ -2013,7 +2025,8 @@
 ## 생성 시험(G-5)
 
 - **GN-13** 함수마다 각 언어의 시험 module은 다음을 확인한다. B-2: 수 parameter와 field마다 G-5의 값(NaN, 무한대, 1.5,
-  true, "7", uint에 -1, uint와 int에 2^53, int에 −2^53, GN-12a)이 value 클래스의 kind `invalid_number`이고, 계약이 `int` key를 나열한 `keyed_map` parameter마다 key 2^53이 kind `invalid_number`다(GN-12a). B-3: 짝 없는 surrogate가 든 text(PHP는 UTF-8이
+  uint에 -1, uint와 int에 2^53, int에 −2^53, GN-12a, Python과 PHP의 float에 정수)이 value 클래스의 kind `invalid_number`이고,
+  true, "7", 그리고 자리가 없는 값을 받지 않으면 null이 type 클래스의 kind `invalid_argument_type`이며(GN-12a), 계약이 `int` key를 나열한 `keyed_map` parameter마다 key 2^53이 kind `invalid_number`다(GN-12a). B-3: 짝 없는 surrogate가 든 text(PHP는 UTF-8이
   아닌 바이트)와 U+0100이 든 latin1 text가 kind `invalid_text`다. B-4: 실패하는 모든 contract case가 정확한 클래스(GN-13d), E-2의 기반
   클래스, kind, status, errno를 낸다. B-7: panic 진입점이 kind `internal`이다. G-7: 빠진 인자, 하나 많은 인자, 없는 이름(PHP
   이름 있는 인자, Python keyword, Node options record의 member와 빠진 member). Python에서 parameter 없는 함수나 메서드는 인자
@@ -2168,9 +2181,9 @@
   뺀다.
   B-4 case가 binding이 거부하도록 주는, 자리의 타입과 다른 JSON 종류의 case 값(숫자 자리의 text나 bool, text 자리의 숫자나
   bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306). 숫자 타입(`int`, `int64`, `uint`, `float`) 자리에 온 숫자가 아닌 값은
-  text나 bool도 포함해, `uint`의 소수나 음수처럼 모든 target에서 B-2의 kind `invalid_number`이다. 그래서 그런 값을 주는
-  case는 `invalid_number`를 기대한다(B2.347). 이유: 모든 target의 숫자 변환은 그 타입의 숫자가 아닌 모든 값을 B-2의
-  한 kind로 거부한다.
+  text나 bool도 포함해 모든 target에서 kind `invalid_argument_type`이고, `uint`의 소수나 음수는 B-2의 kind
+  `invalid_number`다(GN-12a). 그래서 거기에 text나 bool을 주는 case는 `invalid_argument_type`을 기대한다. 이유: B-2는
+  `invalid_number`를 자기 타입의 규칙을 어긴 숫자로 정하고, 다른 타입의 값은 다른 모든 원시 자리의 kind를 가진다(T3.25-1).
 
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
@@ -2325,7 +2338,8 @@
   `<prefix>__number_in` 위에 `internal/binding`의 함수 `<Type>In(value any, subject string) error`(`UintIn`, `IntIn`,
   `Int64In`, `FloatIn`)를 준다. 함수는 Go 값을 host 값으로 encode한다: bool, int64 범위의 Go 정수, 그 위의 Go 정수, Go
   float, Go 문자열, 또는 그 밖의 값이다. 진입점은 그 값을 바인딩의 그 수 타입 변환으로 판정한다: 그 수 타입의 Go
-  타입 값은 GN-12a의 범위를 거치고, 다른 타입의 값은 subject와 함께 B-2의 kind `invalid_number`다. 그래서 오류는 다른
+  타입 값은 GN-12a의 범위를 거치고, 다른 Go 숫자(`float`의 정수, 정수 타입의 float, i64 범위 위의 정수)는 B-2의 kind
+  `invalid_number`이며, bool, 문자열, 그 밖의 값은 kind `invalid_argument_type`이다(GN-12a). 각각 subject와 함께다. 그래서 오류는 다른
   target에서 그 인자로 부른 호출이 주는 오류와 같다. `zz_generated_codec_test.go`는 그런 타입마다 GN-13의 B-2 값을
   확인하고, 그 타입의 값(7, float이면 1.5와 NaN)은 통과한다. 수 parameter에 다른 타입의 host 값을 가진 다른 레포의
   시험(입력 타입이 있는 legacy case 등)은 Go 호출이 그 값을 받을 수 없으므로 이 함수로 그 값을 넘긴다.

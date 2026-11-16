@@ -138,10 +138,19 @@ fn bool_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
     }
 }
 
-/// B-2, GN-12a: an int that is not a bool, 0 to 2^53 - 1 for the contract type uint; any other value is kind
-/// invalid_number.
+/// GN-12a: whether a value is a number of Python, an int or a float that is no bool. A value that is none is kind
+/// invalid_argument_type at a number place, and a number that breaks the rule of its type is kind invalid_number (B-2).
+fn is_number(value: &Bound<'_, PyAny>) -> bool {
+    !value.is_instance_of::<PyBool>() && (value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>())
+}
+
+/// B-2, GN-12a: an int, 0 to 2^53 - 1 for the contract type uint; another number is kind invalid_number, and a value
+/// that is no number is kind invalid_argument_type.
 fn uint_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
     let invalid = || binding_error(py_, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
+    if !is_number(value) {
+        return Err(binding_error(py_, type_error(subject, "int")));
+    }
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
     }
@@ -154,6 +163,9 @@ fn uint_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
 /// B-2, GN-12a: as uint_in, a safe integer for the contract type int.
 fn int_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py_, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
+    if !is_number(value) {
+        return Err(binding_error(py_, type_error(subject, "int")));
+    }
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
     }
@@ -166,17 +178,22 @@ fn int_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
 /// B-2, T-1: as int_in, the range of i64 for the contract type int64.
 fn int64_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py_, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
+    if !is_number(value) {
+        return Err(binding_error(py_, type_error(subject, "int")));
+    }
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
     }
     value.extract::<i64>().map_err(|_out_of_range| invalid())
 }
 
-/// B-2: a float; an int or a bool is not a float.
+/// B-2, GN-12a: a float; an int is a number that is no float, kind invalid_number, and a bool or any other value is no
+/// number, kind invalid_argument_type.
 fn float_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<f64> {
     match value.cast_exact::<PyFloat>() {
         Ok(float) => Ok(float.value()),
-        Err(_not_float) => Err(binding_error(py_, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
+        Err(_not_float) if is_number(value) => Err(binding_error(py_, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
+        Err(_not_number) => Err(binding_error(py_, type_error(subject, "float"))),
     }
 }
 

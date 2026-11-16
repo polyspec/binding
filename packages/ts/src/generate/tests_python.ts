@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -36,11 +36,14 @@ ${CASE_JSON_STRING_GOLDENS.map(({ inputHex, expectedHex }) => `            ("${i
 `;
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
-  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**53', '-(2**53)', '2**63'],
-  int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
-  float: ['True', '"7"', '1'],
+  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', '-1', '2**53', '2**64'],
+  int: ['float("nan")', 'float("inf")', '1.5', '2**53', '-(2**53)', '2**63'],
+  int64: ['float("nan")', 'float("inf")', '1.5', '2**63'],
+  float: ['1'],
 };
+// GN-12a: the values of another type than a number, a bool among them, kind invalid_argument_type; None only where it
+// is no absent value.
+const OTHER_TYPES = ['True', '"7"'];
 
 // G-5: the callback fixture. A call that no row answers is recorded and raises, so a core that swallows the exception
 // still fails the test, which reads the record.
@@ -641,6 +644,14 @@ export function pythonTests(model: Model, module: string): string {
       const number = isNumber(arg.type);
       const argName = langName('python', arg.name, 'variable');
       if (number !== undefined) {
+        append(`
+    def test_b2_${name}_${argName}_refuses_another_type_than_${number}(self) -> None:
+        for bad in [${[...OTHER_TYPES, ...(numberRefusesNull(arg) ? ['None'] : [])].join(', ')}]:
+            with self.subTest(bad=bad):
+                with self.assertRaises(pkg.${cls('type')}) as caught:
+                    ${call(new Map([[arg, 'bad']]))}
+                self.assertIs(type(caught.exception), pkg.${cls('type')})
+                self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
         append(`
     def test_b2_${name}_${argName}_refuses_what_is_not_${number}(self) -> None:
         for bad in [${(BAD_NUMBERS[number] ?? []).join(', ')}]:

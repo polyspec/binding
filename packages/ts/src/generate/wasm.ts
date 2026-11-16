@@ -200,10 +200,11 @@ fn bool_in(value: &JsValue, subject: &str) -> Result<bool, Fail> {
     value.as_bool().ok_or_else(|| type_error(subject, "boolean"))
 }
 
-/// B-2: a number that is a safe integer; NaN, the infinities, fractions and any other value are kind invalid_number.
+/// B-2, GN-12a: a number that is a safe integer; NaN, the infinities and fractions are kind invalid_number, and a value
+/// that is no number is kind invalid_argument_type.
 fn safe_integer(value: &JsValue, subject: &str, expected: NumberType) -> Result<i64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected });
-    let double = value.as_f64().ok_or_else(invalid)?;
+    let double = value.as_f64().ok_or_else(|| type_error(subject, "number"))?;
     // GN-12a, B2.360: a negative zero is a float, which PHP and Python refuse at an integer place, so it is refused here too.
     if !double.is_finite() || double.fract() != 0.0 || double.abs() > 9_007_199_254_740_991.0 || (double == 0.0 && double.is_sign_negative()) {
         return Err(invalid());
@@ -222,16 +223,21 @@ fn int_in(value: &JsValue, subject: &str) -> Result<i64, Fail> {
     safe_integer(value, subject, NumberType::Int)
 }
 
-/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2).
+/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2); any other value is kind
+/// invalid_argument_type (GN-12a).
 fn int64_in(value: &JsValue, subject: &str) -> Result<i64, Fail> {
     if !value.is_bigint() {
+        if value.as_f64().is_none() {
+            return Err(type_error(subject, "number or bigint"));
+        }
         return safe_integer(value, subject, NumberType::Int);
     }
     i64::try_from(value.clone()).map_err(|_outside| binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int }))
 }
 
+/// B-2, GN-12a: every number is a float; a value that is no number is kind invalid_argument_type.
 fn float_in(value: &JsValue, subject: &str) -> Result<f64, Fail> {
-    value.as_f64().ok_or_else(|| binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float }))
+    value.as_f64().ok_or_else(|| type_error(subject, "number"))
 }
 
 /// T-7: an array; the JavaScript entry turns any other iterable but a string into one.
