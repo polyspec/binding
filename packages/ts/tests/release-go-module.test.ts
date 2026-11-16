@@ -122,6 +122,17 @@ const GO_MOD = 'module github.com/polyspec/sample/packages/go\n\ngo 1.27.3\n';
 const PLATFORMS = GO_PLATFORMS;
 const OBJECTS = { linux_amd64: ELF_X86_64, linux_arm64: ELF_AARCH64, linux_amd64_musl: ELF_X86_64, linux_arm64_musl: ELF_AARCH64, darwin_arm64: MACHO_ARM64 };
 
+// GN-15k: the native-static-libs that the release build of each platform printed, and the link file of a platform as
+// the generator writes it, with the directive of the directory alone.
+const NATIVE: Record<string, string> = {
+  linux_amd64: '-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc',
+  linux_arm64: '-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc',
+  linux_amd64_musl: '-lc',
+  linux_arm64_musl: '-lc',
+  darwin_arm64: '-framework Security -framework CoreFoundation -liconv -lSystem -lc -lm',
+};
+const linkFile = (platform: string, libraries = ''): string => `package binding\n\n// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}${libraries === '' ? '' : ` ${libraries}`}\nimport "C"\n`;
+
 interface Scene {
   release: GoModuleRelease;
   dir: string;
@@ -153,9 +164,10 @@ function scene(t: { after: (fn: () => void) => void }, answers: Answer[] = []): 
   write(join(module, 'zz_generated_sample.go'), 'package sample\n');
   write(join(module, 'internal/binding/zz_generated_binding.go'), 'package binding\n');
   for (const platform of PLATFORMS) {
-    write(join(module, `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), 'package binding\n');
+    write(join(module, `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), linkFile(platform));
     write(join(module, `internal/ffi/lib/${platform}/zz_generated_lib.go`), `package ${platform}\n`);
     write(join(dir, 'libraries', platform, 'libpolyspec_sample_go.a'), ar([{ name: 'a.o', data: OBJECTS[platform] }]));
+    write(join(dir, 'libraries', platform, 'native-static-libs'), `${NATIVE[platform]}\n`);
   }
   // What is no generated file of the Go module stays out of the commit.
   write(join(module, 'internal/ffi/generated/lib.rs'), '// generated\n');
@@ -225,11 +237,11 @@ test('the command makes the commit through an index of the run, proves it by a c
   // platform beside the file of its package.
   const added: [string, string][] = [
     ['packages/go/internal/binding/zz_generated_binding.go', join(module, 'internal/binding/zz_generated_binding.go')],
-    ['packages/go/internal/binding/zz_generated_link_darwin_arm64.go', join(module, 'internal/binding/zz_generated_link_darwin_arm64.go')],
-    ['packages/go/internal/binding/zz_generated_link_linux_amd64.go', join(module, 'internal/binding/zz_generated_link_linux_amd64.go')],
-    ['packages/go/internal/binding/zz_generated_link_linux_arm64.go', join(module, 'internal/binding/zz_generated_link_linux_arm64.go')],
-    ['packages/go/internal/binding/zz_generated_link_musl_linux_amd64.go', join(module, 'internal/binding/zz_generated_link_musl_linux_amd64.go')],
-    ['packages/go/internal/binding/zz_generated_link_musl_linux_arm64.go', join(module, 'internal/binding/zz_generated_link_musl_linux_arm64.go')],
+    ['packages/go/internal/binding/zz_generated_link_darwin_arm64.go', join(work, 'link/zz_generated_link_darwin_arm64.go')],
+    ['packages/go/internal/binding/zz_generated_link_linux_amd64.go', join(work, 'link/zz_generated_link_linux_amd64.go')],
+    ['packages/go/internal/binding/zz_generated_link_linux_arm64.go', join(work, 'link/zz_generated_link_linux_arm64.go')],
+    ['packages/go/internal/binding/zz_generated_link_musl_linux_amd64.go', join(work, 'link/zz_generated_link_musl_linux_amd64.go')],
+    ['packages/go/internal/binding/zz_generated_link_musl_linux_arm64.go', join(work, 'link/zz_generated_link_musl_linux_arm64.go')],
     ['packages/go/internal/ffi/lib/darwin_arm64/libpolyspec_sample_go.a', libraryOf('darwin_arm64')],
     ['packages/go/internal/ffi/lib/darwin_arm64/zz_generated_lib.go', join(module, 'internal/ffi/lib/darwin_arm64/zz_generated_lib.go')],
     ['packages/go/internal/ffi/lib/linux_amd64/libpolyspec_sample_go.a', libraryOf('linux_amd64')],
@@ -292,6 +304,31 @@ test('the command makes the commit through an index of the run, proves it by a c
       { GIT_CONFIG_GLOBAL: join(work, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off', GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '' },
     );
   }
+});
+
+test('B2.367: the commit holds the link file of each platform with the native-static-libs that its release build printed (GN-15k)', (t) => {
+  const s = scene(t);
+  releaseGoModule(s.release);
+  for (const platform of PLATFORMS) {
+    const copy = join(s.release.work, `link/zz_generated_link_${goLinkFile(platform)}.go`);
+    assert.equal(readFileSync(copy, 'utf8'), linkFile(platform, NATIVE[platform]), platform);
+    assert.ok(s.lines().includes(`git update-index --add --cacheinfo 100644,object-of:${copy},packages/go/internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), platform);
+  }
+  // The work tree keeps the file that the generator wrote.
+  assert.equal(readFileSync(join(s.release.root, 'packages/go/internal/binding/zz_generated_link_darwin_arm64.go'), 'utf8'), linkFile('darwin_arm64'));
+});
+
+test('B2.367: a platform without its native-static-libs, with an empty one, or whose link file has no directive of its directory is refused (GN-15k)', (t) => {
+  const s = scene(t);
+  rmSync(join(s.release.libraries, 'darwin_arm64/native-static-libs'));
+  writeFileSync(join(s.release.libraries, 'linux_amd64/native-static-libs'), '\n');
+  writeFileSync(join(s.release.root, 'packages/go/internal/binding/zz_generated_link_linux_arm64.go'), 'package binding\n');
+  assert.deepEqual(refusal(() => releaseGoModule(s.release)), [
+    `${join(s.release.libraries, 'linux_amd64/native-static-libs')}: the native-static-libs of linux_amd64 name no library (GN-15k)`,
+    `packages/go/internal/binding/zz_generated_link_linux_arm64.go has no line \`// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/linux_arm64\`: run binding generate --target go (GN-15k)`,
+    `${join(s.release.libraries, 'darwin_arm64/native-static-libs')}: the native-static-libs of darwin_arm64 are not there; release-go-static writes them beside the library (GN-15k)`,
+  ]);
+  assert.equal(s.lines().filter((line) => WRITES.test(line)).length, 0);
 });
 
 test('every failed check is named and the command changes nothing (GN-19f)', (t) => {

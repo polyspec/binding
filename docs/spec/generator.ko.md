@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 914d373dd0e45cede32a88c15e3b6e8242e791bf99cc2d9cccd512a833547646 -->
+<!-- source-sha256: 7f09368c54e9c56df7a5c4d6b2998e94126eb621dcf354488728b338a30b8477 -->
 # 생성기
 
 [English](generator.md)
@@ -548,7 +548,10 @@
   func에 kind `invalid_argument_type`을 요구한다. case의 함수 값은 case의 행으로 답하고 어떤 행도 답하지 않는 호출을
   기록하는 func이며, 시험은 그런 호출이 없기를 요구한다. 함수 값에 행이 있는 case는 코어가 그 호출에서 func를 부름을
   보이므로, 시험은 그 case의 인자로 func가 돌려준 error가 그 호출의 error와 같은 값이고 func의 panic이 그 호출의
-  panic임을 요구한다. receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
+  panic임을 요구한다. `keeps`가 있는 parameter(GN-6aa)는 member가 저장만 하는 함수이므로, 그 case의 행은 member의
+  호출을 보이지 않고 member에는 그런 시험이 없다. 그 함수를 실행하는 나중 호출이 그 시험을 가진다. 이유: member는
+  코어가 함수를 부르기 전에 돌아오므로, 시험은 member가 돌려줄 수 없는 error를 요구했다(template `engine.register`,
+  시험이 실행하지 않은 func). receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
   시험이 그 나중 호출에 같은 것을 요구하고, error 뒤에 `thrown-count-test`의 count가 0임을 요구한다. Go 시험은 다른
   타입의 결과를 주지 않는다. func의 Go 타입이 결과를 정하기 때문이다.
 - **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
@@ -810,7 +813,9 @@
 - **GN-6bk** parameter, field, callable의 Python 이름이 `else` 같은 Python 키워드이면, 그것을 부르는 모든 곳에서
   뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
   `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
-  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
+  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이며, 모든 target은 case value의 field를
+  그 키로 읽는다: Go 시험은 field를 `Else`로 이름하면서 그 값을 Python 이름 `else_`로 찾았으므로, template의 case
+  `Ternary`의 case value를 그 field가 없는 값으로 거부했다.
 - **GN-6bl** 다른 library의 callback unit의 trait은 그 소유자의 코어 오류로 실패한다: 소유자의 `errors.code`가
   이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
   선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신
@@ -861,7 +866,11 @@
   Go는 아직 변환되지 않은 첫 자리까지 byte를 읽고, 그 자리를 먼저 변환한 뒤 변환된 자리의 byte를 건너 값을 다시
   읽으므로, 그런 자리가 `n`개인 값은 `n + 1`번 읽힌다. field가 callback이나 function을 담아 core type이 호출의
   lifetime을 지니는 cycle, 또는 cycle unit을 담은 tuple을 가진 cycle은 서로 부르는 변환을 유지한다. field의 좁힘
-  (GN-12a)은 값이 변환될 때, 그 자리들 뒤에 판정된다. Why: debug WASM module의 stack은 1 MiB이고, template의 case
+  (GN-12a)은 값이 변환될 때, 그 자리들 뒤에 판정된다. core 값의 walk는 record field의 list나 map을 field 자체로
+  loop하고(`value.<field>.iter()`), reference가 필요한 자리, 즉 `optional`과 cycle unit에서만 field를 빌린다
+  (`&value.<field>`). variant case의 field와 loop의 item은 이미 reference다. 빌림의 Why: `&value.body.iter()`는
+  iterator를 빌리고, iterator의 reference는 iterator가 아니므로(E0277), template의 `body`, 즉 `Node`의 list가 모든
+  target의 build를 실패시켰다(B2.390). Why: debug WASM module의 stack은 1 MiB이고, template의 case
   `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식은 단계마다 자기 자신을 부르는 `out_expr`에서 "memory access
   out of bounds"로 trap했다. binding은 host의 stack을 늘릴 수 없고, 더 큰 stack은 process가 끝나는 깊이를 옮길 뿐이며,
   value alias 변환도 같은 방식을 쓴다(GN-6as).
@@ -1748,10 +1757,15 @@
   rustc가 출력하는 `native-static-libs`(`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`)를
   그 순서대로 쓴 것이며, 생성기가 고정하는 목록이 아니다. release는 각 platform의 라이브러리를(GN-15g) 그 출력과 함께
   빌드하고, 그 라이브러리들을 그 platform link 파일의 지시문 `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`에
-  쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다. 라이브러리를 품지 않는 checkout은 CLI의 명령
+  쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다: `release-go-static`은 자기가 빌드하는 각
+  platform의 라이브러리들을 `RELEASE_ASSETS/go/<platform>`에서 그 라이브러리 옆의 파일 `native-static-libs`에 쓰고,
+  `binding release-go-module`은 그 파일이 없거나 그 파일이 라이브러리를 하나도 적지 않는 platform을 거부하며, 그 파일로
+  그 link 파일의 지시문을 module의 commit에 쓴다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
+  방식으로 출력과 함께 빌드하고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
   하나에서 그것을 얻는다: `binding go-link --manifest <Go crate의 Cargo.toml> --target-dir <dir> [--features <features>]`는
   host의 정적 라이브러리를 `cargo rustc --locked --offline --lib --crate-type staticlib`과 주어진 feature로 `<dir>`에 출력과
-  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. Cargo의 진단은
+  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
+  읽으므로 `<dir>`은 절대 경로로 바꾼다. Cargo의 진단은
   표준 오류로 가고, 빌드가 실패하면 명령은 Cargo의 status로 실패한다. Go 시험을 돌리는 recipe는 자기 라이브러리 빌드 대신
   그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
   파일은 `-l<library>`만 쓴다. 명령이 빌드 출력을 읽기만 하지 않고 빌드하는 이유: rustc는 정적 라이브러리를 링크하는 동안에만

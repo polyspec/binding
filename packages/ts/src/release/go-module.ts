@@ -207,6 +207,26 @@ export function libraryFindings(bytes: Uint8Array, platform: GoPlatform): string
   return objects === 0 ? ['holds no object'] : [];
 }
 
+// GN-15k: the libraries that a static library needs, from the diagnostics of the build that linked it with
+// `--print native-static-libs`: the value of the note `native-static-libs:` of rustc as it printed it; undefined when the
+// build printed no such note or one that names no library.
+export function nativeStaticLibs(diagnostics: string): string | undefined {
+  const found = /^note: native-static-libs: (.*)$/m.exec(diagnostics)?.[1]?.trim();
+  return found === undefined || found === '' ? undefined : found;
+}
+
+// GN-15k: the directive of the link file of a platform as the generator writes it, with the directory alone.
+export const goLinkDirective = (platform: string): string => `// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}`;
+
+// GN-15k: the arguments of cargo that build the static library of a Go crate with the print of its native-static-libs.
+export function goStaticBuildArgs(build: { manifest: string; targetDir: string; features?: string | undefined; release?: boolean; target?: string | undefined }): string[] {
+  return [
+    'rustc', ...(build.release === true ? ['--release'] : []), '--locked', '--offline', '--color', 'never', '--manifest-path', build.manifest, '--target-dir', build.targetDir,
+    ...(build.target === undefined ? [] : ['--target', build.target]), '--lib', '--crate-type', 'staticlib',
+    ...(build.features === undefined ? [] : ['--features', build.features]), '--', '--print', 'native-static-libs',
+  ];
+}
+
 // GN-19f: the checks of a release that failed, one sentence each. No commit and no tag was made.
 export class Refused extends Error {
   findings: string[];
@@ -299,10 +319,24 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     }
   };
   walk('');
+  // GN-15k: the link file of each platform with the native-static-libs that the release build of that platform printed,
+  // which release-go-static wrote beside its library; the commit takes it in place of the file of the work tree.
+  const linked = new Map<string, string>();
   for (const platform of GO_PLATFORMS) {
-    for (const file of [`internal/binding/zz_generated_link_${goLinkFile(platform)}.go`, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
+    const link = `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`;
+    for (const file of [link, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
       if (!generated.includes(file)) findings.push(`${directory}/${file} is not in the work tree: run binding generate --target go`);
     }
+    const libsPath = join(release.libraries, platform, 'native-static-libs');
+    const libs = existsSync(libsPath) ? readFileSync(libsPath, 'utf8').trim() : undefined;
+    if (libs === undefined) findings.push(`${libsPath}: the native-static-libs of ${platform} are not there; release-go-static writes them beside the library (GN-15k)`);
+    else if (libs === '' || libs.includes('\n')) findings.push(`${libsPath}: the native-static-libs of ${platform} name no library (GN-15k)`);
+    if (!generated.includes(link)) continue;
+    const text = readFileSync(join(root, directory, link), 'utf8');
+    const directive = goLinkDirective(platform);
+    const lines = text.split('\n');
+    if (!lines.includes(directive)) findings.push(`${directory}/${link} has no line \`${directive}\`: run binding generate --target go (GN-15k)`);
+    else if (libs !== undefined && libs !== '' && !libs.includes('\n')) linked.set(link, lines.map((line) => (line === directive ? `${directive} ${libs}` : line)).join('\n'));
   }
 
   // GN-19b: the llvm tools of the pinned toolchain, never those of PATH.
@@ -328,7 +362,12 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const tracked = run('git', ['-C', root, 'ls-tree', '-r', '-z', '--name-only', parent, '--', directory]).split('\0').filter((path) => path !== '').map((path) => path.slice(directory.length + 1));
   const added = new Map<string, string>(generated.map((file) => [`${directory}/${file}`, join(root, directory, file)]));
   for (const platform of GO_PLATFORMS) added.set(`${directory}/internal/ffi/lib/${platform}/lib${release.library}.a`, libraryOf(platform));
-  mkdirSync(work, { recursive: true });
+  mkdirSync(join(work, 'link'), { recursive: true });
+  for (const [link, text] of linked) {
+    const copy = join(work, 'link', link.slice(link.lastIndexOf('/') + 1));
+    writeFileSync(copy, text);
+    added.set(`${directory}/${link}`, copy);
+  }
   const index = { GIT_INDEX_FILE: join(work, 'index') };
   rmSync(index.GIT_INDEX_FILE, { force: true });
   git(['read-tree', parent], index);

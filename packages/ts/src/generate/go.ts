@@ -1734,8 +1734,6 @@ package binding
 
 /*
 #cgo LDFLAGS: -l${lib}
-#cgo linux LDFLAGS: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
-#cgo darwin LDFLAGS: -lSystem -lc -lm
 ${cDeclarations(model, [...fns, ...model.kept.map((k) => k.constructor)].map((fn) => cSymbol(model, fn)), others)}
 */
 import "C"

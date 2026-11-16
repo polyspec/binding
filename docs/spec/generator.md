@@ -681,7 +681,10 @@ the design ids are those of the binding design.
   the rows of the case and records a call that no row answers, which the test requires to be none; with the
   arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
   test requires that the error that the func returns is the error of the call, the same value, and that its panic
-  is the panic of the call. For a case whose receiver was given a func with a row in an earlier call and whose
+  is the panic of the call. A parameter with `keeps` (GN-6aa) is a function that the member only stores, so a row of
+  its case shows no call of the member, and the member has no such test; the later call that runs the function has it.
+  Why: the member returns before the core calls the function, so the test required an error that the member cannot
+  return (template `engine.register`, a func the test never ran). For a case whose receiver was given a func with a row in an earlier call and whose
   member names `core.failure`, the test requires the same of that later call, and that the count of
   `thrown-count-test` is 0 after the error. No Go test gives a result of another type, because the Go type of the
   func fixes its result.
@@ -1000,7 +1003,9 @@ the design ids are those of the binding design.
   trailing underscore, `else_`, in every place that names it: the dataclass, the stub, the native module and the
   tests. Why: a keyword is no identifier, so `else: list[Node] | None` is a SyntaxError, and PEP 8 names the trailing
   underscore for this case, which no name of the contract has. A key of a case file stays the snake_case name of
-  the contract, `else`, because a case file belongs to no language.
+  the contract, `else`, because a case file belongs to no language, and every target reads a field of a case value
+  by that key: the Go tests named the field `Else` but looked its value up by the Python name `else_`, so a case
+  value of the case `Ternary` of template was refused as one without the field.
 - **GN-6bl** The trait of a callback unit of another library fails with the core error of its owner: the struct
   that `errors.code` of the owner names (GN-7b), or the error enum of its kinds when it names none. Why: the core of
   the owner declares its trait with that error, as the binding of the owner writes it, so a consumer that wrote the
@@ -1063,7 +1068,12 @@ the design ids are those of the binding design.
   are not converted yet, converts that place first and reads the value again past the bytes of the converted places,
   so a value with `n` such places is read `n + 1` times. A cycle whose fields hold a callback or a function, whose core
   types carry a lifetime of the call, or a tuple that holds a unit of the cycle, keeps the conversions that call each
-  other. A narrowing of a field (GN-12a) is judged when the value is converted, after its places. Why: a debug WASM
+  other. A narrowing of a field (GN-12a) is judged when the value is converted, after its places. The walk of the core
+  values loops over a list or a map of a record field by the field itself, `value.<field>.iter()`, and borrows the
+  field only where a reference is needed, at an `optional` and at a unit of the cycle (`&value.<field>`); a field of a
+  case of a variant and an item of a loop are references already. Why of the borrow: `&value.body.iter()` borrows the
+  iterator, and a reference to an iterator is no iterator (E0277), so the `body` of template, a list of `Node`, failed
+  the build of every target (B2.390). Why: a debug WASM
   module has 1 MiB of stack, and the case `parse depth-limit-unary` of template, a `Unary` expression nested 62 deep,
   trapped with "memory access out of bounds" in `out_expr`, which called itself at each level; the binding cannot
   enlarge the stack of a host, a larger stack only moves the depth at which the process ends, and the value alias
@@ -2133,11 +2143,16 @@ the design ids are those of the binding design.
   (`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`), in their order, and no list that the
   generator fixes. A release builds the library of each platform (GN-15g) with that print and writes the libraries
   into the directive of the link file of that platform, `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`,
-  so a consumer that fetches the module links them with no flag of its own. A checkout, whose tree holds no library,
+  so a consumer that fetches the module links them with no flag of its own: `release-go-static` writes the libraries
+  of each platform that it builds into the file `native-static-libs` beside its library in `RELEASE_ASSETS/go/<platform>`,
+  and `binding release-go-module` refuses a platform without that file, or whose file names no library, and writes the
+  directive of its link file from it into the commit of the module. The end-to-end check builds the libraries of its
+  released form (GN-14f) with the print in the same way and writes the same directive. A checkout, whose tree holds no library,
   gets them from one command of the CLI: `binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <dir>
   [--features <features>]` builds the static library of the host with `cargo rustc --locked --offline --lib
   --crate-type staticlib` and the given features into `<dir>`, with the print, and writes to its standard output the
-  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`; the diagnostics of Cargo go to
+  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`, with `<dir>` made absolute, because
+  cgo reads a relative `-L` from the directory of each package; the diagnostics of Cargo go to
   its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
   calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link ...)"` in the recipe line
   (GN-14), and `make e2e` calls the same command. The main link file names only `-l<library>`. Why the command builds

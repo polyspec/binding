@@ -7600,6 +7600,14 @@ test('Go links the static library of each platform from its directory in the Go 
   assert.doesNotMatch(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /-L/);
 });
 
+// B2.367 (defect 26): the main link file wrote a fixed list of system libraries per OS, which missed the frameworks of
+// session-store; the libraries beside the static library are the native-static-libs of its build (GN-15k).
+test('B2.367: the main link file of the Go binding names only -l<library>, no fixed list of system libraries (GN-15k)', () => {
+  const out = sampleWith(() => undefined, ['go']);
+  const directives = text(out, 'packages/go/internal/binding/zz_generated_binding.go').split('\n').filter((line) => line.startsWith('#cgo'));
+  assert.deepEqual(directives, ['#cgo LDFLAGS: -lpolyspec_sample_go']);
+});
+
 // The sample with the classes store and scope of its core (GN-6ae): a transaction takes a function of a scope and
 // returns what the function returned.
 function scopedSample(targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> {
@@ -11014,6 +11022,41 @@ test('a Python name that is a keyword takes a trailing underscore (GN-6bk, B2.34
   assert.doesNotMatch(python, /\belse=/);
 });
 
+test('B2.386: a Go case value reads a field of a variant case that is a Python keyword by the key of the case file (GN-6bk)', () => {
+  // template expr.Ternary: the Go test looked the field else up as else_, its Python name, so every GN-13e test of a
+  // ternary was one t.Fatal of a missing field.
+  const contract = sampleRead('variants/packages/rust/interface.json');
+  const group = contract.units.find((u: any) => u.id === 'figure').cases.find((k: any) => k.value === 'group');
+  group.fields.find((f: any) => f.name[0] === 'back').name = ['else'];
+  const cases = sampleRead('variants/contracts/cases.json');
+  const rename = (json: any): void => {
+    if (Array.isArray(json)) json.forEach(rename);
+    else if (typeof json === 'object' && json !== null) {
+      if (json.type === 'group' && 'back' in json) { json.else = json.back; delete json.back; }
+      Object.values(json).forEach(rename);
+    }
+  };
+  rename(cases);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.doesNotMatch(go, /has no field else_/);
+  assert.match(go, /FigureGroup\{[^\n]*\bElse: /);
+});
+
+test('B2.387: the Go tests require the error and the panic of a function from no member that keeps it (GN-6z, GN-6aa)', () => {
+  // template engine.register: the member only stores the func, so err := made.Register("greet", call) was nil and the
+  // test failed with "<nil> is not the error of the function".
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  cases.registry_register.push({ id: 'a_function_by_its_name', receiver: { new: 'registry.new' }, name: 'up', convert: { function: [{ args: { 0: 'ab c', 1: [2, 1] }, result: 'AB C' }] } });
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.doesNotMatch(go, /func TestGN6zRegistryRegister(ReturnsTheErrorOf|PanicsWithThePanicOf)Convert\(/);
+  assert.match(go, /func TestGN6zRegistryRegisterRefusesANilConvert\(/);
+  assert.match(go, /func TestGN6zApplyReturnsTheErrorOfConvert\(/);
+  assert.match(go, /func TestGN6zRegistryCallTheKeptFunctionConvertsTheValueReturnsTheErrorOfTheKeptFunction\(/);
+});
+
 test('a callback unit of another library fails with the core error of its owner, the struct that errors.code names (GN-6bl, B2.345)', () => {
   // The trait took the code enum of the kinds of the owner, Failure<ValidateErrorCode>, where the owner's own binding
   // and its core take the struct, Failure<ValidateError>.
@@ -11497,6 +11540,30 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
       assert.doesNotMatch(body ?? '', /\b(?:out|in)_figure\(/, `${path} ${name}`);
     }
     assert.match(lib, /GN-6bt/, path);
+  }
+});
+
+test('B2.390: the work stack of a cycle walks a list and a map of a record field by the field and not by a borrow of its iterator (GN-6bt)', () => {
+  // template wasm lib.rs: `for item0 in &value.body.iter() {` was E0277, since `&` takes the iterator and a reference
+  // to an iterator is no iterator. A record of the cycle that holds a list, a map, an optional and a unit of it.
+  const out = variants((contract) => {
+    const figure = contract.units.find((u: any) => u.id === 'figure');
+    figure.cases.push({ value: 'set', fields: [{ name: ['of'], type: { unit: 'figure_set' }, required: true }] });
+    contract.units.push({ id: 'figure_set', name: ['figure', 'set'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_variants::FigureSet', fields: [
+      { name: ['items'], type: { list: { unit: 'figure' } }, required: true },
+      { name: ['named'], type: { map: { unit: 'figure' } }, required: true },
+      { name: ['back'], type: { optional: { unit: 'figure' } }, required: true },
+      { name: ['first'], type: { unit: 'figure' }, required: true },
+    ] });
+  });
+  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
+  for (const path of libs) {
+    const lib = text(out, path);
+    assert.doesNotMatch(lib, /\bin &[^\n]*\.iter\(\) \{/, path);
+    assert.match(lib, /for item0 in value\.items\.iter\(\) \{/, path);
+    assert.match(lib, /for \(_key, item0\) in value\.named\.iter\(\) \{/, path);
+    assert.match(lib, /if let Some\(item0\) = &value\.back \{/, path);
+    assert.match(lib, /kids\.push\(Cycle\d+::U\d+\(&value\.first\)\);/, path);
   }
 });
 
