@@ -1068,7 +1068,12 @@ the design ids are those of the binding design.
   are not converted yet, converts that place first and reads the value again past the bytes of the converted places,
   so a value with `n` such places is read `n + 1` times. A cycle whose fields hold a callback or a function, whose core
   types carry a lifetime of the call, or a tuple that holds a unit of the cycle, keeps the conversions that call each
-  other. A narrowing of a field (GN-12a) is judged when the value is converted, after its places. Why: a debug WASM
+  other. A narrowing of a field (GN-12a) is judged when the value is converted, after its places. The walk of the core
+  values loops over a list or a map of a record field by the field itself, `value.<field>.iter()`, and borrows the
+  field only where a reference is needed, at an `optional` and at a unit of the cycle (`&value.<field>`); a field of a
+  case of a variant and an item of a loop are references already. Why of the borrow: `&value.body.iter()` borrows the
+  iterator, and a reference to an iterator is no iterator (E0277), so the `body` of template, a list of `Node`, failed
+  the build of every target (B2.390). Why: a debug WASM
   module has 1 MiB of stack, and the case `parse depth-limit-unary` of template, a `Unary` expression nested 62 deep,
   trapped with "memory access out of bounds" in `out_expr`, which called itself at each level; the binding cannot
   enlarge the stack of a host, a larger stack only moves the depth at which the process ends, and the value alias

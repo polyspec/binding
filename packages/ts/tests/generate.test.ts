@@ -11543,6 +11543,30 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.390: the work stack of a cycle walks a list and a map of a record field by the field and not by a borrow of its iterator (GN-6bt)', () => {
+  // template wasm lib.rs: `for item0 in &value.body.iter() {` was E0277, since `&` takes the iterator and a reference
+  // to an iterator is no iterator. A record of the cycle that holds a list, a map, an optional and a unit of it.
+  const out = variants((contract) => {
+    const figure = contract.units.find((u: any) => u.id === 'figure');
+    figure.cases.push({ value: 'set', fields: [{ name: ['of'], type: { unit: 'figure_set' }, required: true }] });
+    contract.units.push({ id: 'figure_set', name: ['figure', 'set'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_variants::FigureSet', fields: [
+      { name: ['items'], type: { list: { unit: 'figure' } }, required: true },
+      { name: ['named'], type: { map: { unit: 'figure' } }, required: true },
+      { name: ['back'], type: { optional: { unit: 'figure' } }, required: true },
+      { name: ['first'], type: { unit: 'figure' }, required: true },
+    ] });
+  });
+  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
+  for (const path of libs) {
+    const lib = text(out, path);
+    assert.doesNotMatch(lib, /\bin &[^\n]*\.iter\(\) \{/, path);
+    assert.match(lib, /for item0 in value\.items\.iter\(\) \{/, path);
+    assert.match(lib, /for \(_key, item0\) in value\.named\.iter\(\) \{/, path);
+    assert.match(lib, /if let Some\(item0\) = &value\.back \{/, path);
+    assert.match(lib, /kids\.push\(Cycle\d+::U\d+\(&value\.first\)\);/, path);
+  }
+});
+
 test('B2.385: the K-2 tests take a case whose callback rows give results before one whose callback raises (GN-13y, K-2)', () => {
   // sample tolerant: its first case raises in the callback with the key ?a, whose raise the core swallows, so the K-2
   // tests of an exception and of a result of another type failed with those arguments in every target.
