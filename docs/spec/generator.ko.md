@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e64a125ae9a1a46c1eb4c22f23878b3bdc8b109186a349323350e50401442b71 -->
+<!-- source-sha256: 47212dc8105da7cab162f845b30591ff2ce7e0dc7e3f9dbfc8f6a22307087468 -->
 # 생성기
 
 [English](generator.md)
@@ -2203,6 +2203,8 @@
   동안에만 주는 kind를 보인다. 이유: member는 그 호출 가운데 하나의 callback이 도는 동안 receiver 위의 호출을 거부할 수
   있는데, 예를 들어 callback의 transaction이 하나뿐인 연결을 쥔 pool이 그렇고, 그 kind는 callback이 receiver에 닿을 때만
   case를 가진다.
+  Node와 WASM에서 step은 그 호출이 await하지 않으면 호출의 결과를 바로 읽는다. step의 함수는 그 호출 가운데 하나가
+  await할 때만 async 함수이고, 다른 함수의 `await`는 문법 오류이기 때문이다.
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열, `case_path`와 선택적인 `as`만 가진 경로 객체, case의 listener의

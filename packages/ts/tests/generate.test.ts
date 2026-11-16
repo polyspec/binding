@@ -10870,4 +10870,11 @@ test('a step of a function fixture calls on the receiver of the case, which the 
   const go = text(out, 'packages/go/zz_generated_test.go');
   assert.match(go, /\tbound_receiver := made\d+\n\t_ = bound_receiver\n/);
   assert.match(go, /bound_receiver\.Get\("a"\)/);
+  // A step that raises in a function that is no async function reads its outcome at once: the test of the case awaits
+  // the transaction, but the function of the step cannot await, so a settled outcome there is a syntax error.
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const node = text(out, path);
+    const busy = node.slice(node.indexOf("a_store_is_busy_while_its_transaction_runs'"), node.indexOf('\n});', node.indexOf("a_store_is_busy_while_its_transaction_runs'")));
+    assert.ok(busy.includes("(...args) => { assert.equal((outcome(() => bound.receiver.count())).kind, 'busy'"), `${path}:\n${busy}`);
+  }
 });

@@ -5,17 +5,17 @@
 
 ## Unreleased
 
+- A step of a function fixture that is no async function reads the outcome of a call that raises at once, in Node and WASM; the test of a case that awaits its member wrote `await settled(...)` into that function, a syntax error that stopped the whole test file from loading (GN-6m, GN-13p, B2.324).
 - A step of a function fixture in a case of a method calls on the receiver of the case (`"on": "receiver"`), which the test keeps, on the five targets; with `raises` it shows a kind that the receiver gives while the callback of its own call runs. The end-to-end sample gives `store.count`, which fails with the new kind `busy` while a transaction of the store runs (GN-13p, B2.324).
-
 - A step of a function fixture and a call of `after` may raise a kind, and a call of `after` may be on an argument that a function fixture kept, after the function returned; such a kind counts as a case of the member of the call for CK-22, on the five targets. The end-to-end sample gives `scope.size`, which fails with the new kind `ended` on a scope that a function kept after its transaction ended (GN-13o, B2.323).
-
 - A function fixture names its parameters (`names`), and a step of it or of a fixture inside it calls on a named argument and passes one as `{"bound": <name>}`, on the five targets; the end-to-end sample copies a value of a nested scope into the scope around it with the new member `scope.copy` (GN-13n, B2.322).
-## 0.0.13
-
-- A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
 - A case may run a peer session of its service at the same time as its own through `peer` of its `service`: each test generator except WASM starts the peer, a child process of the program of the state, after setup, writes the JSON of each step as one line and reads the line `ready`, also after a call of `then` with `peer`, ends it before check and kills it in the cleanup of the test, and `binding check` reports a peer of a service without state and a step of the peer in a case without a peer (GN-13q, CK-95, B2.330). A deadlock between two row locks needs two sessions at once, which no case could run.
 - A path of `@files` names a file whose name is bytes that are no Unicode by the escape `\xHH` of a byte from 80 to ff, such as `"sets/\\xff.dbs"`; each of the five test generators writes the file by its bytes, and the test of such a case runs only on Linux and is skipped with the reason elsewhere (GN-13i, B2.326). A key of `@files` was Unicode text, so a case could not store such a file.
 - A case may have `"@listener": "accept_and_close"`, a listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once, and a composed text names its port by the part `{"listener": "port"}`; each of the five test generators starts it before the values of the case and stops it at the end of the test, without a time limit and without a sleep (GN-13r, CK-96, B2.325). A case could name a closed port alone, which the system refuses before any handshake, so a connection that a server drops during the handshake had no case.
+
+## 0.0.13
+
+- A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
 
 ## 0.0.12
 

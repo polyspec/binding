@@ -2709,6 +2709,8 @@ the design ids are those of the binding design.
   step shows a kind that the receiver gives only while its own call runs. Why: a member may refuse a call on its
   receiver while the callback of another of its calls runs, such as a pool whose one connection the transaction of
   the callback holds, and that kind has a case only when the callback reaches the receiver.
+  In Node and WASM the step reads the outcome of its call at once unless that call awaits, because the function of
+  the step is an async function only when one of its calls awaits, and `await` in another function is a syntax error.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings, path objects with only `case_path` and optional `as`, and the

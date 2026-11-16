@@ -1,24 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: dc366b908e7f996d2ac51e5ba51c6012e87a3d46361adf4a87f551d4b4809336 -->
-<!-- source-sha256: a514cd9fea31c45e91b62cfe33e8b930b11a0261deeb07c2ea34c029f7c0e7c2 -->
-<!-- source-sha256: fd6b4c2a687d6d22635190e7ba3e5cd62551286cd339c8c8a9f1eecd6e0c26f0 -->
+<!-- source-sha256: b9b55b3caf2e7b8e699befccab378891ed72b0e102811cee299036a6984c638a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- async 함수가 아닌 function fixture의 step은 raise하는 호출의 결과를 Node와 WASM에서 바로 읽는다. member를 await하는 case의 시험은 그 함수에 `await settled(...)`를 써서, 시험 파일 전체가 load되지 않는 문법 오류를 냈다(GN-6m, GN-13p, B2.324).
 - method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.324).
-
 - function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.323).
-
 - function fixture는 parameter에 이름을 붙이고(`names`), 그것이나 그 안의 fixture의 step은 이름 붙은 인자 위에서 부르고 그것을 `{"bound": <name>}`로 넘긴다. 다섯 타깃에서 그렇다. end-to-end sample은 새 member `scope.copy`로 중첩 scope의 값을 둘러싼 scope에 복사한다(GN-13n, B2.322).
-## 0.0.13
-
-- `cases`의 행은 저장소의 시험이 읽고 어떤 생성기도 읽지 않는 case의 key를 `reads`에 선언하고, CK-96은 그것을 받는다(B2.319). CK-96은 그런 key를 모두 보고하여, core 시험이 자기 key를 읽는 계약에서 `binding generate`가 멈췄다: php-serialization에서 3769건(`bytes`, `tree`, `serialized`, `data`, `written`). 어떤 행도 선언하지 않은 key는 여전히 보고한다.
 - case는 자신의 `service`의 `peer`로 service의 peer session을 자신의 session과 동시에 실행할 수 있다. WASM을 뺀 각 시험 생성기는 상태 program의 자식 process인 peer를 setup 뒤에 시작하고, 각 단계의 JSON을 한 줄로 쓰고 줄 `ready`를 읽으며(`peer`가 있는 `then` 호출 뒤에도), check 전에 끝내고, 시험의 cleanup에서 죽인다. `binding check`는 상태가 없는 service의 peer와 peer가 없는 case의 peer 단계를 보고한다(GN-13q, CK-95, B2.330). 두 행 잠금 사이의 deadlock에는 동시에 두 session이 필요했지만 어떤 case도 그것을 실행하지 못했다.
 - `@files`의 경로는 80부터 ff까지의 바이트 escape `\xHH`로 Unicode가 아닌 바이트 이름의 파일을 이름한다. 예: `"sets/\\xff.dbs"`. 다섯 시험 생성기 각각은 그 바이트로 파일을 쓰고, 그런 case의 시험은 Linux에서만 실행되며 다른 곳에서는 이유와 함께 건너뛴다(GN-13i, B2.326). `@files`의 키는 Unicode 텍스트였으므로 case는 그런 파일을 저장할 수 없었다.
 - case는 `"@listener": "accept_and_close"`를 가질 수 있다. 시스템이 정하는 port로 `127.0.0.1`에서 듣고 각 연결을 받아들인 뒤 바로 닫는 listener이며, 합성 텍스트는 부분 `{"listener": "port"}`로 그 port를 이름한다. 다섯 시험 생성기 각각은 case의 값보다 먼저 그것을 시작하고 시험 끝에서 멈추며, 시간 제한도 잠듦도 없다(GN-13r, CK-96, B2.325). case는 닫힌 port만 이름할 수 있었고 시스템은 그것을 handshake 전에 거부하므로, 서버가 handshake 중에 끊는 연결에는 case가 없었다.
+
+## 0.0.13
+
+- `cases`의 행은 저장소의 시험이 읽고 어떤 생성기도 읽지 않는 case의 key를 `reads`에 선언하고, CK-96은 그것을 받는다(B2.319). CK-96은 그런 key를 모두 보고하여, core 시험이 자기 key를 읽는 계약에서 `binding generate`가 멈췄다: php-serialization에서 3769건(`bytes`, `tree`, `serialized`, `data`, `written`). 어떤 행도 선언하지 않은 key는 여전히 보고한다.
 
 ## 0.0.12
 

@@ -92,9 +92,12 @@ export const awaitedTest = (block: string): string => {
   if (!/\bawait /.test(block)) return block;
   return block
     .replaceAll(/(\ntest\('[^\n]*?'), \((t?)\) => \{/g, '$1, async ($2) => {')
-    .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ')
-    .replaceAll('outcome(() => ', 'await settled(async () => ');
+    .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ');
 };
+
+// G-5, GN-6m: the outcome of a call, settled when the expression awaits and read at once otherwise. It is chosen where
+// the call is written, because a step of a function fixture that is no async function cannot await (GN-13p).
+export const nodeOutcome = (expr: string): string => (/\bawait /.test(expr) ? `await settled(async () => ${expr})` : `outcome(() => ${expr})`);
 
 // GN-6y: the directory of a test, in which a case resolves its relative paths; the tests of a file run one after
 // another, and the directory is removed after each.
@@ -437,7 +440,7 @@ export function nodeTests(model: Model): string {
     fails: (expr, kind, what) => {
       usesOutcome = true;
       // GN-6m: the outcome is parenthesized, so a test that waits reads kind of the settled outcome, not of its promise.
-      return `assert.equal((outcome(() => ${expr})).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
+      return `assert.equal((${nodeOutcome(expr)}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => 'present' in step ? expr : textPaths.derive('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
     arm: (local, member, faults) => {
@@ -643,7 +646,7 @@ test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that i
       const argName = langName('node', pair.arg.name, 'variable');
       emit(`
 test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
-  assert.deepStrictEqual(outcome(() => ${target(callArgs(model, ctx, fn, pair.left))}), outcome(() => ${target(callArgs(model, ctx, fn, pair.right))}));
+  assert.deepStrictEqual(${nodeOutcome(target(callArgs(model, ctx, fn, pair.left)))}, ${nodeOutcome(target(callArgs(model, ctx, fn, pair.right)))});
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
@@ -861,7 +864,7 @@ test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the
     emit(`
 test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.member.name, 'callable')} consumes its object', () => {
   const held = ${made(sample)};
-  outcome(() => ${invoke(fn, args, 'held')});
+  ${nodeOutcome(invoke(fn, args, 'held'))};
   assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
 });`);
   }

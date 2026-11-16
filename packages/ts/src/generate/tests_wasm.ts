@@ -6,7 +6,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCase
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
+import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
@@ -96,7 +96,7 @@ export function wasmTests(model: Model): string {
     run: (expr) => `${expr};`,
     fails: (expr, kind, what) => {
       usesOutcome = true;
-      return `assert.equal((outcome(() => ${expr})).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
+      return `assert.equal((${nodeOutcome(expr)}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => 'present' in step ? expr : textPaths.derive('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
     // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in
@@ -293,7 +293,7 @@ test('GN-6ae: ${name} refuses a ${langName('wasm', arg.name, 'variable')} that i
       const argName = langName('wasm', pair.arg.name, 'variable');
       emit(`
 test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
-  assert.deepStrictEqual(outcome(() => ${target(callArgs(model, ctx, fn, pair.left))}), outcome(() => ${target(callArgs(model, ctx, fn, pair.right))}));
+  assert.deepStrictEqual(${nodeOutcome(target(callArgs(model, ctx, fn, pair.left)))}, ${nodeOutcome(target(callArgs(model, ctx, fn, pair.right)))});
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
@@ -494,7 +494,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
     emit(`
 test('GN-6o: ${langName('wasm', fn.unit.name, 'class')}.${langName('wasm', fn.member.name, 'callable')} consumes its object', () => {
   const held = ${made(sample)};
-  outcome(() => ${invoke(fn, args, 'held')});
+  ${nodeOutcome(invoke(fn, args, 'held'))};
   assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
 });`);
   }

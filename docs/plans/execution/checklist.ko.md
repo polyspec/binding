@@ -1,9 +1,5 @@
 <!-- doc-id: checklist-execution -->
 <!-- source-sha256: 83f04814080e6338fb7b6454ab812357d12d344643ad4b26be295eeec4d1a4c2 -->
-<!-- source-sha256: 36f2e263f11bac607d0566dafffddc21e4485d95526d4874ab07bbcfc0e3d007 -->
-<!-- source-sha256: f1d32038acf7384c2c4ee9640be5503a0f5e70f60217b2a76e871e2c031a3d94 -->
-<!-- source-sha256: 222c499ea2f4781089984b1a2f1d9c19dfedcc2f743b6a4a36b2619880f38037 -->
-<!-- source-sha256: 4de7f8558acfd66042c7f00b986617c7bdae7ef1b473210c8908587f89274d10 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
