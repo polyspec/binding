@@ -3254,6 +3254,14 @@ the design ids are those of the binding design.
   test of the repository reads inputs that the runner of the repository gives, such as the path of its case file in
   an environment variable, which the run does not know, and one target that runs more than the others gives another
   result for the same contract.
+- **GN-14h** A repository of `tests/e2e` with `refused.json` is a check that the compiler refuses its binding
+  (B2.402): `refused.json` names, for each target, one rustc code, and after the generation the run checks the
+  binding crate of each target with `cargo check -p <crate>` (`--target wasm32-unknown-unknown` for WASM), which must
+  fail with that code and no other error; that refusal is the test of the target, and the run ends there. A check
+  that passes, or that fails without the code or with another error, fails the target (`scripts/e2e-refusal.mts`).
+  `tests/e2e/lent` is such a repository: its core keeps a lent record beyond the call (GN-6d), and every target is
+  refused, with E0597 and in Node with E0521. Why: a one-time check proves the lifetime of the call once, and a run in
+  CI keeps a change of the generator from giving a lent record `'static` again.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on

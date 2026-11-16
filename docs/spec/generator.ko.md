@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 04ab4cdd768b490ac32415d88bc22baebcd8310243909335bcec725f82f514e1 -->
+<!-- source-sha256: 95039ceed091b52f732b862683e5b93a5056fa675a4b6c1dfc20da685bde8091 -->
 # 생성기
 
 [English](generator.md)
@@ -2655,6 +2655,13 @@
   바뀌지 않는다. 배포 형태(GN-14f)의 원본도 같은 파일을 뺀다. 코어의 시험(GN-14)은 모든 target의 단계이며 남는다.
   이유: 레포의 시험은 레포의 runner가 주는 입력, 예를 들어 환경 변수로 주는 case 파일의 경로를 읽는데 실행은 그것을
   모르며, 한 target이 다른 target보다 더 많이 실행하면 같은 계약에 다른 결과를 낸다.
+- **GN-14h** `refused.json`을 가진 `tests/e2e`의 레포는 컴파일러가 그 바인딩을 거부하는지의 검사다(B2.402).
+  `refused.json`은 target마다 rustc 코드 하나를 적고, 실행은 생성 뒤 각 target의 바인딩 crate를
+  `cargo check -p <crate>`(WASM은 `--target wasm32-unknown-unknown`)로 검사한다. 그 검사는 그 코드로, 다른 오류 없이
+  실패해야 한다. 그 거부가 그 target의 시험이며 실행은 거기서 끝난다. 통과하거나, 그 코드 없이 또는 다른 오류와 함께
+  실패하는 검사는 그 target을 실패시킨다(`scripts/e2e-refusal.mts`). `tests/e2e/lent`가 그런 레포다. 그 코어는 빌린
+  record를 호출 뒤까지 가지며(GN-6d), 모든 target이 E0597로, Node는 E0521로 거부된다. 이유: 한 번의 검사는 호출의
+  lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
 - **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
   의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
   적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적을

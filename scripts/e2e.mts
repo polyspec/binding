@@ -43,6 +43,7 @@ import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 import { phpMinorProblem } from './php-minor.mts';
+import { refusalProblem } from './e2e-refusal.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -548,6 +549,28 @@ const generateOf = (t: Lang, p: Prepared): void => {
   });
 };
 for (const t of targets) for (const p of copiesOf(t)) generateOf(t, p);
+
+// GN-14 (B2.402): a repository with refused.json is the check that the compiler refuses its binding: cargo check of
+// the crate of each target must fail with the rustc code that it names, which counts as the test of the target, and
+// the run ends there, since no later step can build that crate.
+const refusedPath = mains[0] === undefined ? '' : join(mains[0].copy, 'refused.json');
+if (refusedPath !== '' && existsSync(refusedPath)) {
+  const codes = (JSON.parse(readFileSync(refusedPath, 'utf8')) as { codes: Partial<Record<Lang, string>> }).codes;
+  for (const t of targets) {
+    stepOf([t], `cargo check refuses the binding with ${codes[t] ?? 'no code'}`, () => {
+      for (const p of mainsOf(t)) {
+        const argv = ['check', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-${crateSuffix[t]}`, ...(t === 'wasm' ? ['--target', 'wasm32-unknown-unknown'] : [])];
+        process.stdout.write(`$ cargo ${argv.join(' ')}\n`);
+        const ran = spawnSync('cargo', argv, { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target } });
+        process.stdout.write(ran.stderr);
+        const problem = refusalProblem(ran.status, ran.stderr, codes[t]);
+        if (problem !== undefined) throw new Error(problem);
+        counted(t, `the refusal ${codes[t] ?? ''} of cargo check of ${p.contract.core.crate}-${crateSuffix[t]}`, 1, 0, 0);
+      }
+    });
+  }
+  finish();
+}
 
 // Each core is linted once, with the fault injection points of its feature fault-test when the contract has them.
 stepOf(targets, `lint the core${mains.length === 1 ? '' : 's'}`, () => {
@@ -1091,15 +1114,21 @@ if (targets.includes('wasm') && installed) {
   })) lintOf('wasm', 'tsc --strict of the declarations');
 }
 
-step('each target (a lint reads the code; only a test verifies the target)');
-for (const [t, o] of results) {
-  if (o.causes.length === 0 && o.tests.length === 0) o.causes.push('no test ran (GN-14)');
-  const tests = o.tests.map((x) => `${x.what}: ${x.passed} passed`).join('; ');
-  process.stdout.write(`${t}: ${o.causes.length > 0 ? 'FAILED' : 'passed'}\n  lint: ${o.lint.join('; ') || 'none'}\n  test: ${tests || 'NONE'}\n${o.causes.map((c) => `  cause: ${c}\n`).join('')}`);
+finish();
+
+// The end of the run: each target with its lint, its tests and the causes of its failure; it fails when a target failed.
+function finish(): never {
+  step('each target (a lint reads the code; only a test verifies the target)');
+  for (const [t, o] of results) {
+    if (o.causes.length === 0 && o.tests.length === 0) o.causes.push('no test ran (GN-14)');
+    const tests = o.tests.map((x) => `${x.what}: ${x.passed} passed`).join('; ');
+    process.stdout.write(`${t}: ${o.causes.length > 0 ? 'FAILED' : 'passed'}\n  lint: ${o.lint.join('; ') || 'none'}\n  test: ${tests || 'NONE'}\n${o.causes.map((c) => `  cause: ${c}\n`).join('')}`);
+  }
+  const failedTargets = [...results].filter(([, o]) => o.causes.length > 0).map(([t]) => t);
+  if (failedTargets.length > 0) {
+    process.stdout.write(`\nthe target${failedTargets.length === 1 ? '' : 's'} ${failedTargets.join(', ')} failed, each with its causes above: the run fails (GN-14c)\n`);
+    process.exit(1);
+  }
+  process.stdout.write('\nevery target passed\n');
+  process.exit(0);
 }
-const failedTargets = [...results].filter(([, o]) => o.causes.length > 0).map(([t]) => t);
-if (failedTargets.length > 0) {
-  process.stdout.write(`\nthe target${failedTargets.length === 1 ? '' : 's'} ${failedTargets.join(', ')} failed, each with its causes above: the run fails (GN-14c)\n`);
-  process.exit(1);
-}
-process.stdout.write('\nevery target passed\n');

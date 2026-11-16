@@ -85,6 +85,9 @@ jobs:
           - name: kept
             repo: tests/e2e/kept
             deps: ""
+          - name: lent
+            repo: tests/e2e/lent
+            deps: ""
           - name: plot
             repo: tests/e2e/plot
             deps: tests/e2e/points

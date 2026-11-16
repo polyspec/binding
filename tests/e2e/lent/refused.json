@@ -1,0 +1,10 @@
+{
+  "comment": "GN-14 (B2.402): the core keeps a lent record beyond the call, so cargo check of each binding crate must fail with this rustc code; a check that passes, or that fails with any other error, fails the run.",
+  "codes": {
+    "python": "E0597",
+    "node": "E0521",
+    "php": "E0597",
+    "go": "E0597",
+    "wasm": "E0597"
+  }
+}
