@@ -219,9 +219,10 @@ export function nativeStaticLibs(diagnostics: string): string | undefined {
 export const goLinkDirective = (platform: string): string => `// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}`;
 
 // GN-15k: the arguments of cargo that build the static library of a Go crate with the print of its native-static-libs.
-export function goStaticBuildArgs(build: { manifest: string; targetDir: string; features?: string | undefined; release?: boolean; target?: string | undefined }): string[] {
+// GN-1d: flags are the arguments of a build that the repository gives, right after the subcommand.
+export function goStaticBuildArgs(build: { manifest: string; targetDir: string; features?: string | undefined; release?: boolean; target?: string | undefined; flags?: readonly string[] }): string[] {
   return [
-    'rustc', ...(build.release === true ? ['--release'] : []), '--locked', '--offline', '--color', 'never', '--manifest-path', build.manifest, '--target-dir', build.targetDir,
+    'rustc', ...(build.flags ?? []), ...(build.release === true ? ['--release'] : []), '--locked', '--offline', '--color', 'never', '--manifest-path', build.manifest, '--target-dir', build.targetDir,
     ...(build.target === undefined ? [] : ['--target', build.target]), '--lib', '--crate-type', 'staticlib',
     ...(build.features === undefined ? [] : ['--features', build.features]), '--', '--print', 'native-static-libs',
   ];

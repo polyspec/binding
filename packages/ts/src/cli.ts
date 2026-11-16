@@ -1,16 +1,18 @@
 #!/usr/bin/env node
-// binding check <interface.json> [--release]
+// binding check <interface.json> --cargo <command> [--release]
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
 //   tracked binding packages with what `binding scaffold` writes (L-2). --release adds the check of a release (CK-70).
-// binding scaffold [--root <repository> | --contract <interface.json>]
+// binding scaffold [--root <repository> | --contract <interface.json>] --cargo <command>
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
-// binding generate [--root <repository> | --contract <interface.json>] [--out <directory>]
+// binding generate [--root <repository> | --contract <interface.json>] [--out <directory>] --cargo <command>
 //   Writes the generated sources into the directories that binding owns (L-1). --out writes the same files under another
-//   directory, for the comparison of I-5.
+//   directory, for the comparison of I-5. --cargo of check, scaffold, generate and go-link is the cargo command of the
+//   repository, the value of $(CARGO), which runs every call of Cargo (GN-1d).
 // binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
 //     --work <directory> [--remote <name>]
 //   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
-// binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>]
+// binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate>
+//     --target-dir <directory> [--features <features>]
 //   Builds the static library of the host with the print of rustc and prints the value of CGO_LDFLAGS for the Go tests
 //   of the checkout (GN-15k).
 // binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]
@@ -30,7 +32,7 @@ import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
-import { releaseRecipes } from './release/recipes.ts';
+import { cargoFindings, releaseRecipes } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -55,7 +57,7 @@ function libraries(contract: unknown): Set<string> {
 // GN-15f: cargo metadata resolves the workspace, so it fails where Cargo cannot: without network for a Git dependency
 // that the machine has not fetched, or for a manifest that names a crate that no longer exists. The failure is given
 // back with what to run, so that scaffold can name the Go module alone.
-function cargoContracts(contract: unknown, crateDir: string): { found: Map<string, unknown>; failure?: string } {
+function cargoContracts(contract: unknown, crateDir: string, cargo: readonly string[]): { found: Map<string, unknown>; failure?: string } {
   const wanted = libraries(contract);
   const found = new Map<string, unknown>();
   if (wanted.size === 0) return { found };
@@ -69,7 +71,10 @@ function cargoContracts(contract: unknown, crateDir: string): { found: Map<strin
     try {
       // GN-15f: --locked reads the Cargo.lock of the repository as it is and never writes it, and --offline reads only
       // the crates that the machine fetched, so the contracts that a check reads depend on no network.
-      const run = spawnSync('cargo', ['metadata', '--locked', '--offline', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
+      // GN-1d: the cargo command of the repository, so that a development link of the repository resolves the crates
+      // of the libraries to their linked checkouts, whose interface.json is then read.
+      const [program = 'cargo', ...words] = cargo;
+      const run = spawnSync(program, [...words, 'metadata', '--locked', '--offline', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
         stdio: ['ignore', fd, 'inherit'],
       });
       if (run.error !== undefined) throw run.error;
@@ -111,8 +116,8 @@ function closure(contract: unknown, found: Map<string, unknown>, read: (library:
 }
 
 // check and generate read the contracts for every target, so a failure of Cargo stops them.
-function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
-  const { found, failure } = cargoContracts(contract, crateDir);
+function dependencies(contract: unknown, crateDir: string, cargo: readonly string[]): Map<string, unknown> {
+  const { found, failure } = cargoContracts(contract, crateDir, cargo);
   if (failure !== undefined) fail(failure);
   return found;
 }
@@ -124,8 +129,22 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+// GN-1d: the words of the value of --cargo or --cargo-flags, as the shell splits $(CARGO) of a recipe line at white
+// space; a value that the shell would read otherwise (a quote or a backslash) is refused, and so is a command of no word.
+function words(option: string, value: string, command: boolean): string[] {
+  const split = value.split(/\s+/).filter((word) => word !== '');
+  if (/["'\\]/.test(value) || (command && split.length === 0)) usage(`${option} ${value} is no list of words: give the value of $(${option === '--cargo' ? 'CARGO' : 'CARGOFLAGS'}), which the shell splits at white space (GN-1d)`);
+  return split;
+}
+
+// GN-1d: the cargo command that a command which runs Cargo requires.
+function cargoOf(command: string, value: string | undefined): string[] {
+  if (value === undefined) usage(`${command} takes --cargo <command>, the cargo command of the repository (GN-1d)`);
+  return words('--cargo', value, true);
+}
+
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> --cargo <command> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] --cargo <command> | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -227,6 +246,7 @@ function releaseRecipesCommand(argv: string[]): never {
 }
 
 // GN-15k: the static library of the host, built by cargo rustc with the print of rustc into the target directory, and
+// GN-1d: with the cargo command of --cargo and the arguments of a build of --cargo-flags right after rustc,
 // the value of CGO_LDFLAGS for the Go tests of the checkout on stdout. Both streams of cargo go to stderr, so stdout
 // holds the value alone; a failed build ends with the status of cargo. The directory is made absolute, because cgo
 // reads a relative -L from the directory of each package.
@@ -235,15 +255,17 @@ function goLinkCommand(argv: string[]): never {
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i];
     const value = argv[i + 1];
-    if (key === undefined || value === undefined || !['--manifest', '--target-dir', '--features'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--cargo', '--cargo-flags', '--manifest', '--target-dir', '--features'].includes(key)) usage(`unknown argument ${key ?? ''}`);
     given.set(key, value);
   }
+  const [program = 'cargo', ...prefix] = cargoOf('go-link', given.get('--cargo'));
+  const flags = words('--cargo-flags', given.get('--cargo-flags') ?? '', false);
   const manifestOption = given.get('--manifest');
   const targetOption = given.get('--target-dir');
   if (manifestOption === undefined || targetOption === undefined) usage('go-link takes --manifest and --target-dir');
   const manifest = resolve(manifestOption);
   const targetDir = resolve(targetOption);
-  const ran = spawnSync('cargo', goStaticBuildArgs({ manifest, targetDir, features: given.get('--features') }), { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['inherit', 'pipe', 'pipe'] });
+  const ran = spawnSync(program, [...prefix, ...goStaticBuildArgs({ manifest, targetDir, features: given.get('--features'), flags })], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['inherit', 'pipe', 'pipe'] });
   if (ran.error !== undefined) fail(`cargo did not start: ${ran.error.message}`);
   process.stderr.write(ran.stdout);
   process.stderr.write(ran.stderr);
@@ -263,15 +285,21 @@ const options = new Map<string, string>();
 let contractPath: string;
 if (command === 'check') {
   // CK-70: --release, which the recipe of a release passes (GN-19g), adds the check of a release.
-  const [path, ...extra] = rest.filter((argument) => argument !== '--release');
-  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the option --release');
-  if (rest.includes('--release')) options.set('--release', 'true');
+  const positional: string[] = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const argument = rest[i] as string;
+    if (argument === '--release') options.set('--release', 'true');
+    else if (argument === '--cargo' && rest[i + 1] !== undefined) options.set('--cargo', rest[(i += 1)] as string);
+    else positional.push(argument);
+  }
+  const [path, ...extra] = positional;
+  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the options --cargo and --release');
   contractPath = resolve(path);
 } else {
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
     const value = rest[i + 1];
-    if (key === undefined || value === undefined || !['--root', '--contract', '--out', ...(command === 'generate' ? ['--target'] : [])].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--root', '--contract', '--out', '--cargo', ...(command === 'generate' ? ['--target'] : [])].includes(key)) usage(`unknown argument ${key ?? ''}`);
     options.set(key, value);
   }
   // L-1: a core at packages/<component>/rust names its contract with --contract; --root finds packages/rust.
@@ -279,13 +307,14 @@ if (command === 'check') {
   if (given !== undefined && options.has('--root')) usage('give --root or --contract, not both');
   contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
+const cargo = cargoOf(command, options.get('--cargo'));
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 // scaffold writes the thin packages from the package and name items alone (the schema, CK-1, and the names, CK-18), so
 // no other finding stops it, such as a unit that is still todo (CK-2); check and generate report those. It does not ask
 // Cargo for the workspace either: a binding manifest that an earlier scaffold wrote, which this one rewrites, may no
 // longer resolve (the core crate was renamed), and that must not stop the rewrite. Only the go.mod of a contract with the
 // target go needs the contracts of other libraries, which scaffold reads below (GN-15f).
-const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath));
+const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath), cargo);
 // G-5: an integer of a case file outside the safe integers is read as a bigint from its token, so it keeps its value
 // (an int64 such as 9223372036854775807); a number with a fraction or an exponent stays a number.
 const caseNumber = (_key: string, value: unknown, context?: { source?: string }): unknown =>
@@ -376,9 +405,9 @@ function scaffolded(): Map<string, unknown> {
   // A failure of Cargo leaves the contracts of the other dependencies not found: the Go module is then named as not
   // written with the failure, and the other packages are written with the libraries that the contract itself names.
   if (others) {
-    const cargo = cargoContracts(contract, join(root, checked.core.path));
-    metadataFailure = cargo.failure;
-    for (const [library, other] of cargo.found) if (!found.has(library)) found.set(library, other);
+    const read = cargoContracts(contract, join(root, checked.core.path), cargo);
+    metadataFailure = read.failure;
+    for (const [library, other] of read.found) if (!found.has(library)) found.set(library, other);
   }
   return found;
 }
@@ -491,6 +520,12 @@ if (command === 'check') {
     if (existsSync(fragment) && readFileSync(fragment, 'utf8') !== recipes.text) {
       differs = true;
       process.stderr.write(`${fragment}: CK-94 differs from what binding release-recipes writes for the contract; binding release-recipes writes it again (GN-19h)\n`);
+    }
+    if (existsSync(fragment)) {
+      for (const f of cargoFindings(readFileSync(fragment, 'utf8'))) {
+        differs = true;
+        process.stderr.write(`${fragment}:${String(f.line)}: ${f.message}\n`);
+      }
     }
     const makefile = join(root, 'Makefile');
     if (existsSync(makefile)) {

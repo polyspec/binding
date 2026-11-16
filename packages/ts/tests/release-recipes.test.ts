@@ -70,7 +70,7 @@ function standIn(dir: string, name: string, body: string): void {
 const fs = require('fs');
 const path = require('path');
 const args = process.argv.slice(2);
-const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
+const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS', 'CARGO_VIA'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 fs.appendFileSync(process.env.CALLS, JSON.stringify({ tool: ${JSON.stringify(name)}, args, env: kept }) + '\\n');
 const option = (name) => args[args.indexOf(name) + 1];
 ${body}
@@ -85,7 +85,7 @@ function sandbox(t: TestContext, host: string, change: (contract: Contract) => v
   const contract = fixtureContract();
   change(contract);
   writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
-  execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+  execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
   execFileSync(process.execPath, [cli, 'release-recipes', '--root', root]);
   mkdirSync(join(root, 'config'));
   writeFileSync(join(root, 'config/toolchain.json'), `${JSON.stringify({ schema: 1, llvm: { version: LLVM_MAJOR }, phpExtension: { minors: PHP_MINORS } }, null, 2)}\n`);
@@ -149,7 +149,7 @@ fs.writeFileSync(path.join(option('--pack-destination'), manifest.name.replace('
   standIn(bin, 'wasm-bindgen', `if (args[0] === '--version') { console.log('wasm-bindgen ${WASM_BINDGEN}'); process.exit(0); }
 fs.mkdirSync(option('--out-dir'), { recursive: true });
 fs.writeFileSync(path.join(option('--out-dir'), option('--out-name') + '_bg.wasm'), 'bound');`);
-  writeFileSync(join(root, 'Makefile'), `NODE := ${process.execPath}\nNPM := ${join(bin, 'npm')}\nUV := ${join(bin, 'uv')}\nBINDING_RUN := ${join(bin, 'binding')}\nNAPI := ${join(bin, 'napi')}\nWASM_BINDGEN := ${join(bin, 'wasm-bindgen')}\ninclude packages/release.mk\n`);
+  writeFileSync(join(root, 'Makefile'), `NODE := ${process.execPath}\nNPM := ${join(bin, 'npm')}\nUV := ${join(bin, 'uv')}\nBINDING_RUN := ${join(bin, 'binding')}\nCARGO := ${join(bin, 'cargo')}\nNAPI := ${join(bin, 'napi')}\nWASM_BINDGEN := ${join(bin, 'wasm-bindgen')}\ninclude packages/release.mk\n`);
   const callsFile = join(root, '.calls');
   writeFileSync(callsFile, '');
   const env: NodeJS.ProcessEnv = { PATH: `${bin}:/usr/bin:/bin`, CALLS: callsFile, HOME: root };
@@ -504,7 +504,7 @@ test('the upload requires the asset of each label: each platform, and each PHP m
 test('binding check reports a Makefile that does not include the recipes, a recipe copied by hand and recipes that binding writes otherwise (CK-94)', (t) => {
   const box = sandbox(t, 'aarch64-unknown-linux-gnu');
   const contractPath = join(box.root, 'packages/rust/interface.json');
-  const check = (): string => String(spawnSync(process.execPath, [cli, 'check', contractPath], { encoding: 'utf8' }).stderr);
+  const check = (): string => String(spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contractPath], { encoding: 'utf8' }).stderr);
   const makefile = join(box.root, 'Makefile');
   const fragment = join(box.root, 'packages/release.mk');
   const including = readFileSync(makefile, 'utf8');
@@ -528,6 +528,53 @@ test('binding check reports a Makefile that does not include the recipes, a reci
   // A repository without a Makefile has no recipes of make to check.
   rmSync(makefile);
   assert.doesNotMatch(check(), /CK-94/);
+});
+
+// B2.401: the stand-in of the development link of kit, `node link.mjs cargo <checkout>`, which takes the words
+// `cargo <checkout>` before the arguments of Cargo and runs the cargo stand-in with them, marked as run through the link.
+function linkStandIn(box: Sandbox): string {
+  standIn(box.bin, 'link', `require('child_process').execFileSync(${JSON.stringify(join(box.bin, 'cargo'))}, args.slice(2), { stdio: 'inherit', env: { ...process.env, CARGO_VIA: args.slice(0, 2).join(' ') } });`);
+  return `${join(box.bin, 'link')} cargo ${box.root}`;
+}
+
+test('B2.401: every recipe runs $(CARGO) with $(CARGOFLAGS) right after the subcommand of a build, and passes --cargo to each command of binding that runs cargo (GN-1d, GN-19h)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  const cargo = linkStandIn(box);
+  for (const target of ['release-go-static', 'release-php-ext', 'release-npm', 'release-binding-check']) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make(target, `CARGO=${cargo}`, 'CARGOFLAGS=--ignore-rust-version', `PHP=${join(box.bin, 'php')}`, `LLVM_ROOT=${box.llvm}`);
+    assert.equal(run.status, 0, `${target}: ${run.output}`);
+    const calls = box.calls();
+    const cargoCalls = calls.filter((call) => call.tool === 'cargo');
+    if (target !== 'release-binding-check') assert.notEqual(cargoCalls.length, 0, target);
+    for (const call of cargoCalls) {
+      assert.equal(call.env['CARGO_VIA'], `cargo ${box.root}`, `${target}: cargo ${call.args.join(' ')} ran without $(CARGO)`);
+      if (call.args[0] === 'rustc' || call.args[0] === 'build') assert.equal(call.args[1], '--ignore-rust-version', `${target}: cargo ${call.args.join(' ')}`);
+    }
+    const bindings = calls.filter((call) => call.tool === 'binding' && (call.args[0] === 'generate' || call.args[0] === 'check'));
+    assert.notEqual(bindings.length, 0, target);
+    for (const call of bindings) assert.deepEqual(call.args.slice(-2), ['--cargo', cargo], `${target}: binding ${call.args.join(' ')}`);
+  }
+  // A recipe that runs cargo stops when the Makefile gives no CARGO, and names it.
+  const none = box.make('release-go-static', 'CARGO=');
+  assert.equal(none.status, 2, none.output);
+  assert.match(none.output, /release-go-static needs CARGO: the cargo command of the repository/);
+});
+
+test('B2.401: binding check reports each line of the file of recipes that runs cargo without $(CARGO) and $(CARGOFLAGS), or binding without --cargo (CK-94, GN-1d)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const contractPath = join(box.root, 'packages/rust/interface.json');
+  const check = (): string => String(spawnSync(process.execPath, [cli, 'check', contractPath, '--cargo', 'cargo'], { encoding: 'utf8' }).stderr);
+  const fragment = join(box.root, 'packages/release.mk');
+  assert.doesNotMatch(check(), /CK-94/);
+  const lines = ['\tCARGO_TARGET_DIR=x cargo build --release -p polyspec-sample-wasm', '\t$(CARGO) rustc --release -p polyspec-sample-go', '\t$(BINDING_RUN) generate --contract x --target go'];
+  writeFileSync(fragment, `${readFileSync(fragment, 'utf8')}${lines.join('\n')}\n`);
+  const found = check();
+  assert.match(found, new RegExp(`${fragment}: CK-94 differs from what binding release-recipes writes`));
+  const count = readFileSync(fragment, 'utf8').split('\n').length - 1;
+  assert.match(found, new RegExp(`${fragment}:${String(count - 2)}: CK-94 runs cargo of PATH and not \\$\\(CARGO\\) \\(GN-1d\\)`));
+  assert.match(found, new RegExp(`${fragment}:${String(count - 1)}: CK-94 runs the build \\$\\(CARGO\\) rustc without \\$\\(CARGOFLAGS\\) right after its subcommand \\(GN-1d\\)`));
+  assert.match(found, new RegExp(`${fragment}:${String(count)}: CK-94 runs binding generate, which runs cargo, without --cargo "\\$\\(CARGO\\)" \\(GN-1d\\)`));
 });
 
 // B2.279: a job of the workflow assets.yml of a repository runs one recipe of its Makefile, ci-assets-<job>, which installs

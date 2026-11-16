@@ -98,19 +98,19 @@ export function prepareSteps(c: Copy, locked: readonly string[] | undefined, pat
     // later offline steps read what the lock names and not what the cache of the machine happens to hold.
     { what: 'cargo fetch --locked', command: 'cargo', argv: ['fetch', '--locked', '--manifest-path', manifest], env: { CARGO_NET_OFFLINE: 'false' } },
     ...before.map((goal): Step => ({ what: `make ${goal} of the consumer`, command: c.make, argv: ['-C', c.copy, goal, `NODE=${c.node}`] })),
-    { what: 'binding scaffold', command: c.node, argv: [c.cli, 'scaffold', '--contract', contract] },
+    { what: 'binding scaffold', command: c.node, argv: [c.cli, 'scaffold', '--contract', contract, '--cargo', 'cargo'] },
     { what: `the path patch of polyspec-binding-core to ${c.core}`, write: patch },
     locked === undefined
       ? { what: 'cargo generate-lockfile --offline', command: 'cargo', argv: ['generate-lockfile', '--manifest-path', manifest, '--offline'] }
       : { what: `cargo update ${specs.join(' ')} --offline`, command: 'cargo', argv: ['update', '--manifest-path', manifest, ...specs, '--offline'] },
-    { what: 'binding check', command: c.node, argv: [c.cli, 'check', contract] },
+    { what: 'binding check', command: c.node, argv: [c.cli, 'check', contract, '--cargo', 'cargo'] },
   ];
 }
 
 export const generateStep = (c: Copy, t: Lang): Step => ({
   what: `binding generate --target ${t}`,
   command: c.node,
-  argv: [c.cli, 'generate', '--contract', join(c.copy, c.contract), '--target', t],
+  argv: [c.cli, 'generate', '--contract', join(c.copy, c.contract), '--target', t, '--cargo', 'cargo'],
 });
 
 // The directory of the binding crate of each target, in the form of packages/<dir> that place maps (L-1, L-2a).
@@ -153,7 +153,7 @@ export function goSteps(c: Copy, contract: Contract, goLink: boolean, features: 
   for (const tagged of [false, true]) {
     const tagArgs = tagged && tags.length > 0 ? [`-tags=${tags.join(',')}`] : [];
     const of = tagged ? ` with -tags=${tags.join(',')}` : ' without tags';
-    if (goLink) steps.push({ what: `binding go-link${tagged ? ` --features ${features.join(',')}` : ''}`, command: c.node, argv: [c.cli, 'go-link', '--manifest', manifest, '--target-dir', targetDir, ...(tagged ? ['--features', features.join(',')] : [])], capture: 'CGO_LDFLAGS' });
+    if (goLink) steps.push({ what: `binding go-link${tagged ? ` --features ${features.join(',')}` : ''}`, command: c.node, argv: [c.cli, 'go-link', '--cargo', 'cargo', '--manifest', manifest, '--target-dir', targetDir, ...(tagged ? ['--features', features.join(',')] : [])], capture: 'CGO_LDFLAGS' });
     steps.push({ what: `go vet${of}`, command: c.go, argv: ['vet', ...tagArgs, './...'], cwd: module, env: GO_ENV });
     steps.push({ what: `go test -c${of}`, command: c.go, argv: ['test', '-c', '-o', '/dev/null', '-p', String(c.jobs), ...tagArgs, './...'], cwd: module, env: GO_ENV });
   }

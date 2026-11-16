@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: a361f954be7ed769be2652d785957a29397215d83f2e85453a706e1820ffa56b -->
+<!-- source-sha256: 84a4321c827c810ca4afda54a6fcfe6b9d63edbbccc2ac3c03b5f54160959323 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -253,7 +253,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   파일(`packages/release.mk`, 또는 `packages/<component>/release.mk`, 그것으로 끝나는 경로도 포함)을 `include`나
   `-include`하는 줄이 없는 Makefile과, 그 파일이 정의하는 target에 자기 recipe를 가진 Makefile의 rule을 그 target과
   함께 보고한다. 그런 target에 prerequisite만 더하는 rule은 finding이 아니다. recipe 파일이 있고 이 binding의
-  `binding release-recipes`가 쓰는 것과 다르면 그 파일도 보고한다. 파일이 없는 것은 finding이 아니다. 그 파일은 생성되고
+  `binding release-recipes`가 쓰는 것과 다르면 그 파일도 보고하고, 그 파일에서 GN-1d가 말하는 것과 다른 방식으로 Cargo를
+  실행하는 줄마다 그 줄과 함께 보고한다: `$(CARGO)`가 아닌 `PATH`의 `cargo`, subcommand 바로 뒤에 `$(CARGOFLAGS)`가 없는
+  build(`$(CARGO) rustc`나 `$(CARGO) build`), `--cargo "$(CARGO)"` 없이 Cargo를 실행하는 binding 명령. 파일이 없는 것은 finding이 아니다. 그 파일은 생성되고
   추적되지 않으며, release는 recipe를 실행하기 전에 그것을 쓰기 때문이다. 이유: 손으로 복사한 recipe는 GN-19h가 고친
   복사본의 결함을 그대로 갖고, 다른 binding의 recipe 파일은 그 binding이 빌드하는 것을 빌드한다.
 - **CK-95** 시험 실행의 service(생성기 GN-13j): `services`는 `{"id", "address", "state", "reason"}`를 나열한다.

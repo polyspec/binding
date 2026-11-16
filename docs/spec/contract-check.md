@@ -300,7 +300,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   the contract (`packages/release.mk`, or `packages/<component>/release.mk`, also by a path that ends in it), and a
   rule of the Makefile with a recipe of its own for a target that the file defines, with the target; a rule that only
   adds a prerequisite to such a target is no finding. It also reports the file of recipes when it is there and differs
-  from what `binding release-recipes` of this binding writes. A file that is not there is no finding, because it is
+  from what `binding release-recipes` of this binding writes, and each line of it that runs Cargo in another way than
+  GN-1d states: `cargo` of `PATH` and not `$(CARGO)`, a build (`$(CARGO) rustc` or `$(CARGO) build`) without
+  `$(CARGOFLAGS)` right after its subcommand, and a command of binding that runs Cargo without `--cargo "$(CARGO)"`,
+  with the line. A file that is not there is no finding, because it is
   generated and not tracked, and a release writes it before it runs a recipe. Why: a recipe copied by hand keeps the
   defects of the copy that GN-19h fixed, and a file of recipes of another binding builds what that binding builds.
 - **CK-95** The services of the test run (generator GN-13j): `services` lists `{"id", "address", "state", "reason"}`,

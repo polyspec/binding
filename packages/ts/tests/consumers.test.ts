@@ -61,8 +61,8 @@ test('with binding go-link each Go run takes CGO_LDFLAGS from go-link of its fea
   const links = steps.filter((s) => 'command' in s && s.capture === 'CGO_LDFLAGS');
   assert.equal(links.length, 2);
   assert.deepEqual(links.map((s) => ('argv' in s ? s.argv.slice(1) : [])), [
-    ['go-link', '--manifest', '/work/json/packages/go/internal/ffi/Cargo.toml', '--target-dir', '/work/json/target'],
-    ['go-link', '--manifest', '/work/json/packages/go/internal/ffi/Cargo.toml', '--target-dir', '/work/json/target', '--features', 'panic-test'],
+    ['go-link', '--cargo', 'cargo', '--manifest', '/work/json/packages/go/internal/ffi/Cargo.toml', '--target-dir', '/work/json/target'],
+    ['go-link', '--cargo', 'cargo', '--manifest', '/work/json/packages/go/internal/ffi/Cargo.toml', '--target-dir', '/work/json/target', '--features', 'panic-test'],
   ]);
   const link = steps.findIndex((s) => s.what === 'binding go-link --features panic-test');
   assert.ok(link >= 0 && link < steps.findIndex((s) => s.what === 'go test -c with -tags=polyspec_json_panic_test'));
