@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 0610df01a86ece40cace799423ad7a023fa88211a0119a46c2394e725c675cb2 -->
+<!-- source-sha256: a81cbb48db1b89f6e2f28177d36bcfae738ffcf80431e18947e6b667440d5899 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -222,12 +222,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   함수, 곧 CamelCase로 쓴 그 이름은 package `binding`이 스스로 선언하는 이름이 아니다. 그 이름은 package 자신의 타입과
   함수(`Reader`, `Writer`, `NewReader`, `NewWriter`, `Call`, `NewCall`, `Map`, `KeyedMap`, `Key`, `IntKey`, `BytesKey`,
   `TextKey`와 생성기의 나머지)이거나 계약의 class의 `Release<Class>`다. finding은 그 함수와 선언을 적는다.
-- **CK-90** 코어가 callback을 갖는 parameter(생성기 GN-6aa): parameter는 타입이 이 계약이나 다른 레포의 callback unit을
-  담을 때에만 `keeps: true`를 적는다. 그 unit 자체이거나 그것을 담은 record, list, `optional`, map이며 서로 안에 있어도
-  된다. 다른 parameter의 `keeps`는 member와 parameter를 적어 보고한다. 함수 타입에는 `keeps`가 필요 없다. 코어는 모든
-  함수를 가질 수 있기 때문이다(생성기 GN-6z). 그래서 함수만 담은 parameter의 `keeps`도 보고한다. 이유: 그 속성은 생성기가
-  callback에 적는 lifetime을 바꾸며, callback이 없는 parameter에서는 아무것의 lifetime도 아닌 것을 적게 되고, 읽는 사람은
-  그것을 member의 규칙으로 받아들인다.
+- **CK-90** 코어가 callback이나 함수를 갖는 parameter(생성기 GN-6aa): parameter는 타입이 이 계약이나 다른 레포의 callback
+  unit을 담을 때에만 `keeps: true`를 적는다. 그 unit 자체이거나 그것을 담은 record, list, `optional`, map이며 서로 안에
+  있어도 되고, 같은 자리의 함수 타입이어도 된다. 다른 parameter의 `keeps`는 member와 parameter를 적어 보고한다. 함수에서
+  `keeps`는 member가 그 함수를 나중 member가 부르도록 보관만 한다는 것을 적으므로, 그 코어 오류는 `Failure`가 아니고 그것을
+  부르는 member가 `core.failure: true`를 적는다(생성기 GN-7, CK-21). 이유: 그 속성은 생성기가 callback에 적는 lifetime과
+  callback이나 함수의 실패가 가는 자리를 바꾸며, 둘 다 없는 parameter에서는 아무것도 적지 않게 되고, 읽는 사람은 그것을
+  member의 규칙으로 받아들인다.
 - **CK-92** case의 인스턴스 값이 부르는 member는 case의 member가 생성되는 곳에서 생성된다(생성기 GN-13f). case의 인스턴스
   값의 `new`, `from`, `then`의 호출이 이름하는 각 member는, 다른 인스턴스 값의 receiver나 인자 안에 있어도, class나
   interface 자리의 list, `optional`, map, record의 field 안에 있어도, case의 member와 그 unit의 `only`, 그리고 그 case가

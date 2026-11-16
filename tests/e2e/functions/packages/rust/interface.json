@@ -246,7 +246,8 @@
                   "async_allowed": false
                 }
               },
-              "required": true
+              "required": true,
+              "keeps": true
             }
           ],
           "returns": "none",

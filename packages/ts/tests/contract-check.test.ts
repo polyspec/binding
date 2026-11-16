@@ -960,14 +960,13 @@ describe('CK-90 a parameter whose callback the core keeps (GN-6aa)', () => {
     assert.deepEqual(judged((c) => { member(c, 'forms.parse').parameters[0].keeps = true; }), [{
       check: 'CK-90',
       path: path(contract(), 'forms.parse', 0),
-      message: 'forms.parse.body: keeps names a parameter whose type holds a callback unit, and "bytes" holds none (GN-6aa)',
+      message: 'forms.parse.body: keeps names a parameter whose type holds a callback unit or a function, and "bytes" holds none (GN-6aa)',
     }]);
   });
-  test('keeps at a parameter that holds only a function', () => {
+  test('keeps at a parameter that holds a function is accepted, also inside a list and an optional (B2.378)', () => {
     const type = { function: { parameters: ['text'], returns: 'text' } };
-    assert.deepEqual(judged((c) => { Object.assign(member(c, 'forms.parse').parameters[0], { type, keeps: true }); }).map((f) => f.message), [
-      `forms.parse.body: keeps names a parameter whose type holds a callback unit, and ${JSON.stringify(type)} holds none (GN-6aa)`,
-    ]);
+    assert.deepEqual(judged((c) => { Object.assign(member(c, 'forms.parse').parameters[0], { type, keeps: true }); }), []);
+    assert.deepEqual(judged((c) => { Object.assign(member(c, 'forms.parse').parameters[0], { type: { list: { optional: type } }, keeps: true }); }), []);
   });
   test('keeps at a callback unit, at a list and an optional of it, and at a callback of another repository is accepted', () => {
     assert.deepEqual(judged((c) => { member(c, 'session.new').parameters[0].keeps = true; }), []);
@@ -976,7 +975,7 @@ describe('CK-90 a parameter whose callback the core keeps (GN-6aa)', () => {
   });
   test('keeps at a record that holds a callback in a field is accepted, and at a record without one is reported', () => {
     assert.deepEqual(judged((c) => { member(c, 'session.new').parameters[1].keeps = true; }).map((f) => f.message), [
-      'session.new.options: keeps names a parameter whose type holds a callback unit, and {"unit":"session_options"} holds none (GN-6aa)',
+      'session.new.options: keeps names a parameter whose type holds a callback unit or a function, and {"unit":"session_options"} holds none (GN-6aa)',
     ]);
     assert.deepEqual(judged((c) => {
       unit(c, 'session_options').fields.push({ name: ['backup'], type: { optional: { unit: 'store' } }, default: { literal: null } });

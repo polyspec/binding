@@ -6755,6 +6755,27 @@ test('a member with core.failure converts the error of its core as the failure o
   assert.match(call, /polyspec_functions::Registry::call\(receiver, &name, &value\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(failure_error\(py_, error\)\),/);
 });
 
+test('a function parameter with keeps leaves the failure of the function to the member that calls it (GN-7, GN-6aa, CK-90, B2.378)', () => {
+  // hyper: pages.register stores the host function and page_request.next calls it. Before, every member that took a
+  // function returned the Failure of the function, so the error of the function had its place at the member that only
+  // stores it, and a core that stores it without calling it did not compile.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const register = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'registry.register');
+  register.parameters[1].keeps = true;
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'node', 'php', 'wasm', 'go'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    const at = lib.indexOf('Registry::register(');
+    const stores = lib.slice(at, lib.indexOf('Registry::call(', at) < 0 ? undefined : lib.indexOf('Registry::call(', at));
+    assert.match(stores, /return Err\(core_error\((py_, )?error\)\)/, path);
+    assert.doesNotMatch(stores, /failure_error/, path);
+    // The member that calls the stored function states core.failure and keeps the Failure.
+    const calls = lib.slice(lib.indexOf('Registry::call('));
+    assert.match(calls.slice(0, 400), /return Err\(failure_error\((py_, )?error\)\)/, path);
+  }
+});
+
 test('Go takes a function type as a boxed Fn over a kept func, which is called by the handle of its Native and whose error is kept by no call (T-2, GN-6z, GN-6u)', () => {
   // The contract of tests/e2e/functions: apply calls the function during the call, registry.register keeps it and
   // registry.call calls the kept function in a later call. Before, generation for go was refused: "a function type is

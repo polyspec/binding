@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e90d916f1f30a2359ddb1a957577cb0961ec9aa6aeff027d1a229bed4f800403 -->
+<!-- source-sha256: bc487104f6672f685ddaaef760a9cb609179dc44fca4cfb8a79a7457f4f7fe1f -->
 # 생성기
 
 [English](generator.md)
@@ -545,8 +545,9 @@
   호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
   record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
   뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6z대로 native 수명 위에서
-  그것을 준다. 계약은 코어가 값을 갖는 parameter에 `keeps: true`로 그것을 적는다(U-2). 그 parameter는 callback unit이거나
-  그것을 담은 record, list, `optional`이며, `binding check`는 다른 parameter의 그 속성을 보고한다(CK-90). 계약이 적어야 하는
+  그것을 준다. 계약은 코어가 값을 갖는 parameter에 `keeps: true`로 그것을 적는다(U-2). 그 parameter는 callback unit이나 함수
+  타입이거나 그것을 담은 record, list, `optional`이며, `binding check`는 다른 parameter의 그 속성을 보고한다(CK-90). 함수는
+  `keeps`가 있든 없든 `'static`이므로(GN-6z), 함수에서 `keeps`는 그 실패가 가는 자리만 바꾼다(GN-7). 계약이 적어야 하는
   이유는 lifetime이 `core_type`의 경로에 없고 생성기가 Rust를 읽지 않기 때문이다. `keeps`가 있는 parameter에 대해 생성기는
   모든 target에서 box와 record의 코어 타입을 적는 곳에 `'static`을 적고(`polyspec_x::Options<'static>`), 없는 parameter에는
   호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env` 동안인
@@ -986,7 +987,12 @@
   `core.failure`가 참이면, 그리고 그것이 없으면 `keeps`가 없는 parameter가 callback이나 함수를 담을 때 kind 또는 언어
   코드가 던진 것인 `binding_core::Failure<E>`다. `keeps`가 있는 parameter(GN-6aa)는 세지 않는다. 코어는 그 값을 나중 호출을
   위해 보관하기 때문이다(end-to-end sample의 `index.new`는 index 자체를 돌려준다). 호출 동안 그런 값을 부르는 member는
-  `core.failure: true`를 적는다. `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template
+  `core.failure: true`를 적는다. member가 나중 member가 부르도록 보관만 하는 함수(end-to-end functions의
+  `registry.register`, 이것을 `registry.call`이 부른다. hyper `pages.register`, 이것을 `page_request.next`가 부른다)도
+  `keeps`가 있는 parameter다. 그것을 보관하는 member는 `Failure` 없는 코어 오류를 돌려주고, 그것을 부르는 member는
+  `core.failure: true`를 적으며, 그 receiver는 GN-6h에 따라 그 함수를 지닌다. 계약은 두 member를 적고 둘 사이의 연결은
+  적지 않는다. 보관된 함수를 어느 member가 부르는지는 컴파일러가 판정하는 코어의 사실이기 때문이다(I-2). 어느 member의
+  경로든 다른 오류를 가진 코어는 컴파일되지 않는다. `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template
   `engine.render`, sample `index.get`)를 가리키며, 생성 코드는 그
   오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6z). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는

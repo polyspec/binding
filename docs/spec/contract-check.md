@@ -262,13 +262,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `binding` declares itself: one of its own types and functions (`Reader`, `Writer`, `NewReader`, `NewWriter`, `Call`,
   `NewCall`, `Map`, `KeyedMap`, `Key`, `IntKey`, `BytesKey`, `TextKey` and the others of the generator), or
   `Release<Class>` of a class of the contract. The finding names the function and the declaration.
-- **CK-90** A parameter whose callback the core keeps (generator GN-6aa): a parameter names `keeps: true` only when
-  its type holds a callback unit of this contract or of another repository: the unit itself, or a record, a list, an
-  `optional` or a map that holds one, also inside one another. `keeps` at any other parameter is reported with the
-  member and the parameter. A function type needs no `keeps`, because the core may keep every function (generator
-  GN-6z), so `keeps` at a parameter that holds only functions is reported too. Why: the attribute changes the lifetime
-  that the generator writes for the callback, and at a parameter without a callback it would state a lifetime of
-  nothing, which a reader takes for a rule of the member.
+- **CK-90** A parameter whose callback or function the core keeps (generator GN-6aa): a parameter names `keeps: true`
+  only when its type holds a callback unit of this contract or of another repository: the unit itself, or a record, a list, an
+  `optional` or a map that holds one, also inside one another, or a function type in the same places. `keeps` at any
+  other parameter is reported with the member and the parameter. At a function, `keeps` states that the member stores
+  the function for a later member to call, so its core error is no `Failure` and the member that calls it states
+  `core.failure: true` (generator GN-7, CK-21). Why: the attribute changes the lifetime that the generator writes for
+  the callback and the place of the failure of the callback or the function, and at a parameter without either it
+  would state nothing, which a reader takes for a rule of the member.
 - **CK-92** The members that the instance values of a case call are generated where the member of the case is
   (generator GN-13f): each member that a `new`, a `from` or a call of `then` of an instance value of the case names,
   also inside the receiver or an argument of another and inside a list, an `optional`, a map or a field of a record at

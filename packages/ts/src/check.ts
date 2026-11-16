@@ -1281,7 +1281,9 @@ class Checker {
     // list, an optional, a map or a tuple that holds one. A unit of a contract that the check was not given is no
     // finding here: CK-9 reports it.
     const holds = (type: Type, seen: Set<string>): boolean => {
-      if (typeof type === 'string' || 'function' in type || 'passthrough' in type) return false;
+      // B2.378: a function that the core stores for a later call is kept as a callback is.
+      if (typeof type === 'object' && 'function' in type) return true;
+      if (typeof type === 'string' || 'passthrough' in type) return false;
       if ('list' in type) return holds(type.list, seen);
       if ('optional' in type) return holds(type.optional, seen);
       if ('map' in type) return holds(type.map, seen);
@@ -1304,7 +1306,7 @@ class Checker {
       (unit.members ?? []).forEach((member, m) => {
         (member.parameters ?? []).forEach((parameter, p) => {
           if (parameter.keeps !== true || holds(parameter.type, new Set())) return;
-          this.report('CK-90', `${path}/members/${m}/parameters/${p}/keeps`, `${member.id}.${convert(parameter.name, 'python', 'variable')}: keeps names a parameter whose type holds a callback unit, and ${JSON.stringify(parameter.type)} holds none (GN-6aa)`);
+          this.report('CK-90', `${path}/members/${m}/parameters/${p}/keeps`, `${member.id}.${convert(parameter.name, 'python', 'variable')}: keeps names a parameter whose type holds a callback unit or a function, and ${JSON.stringify(parameter.type)} holds none (GN-6aa)`);
         });
       });
     }
