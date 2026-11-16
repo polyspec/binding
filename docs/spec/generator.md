@@ -1168,7 +1168,8 @@ the design ids are those of the binding design.
   orm states `only` without `wasm` at `default_retry` and `default_pool_acquire_timeout_ms`, whose constants its core
   defines only with the feature `runtime`, which the WASM build lacks, and the WASM crate asserted them (E0425). A value alias (U-7) is an
   alias of a target only when a generated member, record, class, callback, interface or error unit of that target
-  names it, directly or through an alias that it names: a target where no such unit names it has none of its
+  names it, directly or through an alias that it names, by a type or by a row of the kind `nested:<value type>`
+  (GN-6bb): a target where no such unit names it has none of its
   conversions, its host, the imports and the throw table that they need, its entry of `codec-test` and its cases, the
   way every target has none of the alias of a unit with `only` without that target. Why: every member of orm that
   names `orm_value` states `only` without `wasm`, while the alias has none, so the WASM crate kept the imports of the

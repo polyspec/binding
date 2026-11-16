@@ -11566,6 +11566,15 @@ test('B2.396: a value alias that no generated member of a target uses is no alia
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /use binding_core::\{Handle, HostText, HostValue, HostValues/);
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /aliasInData|alias_in_data/);
   assert.match(text(out, 'packages/python/generated/lib.rs'), /_alias_in_data/);
+  // An alias of another repository that only the out row nested:<value type> of a used alias names is used (GN-6bb).
+  const nested = nestedSample();
+  const names = (value: unknown): boolean => /"unit":"data","library":"sample"/.test(JSON.stringify(value));
+  for (const unit of nested.contract.units) {
+    if (unit.id === 'wrapped') continue;
+    if (unit.kind !== 'functions') { if (names(unit)) unit.only = only; } else for (const member of unit.members) if (names(member)) member.only = only;
+  }
+  const lib = text(generate({ contract: nested.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: nested.caseFiles, foreign: nested.foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(lib, /library_sample::make_data\(/);
 });
 
 test('B2.395: a constant whose only leaves a target out is no constant of that target, nor its assertion of the core (Q-4, GN-6g)', () => {

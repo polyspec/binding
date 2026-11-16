@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4719057520cbf0ea059c4bb5dcf4dc1b89bab3ff0261fab45e134e75d4f2f138 -->
+<!-- source-sha256: e44cccc72ec9afbb61812e4c878e865d91b8d3a57fcea2a62fec5379bc9039b7 -->
 # 생성기
 
 [English](generator.md)
@@ -951,7 +951,7 @@
   `only`를 적는데, 그 constant는 코어가 feature `runtime`으로만 정의하고 WASM build에는 그 feature가 없어, WASM crate가 그것을
   assert하면 E0425였다.
   값 alias(U-7)는 그 target의 생성된 member, record, class, callback, interface, error unit이 그것을 직접 또는 그것이
-  이름하는 alias를 거쳐 이름할 때에만 그 target의 alias다. 그런 unit이 이름하지 않는 target에는 그 변환, host, 그것들이
+  이름하는 alias를 거쳐, 타입이나 kind `nested:<value type>`의 행(GN-6bb)으로 이름할 때에만 그 target의 alias다. 그런 unit이 이름하지 않는 target에는 그 변환, host, 그것들이
   필요로 하는 import와 throw table, `codec-test`의 entry, case가 없다. 그 target 없는 `only`를 가진 unit의 alias가 어떤
   target에도 없는 것과 같다. 이유: orm에서 `orm_value`를 이름하는 member는 모두 `wasm` 없는 `only`를 적지만 alias에는
   없어서, WASM crate가 host value의 import와 throw table을 쓰이지 않은 채 남기고, 변환이 쓰이지 않는다며 빠진

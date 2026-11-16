@@ -2070,6 +2070,9 @@ export function membersFor(model: Model, lang: Lang): Model {
     if (typeof value !== 'object' || value === null) return;
     const node = value as Record<string, unknown>;
     if (typeof node['unit'] === 'string') named.add(key(typeof node['library'] === 'string' ? node['library'] : undefined, node['unit']));
+    // GN-6bb: a row of the kind nested:<value type> names the value alias of another repository by that kind.
+    const nested = typeof node['kind'] === 'string' ? nestedType(model.contract, node['kind']) : undefined;
+    if (nested !== undefined) named.add(key(nested.library, nested.unit));
     for (const item of Object.values(node)) walk(item);
   };
   walk([...built.functions, ...built.objects.flatMap((o) => o.members)].map((fn) => fn.member));
