@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f487a649245349db144833b53ea2cb44b9cd95c635f284c0d1e990ef4c9df147 -->
+<!-- source-sha256: 92d0ea6aa378543a221ab078825e9f90e1caf712b8756592424be0f38cd89ed9 -->
 # 생성기
 
 [English](generator.md)
@@ -946,6 +946,10 @@
   `Result<Infallible, E>`를 돌려주는 코어를 부른다. 생성 코드는 실패를 돌려주고, 변형이 없는 그 값을 갈래 없는 match로
   받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
   거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
+  constant면 코어의 constant에 대한 그 assertion도 그렇고, 그것을 이름하는 field나 parameter의 default는 그 field나
+  parameter가 생성되는 곳에서만 assert한다. 이유: orm은 `default_retry`와 `default_pool_acquire_timeout_ms`에 `wasm` 없는
+  `only`를 적는데, 그 constant는 코어가 feature `runtime`으로만 정의하고 WASM build에는 그 feature가 없어, WASM crate가 그것을
+  assert하면 E0425였다.
   `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
   parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는

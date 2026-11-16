@@ -1163,7 +1163,10 @@ the design ids are those of the binding design.
   code returns the failure and matches the value, which has no variant, without an arm; the declarations say `never`
   in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
   with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
-  the tests of every other target. A parameter with `only` is a parameter of the targets that it lists alone: every
+  the tests of every other target; for a constant that is also its assertion against the constant of the core, and the
+  default of a field or a parameter that names it is asserted only where that field or parameter is generated. Why:
+  orm states `only` without `wasm` at `default_retry` and `default_pool_acquire_timeout_ms`, whose constants its core
+  defines only with the feature `runtime`, which the WASM build lacks, and the WASM crate asserted them (E0425). A parameter with `only` is a parameter of the targets that it lists alone: every
   other target has no such parameter in its signature, its declarations and its rules of place, and its binding gives
   the core the parameter
   as left out (`None`). The parameter therefore has a default or an `optional` type, whose core parameter is an

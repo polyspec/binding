@@ -11543,6 +11543,33 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.395: a constant whose only leaves a target out is no constant of that target, nor its assertion of the core (Q-4, GN-6g)', () => {
+  // orm wasm lib.rs: `const _: () = assert!(polyspec_orm::DEFAULT_RETRY == 3);` of a constant with only without wasm
+  // was E0425, since the core builds for wasm without the feature that defines it. The functions fixture with such a
+  // constant, and a record field with only whose {const} default names it.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.395' };
+  contract.units[0].members.push({ id: 'default_retry', name: ['default', 'retry'], kind: 'constant', visibility: 'public', type: 'uint', value: 3, core: 'polyspec_functions::DEFAULT_RETRY', only });
+  contract.units.push({ id: 'apply_options', name: ['apply', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_functions::ApplyOptions', fields: [
+    { name: ['retry'], type: 'uint', default: { const: 'default_retry' }, default_core: 'polyspec_functions::DEFAULT_RETRY', only },
+    { name: ['limit'], type: 'uint', default: { literal: 7 }, default_core: 'polyspec_functions::DEFAULT_LIMIT' },
+  ] });
+  contract.units[0].members.push({ id: 'functions.apply_with', name: ['apply', 'with'], kind: 'function', visibility: 'public', parameters: [
+    { name: ['value'], type: 'text', required: true }, { name: ['options'], type: { unit: 'apply_options' }, required: true },
+  ], returns: 'text', raises: ['polyspec_functions::Error::Empty'], wait: 'none', core: 'polyspec_functions::apply_with' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const libs: Record<string, string> = { python: 'packages/python/generated/lib.rs', node: 'packages/ts/generated/lib.rs', wasm: 'packages/ts/wasm/generated/lib.rs', php: 'packages/php-ext/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(out, path);
+    assert.match(lib, /assert!\(polyspec_functions::DEFAULT_LIMIT == 7\)/, target);
+    if (target === 'wasm') assert.doesNotMatch(lib, /DEFAULT_RETRY/, target);
+    else assert.match(lib, /assert!\(polyspec_functions::DEFAULT_RETRY == 3\)/, target);
+  }
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /DEFAULT_RETRY/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.d.ts') + text(out, 'packages/ts/wasm/generated/index.mjs'), /DEFAULT_RETRY/);
+});
+
 test('B2.394: the Go walk of a value alias with a container and a nested row gives the source to open_level (GN-6bb, GN-6as)', () => {
   // orm packages/go/internal/ffi/generated/lib.rs: the nested arm inside the fn item open_level read the source of
   // make_value, which a fn item cannot capture (E0434). The nested sample with a list row too.
