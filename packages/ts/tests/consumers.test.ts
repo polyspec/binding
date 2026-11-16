@@ -128,7 +128,7 @@ test('the consumer steps before bindings-check of its Makefile run in the copy b
 });
 
 test('the first line of the table names the commit of the CLI and whether its tree is clean (GN-14i, B2.391)', () => {
-  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const commit = '01234567'.repeat(5);
   assert.equal(table([], provenanceLine(commit, true)).split('\n')[0], `binding ${commit} (clean)`);
   assert.equal(provenanceLine(commit, false), `binding ${commit} (with uncommitted changes)`);
   assert.equal(manifestCommit(`binding commit ${commit}\nbranch lane\n`), commit);
@@ -136,7 +136,7 @@ test('the first line of the table names the commit of the CLI and whether its tr
 });
 
 test('a dirty tree of the CLI is no evidence of its commit (GN-14i, B2.391)', () => {
-  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const commit = '01234567'.repeat(5);
   assert.equal(provenanceProblem(commit, '', commit), undefined);
   assert.match(provenanceProblem(commit, ' M scripts/consumers.mts\n', commit) ?? '', /has changes that 0123.* does not hold: M scripts\/consumers\.mts/);
 });
