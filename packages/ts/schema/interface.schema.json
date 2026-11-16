@@ -1248,7 +1248,7 @@
           "const": true
         },
         "keeps": {
-          "description": "The core keeps the callback that the parameter holds after the call (GN-6aa, CK-90).",
+          "description": "The core keeps the callback or the function that the parameter holds after the call, so its failure is that of the member that calls it (GN-6aa, GN-7, CK-90).",
           "const": true
         },
         "only": {

@@ -98,14 +98,15 @@ impl Registry {
         }
     }
 
-    /// Keeps the function under the name; a later function of the same name replaces it.
+    /// Keeps the function under the name, without calling it, so the failure of the function is that of `call` (GN-7); a later
+    /// function of the same name replaces it.
     ///
     /// # Errors
     ///
     /// Kind `empty` for a name without a character.
-    pub fn register(&mut self, name: &str, convert: Convert) -> Result<(), Failure<Error>> {
+    pub fn register(&mut self, name: &str, convert: Convert) -> Result<(), Error> {
         if name.is_empty() {
-            return Err(Failure::Kind(Error::Empty));
+            return Err(Error::Empty);
         }
         self.functions.retain(|(kept, _)| kept != name);
         self.functions.push((name.to_owned(), convert));

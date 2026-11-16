@@ -679,8 +679,10 @@ the design ids are those of the binding design.
   other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
   parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
   Node, PHP and WASM give on the native lifetime as GN-6z states. The contract states it on the parameter whose value
-  the core keeps, with `keeps: true` (U-2): the parameter is a callback unit, or a record, a list or an `optional`
-  that holds one, and `binding check` reports the attribute at any other parameter (CK-90). The contract has to
+  the core keeps, with `keeps: true` (U-2): the parameter is a callback unit or a function type, or a record, a list
+  or an `optional` that holds one, and `binding check` reports the attribute at any other parameter (CK-90). A
+  function is `'static` with or without `keeps` (GN-6z), so at a function `keeps` changes only where its failure
+  goes (GN-7). The contract has to
   state it, because the lifetime is no part of the path in `core_type` and the generator reads no Rust: for a
   parameter with `keeps` the generator writes `'static` where it names the box and the core type of the record
   (`polyspec_x::Options<'static>`) in every target, and for a parameter without it the lifetime of the call. The
@@ -1209,7 +1211,12 @@ the design ids are those of the binding design.
   `core.failure` is true, and without it when a parameter without `keeps` holds a callback or a function. A parameter
   with `keeps` (GN-6aa) does not count, because the core keeps that value for a later call (`index.new` of the
   end-to-end sample returns the index itself); a member that calls such a value during the call states
-  `core.failure: true`. `core.failure: true` names a member that calls language
+  `core.failure: true`. A function that a member only stores for a later member to call (`registry.register` of the
+  end-to-end functions, which `registry.call` calls; hyper `pages.register`, which `page_request.next` calls) is a
+  parameter with `keeps` as well: the member that stores it returns the core error without `Failure`, and the member
+  that calls it states `core.failure: true`, whose receiver carries the function by GN-6h. The contract states the
+  two members and no link between them, because which member calls a stored function is a fact of the core that the
+  compiler judges (I-2): a core whose path of either member has another error does not compile. `core.failure: true` names a member that calls language
   code that its receiver keeps (template `engine.render`, sample `index.get`), whose error the generated code converts as that of a member
   that takes a callback (GN-6d, GN-6z). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
