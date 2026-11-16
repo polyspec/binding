@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 32d7f7e66efa0fb9ea2dacd62cf6e188f462a2e2efc9e954c3c8738039873f72 -->
+<!-- source-sha256: b708a1c94aabd7ba32c05e84de5cd0adc85284eb7e3244950c40af2e3a233dd5 -->
 <!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
@@ -27,6 +27,10 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.16
+
+- 생성된 crate의 `use` 선언은 crate가 이름을 `::` 없이 bare로 쓸 때, 또는 그 이름이 crate가 method를 위해 import하는 trait일 때에만 그 이름을 import한다(GN-4e). json의 Python crate는 `pyo3::types::PyDict`로만 쓰는 `PyDict`를 import했고, cargo clippy에서 `unused import: PyDict`로 실패했다. `node --test --test-name-pattern=B2.418 tests/generate.test.ts`로 검증했다. 이 test는 tests/e2e의 각 계약, sample, json, session-store의 생성된 Rust 파일을 모두 검사한다. json v0.0.32의 binding crate 다섯 개에 대한 `cargo clippy -- -D warnings`로도 검증했다.
 
 ## 0.0.15
 

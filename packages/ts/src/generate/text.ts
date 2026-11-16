@@ -407,6 +407,35 @@ function helperGroups(block: string): HelperGroup[] {
   });
 }
 
+// GN-4e: the traits that a generated crate imports for their methods alone, by their full path. A method call names no
+// trait, so the token reader sees no use of them; the generator imports each where the crate calls its methods.
+const METHOD_TRAITS: ReadonlySet<string> = new Set([
+  'ext_php_rs::convert::FromZval',
+  'ext_php_rs::convert::IntoZval',
+  'napi::JsValue',
+  'napi::bindgen_prelude::JsObjectValue',
+  'wasm_bindgen::JsCast',
+]);
+
+// A `use` declaration of generated Rust, with the attributes before it: its path up to the last `::` and either one
+// name (with its `as` name) or a flat list in braces. A glob or a nested list is not matched and is kept as it is.
+const USE_DECLARATION = /^([ \t]*(?:#\[[^\]\n]*\]\n[ \t]*)*)use ((?:[A-Za-z_][A-Za-z0-9_]*::)+)(?:\{([^{}*]*)\}|([A-Za-z_][A-Za-z0-9_]*(?: as [A-Za-z_][A-Za-z0-9_]*)?));\n/gm;
+
+// GN-4e: Rust text whose `use` declarations import only the names that the text writes bare, a token of the name that
+// no `::` precedes outside the `use` declarations, or a trait of METHOD_TRAITS. A name that the text writes only by its
+// path (`pyo3::types::PyDict`) leaves the list, and a declaration with no name left is removed with its attributes.
+export function withUsedImports(source: string): string {
+  const tokens = rustTokens(source.replace(USE_DECLARATION, ''));
+  const bare = new Set(tokens.filter((token, i) => isName(token.text) && tokens[i - 1]?.text !== '::').map((token) => token.text));
+  return source.replace(USE_DECLARATION, (whole, lead: string, path: string, list: string | undefined, one: string | undefined) => {
+    const names = list === undefined ? [one ?? ''] : list.split(',').map((name) => name.trim()).filter((name) => name !== '');
+    const kept = names.filter((name) => bare.has(name.split(' as ').at(-1) ?? name) || METHOD_TRAITS.has(`${path}${name}`));
+    if (kept.length === names.length) return whole;
+    if (kept.length === 0) return '';
+    return `${lead}use ${path}${kept.length === 1 ? kept.join('') : `{${kept.join(', ')}}`};\n`;
+  });
+}
+
 // GN-4d: a crate with the helpers of `block` (and of the modules of the libraries) that its own text reads. `render`
 // writes the whole crate around the helpers that it is given; it is written once without them, and that text is the code
 // whose reads select the helpers, so a call that any part of the crate makes keeps the helper that it calls.

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+## 0.0.16
+
+- A `use` declaration of a generated crate imports a name only when the crate writes it bare, with no `::` before it, or when the name is a trait that the crate imports for its methods (GN-4e). The Python crate of json imported `PyDict`, which it wrote only as `pyo3::types::PyDict`, and failed cargo clippy with `unused import: PyDict`. Verified by `node --test --test-name-pattern=B2.418 tests/generate.test.ts`, which checks every generated Rust file of each contract of tests/e2e, of the sample and of json and session-store. Also verified by `cargo clippy -- -D warnings` on the five binding crates of json v0.0.32.
+
 ## 0.0.15
 
 - A generated crate of PHP, Python, Node and WASM holds every helper that it calls: the helpers are chosen from the text of the whole crate (GN-4d), where the PHP crate of a contract without a text parameter, such as tests/e2e/plot and tests/e2e/kept, failed cargo clippy with `cannot find function \`text_in\`` and `type_error` in the constructor of its library classes; verified by `make e2e` of plot, kept, sample, shapes, classes, variants, functions, consumer and lent.

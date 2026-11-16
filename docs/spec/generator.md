@@ -376,6 +376,19 @@ the design ids are those of the binding design.
   and a call added outside them, `text_in` and `type_error` in the constructor of a library class of PHP, compiled
   only for a contract that also had a text parameter; a contract without one failed the build. The Go crate keeps
   its list, because a helper that only a test feature uses is compiled under that feature (GN-4).
+- **GN-4e** A `use` declaration of a generated crate (`lib.rs` of each of the five targets) imports a name exactly
+  when the crate writes that name bare: a token of the name, read as GN-4 reads tokens, that no `::` precedes, outside
+  the `use` declarations. A name that the crate writes only by its path, such as `pyo3::types::PyDict`, is not
+  imported. The one exception is a trait that the crate imports for its methods alone, because a method call names no
+  trait: `ext_php_rs::convert::FromZval`, `ext_php_rs::convert::IntoZval`, `napi::JsValue`,
+  `napi::bindgen_prelude::JsObjectValue` and `wasm_bindgen::JsCast`, a closed list that the generator imports where the
+  crate calls their methods. One pass over each generated `lib.rs` applies the rule after the crate is written: it
+  removes from each list a name that is neither written bare nor such a trait, and removes a declaration with no name
+  left together with its attributes. Why: each list chose its names by a word match over a part of the crate
+  (`\bPyDict\b`), and a path matches a word, so the constructor that refuses a direct construction (GN-6b), which
+  writes `pyo3::types::PyDict`, imported `PyDict` into a crate that wrote it nowhere bare, and a consumer whose lints
+  deny warnings failed with `unused import: PyDict`. A pass over the written crate reads the whole text, which no
+  condition over one part of it does.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
