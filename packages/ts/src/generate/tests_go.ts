@@ -32,7 +32,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
+  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType, ROW_EXCEPTION,
 } from './samples.ts';
@@ -1281,10 +1281,14 @@ function memberTests(v: Values, out: Out, fn: Fn): void {
   // A test that calls the member once with placeholders and one argument in its place.
   // GN-13y: the other arguments of the K-2 tests are those of a case that reaches the callback, where one exists.
   const reaching = callbackReachingArgs(model, fn);
+  // GN-13t: an argument of a class is the case value of a case of the member, where one gives it.
+  const classGiven = classCaseArgs(model, fn);
+  const other = (b: Body, a: Arg, rich: boolean): string | undefined =>
+    classGiven !== undefined && classGiven.has(a) && objectUnit(model, a.type) !== undefined ? caseValue(v, b, a, classGiven) : a.default === undefined ? placeholder(v, b, a.type, rich) : undefined;
   const single = (rule: string, what: string, arg: Arg, given: (b: Body) => string, check: string[], rich = false): void => {
     const b = new Body();
     const receiver = sample === undefined ? '' : made(v, b, sample);
-    const args = callArgs(v, b, fn, (a) => (a === arg ? given(b) : rule === 'K-2' && reaching !== undefined ? caseValue(v, b, a, reaching) : a.default === undefined ? placeholder(v, b, a.type, rich) : undefined));
+    const args = callArgs(v, b, fn, (a) => (a === arg ? given(b) : rule === 'K-2' && reaching !== undefined ? caseValue(v, b, a, reaching) : other(b, a, rich)));
     out.main.push(`
 func Test${rule.replace('-', '')}${label}${testName(what)}(t *testing.T) {
 ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)}
@@ -1352,7 +1356,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     if (callback !== undefined && fn.failure) {
       const b = new Body();
       const receiver = sample === undefined ? '' : made(v, b, sample);
-      const args = callArgs(v, b, fn, (a) => (a === arg ? `raising${goName(callback.unit.name)}{err: raised}` : reaching !== undefined ? caseValue(v, b, a, reaching) : a.default === undefined ? placeholder(v, b, a.type, true) : undefined));
+      const args = callArgs(v, b, fn, (a) => (a === arg ? `raising${goName(callback.unit.name)}{err: raised}` : reaching !== undefined ? caseValue(v, b, a, reaching) : other(b, a, true)));
       out.main.push(`
 func TestK2${label}LetsTheErrorOf${testName(argName)}Through(t *testing.T) {
 	raised := errors.New("raised by the callback")
@@ -1362,7 +1366,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), 'if err != ra
       // released its places: the member runs again on the same instance, and a member that writes it is not busy.
       const p = new Body();
       const again = sample === undefined ? '' : made(v, p, sample);
-      const given = (text: string) => callArgs(v, p, fn, (a) => (a === arg ? text : reaching !== undefined ? caseValue(v, p, a, reaching) : a.default === undefined ? placeholder(v, p, a.type, true) : undefined));
+      const given = (text: string) => callArgs(v, p, fn, (a) => (a === arg ? text : reaching !== undefined ? caseValue(v, p, a, reaching) : other(p, a, true)));
       const panics = callLine(fn, invoke(v, fn, given(`panicking${goName(callback.unit.name)}{value: raised}`), again));
       const returns = callLine(fn, invoke(v, fn, given(`raising${goName(callback.unit.name)}{err: raised}`), again));
       const writer = fn.receiver === undefined ? undefined : model.objects.find((o) => o.members.includes(fn))?.members.find((m) => m.kind === 'method' && m.receiver === '&mut self' && m.special === undefined

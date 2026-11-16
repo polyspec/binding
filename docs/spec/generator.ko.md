@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 52fd1edb86dd24a87e82820746bfd6d8c8b4325b40f9e766f84e9ec96fff5003 -->
+<!-- source-sha256: 04d097f6769ad6ff0ab18e46ee3f0c1c5e38d61d67b69ebe9c780cc49989e28b -->
 # 생성기
 
 [English](generator.md)
@@ -2648,6 +2648,13 @@
   case는 core가 callback을 부르는 인자를 말한다. callback의 row가 모두 결과를 주는 case가 callback이 raise하는 case보다
   먼저다(B2.385). 이유: core는 callback의 raise에 스스로 답할 수 있고, sample `tolerant`는 key `?a`에서 그것을 삼키므로,
   첫 case로는 예외의 시험과 다른 타입 결과의 시험이 실패했다.
+- **GN-13t** 한 인자에 자기 값을 주고 나머지에 placeholder를 주는 member의 시험(B-2, B-3, B-8, T-1, T-2, null의 U-2,
+  GN-6z, 그리고 GN-13y의 case가 없는 K-2 시험)은, 모든 target에서, class(T-5)의 인자에 그 member의 첫 case의 그 인자
+  case 값을 준다. 그 case는 모든 인자를 주고, fault를 걸지 않고, 파일을 쓰지 않고, service에 대해 돌지 않는 case이며,
+  raise하지 않는 case가 raise하는 case보다 먼저다. 그런 case가 없을 때만 GN-13의 placeholder가 그 자리에 선다. 값을
+  주는 것은 class의 constructor의 case가 아니라 그 member의 case다. 그 member가 받는 instance를 말하는 것은 그것뿐이기
+  때문이다. 이유: class의 core는 첫 constructor의 placeholder 인자를 거부할 수 있고, crud-ui는 JSON null의
+  `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, B-3 시험은 검사하는 호출 전에 그 인자에서 실패했다.
 - **GN-13z** Python의 U-2와 T-1 시험은 두 결과를 `assertEqual`이 아니라 `_same`으로 비교한다. `_same`은 다른 저장소의 값
   class instance를 in row의 member가 읽는 것으로 비교한다(B2.121). 이유: 소유자의 class는 `__eq__`를 선언하지 않아도
   되고 `polyspec.json.Value`는 선언하지 않아서, 같은 두 결과가 identity로 비교되어 달랐다(crud-ui validator). token으로

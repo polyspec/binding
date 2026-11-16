@@ -3231,6 +3231,15 @@ the design ids are those of the binding design.
   states arguments with which the core calls it. A case whose callback rows all give a result comes before one whose
   callback raises (B2.385). Why: a core may answer a raise of the callback itself, and sample `tolerant` swallows it
   for a key `?a`, so the tests of an exception and of a result of another type failed with the first case.
+- **GN-13t** A test of a member that gives one argument a value of its own and the others placeholders (B-2, B-3, B-8,
+  T-1, T-2, U-2 with null, GN-6z, and the K-2 tests without a case of GN-13y) gives an argument of a class (T-5) the
+  case value of that argument in the first case of the member that gives every argument and arms no faults, writes
+  no files and runs against no service, a case that does not raise before one that raises, in every target; the
+  placeholder of GN-13 stands there only when no such case exists. The case of the member, and not one of the
+  constructor of the class, supplies the value, because only it states an instance that the member takes. Why: the
+  core of a class may refuse the placeholder arguments of its first constructor, and crud-ui refused
+  `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so the B-3 test failed in its argument before the
+  call that it checks.
 - **GN-13z** The Python U-2 and T-1 tests compare the two outcomes by `_same`, which compares an instance of a value
   class of another repository by what the members of its in row read (B2.121), and not by `assertEqual`. Why: the class
   of the owner need not declare `__eq__`, and `polyspec.json.Value` does not, so two equal results compared by identity

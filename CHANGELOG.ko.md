@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 91f49780c3ba984227ba3bb728ea35b93c14f7090640142c4e512957a4d40f19 -->
-<!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
+<!-- source-sha256: 9c050c8350adad91c4499d0b4a7da74cb4c4b0d93a6cf320634e3e8f10c8acf4 -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
@@ -24,6 +23,7 @@
 
 ## Unreleased
 
+- member의 한 인자에 자기 값을 주고 나머지에 placeholder를 주는 생성 시험(B-2, B-3, B-8, T-1, T-2, U-2, GN-6z, 그리고 GN-13y의 case가 없는 K-2)은 다섯 target에서 class의 인자에 그 member의 첫 case의 그 인자 case 값을 준다. raise하지 않는 case가 raise하는 case보다 먼저다(GN-13t). member에 그런 case가 없을 때만 GN-13의 placeholder가 그 자리에 선다. 전에는 placeholder 인자의 첫 constructor로 인자를 만들었고, crud-ui는 JSON null의 `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, 그 Python 생성기의 B-3 시험 22개가 검사하는 호출 전에 인자에서 실패했다(B2.434). `packages/ts`에서 `node --test --test-name-pattern=B2.434 tests/generate.test.ts`로 확인했고, 변경 전에는 실패했다.
 - `category` 없이 E-1a의 kind(`invalid_number`, `invalid_argument_type`과 바인딩이 스스로 내는 다른 kind)를 주는 case의 `raises`는 다섯 target의 생성 시험에서 그 kind의 고정 category를 가진다(GN-13bd). 그런 kind는 `errors.kinds`의 어느 row에도 없어서 시험이 빈 category의 class를 이름했고, crud-ui list-render의 case들은 parse되지 않는 Python 시험 `self.assertRaises(pkg.) as caught`를 열두 곳에 썼으며 Node, WASM, PHP, Go에도 같은 빈 이름이 쓰였다(B2.433). `binding check`는 kind가 `errors.kinds`의 kind도 E-1a의 kind도 아닌, `category` 없는 `raises`를 거부하고(CK-22), 생성기는 빈 class 이름을 쓰는 대신 이름으로 거부한다. `packages/ts`에서 `node --test --test-name-pattern=B2.433 tests/contract-check.test.ts tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 
 ## 0.0.18
