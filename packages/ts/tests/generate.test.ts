@@ -11177,3 +11177,28 @@ test('B2.358: the Python U-2 test compares the outcomes by _same, which reads a 
   assert.doesNotMatch(body, /assertEqual/);
   assert.match(python, /\ndef _same\(actual, expected\):[\s\S]*_read_foreign\(actual\) == _read_foreign\(expected\)/);
 });
+
+test('B2.359: a case that gives 2^53 as an int argument and raises invalid_number is a B-4 test in every target (GN-12a, CK-64)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  cases.repeat[0].times = 9007199254740992n;
+  delete cases.repeat[0].result;
+  cases.repeat[0].raises = { kind: 'invalid_number', status: null, category: 'value', message: 'times is not a value of the type uint' };
+  const id: string = cases.repeat[0].id;
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const files: [string, string, RegExp][] = [
+    ['node', 'packages/ts/generated/tests/generated.test.mjs', /9007199254740992\b(?!n)/],
+    ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs', /9007199254740992\b(?!n)/],
+    ['python', 'packages/python/generated/tests/test_generated.py', /9007199254740992\b/],
+    ['php', 'packages/php-ext/generated/tests/GeneratedTest.php', /9007199254740992\b/],
+    ['go', 'packages/go/zz_generated_test.go', /9007199254740992\b/],
+  ];
+  const pattern = new RegExp(id.replace(/_/g, '_?'), 'i');
+  for (const [lang, path, literal] of files) {
+    const body = text(out, path);
+    const at = body.search(pattern);
+    assert.ok(at >= 0, `${lang}: no test of ${id}`);
+    assert.match(body.slice(at, at + 1500), literal, lang);
+    assert.match(body.slice(at, at + 1500), /invalid_number/, lang);
+  }
+});

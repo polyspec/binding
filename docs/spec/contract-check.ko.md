@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 9bf8b6bf9c4cbdffb55596c6c743d80d4c32bf82fd67eaa2ce885c04df2cea21 -->
+<!-- source-sha256: a10d95079497da4a8ae257da4303d25c076724e1079f7b5e7d946a5fdce0b5ea -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -152,7 +152,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   적지 않는다.
 - **CK-64** 타입 `int`나 `uint` 자리(인자, 그 타입을 담은 list·tuple·map·optional의 항목, 결과)에 있는 case의 정수는 안전
   정수다. 이것이 모든 target이 주는 T-1의 범위다(Node `number`). 그보다 큰 정수는 한 target에서는 `int64`이고 다른
-  target에서는 `int`가 아니므로, case가 두 결과를 기대하게 된다. i64 범위를 받거나 주는 member는 `int64`를 적는다(GN-12a).
+  target에서는 `int`가 아니므로, case가 두 결과를 기대하게 된다. i64 범위를 받거나 주는 member는 `int64`를 적는다(GN-12a). kind `invalid_number`를 내는 case의 인자는 안전 정수 밖이면서 i64 범위 안의 정수여도 된다: 모든
+  target이 그것을 그 kind로 거부하므로(GN-12a) case는 binding의 거부를 결과 하나로 말한다(B2.359, hyper
+  `rules.reply_status`). 그보다 큰 정수는 모든 target의 정수가 아니므로 계속 보고한다.
 - **CK-65** 실패 주입점(`faults`, G-5)을 가진 코어는 manifest의 `[dev-dependencies]`에 자기 자신을 `fault-test`와 함께
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).

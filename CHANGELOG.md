@@ -31,6 +31,7 @@
 - A case text with an unpaired surrogate of a value class of another repository is made from its UTF-16 code units by the out row of the kind `text16`, such as `Value.from_units` of json, in every target; `Value.string("\ud800")` was refused by json, did not compile in Go and became U+FFFD in PHP (GN-6br, B2.356).
 - The K-2 tests of a member that takes a callback give the other arguments of a case whose callback fixture lists calls, and placeholders only where the member has no such case; the crud-ui validator refused the placeholder `data` before it called the callback (GN-13y, B2.357).
 - The Python U-2 and T-1 tests compare their outcomes by `_same`, which reads a value class of another repository by its in row; `assertEqual` compared two equal `polyspec.json.Value` results by identity (GN-13z, B2.358).
+- A case that raises `invalid_number` may give an `int` or `uint` argument of the range of i64 outside the safe integers, which every target refuses with that kind; CK-64 reported it, so the refusal of the binding had no case, and the Go tests now write such an argument as an integer literal (CK-64, GN-12a, B2.359).
 
 ## 0.0.13
 

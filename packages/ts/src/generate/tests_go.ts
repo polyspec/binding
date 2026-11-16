@@ -813,6 +813,13 @@ export function notGoValue(type: Type, json: unknown): string | undefined {
   const number = typeof json === 'number';
   // A value in an object form, such as {"int": ...} or {"float": "nan"}, is judged by value().
   if (typeof json === 'object') return undefined;
+  // GN-12a, B2.359: an integer outside the safe integers, which the case file gives as a bigint (CK-64), is a Go
+  // integer of its range: the binding refuses it at run time, not the compiler.
+  if (typeof json === 'bigint') {
+    if (type === 'uint') return json >= 0n && json < 2n ** 64n ? undefined : `${String(json)} is no value of uint64`;
+    if (type === 'int' || type === 'int64') return json >= -(2n ** 63n) && json < 2n ** 63n ? undefined : `${String(json)} is no value of int64`;
+    return type === 'float' ? undefined : `${String(json)} is no value of the type ${type}`;
+  }
   if (type === 'uint') return number && Number.isInteger(json) && (json as number) >= 0 ? undefined : `${JSON.stringify(json)} is no value of uint64`;
   if (type === 'int' || type === 'int64') return number && Number.isInteger(json) ? undefined : `${JSON.stringify(json)} is no value of int64`;
   if (type === 'float') return number ? undefined : `${JSON.stringify(json)} is no value of float64`;

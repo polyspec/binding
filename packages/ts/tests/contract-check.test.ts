@@ -1800,6 +1800,26 @@ describe('CK-64 integers of a case (T-1)', () => {
   });
 });
 
+describe('B2.359: CK-64 takes an argument outside the safe integers in a case of the refusal of the binding (GN-12a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): string[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-64').map((f) => f.message);
+  };
+  const refused = { kind: 'invalid_number', status: null, category: 'value', message: 'times is not a value of the type uint' };
+  test('2^53 as an argument of a case that raises invalid_number, which every target gives (hyper rules.reply_status)', () => {
+    assert.deepEqual(run((c) => { c.repeat[0].times = 9007199254740992n; delete c.repeat[0].result; c.repeat[0].raises = refused; }), []);
+  });
+  test('the same argument in a case with a result, or with another kind, is reported', () => {
+    assert.equal(run((c) => { c.repeat[0].times = 9007199254740992n; }).length, 1);
+    assert.equal(run((c) => { c.repeat[0].times = 9007199254740992n; delete c.repeat[0].result; c.repeat[0].raises = { ...refused, kind: 'invalid_argument_type' }; }).length, 1);
+  });
+  test('an argument outside the range of i64, which no target writes as an integer, is reported', () => {
+    assert.equal(run((c) => { c.repeat[0].times = 18446744073709551616n; delete c.repeat[0].result; c.repeat[0].raises = refused; }).length, 1);
+  });
+});
+
 describe('CK-22 values of the type cancel (GN-13)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
   // shapes.measure with a parameter of the type cancel, given by its first case.

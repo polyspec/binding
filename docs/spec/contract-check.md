@@ -178,7 +178,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-64** An integer of a case at a place of the type `int` or `uint` (an argument, an item of a list, tuple,
   map or optional of it, and the result) is a safe integer, the range of T-1 that every target gives (a Node
   `number`). A larger integer is an `int64` in one target and no `int` in another, so the case would expect two
-  results; a member that takes or gives the range of i64 declares `int64` (GN-12a).
+  results; a member that takes or gives the range of i64 declares `int64` (GN-12a). An argument of a case that raises
+  the kind `invalid_number` is an integer of the range of i64 outside the safe integers too: every target refuses it
+  with that kind (GN-12a), so the case states the refusal of the binding with one result (B2.359, hyper
+  `rules.reply_status`); a larger integer is no integer of every target and stays reported.
 - **CK-65** A core with fault injection points (`faults`, G-5) has itself as a dev-dependency with `fault-test`,
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise

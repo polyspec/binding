@@ -1362,7 +1362,10 @@ the design ids are those of the binding design.
   integers, and anything else is kind `invalid_number` (B-2); an `int64` result is a `bigint`, so that the whole range
   of i64 leaves, as the declarations say (`number | bigint` in, `bigint` out). A case file gives an integer outside
   the safe integers as its JSON token, which `binding` reads as a `bigint` and every test writes by its decimal
-  token, a Node test as a `bigint` literal (G-5).
+  token, a Node test as a `bigint` literal (G-5). An argument of the type `int` or `uint` outside the safe integers,
+  which only a case that raises `invalid_number` gives (CK-64), is the decimal token in every test: a number literal
+  in Node and WASM, which a caller of the type passes and which stays outside the safe integers, and a Go integer
+  literal, which the compiler takes, so the binding refuses it at run time (B2.359).
 - **GN-6l** A method of a class has the Rust name `member_<name>` in the generated crates of Python and PHP, and its
   name in the language is an attribute (`#[pyo3(name = ...)]`, `#[getter(...)]`, `#[php(name = ...)]`), so that no
   name of a member meets a naming convention that the lints judge for methods (`from_*` with `self`, the names of the

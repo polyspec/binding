@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a5e4824ff423b7c41ffb5697efdfab4d602570af15fa41120d754e74e491dfbb -->
+<!-- source-sha256: 38d2a1214d5982bf23c4bdd65f2c8b87b3be8c7ab3ad9a440a3ae613dd42407d -->
 # 생성기
 
 [English](generator.md)
@@ -1111,7 +1111,9 @@
   Node와 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
   `invalid_number`다(B-2). `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
   `bigint`)과 같다. case 파일은 안전 정수 밖의 정수를 JSON token으로 주고, `binding`은 그것을 `bigint`로 읽으며 모든 시험은
-  그 10진 token으로 쓴다. Node 시험은 `bigint` literal로 쓴다(G-5).
+  그 10진 token으로 쓴다. Node 시험은 `bigint` literal로 쓴다(G-5). 안전 정수 밖의 `int`나 `uint` 타입 인자는 `invalid_number`를 내는 case만 주는데(CK-64), 모든 시험에서
+  그 십진 token이다: Node와 WASM에서는 그 타입의 호출자가 넘기는 number literal이고 안전 정수 밖에 남는다. Go에서는
+  컴파일러가 받는 정수 literal이어서 binding이 실행 중에 거부한다(B2.359).
 - **GN-6l** class의 메서드는 Python과 PHP 생성 crate에서 Rust 이름 `member_<name>`을 갖고, 언어의 이름은
   attribute(`#[pyo3(name = ...)]`, `#[getter(...)]`, `#[php(name = ...)]`)다. 그래서 member의 이름이 lint가 메서드에
   판정하는 이름 규칙(`self`를 받는 `from_*`, std trait 메서드의 이름)에 걸리지 않는다. hook은 언어가 부르는 이름을

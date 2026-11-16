@@ -1709,9 +1709,15 @@ class Checker {
     const found = this.members.get(memberId);
     if (found === undefined) return;
     const where = `the case ${String(record['id'])} of ${memberId}`;
+    // GN-12a, B2.359: every target refuses an int or uint argument outside the safe integers as kind invalid_number,
+    // so a case that raises that kind gives one result; the argument stays in the range of i64, which every target
+    // writes as an integer.
+    const raises = record['raises'];
+    const refusesNumber = typeof raises === 'object' && raises !== null && (raises as Record<string, unknown>)['kind'] === 'invalid_number';
+    const writable = (value: bigint): boolean => value >= -(2n ** 63n) && value < 2n ** 63n;
     const walk = (type: Type, value: unknown, what: string): void => {
       if (typeof type === 'string') {
-        if ((type === 'int' || type === 'uint') && typeof value === 'bigint') {
+        if ((type === 'int' || type === 'uint') && typeof value === 'bigint' && !(refusesNumber && what.startsWith('the argument') && writable(value))) {
           this.report('CK-64', path, `${where}: ${what} ${value} is outside the safe integers, the range of the type ${type} (T-1); a value of the range of i64 is an int64`);
         }
         return;
