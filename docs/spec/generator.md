@@ -2643,7 +2643,7 @@ the design ids are those of the binding design.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
   whose nonempty array contains only Unicode strings, path objects with only `case_path` and optional `as`, and the
-  port of the listener of the case, `{"listener": "port"}` (GN-13n).
+  port of the listener of the case, `{"listener": "port"}` (GN-13o).
   A path object omitting `as` inserts the raw resolved path; its only explicit mode is `json-string`, which inserts
   a complete quoted JSON string token. A relative path obeys GN-6y and contains no NUL or unpaired surrogate.
   Literal strings and the private JSON quoting helper permit every Unicode control character, including NUL.
@@ -2677,7 +2677,7 @@ the design ids are those of the binding design.
   system can be reached through a symbolic link (`/var` and `/private/var` of macOS), so a core that resolves the path
   gives a text that differs from the path the test made, and an expected text with the unresolved path would fail a
   correct result; one resolved form makes the expected text exact without a rule that rewrites results.
-- **GN-13n** A case may have `"@listener": "accept_and_close"`, a server that its test runs for the case alone: a TCP
+- **GN-13o** A case may have `"@listener": "accept_and_close"`, a server that its test runs for the case alone: a TCP
   listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once,
   without reading from it. A part `{"listener": "port"}` of a composed case text (GN-13l) is the port of that listener
   in decimal, such as `{"text": ["postgres://orm@127.0.0.1:", {"listener": "port"}, "/orm_test"]}`. The test of B-4,

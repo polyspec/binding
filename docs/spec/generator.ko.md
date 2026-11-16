@@ -2146,7 +2146,7 @@
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
   가지고, 그 비지 않은 배열은 Unicode 문자열, `case_path`와 선택적인 `as`만 가진 경로 객체, case의 listener의
-  port인 `{"listener": "port"}`(GN-13n)만 담는다.
+  port인 `{"listener": "port"}`(GN-13o)만 담는다.
   `as`가 없으면 풀린 경로를 그대로 넣고, 유일한 명시적 mode인 `json-string`은 완전한 따옴표 붙은 JSON
   string token을 넣는다. 상대 경로는 GN-6y를 따르고 NUL과 짝 없는 surrogate를 담지 않는다. literal 문자열과
   private JSON quoting helper는 NUL을 포함한 모든 Unicode 제어 문자를 허용한다. 모든 경로는
@@ -2179,7 +2179,7 @@
   그것을 대신하지 않는다. 이유: 시스템의 임시 디렉터리는 심볼릭 링크를 거쳐 닿을 수 있어(macOS의 `/var`와 `/private/var`)
   경로를 푸는 코어는 시험이 만든 경로와 다른 텍스트를 주고, 풀지 않은 경로의 기대 텍스트는 올바른 결과를 실패시킨다.
   풀린 형식 하나면 결과를 다시 쓰는 규칙 없이 기대 텍스트가 정확하다.
-- **GN-13n** case는 `"@listener": "accept_and_close"`를 가질 수 있다. 그 시험이 그 case만을 위해 실행하는 서버다.
+- **GN-13o** case는 `"@listener": "accept_and_close"`를 가질 수 있다. 그 시험이 그 case만을 위해 실행하는 서버다.
   `127.0.0.1`에서 시스템이 정하는 port로 듣는 TCP listener이며, 각 연결을 받아들이고 그 연결에서 읽지 않고 바로
   닫는다. 합성 case 텍스트(GN-13l)의 부분 `{"listener": "port"}`는 그 listener의 port를 10진수로 쓴 것이다. 예:
   `{"text": ["postgres://orm@127.0.0.1:", {"listener": "port"}, "/orm_test"]}`. case의 B-4, GN-6ae, GN-6m, GN-6z,

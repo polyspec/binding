@@ -129,15 +129,15 @@ const PHP_CASE_FILE = `
 `;
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-// GN-13n: then the line that starts the listener of the case.
+// GN-13o: then the line that starts the listener of the case.
 const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n        if (PHP_OS_FAMILY !== 'Linux') {\n            self::markTestSkipped(${phpText(BYTE_NAME_LINUX)});\n        }` : ''}${caseFilesOf(files).map((file) => `\n        $this->caseFile(${file.name === undefined ? phpText(file.path) : `(string) hex2bin(${phpText(file.name)})`}, ${phpText(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        $this->caseListener();'}`;
 
-// GN-13n: the listener of a case, a child process of PHP_BINARY, because a call of the extension blocks the process of
+// GN-13o: the listener of a case, a child process of PHP_BINARY, because a call of the extension blocks the process of
 // the test. It writes its port as one line, which the test reads before it makes the values of the case; an After method
 // kills it and waits for its end. The port is a public static property, so a closure or an anonymous class of a case
 // value reads it by the name of the class.
 const PHP_CASE_LISTENER = `
-    /** GN-13n: the port of the listener of the test in progress. */
+    /** GN-13o: the port of the listener of the test in progress. */
     public static ?string $caseListenerPort = null;
 
     /** @var resource|null */
@@ -166,13 +166,13 @@ const PHP_CASE_LISTENER = `
         $pipes = [];
         $process = proc_open([PHP_BINARY, '-n', '-r', $server], [1 => ['pipe', 'w']], $pipes);
         if ($process === false) {
-            self::fail('G-5: the listener of the case did not start (GN-13n)');
+            self::fail('G-5: the listener of the case did not start (GN-13o)');
         }
         $this->caseListenerProcess = $process;
         $this->caseListenerOutput = $pipes[1];
         $port = trim((string) fgets($pipes[1]));
         if (!ctype_digit($port)) {
-            self::fail('G-5: the listener of the case did not start: it wrote no port (GN-13n)');
+            self::fail('G-5: the listener of the case did not start: it wrote no port (GN-13o)');
         }
         self::$caseListenerPort = $port;
     }

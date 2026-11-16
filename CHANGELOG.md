@@ -6,7 +6,7 @@
 ## Unreleased
 
 - A path of `@files` names a file whose name is bytes that are no Unicode by the escape `\xHH` of a byte from 80 to ff, such as `"sets/\\xff.dbs"`; each of the five test generators writes the file by its bytes, and the test of such a case runs only on Linux and is skipped with the reason elsewhere (GN-13i, B2.326). A key of `@files` was Unicode text, so a case could not store such a file.
-- A case may have `"@listener": "accept_and_close"`, a listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once, and a composed text names its port by the part `{"listener": "port"}`; each of the five test generators starts it before the values of the case and stops it at the end of the test, without a time limit and without a sleep (GN-13n, CK-96, B2.325). A case could name a closed port alone, which the system refuses before any handshake, so a connection that a server drops during the handshake had no case.
+- A case may have `"@listener": "accept_and_close"`, a listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once, and a composed text names its port by the part `{"listener": "port"}`; each of the five test generators starts it before the values of the case and stops it at the end of the test, without a time limit and without a sleep (GN-13o, CK-96, B2.325). A case could name a closed port alone, which the system refuses before any handshake, so a connection that a server drops during the handshake had no case.
 
 ## 0.0.12
 

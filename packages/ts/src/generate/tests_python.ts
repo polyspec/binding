@@ -155,10 +155,10 @@ const PYTHON_CASE_BYTE_FILE = `
 `;
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-// GN-13n: then the line that starts the listener of the case.
+// GN-13o: then the line that starts the listener of the case.
 const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n        if sys.platform != "linux":\n            self.skipTest(${pyString(BYTE_NAME_LINUX)})` : ''}${caseFilesOf(files).map((file) => (file.name === undefined ? `\n        self._case_file(${pyString(file.path)}, ${pyString(file.hex)})` : `\n        self._case_byte_file(${pyString(file.name)}, ${pyString(file.hex)})`)).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        self._case_listener()'}`;
 
-// GN-13n: the listener of a case, a child process of the interpreter of the test, because a call that holds the GIL
+// GN-13o: the listener of a case, a child process of the interpreter of the test, because a call that holds the GIL
 // would keep a thread of the test from closing the connection. It writes its port as one line, which the test reads
 // before it makes the values of the case, and the cleanup of the test kills it and waits for its end.
 const PYTHON_CASE_LISTENER_SERVER = `
@@ -173,7 +173,7 @@ _CASE_LISTENER_SERVER = (
     "    connection.close()\\n"
 )
 
-# GN-13n: the port of the listener of the test in progress.
+# GN-13o: the port of the listener of the test in progress.
 _case_listener: dict[str, str] = {}
 `;
 const PYTHON_CASE_LISTENER = `
@@ -190,7 +190,7 @@ const PYTHON_CASE_LISTENER = `
         self.addCleanup(stop)
         port = "" if server.stdout is None else server.stdout.readline().strip()
         if not port.isdigit():
-            self.fail(f"G-5: the listener of the case did not start: it exited with {server.wait()} (GN-13n)")
+            self.fail(f"G-5: the listener of the case did not start: it exited with {server.wait()} (GN-13o)")
         _case_listener["port"] = port
 `;
 
@@ -991,7 +991,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   const usesFuture = out.some((block) => block.includes('self._future('));
   // GN-13j: the helpers of a service are module functions, which the lines of a test and of a made value call.
   const usesService = [...out, ...helpers].some((block) => /\b_service_(address|state)\(/.test(block));
-  // GN-13n: the listener of a case, a child process that the test starts.
+  // GN-13o: the listener of a case, a child process that the test starts.
   const usesListener = out.some((block) => block.includes('self._case_listener()'));
   // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
   const readers = usesSame ? foreignReaders(model, 'python') : [];

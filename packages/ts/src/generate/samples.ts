@@ -63,7 +63,7 @@ export interface Context {
   cancelNew?: (fired: boolean) => string;
   // GN-13j: the expression of the address of the service of a case, which the test reads from its variable.
   serviceAddress?: (service: CaseService) => string;
-  // GN-13n: the expression of the port of the listener of a case, as a text.
+  // GN-13o: the expression of the port of the listener of a case, as a text.
   listenerPort?: string;
 }
 
@@ -187,17 +187,17 @@ const wellFormedCaseText = (text: string): boolean => !/[\uD800-\uDFFF]/u.test(t
 
 export type CaseTextPart = string | { relative: string; jsonString: boolean } | { listener: ListenerPort };
 
-// GN-13n: the server of a case that accepts each connection and closes it at once. The value of @listener names what the
+// GN-13o: the server of a case that accepts each connection and closes it at once. The value of @listener names what the
 // server does; accept_and_close is the one that a case names today.
 export const CASE_LISTENER = '@listener';
 const LISTENER_KINDS: readonly string[] = ['accept_and_close'];
 export function caseListenerOf(raw: unknown): 'accept_and_close' | undefined {
   if (raw === undefined) return undefined;
-  if (typeof raw !== 'string' || !LISTENER_KINDS.includes(raw)) throw new Unsupported(`${CASE_LISTENER} of a case is "accept_and_close" (GN-13n), not ${shown(raw)}`);
+  if (typeof raw !== 'string' || !LISTENER_KINDS.includes(raw)) throw new Unsupported(`${CASE_LISTENER} of a case is "accept_and_close" (GN-13o), not ${shown(raw)}`);
   return 'accept_and_close';
 }
 
-// GN-13n: a part {"listener": "port"} of a composed case text, with the @listener of its case, which withServices reads.
+// GN-13o: a part {"listener": "port"} of a composed case text, with the @listener of its case, which withServices reads.
 export class ListenerPort {
   readonly given: unknown;
   readonly declared: unknown;
@@ -214,8 +214,8 @@ export class ListenerPort {
   // The part in a target, or the reason that fails the test of its case.
   check(): void {
     const record = this.given as Record<string, unknown>;
-    if (Object.keys(record).length !== 1 || record['listener'] !== 'port') throw new Unsupported(`a listener part of a composed case text is {"listener": "port"} (GN-13n), not ${shown(this.given)}`);
-    if (this.declared === undefined) throw new Unsupported(`a part {"listener": "port"} stands in a case without ${CASE_LISTENER} (GN-13n)`);
+    if (Object.keys(record).length !== 1 || record['listener'] !== 'port') throw new Unsupported(`a listener part of a composed case text is {"listener": "port"} (GN-13o), not ${shown(this.given)}`);
+    if (this.declared === undefined) throw new Unsupported(`a part {"listener": "port"} stands in a case without ${CASE_LISTENER} (GN-13o)`);
     caseListenerOf(this.declared);
   }
 }
@@ -228,7 +228,7 @@ export function caseTextParts(value: unknown): CaseTextPart[] | undefined {
   if (Object.keys(value).length !== 1 || !Array.isArray(parts) || parts.length === 0) return refused();
   return parts.map((part): CaseTextPart => {
     if (typeof part === 'string') return wellFormedCaseText(part) ? part : refused();
-    // GN-13n: the port of the listener of the case.
+    // GN-13o: the port of the listener of the case.
     if (part instanceof ListenerPort) return { listener: part };
     if (typeof part !== 'object' || part === null || Array.isArray(part)) return refused();
     const record = part as Record<string, unknown>;
@@ -263,7 +263,7 @@ export interface CaseFile {
 }
 
 // GN-13i: the reason of the test of a case that names a file by bytes, which only a file system of Linux stores.
-export const BYTE_NAME_LINUX = 'the case names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
+export const BYTE_NAME_LINUX = 'a case verified only on Linux: it names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
 
 // GN-13i: the bytes of a path with the escape \xHH of a byte from 80 to ff, as lower-case hex, or undefined for a path
 // without a backslash. A path whose bytes are UTF-8 is written as its text, so each name has one spelling.
@@ -403,7 +403,7 @@ export function withServices(services: readonly Service[], member: string, kase:
   const walk = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(walk);
     if (typeof value !== 'object' || value === null) return value;
-    // GN-13n: a part {"listener": ...} of a composed case text keeps the @listener of its case.
+    // GN-13o: a part {"listener": ...} of a composed case text keeps the @listener of its case.
     const parts = (value as { text?: unknown }).text;
     if (Object.keys(value).length === 1 && Array.isArray(parts) && parts.some(listenerPart)) {
       found = true;
@@ -541,7 +541,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
         if (typeof part === 'string') return literal(part);
         if ('listener' in part) {
           part.listener.check();
-          if (ctx.listenerPort === undefined) throw new Unsupported(`the port of the listener of a case is not generated for ${ctx.target ?? ctx.lang} (GN-13n)`);
+          if (ctx.listenerPort === undefined) throw new Unsupported(`the port of the listener of a case is not generated for ${ctx.target ?? ctx.lang} (GN-13o)`);
           return ctx.listenerPort;
         }
         if (ctx.caseTextPath === undefined) throw new Unsupported(`a case-owned text path is not generated for ${ctx.target ?? ctx.lang} (GN-13l)`);
@@ -1594,7 +1594,7 @@ export interface RaisingCase {
   faults?: string;
   // GN-13i: the files of the case as the case gives them, which caseRefusal judges and caseFilesOf reads.
   files?: unknown;
-  // GN-13n: the listener of the case, which caseRefusal judges and caseListenerOf reads.
+  // GN-13o: the listener of the case, which caseRefusal judges and caseListenerOf reads.
   listener?: unknown;
   // GN-13j: the service of the case, which caseRefusal judges and serviceSteps reads.
   service?: unknown;
@@ -1993,7 +1993,7 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
 function hookWithoutFiles(fn: Fn, record: Record<string, unknown>): void {
   if (record[CASE_FILES] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${CASE_FILES}, which the test of a hook does not write (N-4, GN-13i)`);
   // GN-13j: nor runs the lines of a service.
-  if (record[CASE_LISTENER] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${CASE_LISTENER}, which the test of a hook does not start (N-4, GN-13n)`);
+  if (record[CASE_LISTENER] !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${CASE_LISTENER}, which the test of a hook does not start (N-4, GN-13o)`);
   if (servesCase(record)) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} runs against a service, which the test of a hook does not reach (N-4, GN-13j)`);
 }
 
@@ -2133,7 +2133,7 @@ export interface ResultCase {
   after?: After[];
   // GN-13i: the files of the case as the case gives them.
   files?: unknown;
-  // GN-13n: the listener of the case.
+  // GN-13o: the listener of the case.
   listener?: unknown;
   // GN-13j: the service of the case, and whether the case runs against a service.
   service?: unknown;

@@ -518,7 +518,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   const usesSettled = blocks.some((block) => block.includes('settled('));
   // GN-13i: the files of a case are written with node:fs of the Node.js that runs the tests, as in Node.
   const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile(') || block.includes('caseByteFile('));
-  // GN-13n: the listener of a case, a Worker of the Node.js that runs the tests, as in Node.
+  // GN-13o: the listener of a case, a Worker of the Node.js that runs the tests, as in Node.
   const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'wasm') : [];

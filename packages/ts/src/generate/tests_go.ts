@@ -203,7 +203,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
       if (type !== 'text') throw new Unsupported(`a composed case text stands at a place of the type text alone (GN-13l), not ${type}`);
       return `(${textParts.map((part) => {
         if (typeof part === 'string') return goString(part);
-        // GN-13n: the port of the listener of the case.
+        // GN-13o: the port of the listener of the case.
         if ('listener' in part) {
           part.listener.check();
           return '_caseListenerPort';
@@ -852,7 +852,7 @@ function writeFiles(b: Body, files: unknown, service?: unknown, listener?: unkno
   // GN-13i: a case that names a file by bytes runs only on Linux, and Go writes the bytes of the name as a string.
   if (caseFilesOf(files).some((file) => file.name !== undefined)) b.lines.push('if runtime.GOOS != "linux" {', `\tt.Skip(${goString(BYTE_NAME_LINUX)})`, '}');
   b.lines.push(...caseFilesOf(files).map((file) => (file.name === undefined ? `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})` : `caseFile(t, ${goByteName(file.name)}, ${goString(file.hex)})`)));
-  // GN-13n: the listener of the case, after the files and before the service.
+  // GN-13o: the listener of the case, after the files and before the service.
   if (caseListenerOf(listener) !== undefined) b.lines.push('caseListener(t)');
   // GN-13j: the address of the service of the case and its setup, after the files.
   const steps = serviceSteps(service, 'go');
@@ -1853,10 +1853,10 @@ func caseFile(t *testing.T, relative string, content string) {
 }
 `;
 
-// GN-13n: the listener of a case, in a goroutine beside the call of the test, which accepts each connection and closes
+// GN-13o: the listener of a case, in a goroutine beside the call of the test, which accepts each connection and closes
 // it at once; the cleanup of the test closes it and waits for the goroutine to end.
 const CASE_LISTENER = `
-// _caseListenerPort is the port of the listener of the test in progress (GN-13n).
+// _caseListenerPort is the port of the listener of the test in progress (GN-13o).
 var _caseListenerPort string
 
 // caseListener starts the listener of the case of the test t on 127.0.0.1 at a port that the system assigns.
@@ -1864,7 +1864,7 @@ func caseListener(t *testing.T) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("G-5: the listener of the case did not start: %v (GN-13n)", err)
+		t.Fatalf("G-5: the listener of the case did not start: %v (GN-13o)", err)
 	}
 	done := make(chan struct{})
 	go func() {

@@ -233,10 +233,10 @@ export const linuxOnlyTests = (block: string): string => block.replaceAll(/\(\) 
 export const scoped = (made: string): string => (/\bawait\b/.test(made) ? `await (async () => {\n    ${made};\n  })();` : `(() => {\n    ${made};\n  })();`);
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-// GN-13n: then the line that starts the listener of the case.
+// GN-13o: then the line that starts the listener of the case.
 export const nodeCaseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(BYTE_NAME_LINUX)});\n    return;\n  }` : ''}${caseFilesOf(files).map((file) => (file.name === undefined ? `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});` : `\n  caseByteFile(${jsString(file.name)}, ${jsString(file.hex)});`)).join('')}${caseListenerOf(listener) === undefined ? '' : '\n  caseListener();'}`;
 
-// GN-13n: the listener of a case, in a Worker, because a call that blocks the thread of the test would keep its event
+// GN-13o: the listener of a case, in a Worker, because a call that blocks the thread of the test would keep its event
 // loop from closing the connection. The worker gives its port through a SharedArrayBuffer, on which the test waits with
 // Atomics.wait before it makes the values of the case, and afterEach terminates it and awaits its end. WASM starts it
 // the same way, with node:worker_threads of the Node.js that runs its tests.
@@ -265,7 +265,7 @@ function caseListener() {
   caseListenerWorker = new Worker(CASE_LISTENER_SERVER, { eval: true, workerData: shared });
   Atomics.wait(shared, 0, 0);
   const port = Atomics.load(shared, 0);
-  if (port <= 0) assert.fail('G-5: the listener of the case did not start (GN-13n)');
+  if (port <= 0) assert.fail('G-5: the listener of the case did not start (GN-13o)');
   caseListenerPort = String(port);
 }
 `;
@@ -839,7 +839,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const usesCasePath = usesCaseFile || blocks.some((block) => block.includes('casePath('));
   // GN-13j: the helpers of a service, which the lines of a test and its values call.
   const usesService = blocks.some((block) => /\bservice(Address|State)\(/.test(block));
-  // GN-13n: the listener of a case, a Worker that the test starts.
+  // GN-13o: the listener of a case, a Worker that the test starts.
   const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'node') : [];

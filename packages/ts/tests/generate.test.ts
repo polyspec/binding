@@ -5050,7 +5050,7 @@ test('a case names a file by bytes that are no Unicode with \\xHH, and its test 
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
   const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
   const name = Buffer.concat([Buffer.from('sets/'), Buffer.from([0xff]), Buffer.from('.dbs')]).toString('hex');
-  const reason = 'the case names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
+  const reason = 'a case verified only on Linux: it names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.ok(python.includes(`def test_gn13e_length_three_characters(self) -> None:\n        if sys.platform != "linux":\n            self.skipTest(${pyString(reason)})\n        self._case_byte_file("${name}", "78")\n        self._case_file("plain", "79")\n`), python);
   assert.match(python, /def _case_byte_file\(self, relative: str, content: str\) -> None:\n {8}self\._case_file\(os\.fsdecode\(bytes\.fromhex\(relative\)\), content\)/);
@@ -5162,7 +5162,7 @@ test('a case runs against a service of the test run: its address, its scope and 
   }
 });
 
-test('a case starts a listener that accepts each connection and closes it, whose port a composed text names, in every target (G-5, GN-13n, B2.325)', () => {
+test('a case starts a listener that accepts each connection and closes it, whose port a composed text names, in every target (G-5, GN-13o, B2.325)', () => {
   const listened = (change: (cases: any) => void = () => undefined): { out: Map<string, string | Buffer>; wasm: Map<string, string | Buffer> } => {
     const { contract, caseFiles } = shapes();
     const cases = caseFiles.get('contracts/cases.json') as any;
@@ -5219,9 +5219,9 @@ test('a case starts a listener that accepts each connection and closes it, whose
   assert.doesNotMatch(text(shaped(), 'packages/python/generated/tests/test_generated.py'), /_case_listener/);
   // G-4, GN-13e: a listener that the case cannot run fails the test of the case by name in every target.
   const refused: [string, (cases: any) => void][] = [
-    ['@listener of a case is "accept_and_close" (GN-13n), not "accept"', (cases) => { cases.repeat[2]['@listener'] = 'accept'; }],
-    ['a part {"listener": "port"} stands in a case without @listener (GN-13n)', (cases) => { delete cases.repeat[2]['@listener']; }],
-    ['a listener part of a composed case text is {"listener": "port"} (GN-13n), not {"listener":"host"}', (cases) => { cases.repeat[2].text = { text: [{ listener: 'host' }] }; }],
+    ['@listener of a case is "accept_and_close" (GN-13o), not "accept"', (cases) => { cases.repeat[2]['@listener'] = 'accept'; }],
+    ['a part {"listener": "port"} stands in a case without @listener (GN-13o)', (cases) => { delete cases.repeat[2]['@listener']; }],
+    ['a listener part of a composed case text is {"listener": "port"} (GN-13o), not {"listener":"host"}', (cases) => { cases.repeat[2].text = { text: [{ listener: 'host' }] }; }],
   ];
   for (const [message, change] of refused) {
     const { out: refusedOut, wasm: refusedWasm } = listened(change);
