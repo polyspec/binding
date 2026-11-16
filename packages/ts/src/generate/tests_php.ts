@@ -22,16 +22,19 @@ const phpBase = (category: string): string => ({ value: 'InvalidArgumentExceptio
 // G-5: the object of a callback fixture: a call that no row answers is recorded and throws, so a core that swallows the
 // exception still fails the test, which reads the record.
 function phpFixture(values: { members: string[]; rows: string[][] }): string {
-  return `new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
+  // GN-13bb: the arguments of a call are compared with those of a row by self::same of the test class, which compares an
+  // object by its class and its properties and an instance of a value class of another repository by its in row, as
+  // a result is compared; === of PHP holds for one instance alone.
+  return `new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}], self::same(...)) {
             public array $unexpected = [];
             public array $calls = [];
-            public function __construct(private array $rows) {}
+            public function __construct(private array $rows, private \\Closure $same) {}
 ${values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
             private function answer(string $name, array $args): mixed
             {
                 $this->calls[] = [$name, $args];
                 foreach ($this->rows as $at => $row) {
-                    if ($row[0] === $name && $row[1] === $args) {
+                    if ($row[0] === $name && ($this->same)($row[1]) === ($this->same)($args)) {
                         if ($row[3]) {
                             unset($this->rows[$at]);
                         }
@@ -1116,6 +1119,8 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
   const renderedMethods = methods.map((method, i) => methodRoots[i] === true
     ? method.replace(/(\n    public function test[^\n]*\n    \{)/g, "$1\n        $_caseTextRoot = dirname($this->casePath('.'));")
     : method);
+  // GN-13bb: a fixture compares the arguments of a call by same.
+  usesSame ||= renderedMethods.some((method) => method.includes('self::same(...)'));
   // GN-13e, B2.121: same reads an instance of a value class of another repository through its in row.
   const readers = usesSame ? foreignReaders(model, 'php') : [];
   const phpForeign = foreignClassNames(readers, foreignClass);

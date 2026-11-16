@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: c5971198a21f0f47d7acb719ef188d4fb501609b22a05a5b0dc1724fa5139635 -->
+<!-- source-sha256: 601ec6b0a6fe2c80d8fcb427835972c50a0b9e6c77807a113379791a9a2c341d -->
 # 생성기
 
 [English](generator.md)
@@ -2122,6 +2122,13 @@
   template이 import하는 json module의 `internal/binding` 태그 파일까지 켰다. 그 파일은 release에 없는 json 라이브러리의 test
   진입점을 불러서 template의 Go 시험이 링크되지 않았다. Go 시험을 돌리는 저장소는 자기 library의 태그를 준다:
   `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
+- **GN-13bb** 생성 시험의 callback이나 function fixture(G-5)는 호출의 인자를 row의 인자와, 시험이 결과를 비교하는 규칙으로
+  비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
+  row로, B2.121)으로 비교하고 fixture는 그것을 `self::same(...)`로 받는다. Python은 `_same`으로 비교한다. Node와 WASM은
+  `isDeepStrictEqual`로, Go는 `reflect.DeepEqual`로 비교하는데, 이것들은 이미 값을 비교한다. 이유: PHP에서 두 객체의
+  `===`는 같은 instance일 때만 참이고, Python에서 `__eq__`가 없는 class의 `==`는 identity다. 그래서 binding이 만든, row의
+  값과 같은 인자가 어느 row와도 맞지 않았다: 둘째 인자가 `Environment`인 template의 host function 셋이 매 호출마다
+  `UnexpectedCall`을 냈다. 결과의 같은 비교는 B2.358이었다.
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

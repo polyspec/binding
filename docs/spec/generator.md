@@ -2616,6 +2616,14 @@ the design ids are those of the binding design.
   template imports, which call the test entry points of a json library that its release does not have, and the Go
   tests of template did not link. A repository that runs its Go tests gives the tags of its own library:
   `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
+- **GN-13bb** A callback or function fixture of a generated test (G-5) finds the row of a call by comparing the
+  arguments of the call with those of the row by the rule by which the test compares a result: PHP by `same` of the
+  test class (an object by its class and its properties, an instance of a value class of another repository by its in
+  row, B2.121), which the fixture takes as `self::same(...)`, and Python by `_same`. Node and WASM compare by
+  `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already. Why: PHP `===` of two objects holds
+  for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
+  made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
+  an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

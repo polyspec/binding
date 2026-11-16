@@ -34,6 +34,7 @@
 - A case that raises `invalid_number` may give an `int` or `uint` argument of the range of i64 outside the safe integers, which every target refuses with that kind; CK-64 reported it, so the refusal of the binding had no case, and the Go tests now write such an argument as an integer literal (CK-64, GN-12a, B2.359).
 - Python: every module `m` of the contract is the private module `<root>._module_m`, with its public and internal names, which the package root re-exports; the module file `format.py` of template replaced the function `format` of the package by the module (GN-6bs, B2.368). A module `<root>.m` and the internal module `<root>._m` are gone.
 - Go: the build tag of a test feature names the library, `polyspec_<library>_<feature>` such as `polyspec_template_fault_test`; the tag `polyspec_fault_test` of one module turned on the tagged files of every polyspec module that it imports, which did not link with their release libraries (GN-13ba, B2.369). A repository that runs its Go tests renames its tags.
+- The callback and function fixtures of the PHP and Python tests compare the arguments of a call with a row by the comparison of the results, `same` and `_same`; PHP `===` held for one instance alone, so the host functions of template that take an `Environment` raised `UnexpectedCall` (GN-13bb, B2.370).
 
 ## 0.0.13
 

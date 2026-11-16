@@ -3378,7 +3378,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false, null\]\]\) \{/);
+  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false, null\]\], self::same\(\.\.\.\)\) \{/);
   assert.match(php, /public function find\(mixed \.\.\.\$args\): mixed \{ return \$this->answer\("find", \$args\); \}/);
   assert.match(php, /self::assertSame\(\[\], \$fixture0->unexpected\);\n {8}self::assertSame\(\[\["find", \["a"\]\]\], \$fixture0->calls\);/);
   assert.match(php, /\nfinal class UnexpectedCall extends \\LogicException\n/);
@@ -3632,7 +3632,7 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/php-ext/Cargo.toml')), /\nthread-test = \[\]\n/);
   assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /\* @param \\Closure \$convert\n/);
   const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false, null\]\]\)/);
+  assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false, null\]\], self::same\(\.\.\.\)\)/);
   assert.ok(tests.includes('apply($function0->call(...), '), tests);
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });
@@ -11225,4 +11225,18 @@ test('B2.369: the Go build tag of a test feature names the library, so it turns 
   const tagged = [...sample.keys()].filter((p) => p.startsWith('packages/go/') && p.endsWith('.go')).map((p) => [p, /^\/\/go:build (.+)$/m.exec(text(sample, p))?.[1]] as const).filter(([, tag]) => tag !== undefined && /polyspec_/.test(tag));
   assert.ok(tagged.some(([p]) => p.endsWith('internal/binding/zz_generated_panic.go')), tagged.map(([p]) => p).join(', '));
   for (const [path, tag] of tagged) for (const one of (tag ?? '').split(/\s*&&\s*/)) assert.match(one, /^polyspec_sample_[a-z_]+_test$/, `${path}: ${tag}`);
+});
+
+test('B2.370: a callback fixture compares the arguments of a call by the value rule of the results, not by identity (GN-13bb)', () => {
+  // template: PHP === of the Environment that the binding gave and the one of the row held for one instance alone, so
+  // each call was UnexpectedCall; Python == compares a class without __eq__ by identity (B2.358).
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const php = text(sample, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /new class\(\[[^\n]*\], self::same\(\.\.\.\)\) \{/);
+  assert.match(php, /\(\$this->same\)\(\$row\[1\]\) === \(\$this->same\)\(\$args\)/);
+  assert.doesNotMatch(php, /\$row\[1\] === \$args/);
+  assert.match(php, /private static function same\(mixed \$value\): mixed/);
+  const python = text(sample, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /if row\[0\] == name and _same\(args, row\[1\]\):/);
+  assert.match(python, /\ndef _same\(actual, expected\):/);
 });

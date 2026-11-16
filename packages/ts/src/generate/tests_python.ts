@@ -59,7 +59,7 @@ def _fixture(members, rows):
         def call(self, *args):
             calls.append((name, args))
             for row in left:
-                if row[0] == name and row[1] == args:
+                if row[0] == name and _same(args, row[1]):
                     if row[3]:
                         left.remove(row)
                     if row[4] is not None:
@@ -1114,6 +1114,8 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   // GN-13r: the listener of a case, a child process that the test starts.
   const usesListener = out.some((block) => block.includes('self._case_listener()'));
   // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
+  // GN-13bb: a fixture compares the arguments of a call by _same.
+  usesSame ||= usesFixture;
   const readers = usesSame ? foreignReaders(model, 'python') : [];
   const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
   const foreignRead = pythonForeignRead(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
