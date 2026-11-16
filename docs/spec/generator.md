@@ -1180,8 +1180,10 @@ the design ids are those of the binding design.
   conversions take the same approach (GN-6as).
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
-  `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
-  with a work stack on the heap and never calls itself or a conversion of the alias. The stack holds one level for
+  `make_<name>`, which makes the value of the language from the `OutValue` of the core, never calls itself or a
+  conversion of the alias. When a row makes a container, it walks the value in a loop with a work stack on the heap;
+  when no row makes a container, the value has no children and a depth of one, and the function is one match over
+  the rows, with no loop and no stack, which would never hold a level. The stack holds one level for
   each container whose children are not all made: the handle of the container, its length and the index of its next
   child, the container of the language that takes the made children, and, for an entry of a map, the made key until
   its value is made. A container that a later position may name again (U-7 (d)) is made and kept under its handle

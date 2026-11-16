@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9244dfac6871927f26b92fcaed23ccad18fca9aa8c1d4f56d06315dc2033ad4c -->
-<!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
+<!-- source-sha256: 31aaacb22843fe7a979506dabe8cf9f7648027d6e566913666503de17f6a5b12 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -25,6 +24,7 @@
 
 ## Unreleased
 
+- end-to-end sample에 UTF-8 bytes가 text로 나가는 값 alias 결과가 생겼다(GN-13be, B2.421): `php_value`의 out row와 in row를 가진 alias `blob`, member `store.get_blob`, 그리고 commit된 "y"를 그것으로 읽는 `after`를 가진 `store.transaction`의 case다. 그래서 CI가 B2.420이 고친 그런 결과의 생성된 Go를 실행한다. GN-6as는 이제 row가 container를 만들지 않는 alias의 `make_<name>`은 row에 대한 match 하나이고 loop와 작업 stack이 없다고 말한다. 그런 값은 깊이가 1이기 때문이다. 전에는 모든 make 함수가 작업 stack으로 걷는다고 말했지만, generator는 이미 그런 alias에 그렇게 하지 않았다. generator는 바뀌지 않는다. `packages/ts`에서 `node --test --test-name-pattern=B2.421 tests/generate.test.ts`로 확인했다.
 - 다섯 target의 생성된 시험은 binding이 callback에 넘기는 값을 결과처럼 value alias의 out row로 쓴다(GN-13be): callback fixture의 row와 function value의 row의 인자, 그리고 fixture가 기대하는 호출의 인자다. 이들은 호출의 인자처럼 쓰였다. 그래서 row가 UTF-8 bytes를 text로 만드는 alias의 인자는 bytes로 기대되었고, binding이 그 text로 한 호출은 어떤 row에도 맞지 않았다(B2.422). `packages/ts`에서 `node --test --test-name-pattern=B2.422 tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 - checkout이 kit 0.0.114 대신 0.0.118을 설치한다(B2.428). 그것이 설치하는 kit에서 `make install-packages`, `make docs-check`, `make hooks-check`, `make lint-rust`, `make typecheck-ts`, `make test-ts`로 검증했다.
 - 꼴이 틀린 생성된 Python 함수 호출(keyword-only 인자를 위치로 넘긴 것, 인자의 수, 빠지거나 모르는 인자)은 kind가 없는 Python의 `TypeError`이고, 계약의 kind는 꼴이 맞는 호출의 값만 판정한다(GN-11a): json이 `parse("1", "options")`가 plain `TypeError`를 낸다고 보고했는데, 그것이 규칙이다. keyword-only parameter가 있는 member의 생성된 Python 시험은 그것을 위치로 넘기고 그 `TypeError`를 기대한다(B2.426). `packages/ts`에서 `node --test --test-name-pattern=B2.426 tests/generate.test.ts`로 검증했고, 변경 전에는 실패했다.

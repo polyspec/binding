@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d0988e434acdc3a913930710d947dd34d5bbb87612060ac84a68853776cdcbad -->
+<!-- source-sha256: 35d28ffdabf0259785ea9b9d36b90ec5e24861e6e694c48b1a7d60eb08f18629 -->
 # 생성기
 
 [English](generator.md)
@@ -961,8 +961,10 @@
   out of bounds"로 trap했다. binding은 host의 stack을 늘릴 수 없고, 더 큰 stack은 process가 끝나는 깊이를 옮길 뿐이며,
   value alias 변환도 같은 방식을 쓴다(GN-6as).
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
-  native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
-  loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
+  native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 자기 자신이나 그 alias의
+  변환을 부르지 않는다. row가 container를 만들면 heap의 작업 stack을 가진 loop로 값을 걷는다. 어떤 row도 container를
+  만들지 않으면 값은 자식이 없고 깊이가 1이므로, 함수는 row에 대한 match 하나이며 loop도, level을 하나도 담지 않을
+  stack도 없다. stack은 자식이 다 만들어지지 않은 container마다
   level 하나를 담는다: container의 handle, 길이와 다음 자식의 index, 만든 자식을 받는 언어의 container, 그리고 map의
   entry에서는 값이 만들어질 때까지 만든 key. 뒤의 자리가 다시 이름할 수 있는 container(U-7 (d))는 자식보다 먼저
   만들어 handle 아래에 두므로, cycle은 전과 같이 만들어진다. owner의 member가 만든 자식으로 만드는 인스턴스(GN-6x)는
