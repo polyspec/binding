@@ -179,6 +179,78 @@ def _service_state(service: str, variable: str, step: str, scope: str, value: st
         raise AssertionError(f"G-5: {step} of the service {service} for {scope} exited with {done.returncode}: {done.stdout.decode(errors='replace')} (GN-13j)")
 `;
 
+// GN-13q: the peer session of the service of a case, a child process of the program of its state that runs while the
+// test runs: the test writes the JSON text of each step as one line and reads the line ready, closes its input at the
+// end and waits for its exit; the cleanup of the test kills a peer that it did not end, and waits for it.
+const PYTHON_PEER = `
+
+
+_peers: dict[str, subprocess.Popen[bytes]] = {}
+
+
+def _service_peer_ready(service: str, scope: str, step: str) -> None:
+    peer = _peers[scope]
+    assert peer.stdout is not None
+    line = peer.stdout.readline()
+    if line == b"ready\\n":
+        return
+    if line == b"":
+        del _peers[scope]
+        status = peer.wait()
+        raise AssertionError(f"G-5: {step} of the peer of the service {service} for {scope} ended before ready with {status} (GN-13q)")
+    raise AssertionError(f"G-5: {step} of the peer of the service {service} for {scope} wrote {line!r} in place of ready (GN-13q)")
+
+
+def _service_peer_write(scope: str, value: str) -> None:
+    peer = _peers[scope]
+    assert peer.stdin is not None
+    try:
+        peer.stdin.write(value.encode() + b"\\n")
+        peer.stdin.flush()
+    except BrokenPipeError:
+        # The peer ended; the line that it did not write tells the step.
+        pass
+
+
+def _service_peer(case: unittest.TestCase, service: str, variable: str, scope: str, value: str) -> None:
+    program = os.environ.get(variable, "")
+    if program == "":
+        raise AssertionError(f"G-5: the service {service} of the case has no program of its state: the test run sets the environment variable {variable} (GN-13j)")
+    try:
+        _peers[scope] = subprocess.Popen([program, "peer", scope], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    except OSError as error:
+        raise AssertionError(f"G-5: the peer of the service {service} for {scope} did not start: {error} (GN-13q)") from error
+    case.addCleanup(_service_peer_stop, scope)
+    _service_peer_write(scope, value)
+    _service_peer_ready(service, scope, "peer")
+
+
+def _service_peer_next(service: str, scope: str, value: str) -> None:
+    _service_peer_write(scope, value)
+    _service_peer_ready(service, scope, "next")
+
+
+def _service_peer_end(service: str, scope: str) -> None:
+    peer = _peers.pop(scope)
+    assert peer.stdin is not None and peer.stdout is not None
+    peer.stdin.close()
+    status = peer.wait()
+    peer.stdout.close()
+    if status != 0:
+        raise AssertionError(f"G-5: the peer of the service {service} for {scope} exited with {status} (GN-13q)")
+
+
+def _service_peer_stop(scope: str) -> None:
+    peer = _peers.pop(scope, None)
+    if peer is None:
+        return
+    peer.kill()
+    peer.wait()
+    for stream in (peer.stdin, peer.stdout):
+        if stream is not None:
+            stream.close()
+`;
+
 const pyState = (service: CaseService, state: string, step: string, scope: string, value: string): string =>
   `_service_state(${pyString(service.id)}, ${pyString(state)}, ${pyString(step)}, ${pyString(scope)}, ${pyString(value)})`;
 
@@ -187,11 +259,12 @@ const pyState = (service: CaseService, state: string, step: string, scope: strin
 const serviceStart = (service: unknown): string => {
   const steps = serviceSteps(service, 'python');
   if (steps === undefined) return '';
-  return `\n        _service_address(${pyString(steps.service.id)}, ${pyString(steps.service.address)})${steps.setup === undefined ? '' : `\n        ${pyState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}`;
+  return `\n        _service_address(${pyString(steps.service.id)}, ${pyString(steps.service.address)})${steps.setup === undefined ? '' : `\n        ${pyState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}${steps.peer === undefined ? '' : `\n        _service_peer(self, ${pyString(steps.service.id)}, ${pyString(steps.peer.state)}, ${pyString(steps.scope)}, ${pyString(steps.peer.value)})`}`;
 };
 const serviceEnd = (service: unknown): string => {
   const steps = serviceSteps(service, 'python');
-  return steps?.check === undefined ? '' : `\n        ${pyState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`;
+  const peer = steps?.peer === undefined ? '' : `\n        _service_peer_end(${pyString(steps.service.id)}, ${pyString(steps.scope)})`;
+  return `${peer}${steps?.check === undefined ? '' : `\n        ${pyState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`}`;
 };
 
 // GN-6aq: a future that was cancelled before the call, or one that is never cancelled.
@@ -386,6 +459,7 @@ export function pythonTests(model: Model, module: string): string {
     arm: (local, member, faults) => `${local} = _native._arm_faults(${pyString(member)}, ${pyString(faults)})`,
     left: (local, what) => `assert _native._fault_left(${local}) == [], ${pyString(`G-5: ${what}`)}`,
     state: (service, state, step, scope, value) => pyState(service, state, step, scope, value),
+    peerNext: (service, scope, value) => `_service_peer_next(${pyString(service.id)}, ${pyString(scope)}, ${pyString(value)})`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -966,6 +1040,8 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   const usesFuture = out.some((block) => block.includes('self._future('));
   // GN-13j: the helpers of a service are module functions, which the lines of a test and of a made value call.
   const usesService = [...out, ...helpers].some((block) => /\b_service_(address|state)\(/.test(block));
+  // GN-13q: the helpers of a peer session, which the lines of a test with a peer call.
+  const usesPeer = [...out, ...helpers].some((block) => /\b_service_peer\(/.test(block));
   // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
   const readers = usesSame ? foreignReaders(model, 'python') : [];
   const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
@@ -981,7 +1057,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.future
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

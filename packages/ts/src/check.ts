@@ -1877,7 +1877,7 @@ class Checker {
     if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
     for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on', 'service'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
+      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on', 'service', 'peer'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
       const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
       const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
       // A call with on: receiver is a method of the class of the receiver of the value, called on that receiver.
@@ -2283,6 +2283,8 @@ class Checker {
     // JSON of a state is the program's, so it is not read.
     let value: string | undefined;
     let changes = false;
+    // GN-13q: the calls of then that step the peer of the service.
+    let peers = false;
     const walk = (item: unknown): void => {
       if (Array.isArray(item)) {
         for (const each of item) walk(each);
@@ -2299,8 +2301,9 @@ class Checker {
         if (instance && key === 'then' && Array.isArray(inner)) {
           for (const step of inner) {
             if (typeof step !== 'object' || step === null || Array.isArray(step)) continue;
-            const { service, ...rest } = step as Record<string, unknown>;
+            const { service, peer, ...rest } = step as Record<string, unknown>;
             if (service !== undefined) changes = true;
+            if (peer !== undefined) peers = true;
             walk(rest);
           }
         } else walk(inner);
@@ -2311,10 +2314,11 @@ class Checker {
     if (raw === undefined) {
       if (value !== undefined) report(`a case value {"service": "${value}"} stands in a case without service`);
       if (changes) report('a call of then changes the service, but the case has no service');
+      if (peers) this.report('CK-95', path, `${where}: a call of then steps the peer, but the case has no service (GN-13q)`);
       return;
     }
     const object = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
-    if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'check'].includes(key))) {
+    if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'peer', 'check'].includes(key))) {
       this.report('CK-95', path, `${where}: service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${JSON.stringify(raw)}`);
       return;
     }
@@ -2326,6 +2330,9 @@ class Checker {
     if (service.state === undefined && (object['setup'] !== undefined || object['check'] !== undefined || changes)) {
       report(`the service ${service.id} has no state, so the case gives no setup, check or service of a call of then`);
     }
+    // GN-13q: the peer is a process of the program of the state, and a call of then steps the peer of the case alone.
+    if (service.state === undefined && object['peer'] !== undefined) this.report('CK-95', path, `${where}: the service ${service.id} has no state, so the case gives no peer (GN-13q)`);
+    if (peers && object['peer'] === undefined) this.report('CK-95', path, `${where}: a call of then steps the peer, but the service ${service.id} of the case has no peer (GN-13q)`);
     if (this.targetsOf(memberId).includes('wasm') && (only === undefined || only.includes('wasm'))) {
       this.report('CK-95', path, `the row of ${memberId} holds the case ${String(record['id'])}, which runs against the service ${service.id}, for wasm, whose core has no socket; give the row an only without wasm (GN-13h, GN-13j)`);
     }

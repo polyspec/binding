@@ -253,9 +253,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   복사본의 결함을 그대로 갖고, 다른 binding의 recipe 파일은 그 binding이 빌드하는 것을 빌드한다.
 - **CK-95** 시험 실행의 service(생성기 GN-13j): `services`는 `{"id", "address", "state", "reason"}`를 나열한다.
   `address`와 `state`는 환경 변수의 이름(`^[A-Z][A-Z0-9_]*$`)이고 `state`는 선택이며, id는 겹치지 않는다. `binding
-  check`는 `service`가 `services`의 id를 가진 `{"id", "setup", "check"}`(`setup`과 `check`는 선택)가 아닌 case, `state`가
-  없는 service의 `setup`, `check`, `then` 호출의 `service`, `service`가 없는 case의 case 값 `{"service": ...}`나 `service`가
-  있는 `then` 호출, 그리고 group이 `service`가 있는 case를 담고 WASM에 해당하는 `cases` 행을 보고한다. WASM에 해당한다는
+  check`는 `service`가 `services`의 id를 가진 `{"id", "setup", "peer", "check"}`(`setup`, `peer`, `check`는 선택)가
+  아닌 case, `state`가 없는 service의 `setup`, `peer`, `check`, `then` 호출의 `service`, `service`가 없는 case의 case 값
+  `{"service": ...}`나 `service` 또는 `peer`가 있는 `then` 호출, service에 `peer`가 없는 case의 `peer`가 있는 `then`
+  호출(GN-13q), 그리고 group이 `service`가 있는 case를 담고 WASM에 해당하는 `cases` 행을 보고한다. WASM에 해당한다는
   것은 그 member가 WASM에 생성되고 행에 `wasm`이 없는 `only`가 없다는 뜻이다(GN-13h). 이유: 실행이 제공하지 않는 service나
   어떤 program도 쓰지 않는 상태를 가리키는 case는 시험이 실행될 때에야 실패하고, WASM의 코어에는 socket이 없으므로 그런
   case의 WASM 시험은 실패할 수밖에 없다.

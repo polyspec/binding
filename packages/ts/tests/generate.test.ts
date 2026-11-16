@@ -5133,6 +5133,133 @@ test('a case runs against a service of the test run: its address, its scope and 
   }
 });
 
+test('B2.330: a case runs a peer session of its service at once with its own: started after setup, stepped after a call of then, ended before check, killed in the cleanup (G-5, GN-13q)', () => {
+  const store = { id: 'store', address: 'SHAPES_STORE', state: 'SHAPES_STORE_STATE', reason: 'G-5' };
+  const peered = (change: (contract: any, cases: any) => void = () => undefined): { out: Map<string, string | Buffer>; wasm: Map<string, string | Buffer> } => {
+    const { contract, caseFiles } = shapes();
+    contract.services = [{ ...store }];
+    const cases = caseFiles.get('contracts/cases.json') as any;
+    // The peer locks row 1, the receiver row 2, after which the peer requests row 2; the call of the case closes the cycle.
+    Object.assign(cases.buffer_size[0], {
+      receiver: { new: 'buffer.new', args: { start: 'ab' }, then: [{ call: 'buffer.append', args: { source: 'c' }, peer: { lock: 2 } }] },
+      service: { id: 'store', setup: { rows: [1, 2] }, peer: { lock: 1, victim: false }, check: { released: true } },
+    });
+    delete cases.buffer_size[0].start;
+    // A case that raises runs a peer too.
+    Object.assign(cases.repeat[2], { text: { service: 'address' }, service: { id: 'store', peer: { lock: 1 } } });
+    change(contract, cases);
+    return {
+      out: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles }),
+      wasm: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] }),
+    };
+  };
+  const { out, wasm } = peered();
+  const setup = JSON.stringify({ rows: [1, 2] });
+  const start = JSON.stringify({ lock: 1, victim: false });
+  const next = JSON.stringify({ lock: 2 });
+  const check = JSON.stringify({ released: true });
+  const scope = (target: string): string => `${target}:buffer.size:the_size_of_a_text_source:`;
+  const raising = (target: string): string => `${target}:shapes.repeat:more_than_the_most:`;
+  // The order in each target: setup, the start of the peer, the receiver and its step of the peer, the call, the end of the peer, check.
+  const ordered = (body: string, parts: string[]): void => {
+    let at = -1;
+    for (const part of parts) {
+      const found = body.indexOf(part, at + 1);
+      assert.ok(found > at, `${part} after ${parts[parts.indexOf(part) - 1] ?? 'the start'}:\n${body}`);
+      at = found;
+    }
+  };
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const pyScope = pyString(scope('python'));
+  ordered(python, [
+    'def test_gn13e_buffer_size_the_size_of_a_text_source(self) -> None:',
+    `_service_state("store", "SHAPES_STORE_STATE", "setup", ${pyScope}, ${pyString(setup)})`,
+    `_service_peer(self, "store", "SHAPES_STORE_STATE", ${pyScope}, ${pyString(start)})`,
+    '.append(',
+    `_service_peer_next("store", ${pyScope}, ${pyString(next)})`,
+    '.size',
+    `_service_peer_end("store", ${pyScope})`,
+    `_service_state("store", "SHAPES_STORE_STATE", "check", ${pyScope}, ${pyString(check)})`,
+  ]);
+  ordered(python, ['def test_b4_repeat_more_than_the_most(self) -> None:', `_service_peer(self, "store", "SHAPES_STORE_STATE", ${pyString(raising('python'))}, ${pyString(JSON.stringify({ lock: 1 }))})`, 'assertRaises', `_service_peer_end("store", ${pyString(raising('python'))})`]);
+  assert.match(python, /^def _service_peer\(case: unittest\.TestCase, service: str, variable: str, scope: str, value: str\) -> None:/m);
+  assert.match(python, /subprocess\.Popen\(\[program, "peer", scope\]/);
+  assert.match(python, /case\.addCleanup\(_service_peer_stop, scope\)/);
+  assert.match(python, /^def _service_peer_next\(service: str, scope: str, value: str\) -> None:/m);
+  assert.match(python, /^def _service_peer_end\(service: str, scope: str\) -> None:/m);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const jsScope = jsString(scope('node'));
+  ordered(node, [
+    "test('GN-13e: Buffer.size the_size_of_a_text_source', async () => {",
+    `serviceState('store', 'SHAPES_STORE_STATE', 'setup', ${jsScope}, ${jsString(setup)});`,
+    `await servicePeer('store', 'SHAPES_STORE_STATE', ${jsScope}, ${jsString(start)});`,
+    '.append(',
+    `await servicePeerNext('store', ${jsScope}, ${jsString(next)});`,
+    '.size',
+    `await servicePeerEnd('store', ${jsScope});`,
+    `serviceState('store', 'SHAPES_STORE_STATE', 'check', ${jsScope}, ${jsString(check)});`,
+  ]);
+  ordered(node, ["test('B-4: repeat more_than_the_most', async () => {", 'await servicePeer(', 'await assert.rejects(async () => ', `await servicePeerEnd('store', ${jsString(raising('node'))});`]);
+  assert.match(node, /^async function servicePeer\(service, variable, scope, value\) \{/m);
+  assert.match(node, /^async function servicePeerNext\(service, scope, value\) \{/m);
+  assert.match(node, /^async function servicePeerEnd\(service, scope\) \{/m);
+  assert.match(node, /^import \{ spawn, spawnSync \} from 'node:child_process';$/m);
+  assert.match(node, /^import test, \{ afterEach \} from 'node:test';$/m);
+  assert.match(node, /^afterEach\(async \(\) => \{\n {2}for \(const peer of peers\.values\(\)\)/m);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const phpScope = phpText(scope('php'));
+  ordered(php, [
+    'function testGn13eBufferSizeTheSizeOfATextSource(): void',
+    `self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('setup')}, ${phpScope}, ${phpText(setup)});`,
+    `self::servicePeer(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpScope}, ${phpText(start)});`,
+    '->append(',
+    `self::servicePeerNext(${phpText('store')}, ${phpScope}, ${phpText(next)});`,
+    '->size',
+    `self::servicePeerEnd(${phpText('store')}, ${phpScope});`,
+    `self::serviceState(${phpText('store')}, ${phpText('SHAPES_STORE_STATE')}, ${phpText('check')}, ${phpScope}, ${phpText(check)});`,
+  ]);
+  assert.match(php, /private static function servicePeer\(string \$service, string \$variable, string \$scope, string \$value\): void/);
+  assert.match(php, /proc_open\(\[\$program, 'peer', \$scope\]/);
+  assert.match(php, /#\[\\PHPUnit\\Framework\\Attributes\\After\]\n {4}public function stopServicePeers\(\): void/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const goScope = goString(scope('go'));
+  ordered(go, [
+    'func TestGN13eBufferSizeTheSizeOfATextSource(t *testing.T) {',
+    `serviceState(t, "store", "SHAPES_STORE_STATE", "setup", ${goScope}, ${goString(setup)})`,
+    `servicePeer(t, "store", "SHAPES_STORE_STATE", ${goScope}, ${goString(start)})`,
+    '.Append(',
+    `servicePeerNext(t, "store", ${goScope}, ${goString(next)})`,
+    '.Size',
+    `servicePeerEnd(t, "store", ${goScope})`,
+    `serviceState(t, "store", "SHAPES_STORE_STATE", "check", ${goScope}, ${goString(check)})`,
+  ]);
+  assert.match(go, /^func servicePeer\(t \*testing\.T, service string, variable string, scope string, value string\) \{/m);
+  assert.match(go, /\tt\.Cleanup\(func\(\) \{/);
+  assert.match(go, /"bufio"/);
+  assert.match(go, /"io"/);
+  // WASM: the core has no socket, so the test of a case with a peer fails by name, as GN-13j states.
+  const wasmTests = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(wasmTests.includes(`assert.fail(${jsString('the case more_than_the_most of shapes.repeat: the core of WASM has no socket, so it reaches no service; the row of the case in cases has an only without wasm (GN-13j)')})`), wasmTests);
+  assert.doesNotMatch(wasmTests, /servicePeer/);
+  // G-4, GN-13e: a peer that the case cannot run fails the test of the case by name in every target.
+  const refused: [string, string, (contract: any, cases: any) => void][] = [
+    ['the_size_of_a_text_source of buffer.size', 'the service store has no state, so the case gives no peer (GN-13q)', (contract, cases) => { delete contract.services[0].state; delete cases.buffer_size[0].service.setup; delete cases.buffer_size[0].service.check; }],
+    ['the_size_of_a_text_source of buffer.size', 'a call of then steps the peer, but the service store of the case has no peer (GN-13q)', (_c, cases) => { delete cases.buffer_size[0].service.peer; }],
+    ['the_size_of_a_text_source of buffer.size', 'the peer of a call of then stands in a case without service (GN-13q)', (_c, cases) => { delete cases.buffer_size[0].service; }],
+  ];
+  for (const [which, message, change] of refused) {
+    const { out: refusedOut } = peered(change);
+    const reason = `the case ${which}: ${message}`;
+    const written: [string, string][] = [
+      ['packages/python/generated/tests/test_generated.py', `self.fail(${pyString(reason)})`],
+      ['packages/ts/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+      ['packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${phpText(reason)})`],
+      ['packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
+    ];
+    for (const [path, fails] of written) assert.ok(text(refusedOut, path).includes(fails), `${path}: ${message}\n${text(refusedOut, path).split('\n').filter((line) => line.includes('size_of_a_text') || line.includes('fail(')).join('\n')}`);
+  }
+});
+
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
   const out = shaped();
   const errors = text(out, 'packages/python/generated/python/polyspec/shapes/_errors.py');

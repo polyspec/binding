@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: a3595d0d55e6a4a183e3f8a1dd46cd55465aa7275c99f3b04159373536c0d916 -->
+<!-- source-sha256: a514cd9fea31c45e91b62cfe33e8b930b11a0261deeb07c2ea34c029f7c0e7c2 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -14,6 +15,7 @@
 ## 0.0.13
 
 - `cases`의 행은 저장소의 시험이 읽고 어떤 생성기도 읽지 않는 case의 key를 `reads`에 선언하고, CK-96은 그것을 받는다(B2.319). CK-96은 그런 key를 모두 보고하여, core 시험이 자기 key를 읽는 계약에서 `binding generate`가 멈췄다: php-serialization에서 3769건(`bytes`, `tree`, `serialized`, `data`, `written`). 어떤 행도 선언하지 않은 key는 여전히 보고한다.
+- case는 자신의 `service`의 `peer`로 service의 peer session을 자신의 session과 동시에 실행할 수 있다. WASM을 뺀 각 시험 생성기는 상태 program의 자식 process인 peer를 setup 뒤에 시작하고, 각 단계의 JSON을 한 줄로 쓰고 줄 `ready`를 읽으며(`peer`가 있는 `then` 호출 뒤에도), check 전에 끝내고, 시험의 cleanup에서 죽인다. `binding check`는 상태가 없는 service의 peer와 peer가 없는 case의 peer 단계를 보고한다(GN-13q, CK-95, B2.330). 두 행 잠금 사이의 deadlock에는 동시에 두 session이 필요했지만 어떤 case도 그것을 실행하지 못했다.
 
 ## 0.0.12
 

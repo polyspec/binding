@@ -13,6 +13,7 @@
 ## 0.0.13
 
 - A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
+- A case may run a peer session of its service at the same time as its own through `peer` of its `service`: each test generator except WASM starts the peer, a child process of the program of the state, after setup, writes the JSON of each step as one line and reads the line `ready`, also after a call of `then` with `peer`, ends it before check and kills it in the cleanup of the test, and `binding check` reports a peer of a service without state and a step of the peer in a case without a peer (GN-13q, CK-95, B2.330). A deadlock between two row locks needs two sessions at once, which no case could run.
 
 ## 0.0.12
 
