@@ -198,7 +198,7 @@ test('the run fails when any cell failed, a failed check alone among them (GN-14
 });
 
 test('without EXPECT or DIST the run is evidence of the HEAD of its checkout, which must be clean (GN-14i, B2.391)', () => {
-  const head = '89abcdef'.repeat(5);
+  const head = 'f'.repeat(40);
   const other = '01234567'.repeat(5);
   assert.equal(expectedCommit(head, undefined, undefined), head);
   assert.equal(expectedCommit(head, other, undefined), other);
