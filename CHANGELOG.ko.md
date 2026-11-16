@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d338bf89bfea35d6057c55f11f3ceb299b42f686cfbc8abdebd58300fce5d35a -->
+<!-- source-sha256: a3595d0d55e6a4a183e3f8a1dd46cd55465aa7275c99f3b04159373536c0d916 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.13
 
 - `cases`의 행은 저장소의 시험이 읽고 어떤 생성기도 읽지 않는 case의 key를 `reads`에 선언하고, CK-96은 그것을 받는다(B2.319). CK-96은 그런 key를 모두 보고하여, core 시험이 자기 key를 읽는 계약에서 `binding generate`가 멈췄다: php-serialization에서 3769건(`bytes`, `tree`, `serialized`, `data`, `written`). 어떤 행도 선언하지 않은 key는 여전히 보고한다.
 

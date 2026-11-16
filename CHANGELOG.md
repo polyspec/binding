@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.13
+
 - A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
 
 ## 0.0.12
