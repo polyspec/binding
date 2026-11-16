@@ -988,6 +988,11 @@ the design ids are those of the binding design.
   the owner declares its trait with that error, as the binding of the owner writes it, so a consumer that wrote the
   code enum (`Failure<ValidateErrorCode>` for `Failure<ValidateError>`) implemented another trait, which does not
   compile.
+- **GN-6bm** Go writes no output conversion `out_<record>` for a record whose field holds a function type, in an
+  `optional`, a `list`, a `map` or a `tuple` too, and reads the field as every function enters (GN-6z): its return
+  value goes from the Go func into the core. Why: a function only enters, so such a record is a value that the
+  binding makes from the arguments of a call and never gives back, and a function type has no output conversion, so
+  the writer of the record was refused (G-4) where no member needs it.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

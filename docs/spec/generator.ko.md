@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bd89d413f9a96bbf19a3caf97e5cd80e14e66b2698ef00039de46a43464613fb -->
+<!-- source-sha256: 083110768d544b4c01a0801b70562e0ed6d48161859e6ecef29f2b21c94e326b -->
 # 생성기
 
 [English](generator.md)
@@ -800,6 +800,10 @@
   이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
   선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신
   `Failure<ValidateErrorCode>`)는 다른 trait을 구현하게 되어 컴파일되지 않는다.
+- **GN-6bm** Go는 field가 함수 타입을 담는 record(`optional`, `list`, `map`, `tuple` 안도 포함)에 출력 변환
+  `out_<record>`를 쓰지 않고, 그 field는 모든 함수처럼 들어오는 값으로 읽는다(GN-6z): 반환값은 Go func에서 코어로
+  들어간다. 이유: 함수는 들어오기만 하므로 그런 record는 binding이 호출의 인자로 만들고 돌려주지 않는 값이며, 함수
+  타입에는 출력 변환이 없어서 어느 member도 필요로 하지 않는 record의 writer가 거부되었다(G-4).
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

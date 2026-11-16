@@ -597,18 +597,31 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   // enters, as rustType writes its core type.
   const units = new Map(model.contract.units.map((u) => [u.id, u]));
   const entersOnly = fields.some((f) => holdsCallback(units, f.type));
+  // GN-6bm: a function only enters (GN-6z), so a record whose field holds one, in an optional, a list, a map or a
+  // tuple too, has no output conversion; its core type keeps no lifetime of the call.
+  const holdsFunction = (type: Type): boolean => {
+    if (typeof type === 'string') return false;
+    if ('function' in type) return true;
+    if ('list' in type) return holdsFunction(type.list);
+    if ('optional' in type) return holdsFunction(type.optional);
+    if ('map' in type) return holdsFunction(type.map);
+    if ('keyed_map' in type) return holdsFunction(type.keyed_map);
+    if ('tuple' in type) return type.tuple.some(holdsFunction);
+    return false;
+  };
+  const writesOut = !entersOnly && !fields.some((f) => holdsFunction(f.type));
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => fieldInit(f.name)).join(', ')}${absentInits(unit)} })
 }
-${entersOnly ? '' : `
+${writesOut ? `
 fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
     let value = value.borrow();
 ${writes().join('\n')}
 }
-`}`;
+` : ''}`;
 }
 
 // ---- class units (T-5) ----

@@ -6500,6 +6500,19 @@ test('Go reads a record whose callback field is optional and writes no output co
   assert.doesNotMatch(lib, /\nfn out_search\(/);
 });
 
+test('B2.349: Go reads a record whose field holds a function type and writes no output conversion for it (GN-6bm)', () => {
+  // The record config of orm holds audit_source: { function: { returns: { map: { unit: orm_value } } } }; Go wrote
+  // out_config for it and was refused with "no Go output conversion for {"function":...}".
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const search = sample.units.find((u: { id: string }) => u.id === 'search');
+  search.fields = [search.fields[1], { name: ['source'], type: { optional: { function: { parameters: [], returns: { map: 'text' }, async_allowed: false } } }, default: { literal: null } }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_search\(input: &mut &\[u8\]\) -> Result</);
+  assert.match(lib, /kept_function_in\(/);
+  assert.doesNotMatch(lib, /\nfn out_search\(/);
+});
+
 test('a member with core.failure converts the error of its core as the failure of language code (E-1c, GN-7)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
   const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });

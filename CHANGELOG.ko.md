@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
+<!-- source-sha256: 705cabcd6376a5d8bf2becfe9f8f4ea53bc99d7944f3a33597f6f3cfb60cfc36 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -15,6 +15,7 @@
 - receiver를 만드는 Python 모듈 함수는 단계가 `self._case_path` 같은 시험 case의 helper를 부르면 시험 case를 `self`로 받는다. 그 단계가 NameError를 냈다(GN-13s, B2.346).
 - generator spec은 숫자 타입 자리의 숫자가 아닌 값(text나 bool 포함)이 모든 target에서 B-2의 kind `invalid_number`라고 명시한다. 변환은 이미 그렇게 거부한다(GN-13d, B2.347).
 - Python과 PHP 시험은 case가 만든 cleanup member가 있는 instance를 시험 끝에 case와 따로 닫는다. 이전에는 instance를 버려 소멸자가 경고했다(GN-13u, B2.348).
+- Go는 orm `config`의 `audit_source`처럼 field가 함수 타입을 담는 record를 출력 변환 없이 생성한다. 이전에는 `no Go output conversion for {"function":...}`로 생성이 거부되었다(GN-6bm, B2.349).
 
 ## 0.0.12
 
