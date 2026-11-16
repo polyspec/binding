@@ -32,7 +32,7 @@ import {
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
-  caseTextParts, caseListenerOf, CASE_JSON_STRING_GOLDENS,
+  caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType,
 } from './samples.ts';
 
@@ -845,8 +845,13 @@ function made(v: Values, b: Body, r: Receiver): string {
 // is not written; the other tests of the target are written.
 // GN-13i: the lines that write the files of a case, first in the body of its test; files of another form are refused by
 // name (G-4), which written gives as the reason of the test of the case.
+// GN-13i: a Go string literal of the bytes of a hex, each byte that is no printable ASCII as \xHH.
+const goByteName = (hex: string): string => `"${[...Buffer.from(hex, 'hex')].map((byte) => (byte >= 0x20 && byte < 0x7f && byte !== 0x22 && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).padStart(2, '0')}`)).join('')}"`;
+
 function writeFiles(b: Body, files: unknown, service?: unknown, listener?: unknown): void {
-  b.lines.push(...caseFilesOf(files).map((file) => `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})`));
+  // GN-13i: a case that names a file by bytes runs only on Linux, and Go writes the bytes of the name as a string.
+  if (caseFilesOf(files).some((file) => file.name !== undefined)) b.lines.push('if runtime.GOOS != "linux" {', `\tt.Skip(${goString(BYTE_NAME_LINUX)})`, '}');
+  b.lines.push(...caseFilesOf(files).map((file) => (file.name === undefined ? `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})` : `caseFile(t, ${goByteName(file.name)}, ${goString(file.hex)})`)));
   // GN-13n: the listener of the case, after the files and before the service.
   if (caseListenerOf(listener) !== undefined) b.lines.push('caseListener(t)');
   // GN-13j: the address of the service of the case and its setup, after the files.

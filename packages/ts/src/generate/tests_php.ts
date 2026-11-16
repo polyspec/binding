@@ -6,7 +6,7 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -130,7 +130,7 @@ const PHP_CASE_FILE = `
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
 // GN-13n: then the line that starts the listener of the case.
-const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).map((file) => `\n        $this->caseFile(${phpText(file.path)}, ${phpText(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        $this->caseListener();'}`;
+const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n        if (PHP_OS_FAMILY !== 'Linux') {\n            self::markTestSkipped(${phpText(BYTE_NAME_LINUX)});\n        }` : ''}${caseFilesOf(files).map((file) => `\n        $this->caseFile(${file.name === undefined ? phpText(file.path) : `(string) hex2bin(${phpText(file.name)})`}, ${phpText(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        $this->caseListener();'}`;
 
 // GN-13n: the listener of a case, a child process of PHP_BINARY, because a call of the extension blocks the process of
 // the test. It writes its port as one line, which the test reads before it makes the values of the case; an After method

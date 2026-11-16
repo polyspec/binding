@@ -5031,15 +5031,44 @@ test('a case writes its files into the directory of its test before its values a
     kase['@files'] = bad;
     const refusedOut = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles });
     const refusedWasm = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles, targets: ['wasm'] });
-    const reason = `the case ${kase.id} of shapes.length: @files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
+    const reason = `the case ${kase.id} of shapes.length: @files of a case is an object from a relative path inside the directory of the test, without .., with \\xHH for a byte from 80 to ff of a name that is no UTF-8, to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
     const written: [Map<string, string | Buffer>, string, string][] = [
       [refusedOut, 'packages/python/generated/tests/test_generated.py', `self.fail(${JSON.stringify(reason)})`],
-      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
-      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${JSON.stringify(reason)})`],
-      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${JSON.stringify(reason)})`],
-      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
+      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${phpText(reason)})`],
+      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
+      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
     ];
     for (const [files, path, fails] of written) assert.ok(text(files, path).includes(fails), `${path}: ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a case names a file by bytes that are no Unicode with \\xHH, and its test runs only on Linux, in every target (G-5, GN-13i, B2.326)', () => {
+  const { contract, caseFiles } = shapes();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.length[0]['@files'] = { 'sets/\\xff.dbs': 'x', plain: 'y' };
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+  const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
+  const name = Buffer.concat([Buffer.from('sets/'), Buffer.from([0xff]), Buffer.from('.dbs')]).toString('hex');
+  const reason = 'the case names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(`def test_gn13e_length_three_characters(self) -> None:\n        if sys.platform != "linux":\n            self.skipTest(${pyString(reason)})\n        self._case_byte_file("${name}", "78")\n        self._case_file("plain", "79")\n`), python);
+  assert.match(python, /def _case_byte_file\(self, relative: str, content: str\) -> None:\n {8}self\._case_file\(os\.fsdecode\(bytes\.fromhex\(relative\)\), content\)/);
+  assert.match(python, /^import sys$/m);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`test('GN-13e: length three_characters', (t) => {\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(reason)});\n    return;\n  }\n  caseByteFile('${name}', '78');\n  caseFile('plain', '79');\n`), node);
+  assert.match(node, /^function caseByteFile\(relative, content\) \{/m);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(`    {\n        if (PHP_OS_FAMILY !== 'Linux') {\n            self::markTestSkipped(${phpText(reason)});\n        }\n        $this->caseFile((string) hex2bin(${phpText(name)}), ${phpText('78')});\n`), php);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.ok(go.includes(`\tif runtime.GOOS != "linux" {\n\t\tt.Skip(${goString(reason)})\n\t}\n\tcaseFile(t, "sets/\\xff.dbs", "78")\n`), go);
+  assert.match(go, /"runtime"/);
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(wasm.includes(`test('GN-13e: length three_characters', (t) => {\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(reason)});\n`), wasm);
+  assert.match(wasm, /^function caseByteFile\(relative, content\) \{/m);
+  // A byte below 80, a name that is UTF-8, another escape and a backslash alone fail the test of the case by name.
+  for (const bad of ['a\\x41', 'a\\xc3\\xa9', 'a\\xFF', 'a\\n', '../\\xff']) {
+    assert.throws(() => caseFilesOf({ [bad]: 'x' }), /with \\xHH for a byte from 80 to ff.*GN-13i/, bad);
   }
 });
 

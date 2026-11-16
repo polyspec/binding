@@ -258,24 +258,56 @@ export const CASE_FILES = '@files';
 export interface CaseFile {
   path: string;
   hex: string;
+  // GN-13i: the lower-case hex of the bytes of a path that names a file by bytes that are no Unicode.
+  name?: string;
+}
+
+// GN-13i: the reason of the test of a case that names a file by bytes, which only a file system of Linux stores.
+export const BYTE_NAME_LINUX = 'the case names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
+
+// GN-13i: the bytes of a path with the escape \xHH of a byte from 80 to ff, as lower-case hex, or undefined for a path
+// without a backslash. A path whose bytes are UTF-8 is written as its text, so each name has one spelling.
+function byteNameOf(path: string): string | undefined {
+  if (!path.includes('\\')) return undefined;
+  const pieces = path.split(/\\x([0-9a-f]{2})/);
+  const bytes: Buffer[] = [];
+  for (const [i, piece] of pieces.entries()) {
+    if (i % 2 === 0) {
+      if (piece.includes('\\')) return '';
+      bytes.push(Buffer.from(piece, 'utf8'));
+    } else {
+      if (Number.parseInt(piece, 16) < 0x80) return '';
+      bytes.push(Buffer.from(piece, 'hex'));
+    }
+  }
+  const name = Buffer.concat(bytes);
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(name);
+    return '';
+  } catch {
+    return name.toString('hex');
+  }
 }
 export function caseFilesOf(raw: unknown): CaseFile[] {
   if (raw === undefined) return [];
   const refused = (): never => {
-    throw new Unsupported(`${CASE_FILES} of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${shown(raw)}`);
+    throw new Unsupported(`${CASE_FILES} of a case is an object from a relative path inside the directory of the test, without .., with \\xHH for a byte from 80 to ff of a name that is no UTF-8, to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${shown(raw)}`);
   };
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return refused();
   return Object.entries(raw as Record<string, unknown>).map(([path, content]): CaseFile => {
+    const name = byteNameOf(path);
+    if (name === '') return refused();
     try {
-      casePathOf(path);
+      casePathOf(name === undefined ? path : path.replaceAll(/\\x[0-9a-f]{2}/g, '_'));
     } catch (error) {
       if (error instanceof Unsupported) return refused();
       throw error;
     }
-    if (typeof content === 'string') return { path, hex: Buffer.from(content, 'utf8').toString('hex') };
+    const named = name === undefined ? {} : { name };
+    if (typeof content === 'string') return { path, hex: Buffer.from(content, 'utf8').toString('hex'), ...named };
     const hex = typeof content === 'object' && content !== null && Object.keys(content).length === 1 ? (content as { hex?: unknown }).hex : undefined;
     if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) return refused();
-    return { path, hex };
+    return { path, hex, ...named };
   });
 }
 

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ba73306de5b8b2b223ce3a5ff2163b9af3e1cc47d774c5f6236a9db0a11ba9fc -->
+<!-- source-sha256: ab34e58a760cecc2928a4048d1088b2e047757da1da297d95b9e033064798c0c -->
 # 생성기
 
 [English](generator.md)
@@ -2085,6 +2085,19 @@
   않는 경로를 실행하므로, case가 바이트를 가지고 시험이 그것을 member가 읽는 곳에 쓴다. 키는 `@`로 시작하며, snake_case
   이름은 `@`를 갖지 않으므로 이 키는 contract와 그 case의 이름 밖에 있다. 매개변수, field, case의 기댓값은 `files`라는
   이름을 가질 수 있고 그 뜻을 유지하며, 생성기는 contract 자신의 이름인 키를 case의 파일로 읽지 않는다.
+  `@files`의 경로는 Unicode 텍스트가 아닌 이름의 파일을 escape `\xHH`로 이름한다. `80`부터 `ff`까지의 바이트 하나를
+  소문자 hex 두 자리로 쓴 것이며, 예를 들어 case의 JSON에서 `"sets/\\xff.dbs"`는 바이트 `sets/`, `0xff`, `.dbs`다.
+  backslash는 GN-6y의 경로에 없으므로 escape는 텍스트 경로의 뜻을 바꾸지 않는다. escape가 있는 경로는 다른 backslash를
+  갖지 않고, 그 바이트는 올바른 UTF-8이 아니다. UTF-8인 이름은 텍스트로 쓰므로 각 이름의 철자는 하나다. 시험은 그런
+  파일을 경로의 바이트로 쓴다: Python은 Linux에서 `os.fsdecode`가 주는 str로 `self._case_byte_file`, Node와 WASM은
+  Buffer 경로로 `caseByteFile`, PHP와 Go는 바이트 문자열로 `$this->caseFile`과 `caseFile(t, ...)`이다. macOS와 Windows의
+  파일 시스템은 이름을 Unicode로 저장해 그런 이름을 거부하고, Linux는 이름의 바이트를 그대로 저장하므로, 그런 경로를
+  가진 case의 시험은 Linux에서만 실행된다. 다른 시스템에서는 파일을 쓰기 전에 그 이유와 함께 건너뛴다(Python
+  `self.skipTest`, Node와 WASM `t.skip`, PHP `self::markTestSkipped`, Go `t.Skip`). `path`의 case 값은 텍스트이므로 그런
+  파일을 이름하지 않고, 그 파일을 담은 디렉터리를 이름한다. 다른 형식의 escape, `80` 미만의 바이트, 바이트가 UTF-8인
+  경로는 모든 target에서 이유와 함께 그 case의 시험을 실패시킨다. 이유: 디렉터리를 나열하는 코어는 Linux에서 Unicode가
+  아닌 이름을 만나며(예: 그런 이름을 담은 디렉터리의 set을 거부하는 것), 그 이름의 파일이 디스크에 있어야만 코어가
+  그 나열을 받는다.
 - **GN-13j** case는 레포의 시험 실행이 제공하는 service(예: database 서버)에 대해 실행될 수 있다. 형식은
   `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`이고 `setup`과 `check`는 선택이다. 계약은 그런
   service를 `services`에 선언한다(계약 검사 CK-95): `{"id", "address", "state", "reason"}`. `address`는 service의 주소를

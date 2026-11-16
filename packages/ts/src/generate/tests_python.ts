@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -147,9 +147,16 @@ const PYTHON_CASE_FILE = `
             file.write(bytes.fromhex(content))
 `;
 
+// GN-13i: a file of a case whose name is bytes that are no Unicode, through the str of those bytes that os.fsdecode gives
+// on Linux.
+const PYTHON_CASE_BYTE_FILE = `
+    def _case_byte_file(self, relative: str, content: str) -> None:
+        self._case_file(os.fsdecode(bytes.fromhex(relative)), content)
+`;
+
 // GN-13i: the lines that write the files of a case, first in the body of its test.
 // GN-13n: then the line that starts the listener of the case.
-const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).map((file) => `\n        self._case_file(${pyString(file.path)}, ${pyString(file.hex)})`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        self._case_listener()'}`;
+const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n        if sys.platform != "linux":\n            self.skipTest(${pyString(BYTE_NAME_LINUX)})` : ''}${caseFilesOf(files).map((file) => (file.name === undefined ? `\n        self._case_file(${pyString(file.path)}, ${pyString(file.hex)})` : `\n        self._case_byte_file(${pyString(file.name)}, ${pyString(file.hex)})`)).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        self._case_listener()'}`;
 
 // GN-13n: the listener of a case, a child process of the interpreter of the test, because a call that holds the GIL
 // would keep a thread of the test from closing the connection. It writes its port as one line, which the test reads
@@ -978,7 +985,8 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   const renderedOut = out.map((block, i) => methodRoots[i] === true
     ? block.replace(/(\n    def test_[^\n]*:\n)/g, '$1        _case_text_root = os.path.dirname(self._case_path("."))\n')
     : block);
-  const usesCaseFile = out.some((block) => block.includes('self._case_file('));
+  const usesByteFile = out.some((block) => block.includes('self._case_byte_file('));
+  const usesCaseFile = usesByteFile || out.some((block) => block.includes('self._case_file('));
   const usesCasePath = usesCaseTextPath || usesCaseFile || out.some((block) => block.includes('self._case_path('));
   const usesFuture = out.some((block) => block.includes('self._future('));
   // GN-13j: the helpers of a service are module functions, which the lines of a test and of a made value call.
@@ -996,13 +1004,13 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesFunctools ? 'import functools\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService || usesListener ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens || usesCaseTextPath ? 'import json\n' : ''}${usesTokens ? 'import struct\n' : ''}${roundFn === undefined && !usesListener ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesFunctools ? 'import functools\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService || usesListener ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens || usesCaseTextPath ? 'import json\n' : ''}${usesTokens ? 'import struct\n' : ''}${roundFn === undefined && !usesListener && !usesByteFile ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
-class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
+class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesByteFile ? PYTHON_CASE_BYTE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
         with self.assertRaises(pkg.${cls('internal')}) as caught:
             _native._panic_test()

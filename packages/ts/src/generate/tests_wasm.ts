@@ -6,7 +6,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCase
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
+import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
@@ -513,11 +513,11 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   // A block may hold several tests, each of which is judged alone.
   const usesCaseText = textPaths.used();
   if (usesCaseText) nodeCaseTextProof(ctx, emit);
-  const blocks = out.map((block) => block.split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
+  const blocks = out.map((block) => linuxOnlyTests(block).split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
   // GN-13i: the files of a case are written with node:fs of the Node.js that runs the tests, as in Node.
-  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile('));
+  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile(') || block.includes('caseByteFile('));
   // GN-13n: the listener of a case, a Worker of the Node.js that runs the tests, as in Node.
   const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.

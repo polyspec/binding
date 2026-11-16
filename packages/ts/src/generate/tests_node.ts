@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -91,7 +91,7 @@ async function settled(call) {
 export const awaitedTest = (block: string): string => {
   if (!/\bawait /.test(block)) return block;
   return block
-    .replaceAll(/(\ntest\('[^\n]*?'), \(\) => \{/g, '$1, async () => {')
+    .replaceAll(/(\ntest\('[^\n]*?'), \((t?)\) => \{/g, '$1, async ($2) => {')
     .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ')
     .replaceAll('outcome(() => ', 'await settled(async () => ');
 };
@@ -214,7 +214,18 @@ function caseFile(relative, content) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, Buffer.from(content, 'hex'), { mode: 0o600 });
 }
+
+// GN-13i: a file whose name is bytes that are no Unicode, written by a Buffer path.
+function caseByteFile(relative, content) {
+  const path = Buffer.concat([Buffer.from(\`\${casePath('.')}/\`), Buffer.from(relative, 'hex')]);
+  mkdirSync(path.subarray(0, path.lastIndexOf(0x2f)), { recursive: true, mode: 0o700 });
+  writeFileSync(path, Buffer.from(content, 'hex'), { mode: 0o600 });
+}
 `;
+
+// GN-13i: a test whose case names a file by bytes runs only on Linux, so it takes the context of node:test, whose skip
+// it calls on another system.
+export const linuxOnlyTests = (block: string): string => block.replaceAll(/\(\) => \{(\n  if \(process\.platform !== 'linux'\) \{)/g, '(t) => {$1');
 
 // GN-6p, B-10: the statement that makes an object inside a function of its own, so that nothing of the test holds it
 // when gc() runs; a factory that the test awaits is made inside an async function, which the test awaits, because an
@@ -223,7 +234,7 @@ export const scoped = (made: string): string => (/\bawait\b/.test(made) ? `await
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
 // GN-13n: then the line that starts the listener of the case.
-export const nodeCaseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).map((file) => `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n  caseListener();'}`;
+export const nodeCaseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(BYTE_NAME_LINUX)});\n    return;\n  }` : ''}${caseFilesOf(files).map((file) => (file.name === undefined ? `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});` : `\n  caseByteFile(${jsString(file.name)}, ${jsString(file.hex)});`)).join('')}${caseListenerOf(listener) === undefined ? '' : '\n  caseListener();'}`;
 
 // GN-13n: the listener of a case, in a Worker, because a call that blocks the thread of the test would keep its event
 // loop from closing the connection. The worker gives its port through a SharedArrayBuffer, on which the test waits with
@@ -821,10 +832,10 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   // GN-6m: a block may hold several tests, each of which awaits when its call does.
   const usesCaseText = textPaths.used();
   if (usesCaseText) nodeCaseTextProof(ctx, emit);
-  const blocks = out.map((block) => block.split(/(?=\ntest\()/).map(awaitedTest).join(''));
+  const blocks = out.map((block) => linuxOnlyTests(block).split(/(?=\ntest\()/).map(awaitedTest).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
-  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile('));
+  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile(') || block.includes('caseByteFile('));
   const usesCasePath = usesCaseFile || blocks.some((block) => block.includes('casePath('));
   // GN-13j: the helpers of a service, which the lines of a test and its values call.
   const usesService = blocks.some((block) => /\bservice(Address|State)\(/.test(block));

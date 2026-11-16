@@ -2572,6 +2572,20 @@ the design ids are those of the binding design.
   no name in snake_case has, so it is outside the names of the contract and of its cases: a parameter, a field or an
   expected value of a case may be named `files` and keeps its meaning, and the generator reads no key of the contract's
   own names as the files of a case.
+  A path of `@files` names a file whose name is no Unicode text by the escape `\xHH`, two lower-case hex digits of one
+  byte from `80` to `ff`, such as `"sets/\\xff.dbs"` in the JSON of the case for the bytes `sets/`, `0xff` and `.dbs`.
+  A backslash is no part of a path of GN-6y, so the escape gives no path of a text another meaning. A path with the
+  escape holds no other backslash, and its bytes are no well-formed UTF-8, because a name that is UTF-8 is written as
+  its text, so that each name has one spelling. A test writes such a file by the bytes of its path: Python
+  `self._case_byte_file` with the str that `os.fsdecode` gives on Linux, Node and WASM `caseByteFile` with a Buffer path,
+  and PHP and Go `$this->caseFile` and `caseFile(t, ...)` with a string of the bytes. A file system of macOS and Windows stores a name as Unicode and
+  refuses such a name, and Linux stores the bytes of a name as they are, so the test of a case with such a path runs
+  only on Linux: on another system it is skipped with the reason before it writes a file (Python `self.skipTest`, Node
+  and WASM `t.skip`, PHP `self::markTestSkipped`, Go `t.Skip`). A case value of `path` names no such file, because a
+  value of `path` is a text; it names the directory that holds it. An escape of another form, a byte below `80` or a
+  path whose bytes are UTF-8 fail the test of the case with the reason in every target. Why: a core that lists a
+  directory meets a name that is not Unicode on Linux, such as the refusal of a set whose directory holds one, and
+  only a file of that name on the disk gives the core that listing.
 - **GN-13j** A case may run against a service that the test run of the repository provides, such as a database
   server, through `"service": {"id": "<service id>", "setup": <JSON>, "check": <JSON>}`, of which `setup` and `check`
   are optional. The contract declares each such service in `services` (contract check CK-95):
