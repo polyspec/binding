@@ -1,12 +1,12 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
-<!-- source-sha256: 81ac0e50b9b114a9dfff7cf56dc806ca1371432de81388c3319fbf52e9f58ba5 -->
-<!-- source-sha256: ebbab0267d1bbef5b698d0e84d4884191580d870691c597f760299ccefb307aa -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.12
 
 - `binding check`는 parameter도, 결과의 key도, case의 key도 아닌 member case의 key를 그 key, case, member와 함께 보고한다(CK-96, B2.312). 생성기는 그런 key를 아무 말 없이 뺐다: end-to-end sample은 세 case의 파일을 `@files` 대신 `files`에 주었고 이제 그 파일이 쓰이며, fixture 레포의 case는 어떤 시험도 읽지 않는 key `words`를 가졌고 이를 지운다.
 - 이름이 Rust 키워드인 Node method, 예를 들어 `where`는 Rust 함수 `method_where`이다. raw identifier `r#where`는 매크로 `napi`를 panic하게 했다(GN-6bg, B2.313).

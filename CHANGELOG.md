@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## 0.0.12
+
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.
 - A Node method whose name is a Rust keyword, such as `where`, is the Rust function `method_where`; the raw identifier `r#where` made the macro `napi` panic (GN-6bg, B2.313).
 - A member case that raises without `status` checks no status; Go wrote `status != undefined`, which go vet refuses, and the other targets compared the status with `undefined` (GN-13ka, B2.314).
