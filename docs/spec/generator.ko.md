@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0f9248340ddf63e9a3d1aff150a44bddad3ebfec00b5245d4af600ac5102e9aa -->
+<!-- source-sha256: d0858d58e3501d5b430968f8a88c33731506f145795917791c03898660b70960 -->
 # 생성기
 
 [English](generator.md)
@@ -35,6 +35,26 @@
   이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다. 명령은 각 target을 1 GiB stack을
   가진 자기 thread에서 생성하고 그것을 기다린다. 그래서 코어의 깊이 한계를 넘게 중첩된 case 값(수백 단계, 단계마다 생성기의
   frame 여럿)도 case가 주는 대로 생성된다. main thread의 stack은 그보다 작고, 그것을 넘친 생성은 깊이에 따라 우연히 실패한다.
+- **GN-1d** binding의 모든 Cargo 호출은 저장소가 주는 cargo 명령을 저장소가 주는 build 인자와 함께 실행하며, `PATH`의
+  `cargo`를 실행하지 않는다. Cargo를 실행하는 명령, 곧 `binding check`, `binding scaffold`, `binding generate`(`cargo metadata
+  --locked --offline`, GN-15f)와 `binding go-link`(`cargo rustc`, GN-15k)는 저장소의 `$(CARGO)` 값인 `--cargo <command>`를
+  요구하고 `<command> <subcommand> ...`를 실행한다. 그것이 없는 명령은 usage와 함께 실패한다. `binding go-link`는 저장소의
+  `$(CARGOFLAGS)` 값인 `--cargo-flags <arguments>`도 받으며(비어 있을 수 있다), 그것을 subcommand `rustc` 바로 뒤에 넘긴다.
+  `cargo metadata`는 `--ignore-rust-version` 같은 build 인자를 받지 않으므로 다른 명령은 flag를 받지 않는다. 각 값은 shell이
+  recipe 줄의 `$(CARGO)`를 나누듯 공백에서 단어로 나눈다. shell이 달리 읽을 따옴표나 backslash를 담은 값과 단어가 없는
+  `--cargo`는 명령줄 오류다. release recipe(GN-19h)는 Cargo를 `$(CARGO) <subcommand>`로 실행하고, build의 subcommand(`rustc`,
+  `build`) 바로 뒤에 `$(CARGOFLAGS)`를 두며, 자기가 실행하는 binding 명령 중 Cargo를 실행하는 것마다 `--cargo "$(CARGO)"`를
+  넘긴다. `binding check`는 Cargo를 다른 방식으로 실행하는 recipe 파일을 보고한다(CK-94). `binding go-link`를 실행하는 저장소의
+  recipe는 `--cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)"`를 넘긴다. `uv build`가 실행하는 maturin과 `napi build`는 Cargo를
+  스스로 시작하며 binding의 호출이 아니다. 이유: php-serialization과 session-store가 `binding go-link`와 release recipe가 `PATH`의
+  `cargo`를 실행해서 저장소의 `$(CARGO)`와 `CARGOFLAGS`를, 그리고 그것과 함께 kit의 Rust 연결을 거치지 않는다는 것을 찾았고,
+  개발 연결에서 core가 lock의 tag로 빌드되었다. hyper는 provider 계약을 읽는 데서 같은 것을 찾았다. 그 `cargo metadata`가 lock의
+  tag의 crate를 주어서 생성기가 연결된 checkout의 계약이 아니라 그 release의 계약을 읽었다. 개발 연결에서 `$(CARGO)`는 `node
+  $(KIT)/link.mjs cargo $(CURDIR)`이며, 이것은 `var/link/cargo` 아래의 lock 사본과 연결된 crate마다 그 checkout으로 가는
+  `patch`로 Cargo를 실행한다. 그래서 `cargo metadata`가 그 checkout의 manifest를 주고, binding은 그 옆의 `interface.json`을
+  읽는다(GN-15f). 명령은 필수다. `PATH`의 `cargo`로 가는 기본값이 바로 그 우회이기 때문이다. 환경 변수 `CARGO`가 아니라
+  option인 이유: Cargo는 자기가 시작하는 build script, 시험, `cargo run`마다 `CARGO`를 자기 프로그램의 경로로 정하므로 거기서
+  시작된 binding은 아무 표시 없이 그 프로그램을 읽게 되고, make는 export하라고 하지 않은 변수를 export하지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -1787,12 +1807,13 @@
   `binding release-go-module`은 그 파일이 없거나 그 파일이 라이브러리를 하나도 적지 않는 platform을 거부하며, 그 파일로
   그 link 파일의 지시문을 module의 commit에 쓴다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
   방식으로 출력과 함께 빌드하고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
-  하나에서 그것을 얻는다: `binding go-link --manifest <Go crate의 Cargo.toml> --target-dir <dir> [--features <features>]`는
-  host의 정적 라이브러리를 `cargo rustc --locked --offline --lib --crate-type staticlib`과 주어진 feature로 `<dir>`에 출력과
+  하나에서 그것을 얻는다: `binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Go crate의 Cargo.toml> --target-dir <dir>
+  [--features <features>]`는 host의 정적 라이브러리를 `<command> rustc <arguments> --locked --offline --lib --crate-type
+  staticlib`(GN-1d)과 주어진 feature로 `<dir>`에 출력과
   함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
   읽으므로 `<dir>`은 절대 경로로 바꾼다. Cargo의 진단은
   표준 오류로 가고, 빌드가 실패하면 명령은 Cargo의 status로 실패한다. Go 시험을 돌리는 recipe는 자기 라이브러리 빌드 대신
-  그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
+  그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)" ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
   파일은 `-l<library>`만 쓴다. 명령이 빌드 출력을 읽기만 하지 않고 빌드하는 이유: rustc는 정적 라이브러리를 링크하는 동안에만
   그 라이브러리들을 진단으로 출력하고 어느 파일에도 쓰지 않는다. 그래서 읽기만 하는 명령이라면 모든 recipe가 그 출력을
   요청하고 보관해야 하는데, 그것이 명령이 한 번만 갖는 로직이다. 그리고 명령의 빌드가 그 라이브러리의 유일한 빌드이고 두 번째
@@ -2766,7 +2787,8 @@
   tag `vX.Y.Z`의 tree 사본에서 실행마다의 `CARGO_TARGET_DIR`로 실행하므로, asset은 이전 빌드의 것을 담지 않는다. CI의
   workflow는 같은 matrix로 자기 commit의 같은 asset을 빌드하고 그 마지막 job이 그 job들을 요구한다. release는 CI 실행이
   통과한 commit에만 tag를 달므로, 빌드되지 않는 asset은 tag가 생기기 전에 release를 막는다.
-- **GN-19b** Go 모듈의 정적 라이브러리(GN-15g), 플랫폼마다: `cargo build --release --locked -p polyspec-<repository>-go`,
+- **GN-19b** Go 모듈의 정적 라이브러리(GN-15g), 플랫폼마다: `$(CARGO) rustc $(CARGOFLAGS) --release --locked -p
+  polyspec-<repository>-go`(GN-1d, GN-15k),
   그다음 `libpolyspec_<repository>_go.a`의 사본에 `llvm-strip --strip-debug`. `llvm-strip`은 고정한 toolchain의
   `<sysroot>/lib/rustlib/<host>/bin`의 것이며(`rustc --print sysroot`, `rustc --print host-tuple`; `rust-toolchain.toml`의
   component `llvm-tools`), 기계마다 다른 `PATH`의 `strip`은 쓰지 않는다. 그 job은 라이브러리를 파일
@@ -2783,8 +2805,8 @@
   link하므로, 거기서 빌드한 라이브러리는 적어도 그 policy가 필요하다. maturin은 라이브러리를 policy에 대해 검사하고, 더
   나중 symbol이나 policy 밖의 라이브러리가 필요한 것은 거부한다. release 실행의 라이브러리는 `libc.so.6`,
   `libgcc_s.so.1`, `ld-linux`와 `GLIBC_2.34`까지의 symbol을 필요로 한다. macOS는 이 option을 무시한다.
-- **GN-19d** PHP 확장, 플랫폼과 PHP minor마다: `PHP=<php> PHP_CONFIG=<php-config> cargo build --release --locked -p
-  polyspec-<repository>-php-ext`, 그다음 cdylib을 `<extension-name>.so`로 복사한다. recipe는
+- **GN-19d** PHP 확장, 플랫폼과 PHP minor마다: `PHP=<php> PHP_CONFIG=<php-config> $(CARGO) build $(CARGOFLAGS) --release
+  --locked -p polyspec-<repository>-php-ext`(GN-1d), 그다음 cdylib을 `<extension-name>.so`로 복사한다. recipe는
   `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'`이 0으로 끝나는 것을 요구한
   뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
   <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
@@ -2878,13 +2900,14 @@
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
-  명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
+  명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
+  인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
   도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
   적는다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
   `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
   ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.
-  - 바인딩을 빌드하는 recipe는 먼저 자기 target의 `binding generate --contract <interface.json> --target <target>`을
+  - 바인딩을 빌드하는 recipe는 먼저 자기 target의 `binding generate --contract <interface.json> --target <target> --cargo "$(CARGO)"`을
     실행한다. 생성된 파일은 추적되지 않으므로 tag의 checkout에는 그것이 하나도 없기 때문이다.
   - `release-php-ext`는 `LLVM_ROOT`의 LLVM의 `LIBCLANG_PATH`와 `CLANG_PATH`로 빌드한다. `LLVM_ROOT`의 기본값은 Linux에서
     `/usr/lib/llvm-<major>`, macOS에서 Homebrew formula `llvm@<major>`다. 그 LLVM에 clang이나 libclang이 없거나 clang이

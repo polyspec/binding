@@ -53,6 +53,31 @@ the design ids are those of the binding design.
   thread of its own with a stack of 1 GiB and waits for it, so a case value nested past the depth limit of its core
   (hundreds of levels, each several frames of the generator) is generated as the case gives it; the stack of the main
   thread holds less, and a generation that overflowed it would fail by chance of the depth.
+- **GN-1d** Every call of Cargo by binding runs the cargo command that the repository gives, with the arguments of a
+  build that the repository gives, and never the `cargo` of `PATH`. The commands that run Cargo, `binding check`,
+  `binding scaffold` and `binding generate` (`cargo metadata --locked --offline`, GN-15f) and `binding go-link`
+  (`cargo rustc`, GN-15k), require `--cargo <command>`, the value of `$(CARGO)` of the repository, and run
+  `<command> <subcommand> ...`; a command without it fails with the usage. `binding go-link` also takes
+  `--cargo-flags <arguments>`, the value of `$(CARGOFLAGS)` of the repository, which may be empty, and passes them
+  right after the subcommand `rustc`; `cargo metadata` takes no argument of a build, such as `--ignore-rust-version`,
+  so the other commands take no flags. Each value is split into words at white space, as the shell splits
+  `$(CARGO)` in a recipe line; a value that holds a quote or a backslash, which the shell would read otherwise, and a
+  `--cargo` without a word are errors of the command line. The release recipes (GN-19h) run Cargo as `$(CARGO)
+  <subcommand>`, with `$(CARGOFLAGS)` right after the subcommand of a build (`rustc`, `build`), and pass `--cargo
+  "$(CARGO)"` to each command of binding that they run that runs Cargo; `binding check` reports a file of recipes that
+  runs Cargo in another way (CK-94). A recipe of the repository that runs `binding go-link` passes `--cargo "$(CARGO)"
+  --cargo-flags "$(CARGOFLAGS)"`. maturin, which `uv build` runs, and `napi build` start Cargo themselves and are no
+  call of binding. Why: php-serialization and session-store found that `binding go-link` and the release recipes ran
+  the `cargo` of `PATH`, so they missed the `$(CARGO)` and the `CARGOFLAGS` of the repository and with them the Rust
+  link of kit, and in a development link the core was built from the tag of the lock; hyper found the same of the read
+  of the contracts of its providers, whose `cargo metadata` gave the crate of the tag of the lock, so its generator read
+  the contract of that release and not the one of the linked checkout. In a development link `$(CARGO)` is `node
+  $(KIT)/link.mjs cargo $(CURDIR)`, which runs Cargo with a copy of the lock under `var/link/cargo` and a `patch` of
+  each linked crate to its checkout, so `cargo metadata` gives the manifest of that checkout, beside which binding
+  reads `interface.json` (GN-15f). The command is required, because a default to the `cargo` of `PATH` is the bypass
+  itself. It is an option and not the variable `CARGO` of the environment, because Cargo sets `CARGO` to the path of
+  its own program for each build script, test and `cargo run` that it starts, so a binding started there would read
+  that program without a sign, and make exports no variable that it is not told to export.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -2177,13 +2202,15 @@ the design ids are those of the binding design.
   and `binding release-go-module` refuses a platform without that file, or whose file names no library, and writes the
   directive of its link file from it into the commit of the module. The end-to-end check builds the libraries of its
   released form (GN-14f) with the print in the same way and writes the same directive. A checkout, whose tree holds no library,
-  gets them from one command of the CLI: `binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <dir>
-  [--features <features>]` builds the static library of the host with `cargo rustc --locked --offline --lib
-  --crate-type staticlib` and the given features into `<dir>`, with the print, and writes to its standard output the
+  gets them from one command of the CLI: `binding go-link --cargo <command> [--cargo-flags
+  <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <dir> [--features <features>]` builds the static
+  library of the host with `<command> rustc <arguments> --locked --offline --lib --crate-type staticlib` (GN-1d) and
+  the given features into `<dir>`, with the print, and writes to its standard output the
   value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`, with `<dir>` made absolute, because
   cgo reads a relative `-L` from the directory of each package; the diagnostics of Cargo go to
   its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
-  calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link ...)"` in the recipe line
+  calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags
+  "$(CARGOFLAGS)" ...)"` in the recipe line
   (GN-14), and `make e2e` calls the same command. The main link file names only `-l<library>`. Why the command builds
   and does not read an output of a build: rustc prints the libraries only while it links the static library, to its
   diagnostics, and writes them to no file, so a command that only read them would need every recipe to ask for the
@@ -3390,8 +3417,8 @@ the design ids are those of the binding design.
   of the run, so that an asset holds nothing of an earlier build. The workflow of CI builds the same assets of its
   commit with the same matrix, and its last job requires those jobs: a release tags only a commit whose CI run
   passed, so an asset that does not build stops the release before a tag exists.
-- **GN-19b** The static library of the Go module (GN-15g), on each platform: `cargo build --release --locked -p
-  polyspec-<repository>-go`, then `llvm-strip --strip-debug` on a copy of `libpolyspec_<repository>_go.a`, with the
+- **GN-19b** The static library of the Go module (GN-15g), on each platform: `$(CARGO) rustc $(CARGOFLAGS) --release
+  --locked -p polyspec-<repository>-go` (GN-1d, GN-15k), then `llvm-strip --strip-debug` on a copy of `libpolyspec_<repository>_go.a`, with the
   `llvm-strip` of `<sysroot>/lib/rustlib/<host>/bin` of the pinned toolchain (`rustc --print sysroot`, `rustc --print
   host-tuple`; the component `llvm-tools` of `rust-toolchain.toml`), never the `strip` of `PATH`, which differs by
   machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
@@ -3408,8 +3435,8 @@ the design ids are those of the binding design.
   policy, and maturin checks the library against the policy and refuses one that needs a later symbol or a library
   outside it. The libraries of a release run need `libc.so.6`, `libgcc_s.so.1` and `ld-linux`, and symbols up to
   `GLIBC_2.34`. macOS ignores the option.
-- **GN-19d** The PHP extension, on each platform and PHP minor: `PHP=<php> PHP_CONFIG=<php-config> cargo build
-  --release --locked -p polyspec-<repository>-php-ext`, then the cdylib is copied as `<extension-name>.so`, and the
+- **GN-19d** The PHP extension, on each platform and PHP minor: `PHP=<php> PHP_CONFIG=<php-config> $(CARGO) build
+  $(CARGOFLAGS) --release --locked -p polyspec-<repository>-php-ext` (GN-1d), then the cdylib is copied as `<extension-name>.so`, and the
   recipe requires that `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'` ends
   with 0 (GN-3g) before it packs `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name
   part>[-debug]-<zts|nts>.zip <extension-name>.so`, the name by which PIE finds a pre-packaged binary (GN-3c). The
@@ -3517,7 +3544,8 @@ the design ids are those of the binding design.
 
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
-  installed package), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
+  installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
+  may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
   target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
@@ -3525,8 +3553,8 @@ the design ids are those of the binding design.
   (GN-19a), and the musl targets of its arches in `rust-toolchain.toml`, and ignores
   the file of recipes and the folder `npm/` of its npm package. The recipes hold the four rules that copies by hand
   broke:
-  - Each recipe that builds a binding first runs `binding generate --contract <interface.json> --target <target>` of
-    its target, because the generated files are not tracked, so a checkout of a tag holds none of them.
+  - Each recipe that builds a binding first runs `binding generate --contract <interface.json> --target <target>
+    --cargo "$(CARGO)"` of its target, because the generated files are not tracked, so a checkout of a tag holds none of them.
   - `release-php-ext` builds with `LIBCLANG_PATH` and `CLANG_PATH` of the LLVM of `LLVM_ROOT`, which is
     `/usr/lib/llvm-<major>` on Linux and the Homebrew formula `llvm@<major>` on macOS by default, and fails before
     Cargo builds when that LLVM has no clang or no libclang or its clang is of another major release (GN-14a). No recipe

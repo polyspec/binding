@@ -49,7 +49,7 @@ process.exit(${String(status)});
   writeFileSync(join(dir, 'calls.jsonl'), '');
   return {
     dir,
-    run: (argv) => spawnSync(process.execPath, [cli, ...argv], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env['PATH'] ?? ''}` } }),
+    run: (argv) => spawnSync(process.execPath, [cli, ...argv, '--cargo', 'cargo'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env['PATH'] ?? ''}` } }),
     calls: () => readFileSync(join(dir, 'calls.jsonl'), 'utf8').split('\n').filter((line) => line !== '').map((line) => JSON.parse(line) as string[]),
   };
 }
@@ -90,7 +90,7 @@ test('B2.367: binding go-link requires --manifest and --target-dir and names its
   for (const argv of [['go-link'], ['go-link', '--manifest', 'Cargo.toml'], ['go-link', '--target-dir', 'target'], ['go-link', '--manifest', 'Cargo.toml', '--target-dir', 'target', '--release', 'x']]) {
     const ran = b.run(argv);
     assert.equal(ran.status, 2, argv.join(' '));
-    assert.match(ran.stderr, /usage: .*binding go-link --manifest <Cargo\.toml of the Go crate> --target-dir <directory> \[--features <features>\]/);
+    assert.match(ran.stderr, /usage: .*binding go-link --cargo <command> \[--cargo-flags <arguments>\] --manifest <Cargo\.toml of the Go crate> --target-dir <directory> \[--features <features>\]/);
     assert.equal(ran.stdout, '');
   }
   assert.deepEqual(b.calls(), []);
@@ -98,6 +98,6 @@ test('B2.367: binding go-link requires --manifest and --target-dir and names its
 
 test('B2.367: the end-to-end check gives the Go tests the CGO_LDFLAGS of binding go-link, not the directory alone (GN-15k)', () => {
   const script = readFileSync(new URL('../../../scripts/e2e.mts', import.meta.url), 'utf8');
-  assert.match(script, /'go-link', '--manifest'/);
+  assert.match(script, /'go-link', '--cargo', 'cargo', '--manifest'/);
   assert.doesNotMatch(script, /CGO_LDFLAGS: `-L\$\{join\(target, 'debug'\)\}`/);
 });

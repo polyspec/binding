@@ -118,7 +118,9 @@ export function releaseRecipes(contract: Contract): Recipes {
   const extension = extensionName(contract);
   const label = `polyspec-${contract.library}`;
   const require = (variable: string, what: string): string => `\t@$(call binding_require,${variable},${what},${path})`;
-  const generate = (lang: string): string => `\t$(BINDING_RUN) generate --contract ${contractPath} --target ${lang}`;
+  // GN-1d: every command of binding that runs Cargo, and every call of Cargo, takes the cargo command of the repository,
+  // and a build takes its arguments right after the subcommand.
+  const generate = (lang: string): string => `\t$(BINDING_RUN) generate --contract ${contractPath} --target ${lang} --cargo "$(CARGO)"`;
   const head = (step: string, comment: string, prerequisites = '$(BINDING_DEP)'): string =>
     `${comment.split('\n').map((line) => `# ${line}`).join('\n')}\n.PHONY: ${name(step)}\n${name(step)}:${prerequisites === '' ? '' : ` ${prerequisites}`}`;
   const sections: string[] = [];
@@ -134,9 +136,10 @@ export function releaseRecipes(contract: Contract): Recipes {
 the one of the musl target of its arch into linux_<arch>_musl, because binding release-go-module requires the libraries of
 five Go platforms. It strips the debug sections of a copy of each with the llvm-strip of the component llvm-tools of the
 pinned toolchain, never the strip of PATH, and the stripped copy enters the assets under another name and is renamed there.
-cargo rustc builds each library with the print of rustc, and the native-static-libs that it printed enter the file
+$(CARGO) rustc builds each library with the print of rustc, and the native-static-libs that it printed enter the file
 native-static-libs beside the library, which binding release-go-module writes into the link file of the platform (GN-15k).`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 ${generate('go')}
 	@$(call binding_release_host,${name('release-go-static')}); \\
 	set -ex; \\
@@ -154,7 +157,7 @@ ${generate('go')}
 	mkdir -p $(RELEASE_TARGET); \\
 	log=$(RELEASE_TARGET)/native-static-libs-$$2.log; \\
 	status=0; \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo rustc --release --locked --color never -p ${crate('go')} $$3 --lib --crate-type staticlib -- --print native-static-libs 2> "$$log" || status=$$?; \\
+	CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) rustc $(CARGOFLAGS) --release --locked --color never -p ${crate('go')} $$3 --lib --crate-type staticlib -- --print native-static-libs 2> "$$log" || status=$$?; \\
 	cat "$$log" >&2; \\
 	test "$$status" = 0 || exit "$$status"; \\
 	libs=$$(sed -n 's/^note: native-static-libs: *//p' "$$log"); \\
@@ -175,6 +178,7 @@ ${generate('go')}
 with --locked and, on Linux, for the policy ${MANYLINUX}, which it checks, and the time of the commit of HEAD dates the files
 of the wheel.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 ${require('UV', 'the uv of the checkout')}
 ${generate('python')}
 	@$(call binding_release_host,${name('release-wheel')}); \\
@@ -195,6 +199,7 @@ PHP without a php.ini before it is packed under the name by which PIE finds a pr
 EXPECTED_PHP_MINOR is the expected major.minor; the selected runtime and php-config header minor must agree before
 Cargo builds, and the recipe records their full versions. This checks the minor, not every ABI or patch flag.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 	@test -n "$(PHP)" || { echo '${step} needs PHP: the PHP to build for, for example make ${step} PHP=php' >&2; exit 2; }
 	@test -z "$(EXPECTED_PHP_MINOR)" || printf '%s\\n' "$(EXPECTED_PHP_MINOR)" | grep -Eq '^[0-9]+\\.[0-9]+$$' || { echo '${step}: EXPECTED_PHP_MINOR must be major.minor (for example 8.4)' >&2; exit 2; }
 	@test -n "$(LLVM_MAJOR)" || { echo '${step}: config/toolchain.json pins no major release of LLVM (llvm.version)' >&2; exit 2; }
@@ -216,8 +221,8 @@ ${generate('php')}
 	printf '%s\\n' "${step}: PHP runtime $$runtime_version; php-config $$config_version"; \\
 	build=$$("$$php" -n -r 'echo PHP_DEBUG ? "-debug" : "", "-", PHP_ZTS ? "zts" : "nts";'); \\
 	target=$(abspath $(RELEASE_TARGET))/php$$minor$$build; \\
-	PHP="$$php" PHP_CONFIG="$$config" LIBCLANG_PATH=$(LLVM_ROOT)/lib CLANG_PATH=$(LLVM_ROOT)/bin/clang CARGO_TARGET_DIR="$$target" cargo build --release --locked -p ${crate('php-ext')}; \\
-	version=$$(cargo pkgid -p ${crate('php-ext')} | sed 's/.*@//'); \\
+	PHP="$$php" PHP_CONFIG="$$config" LIBCLANG_PATH=$(LLVM_ROOT)/lib CLANG_PATH=$(LLVM_ROOT)/bin/clang CARGO_TARGET_DIR="$$target" $(CARGO) build $(CARGOFLAGS) --release --locked -p ${crate('php-ext')}; \\
+	version=$$($(CARGO) pkgid -p ${crate('php-ext')} | sed 's/.*@//'); \\
 	copy=$(abspath $(RELEASE_TARGET))/php-ext/php$$minor$$build; \\
 	mkdir -p "$$copy"; \\
 	cp "$$target/release/lib${extension}.$(BINDING_CDYLIB)" "$$copy/${extension}.so"; \\
@@ -240,6 +245,7 @@ napi CLI, with a configuration of the run that names the triple of the host alon
 configured platform whose addon another runner builds. The folder of the run is ${npmDir}/npm/<platform>, which the
 repository ignores: napi create-npm-dirs refuses a folder outside the package of --package-json-path.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 ${require('NPM', 'the npm of the checkout')}
 	@test -x "$(NAPI)" || { echo '${name('release-npm-platform')}: no napi CLI at $(NAPI); the repository pins @napi-rs/cli as a devDependency' >&2; exit 2; }
 ${generate('node')}
@@ -273,6 +279,7 @@ ${generate('node')}
 module that cargo builds for release and the wasm-bindgen of WASM_BINDGEN binds, which must be the release ${WASM_BINDGEN} of the crate
 of the generated manifests (GN-18)` : ''}. ${has('node') ? 'The manifest of the copy names the platform package of each platform of the release at the version of the package in\noptionalDependencies; the tracked manifest names none.' : 'The package has no Node addon, so it names no platform package.'}`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 ${require('NODE', 'the Node.js of the checkout')}
 ${require('NPM', 'the npm of the checkout')}
 ${has('wasm') ? `	@test "$$($(WASM_BINDGEN) --version)" = "wasm-bindgen ${WASM_BINDGEN}" || { echo "${name('release-npm')}: $(WASM_BINDGEN) is $$($(WASM_BINDGEN) --version), not the release ${WASM_BINDGEN} of the crate of the generated manifests (GN-18)" >&2; exit 2; }\n` : ''}${has('node') ? `${generate('node')}\n` : ''}${has('wasm') ? `${generate('wasm')}\n` : ''}	@work=$(abspath $(RELEASE_TARGET))/npm/package${suffix}; \\
@@ -281,7 +288,7 @@ ${has('wasm') ? `	@test "$$($(WASM_BINDGEN) --version)" = "wasm-bindgen ${WASM_B
 	mkdir -p "$$work/package" "$$work/pack"; \\
 	(cd ${npmDir} && $(NPM) pack --dry-run --json --ignore-scripts) > "$$work/files.json"; \\
 	$(NODE) -e '${copy}' ${npmDir} "$$work/files.json" "$$work/package"${platforms}; \\
-${has('wasm') ? `	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo build --release --locked -p ${crate('wasm')} --target wasm32-unknown-unknown; \\
+${has('wasm') ? `	CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) build $(CARGOFLAGS) --release --locked -p ${crate('wasm')} --target wasm32-unknown-unknown; \\
 	$(WASM_BINDGEN) --target web --out-dir "$$work/package/${wasmDir}" --out-name ${contract.library.replaceAll('-', '_')}_wasm $(RELEASE_TARGET)/wasm32-unknown-unknown/release/${extension}_wasm.wasm; \\
 ` : ''}	$(call binding_release_pack,"$$work/package","$$work/pack")
 `);
@@ -296,6 +303,7 @@ at it. The recipe pushes the reference that the command prints, and nothing when
 that tag already. The folder of the run is made writable before it is removed, since Go writes its module cache read-only.`)}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
 ${require('BINDING_RUN', 'the command that starts binding')}
+${require('CARGO', 'the cargo command of the repository')}
 ${generate('go')}
 	@work=$(abspath $(RELEASE_TARGET))/go-module${suffix}; \\
 	set -e; \\
@@ -314,7 +322,8 @@ ${generate('go')}
   add('release-binding-check', `${head('release-binding-check', `release-binding-check runs the release check of binding on the contract (GN-19g, CK-70), which a release runs before it
 builds an asset of a tag.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
-	$(BINDING_RUN) check ${contractPath} --release
+${require('CARGO', 'the cargo command of the repository')}
+	$(BINDING_RUN) check ${contractPath} --release --cargo "$(CARGO)"
 `);
 
   // GN-19g: the assets of each platform with their labels, and the labels that the targets of the contract require, one
@@ -405,9 +414,32 @@ ${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(
 
   const header = `# Generated by binding release-recipes from ${contract.core.path}/interface.json; do not edit, and do not track it.
 # The release recipes of the binding (binding GN-19h): the Makefile of the repository includes this file after it defines
-# BINDING_RUN, the command that starts binding, NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target
-# that installs binding, if it has one; it runs binding release-recipes to write the file again.
+# BINDING_RUN, the command that starts binding, CARGO, the cargo command of the repository, and CARGOFLAGS, the arguments
+# of its builds (binding GN-1d), NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target that installs
+# binding, if it has one; it runs binding release-recipes to write the file again.
 `;
   const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };
+}
+
+// CK-94, GN-1d: each line of a file of recipes that runs Cargo in another way than GN-1d states, with its line from 1: the
+// cargo of PATH and not $(CARGO), a build of $(CARGO) without $(CARGOFLAGS) right after its subcommand, and a command of
+// binding that runs Cargo without --cargo "$(CARGO)". A line is read as the commands that the shell starts in it: each
+// part after a separator of the shell, a subshell or the start of a substitution ($$( of make), but not after the $( of
+// a variable of make, without the assignments of the environment that
+// precede its command; a comment of make is no command.
+export function cargoFindings(text: string): { line: number; message: string }[] {
+  const found: { line: number; message: string }[] = [];
+  text.split('\n').forEach((line, index) => {
+    if (/^\s*#/.test(line)) return;
+    for (const part of line.split(/;|&&|\|\||\||\$\$\(|(?<!\$)\(/)) {
+      const command = part.replace(/^[\s@{-]+/, '').replace(/^([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|\S*)\s+)+/, '');
+      const build = /^\$\(CARGO\) (rustc|build)\b(.*)$/.exec(command);
+      const binding = /^\$\(BINDING_RUN\) (check|scaffold|generate|go-link)\b/.exec(command);
+      if (/^cargo\s/.test(command)) found.push({ line: index + 1, message: 'CK-94 runs cargo of PATH and not $(CARGO) (GN-1d)' });
+      else if (build !== null && !/^ \$\(CARGOFLAGS\)(\s|$)/.test(build[2] ?? '')) found.push({ line: index + 1, message: `CK-94 runs the build $(CARGO) ${build[1] ?? ''} without $(CARGOFLAGS) right after its subcommand (GN-1d)` });
+      else if (binding !== null && !command.includes('--cargo "$(CARGO)"')) found.push({ line: index + 1, message: `CK-94 runs binding ${binding[1] ?? ''}, which runs cargo, without --cargo "$(CARGO)" (GN-1d)` });
+    }
+  });
+  return found;
 }

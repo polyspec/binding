@@ -81,8 +81,8 @@ test('two generations in two directories give the same bytes and name neither di
   const first = mkdtempSync(join(tmpdir(), 'binding-a-'));
   const second = mkdtempSync(join(tmpdir(), 'binding-b-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', first, '--target', FIXTURE_TAKEN]);
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', second, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', first, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', second, '--target', FIXTURE_TAKEN]);
     const a = files(first);
     const b = files(second);
     assert.ok(a.size > 10, `only ${a.size} files were generated`);
@@ -113,7 +113,7 @@ test('the fixture names the five targets, and the generator refuses a target by 
     writeFileSync(path, JSON.stringify(contract));
     const refused = /node: not generated \(G-4\), 1 item:\n  split: a keyed_map<T> with byte string keys is not generated for node[^\n]* \(a Map compares a Uint8Array key by identity, GN-12\)/;
     // The target Node alone writes nothing.
-    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'node'], { encoding: 'utf8' });
+    const alone = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', out, '--target', 'node'], { encoding: 'utf8' });
     // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
     assert.equal(alone.status, 1, alone.stderr);
     assert.doesNotMatch(alone.stderr, /usage:/);
@@ -121,7 +121,7 @@ test('the fixture names the five targets, and the generator refuses a target by 
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
     // Every target: the refused Node and WASM are named, and every other target is written as it is alone.
-    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out], { encoding: 'utf8' });
+    const whole = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', out], { encoding: 'utf8' });
     assert.equal(whole.status, 1, whole.stderr);
     assert.doesNotMatch(whole.stderr, /usage:/);
     assert.match(whole.stderr, refused);
@@ -130,7 +130,7 @@ test('the fixture names the five targets, and the generator refuses a target by 
     assert.ok(![...written.keys()].some((file) => file.startsWith('packages/ts/')), 'a refused target wrote files');
     const taken = mkdtempSync(join(tmpdir(), 'binding-w-'));
     try {
-      execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', taken, '--target', 'php,python,go']);
+      execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', taken, '--target', 'php,python,go']);
       assert.deepEqual(files(taken), written);
     } finally {
       rmSync(taken, { recursive: true, force: true });
@@ -144,10 +144,10 @@ test('the fixture names the five targets, and the generator refuses a target by 
 test('a generation leaves no file of an earlier one', () => {
   const out = mkdtempSync(join(tmpdir(), 'binding-c-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
     const stale = join(out, 'packages/python/generated/stale.py');
     execFileSync('touch', [stale]);
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
     assert.ok(!files(out).has('packages/python/generated/stale.py'));
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -170,7 +170,7 @@ test('a contract that fails the check is not generated', () => {
     const contract = JSON.parse(readFileSync(path, 'utf8'));
     contract.packages.python.module = 'polyspec_sample';
     execFileSync('sh', ['-c', `cat > ${path}`], { input: JSON.stringify(contract) });
-    assert.throws(() => execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out], { stdio: 'pipe' }), /CK-18/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', out], { stdio: 'pipe' }), /CK-18/);
     rmSync(root, { recursive: true, force: true });
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -182,13 +182,13 @@ test('check compares the tracked binding packages with what scaffold writes (L-2
   try {
     cpSync(fixture, root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-19 is missing/);
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), /CK-19 is missing/);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
-    execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' });
     const entry = join(root, 'packages/python/src/lib.rs');
     execFileSync('sh', ['-c', `echo '// edited' >> ${entry}`]);
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /lib\.rs: CK-19 differs/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), /lib\.rs: CK-19 differs/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -251,9 +251,9 @@ test('a core with fault injection points has itself as a dev-dependency with fau
     cpSync(fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
     const manifestPath = join(root, 'packages/rust/Cargo.toml');
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
-    const run = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const run = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { encoding: 'utf8' });
     const passed = run();
     assert.equal(passed.status, 0, String(passed.stderr));
     const manifest = readFileSync(manifestPath, 'utf8');
@@ -294,14 +294,14 @@ test('check runs CK-19 and CK-20 past the findings of the contract and names a c
     const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
     // CK-22: no member names its cases; the repository has no scaffolded package and no Cargo.lock.
     writeFileSync(contractPath, JSON.stringify({ ...contract, cases: [] }));
-    const run = spawnSync(process.execPath, [cli, 'check', contractPath], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contractPath], { encoding: 'utf8' });
     assert.equal(run.status, 1, run.stderr);
     assert.match(run.stderr, /CK-22/);
     assert.match(run.stderr, /CK-19 is missing/);
     assert.match(run.stderr, /CK-20 there is no Cargo\.lock/);
     // CK-1: the schema fails, so neither reads the contract.
     writeFileSync(contractPath, JSON.stringify({ ...contract, library: 5 }));
-    const broken = spawnSync(process.execPath, [cli, 'check', contractPath], { encoding: 'utf8' });
+    const broken = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contractPath], { encoding: 'utf8' });
     assert.equal(broken.status, 1, broken.stderr);
     assert.match(broken.stderr, /CK-1 /);
     assert.match(broken.stderr, /CK-19 and CK-20 did not run: they read the contract, which fails CK-1/);
@@ -315,17 +315,17 @@ test('check refuses a binding_core of another version or commit than the CLI (CK
   try {
     cpSync(fixture, root, { recursive: true });
     const contract = join(root, 'packages/rust/interface.json');
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
     writeFileSync(join(root, 'Cargo.lock'), lock('0.0.0-other'));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-binding-core 0\.0\.0-other/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-binding-core 0\.0\.0-other/);
     // A git dependency is compared by its commit with the checkout of this binding.
     const head = execFileSync('git', ['-C', dirname(cli), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const git = (commit: string): string => `${lock(version).trimEnd()}\nsource = "git+https://github.com/polyspec/binding.git?branch=main#${commit}"\n`;
     writeFileSync(join(root, 'Cargo.lock'), git('0'.repeat(40)));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), new RegExp(`CK-20 Cargo\\.lock pins polyspec-binding-core at the commit ${'0'.repeat(40)}, not ${head}`));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), new RegExp(`CK-20 Cargo\\.lock pins polyspec-binding-core at the commit ${'0'.repeat(40)}, not ${head}`));
     writeFileSync(join(root, 'Cargo.lock'), git(head));
-    const run = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { encoding: 'utf8' });
     assert.doesNotMatch(run.stderr, /CK-20/, run.stderr);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -345,12 +345,12 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
     execFileSync('mv', [join(root, 'packages/rust'), join(root, 'packages/server/rust')]);
     const path = join(root, 'packages/server/rust/interface.json');
     writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), core: { ...contract.core } }));
-    execFileSync(process.execPath, [cli, 'scaffold', '--contract', path]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--contract', path]);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
-    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' });
     assert.ok(files(root).has('packages/server/ts/build.rs'));
     assert.ok(files(root).has('packages/server/python/Cargo.toml'));
-    execFileSync(process.execPath, [cli, 'generate', '--contract', path, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--contract', path, '--target', FIXTURE_TAKEN]);
     assert.ok(files(root).has('packages/server/php-ext/generated/lib.rs'));
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -364,18 +364,18 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
     // T-2: a tuple of two types inside a list is a struct of its parts, and a tuple of one type an array.
-    execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root]);
     assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]Tuple2\[string, uint64\], error\)/);
     assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /^type Tuple2\[T0, T1 any\] = binding\.Tuple2\[T0, T1\]$/m);
     assert.match(String(files(join(root, 'packages/go')).get('internal/binding/zz_generated_binding.go')), /^type Tuple2\[T0, T1 any\] struct \{\n\tP0 T0\n\tP1 T1\n\}$/m);
     contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
     writeFileSync(path, JSON.stringify(contract));
-    execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root]);
     assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]\[2\]string, error\)/);
     const stale = join(root, 'packages/go/zz_generated_stale.go');
     writeFileSync(stale, 'package sample\n');
     writeFileSync(join(root, 'packages/go/go.mod'), 'module github.com/polyspec/sample/packages/go\n');
-    execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root]);
     const out = files(join(root, 'packages/go'));
     assert.ok(!out.has('zz_generated_stale.go'), 'a zz_generated file of an earlier generation stays');
     assert.ok(out.has('go.mod'), 'a file that binding does not own was removed');
@@ -410,7 +410,7 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     writeFileSync(join(root, 'metadata.json'), JSON.stringify(metadata));
     assert.ok(readFileSync(join(root, 'metadata.json')).length > 2 ** 22);
     writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${join(root, 'arguments')}'\ncat '${join(root, 'metadata.json')}'\n`, { mode: 0o755 });
-    const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json')], {
+    const run = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', join(root, 'packages/rust/interface.json')], {
       encoding: 'utf8',
       env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` },
     });
@@ -832,14 +832,14 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   for (const [path, body] of out) if (path !== 'packages/php-ext/build.rs') assert.doesNotMatch(String(body), /dynamic_lookup|rustflags/, path);
   const { root, contract: path } = fixtureCopy(() => {});
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
     assert.equal(readFileSync(join(root, 'packages/php-ext/build.rs'), 'utf8'), PHP_BUILD);
-    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' });
     writeFileSync(join(root, 'packages/php-ext/build.rs'), PHP_BUILD.replace('"macos"', '"linux"'));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /php-ext\/build\.rs: CK-19 differs/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' }), /php-ext\/build\.rs: CK-19 differs/);
     rmSync(join(root, 'packages/php-ext/build.rs'));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /php-ext\/build\.rs: CK-19 is missing/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' }), /php-ext\/build\.rs: CK-19 is missing/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -851,8 +851,8 @@ test('the PHP binding crate links on macOS by its own build script, which check 
 test('the release profile of a repository with the target go does not turn on LTO, and one that does is a finding (GN-15i, CK-91)', () => {
   const { root, contract: path } = fixtureCopy(() => {});
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
-    const check = (): string => String(spawnSync(process.execPath, [cli, 'check', path], { encoding: 'utf8' }).stderr);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
+    const check = (): string => String(spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { encoding: 'utf8' }).stderr);
     assert.doesNotMatch(check(), /CK-91/);
     const manifest = join(root, 'Cargo.toml');
     // LTO puts the standard library into the one object of the static library, so two of them do not link in one program.
@@ -872,9 +872,9 @@ test('the release profile of a repository with the target go does not turn on LT
     // A contract without the target go has no Go static library.
     const other = fixtureCopy((c) => { c.targets = ['php', 'python', 'node', 'wasm']; });
     try {
-      execFileSync(process.execPath, [cli, 'scaffold', '--root', other.root]);
+      execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', other.root]);
       writeFileSync(join(other.root, 'Cargo.toml'), '[workspace]\nmembers = ["packages/rust"]\n\n[profile.release]\nlto = true\n');
-      assert.doesNotMatch(String(spawnSync(process.execPath, [cli, 'check', other.contract], { encoding: 'utf8' }).stderr), /CK-91/);
+      assert.doesNotMatch(String(spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', other.contract], { encoding: 'utf8' }).stderr), /CK-91/);
     } finally {
       rmSync(other.root, { recursive: true, force: true });
     }
@@ -901,22 +901,22 @@ test('every scaffolded manifest carries the licence of the core, and a core with
     const manifest = join(root, 'packages/rust/Cargo.toml');
     const named = readFileSync(manifest, 'utf8');
     assert.match(named, /\nlicense = "MIT"\n/);
-    const check = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', path], { encoding: 'utf8' });
+    const check = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { encoding: 'utf8' });
     // The licence of the core itself.
     writeFileSync(manifest, named.replace('license = "MIT"', 'license = "Apache-2.0"'));
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     assert.equal(JSON.parse(readFileSync(join(root, 'packages/php-ext/composer.json'), 'utf8')).license, 'Apache-2.0');
     assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /\nlicense = "Apache-2\.0"\n/);
     assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
     // The licence of the workspace, which the core inherits.
     writeFileSync(manifest, named.replace('license = "MIT"', 'license.workspace = true'));
     writeFileSync(join(root, 'Cargo.toml'), '[workspace]\nmembers = ["packages/rust"]\n\n[workspace.package]\nlicense = "BSD-3-Clause"\n');
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     assert.equal(JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')).license, 'BSD-3-Clause');
     assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
     // A core without a licence: scaffold writes no licence, and check names the core manifest.
     writeFileSync(manifest, named.replace('license = "MIT"\n', ''));
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     assert.equal('license' in JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')), false);
     const missing = check();
     assert.equal(missing.status, 1);
@@ -963,18 +963,18 @@ test('the scaffolded manifests name the napi configuration, the module type and 
   // CK-19: a tracked manifest without these fields differs from what scaffold writes.
   const { root, contract: path } = fixtureCopy(() => {});
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
-    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' });
     const npmPath = join(root, 'packages/ts/package.json');
     const written = JSON.parse(readFileSync(npmPath, 'utf8'));
     writeFileSync(npmPath, `${JSON.stringify({ ...written, napi: undefined }, null, 2)}\n`);
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /ts\/package\.json: CK-19 differs/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' }), /ts\/package\.json: CK-19 differs/);
     writeFileSync(npmPath, `${JSON.stringify(written, null, 2)}\n`);
     const composerPath = join(root, 'packages/php-ext/composer.json');
     const ext = JSON.parse(readFileSync(composerPath, 'utf8'));
     writeFileSync(composerPath, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /php-ext\/composer\.json: CK-19 differs/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', path], { stdio: 'pipe' }), /php-ext\/composer\.json: CK-19 differs/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -984,7 +984,7 @@ test('scaffold writes under --out and not into the repository', () => {
   const { root } = fixtureCopy(() => {});
   const out = mkdtempSync(join(tmpdir(), 'binding-k-'));
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root, '--out', out]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root, '--out', out]);
     assert.ok(files(out).has('packages/python/Cargo.toml'));
     assert.ok(!files(root).has('packages/python/Cargo.toml'));
   } finally {
@@ -998,9 +998,9 @@ test('scaffold writes the packages of a contract with a todo unit (CK-2), which 
     c.units[0].members[0].wait = 'todo';
   });
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     assert.ok(files(root).has('packages/python/Cargo.toml'));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-2 /);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' }), /CK-2 /);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1013,7 +1013,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     c.packages.php.host = true;
   });
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     const written = files(root);
     // The crate is native/ of the host package; the PHP extension is the package <host>-native there.
     for (const path of ['packages/python/native/Cargo.toml', 'packages/ts/native/build.rs', 'packages/php/native/src/lib.rs', 'packages/php/native/composer.json']) {
@@ -1029,7 +1029,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.match(readFileSync(join(root, 'packages/ts/native/wasm/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/src/lib.rs'), 'utf8'), /The native module polyspec\.sample\._binding\._native\./);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
-    const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const missing = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
     // GN-3f: the host's manifest names the licence of the core.
@@ -1056,7 +1056,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     });
     writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
     writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', license: 'MIT', require: { 'ext-polyspec_sample': '*' } }));
-    const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const wrongModule = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { encoding: 'utf8' });
     assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 license is "Apache-2\.0", not "MIT"/);
     assert.doesNotMatch(wrongModule.stderr, /(pyproject\.toml|composer\.json): CK-19 (project\.)?license/);
     assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
@@ -1067,17 +1067,17 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const scaffolded = readFileSync(nativeComposer, 'utf8');
     const ext = JSON.parse(scaffolded);
     writeFileSync(nativeComposer, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
-    assert.match(spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' }).stderr, /php\/native\/composer\.json: CK-19 differs/);
+    assert.match(spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { encoding: 'utf8' }).stderr, /php\/native\/composer\.json: CK-19 differs/);
     writeFileSync(nativeComposer, scaffolded);
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
-    execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'check', '--cargo', 'cargo', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
     // L-2a: the WASM binding of a host Node package is not refused for its layout; it is native/wasm/generated/.
-    const wasm = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'wasm'], { encoding: 'utf8' });
+    const wasm = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', out, '--target', 'wasm'], { encoding: 'utf8' });
     assert.equal(wasm.status, 0, wasm.stderr);
     assert.ok(files(out).has('packages/ts/native/wasm/generated/index.mjs'));
     assert.match(String(files(out).get('packages/ts/native/wasm/generated/tests/generated.test.mjs')), /import \* as pkg from '\.\.\/index\.mjs';/);
-    execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'php,python,node']);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', root, '--out', out, '--target', 'php,python,node']);
     const generated = files(out);
     assert.ok(generated.has('packages/python/native/generated/lib.rs'));
     assert.ok(generated.has('packages/python/src/polyspec/sample/_binding/__init__.py'));
@@ -1097,7 +1097,7 @@ test('a binding crate builds the core with the features of its target only (I-1)
     c.core.features = { node: ['io', 'redis'] };
   });
   try {
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     assert.match(readFileSync(join(root, 'packages/ts/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust", default-features = false, features = \["io", "redis"\] \}/);
     assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust" \}/);
   } finally {
@@ -1114,14 +1114,14 @@ test('a binding crate turns on fault-test of the core of another library whose p
     const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
     cases.split[0].faults = [{ point: 'forms_dep.internal', kind: 'internal' }];
     writeFileSync(casesPath, JSON.stringify(cases));
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
     const python = readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8');
     assert.match(python, /\nfault-test = \["polyspec-forms-dep\/fault-test"\]\n/);
     assert.match(python, /\npolyspec-forms-dep = \{ path = "\.\.\/\.\.\/dep" \}/);
     // A point of a library that the core does not depend on is named.
     cases.split[0].faults = [{ point: 'other_lib.internal', kind: 'internal' }];
     writeFileSync(casesPath, JSON.stringify(cases));
-    const refused = spawnSync(process.execPath, [cli, 'scaffold', '--root', root], { encoding: 'utf8' });
+    const refused = spawnSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root], { encoding: 'utf8' });
     assert.notEqual(refused.status, 0);
     assert.match(refused.stderr, /a case arms a fault injection point of other_lib/);
   } finally {
@@ -1144,7 +1144,7 @@ test('scaffold rewrites its packages after the core crate was renamed, without a
     // A cargo that fails as it does when a binding manifest names a crate that no longer exists.
     writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
     const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` };
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root], { env });
     // The core is renamed; the binding manifests of the first scaffold still name the old crate.
     const contractPath = join(root, 'packages/rust/interface.json');
     const renamed = JSON.parse(readFileSync(contractPath, 'utf8'));
@@ -1158,7 +1158,7 @@ test('scaffold rewrites its packages after the core crate was renamed, without a
     }
     writeFileSync(contractPath, JSON.stringify(renamed));
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('name = "polyspec-sample"', 'name = "polyspec-sample-next"'));
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root], { env });
     assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample-next = \{ path = "\.\.\/rust" \}/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1777,7 +1777,7 @@ test('binding scaffold reads the contract of a path dependency and writes its Go
   const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
   try {
     for (const repository of ['points', 'plot']) cpSync(new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, join(root, repository), { recursive: true });
-    execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', join(root, 'plot')]);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1815,7 +1815,7 @@ test('a branch dependency of the core generates every target, and only the check
     assert.ok(readFileSync(manifest, 'utf8').includes(path));
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(path, 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
     const contract = join(root, 'plot/packages/rust/interface.json');
-    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
     const scaffold = run('scaffold', '--root', join(root, 'plot'));
     assert.equal(scaffold.status, 0, scaffold.stderr);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n$/);
@@ -1858,7 +1858,7 @@ test('a scaffold whose cargo metadata fails writes no file and fails with the er
     // A cargo that fails as it does for a Cargo.lock that the version of a manifest no longer matches.
     writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: the lock file needs to be updated but --locked was passed" >&2\nexit 101\n', { mode: 0o755 });
     const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
-    const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')], { encoding: 'utf8', env });
+    const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', join(root, 'plot')], { encoding: 'utf8', env });
     assert.equal(scaffold.status, 1);
     assert.match(scaffold.stderr, /error: the lock file needs to be updated but --locked was passed\n/);
     assert.match(scaffold.stderr, new RegExp(`\\nbinding: the contracts of the libraries that the contract names are not all found, so binding scaffold writes no file \\(GN-3e\\): ${advice}\\n$`));
@@ -1866,7 +1866,7 @@ test('a scaffold whose cargo metadata fails writes no file and fails with the er
     assert.deepEqual(readdirSync(join(root, 'plot/packages')), ['rust']);
     // check and generate read the contracts for every target, so they fail with the same instruction.
     for (const args of [['check', join(root, 'plot/packages/rust/interface.json')], ['generate', '--root', join(root, 'plot'), '--out', join(root, 'out')]]) {
-      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      const run = spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
       assert.equal(run.status, 1, args[0]);
       assert.match(run.stderr, new RegExp(`\\nbinding: ${advice}\\n$`), args[0]);
     }
@@ -1922,7 +1922,7 @@ test('a tracked package that scaffold cannot write is named, and the other packa
     points.targets = points.targets.filter((target: string) => target !== 'go');
     delete points.packages.go;
     writeFileSync(pointsPath, JSON.stringify(points));
-    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
     const scaffold = run('scaffold', '--root', join(root, 'plot'));
     assert.equal(scaffold.status, 1);
     assert.match(scaffold.stderr, /^binding: packages\/go: not written: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n$/);
@@ -1983,7 +1983,7 @@ const threeLibraries = (): { root: string; env: NodeJS.ProcessEnv } => {
 test('the contract of a library that only a unit of another library names is read, and the manifests name that library (T-3, CK-9, GN-3e, GN-15f)', () => {
   const { root, env } = threeLibraries();
   try {
-    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
     // The contract check takes the unit of the third library, which is a record of its contract.
     const checked = run('check', join(root, 'consumer/packages/rust/interface.json'));
     assert.doesNotMatch(checked.stderr, /CK-9|has no unit|\n {4}at /);
@@ -2027,7 +2027,7 @@ test('libraries whose contracts name each other in a cycle are refused by name (
     points.units.find((u: any) => u.id === 'point').fields[0].type = { unit: 'data', library: 'sample' };
     writeFileSync(pointsPath, JSON.stringify(points));
     for (const args of [['check', join(root, 'consumer/packages/rust/interface.json')], ['generate', '--root', join(root, 'consumer'), '--out', join(root, 'out')], ['scaffold', '--root', join(root, 'consumer')]]) {
-      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      const run = spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
       assert.equal(run.status, 1, args[0]);
       assert.match(run.stderr, /^binding: the contracts of the libraries sample -> points -> sample name each other in a cycle, which is not generated \(T-3\)\n/m, args[0]);
       assert.doesNotMatch(run.stderr, /\n {4}at /, args[0]);
@@ -2045,7 +2045,7 @@ test('generate refuses the Go target alone, with its sentence, when a library wh
     points.targets = points.targets.filter((target: string) => target !== 'go');
     delete points.packages.go;
     writeFileSync(pointsPath, JSON.stringify(points));
-    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'plot'), '--out', join(root, 'out')], { encoding: 'utf8', env });
+    const run = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', join(root, 'plot'), '--out', join(root, 'out')], { encoding: 'utf8', env });
     assert.equal(run.status, 1);
     assert.match(run.stderr, /go: not generated \(G-4\), 1 item:\n {2}points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n/);
     assert.doesNotMatch(run.stderr, /\n {4}at /);
@@ -2068,7 +2068,7 @@ test('a failure that a case file causes is a refused target with its sentence an
     const kase = cases.data_in.find((k: any) => k.raises !== undefined);
     kase.value = { host: 'bogus' };
     writeFileSync(casesPath, JSON.stringify(cases));
-    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'sample'), '--out', join(root, 'out')], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', join(root, 'sample'), '--out', join(root, 'out')], { encoding: 'utf8' });
     assert.equal(run.status, 1);
     for (const target of ['php', 'python', 'node', 'go', 'wasm']) {
       assert.match(run.stderr, new RegExp(`${target}: not generated \\(G-4\\), 1 item:\\n  the case ${kase.id} of the alias data: a value \\{"host"\\} is [^\\n]*, not "bogus" \\(G-5\\)\\n`));
@@ -6546,17 +6546,17 @@ test('generate --target writes the directories of those targets alone, the files
   const whole = mkdtempSync(join(tmpdir(), 'binding-t-'));
   const parts = mkdtempSync(join(tmpdir(), 'binding-u-'));
   try {
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', whole, '--target', FIXTURE_TAKEN]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', whole, '--target', FIXTURE_TAKEN]);
     const targets = FIXTURE_TAKEN.split(',');
     const [first, ...others] = targets;
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', first ?? '']);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', parts, '--target', first ?? '']);
     const alone = files(parts);
     assert.ok(alone.size > 0 && alone.size < files(whole).size, `${first ?? ''} alone wrote ${alone.size} files`);
     for (const [path, bytes] of alone) assert.ok(bytes.equals(files(whole).get(path) ?? Buffer.alloc(0)), path);
     // A later generation of the other targets keeps what the first wrote.
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', others.join(',')]);
+    execFileSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', parts, '--target', others.join(',')]);
     assert.deepEqual([...files(parts).keys()], [...files(whole).keys()]);
-    const refused = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', 'cobol'], { encoding: 'utf8' });
+    const refused = spawnSync(process.execPath, [cli, 'generate', '--cargo', 'cargo', '--root', fixture, '--out', parts, '--target', 'cobol'], { encoding: 'utf8' });
     assert.equal(refused.status, 2);
     assert.match(refused.stderr, /--target names cobol, which the contract does not name in targets/);
   } finally {
@@ -10418,7 +10418,7 @@ test('a parameter with keeps does not make the core path of its member return a 
   try {
     cpSync(fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), root, { recursive: true });
     writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract, null, 2));
-    const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json')], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', join(root, 'packages/rust/interface.json')], { encoding: 'utf8' });
     assert.doesNotMatch(String(run.stdout) + String(run.stderr), /CK-21[^\n]*index\.(single|get)/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -11777,7 +11777,7 @@ test('scaffold writes the go.sum beside the go.mod, CK-19 compares it, and a mod
     const path = 'polyspec-points = { path = "../../../points/packages/rust" }';
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(path, 'polyspec-points = { git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }'));
     const contract = join(root, 'plot/packages/rust/interface.json');
-    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
     const goSum = join(root, 'plot/packages/go/go.sum');
     const scaffold = run('scaffold', '--root', join(root, 'plot'));
     assert.equal(scaffold.status, 0, scaffold.stderr);

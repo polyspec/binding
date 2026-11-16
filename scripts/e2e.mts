@@ -186,7 +186,7 @@ function runBinding(argv: string[], copyDir: string): void {
 // directory of the run and gives the value of CGO_LDFLAGS for its Go tests: the directory and the native-static-libs of
 // the library. Its stderr, the diagnostics of Cargo, is printed; a failure carries the errors of rustc and Cargo.
 function goLink(manifest: string, features: string): string {
-  const argv = ['go-link', '--manifest', manifest, '--target-dir', target, '--features', features];
+  const argv = ['go-link', '--cargo', 'cargo', '--manifest', manifest, '--target-dir', target, '--features', features];
   process.stdout.write(`$ ${process.execPath} ${cli} ${argv.join(' ')}\n`);
   const ran = spawnSync(process.execPath, [cli, ...argv], { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency } });
   process.stdout.write(ran.stderr);
@@ -245,7 +245,7 @@ function prepare(checkout: string): Prepared[] {
   else execFileSync('cp', ['-r', `${resolve(checkout)}/.`, copy]);
 
   step(`${library}: the changes that take the binding of the run (GN-14d, each printed)`);
-  for (const path of paths) runBinding(['scaffold', '--contract', join(copy, path)], copy);
+  for (const path of paths) runBinding(['scaffold', '--contract', join(copy, path), '--cargo', 'cargo'], copy);
   process.stdout.write('change: the tracked binding packages that binding scaffold of the run writes (L-2, GN-14d)\n');
   // GN-4: every binding crate of the targets is a member of the root workspace of the repository; a workspace that
   // lacks one is a defect of the repository, which the run names and does not repair.
@@ -291,7 +291,7 @@ function prepare(checkout: string): Prepared[] {
   // the build of the core fetched only its own, so the run fetches the rest of the lock first, as the install target of a
   // repository does.
   run('cargo', ['fetch', '--locked', '--manifest-path', join(copy, 'Cargo.toml'), '--quiet']);
-  for (const path of paths) runBinding(['check', join(copy, path)], copy);
+  for (const path of paths) runBinding(['check', join(copy, path), '--cargo', 'cargo'], copy);
 
   step(`${library}: the cases in the convention of G-5`);
   return contracts.map((contract, i) => ({ contract, path: paths[i] ?? '', copy, caseFiles: checkCases(contract, copy) }));
@@ -539,7 +539,7 @@ const generateOf = (t: Lang, p: Prepared): void => {
   stepOf([t], `generate ${p.contract.library} for ${t}`, () => {
     const contractPath = join(p.copy, p.path);
     process.stdout.write(`$ ${process.execPath} ${cli} generate --contract ${contractPath} --target ${t}\n`);
-    const generated = spawnSync(process.execPath, [cli, 'generate', '--contract', contractPath, '--target', t], { encoding: 'utf8' });
+    const generated = spawnSync(process.execPath, [cli, 'generate', '--contract', contractPath, '--target', t, '--cargo', 'cargo'], { encoding: 'utf8' });
     process.stdout.write(generated.stdout);
     process.stdout.write(generated.stderr);
     if (generated.status !== 0) {
