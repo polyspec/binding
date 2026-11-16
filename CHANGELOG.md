@@ -54,6 +54,8 @@
 - CK-22 takes one case of any kind of another library for all its kinds on a form of call, whose conversion is the owner's; it asked a case of each (B2.382).
 - A step or a call of `after` passes `{"bound": <name>}` to a parameter of a generated interface, which CK-77 refused, and a call of `after` takes the names of `with` as bound arguments (CK-77, GN-13pa, B2.383).
 - The K-2 tests of a member that takes a callback take a case whose callback rows give results before one whose callback raises, which a core may answer itself; with the first case of sample `tolerant` they failed in every target (GN-13y, B2.385).
+- The Go tests read a field of a case value by the key of the case file, the snake_case name of the contract: a field that is a Python keyword, such as `else` of template `expr.Ternary`, was looked up as `else_`, and its tests failed as a case value without the field (GN-6bk, B2.386).
+- The Go tests require the error and the panic of a function only from a call that runs it: a parameter with `keeps`, which its member only stores, has no such test at that member, where it failed with `<nil> is not the error of the function` (GN-6z, B2.387).
 
 ## 0.0.13
 

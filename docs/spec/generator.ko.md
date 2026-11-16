@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 64e7ff54ff7d0b70f9f454f7e78084545084a4fb723fa7861e190d02ec307fae -->
+<!-- source-sha256: b382e05ac4253dd10a962022a3430002ade2a12df56b09f9dc3215287b800d32 -->
 # 생성기
 
 [English](generator.md)
@@ -548,7 +548,10 @@
   func에 kind `invalid_argument_type`을 요구한다. case의 함수 값은 case의 행으로 답하고 어떤 행도 답하지 않는 호출을
   기록하는 func이며, 시험은 그런 호출이 없기를 요구한다. 함수 값에 행이 있는 case는 코어가 그 호출에서 func를 부름을
   보이므로, 시험은 그 case의 인자로 func가 돌려준 error가 그 호출의 error와 같은 값이고 func의 panic이 그 호출의
-  panic임을 요구한다. receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
+  panic임을 요구한다. `keeps`가 있는 parameter(GN-6aa)는 member가 저장만 하는 함수이므로, 그 case의 행은 member의
+  호출을 보이지 않고 member에는 그런 시험이 없다. 그 함수를 실행하는 나중 호출이 그 시험을 가진다. 이유: member는
+  코어가 함수를 부르기 전에 돌아오므로, 시험은 member가 돌려줄 수 없는 error를 요구했다(template `engine.register`,
+  시험이 실행하지 않은 func). receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
   시험이 그 나중 호출에 같은 것을 요구하고, error 뒤에 `thrown-count-test`의 count가 0임을 요구한다. Go 시험은 다른
   타입의 결과를 주지 않는다. func의 Go 타입이 결과를 정하기 때문이다.
 - **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
@@ -810,7 +813,9 @@
 - **GN-6bk** parameter, field, callable의 Python 이름이 `else` 같은 Python 키워드이면, 그것을 부르는 모든 곳에서
   뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
   `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
-  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
+  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이며, 모든 target은 case value의 field를
+  그 키로 읽는다: Go 시험은 field를 `Else`로 이름하면서 그 값을 Python 이름 `else_`로 찾았으므로, template의 case
+  `Ternary`의 case value를 그 field가 없는 값으로 거부했다.
 - **GN-6bl** 다른 library의 callback unit의 trait은 그 소유자의 코어 오류로 실패한다: 소유자의 `errors.code`가
   이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
   선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신

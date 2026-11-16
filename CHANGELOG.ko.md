@@ -1,6 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
+<!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -61,6 +62,8 @@
 - CK-22는 다른 library의 어느 kind의 case 하나를 호출 형태마다 그 모든 kind에 대해 받는다. 그 변환은 owner의 것이다. 이전에는 kind마다 case를 요구했다(B2.382).
 - step이나 `after` 호출은 generated interface의 parameter에 `{"bound": <name>}`을 넘긴다. 이전에는 CK-77이 그것을 거부했다. `after` 호출은 `with`의 이름을 bound argument로 받는다(CK-77, GN-13pa, B2.383).
 - callback을 받는 member의 K-2 시험은 callback row가 결과를 주는 case를 callback이 raise하는 case보다 먼저 쓴다. core는 그 raise에 스스로 답할 수 있다. sample `tolerant`의 첫 case로는 모든 target에서 실패했다(GN-13y, B2.385).
+- Go 시험은 case value의 field를 case 파일의 키, 곧 계약의 snake_case 이름으로 읽는다. template `expr.Ternary`의 `else`처럼 Python 키워드인 field는 `else_`로 찾았으므로, 그 시험은 field가 없는 case value로 실패했다(GN-6bk, B2.386).
+- Go 시험은 함수의 error와 panic을 그 함수를 실행하는 호출에서만 요구한다. member가 저장만 하는 `keeps` parameter는 그 member에 그런 시험이 없다. 이전에는 거기서 `<nil> is not the error of the function`으로 실패했다(GN-6z, B2.387).
 
 ## 0.0.13
 
