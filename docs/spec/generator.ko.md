@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e911c44e1d383769a4614935792849e6c0820992389fab4c639e7c8c2d7215df -->
+<!-- source-sha256: 9bf2733f3577e34771acd0ab4353684c97c58b57132e7c9ffd463ffe42189527 -->
 # 생성기
 
 [English](generator.md)
@@ -950,12 +950,16 @@
   parameter가 생성되는 곳에서만 assert한다. 이유: orm은 `default_retry`와 `default_pool_acquire_timeout_ms`에 `wasm` 없는
   `only`를 적는데, 그 constant는 코어가 feature `runtime`으로만 정의하고 WASM build에는 그 feature가 없어, WASM crate가 그것을
   assert하면 E0425였다.
-  값 alias(U-7)는 그 target의 생성된 member, record, class, callback, interface, error unit이 그것을 직접 또는 그것이
+  값 alias(U-7)는 그 target의 생성된 member, record, variant, class, callback, interface, error unit이 그것을 직접 또는 그것이
   이름하는 alias를 거쳐, 타입이나 kind `nested:<value type>`의 행(GN-6bb)으로 이름할 때에만 그 target의 alias다. 그런 unit이 이름하지 않는 target에는 그 변환, host, 그것들이
   필요로 하는 import와 throw table, `codec-test`의 entry, case가 없다. 그 target 없는 `only`를 가진 unit의 alias가 어떤
   target에도 없는 것과 같다. 이유: orm에서 `orm_value`를 이름하는 member는 모두 `wasm` 없는 `only`를 적지만 alias에는
   없어서, WASM crate가 host value의 import와 throw table을 쓰이지 않은 채 남기고, 변환이 쓰이지 않는다며 빠진
-  `codec-test`의 entry `__aliasInValue`를 남겼다(E0425).
+  `codec-test`의 entry `__aliasInValue`를 남겼다(E0425). 그것을 이름하는 unit은 이 contract의 unit과 다른 레포의 unit이
+  똑같으며, 예를 들어 parameter가 받는 다른 레포의 callback이나 interface, record, variant이고, 다른 레포의 unit은 그 contract가
+  적은 대로 읽는다. 자기 library의 unit은 library 없이, 또는 그 contract의 named type으로 이름한다(T-3). 이유: hyper는 php-serialization의 `php_value`에 session-store의 interface
+  `store`를 거쳐서만 닿고, 그 member는 그것을 session-store의 named type으로 이름해서, 모든 타깃이 alias를 버렸다(`no <lang> input
+  conversion for php_value`).
   `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
   parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는

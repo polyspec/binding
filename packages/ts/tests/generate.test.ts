@@ -11576,6 +11576,35 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.403: a value alias of another repository that only a callback interface of that repository names is used (Q-4, U-7, GN-6s)', () => {
+  // hyper: the alias php_value of php-serialization is named only by the members of the interface store of
+  // session-store, a callback unit of another repository, whose types name the alias bare, in its own library; the walk
+  // of B2.396 did not walk the foreign callback units, so every target dropped the alias ("no <lang> input conversion
+  // for php_value"). The consumer whose only use of the alias data of sample is the interface source of sample, whose
+  // read returns data by a named type of sample.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const source = foreign.get('sample').units.find((u: any) => u.id === 'source');
+  // As session-store names php_value, by a named type of its contract.
+  foreign.get('sample').types = { own_data: { library: 'sample', unit: 'data' } };
+  source.members[0].returns = { optional: 'own_data' };
+  // The cases of the members that take a source give the text that read returned, which is no value of data.
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, unknown>;
+  cases['copy'] = [];
+  cases['read'] = [];
+  const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.403' };
+  const names = (value: unknown): boolean => /"unit":"data","library":"sample"/.test(JSON.stringify(value));
+  for (const unit of contract.units) {
+    // The variant note holds data in its fields; it holds a text instead, since a variant has no only.
+    if (unit.kind === 'variant') unit.cases = JSON.parse(JSON.stringify(unit.cases).replaceAll('{"unit":"data","library":"sample"}', '"text"'));
+    else if (unit.kind !== 'functions') { if (names(unit)) unit.only = only; } else for (const member of unit.members) if (names(member)) member.only = only;
+  }
+  assert.ok(JSON.stringify(contract).includes('"unit":"source","library":"sample"'));
+  assert.doesNotMatch(JSON.stringify(contract.units.filter((u: any) => u.only === undefined).map((u: any) => ({ ...u, members: (u.members ?? []).filter((m: any) => m.only === undefined) }))), /"unit":"data","library":"sample"/);
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(lib, /pub\(super\) fn in_data\(/);
+  assert.match(lib, /fn read\(&mut self[\s\S]*?library_sample::/);
+});
+
 test('B2.396: a value alias that no generated member of a target uses is no alias of that target (Q-4, U-7)', () => {
   // orm wasm lib.rs: the alias orm_value, whose every member has only without wasm, kept the imports of the host
   // values and the throw table of the crate (unused, dead code) and the export __aliasInValue of codec-test, whose
