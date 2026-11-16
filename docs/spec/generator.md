@@ -1588,6 +1588,13 @@ the design ids are those of the binding design.
   that breaks the number rule of its contract type (B-2), and every target gave it for any refused value, also for a
   value of another type, which the other primitive places refuse as kind `invalid_argument_type`; the json
   repository reported the difference (T3.25-1).
+  A refused value has two layers, and the binding checks only the first (B2.425): the binding checks the contract type
+  of the place and gives the kind of the rule of that type, as above, and a kind that the contract states for a value
+  of a right type, such as the `invalid_code_unit` of a code unit outside 0 to 0xFFFF at a `list` of `uint`, is
+  raised by the core alone, for a value that passed the type. So -1 at a `uint` item is kind `invalid_number`, `"a"`
+  there is kind `invalid_argument_type`, and 0x10000 reaches the core, which judges it. Why: the contract types of a
+  place hold no rule of the core, and a binding that judged one would state the rule of the core twice; a wrong call
+  shape stays the error of the language for the same reason (B2.426).
   Node and WASM: an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
   integers; a `bigint` outside that range or a number that is no safe integer is kind `invalid_number` (B-2), and
   any other value is kind `invalid_argument_type`; an `int64` result is a `bigint`, so that the whole range
