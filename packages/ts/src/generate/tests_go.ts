@@ -652,7 +652,17 @@ function comparedCall(v: Values, a: Body, fn: Fn, receiver: string, args: Readon
   if (reason !== undefined) throw new Unsupported(reason);
   const compared = !expects ? [] : parts.flatMap((type, i) => {
     const want = parts.length === 1 ? expected.value : (expected.value as unknown[] | null)?.[i];
-    return [`if want := (${typeName(v, type)})(${value(v, a, type, want ?? null)}); !reflect.DeepEqual(value${i}, want) {`, `\t${differs(i)}`, '}'];
+    // GN-13be: the result of a call of after or of a step takes the forms of the Go out rows of an alias, as the
+    // result of the case does.
+    const outer = v.result === true;
+    v.result = true;
+    let made: string;
+    try {
+      made = value(v, a, type, want ?? null);
+    } finally {
+      v.result = outer;
+    }
+    return [`if want := (${typeName(v, type)})(${made}); !reflect.DeepEqual(value${i}, want) {`, `\t${differs(i)}`, '}'];
   });
   return [...a.lines, callLine(fn, invoke(v, fn, given, receiver), expects ? parts.map((_, i) => `value${i}`) : undefined), 'if err != nil {', `\t${failed}`, '}', ...compared];
 }

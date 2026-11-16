@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 32d7f7e66efa0fb9ea2dacd62cf6e188f462a2e2efc9e954c3c8738039873f72 -->
-<!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
+<!-- source-sha256: 23433021949a0e48e5a721f34bc06d17f07addb0ee691983d6682b101c52ad74 -->
 <!-- source-sha256: b646290ae5ea803962330f63746a94ac9da97e8a45a6b26d46cdb132928f0d31 -->
 <!-- source-sha256: 7a126bae000ad4d441ea9a7810e363349700f7fd1cc2d8fd1f6d463f1cf8b511 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
@@ -30,8 +29,17 @@
 
 ## Unreleased
 
+- merge가 한쪽이 상태를 바꾼 task 행을 한 줄로 남긴다: `make hooks`가 changelog와 checklist에 kit의 merge driver `kit-changelog`, `kit-checklist`, `kit-twin`을 target `twin-merge`와 함께 선언한다. 검증 중 행과 main의 완료 행을 둘 다 남기던 `merge=union`을 대신하고, `make hooks-check`는 그것이 없는 checkout을 실패시킨다(K354, B2.424). 0.0.17 lane에 main을 merge한 것을 다시 해서 union에서 B2.418 행이 둘인 것을 보았고, `make hooks` 전에 `make hooks-check`가 실패하는 것으로 검증했다.
 - `binding release-recipes`가 쓰는 recipe 파일은 target `node`를 가진 계약에 대해 `checkout-node-addon`을 가진다(GN-3c, GN-19h). 그것은 Node 바인딩을 생성하고, 끝에서 끝까지 확인이 addon을 빌드하듯 test feature를 켠 debug 빌드 `$(CARGO) build $(CARGOFLAGS) --locked --all-features -p polyspec-<library>-node`를 실행하며, `$(CARGO) metadata`가 알려 주는 target directory의 cdylib를 생성된 진입점 옆의 `<name>.<platform>.node`로 복사한다. 진입점은 플랫폼 패키지가 설치되지 않았을 때 그것을 로드한다. 레포와 그 checkout에 연결한 소비자는 빌드, 플랫폼 이름, 복사를 스스로 쓰지 않는다. php-serialization에는 그것이 없어서 그 checkout을 연결한 소비자가 addon load에 실패했다(T2.43). 플랫폼 이름은 표 `NODE_PLATFORMS` 하나에서 나오고, 진입점과 그 test는 기계의 플랫폼을 한 식으로 계산한다(B2.407). `packages/ts`에서 `node --test --test-name-pattern=B2.407 tests/release-recipes.test.ts`로 검증했고, 변경 전에는 `No rule to make target 'checkout-node-addon'`으로 실패했다. 또 `tests/e2e/sample`의 `git archive` 사본에서 실제 cargo로 `make checkout-node-addon`을 실행하고, 그것이 둔 addon으로 생성된 Node test 226개를 실행했다.
 - `binding check`는 callback interface의 member의 parameter에 붙은 `default`를 거부하고 `the parameter <name> of the callback member <member> of <unit> has a default`로 이름을 댄다: 코어는 callback에 모든 인자를 넘기고 callback 행은 정확히 그 parameter를 주므로(CK-101) 그 default는 어느 target에서도 뜻이 없었고, 생성기는 이미 그런 member를 생성하지 않는 것으로 거부했다(CK-98, B2.409). `packages/ts`에서 `node --test --test-name-pattern=B2.409 tests/contract-check.test.ts`로 검증했으며, 변경 전에는 실패했다.
+
+## 0.0.17
+
+- Go 시험은 `after`의 호출과 function fixture의 step의 기대 결과를, case의 결과처럼 그리고 다른 네 target처럼, value alias의 out row로 쓴다(GN-13be): session-store는 `Set("a", []byte("y"))` 뒤에 시험이 `Get("a")`에서 `[]byte("y")`를 기대한다는 것을 찾았는데, 그 호출은 `php_value`의 utf8 row에 따라 문자열 "y"를 담은 `*any`를 준다. `packages/ts`에서 `node --test --test-name-pattern=B2.420 tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
+
+## 0.0.16
+
+- 생성된 crate의 `use` 선언은 crate가 이름을 `::` 없이 bare로 쓸 때, 또는 그 이름이 crate가 method를 위해 import하는 trait일 때에만 그 이름을 import한다(GN-4e). json의 Python crate는 `pyo3::types::PyDict`로만 쓰는 `PyDict`를 import했고, cargo clippy에서 `unused import: PyDict`로 실패했다. `node --test --test-name-pattern=B2.418 tests/generate.test.ts`로 검증했다. 이 test는 tests/e2e의 각 계약, sample, json, session-store의 생성된 Rust 파일을 모두 검사한다. json v0.0.32의 binding crate 다섯 개에 대한 `cargo clippy -- -D warnings`로도 검증했다.
 
 ## 0.0.15
 

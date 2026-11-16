@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 4dce39be61d180b4debcde32c1952a3141a95d6c5c23d10315a37a20736a1652 -->
+<!-- source-sha256: aafc2ff6f47bf88863e68f23581f01bc3fb9c8c9b06ac3d29e2c8ec44e71cfb8 -->
 # 개발
 
 [English](AGENTS.md)
@@ -114,7 +114,9 @@
   이유: 검증 명령을 가진 작업의 목록 하나가 무엇이 끝났고 어떻게 확인했는지를 보인다.
   Enforced by: `make docs-check`
 - Own: 추적 파일은 이 저장소의 것이든 다른 저장소의 것이든 Git commit을 이름하지 않는다. 도구가 commit을 요구하는 곳만
-  예외다: GitHub action은 그 `uses:` 줄에서 commit으로 고정하고, lock은 그 package manager가 정한 것을 적는다. end-to-end
+  예외다: GitHub action은 그 `uses:` 줄에서 commit으로 고정하고, lock은 그 package manager가 정한 것을 적는다. 소비자
+  계약의 사본, 곧 `packages/ts/tests/fixtures/consumers/` 아래의 `.json` 파일은 그 계약의 데이터 그대로이고 commit을
+  이름하지 않는다. 그 옆의 README는 이 규칙을 따른다. end-to-end
   실행이 확인한 commit 같은 실행의 증거는 무시되는 `var/report/` 아래 그 기록에 있다. changelog 항목이나 문서는 무엇을,
   어느 명령으로, 어느 입력에서 검증했는지 적는다. 이유: commit 이름은 그것을 찾아보지 않는 독자에게 아무것도 말하지 않고,
   다시 쓰이거나 얕은 history에서는 남지 않으며, 독자에게 필요한 사실은 문장 자체에 있어야 한다.

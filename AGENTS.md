@@ -130,7 +130,9 @@ rules of this repository.
   commands shows what is done and how it was checked.
   Enforced by: `make docs-check`
 - Own: No tracked file names a Git commit, of this repository or of another, except where a tool requires the commit:
-  a GitHub action is pinned by its commit on its `uses:` line, and a lock records what its package manager resolved. The
+  a GitHub action is pinned by its commit on its `uses:` line, and a lock records what its package manager resolved. A
+  copy of a consumer contract, a `.json` file under `packages/ts/tests/fixtures/consumers/`, is that contract's data as
+  it is and names no commit; the README beside it is held to this rule. The
   evidence of a run, such as the commit that an end-to-end run checked, is in its record under the ignored
   `var/report/`; a changelog entry or a document states what was verified, by which command, on which inputs. Why: a
   commit name says nothing to a reader who does not look it up, it does not survive a history that is rewritten or

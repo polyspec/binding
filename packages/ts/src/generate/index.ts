@@ -10,7 +10,7 @@ import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
 import { HOST_PYTHON_SUBPACKAGE, place, placed } from './packages.ts';
-import type { Files } from './text.ts';
+import { type Files, withUsedImports } from './text.ts';
 
 export interface Inputs {
   contract: Contract;
@@ -135,7 +135,8 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
   refusals.fail();
   // GN-6z: each crate defines the aliases of the function types that it names.
-  for (const [path, text] of files) if (path.endsWith('generated/lib.rs') && typeof text === 'string') files.set(path, withFunctionAliases(text));
+  // GN-4e: each crate imports only the names that it writes bare.
+  for (const [path, text] of files) if (path.endsWith('generated/lib.rs') && typeof text === 'string') files.set(path, withUsedImports(withFunctionAliases(text)));
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 

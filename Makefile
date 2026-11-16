@@ -156,13 +156,21 @@ documents-stamp: ## Write the source-sha256 of each English document into the Ko
 # commit-ai-footer and commit-ai-identity of check-commits of kit, before the commit exists: a push publishes what a
 # commit holds, and a commit that was pushed is not written again. make hooks points core.hooksPath of the checkout, and
 # so of each of its worktrees, at .githooks and makes the hook executable; hooks-check fails a checkout without it.
-.PHONY: hooks hooks-check commit-msg-hook
-HOOK_DECLARATION := --hooks-path .githooks --hook commit-msg
-hooks: ## Point core.hooksPath at .githooks, whose commit-msg refuses an AI footer or identity line; offline
+.PHONY: hooks hooks-check twin-merge commit-msg-hook
+# The changelogs and the checklists merge with the drivers of kit (K354): a union keeps a task row twice when one side
+# changes its state, and leaves the revision marker of a Korean twin stale (B2.424).
+TWIN_MERGE_DRIVER := make --no-print-directory twin-merge MERGE="%O %A %B %P"
+HOOK_DECLARATION := --hooks-path .githooks --hook commit-msg --merge 'CHANGELOG.md=kit-changelog' --merge 'CHANGELOG.ko.md=kit-twin' \
+	--merge 'docs/plans/*/checklist.md=kit-checklist' --merge 'docs/plans/*/checklist.ko.md=kit-twin' \
+	--driver 'kit-twin=$(TWIN_MERGE_DRIVER)' --driver 'kit-changelog=$(TWIN_MERGE_DRIVER)' --driver 'kit-checklist=$(TWIN_MERGE_DRIVER)'
+hooks: ## Point core.hooksPath at .githooks, whose commit-msg refuses an AI footer or identity line, and declare the merge drivers; offline
 	$(NODE) $(KIT)/git-hooks.mjs install $(HOOK_DECLARATION)
 
-hooks-check: ## Fail unless core.hooksPath points at .githooks and its hooks are executable; offline
+hooks-check: ## Fail unless core.hooksPath points at .githooks, its hooks are executable and the merge drivers are declared; offline
 	$(NODE) $(KIT)/git-hooks.mjs check $(HOOK_DECLARATION)
+
+twin-merge: ## The merge drivers of a Korean twin, a changelog and a checklist; git runs it with MERGE="<base> <ours> <theirs> <path>"; offline
+	@$(NODE) $(KIT)/twin-merge.mjs $(MERGE)
 
 commit-msg-hook: ## Check the message of the commit in MESSAGE, a file, as the hook commit-msg does; offline
 	$(NODE) $(KIT)/check-commits.mjs --message $(MESSAGE) --rules commit-ai-footer,commit-ai-identity

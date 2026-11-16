@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 68f4f04217c74e5318feda48eb73b584864c135f0c76cf6ccfc76ed93c0799d9 -->
+<!-- source-sha256: f8b38c159f20f6d2b94d1675574fbc76de1ffc751ce767607b7bcec7eb012215 -->
 # 생성기
 
 [English](generator.md)
@@ -315,6 +315,17 @@
   호출, PHP library class의 생성자에 있는 `text_in`과 `type_error`는 text parameter도 있는 계약에서만 컴파일되었다.
   text parameter가 없는 계약은 빌드에 실패했다. Go crate는 목록을 유지한다. test feature만 쓰는 helper는 그 feature
   아래에서 컴파일되기 때문이다(GN-4).
+- **GN-4e** 생성된 crate(다섯 target 각각의 `lib.rs`)의 `use` 선언은 crate가 그 이름을 bare로 쓸 때에만 그 이름을
+  import한다. bare란 `use` 선언 밖에서, GN-4가 token을 읽는 방식으로 읽은 그 이름의 token 앞에 `::`가 없는 것이다.
+  crate가 `pyo3::types::PyDict`처럼 경로로만 쓰는 이름은 import하지 않는다. 유일한 예외는 crate가 method만을 위해
+  import하는 trait이다. method 호출은 trait를 이름으로 쓰지 않기 때문이다. `ext_php_rs::convert::FromZval`,
+  `ext_php_rs::convert::IntoZval`, `napi::JsValue`, `napi::bindgen_prelude::JsObjectValue`, `wasm_bindgen::JsCast`의
+  닫힌 목록이며, generator는 crate가 그 method를 부르는 곳에서 이들을 import한다. crate를 쓴 뒤 생성된 각 `lib.rs`에
+  대한 한 번의 처리가 이 규칙을 적용한다. 각 목록에서 bare로 쓰이지도 않고 그런 trait도 아닌 이름을 지우고, 남은 이름이
+  없는 선언은 그 attribute와 함께 지운다. 이유: 각 목록은 crate 일부에 대한 단어 일치(`\bPyDict\b`)로 이름을 골랐고,
+  경로도 단어에 일치한다. 그래서 직접 생성을 거부하는 생성자(GN-6b)가 `pyo3::types::PyDict`를 쓰면, 어디에서도 bare로
+  쓰지 않는 crate에 `PyDict`를 import했고, lint가 warning을 거부하는 consumer는 `unused import: PyDict`로 실패했다.
+  작성된 crate에 대한 처리는 텍스트 전체를 읽는다. crate의 한 부분에 대한 조건은 그렇게 하지 못한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -2355,7 +2366,9 @@
   text를 만드는 byte string, 곧 row `{"predicate": "utf8", "is": true}`의 UTF-8 bytes는 그 언어에서 그 bytes의 text다. kind의
   내장 형태가 아닌 다른 형태는 이름을 들어 계속 거부한다. 이유: 생성기는 그런 row를 가진 alias의 모든 byte string을 거부했는데,
   값은 bytes를 만드는 row나 text를 만드는 row 중 하나에 맞고, text가 그 언어가 주는 것이다: 결과가 optional `php_value`인
-  session-store `memory_store.get`이 Python에서 비교되지 않았다(시험 2개).
+  session-store `memory_store.get`이 Python에서 비교되지 않았다(시험 2개). Go 시험은 case의 결과에만 out row를 따랐다. 그래서
+  `Set("a", []byte("y"))` 뒤 `after`의 `Get("a")`에서 `[]byte("y")`를 기대했는데, 그 호출은 문자열 "y"를 담은 `*any`를 준다.
+  function fixture의 step도 같은 방식으로 쓰였다(B2.420).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

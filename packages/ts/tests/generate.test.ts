@@ -11551,6 +11551,32 @@ test('B2.375: a Python result of an alias in after takes the bytes that leave as
   assert.match(body, /expected_2 = \["x", bytes\.fromhex\("ff"\)\]/);
 });
 
+test('B2.420: a Go result of an alias in after takes the bytes that leave as a text by the row that the value meets (GN-13be)', () => {
+  // session-store memory_store.get in after: after Set("a", []byte("y")), Get("a") gives a *any that holds the string
+  // "y", which the utf8 row of php_value makes, and the Go test expected []byte{0x79}.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'bytes');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  sample.units.find((u: any) => u.id === 'counter').members.push({ id: 'counter.held', name: ['held'], kind: 'property', visibility: 'public', parameters: [], returns: { optional: { unit: 'data' } }, raises: [], wait: 'none', core: { path: 'polyspec_sample::Counter::held', receiver: '&self' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, any[]>;
+  file['counter_add']![0].after = [
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: '79' } } },
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: 'ff' } } },
+  ];
+  const go = text(generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  const at = go.indexOf('AnAmountIsAdded(t *testing.T)');
+  assert.ok(at >= 0);
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  assert.ok(body.includes('if want := (*any)(ptr[any]("y")); '), 'utf8 bytes are a string');
+  assert.ok(!body.includes('[]byte("y")'), 'utf8 bytes are no []byte');
+  assert.ok(body.includes('if want := (*any)(ptr[any]([]byte("\\xff"))); '), 'other bytes stay a []byte');
+});
+
 test('B2.379: a member of a callback interface with a default may be left out by the host object, which gets the default (U-3, GN-6d)', () => {
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   for (const [id, trait] of [['lookup', 'Lookup'], ['source', 'Source']] as const) {
@@ -12115,4 +12141,81 @@ test('B2.413: a crate of a contract without a text parameter defines every helpe
     const missing = [...rustCalls(body)].filter((name) => helpers.get(path)?.has(name) === true && !declared.has(name));
     assert.deepEqual(missing, [], `${path} calls helpers that it does not define`);
   }
+});
+
+// B2.418: the names that the `use` declarations of Rust text import, each with its declaration; a list `{...}` gives
+// each of its names, `a as b` gives b, and a glob or `self` imports no name of its own. `path` is the full path of the
+// name in its crate.
+const rustImports = (source: string): { name: string; path: string; line: string }[] =>
+  [...source.matchAll(/^[ \t]*(?:pub(?:\([^)]*\))? )?use ([^;]+);/gm)].flatMap((m) => {
+    const path = (m[1] ?? '').replace(/\s+/g, ' ');
+    const brace = path.indexOf('{');
+    const prefix = brace < 0 ? '' : path.slice(0, brace);
+    const names = brace < 0 ? [path] : path.slice(brace + 1, path.lastIndexOf('}')).split(',');
+    return names
+      .map((part) => ({ part: part.trim(), name: part.trim().split(' as ').at(-1)?.split('::').at(-1)?.trim() ?? '' }))
+      .filter(({ name }) => name !== '' && name !== '*' && name !== 'self' && !name.includes('{'))
+      .map(({ part, name }) => ({ name, path: `${prefix}${part}`, line: m[0].trim() }));
+  });
+// GN-4e: the traits that a crate imports for their methods alone, which a method call uses without naming them.
+const METHOD_TRAITS = new Set(['ext_php_rs::convert::FromZval', 'ext_php_rs::convert::IntoZval', 'napi::JsValue', 'napi::bindgen_prelude::JsObjectValue', 'wasm_bindgen::JsCast']);
+// A name that Rust text writes bare: a word of the text outside its `use` declarations and its line comments that no
+// `::` precedes.
+const usesBare = (source: string, name: string): boolean => {
+  const code = source.replace(/^[ \t]*(?:pub(?:\([^)]*\))? )?use [^;]+;/gm, '').replace(/\/\/[^\n]*/g, '');
+  return new RegExp(`(?<!::\\s*)\\b${name}\\b`).test(code);
+};
+
+test('B2.418: every name that a generated Rust file imports is written bare in that file, in every target of every contract (GN-4e)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const repo = (name: string, deps: string[] = []): Inputs => ({
+    contract: read(`${name}/packages/rust/interface.json`),
+    caseFiles: new Map([['contracts/cases.json', read(`${name}/contracts/cases.json`)]]),
+    foreign: new Map(deps.map((dep) => [dep, read(`${dep}/packages/rust/interface.json`)])),
+    version: '0.0.0',
+    coreLib: `polyspec_${name}`,
+  });
+  // The contracts of the consumers json and session-store, whose sources tests/fixtures/consumers/README.md names.
+  const consumer = (path: string): any => JSON.parse(readFileSync(new URL(`fixtures/consumers/${path}`, import.meta.url), 'utf8'));
+  const caseFilesOf = (dir: string, files: string[]): Map<string, unknown> => new Map(files.map((file) => [`contracts/${file}`, consumer(`${dir}/contracts/${file}`)]));
+  // relay is left out: its core depends on json, which is not in tests/e2e (tests/e2e/not-in-ci.json).
+  const contracts: [string, Inputs][] = [
+    ['fixture', { ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }],
+    ...['classes', 'functions', 'kept', 'lent', 'points', 'sample', 'shapes', 'variants'].map((name): [string, Inputs] => [name, repo(name)]),
+    ['plot', repo('plot', ['points'])],
+    ['consumer', repo('consumer', ['sample'])],
+    ['json', { contract: consumer('json/interface.json'), caseFiles: caseFilesOf('json', ['core.json']), version: '0.0.0', coreLib: 'polyspec_json' }],
+    [
+      'session-store',
+      {
+        contract: consumer('session-store/interface.json'),
+        caseFiles: caseFilesOf('session-store', ['sessions.json', 'file-sessions.json', 'redis-sessions.json']),
+        foreign: new Map([['php-serialization', consumer('session-store/php-serialization.json')]]),
+        version: '0.0.0',
+        coreLib: 'polyspec_session_store',
+      },
+    ],
+  ];
+  const unused: string[] = [];
+  let files = 0;
+  for (const [name, inputs] of contracts) {
+    for (const target of inputs.contract.targets as Lang[]) {
+      let out: Map<string, string | Buffer>;
+      try {
+        // The stack of the command line, which the case tests of json need for its nested values.
+        out = generateOnStack({ ...inputs, targets: [target] });
+      } catch (error) {
+        // G-4: a target that the generator refuses for this contract by name has no crate to read.
+        if (Array.isArray((error as { refusals?: unknown }).refusals)) continue;
+        throw error;
+      }
+      for (const [path, body] of out) {
+        if (!path.endsWith('.rs')) continue;
+        files += 1;
+        for (const { name: imported, path: full, line } of rustImports(String(body))) if (!METHOD_TRAITS.has(full) && !usesBare(String(body), imported)) unused.push(`${name} ${target} ${path}: ${imported} of \`${line}\``);
+      }
+    }
+  }
+  assert.ok(files > 0);
+  assert.deepEqual([...new Set(unused)], []);
 });

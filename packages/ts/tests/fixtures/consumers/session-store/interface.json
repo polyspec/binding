@@ -1,0 +1,1841 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "session-store",
+  "core": {
+    "crate": "polyspec-session-store",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/session-store",
+      "namespace": "Polyspec\\SessionStore"
+    },
+    "python": {
+      "package": "polyspec-session-store",
+      "module": "polyspec.session_store"
+    },
+    "node": {
+      "package": "@polyspec/session-store",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/session-store/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "php_value": {
+      "library": "php-serialization",
+      "unit": "php_value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\SessionStore\\SessionStoreValueError",
+        "python": "SessionStoreValueError",
+        "node": "SessionStoreValueError",
+        "wasm": "SessionStoreValueError"
+      },
+      "type": {
+        "php": "Polyspec\\SessionStore\\SessionStoreTypeError",
+        "python": "SessionStoreTypeError",
+        "node": "SessionStoreTypeError",
+        "wasm": "SessionStoreTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\SessionStore\\SessionStoreIoError",
+        "python": "SessionStoreIoError",
+        "node": "SessionStoreIoError",
+        "wasm": "SessionStoreIoError"
+      },
+      "store": {
+        "php": "Polyspec\\SessionStore\\SessionStoreStoreError",
+        "python": "SessionStoreStoreError",
+        "node": "SessionStoreStoreError",
+        "wasm": "SessionStoreStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\SessionStore\\SessionStoreBusyError",
+        "python": "SessionStoreBusyError",
+        "node": "SessionStoreBusyError",
+        "wasm": "SessionStoreBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\SessionStore\\SessionStoreInternalError",
+        "python": "SessionStoreInternalError",
+        "node": "SessionStoreInternalError",
+        "wasm": "SessionStoreInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_session_store::Error::Random",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Record",
+        "category": "store",
+        "source": "php-serialization",
+        "class": "record_error"
+      },
+      {
+        "variant": "polyspec_session_store::Error::RecordNotArray",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_session_store::Error::RecordWrite",
+        "category": "store",
+        "source": "php-serialization",
+        "class": "record_error"
+      },
+      {
+        "variant": "polyspec_session_store::Error::InvalidDirectory",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_session_store::Error::InvalidLifetime",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Cancelled",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_session_store::Error::IdentifierTaken",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Io",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_session_store::Error::InvalidLockExpire",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_session_store::Error::InvalidSetting",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_session_store::Error::LockTimeout",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_session_store::Error::LockLost",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Reply",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Redis",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Connection",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_session_store::Error::Internal",
+        "category": "internal"
+      }
+    ],
+    "binding": [],
+    "wrapped": [
+      {
+        "library": "php-serialization",
+        "unit": "format_error",
+        "property": [
+          "offset"
+        ],
+        "forward": "record_error"
+      }
+    ]
+  },
+  "faults": [
+    {
+      "id": "random",
+      "core": "polyspec_session_store::fault::RANDOM",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "random"
+      ],
+      "reason": "SE-5.4",
+      "place": "polyspec_session_store::random_hex"
+    },
+    {
+      "id": "internal",
+      "core": "polyspec_session_store::fault::INTERNAL",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-9.6",
+      "place": "polyspec_session_store::MemoryStore::renew"
+    },
+    {
+      "id": "open",
+      "core": "polyspec_session_store::fault::OPEN",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "io"
+      ],
+      "reason": "SF-9.2",
+      "place": "polyspec_session_store::FileSessions::open"
+    },
+    {
+      "id": "create",
+      "core": "polyspec_session_store::fault::CREATE",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "io",
+        "identifier_taken"
+      ],
+      "place": "polyspec_session_store::FileSession::close",
+      "reason": "SF-4.4"
+    },
+    {
+      "id": "read_dir",
+      "core": "polyspec_session_store::fault::READ_DIR",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "io"
+      ],
+      "reason": "SF-9.2",
+      "place": "polyspec_session_store::FileSessions::collect"
+    },
+    {
+      "id": "record_root",
+      "core": "polyspec_session_store::fault::RECORD_ROOT",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.3",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "record_index",
+      "core": "polyspec_session_store::fault::RECORD_INDEX",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "value_reference",
+      "core": "polyspec_session_store::fault::VALUE_REFERENCE",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "value_root",
+      "core": "polyspec_session_store::fault::VALUE_ROOT",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_new_reference",
+      "core": "polyspec_session_store::fault::COPY_NEW_REFERENCE",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.6",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_array",
+      "core": "polyspec_session_store::fault::COPY_ARRAY",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_element",
+      "core": "polyspec_session_store::fault::COPY_ELEMENT",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_object",
+      "core": "polyspec_session_store::fault::COPY_OBJECT",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_property",
+      "core": "polyspec_session_store::fault::COPY_PROPERTY",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.5",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_reference",
+      "core": "polyspec_session_store::fault::COPY_REFERENCE",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.6",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "copy_set_reference",
+      "core": "polyspec_session_store::fault::COPY_SET_REFERENCE",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "SE-6.6",
+      "place": "polyspec_session_store::RecordSession::get"
+    },
+    {
+      "id": "open_reply",
+      "core": "polyspec_session_store::fault::OPEN_REPLY",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "reply"
+      ],
+      "reason": "SE-10.7",
+      "place": "polyspec_session_store::RedisSessions::open"
+    },
+    {
+      "id": "close_reply",
+      "core": "polyspec_session_store::fault::CLOSE_REPLY",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "reply"
+      ],
+      "reason": "SE-10.7",
+      "place": "polyspec_session_store::RedisSession::close"
+    }
+  ],
+  "units": [
+    {
+      "id": "store",
+      "name": [
+        "store"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_session_store::Store",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "store.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "php_value"
+          },
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_session_store::Store::get",
+            "receiver": "&mut self"
+          },
+          "optional_reason": "SE-2.1"
+        },
+        {
+          "id": "store.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_session_store::Store::set",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "store.remove",
+          "name": [
+            "remove"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_session_store::Store::remove",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "store.renew",
+          "name": [
+            "renew"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_session_store::Store::renew",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory_store",
+      "name": [
+        "memory",
+        "store"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_session_store::MemoryStore",
+      "final": true,
+      "implements": [
+        {
+          "unit": "store"
+        }
+      ],
+      "members": [
+        {
+          "id": "memory_store.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "self",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::MemoryStore::new"
+          }
+        },
+        {
+          "id": "memory_store.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "php_value"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::get",
+            "receiver": "&mut self",
+            "result": true
+          },
+          "optional_reason": "SE-2.1"
+        },
+        {
+          "id": "memory_store.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::set",
+            "receiver": "&mut self",
+            "result": true
+          }
+        },
+        {
+          "id": "memory_store.remove",
+          "name": [
+            "remove"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::remove",
+            "receiver": "&mut self",
+            "result": true
+          }
+        },
+        {
+          "id": "memory_store.renew",
+          "name": [
+            "renew"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::renew",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "memory_store.renewals",
+          "name": [
+            "renewals"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::MemoryStore::renewals",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "identifiers",
+      "name": [
+        "identifiers"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "accept",
+          "name": [
+            "accept"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "cookie"
+              ],
+              "type": "latin1",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::accept"
+          },
+          "optional_reason": "SE-5.2"
+        },
+        {
+          "id": "new_identifier",
+          "name": [
+            "new",
+            "identifier"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_session_store::Error::Random"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::new_identifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "record_error",
+      "name": [
+        "record",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "store",
+      "final": true,
+      "members": [
+        {
+          "id": "record_error.offset",
+          "name": [
+            "offset"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "uint"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Error::offset",
+            "receiver": "&self"
+          },
+          "optional_reason": "SE-9.2"
+        }
+      ]
+    },
+    {
+      "id": "file_sessions",
+      "name": [
+        "file",
+        "sessions"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SF-1.4"
+      },
+      "origin": "generated",
+      "core_type": "polyspec_session_store::FileSessions",
+      "final": true,
+      "constructible": false,
+      "members": [
+        {
+          "id": "file_sessions.in_directory",
+          "name": [
+            "in",
+            "directory"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "directory"
+              ],
+              "type": "path",
+              "required": true
+            },
+            {
+              "name": [
+                "lifetime"
+              ],
+              "type": "uint",
+              "default": {
+                "literal": 1440
+              },
+              "default_core": "polyspec_session_store::DEFAULT_LIFETIME"
+            }
+          ],
+          "returns": {
+            "unit": "file_sessions"
+          },
+          "raises": [
+            "polyspec_session_store::Error::InvalidDirectory",
+            "polyspec_session_store::Error::InvalidLifetime"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_session_store::FileSessions::in_directory"
+          }
+        },
+        {
+          "id": "file_sessions.open",
+          "name": [
+            "open"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "cookie"
+              ],
+              "type": {
+                "optional": "latin1"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "cancel"
+              ],
+              "type": {
+                "optional": "cancel"
+              },
+              "default": {
+                "computed": "SF-3.8"
+              },
+              "only": {
+                "targets": [
+                  "python",
+                  "node"
+                ],
+                "reason": "B-5"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "file_session"
+          },
+          "raises": [
+            "polyspec_session_store::Error::Cancelled",
+            "polyspec_session_store::Error::Io",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "process_wait",
+          "core": {
+            "path": "polyspec_session_store::FileSessions::open",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "file_sessions.collect",
+          "name": [
+            "collect"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_session_store::Error::Io",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_session_store::FileSessions::collect",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "file_sessions.lifetime",
+          "name": [
+            "lifetime"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::FileSessions::lifetime",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "file_sessions.directory",
+          "name": [
+            "directory"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "path",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::FileSessions::directory",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "file_session",
+      "name": [
+        "file",
+        "session"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SF-1.4"
+      },
+      "origin": "generated",
+      "core_type": "polyspec_session_store::FileSession",
+      "final": true,
+      "constructible": false,
+      "cleanup": "file_session.close",
+      "implements": [
+        {
+          "unit": "store"
+        }
+      ],
+      "members": [
+        {
+          "id": "file_session.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "php_value"
+          },
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::get",
+            "receiver": "&mut self"
+          },
+          "optional_reason": "SE-2.1"
+        },
+        {
+          "id": "file_session.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::set",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "file_session.remove",
+          "name": [
+            "remove"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::remove",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "file_session.renew",
+          "name": [
+            "renew"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::renew",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "file_session.found",
+          "name": [
+            "found"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::FileSession::found",
+            "receiver": "&self"
+          },
+          "optional_reason": "SE-7.1"
+        },
+        {
+          "id": "file_session.close",
+          "name": [
+            "close"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [
+            "polyspec_session_store::Error::Io",
+            "polyspec_session_store::Error::IdentifierTaken",
+            "polyspec_session_store::Error::RecordWrite",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_session_store::FileSession::close",
+            "receiver": "self"
+          },
+          "optional_reason": "SE-7.6"
+        }
+      ]
+    },
+    {
+      "id": "setting",
+      "name": [
+        "setting"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_session_store::Setting",
+      "tag": [
+        "kind"
+      ],
+      "cases": [
+        {
+          "value": "server",
+          "fields": [
+            {
+              "name": [
+                "url"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "sentinel",
+          "fields": [
+            {
+              "name": [
+                "urls"
+              ],
+              "type": {
+                "list": "text"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "service"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "tls"
+              ],
+              "type": "bool",
+              "required": true
+            },
+            {
+              "name": [
+                "user"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "required": true,
+              "reason": "SR-6.1"
+            },
+            {
+              "name": [
+                "password"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "required": true,
+              "reason": "SR-6.1"
+            }
+          ]
+        },
+        {
+          "value": "cluster",
+          "fields": [
+            {
+              "name": [
+                "urls"
+              ],
+              "type": {
+                "list": "text"
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "store_options",
+      "name": [
+        "store",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "core_type": "polyspec_session_store::StoreOptions",
+      "visibility": "public",
+      "origin": "generated",
+      "fields": [
+        {
+          "name": [
+            "lock",
+            "expire"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "lifetime"
+          ],
+          "type": "uint",
+          "default": {
+            "literal": 1440
+          },
+          "default_core": "polyspec_session_store::Options::LIFETIME"
+        },
+        {
+          "name": [
+            "prefix"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "PHPREDIS_SESSION:"
+          },
+          "default_core": "polyspec_session_store::Options::PREFIX"
+        },
+        {
+          "name": [
+            "lock",
+            "retries"
+          ],
+          "type": "uint",
+          "default": {
+            "literal": 100
+          },
+          "default_core": "polyspec_session_store::Options::LOCK_RETRIES"
+        },
+        {
+          "name": [
+            "lock",
+            "wait"
+          ],
+          "type": "uint",
+          "default": {
+            "literal": 20000
+          },
+          "default_core": "polyspec_session_store::Options::LOCK_WAIT"
+        }
+      ]
+    },
+    {
+      "id": "redis_sessions",
+      "name": [
+        "redis",
+        "sessions"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_session_store::RedisSessions",
+      "final": true,
+      "members": [
+        {
+          "id": "redis_sessions.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "setting"
+              ],
+              "type": {
+                "unit": "setting"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "store_options"
+              },
+              "required": true
+            }
+          ],
+          "returns": "self",
+          "raises": [
+            "polyspec_session_store::Error::InvalidLifetime",
+            "polyspec_session_store::Error::InvalidLockExpire",
+            "polyspec_session_store::Error::InvalidSetting"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::RedisSessions::new"
+          }
+        },
+        {
+          "id": "redis_sessions.open",
+          "name": [
+            "open"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "cookie"
+              ],
+              "type": {
+                "optional": "latin1"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "redis_session"
+          },
+          "raises": [
+            "polyspec_session_store::Error::LockTimeout",
+            "polyspec_session_store::Error::Reply",
+            "polyspec_session_store::Error::Redis",
+            "polyspec_session_store::Error::Connection",
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_session_store::RedisSessions::open",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "redis_session",
+      "name": [
+        "redis",
+        "session"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_session_store::RedisSession",
+      "final": true,
+      "constructible": false,
+      "cleanup": "redis_session.close",
+      "implements": [
+        {
+          "unit": "store"
+        }
+      ],
+      "members": [
+        {
+          "id": "redis_session.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "php_value"
+          },
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::get",
+            "receiver": "&mut self"
+          },
+          "optional_reason": "SE-2.1"
+        },
+        {
+          "id": "redis_session.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::set",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "redis_session.remove",
+          "name": [
+            "remove"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::remove",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "redis_session.renew",
+          "name": [
+            "renew"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [
+            "polyspec_session_store::Error::Random",
+            "polyspec_session_store::Error::Record",
+            "polyspec_session_store::Error::RecordNotArray",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::Store::renew",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "redis_session.found",
+          "name": [
+            "found"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_session_store::RedisSession::found",
+            "receiver": "&self"
+          },
+          "optional_reason": "SE-7.1"
+        },
+        {
+          "id": "redis_session.close",
+          "name": [
+            "close"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [
+            "polyspec_session_store::Error::LockLost",
+            "polyspec_session_store::Error::Reply",
+            "polyspec_session_store::Error::Redis",
+            "polyspec_session_store::Error::Connection",
+            "polyspec_session_store::Error::RecordWrite",
+            "polyspec_session_store::Error::Internal"
+          ],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_session_store::RedisSession::close",
+            "receiver": "self"
+          },
+          "optional_reason": "SE-7.6"
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "id": "change-names",
+      "rule": "N-1",
+      "reason": "plan N-1: a repository is named after what it handles, a noun in the singular, and this library is a store of the values of sessions, so the repository is session-store; design P-1 and E-2 give its package, module and error class names: Composer polyspec/session-store, PHP Polyspec\\SessionStore, PyPI polyspec-session-store, Python polyspec.session_store, npm @polyspec/session-store, PHP extension polyspec_session_store, SessionStore<Category>Error; the crates are polyspec-session-store and polyspec-session-store-core, -file and -redis",
+      "symbol": "polyspec/sessions, Polyspec\\Sessions, polyspec-sessions, polyspec.sessions, @polyspec/sessions",
+      "from": {
+        "php": "Composer polyspec/sessions, namespace Polyspec\\Sessions, extension polyspec_sessions, Sessions<Category>Error",
+        "python": "PyPI polyspec-sessions, module polyspec.sessions, Sessions<Category>Error",
+        "node": "npm @polyspec/sessions, Sessions<Category>Error"
+      },
+      "to": "store"
+    }
+  ],
+  "services": [
+    {
+      "id": "redis",
+      "address": "SESSION_STORE_REDIS_URL",
+      "state": "SESSION_STORE_REDIS_STATE",
+      "reason": "SE-10.7"
+    }
+  ],
+  "cases": [
+    {
+      "member": "memory_store.new",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.new.made"
+    },
+    {
+      "member": "memory_store.get",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.get.made"
+    },
+    {
+      "member": "memory_store.set",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.set.made"
+    },
+    {
+      "member": "memory_store.remove",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.remove.made"
+    },
+    {
+      "member": "memory_store.renew",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.renew.made"
+    },
+    {
+      "member": "memory_store.renew",
+      "file": "contracts/sessions.json",
+      "group": "internal"
+    },
+    {
+      "member": "memory_store.renewals",
+      "file": "contracts/sessions.json",
+      "group": "memory_store.renewals.made"
+    },
+    {
+      "member": "accept",
+      "file": "contracts/sessions.json",
+      "group": "identifier"
+    },
+    {
+      "member": "new_identifier",
+      "file": "contracts/sessions.json",
+      "group": "created"
+    },
+    {
+      "member": "file_sessions.in_directory",
+      "file": "contracts/file-sessions.json",
+      "group": "open"
+    },
+    {
+      "member": "file_sessions.open",
+      "file": "contracts/file-sessions.json",
+      "group": "openFaults"
+    },
+    {
+      "member": "file_sessions.collect",
+      "file": "contracts/file-sessions.json",
+      "group": "collectFaults"
+    },
+    {
+      "member": "file_sessions.lifetime",
+      "file": "contracts/file-sessions.json",
+      "group": "open"
+    },
+    {
+      "member": "file_sessions.directory",
+      "file": "contracts/file-sessions.json",
+      "group": "open"
+    },
+    {
+      "member": "redis_sessions.new",
+      "file": "contracts/redis-sessions.json",
+      "group": "open"
+    },
+    {
+      "member": "redis_sessions.open",
+      "file": "contracts/redis-sessions.json",
+      "group": "openFaults"
+    },
+    {
+      "member": "redis_sessions.open",
+      "file": "contracts/redis-sessions.json",
+      "group": "opening"
+    },
+    {
+      "member": "redis_sessions.open",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_sessions.open.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "file_session.get",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.get.made"
+    },
+    {
+      "member": "file_session.set",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.set.made"
+    },
+    {
+      "member": "file_session.remove",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.remove.made"
+    },
+    {
+      "member": "file_session.renew",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.renew.made"
+    },
+    {
+      "member": "file_sessions.open",
+      "file": "contracts/file-sessions.json",
+      "group": "file_sessions.open.cancel",
+      "only": {
+        "targets": [
+          "python",
+          "node"
+        ],
+        "reason": "SF-3.8"
+      }
+    },
+    {
+      "member": "redis_session.get",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.get.made"
+    },
+    {
+      "member": "redis_session.get",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.get.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "redis_session.set",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.set.made"
+    },
+    {
+      "member": "redis_session.set",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.set.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "redis_session.remove",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.remove.made"
+    },
+    {
+      "member": "redis_session.remove",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.remove.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "redis_session.renew",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.renew.made"
+    },
+    {
+      "member": "redis_session.renew",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.renew.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "redis_session.close",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.close.made"
+    },
+    {
+      "member": "redis_session.close",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.close.served",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "SE-10.7"
+      }
+    },
+    {
+      "member": "redis_session.found",
+      "file": "contracts/redis-sessions.json",
+      "group": "redis_session.found.made"
+    },
+    {
+      "member": "file_session.close",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.close.made"
+    },
+    {
+      "member": "file_session.found",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.found.made"
+    },
+    {
+      "member": "file_session.get",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.get.stored"
+    },
+    {
+      "member": "file_session.set",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.set.stored"
+    },
+    {
+      "member": "file_session.remove",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.remove.stored"
+    },
+    {
+      "member": "file_session.renew",
+      "file": "contracts/file-sessions.json",
+      "group": "file_session.renew.stored"
+    }
+  ]
+}

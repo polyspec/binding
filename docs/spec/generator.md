@@ -386,6 +386,19 @@ the design ids are those of the binding design.
   and a call added outside them, `text_in` and `type_error` in the constructor of a library class of PHP, compiled
   only for a contract that also had a text parameter; a contract without one failed the build. The Go crate keeps
   its list, because a helper that only a test feature uses is compiled under that feature (GN-4).
+- **GN-4e** A `use` declaration of a generated crate (`lib.rs` of each of the five targets) imports a name exactly
+  when the crate writes that name bare: a token of the name, read as GN-4 reads tokens, that no `::` precedes, outside
+  the `use` declarations. A name that the crate writes only by its path, such as `pyo3::types::PyDict`, is not
+  imported. The one exception is a trait that the crate imports for its methods alone, because a method call names no
+  trait: `ext_php_rs::convert::FromZval`, `ext_php_rs::convert::IntoZval`, `napi::JsValue`,
+  `napi::bindgen_prelude::JsObjectValue` and `wasm_bindgen::JsCast`, a closed list that the generator imports where the
+  crate calls their methods. One pass over each generated `lib.rs` applies the rule after the crate is written: it
+  removes from each list a name that is neither written bare nor such a trait, and removes a declaration with no name
+  left together with its attributes. Why: each list chose its names by a word match over a part of the crate
+  (`\bPyDict\b`), and a path matches a word, so the constructor that refuses a direct construction (GN-6b), which
+  writes `pyo3::types::PyDict`, imported `PyDict` into a crate that wrote it nowhere bare, and a consumer whose lints
+  deny warnings failed with `unused import: PyDict`. A pass over the written crate reads the whole text, which no
+  condition over one part of it does.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -2894,7 +2907,9 @@ the design ids are those of the binding design.
   the built-in form of the kind stays refused by name. Why: the generator refused every byte string of an alias with
   such a row, though the value meets the row that makes bytes or the one that makes a text, and the text is what the
   language gives: session-store `memory_store.get`, whose result is an optional `php_value`, was not compared in
-  Python (2 tests).
+  Python (2 tests). The Go test took the out rows only for the result of the case, so after `Set("a", []byte("y"))`
+  it expected `[]byte("y")` from `Get("a")` in `after`, which gives a `*any` that holds the string "y"; a step of a
+  function fixture was written the same way (B2.420).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

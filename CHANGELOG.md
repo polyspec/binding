@@ -5,8 +5,17 @@
 
 ## Unreleased
 
+- A merge keeps one row of a task whose state one side changed: `make hooks` declares the merge drivers of kit for the changelogs and the checklists, `kit-changelog`, `kit-checklist` and `kit-twin` with the target `twin-merge`, in place of the `merge=union` that kept the verification row and the done row of main both, and `make hooks-check` fails a checkout without them (K354, B2.424). Verified by replaying the merge of main into the 0.0.17 lane, which gave two rows of B2.418 under union, and by `make hooks-check`, which failed before `make hooks`.
 - The file of recipes that `binding release-recipes` writes holds `checkout-node-addon` for a contract with the target `node` (GN-3c, GN-19h): it generates the Node binding, runs `$(CARGO) build $(CARGOFLAGS) --locked --all-features -p polyspec-<library>-node`, a debug build with the test features as the end-to-end check builds the addon, and copies the cdylib from the target directory that `$(CARGO) metadata` names to `<name>.<platform>.node` beside the generated entry, which the entry loads when the platform package is not installed. A repository and a consumer linked to its checkout write no build, platform name or copy of their own; php-serialization lacked them and a consumer that linked its checkout failed to load the addon (T2.43). The platform names come from the one table `NODE_PLATFORMS`, and the entry and its tests share one expression for the platform of the machine (B2.407). Verified by `node --test --test-name-pattern=B2.407 tests/release-recipes.test.ts` in `packages/ts`, which failed before the change with `No rule to make target 'checkout-node-addon'`, and on a `git archive` copy of `tests/e2e/sample` by `make checkout-node-addon` with real cargo and the 226 generated Node tests against the addon that it put there.
 - `binding check` refuses a `default` on a parameter of a member of a callback interface and names it as `the parameter <name> of the callback member <member> of <unit> has a default`: the core passes every argument to a callback and a callback row gives exactly the parameters (CK-101), so the default had no meaning in any target, and the generator already refused such a member as not generated (CK-98, B2.409). Verified by `node --test --test-name-pattern=B2.409 tests/contract-check.test.ts` in `packages/ts`, which failed before the change.
+
+## 0.0.17
+
+- The Go test writes the expected result of a call of `after` and of a step of a function fixture by the out rows of a value alias, as it writes the result of a case and as the other four targets do (GN-13be): session-store found that after `Set("a", []byte("y"))` the test expected `[]byte("y")` from `Get("a")`, which gives a `*any` that holds the string "y" by the utf8 row of `php_value`. Verified by `node --test --test-name-pattern=B2.420 tests/generate.test.ts` in `packages/ts`, which failed before the change.
+
+## 0.0.16
+
+- A `use` declaration of a generated crate imports a name only when the crate writes it bare, with no `::` before it, or when the name is a trait that the crate imports for its methods (GN-4e). The Python crate of json imported `PyDict`, which it wrote only as `pyo3::types::PyDict`, and failed cargo clippy with `unused import: PyDict`. Verified by `node --test --test-name-pattern=B2.418 tests/generate.test.ts`, which checks every generated Rust file of each contract of tests/e2e, of the sample and of json and session-store. Also verified by `cargo clippy -- -D warnings` on the five binding crates of json v0.0.32.
 
 ## 0.0.15
 
