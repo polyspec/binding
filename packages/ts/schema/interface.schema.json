@@ -2094,7 +2094,7 @@
       }
     },
     "service": {
-      "description": "A service of the test run (GN-13j): address names the environment variable that holds its address; state, when given, the environment variable that holds the absolute path of the program that writes and reads its state; reason is the rule whose behaviour needs the service.",
+      "description": "A service of the test run (GN-13j): address names the environment variable that holds its address; state, when given, the environment variable that holds the absolute path of the program that writes and reads its state and runs the peer session of a case (GN-13n); reason is the rule whose behaviour needs the service.",
       "type": "object",
       "additionalProperties": false,
       "required": [

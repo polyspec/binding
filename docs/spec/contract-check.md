@@ -298,10 +298,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   defects of the copy that GN-19h fixed, and a file of recipes of another binding builds what that binding builds.
 - **CK-95** The services of the test run (generator GN-13j): `services` lists `{"id", "address", "state", "reason"}`,
   whose `address` and `state` are names of environment variables (`^[A-Z][A-Z0-9_]*$`) and whose `state` is
-  optional; the ids are unique. `binding check` reports a case whose `service` is not `{"id", "setup", "check"}`,
-  with `setup` and `check` optional, of an id of `services`; `setup`, `check` or the `service` of a call of `then` of
-  a service without `state`; a case value `{"service": ...}` or a call of `then` with `service` in a case without
-  `service`; and a row of `cases` whose group holds a case with `service` and that holds for WASM: its member is
+  optional; the ids are unique. `binding check` reports a case whose `service` is not `{"id", "setup", "peer",
+  "check"}`, with `setup`, `peer` and `check` optional, of an id of `services`; `setup`, `peer`, `check` or the
+  `service` of a call of `then` of a service without `state`; a case value `{"service": ...}` or a call of `then` with
+  `service` or `peer` in a case without `service`; a call of `then` with `peer` in a case whose service has no `peer`
+  (GN-13n); and a row of `cases` whose group holds a case with `service` and that holds for WASM: its member is
   generated for WASM and the row has no `only` without `wasm` (GN-13h). Why: a case that names a service that the run
   does not provide, or a state that no program writes, fails only when the tests run, and the core of WASM has no
   socket, so its test of such a case can only fail.

@@ -166,6 +166,77 @@ const PHP_SERVICE = `
     }
 `;
 
+// GN-13n: the peer session of the service of a case, a child process of the program of its state that runs while the
+// test runs: the test writes the JSON text of each step as one line and reads the line ready, closes its input at the
+// end and waits for its exit; the method After of the test kills a peer that it did not end, and waits for it.
+const PHP_PEER = `
+    /** @var array<string, array{process: resource, pipes: array<int, resource>}> */
+    private static array $peers = [];
+
+    private static function servicePeerReady(string $service, string $scope, string $step): void
+    {
+        $line = fgets(self::$peers[$scope]['pipes'][1]);
+        if ($line === "ready\\n") {
+            return;
+        }
+        if ($line === false) {
+            $peer = self::$peers[$scope];
+            unset(self::$peers[$scope]);
+            fclose($peer['pipes'][0]);
+            fclose($peer['pipes'][1]);
+            self::fail('G-5: ' . $step . ' of the peer of the service ' . $service . ' for ' . $scope . ' ended before ready with ' . proc_close($peer['process']) . ' (GN-13n)');
+        }
+        self::fail('G-5: ' . $step . ' of the peer of the service ' . $service . ' for ' . $scope . ' wrote ' . json_encode($line) . ' in place of ready (GN-13n)');
+    }
+
+    private static function servicePeer(string $service, string $variable, string $scope, string $value): void
+    {
+        $program = getenv($variable);
+        if ($program === false || $program === '') {
+            self::fail('G-5: the service ' . $service . ' of the case has no program of its state: the test run sets the environment variable ' . $variable . ' (GN-13j)');
+        }
+        $pipes = [];
+        $process = proc_open([$program, 'peer', $scope], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => STDERR], $pipes);
+        if ($process === false) {
+            self::fail('G-5: the peer of the service ' . $service . ' for ' . $scope . ' did not start (GN-13n)');
+        }
+        self::$peers[$scope] = ['process' => $process, 'pipes' => $pipes];
+        // A peer that ended refuses the line; the line ready that it did not write tells the step.
+        @fwrite($pipes[0], $value . "\\n");
+        self::servicePeerReady($service, $scope, 'peer');
+    }
+
+    private static function servicePeerNext(string $service, string $scope, string $value): void
+    {
+        @fwrite(self::$peers[$scope]['pipes'][0], $value . "\\n");
+        self::servicePeerReady($service, $scope, 'next');
+    }
+
+    private static function servicePeerEnd(string $service, string $scope): void
+    {
+        $peer = self::$peers[$scope];
+        unset(self::$peers[$scope]);
+        fclose($peer['pipes'][0]);
+        fclose($peer['pipes'][1]);
+        $status = proc_close($peer['process']);
+        if ($status !== 0) {
+            self::fail('G-5: the peer of the service ' . $service . ' for ' . $scope . ' exited with ' . $status . ' (GN-13n)');
+        }
+    }
+
+    #[\\PHPUnit\\Framework\\Attributes\\After]
+    public function stopServicePeers(): void
+    {
+        foreach (self::$peers as $peer) {
+            proc_terminate($peer['process'], 9);
+            fclose($peer['pipes'][0]);
+            fclose($peer['pipes'][1]);
+            proc_close($peer['process']);
+        }
+        self::$peers = [];
+    }
+`;
+
 const phpState = (service: CaseService, state: string, step: string, scope: string, value: string): string =>
   `self::serviceState(${phpText(service.id)}, ${phpText(state)}, ${phpText(step)}, ${phpText(scope)}, ${phpText(value)});`;
 
@@ -174,11 +245,12 @@ const phpState = (service: CaseService, state: string, step: string, scope: stri
 const serviceStart = (service: unknown): string => {
   const steps = serviceSteps(service, 'php');
   if (steps === undefined) return '';
-  return `\n        self::serviceAddress(${phpText(steps.service.id)}, ${phpText(steps.service.address)});${steps.setup === undefined ? '' : `\n        ${phpState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}`;
+  return `\n        self::serviceAddress(${phpText(steps.service.id)}, ${phpText(steps.service.address)});${steps.setup === undefined ? '' : `\n        ${phpState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}${steps.peer === undefined ? '' : `\n        self::servicePeer(${phpText(steps.service.id)}, ${phpText(steps.peer.state)}, ${phpText(steps.scope)}, ${phpText(steps.peer.value)});`}`;
 };
 const serviceEnd = (service: unknown): string => {
   const steps = serviceSteps(service, 'php');
-  return steps?.check === undefined ? '' : `\n        ${phpState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`;
+  const peer = steps?.peer === undefined ? '' : `\n        self::servicePeerEnd(${phpText(steps.service.id)}, ${phpText(steps.scope)});`;
+  return `${peer}${steps?.check === undefined ? '' : `\n        ${phpState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`}`;
 };
 
 export function phpTests(model: Model, layout: PhpLayout): string {
@@ -293,6 +365,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     arm: (local, member, faults) => `$${local} = \\${layout.namespace}\\Internal\\armFaults(${phpText(member)}, ${phpText(faults)});`,
     left: (local, what) => `self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($${local}), ${phpText(`G-5: ${what}`)});`,
     state: (service, state, step, scope, value) => phpState(service, state, step, scope, value),
+    peerNext: (service, scope, value) => `self::servicePeerNext(${phpText(service.id)}, ${phpText(scope)}, ${phpText(value)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -956,7 +1029,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
+{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('self::servicePeer(')) ? PHP_PEER : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}

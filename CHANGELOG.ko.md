@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
+<!-- source-sha256: a514cd9fea31c45e91b62cfe33e8b930b11a0261deeb07c2ea34c029f7c0e7c2 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- case는 자신의 `service`의 `peer`로 service의 peer session을 자신의 session과 동시에 실행할 수 있다. WASM을 뺀 각 시험 생성기는 상태 program의 자식 process인 peer를 setup 뒤에 시작하고, 각 단계의 JSON을 한 줄로 쓰고 줄 `ready`를 읽으며(`peer`가 있는 `then` 호출 뒤에도), check 전에 끝내고, 시험의 cleanup에서 죽인다. `binding check`는 상태가 없는 service의 peer와 peer가 없는 case의 peer 단계를 보고한다(GN-13n, CK-95, B2.330). 두 행 잠금 사이의 deadlock에는 동시에 두 session이 필요했지만 어떤 case도 그것을 실행하지 못했다.
 
 ## 0.0.12
 

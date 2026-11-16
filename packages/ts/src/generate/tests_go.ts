@@ -31,7 +31,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, serviceSteps, type CaseService,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, CASE_JSON_STRING_GOLDENS,
   fixtureType,
 } from './samples.ts';
@@ -832,6 +832,11 @@ function made(v: Values, b: Body, r: Receiver): string {
       const change = serviceChangeOf(step.service, 'go');
       b.lines.push(goState(change.service, change.state, 'change', change.service.scope('go'), change.value));
     }
+    // GN-13n: the call is followed by the next step of the peer, which runs while the receiver holds its state.
+    if (step.peer !== undefined) {
+      const next = servicePeerOf(step.peer, 'go');
+      b.lines.push(`servicePeerNext(t, ${goString(next.service.id)}, ${goString(next.service.scope('go'))}, ${goString(next.value)})`);
+    }
   }
   return local;
 }
@@ -847,6 +852,8 @@ function writeFiles(b: Body, files: unknown, service?: unknown): void {
   if (steps === undefined) return;
   b.lines.push(`serviceAddress(t, ${goString(steps.service.id)}, ${goString(steps.service.address)})`);
   if (steps.setup !== undefined) b.lines.push(goState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value));
+  // GN-13n: the peer starts after setup, before the receiver and the arguments of the case.
+  if (steps.peer !== undefined) b.lines.push(`servicePeer(t, ${goString(steps.service.id)}, ${goString(steps.peer.state)}, ${goString(steps.scope)}, ${goString(steps.peer.value)})`);
 }
 
 // GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
@@ -856,7 +863,10 @@ const goState = (service: CaseService, state: string, step: string, scope: strin
 // GN-13j: the check of the service of a case, at the end of its test.
 const serviceCheck = (service: unknown): string[] => {
   const steps = serviceSteps(service, 'go');
-  return steps?.check === undefined ? [] : [goState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)];
+  if (steps === undefined) return [];
+  // GN-13n: the peer ends before check.
+  const peer = steps.peer === undefined ? [] : [`servicePeerEnd(t, ${goString(steps.service.id)}, ${goString(steps.scope)})`];
+  return [...peer, ...(steps.check === undefined ? [] : [goState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)])];
 };
 
 function written<T>(fn: Fn, id: string, write: () => T): T | string {
@@ -1989,6 +1999,88 @@ func serviceState(t *testing.T, service string, variable string, step string, sc
 }
 `;
 
+// GN-13n: the peer session of the service of a case, a child process of the program of its state that runs while the
+// test runs: the test writes the JSON text of each step as one line and reads the line ready, closes its input at the
+// end and waits for its exit; the cleanup of the test kills a peer that it did not end, and waits for it.
+const PEER = `
+// servicePeerProcess is the peer session of the service of a case.
+type servicePeerProcess struct {
+	command *exec.Cmd
+	input   io.WriteCloser
+	output  *bufio.Reader
+}
+
+// servicePeers are the peers of the running test by their scopes; the tests of the package run one after another.
+var servicePeers = map[string]*servicePeerProcess{}
+
+// servicePeerReady reads the line ready of the peer of the scope after a step.
+func servicePeerReady(t *testing.T, service string, scope string, step string) {
+	t.Helper()
+	peer := servicePeers[scope]
+	line, err := peer.output.ReadString('\\n')
+	if err == nil && line == "ready\\n" {
+		return
+	}
+	if err != nil {
+		delete(servicePeers, scope)
+		_ = peer.input.Close()
+		t.Fatalf("G-5: %s of the peer of the service %s for %s ended before ready with %v (GN-13n)", step, service, scope, peer.command.Wait())
+	}
+	t.Fatalf("G-5: %s of the peer of the service %s for %s wrote %q in place of ready (GN-13n)", step, service, scope, line)
+}
+
+// servicePeer starts the peer of the scope with the JSON text of its start and reads its line ready.
+func servicePeer(t *testing.T, service string, variable string, scope string, value string) {
+	t.Helper()
+	program := os.Getenv(variable)
+	if program == "" {
+		t.Fatalf("G-5: the service %s of the case has no program of its state: the test run sets the environment variable %s (GN-13j)", service, variable)
+	}
+	command := exec.Command(program, "peer", scope)
+	command.Stderr = os.Stderr
+	input, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("G-5: the peer of the service %s for %s has no input: %v (GN-13n)", service, scope, err)
+	}
+	output, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatalf("G-5: the peer of the service %s for %s has no output: %v (GN-13n)", service, scope, err)
+	}
+	if err := command.Start(); err != nil {
+		t.Fatalf("G-5: the peer of the service %s for %s did not start: %v (GN-13n)", service, scope, err)
+	}
+	servicePeers[scope] = &servicePeerProcess{command: command, input: input, output: bufio.NewReader(output)}
+	t.Cleanup(func() {
+		if peer, ok := servicePeers[scope]; ok {
+			delete(servicePeers, scope)
+			_ = peer.command.Process.Kill()
+			_ = peer.command.Wait()
+		}
+	})
+	// A peer that ended refuses the line; the line ready that it did not write tells the step.
+	_, _ = io.WriteString(input, value+"\\n")
+	servicePeerReady(t, service, scope, "peer")
+}
+
+// servicePeerNext writes the JSON text of the next step to the peer of the scope and reads its line ready.
+func servicePeerNext(t *testing.T, service string, scope string, value string) {
+	t.Helper()
+	_, _ = io.WriteString(servicePeers[scope].input, value+"\\n")
+	servicePeerReady(t, service, scope, "next")
+}
+
+// servicePeerEnd closes the input of the peer of the scope and waits for its exit.
+func servicePeerEnd(t *testing.T, service string, scope string) {
+	t.Helper()
+	peer := servicePeers[scope]
+	delete(servicePeers, scope)
+	_ = peer.input.Close()
+	if err := peer.command.Wait(); err != nil {
+		t.Fatalf("G-5: the peer of the service %s for %s exited with %v (GN-13n)", service, scope, err)
+	}
+}
+`;
+
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
@@ -2213,7 +2305,7 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope, extraStd: readonly { path: string; alias: string }[] = []): string {
-  const std = ['context', 'encoding/hex', 'errors', 'fmt', 'log', 'math', 'math/big', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   // Owned-text helpers declare their imports without interpreting ordinary literals as code.
   std.push(...extraStd.map(({ path, alias }) => `${alias} ${goString(path)}`));
   std.push('"testing"');
@@ -2289,6 +2381,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(composedText || /\bcaseFile\(t, /.test(all) ? [CASE_FILE] : []),
     ...(composedText ? [CASE_TEXT_PATH, caseTextWitness(v)] : []),
     ...(/\bservice(Address|State)\(t, /.test(all) ? [SERVICE] : []),
+    ...(/\bservicePeer\(t, /.test(all) ? [PEER] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),

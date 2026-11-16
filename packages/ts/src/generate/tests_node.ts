@@ -244,6 +244,60 @@ function serviceState(service, variable, step, scope, value) {
 }
 `;
 
+// GN-13n: the peer session of the service of a case, a child process of the program of its state that runs while the
+// test runs: the test writes the JSON text of each step as one line and awaits the line ready, closes its input at the
+// end and awaits its exit; afterEach kills a peer that the test did not end, and awaits its exit.
+const NODE_PEER = `
+const peers = new Map();
+afterEach(async () => {
+  for (const peer of peers.values()) {
+    peer.child.kill('SIGKILL');
+    await peer.exited;
+  }
+  peers.clear();
+});
+
+async function servicePeerReady(service, scope, step) {
+  const peer = peers.get(scope);
+  const line = await peer.lines.next();
+  if (line.done) {
+    peers.delete(scope);
+    assert.fail(\`G-5: \${step} of the peer of the service \${service} for \${scope} ended before ready with \${await peer.exited} (GN-13n)\`);
+  }
+  if (line.value !== 'ready') assert.fail(\`G-5: \${step} of the peer of the service \${service} for \${scope} wrote \${JSON.stringify(line.value)} in place of ready (GN-13n)\`);
+}
+
+async function servicePeer(service, variable, scope, value) {
+  const program = process.env[variable] ?? '';
+  if (program === '') assert.fail(\`G-5: the service \${service} of the case has no program of its state: the test run sets the environment variable \${variable} (GN-13j)\`);
+  const child = spawn(program, ['peer', scope], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const exited = new Promise((resolve) => child.on('close', (status, signal) => resolve(status ?? signal)));
+  const started = await new Promise((resolve) => {
+    child.on('spawn', () => resolve(undefined));
+    child.on('error', (error) => resolve(error));
+  });
+  if (started !== undefined) assert.fail(\`G-5: the peer of the service \${service} for \${scope} did not start: \${started.message} (GN-13n)\`);
+  // A peer that ended refuses the line; the line ready that it did not write tells the step.
+  child.stdin.on('error', () => undefined);
+  peers.set(scope, { child, exited, lines: createInterface({ input: child.stdout })[Symbol.asyncIterator]() });
+  child.stdin.write(\`\${value}\\n\`);
+  await servicePeerReady(service, scope, 'peer');
+}
+
+async function servicePeerNext(service, scope, value) {
+  peers.get(scope).child.stdin.write(\`\${value}\\n\`);
+  await servicePeerReady(service, scope, 'next');
+}
+
+async function servicePeerEnd(service, scope) {
+  const peer = peers.get(scope);
+  peers.delete(scope);
+  peer.child.stdin.end();
+  const status = await peer.exited;
+  if (status !== 0) assert.fail(\`G-5: the peer of the service \${service} for \${scope} exited with \${status} (GN-13n)\`);
+}
+`;
+
 const jsState = (service: CaseService, state: string, step: string, scope: string, value: string): string =>
   `serviceState(${jsString(service.id)}, ${jsString(state)}, ${jsString(step)}, ${jsString(scope)}, ${jsString(value)});`;
 
@@ -252,11 +306,12 @@ const jsState = (service: CaseService, state: string, step: string, scope: strin
 export const nodeServiceStart = (service: unknown): string => {
   const steps = serviceSteps(service, 'node');
   if (steps === undefined) return '';
-  return `\n  serviceAddress(${jsString(steps.service.id)}, ${jsString(steps.service.address)});${steps.setup === undefined ? '' : `\n  ${jsState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}`;
+  return `\n  serviceAddress(${jsString(steps.service.id)}, ${jsString(steps.service.address)});${steps.setup === undefined ? '' : `\n  ${jsState(steps.service, steps.setup.state, 'setup', steps.scope, steps.setup.value)}`}${steps.peer === undefined ? '' : `\n  await servicePeer(${jsString(steps.service.id)}, ${jsString(steps.peer.state)}, ${jsString(steps.scope)}, ${jsString(steps.peer.value)});`}`;
 };
 export const nodeServiceEnd = (service: unknown): string => {
   const steps = serviceSteps(service, 'node');
-  return steps?.check === undefined ? '' : `\n  ${jsState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`;
+  const peer = steps?.peer === undefined ? '' : `\n  await servicePeerEnd(${jsString(steps.service.id)}, ${jsString(steps.scope)});`;
+  return `${peer}${steps?.check === undefined ? '' : `\n  ${jsState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`}`;
 };
 
 // GN-6y, GN-13i: the imports of node:fs and node:os that the directory of a test and the files of a case use.
@@ -344,6 +399,7 @@ export function nodeTests(model: Model): string {
     },
     left: (local, what) => `assert.deepEqual(addon().__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
     state: (service, state, step, scope, value) => jsState(service, state, step, scope, value),
+    peerNext: (service, scope, value) => `await servicePeerNext(${jsString(service.id)}, ${jsString(scope)}, ${jsString(value)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -792,6 +848,8 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const usesCasePath = usesCaseFile || blocks.some((block) => block.includes('casePath('));
   // GN-13j: the helpers of a service, which the lines of a test and its values call.
   const usesService = blocks.some((block) => /\bservice(Address|State)\(/.test(block));
+  // GN-13n: the helpers of a peer session, which the lines of a test with a peer await.
+  const usesPeer = blocks.some((block) => /\bservicePeer\(/.test(block));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'node') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
@@ -801,15 +859,15 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const forms = usesTokens ? tokenForms(model, 'node') : [];
   for (const form of forms) if (form.library !== undefined) foreignModules.add(form.library);
   return `${header('//')}
-import assert from 'node:assert/strict';${usesService ? "\nimport { spawnSync } from 'node:child_process';" : ''}
+import assert from 'node:assert/strict';${usesService ? `\nimport { ${usesPeer ? 'spawn, ' : ''}spawnSync } from 'node:child_process';` : ''}
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile, usesCaseText) : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import { dirname, join } from 'node:path';${usesPeer ? "\nimport { createInterface } from 'node:readline';" : ''}
+import test${usesCasePath || usesPeer ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile, usesCaseText) : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesService ? NODE_SERVICE : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesService ? NODE_SERVICE : ''}${usesPeer ? NODE_PEER : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

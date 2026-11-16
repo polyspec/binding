@@ -2615,6 +2615,52 @@ the design ids are those of the binding design.
   imitates a condition of the system (G-5); a point that gave a reply in place of the server would run a path that no
   server takes. The meaning of a state belongs to the repository that owns the service, so binding passes the JSON of
   the case to the program of that repository and speaks no protocol of a service.
+- **GN-13n** A case may run a second session of its service at the same time as its own, the peer, through `peer` of
+  its `service`: `"service": {"id": "<service id>", "setup": <JSON>, "peer": <JSON>, "check": <JSON>}`, and a call of
+  `then` of an instance value (GN-13f) may have `"peer": <JSON>`. The peer is a process of the program of the variable
+  `state` (GN-13j), which the test starts with the arguments `peer` and the scope after `setup` and before the receiver,
+  the arguments and the fixtures of the case. The test writes the JSON text of `peer` as one line to the standard
+  input of the peer and reads one line from its standard output, which is `ready` when the session of the peer holds
+  the state that the JSON states. After a call of `then` with `peer`, the test writes the JSON text of that `peer` as
+  one line and reads the line `ready` again. After the call of the case and its checks, and before `check`, the test
+  closes the standard input of the peer and waits for its exit, whose status is 0 when the session of the peer ended
+  as the JSON of the case states. The standard error of the peer is the standard error of the test. A line other than
+  `ready`, the end of the output before `ready`, a peer that does not start and a status that is not 0 fail the test
+  with the step, the service, the scope and the line or the status. The test waits for each line and for the exit
+  without a time limit. A test that ends before it waited for the exit of its peer, by a failure or by an exception,
+  kills the peer and waits for its exit in its cleanup, so no peer outlives its test and no lock of a peer stays on
+  the server: Go `t.Cleanup`, Python `addCleanup`, PHP a method with the attribute `After`, and Node `afterEach`. Each
+  target runs the peer with helpers of its test file, which find the peer of the test by its scope: Python
+  `_service_peer`, `_service_peer_next` and `_service_peer_end` with `subprocess.Popen`, Node `servicePeer`,
+  `servicePeerNext` and `servicePeerEnd` with `spawn` of `node:child_process`, which the test awaits, PHP
+  `self::servicePeer`, `self::servicePeerNext` and `self::servicePeerEnd` with `proc_open`, and Go
+  `servicePeer(t, ...)`, `servicePeerNext(t, ...)` and `servicePeerEnd(t, ...)` with `os/exec`. WASM reaches no service
+  (GN-13j), so its test of such a case fails with that reason. `peer` of a service without `state`, a `peer` of a call
+  of `then` in a case whose service has no `peer`, and a `peer` of a call of `then` in a case without `service` fail
+  the test of the case with the reason in every target, and the other tests are written (G-4, GN-13e); `binding check`
+  reports them (CK-95). The order of the statements of the two sessions is the order of the case, and the JSON of each
+  step states the statements that the peer runs. A deadlock between two row locks is such a case:
+
+  ```json
+  {"id": "a_deadlock_between_two_row_locks", "rule": "SVC-9",
+   "service": {"id": "postgres", "setup": {"table": "service_deadlock_row", "rows": [[1], [2]]},
+               "peer": {"lock": 1, "victim": false}, "check": {"released": true}},
+   "receiver": {"new": "transaction.begin", "args": {"dsn": {"service": "address"}},
+                "then": [{"call": "transaction.lock_row", "args": {"row": 2}, "peer": {"lock": 2}}]},
+   "row": 1, "raises": {"kind": "deadlock"}}
+  ```
+
+  The peer locks row 1 and writes `ready`; the receiver locks row 2, after which the peer requests row 2 and writes
+  `ready` when its statement waits for the lock; the call of the case requests row 1, which closes the cycle, and the
+  server ends one of the two transactions with the deadlock. The program of the repository makes the transaction that
+  the case names the one that the server ends, for example by the deadlock timeout of the session of the peer on
+  PostgreSQL and by the number of rows that the transaction of the peer changed on MySQL, and the exit status of the
+  peer states whether its session ended as the JSON states: with `"victim": false` its transaction commits, and the
+  case raises `deadlock`. Why: a deadlock needs two sessions that each hold a lock that the other requests, so a second
+  client must run while the call of the case waits; a `change` of GN-13j runs the program to its end before the next
+  statement of the test and cannot wait inside a lock. The peer is a child process of the test, so the test owns it
+  and ends it; the session and its statements belong to the repository that owns the service, and binding passes the
+  JSON of the case to its program as GN-13j does and reads no line other than `ready`.
 
 - **GN-13k** Every alias-case test checks the declared error status, including an explicit `null`, and the errno
   as well as the exact error class and kind. A case without `status` declares no status expectation. An absent or

@@ -252,8 +252,10 @@ export class CaseService {
   readonly caseId: string;
   readonly setup: string | undefined;
   readonly check: string | undefined;
+  // GN-13n: the JSON text of the start of the peer session, which runs at the same time as the session of the case.
+  readonly peer: string | undefined;
 
-  constructor(declared: Service, member: string, caseId: string, setup: string | undefined, check: string | undefined) {
+  constructor(declared: Service, member: string, caseId: string, setup: string | undefined, check: string | undefined, peer?: string) {
     this.id = declared.id;
     this.address = declared.address;
     this.state = declared.state;
@@ -261,6 +263,7 @@ export class CaseService {
     this.caseId = caseId;
     this.setup = setup;
     this.check = check;
+    this.peer = peer;
   }
 
   // The scope of the case in a target: the space of the service that the case alone uses.
@@ -310,13 +313,13 @@ function caseServiceOf(services: readonly Service[], member: string, record: Rec
   const raw = record['service'];
   if (raw === undefined) return undefined;
   const object = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
-  if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'check'].includes(key))) {
+  if (object === undefined || typeof object['id'] !== 'string' || Object.keys(object).some((key) => !['id', 'setup', 'peer', 'check'].includes(key))) {
     return new ServiceRefused(`service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${shown(raw)}`);
   }
   const declared = services.find((service) => service.id === object['id']);
   if (declared === undefined) return new ServiceRefused(`the service ${object['id']} is not one of services of the contract (GN-13j)`);
   const text = (value: unknown): string | undefined => (value === undefined ? undefined : shown(value));
-  return new CaseService(declared, member, String(record['id']), text(object['setup']), text(object['check']));
+  return new CaseService(declared, member, String(record['id']), text(object['setup']), text(object['check']), text(object['peer']));
 }
 
 // GN-13j: the case with its service read: the service of the case, each value {"service": ...} at any place of it, and
@@ -341,10 +344,11 @@ export function withServices(services: readonly Service[], member: string, kase:
     for (const [key, item] of Object.entries(object)) {
       if (key === 'then' && isInstanceValue(object) && Array.isArray(item)) {
         out[key] = item.map((step) => {
-          if (typeof step !== 'object' || step === null || Array.isArray(step) || !('service' in step)) return walk(step);
-          const { service: change, ...rest } = step as Record<string, unknown>;
+          if (typeof step !== 'object' || step === null || Array.isArray(step) || !('service' in step || 'peer' in step)) return walk(step);
+          const { service: change, peer, ...rest } = step as Record<string, unknown>;
           found = true;
-          return { ...(walk(rest) as Record<string, unknown>), service: new ServiceChange(shown(change), service) };
+          // GN-13n: the step of the peer after the call, which the peer of the service of the case reads.
+          return { ...(walk(rest) as Record<string, unknown>), ...(change === undefined ? {} : { service: new ServiceChange(shown(change), service) }), ...(peer === undefined ? {} : { peer: new ServiceChange(shown(peer), service) }) };
         });
       } else out[key] = walk(item);
     }
@@ -374,6 +378,7 @@ export function serviceOf(given: unknown, target: string): CaseService | undefin
   if (!(given instanceof CaseService)) throw new Unsupported(`service of a case is {"id": "<service id>", "setup": <JSON>, "check": <JSON>} (GN-13j), not ${shown(given)}`);
   if (target === 'wasm') throw new Unsupported('the core of WASM has no socket, so it reaches no service; the row of the case in cases has an only without wasm (GN-13j)');
   if (given.state === undefined && (given.setup !== undefined || given.check !== undefined)) throw new Unsupported(`the service ${given.id} has no state, so the case gives no setup, check or service of a call of then (GN-13j)`);
+  if (given.state === undefined && given.peer !== undefined) throw new Unsupported(`the service ${given.id} has no state, so the case gives no peer (GN-13n)`);
   return given;
 }
 
@@ -398,6 +403,14 @@ export function serviceChangeOf(change: ServiceChange, target: string): { servic
   return { service, state: service.state, value: change.value };
 }
 
+// GN-13n: the step of the peer after a call of then: the service and the JSON text that the peer reads as one line.
+export function servicePeerOf(step: ServiceChange, target: string): { service: CaseService; value: string } {
+  if (step.service === undefined) throw new Unsupported('the peer of a call of then stands in a case without service (GN-13n)');
+  const service = namedService(step.service, 'the peer of a call of then', target);
+  if (service.peer === undefined) throw new Unsupported(`a call of then steps the peer, but the service ${service.id} of the case has no peer (GN-13n)`);
+  return { service, value: step.value };
+}
+
 // GN-13j: the steps of the program of the state of a service that a test runs: setup before the values of the case,
 // check after its call; each with the variable of the program, the scope and the JSON text.
 export interface ServiceSteps {
@@ -405,6 +418,8 @@ export interface ServiceSteps {
   scope: string;
   setup?: { state: string; value: string };
   check?: { state: string; value: string };
+  // GN-13n: the start of the peer, after setup; the test ends the peer before check.
+  peer?: { state: string; value: string };
 }
 export function serviceSteps(given: unknown, target: string): ServiceSteps | undefined {
   const service = serviceOf(given, target);
@@ -412,7 +427,8 @@ export function serviceSteps(given: unknown, target: string): ServiceSteps | und
   const step = (value: string | undefined): { state: string; value: string } | undefined => (value === undefined || service.state === undefined ? undefined : { state: service.state, value });
   const setup = step(service.setup);
   const check = step(service.check);
-  return { service, scope: service.scope(target), ...(setup === undefined ? {} : { setup }), ...(check === undefined ? {} : { check }) };
+  const peer = step(service.peer);
+  return { service, scope: service.scope(target), ...(setup === undefined ? {} : { setup }), ...(check === undefined ? {} : { check }), ...(peer === undefined ? {} : { peer }) };
 }
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
@@ -1557,7 +1573,8 @@ export interface Receiver {
   // A call of then may fail with a kind, which the test requires before the next step; it may arm faults for itself
   // alone, as the JSON text that the arming entry point takes, and with on: receiver it calls the receiver of the value.
   // GN-13j: a call of then may change the state of the service of the case after it.
-  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver'; service?: ServiceChange }[];
+  // GN-13n: and it may step the peer of that service after it.
+  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver'; service?: ServiceChange; peer?: ServiceChange }[];
 }
 
 // GN-13f: whether a receiver, or a receiver that it is made on, has a call of then that arms faults.
@@ -1730,7 +1747,9 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
     if (step['raises'] !== undefined && typeof kind !== 'string') return fail(`then ${i} expects ${fn.member.id} to fail by {"kind": <kind>}`);
     const change = step['service'];
     if (change !== undefined && !(change instanceof ServiceChange)) return fail(`then ${i} changes the service by ${shown(change)}, which the generator does not read (GN-13j)`);
-    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}), ...(change === undefined ? {} : { service: change }) };
+    const peer = step['peer'];
+    if (peer !== undefined && !(peer instanceof ServiceChange)) return fail(`then ${i} steps the peer by ${shown(peer)}, which the generator does not read (GN-13n)`);
+    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}), ...(change === undefined ? {} : { service: change }), ...(peer === undefined ? {} : { peer }) };
   });
   const picks = pick.map((step, i): Pick => (step === '?' ? { present: presentType(model, factory.returns, pick.slice(0, i)) } : typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
@@ -1755,6 +1774,8 @@ export interface MadeForm {
   left: (local: string, what: string) => string;
   // GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
   state?: (service: CaseService, state: string, step: 'setup' | 'change' | 'check', scope: string, value: string) => string;
+  // GN-13n: the statement that writes the JSON text of a step to the peer of the scope and reads its line ready.
+  peerNext?: (service: CaseService, scope: string, value: string) => string;
 }
 
 // GN-13f: the instance of an instance value at a place of a type: the class of the place, also inside an `optional`, or
@@ -1811,6 +1832,13 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
         const change = serviceChangeOf(step.service, target);
         if (form.state === undefined) throw new Unsupported(`the state of a service is not generated for ${target} (GN-13j)`);
         lines.push(form.state(change.service, change.state, 'change', change.service.scope(target), change.value));
+      }
+      // GN-13n: the call is followed by the next step of the peer, which runs while the receiver holds its state.
+      if (step.peer !== undefined) {
+        const target = form.ctx.target ?? form.ctx.lang;
+        const next = servicePeerOf(step.peer, target);
+        if (form.peerNext === undefined) throw new Unsupported(`the peer of a service is not generated for ${target} (GN-13n)`);
+        lines.push(form.peerNext(next.service, next.service.scope(target), next.value));
       }
     }
     return form.name(local);

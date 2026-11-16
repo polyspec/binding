@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A case may run a peer session of its service at the same time as its own through `peer` of its `service`: each test generator except WASM starts the peer, a child process of the program of the state, after setup, writes the JSON of each step as one line and reads the line `ready`, also after a call of `then` with `peer`, ends it before check and kills it in the cleanup of the test, and `binding check` reports a peer of a service without state and a step of the peer in a case without a peer (GN-13n, CK-95, B2.330). A deadlock between two row locks needs two sessions at once, which no case could run.
+
 ## 0.0.12
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.

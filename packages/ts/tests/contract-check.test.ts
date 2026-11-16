@@ -1658,6 +1658,30 @@ describe('CK-95 the services of the test run (GN-13j)', () => {
   test('a value of a service in a case without service', () => {
     assert.deepEqual(ck95(run((_c, cases) => { delete cases.served[0].service; })), ['the case twice_from_the_service of shapes.repeat: a case value {"service": "address"} stands in a case without service (GN-13j)']);
   });
+  test('B2.330: a peer of a service without state, and a step of the peer in a case without a peer or without service (GN-13n)', () => {
+    const peered = (contract: any, cases: any): void => {
+      cases.buffer_size[0].receiver = { new: 'buffer.new', args: { start: 'ab' }, then: [{ call: 'buffer.append', args: { source: 'c' }, peer: { lock: 2 } }] };
+      delete cases.buffer_size[0].start;
+      cases.served[0].service.peer = { lock: 1 };
+      contract.cases.find((row: any) => row.member === 'buffer.size').only = { targets: ['php', 'python', 'node', 'go'], reason: 'G-5' };
+    };
+    // A case whose service has a peer, and a call of then that steps it, has no finding.
+    assert.deepEqual(ck95(run((contract, cases) => {
+      peered(contract, cases);
+      cases.buffer_size[0].service = { id: 'store', peer: { lock: 1 } };
+    })), []);
+    assert.deepEqual(ck95(run((contract, cases) => {
+      peered(contract, cases);
+      delete contract.services[0].state;
+      delete cases.served[0].service.setup;
+      delete cases.served[0].service.check;
+      cases.buffer_size[0].service = { id: 'store' };
+    })), [
+      'the case the_size_of_a_text_source of buffer.size: a call of then steps the peer, but the service store of the case has no peer (GN-13n)',
+      'the case twice_from_the_service of shapes.repeat: the service store has no state, so the case gives no peer (GN-13n)',
+    ]);
+    assert.deepEqual(ck95(run(peered)), ['the case the_size_of_a_text_source of buffer.size: a call of then steps the peer, but the case has no service (GN-13n)']);
+  });
   test('a row of a case with a service that holds for WASM', () => {
     assert.deepEqual(ck95(run((contract) => { delete contract.cases.at(-1).only; })), ['the row of shapes.repeat holds the case twice_from_the_service, which runs against the service store, for wasm, whose core has no socket; give the row an only without wasm (GN-13h, GN-13j)']);
   });

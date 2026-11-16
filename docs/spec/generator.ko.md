@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bd89d413f9a96bbf19a3caf97e5cd80e14e66b2698ef00039de46a43464613fb -->
+<!-- source-sha256: 284959da0d9547d19ea38d2be5ecad27e3ba6300f70bbab8c4f806bb2e5563fa -->
 # 생성기
 
 [English](generator.md)
@@ -2120,6 +2120,46 @@
   레코드 같은 서버의 상태는 저장 파일처럼(GN-13i) case의 입력이고, fault injection point는 시스템의 조건을 흉내
   낸다(G-5). 서버 대신 응답을 준 point는 어떤 서버도 지나지 않는 경로를 실행한다. 상태의 뜻은 service를 소유한 레포의
   것이므로, binding은 case의 JSON을 그 레포의 program에 넘기고 service의 어떤 protocol도 말하지 않는다.
+- **GN-13n** case는 자신의 `service`의 `peer`로 service의 두 번째 session인 peer를 자신의 session과 동시에 실행할 수
+  있다. 형식은 `"service": {"id": "<service id>", "setup": <JSON>, "peer": <JSON>, "check": <JSON>}`이고, instance
+  값(GN-13f)의 `then` 호출은 `"peer": <JSON>`을 가질 수 있다. peer는 변수 `state`(GN-13j)의 program의 process이고,
+  시험은 `setup` 뒤, case의 receiver, 인자, fixture 전에 인자 `peer`와 scope로 그것을 시작한다. 시험은 `peer`의 JSON
+  text를 한 줄로 peer의 표준 입력에 쓰고 그 표준 출력에서 한 줄을 읽는다. 그 줄은 peer의 session이 JSON이 밝힌 상태를
+  잡았을 때 `ready`다. `peer`가 있는 `then` 호출 뒤에 시험은 그 `peer`의 JSON text를 한 줄로 쓰고 다시 줄 `ready`를
+  읽는다. case의 호출과 그 확인 뒤, `check` 전에 시험은 peer의 표준 입력을 닫고 그 종료를 기다린다. 종료 상태는 peer의
+  session이 case의 JSON이 밝힌 대로 끝났을 때 0이다. peer의 표준 오류는 시험의 표준 오류다. `ready`가 아닌 줄, `ready`
+  전의 출력 끝, 시작하지 못한 peer, 0이 아닌 상태는 단계, service, scope, 그 줄이나 상태와 함께 시험을 실패시킨다.
+  시험은 각 줄과 종료를 시간 제한 없이 기다린다. peer의 종료를 기다리기 전에 실패나 예외로 끝나는 시험은 cleanup에서
+  peer를 죽이고 그 종료를 기다린다. 그래서 어떤 peer도 시험보다 오래 살지 않고 peer의 잠금이 서버에 남지 않는다. Go는
+  `t.Cleanup`, Python은 `addCleanup`, PHP는 attribute `After`가 있는 method, Node는 `afterEach`다. 각 target은 시험
+  파일의 helper로 peer를 실행하고, helper는 시험의 peer를 scope로 찾는다. Python은 `subprocess.Popen`을 쓰는
+  `_service_peer`, `_service_peer_next`, `_service_peer_end`, Node는 `node:child_process`의 `spawn`을 쓰고 시험이
+  await하는 `servicePeer`, `servicePeerNext`, `servicePeerEnd`, PHP는 `proc_open`을 쓰는 `self::servicePeer`,
+  `self::servicePeerNext`, `self::servicePeerEnd`, Go는 `os/exec`를 쓰는 `servicePeer(t, ...)`,
+  `servicePeerNext(t, ...)`, `servicePeerEnd(t, ...)`다. WASM은 어떤 service에도 닿지 못하므로(GN-13j) 그런 case의
+  시험은 그 이유로 실패한다. `state`가 없는 service의 `peer`, service에 `peer`가 없는 case의 `then` 호출의 `peer`,
+  `service`가 없는 case의 `then` 호출의 `peer`는 모든 target에서 그 case의 시험을 그 이유로 실패시키고, 다른 시험은
+  쓴다(G-4, GN-13e). `binding check`가 그것을 보고한다(CK-95). 두 session의 문장 순서는 case의 순서이고, 각 단계의
+  JSON이 peer가 실행하는 문장을 밝힌다. 두 행 잠금 사이의 deadlock이 그런 case다.
+
+  ```json
+  {"id": "a_deadlock_between_two_row_locks", "rule": "SVC-9",
+   "service": {"id": "postgres", "setup": {"table": "service_deadlock_row", "rows": [[1], [2]]},
+               "peer": {"lock": 1, "victim": false}, "check": {"released": true}},
+   "receiver": {"new": "transaction.begin", "args": {"dsn": {"service": "address"}},
+                "then": [{"call": "transaction.lock_row", "args": {"row": 2}, "peer": {"lock": 2}}]},
+   "row": 1, "raises": {"kind": "deadlock"}}
+  ```
+
+  peer는 행 1을 잠그고 `ready`를 쓴다. receiver가 행 2를 잠그면 peer는 행 2를 요청하고, 그 문장이 잠금을 기다릴 때
+  `ready`를 쓴다. case의 호출이 행 1을 요청하면 순환이 닫히고, 서버는 두 transaction 중 하나를 deadlock으로 끝낸다. 레포의
+  program은 서버가 끝내는 transaction을 case가 이름한 쪽으로 만든다. 예를 들어 PostgreSQL에서는 peer session의 deadlock
+  timeout으로, MySQL에서는 peer의 transaction이 바꾼 행의 수로 정한다. peer의 종료 상태는 그 session이 JSON이 밝힌 대로
+  끝났는지를 밝힌다. `"victim": false`이면 peer의 transaction은 commit하고 case는 `deadlock`을 raise한다. 이유: deadlock에는
+  서로 상대가 요청하는 잠금을 잡은 두 session이 필요하므로, case의 호출이 기다리는 동안 두 번째 client가 실행되어야 한다.
+  GN-13j의 `change`는 시험의 다음 문장 전에 program을 끝까지 실행하므로 잠금 안에서 기다릴 수 없다. peer는 시험의 자식
+  process이므로 시험이 그것을 소유하고 끝낸다. session과 그 문장은 service를 소유한 레포의 것이고, binding은 GN-13j처럼
+  case의 JSON을 그 program에 넘기며 `ready` 외의 줄을 읽지 않는다.
 
 - **GN-13k** 모든 alias-case 시험은 정확한 error class와 kind뿐 아니라 선언된 error status(명시적 `null`
   포함)와 errno도 확인한다. `status`를 생략한 case는 status 기대값을 선언하지 않는다. 없거나 null인 errno는
