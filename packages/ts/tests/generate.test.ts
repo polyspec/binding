@@ -11543,6 +11543,21 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.394: the Go walk of a value alias with a container and a nested row gives the source to open_level (GN-6bb, GN-6as)', () => {
+  // orm packages/go/internal/ffi/generated/lib.rs: the nested arm inside the fn item open_level read the source of
+  // make_value, which a fn item cannot capture (E0434). The nested sample with a list row too.
+  const { contract, caseFiles, foreign } = nestedSample();
+  const wrapped = contract.units.find((u: any) => u.id === 'wrapped');
+  wrapped.out.push({ kind: 'list', make: Object.fromEntries(FIVE.map((lang) => [lang, 'list'])) });
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  const open = lib.slice(lib.indexOf('fn make_wrapped('));
+  assert.match(open, /fn open_level\(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues/);
+  assert.match(open, /levels\.extend\(open_level\(output, out, source[,)]/);
+  // Without a container the make function names the source that the nested arm reads.
+  const plain = text(generate({ contract: nestedSample().contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(plain, /fn make_wrapped\(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues[,)]/);
+});
+
 test('B2.393: Go calls an optional func of a record field through the pointer in parentheses (GN-6bi, GN-6z)', () => {
   // orm zz_generated_orm.go: `returned, err := *cfg.AuditSource()` failed go vet with `is not a function`, since a call
   // binds before the star. The functions fixture with a record whose optional field holds a function type.

@@ -971,6 +971,10 @@ the design ids are those of the binding design.
   targets generate the row. Refused by name (G-4): another make of the kind, a row with `when`, and a value type that
   `ValueType` does not have. Why: the core keeps a value of another repository inside its own value, and only the
   binding of that repository's value type knows how a language holds it.
+  The source is a parameter of the function that opens a level of the walk, in Go as in the other targets, because a
+  nested fn item of Rust captures no local of the function around it. Why: the Go crate of orm, whose value alias
+  `orm_value` makes a list, a map and a nested `json_value`, read the source of the make function inside its
+  `open_level` and failed with E0434.
 - **GN-6bc** An `out` row of a value alias whose make is a member of a class of this contract that takes one parameter
   of the type `list<alias>` (kind `list`) or `map<alias>` (kind `map`) is made in two steps: the walk makes the
   children by the rows of the alias into the array of the language, as the built-in form does, and when the last

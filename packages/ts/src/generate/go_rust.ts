@@ -1796,11 +1796,13 @@ const goArm = (walk: GoWalk, ...lines: string[]): string => {
 // handles, with which the arms read the OutValue again for a when.
 function goMake(name: string, arms: (walk: GoWalk) => string, tail: (walk: GoWalk) => string, kept?: { name: string; type: string }): string {
   const plain: GoWalk = { end: '', ret: 'return;', level: () => '' };
+  // GN-6bb: an arm that makes a nested value reads its children from the source, which open_level then takes.
+  const sourced = /\bsource\b/.test(arms(plain));
   const used = GO_CHILDREN.filter((children) => arms({ end: 'None', ret: 'return None;', level: (c) => `OutChildren::${c}` }).includes(`OutChildren::${children.name}`));
   if (used.length === 0) {
     // No row makes a container, so the value has no children and the function has no walk.
     return `
-fn make_${name}(output: &mut Vec<u8>, out: OutValue, _source: &mut dyn OutValues${kept === undefined ? '' : `, _${kept.name}: ${kept.type}`}) {
+fn make_${name}(output: &mut Vec<u8>, out: OutValue, ${sourced ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, _${kept.name}: ${kept.type}`}) {
     match out${kept === undefined ? '' : '.clone()'} {
 ${arms(plain)}
         ${tail(plain)}
@@ -1827,7 +1829,7 @@ ${arms(plain)}
         level.index = level.index.saturating_add(1);
 ${indent(many ? `match level.children {\n${used.map((children) => `    OutChildren::${children.name} => ${indent(child(children), 4).trimStart()}${child(children).startsWith('{') ? '' : ','}`).join('\n')}\n}` : child(used[0] ?? {}), 8)}`;
   return `
-fn make_${name}(output: &mut Vec<u8>, out: OutValue, ${walked ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) {
+fn make_${name}(output: &mut Vec<u8>, out: OutValue, ${walked || sourced ? 'source' : '_source'}: &mut dyn OutValues${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) {
     // GN-6as: a container whose node is written and whose children are written next: an entry of the work stack of the
     // walk.${walked ? ' The children are read from the source by the handle, one for each index below the length.' : ''} waiting
     // is the child that is written first: the value of the entry whose key was written, or the one value of a reference.
@@ -1843,7 +1845,7 @@ fn make_${name}(output: &mut Vec<u8>, out: OutValue, ${walked ? 'source' : '_sou
 ${used.map((children) => `        // ${children.doc}\n        ${children.name},`).join('\n')}
     }` : ''}
     // GN-6as: one value: its node is written, and a container gives the level whose children are written next.
-    fn open_level(output: &mut Vec<u8>, out: OutValue${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> Option<OutLevel> {
+    fn open_level(output: &mut Vec<u8>, out: OutValue${sourced ? ', source: &mut dyn OutValues' : ''}${kept === undefined ? '' : `, ${kept.name}: ${kept.type}`}) -> Option<OutLevel> {
         match out${kept === undefined ? '' : '.clone()'} {
 ${indent(arms(walk), 4)}
             ${tail(walk)}
@@ -1857,7 +1859,7 @@ ${next}
     let mut next = Some(out);
     loop {
         if let Some(out) = next.take() {
-            levels.extend(open_level(output, out${kept === undefined ? '' : `, ${kept.name}`}));
+            levels.extend(open_level(output, out${sourced ? ', source' : ''}${kept === undefined ? '' : `, ${kept.name}`}));
         }
         let Some(level) = levels.last_mut() else {
             return;

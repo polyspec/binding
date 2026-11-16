@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e2fd52f7a92d7a7df007769f9b7d5266ef07d05185d123eba156c7f9bc215c32 -->
+<!-- source-sha256: f487a649245349db144833b53ea2cb44b9cd95c635f284c0d1e990ef4c9df147 -->
 # 생성기
 
 [English](generator.md)
@@ -786,6 +786,9 @@
   owner class가 없는 값 alias면 순회가 만든 container를 넘긴다. 다섯 타깃이 이 행을 생성한다. 이름을 대고 거부한다(G-4):
   그 kind의 다른 make, `when`이 있는 행, `ValueType`에 없는 값 타입. 이유: 코어는 다른 레포의 값을 자기 값 안에 담고,
   언어가 그 값을 어떻게 갖는지는 그 레포의 값 타입의 바인딩만 안다.
+  source는 다른 타깃처럼 Go에서도 순회의 level을 여는 함수의 parameter다. Rust의 중첩 fn item은 바깥 함수의 local을
+  capture하지 못하기 때문이다. 이유: list, map, 중첩 `json_value`를 만드는 값 alias `orm_value`를 가진 orm의 Go crate는
+  make 함수의 source를 `open_level` 안에서 읽어 E0434로 실패했다.
 - **GN-6bc** make가 이 계약의 class의 member이고 그 member가 `list<alias>`(kind `list`)나 `map<alias>`(kind `map`)
   타입의 parameter 하나를 받는 값 alias의 `out` 행은 두 단계로 만든다. 순회는 내장 꼴처럼 alias의 행으로 자식을 언어의
   배열에 만들고, 마지막 자식이 만들어지면 parameter의 변환이 그 배열을 받아 member의 코어 경로가 코어 값을 만들고 class의
