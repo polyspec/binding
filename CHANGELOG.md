@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A case may have `"@listener": "accept_and_close"`, a listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once, and a composed text names its port by the part `{"listener": "port"}`; each of the five test generators starts it before the values of the case and stops it at the end of the test, without a time limit and without a sleep (GN-13n, CK-96, B2.325). A case could name a closed port alone, which the system refuses before any handshake, so a connection that a server drops during the handshake had no case.
+
 ## 0.0.12
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.

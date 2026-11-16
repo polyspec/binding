@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
+<!-- source-sha256: c47c2bfba1847a9f0a43dd9c364e929d1f2d5f6ee9ad3fd41ec7e09f150acccb -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- case는 `"@listener": "accept_and_close"`를 가질 수 있다. 시스템이 정하는 port로 `127.0.0.1`에서 듣고 각 연결을 받아들인 뒤 바로 닫는 listener이며, 합성 텍스트는 부분 `{"listener": "port"}`로 그 port를 이름한다. 다섯 시험 생성기 각각은 case의 값보다 먼저 그것을 시작하고 시험 끝에서 멈추며, 시간 제한도 잠듦도 없다(GN-13n, CK-96, B2.325). case는 닫힌 port만 이름할 수 있었고 시스템은 그것을 handshake 전에 거부하므로, 서버가 handshake 중에 끊는 연결에는 case가 없었다.
 
 ## 0.0.12
 

@@ -364,7 +364,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which
   makes the receiver; the key of its result (CK-22); or a key of a case: `id`, `rule`, `note`, `receiver`, `raises`,
-  `after`, `then`, `faults`, `service`, `@files`, `repeat` and `awaits`. `binding check` reports any other key with the
+  `after`, `then`, `faults`, `service`, `@files`, `@listener`, `repeat` and `awaits`. `binding check` reports any other key with the
   key, the case and the member. Why: the generator reads only the keys that it knows, so a key of another name, such
   as `files` for `@files` or a result under a key that the row of `cases` does not name, is left out of every test
   without a word, and the case checks less than it says.

@@ -134,7 +134,7 @@ const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boo
 };
 
 // CK-96: the keys of a member case that G-5 gives a meaning, besides the parameters of the member and its result.
-const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', 'repeat', 'awaits'];
+const CASE_META_KEYS: readonly string[] = ['id', 'rule', 'note', 'receiver', 'raises', 'after', 'then', 'faults', 'service', '@files', '@listener', 'repeat', 'awaits'];
 
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];

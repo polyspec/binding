@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -148,7 +148,44 @@ const PYTHON_CASE_FILE = `
 `;
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-const caseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n        self._case_file(${pyString(file.path)}, ${pyString(file.hex)})`).join('');
+// GN-13n: then the line that starts the listener of the case.
+const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).map((file) => `\n        self._case_file(${pyString(file.path)}, ${pyString(file.hex)})`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        self._case_listener()'}`;
+
+// GN-13n: the listener of a case, a child process of the interpreter of the test, because a call that holds the GIL
+// would keep a thread of the test from closing the connection. It writes its port as one line, which the test reads
+// before it makes the values of the case, and the cleanup of the test kills it and waits for its end.
+const PYTHON_CASE_LISTENER_SERVER = `
+
+_CASE_LISTENER_SERVER = (
+    "import socket, sys\\n"
+    "server = socket.create_server(('127.0.0.1', 0))\\n"
+    "sys.stdout.write(f'{server.getsockname()[1]}\\\\n')\\n"
+    "sys.stdout.flush()\\n"
+    "while True:\\n"
+    "    connection, _ = server.accept()\\n"
+    "    connection.close()\\n"
+)
+
+# GN-13n: the port of the listener of the test in progress.
+_case_listener: dict[str, str] = {}
+`;
+const PYTHON_CASE_LISTENER = `
+    def _case_listener(self) -> None:
+        server = subprocess.Popen([sys.executable, "-I", "-c", _CASE_LISTENER_SERVER], stdout=subprocess.PIPE, text=True)
+
+        def stop() -> None:
+            server.kill()
+            server.wait()
+            if server.stdout is not None:
+                server.stdout.close()
+            _case_listener.pop("port", None)
+
+        self.addCleanup(stop)
+        port = "" if server.stdout is None else server.stdout.readline().strip()
+        if not port.isdigit():
+            self.fail(f"G-5: the listener of the case did not start: it exited with {server.wait()} (GN-13n)")
+        _case_listener["port"] = port
+`;
 
 // GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
 // the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
@@ -251,6 +288,7 @@ export function pythonTests(model: Model, module: string): string {
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
     cancelNew: (fired) => `self._future(${fired ? 'True' : 'False'})`,
     serviceAddress: (service) => `_service_address(${pyString(service.id)}, ${pyString(service.address)})`,
+    listenerPort: '_case_listener["port"]',
     // GN-6s: an error unit of the owner of a callback unit of another repository, through the module of its package.
     errorNew: (unit, kind, message, library) => {
       if (library !== undefined) foreignModules.add(library);
@@ -639,7 +677,7 @@ export function pythonTests(model: Model, module: string): string {
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
       append(`
-    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
+    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? caseCall(fn, callArgs(model, ctx, fn, caseArg), receiver, kase.args) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
@@ -663,7 +701,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       const call = caseCall(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr === '' ? '' : 'receiver', kase.args);
       usesRaised = true;
       append(`
-    def test_gn6ae_${name}_${id}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}
+    def test_gn6ae_${name}_${id}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}
         raised = LookupError(${pyString(FIXTURE_RAISED)})
         _raised[:] = [raised]
         with self.assertRaises(LookupError) as caught:
@@ -714,7 +752,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         const plain = invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiver === '' ? '' : 'subject');
         const awaited = plain.replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
         append(`
-    def test_gn6m_${name}_drops_its_result_when_its_loop_is_closed(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiver === '' ? '' : `\n        subject = ${receiver}`}
+    def test_gn6m_${name}_drops_its_result_when_its_loop_is_closed(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiver === '' ? '' : `\n        subject = ${receiver}`}
         escaped = []
         started = []
         thread_class = threading.Thread
@@ -750,7 +788,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
               : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
             : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       append(`
-    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -945,6 +983,8 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   const usesFuture = out.some((block) => block.includes('self._future('));
   // GN-13j: the helpers of a service are module functions, which the lines of a test and of a made value call.
   const usesService = [...out, ...helpers].some((block) => /\b_service_(address|state)\(/.test(block));
+  // GN-13n: the listener of a case, a child process that the test starts.
+  const usesListener = out.some((block) => block.includes('self._case_listener()'));
   // GN-13e, B2.121: _same reads an instance of a value class of another repository through its in row.
   const readers = usesSame ? foreignReaders(model, 'python') : [];
   const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
@@ -956,13 +996,13 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesFunctools ? 'import functools\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens || usesCaseTextPath ? 'import json\n' : ''}${usesTokens ? 'import struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.futures\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesFunctools ? 'import functools\n' : ''}${usesCasePath || usesService ? 'import os\n' : ''}${usesService || usesListener ? 'import subprocess\n' : ''}${usesCasePath ? 'import tempfile\n' : ''}${usesTokens || usesCaseTextPath ? 'import json\n' : ''}${usesTokens ? 'import struct\n' : ''}${roundFn === undefined && !usesListener ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesService ? PYTHON_SERVICE : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
-class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesFuture ? PYTHON_FUTURE : ''}
+class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
         with self.assertRaises(pkg.${cls('internal')}) as caught:
             _native._panic_test()

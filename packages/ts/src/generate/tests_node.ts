@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -222,7 +222,42 @@ function caseFile(relative, content) {
 export const scoped = (made: string): string => (/\bawait\b/.test(made) ? `await (async () => {\n    ${made};\n  })();` : `(() => {\n    ${made};\n  })();`);
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-export const nodeCaseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});`).join('');
+// GN-13n: then the line that starts the listener of the case.
+export const nodeCaseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).map((file) => `\n  caseFile(${jsString(file.path)}, ${jsString(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n  caseListener();'}`;
+
+// GN-13n: the listener of a case, in a Worker, because a call that blocks the thread of the test would keep its event
+// loop from closing the connection. The worker gives its port through a SharedArrayBuffer, on which the test waits with
+// Atomics.wait before it makes the values of the case, and afterEach terminates it and awaits its end. WASM starts it
+// the same way, with node:worker_threads of the Node.js that runs its tests.
+export const NODE_CASE_LISTENER = `
+const CASE_LISTENER_SERVER = \`
+const { workerData } = require('node:worker_threads');
+const { createServer } = require('node:net');
+const give = (port) => {
+  Atomics.store(workerData, 0, port);
+  Atomics.notify(workerData, 0);
+};
+const server = createServer((socket) => socket.destroy());
+server.on('error', () => give(-1));
+server.listen(0, '127.0.0.1', () => give(server.address().port));
+\`;
+let caseListenerWorker;
+let caseListenerPort;
+afterEach(async () => {
+  if (caseListenerWorker !== undefined) await caseListenerWorker.terminate();
+  caseListenerWorker = undefined;
+  caseListenerPort = undefined;
+});
+
+function caseListener() {
+  const shared = new Int32Array(new SharedArrayBuffer(4));
+  caseListenerWorker = new Worker(CASE_LISTENER_SERVER, { eval: true, workerData: shared });
+  Atomics.wait(shared, 0, 0);
+  const port = Atomics.load(shared, 0);
+  if (port <= 0) assert.fail('G-5: the listener of the case did not start (GN-13n)');
+  caseListenerPort = String(port);
+}
+`;
 
 // GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
 // the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
@@ -275,6 +310,7 @@ export function nodeTests(model: Model): string {
     // GN-6aq: an AbortSignal that was aborted before the call, or one whose controller never aborts it.
     cancelNew: (fired) => (fired ? 'AbortSignal.abort()' : 'new AbortController().signal'),
     serviceAddress: (service) => `serviceAddress(${jsString(service.id)}, ${jsString(service.address)})`,
+    listenerPort: 'caseListenerPort',
     // GN-6x: a class of another repository, through the owner's package.
     foreignClass: (library, unit) => {
       foreignModules.add(library);
@@ -564,7 +600,7 @@ test('B-4: ${name} ${kase.id}', () => {
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       emit(`
-test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${arming}
+test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -586,7 +622,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
       const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
       emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}
+test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
   assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
@@ -634,7 +670,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       emit(`
-test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
+test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -792,6 +828,8 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const usesCasePath = usesCaseFile || blocks.some((block) => block.includes('casePath('));
   // GN-13j: the helpers of a service, which the lines of a test and its values call.
   const usesService = blocks.some((block) => /\bservice(Address|State)\(/.test(block));
+  // GN-13n: the listener of a case, a Worker that the test starts.
+  const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'node') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
@@ -804,12 +842,12 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
 import assert from 'node:assert/strict';${usesService ? "\nimport { spawnSync } from 'node:child_process';" : ''}
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile, usesCaseText) : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesCasePath || usesListener ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? nodeCaseImports(usesCaseFile, usesCaseText) : ''}${usesListener ? "\nimport { Worker } from 'node:worker_threads';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesService ? NODE_SERVICE : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? ordered : ''}${usesTokens ? nodeTokens(forms) : ''}${usesCasePath ? NODE_CASE_PATH : ''}${usesCaseFile ? NODE_CASE_FILE : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesService ? NODE_SERVICE : ''}${usesListener ? NODE_CASE_LISTENER : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

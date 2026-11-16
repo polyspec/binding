@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 8c7e931a72ab61f9767c440b084182566d2a1ad139d86fdfab79b0b71fab4918 -->
+<!-- source-sha256: b7a785b88015c707b8e7915c1cb0161a7822f145fd216278cae6329b3f376b29 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -304,7 +304,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
   key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `raises`, `after`, `then`, `faults`, `service`,
-  `@files`, `repeat`, `awaits`. `binding check`는 다른 key를 그 key, case, member와 함께 보고한다. 이유: 생성기는 아는
+  `@files`, `@listener`, `repeat`, `awaits`. `binding check`는 다른 key를 그 key, case, member와 함께 보고한다. 이유: 생성기는 아는
   key만 읽으므로, `@files` 대신 쓴 `files`나 `cases`의 행이 이름하지 않은 key 아래의 결과 같은 다른 이름의 key는 아무
   말 없이 모든 시험에서 빠지고, case는 말하는 것보다 적게 검사한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서

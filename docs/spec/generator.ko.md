@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bd89d413f9a96bbf19a3caf97e5cd80e14e66b2698ef00039de46a43464613fb -->
+<!-- source-sha256: ba73306de5b8b2b223ce3a5ff2163b9af3e1cc47d774c5f6236a9db0a11ba9fc -->
 # 생성기
 
 [English](generator.md)
@@ -2132,7 +2132,8 @@
   시험에 `undefined`가 쓰여 Go가 컴파일하지 않는다.
 - **GN-13l** 타입 `text` 자리의 case 값은
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`일 수 있다. 바깥 객체는 `text`만
-  가지고, 그 비지 않은 배열은 Unicode 문자열과 `case_path`, 선택적인 `as`만 가진 경로 객체만 담는다.
+  가지고, 그 비지 않은 배열은 Unicode 문자열, `case_path`와 선택적인 `as`만 가진 경로 객체, case의 listener의
+  port인 `{"listener": "port"}`(GN-13n)만 담는다.
   `as`가 없으면 풀린 경로를 그대로 넣고, 유일한 명시적 mode인 `json-string`은 완전한 따옴표 붙은 JSON
   string token을 넣는다. 상대 경로는 GN-6y를 따르고 NUL과 짝 없는 surrogate를 담지 않는다. literal 문자열과
   private JSON quoting helper는 NUL을 포함한 모든 Unicode 제어 문자를 허용한다. 모든 경로는
@@ -2165,6 +2166,28 @@
   그것을 대신하지 않는다. 이유: 시스템의 임시 디렉터리는 심볼릭 링크를 거쳐 닿을 수 있어(macOS의 `/var`와 `/private/var`)
   경로를 푸는 코어는 시험이 만든 경로와 다른 텍스트를 주고, 풀지 않은 경로의 기대 텍스트는 올바른 결과를 실패시킨다.
   풀린 형식 하나면 결과를 다시 쓰는 규칙 없이 기대 텍스트가 정확하다.
+- **GN-13n** case는 `"@listener": "accept_and_close"`를 가질 수 있다. 그 시험이 그 case만을 위해 실행하는 서버다.
+  `127.0.0.1`에서 시스템이 정하는 port로 듣는 TCP listener이며, 각 연결을 받아들이고 그 연결에서 읽지 않고 바로
+  닫는다. 합성 case 텍스트(GN-13l)의 부분 `{"listener": "port"}`는 그 listener의 port를 10진수로 쓴 것이다. 예:
+  `{"text": ["postgres://orm@127.0.0.1:", {"listener": "port"}, "/orm_test"]}`. case의 B-4, GN-6ae, GN-6m, GN-6z,
+  GN-13e 시험은 GN-13i의 파일을 쓴 뒤, GN-13j의 서비스와 case의 receiver, argument, fixture보다 먼저 listener를
+  시작하고, 시험이 끝날 때, 실패할 때에도, listener를 멈추고 그 끝을 기다린다. listener는 호출과 따로 실행된다.
+  호출이 자기 thread를 막으면 연결이 열린 채로 남기 때문이다. Python과 PHP는 시험의 interpreter(`sys.executable`,
+  `PHP_BINARY`)의 자식 process로 시작하며, 그 process는 port를 한 줄로 쓰고 시험은 그 줄을 읽은 뒤 나아간다. Node와
+  WASM은 `node:worker_threads`의 `Worker`에서 시작하며, worker는 `SharedArrayBuffer`로 port를 주고 시험은
+  `Atomics.wait`로 그것을 기다린다. Go는 goroutine에서 시작한다. 각 target은 시험 파일의 helper로 시작한다: Python
+  `self._case_listener`, Node와 WASM `caseListener`, PHP `$this->caseListener`, Go `caseListener(t)`. 값은 port를
+  `_case_listener_port`, `caseListenerPort`, `GeneratedTest::$caseListenerPort`, `caseListenerPort`로 이름한다.
+  listener를 만들지 못하면 그 이유와 함께 시험이 실패한다. 어떤 단계도 시간 제한을 두고 기다리지 않고, 어떤 단계도
+  잠들지 않는다. WASM도 자신이 실행하는 모든 case의 listener를 시작하므로 case는 각 target에서 같은 뜻을 가진다.
+  WASM의 코어는 socket이 없으므로(GN-13j) 코어가 연결하는 member는 `wasm`이 없는 `only`를 가진다(GN-13h). 다른 값의
+  `@listener`, 다른 형식의 부분 `{"listener": ...}`, `@listener`가 없는 case의 그 부분은 모든 target에서 이유와 함께
+  그 case의 시험을 실패시키고, 다른 시험은 쓰인다(G-4, GN-13e). 아무 receiver가 필요한 시험이나 case의 값을 그 줄
+  없이 가져가는 시험(B-2, B-3, G-7, U-2, GN-6z)은 `@listener`가 있는 case에서 아무것도 가져가지 않고, `@listener`가
+  있는 hook(N-4)의 case는 이름과 함께 거부되며, `case-test`의 entry point(GN-13)로 실행되는 case는 listener를
+  시작하지 않는다. `service`가 있는 case와 같다. 이유: 연결을 받아들인 뒤 닫는 서버는 데이터베이스 client의 끊긴
+  연결처럼 코어가 handshake 중에 만나는 네트워크의 상태다. 닫힌 port는 이 상태를 주지 않는다. 시스템이 닫힌 port로의
+  연결을 handshake 전에 거부하기 때문이다. 그 자리의 fault injection point는 어떤 socket도 지나지 않는 경로를 실행한다.
 
 ## 끝에서 끝까지 확인
 

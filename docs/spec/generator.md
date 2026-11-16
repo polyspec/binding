@@ -2628,7 +2628,8 @@ the design ids are those of the binding design.
   check of an undeclared value writes `undefined` into the test, which Go does not compile.
 - **GN-13l** A case value at a place of type `text` may be
   `{"text": [<literal>, {"case_path": "<relative>", "as": "json-string"}, ...]}`. The outer object has only `text`,
-  whose nonempty array contains only Unicode strings and path objects with only `case_path` and optional `as`.
+  whose nonempty array contains only Unicode strings, path objects with only `case_path` and optional `as`, and the
+  port of the listener of the case, `{"listener": "port"}` (GN-13n).
   A path object omitting `as` inserts the raw resolved path; its only explicit mode is `json-string`, which inserts
   a complete quoted JSON string token. A relative path obeys GN-6y and contains no NUL or unpaired surrogate.
   Literal strings and the private JSON quoting helper permit every Unicode control character, including NUL.
@@ -2662,6 +2663,31 @@ the design ids are those of the binding design.
   system can be reached through a symbolic link (`/var` and `/private/var` of macOS), so a core that resolves the path
   gives a text that differs from the path the test made, and an expected text with the unresolved path would fail a
   correct result; one resolved form makes the expected text exact without a rule that rewrites results.
+- **GN-13n** A case may have `"@listener": "accept_and_close"`, a server that its test runs for the case alone: a TCP
+  listener on `127.0.0.1` at a port that the system assigns, which accepts each connection and closes it at once,
+  without reading from it. A part `{"listener": "port"}` of a composed case text (GN-13l) is the port of that listener
+  in decimal, such as `{"text": ["postgres://orm@127.0.0.1:", {"listener": "port"}, "/orm_test"]}`. The test of B-4,
+  GN-6ae, GN-6m, GN-6z and GN-13e of the case starts the listener after it writes the files of GN-13i and before the
+  service of GN-13j, the receiver, the arguments and the fixtures of the case, and it stops the listener and waits for
+  its end when the test ends, also when the test fails. The listener runs beside the call, because a call that blocks
+  its thread would otherwise hold the connection open: Python and PHP start it as a child process of the interpreter of
+  the test (`sys.executable`, `PHP_BINARY`), which writes its port as one line and which the test reads before it goes
+  on; Node and WASM start it in a `Worker` of `node:worker_threads`, which gives its port through a
+  `SharedArrayBuffer` that the test waits on with `Atomics.wait`; Go starts it in a goroutine. Each target starts it
+  with a helper of its test file: Python `self._case_listener`, Node and WASM `caseListener`, PHP
+  `$this->caseListener`, and Go `caseListener(t)`, and a value names the port through `_case_listener_port`,
+  `caseListenerPort`, `GeneratedTest::$caseListenerPort` and `caseListenerPort`. A listener that cannot be made fails
+  the test with the reason; no step waits with a time limit, and none sleeps. WASM starts the listener of every case
+  that it runs too, so a case means the same in each target; the core of WASM has no socket (GN-13j), so a member
+  whose core connects has an `only` without `wasm` (GN-13h). `@listener` of another value, and a part
+  `{"listener": ...}` of another form or in a case without `@listener`, fail the test of the case with the reason in
+  every target, and the other tests are written (G-4, GN-13e). A test that needs any receiver or takes the values of a
+  case without its lines (B-2, B-3, G-7, U-2, GN-6z) takes none from a case with `@listener`, a case of a hook (N-4)
+  with `@listener` is refused by name, and a case that runs through an entry point of `case-test` (GN-13) starts no
+  listener, as for a case with `service`. Why: a server that accepts a connection and then closes it is a state of the
+  network that a core meets during its handshake, such as the lost connection of a database client, which a closed
+  port does not give, because the system refuses a connection to a closed port before any handshake; a fault
+  injection point in its place would run a path that no socket takes.
 
 ## End-to-end check
 
