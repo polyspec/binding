@@ -364,10 +364,17 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which
   makes the receiver; the key of its result (CK-22); or a key of a case: `id`, `rule`, `note`, `receiver`, `raises`,
-  `after`, `then`, `faults`, `service`, `@files`, `repeat` and `awaits`. `binding check` reports any other key with the
-  key, the case and the member. Why: the generator reads only the keys that it knows, so a key of another name, such
-  as `files` for `@files` or a result under a key that the row of `cases` does not name, is left out of every test
-  without a word, and the case checks less than it says.
+  `after`, `then`, `faults`, `service`, `@files`, `repeat` and `awaits`; or a key that the row of `cases` names in
+  `reads`. `reads` is a list of snake_case keys of the cases of the group that the tests of the repository itself
+  read and no generator reads, such as the input bytes and the expected tree that its core tests and its hand-written
+  host tests compare: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases", "result":
+  "serialized", "reads": ["bytes", "data", "tree"]}`. `binding check` reports any other key with the key, the case and
+  the member. Why: the generator reads only the keys that it knows, so a key of another name, such as `files` for
+  `@files` or a result under a key that the row of `cases` does not name, is left out of every test without a word,
+  and the case checks less than it says; a case file is also read by the tests of the repository, so the row
+  declares the keys that those tests read. `reads` is a field of the row and not of the contract, because the row
+  already names the group and its `result`, and two groups of one member hold different keys (`bytes` in one,
+  `written` in another).
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
+
 ## 0.0.12
 
 - `binding check` reports a key of a member case that is no parameter, no key of its result and no key of a case, with the key, the case and the member (CK-96, B2.312). The generator left such a key out without a word: the end-to-end sample gave the files of three cases under `files` instead of `@files`, which now are written, and a case of the fixture repository held a key `words` that no test read, which is removed.
