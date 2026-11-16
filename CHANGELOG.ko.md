@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b71a6ae4e6627e64e14ad70bc3f9307901193ba0fcabf6b614048151a3d7018a -->
+<!-- source-sha256: b93faecf0b8e8cc4f7023e1eeee0f3c67bb7952107bde90185d63744384b9f96 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -10,6 +10,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.15
 
 - 함수 parameter는 그 member가 나중 member가 부르도록 함수를 보관만 할 때 `keeps: true`를 적을 수 있다(hyper `pages.register`, 이것을 `page_request.next`가 부른다). 그 member는 `Failure` 없는 코어 오류를 돌려주고, 함수를 부르는 member가 `core.failure: true`를 적는다. 전에는 `binding check`가 함수의 `keeps`를 거부했으므로 함수의 실패가 그것을 보관하는 member에 자리했다. end-to-end functions가 `registry.register`에 그것을 적는다(GN-6aa, GN-7, CK-90, B2.378).
 - method의 case는 `with`, 곧 `{"<name>": {"new": <member id>, ...}}`로 instance value에 이름을 붙이고, 시험은 그것을 receiver 다음에 만들어 그 이름으로 보관한다. 다섯 타깃에서 그렇다. 어떤 깊이의 function fixture의 step도 그런 값 위에서 부르거나 그것을 `{"bound": <name>}`로 넘기고, `after`의 호출은 함수가 반환한 뒤 그것 위에서 부른다. step이나 `after`의 호출이 부르는 member는 CK-22에서 거기서 case를 가지므로, callback만 주는 class, 예를 들어 ORM의 transaction의 member에는 `cases`의 행이 필요 없다. end-to-end sample은 `busy`를 낸 step 뒤와 transaction 뒤에 `with`의 두 번째 store를 부른다(GN-13pa, CK-22, CK-96, B2.365).
