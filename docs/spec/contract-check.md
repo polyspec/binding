@@ -322,7 +322,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   conversion of the core error of each library, which every member of that form of call shares (B-4), so one case of
   the path shows the conversion for all of them, while whether the core of each member gives the kind is what the
   tests of the core show; a call with `wait` rejects by another path than a throw, and the kind of another library
-  leaves by the conversion of its owner, so each of those is a path of its own. A row of a kind of another library
+  leaves by the conversion of its owner, so each of those is a path of its own. The kinds of another library are
+  one path for each form of call: a case of any kind of that library shows them all (B2.382). Why: the owner
+  converts each of its kinds, which the CK-22 of the owner's contract shows kind by kind; what the case of this
+  repository shows is that the call takes the owner's conversion, which is the same for every kind of it, so a case
+  for each kind repeated the owner's cases (hyper `rules.template_reads`, 19 kinds of template). A row of a kind of another library
   takes its category and its kinds from the row of that library (GN-7c); CK-22 skipped such a row, which has no
   category of its own, so no kind of another library was asked a case. The `cases` row of a member may name `result`, the snake_case key of its cases
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has

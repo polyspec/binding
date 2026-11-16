@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 02f6a79654bf37c4badacd0bdef356ef7ec1b579a0cef5d28b182ed16a956d69 -->
+<!-- source-sha256: 7527207a383a44af0c769bc4be3fd8c9c830acd561aebba635b59947d2e68c1c -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -273,7 +273,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   생성 코드는 library마다 하나인 core 오류의 변환으로 kind에 class, message, status, errno를 주고, 같은 호출 형태의 모든
   member가 그 변환을 공유한다(B-4). 그래서 그 경로의 case 하나가 그들 모두의 변환을 보이고, 각 member의 core가 그 kind를
   내는지는 core의 시험이 보인다. `wait`를 가진 호출은 throw와 다른 경로로 reject하고, 다른 library의 kind는 그 owner의
-  변환으로 나가므로, 그 각각이 자기 경로다. 다른 library의 kind 행은
+  변환으로 나가므로, 그 각각이 자기 경로다. 다른 library의 kind들은
+  호출 형태마다 한 경로다: 그 library의 어느 kind의 case든 그 모두를 보인다(B2.382). 이유: owner가 자기 kind를 하나씩
+  바꾸고, 그것은 owner 계약의 CK-22가 kind마다 보인다. 이 저장소의 case가 보이는 것은 그 호출이 owner의 변환을 탄다는
+  것이고, 그것은 그 모든 kind에 같으므로, kind마다의 case는 owner의 case를 되풀이했다(hyper `rules.template_reads`,
+  template의 kind 19개). 다른 library의 kind 행은
   그 category와 kind를 그 library의 행에서 가져온다(GN-7c). CK-22는 자기 category가 없는 그런 행을 건너뛰어서, 다른
   library의 어느 kind에도 case를 요구하지 않았다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
   snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다: 그 member가 있고 `pick`을 거쳐 그 class를

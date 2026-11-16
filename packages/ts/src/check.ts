@@ -1558,7 +1558,9 @@ class Checker {
     // for each library whose kind it is (the library itself, or its owner, GN-7c) and each form of the call (a throw
     // of a call without wait, a rejection of one with wait). A case of any member that takes the same path shows the
     // kind for all of them.
-    const pathOf = (member: Member, row: { library?: string }, kind: string): string => `${member.wait === undefined || member.wait === 'none' ? 'sync' : 'async'} ${row.library ?? ''} ${kind}`;
+    // B2.382: a kind of another library is shown for every kind of that library by one case, since the owner's
+    // conversion gives each kind its class and its own CK-22 shows each kind; a kind of this library, one case each.
+    const pathOf = (member: Member, row: { library?: string }, kind: string): string => `${member.wait === undefined || member.wait === 'none' ? 'sync' : 'async'} ${row.library ?? ''} ${row.library === undefined ? kind : '*'}`;
     // GN-7c: a row of a kind of a library takes its category and its kinds from the row of that library.
     const ownerRow = (row: (typeof this.contract.errors.kinds)[number]): (typeof this.contract.errors.kinds)[number] | undefined =>
       row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));

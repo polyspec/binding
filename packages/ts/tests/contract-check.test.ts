@@ -2111,3 +2111,28 @@ describe('B2.379: CK-98 a default of a member is a literal of its return type on
     assert.match(found[0]?.message ?? '', /only a member of a callback interface has a default/);
   });
 });
+
+test('B2.382: CK-22 takes one case of a kind of another library for all its kinds on the form of call (GN-7c)', () => {
+  // hyper rules.template_reads raises 19 kinds of template, which the owner converts and its own CK-22 shows.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const kinds = ['Missing', 'Unsupported', 'Refused', 'Unreadable', 'Ended'];
+  const findings = (withCase: boolean, own: boolean): string[] => {
+    const contract = read('consumer/packages/rust/interface.json');
+    const fetch = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'consumer.fetch');
+    for (const kind of kinds) {
+      const variant = own ? `polyspec_consumer::Error::${kind}` : `polyspec_consumer::Error::Sample/polyspec_sample::Error::${kind}`;
+      contract.errors.kinds.push(own ? { variant, category: 'value' } : { variant, library: 'sample' });
+      fetch.raises.push(variant);
+    }
+    const cases = read('consumer/contracts/cases.json');
+    if (withCase) cases.fetch.push({ ...cases.fetch[0], id: 'a_missing_value', raises: { kind: 'missing', status: null, category: 'value', message: 'no value' } });
+    const dependencies = new Map([['sample', read('sample/packages/rust/interface.json')]]);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]), dependencies }).map((f) => f.message).filter((m) => /no case of consumer\.fetch/.test(m));
+  };
+  // One case of a kind of sample shows the other four.
+  assert.deepEqual(findings(true, false), []);
+  // Without a case of any kind of sample, the path is reported, once for each kind.
+  assert.equal(findings(false, false).length, kinds.length);
+  // A kind of this library still takes its own case.
+  assert.deepEqual(findings(true, true).sort(), ['no case of consumer.fetch raises the kind ended (K-1, B-4)', 'no case of consumer.fetch raises the kind refused (K-1, B-4)', 'no case of consumer.fetch raises the kind unreadable (K-1, B-4)', 'no case of consumer.fetch raises the kind unsupported (K-1, B-4)']);
+});
