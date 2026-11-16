@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6f3a3ea0363f6cc4a23ec34e5b2006e78f006358d478780d808213beca614685 -->
+<!-- source-sha256: 88862e34f879ff4182b10fa5dd3b20b0b86581ea63b1245ff1b441c65a15d430 -->
 # 생성기
 
 [English](generator.md)
@@ -548,7 +548,10 @@
   func에 kind `invalid_argument_type`을 요구한다. case의 함수 값은 case의 행으로 답하고 어떤 행도 답하지 않는 호출을
   기록하는 func이며, 시험은 그런 호출이 없기를 요구한다. 함수 값에 행이 있는 case는 코어가 그 호출에서 func를 부름을
   보이므로, 시험은 그 case의 인자로 func가 돌려준 error가 그 호출의 error와 같은 값이고 func의 panic이 그 호출의
-  panic임을 요구한다. receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
+  panic임을 요구한다. `keeps`가 있는 parameter(GN-6aa)는 member가 저장만 하는 함수이므로, 그 case의 행은 member의
+  호출을 보이지 않고 member에는 그런 시험이 없다. 그 함수를 실행하는 나중 호출이 그 시험을 가진다. 이유: member는
+  코어가 함수를 부르기 전에 돌아오므로, 시험은 member가 돌려줄 수 없는 error를 요구했다(template `engine.register`,
+  시험이 실행하지 않은 func). receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
   시험이 그 나중 호출에 같은 것을 요구하고, error 뒤에 `thrown-count-test`의 count가 0임을 요구한다. Go 시험은 다른
   타입의 결과를 주지 않는다. func의 Go 타입이 결과를 정하기 때문이다.
 - **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.

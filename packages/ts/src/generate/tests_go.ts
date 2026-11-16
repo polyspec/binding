@@ -1329,10 +1329,12 @@ ${indent([
     if (typeof arg.type === 'object' && 'function' in arg.type && !machineFunction(arg.type)) {
       // GN-6z: a nil func is no function, kind invalid_argument_type. The error that the func returns is the error of
       // the call in which the core runs it, the same value, and its panic is the panic of that call: each is tested
-      // with the arguments of a case in which the core calls the func, which a case with a row shows.
+      // with the arguments of a case in which the core calls the func, which a case with a row shows; a parameter with
+      // keeps is stored by the member, which never calls it, so only the later call that runs it has these tests.
       const kept = arg.type.function;
+      const stores = !arg.field && (fn.member.parameters ?? []).some((p) => p.name === arg.name && p.keeps === true);
       single('GN-6z', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_argument_type', 'GN-6z'));
-      const calling = resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
+      const calling = stores ? undefined : resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
       const ends = (end: string): { lines: string[]; call: string } | string => {
         const b = new Body();
         return written(fn, calling?.id ?? '', () => {

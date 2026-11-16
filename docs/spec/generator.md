@@ -681,7 +681,10 @@ the design ids are those of the binding design.
   the rows of the case and records a call that no row answers, which the test requires to be none; with the
   arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
   test requires that the error that the func returns is the error of the call, the same value, and that its panic
-  is the panic of the call. For a case whose receiver was given a func with a row in an earlier call and whose
+  is the panic of the call. A parameter with `keeps` (GN-6aa) is a function that the member only stores, so a row of
+  its case shows no call of the member, and the member has no such test; the later call that runs the function has it.
+  Why: the member returns before the core calls the function, so the test required an error that the member cannot
+  return (template `engine.register`, a func the test never ran). For a case whose receiver was given a func with a row in an earlier call and whose
   member names `core.failure`, the test requires the same of that later call, and that the count of
   `thrown-count-test` is 0 after the error. No Go test gives a result of another type, because the Go type of the
   func fixes its result.

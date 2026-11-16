@@ -11035,6 +11035,20 @@ test('B2.386: a Go case value reads a field of a variant case that is a Python k
   assert.match(go, /FigureGroup\{[^\n]*\bElse: /);
 });
 
+test('B2.387: the Go tests require the error and the panic of a function from no member that keeps it (GN-6z, GN-6aa)', () => {
+  // template engine.register: the member only stores the func, so err := made.Register("greet", call) was nil and the
+  // test failed with "<nil> is not the error of the function".
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  cases.registry_register.push({ id: 'a_function_by_its_name', receiver: { new: 'registry.new' }, name: 'up', convert: { function: [{ args: { 0: 'ab c', 1: [2, 1] }, result: 'AB C' }] } });
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.doesNotMatch(go, /func TestGN6zRegistryRegister(ReturnsTheErrorOf|PanicsWithThePanicOf)Convert\(/);
+  assert.match(go, /func TestGN6zRegistryRegisterRefusesANilConvert\(/);
+  assert.match(go, /func TestGN6zApplyReturnsTheErrorOfConvert\(/);
+  assert.match(go, /func TestGN6zRegistryCallTheKeptFunctionConvertsTheValueReturnsTheErrorOfTheKeptFunction\(/);
+});
+
 test('a callback unit of another library fails with the core error of its owner, the struct that errors.code names (GN-6bl, B2.345)', () => {
   // The trait took the code enum of the kinds of the owner, Failure<ValidateErrorCode>, where the owner's own binding
   // and its core take the struct, Failure<ValidateError>.
