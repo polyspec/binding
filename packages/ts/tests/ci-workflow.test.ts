@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -350,4 +350,30 @@ test('B2.278: make ci-release tags, then checks the tag out, installs, builds, p
   const usage = run('ci-release', []);
   assert.notEqual(usage.status, 0);
   assert.deepEqual(usage.calls, []);
+});
+
+// B2.364, GN-14j: make dist builds packages/ts with the npm of the checkout and gives the bin dist/cli.js the mode 0755,
+// which tsc does not give it, so a consumer that links this checkout runs node_modules/.bin/binding. The stand-in of npm
+// writes dist/cli.js with the mode 0644 of tsc and records its arguments.
+test('B2.364: make dist runs the build of packages/ts and makes the bin dist/cli.js executable', (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'binding-dist-')));
+  t.after(() => { rmSync(root, { recursive: true, force: true }); });
+  copyFileSync(`${top}Makefile`, join(root, 'Makefile'));
+  const calls = join(root, '.calls');
+  const npm = join(root, 'npm-stand-in.cjs');
+  writeFileSync(npm, `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.CALLS, JSON.stringify(args) + '\\n');
+const prefix = args[args.indexOf('--prefix') + 1];
+fs.mkdirSync(path.join(prefix, 'dist'), { recursive: true });
+fs.writeFileSync(path.join(prefix, 'dist', 'cli.js'), '#!/usr/bin/env node\\n', { mode: 0o644 });
+`);
+  chmodSync(npm, 0o755);
+  writeFileSync(calls, '');
+  const ran = spawnSync('make', ['--no-print-directory', '-C', root, 'dist', `NPM=${npm}`], { env: { PATH: '/usr/bin:/bin', CALLS: calls }, encoding: 'utf8' });
+  assert.equal(ran.status, 0, `${ran.stdout}${ran.stderr}`);
+  assert.deepEqual(readFileSync(calls, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as string[]), [['run', '--prefix', 'packages/ts', 'build']]);
+  assert.equal(statSync(join(root, 'packages', 'ts', 'dist', 'cli.js')).mode & 0o777, 0o755);
 });

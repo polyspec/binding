@@ -24,7 +24,7 @@ export RUSTUP_AUTO_INSTALL := 0
 ONLINE :=
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install install-tools install-packages toolchain-lock
+.PHONY: help bootstrap install install-tools install-packages dist toolchain-lock
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -60,6 +60,12 @@ endif
 install-packages: ## Install package-lock.json and packages/ts/package-lock.json with the npm of var/tools; ONLINE
 	$(ONLINE) $(NPM) ci
 	$(ONLINE) $(NPM) ci --prefix packages/ts
+
+# dist writes packages/ts/dist with the tsc of the checkout and gives the bin the mode that npm install gives the bin of a
+# release: a consumer that links this checkout runs node_modules/.bin/binding, and tsc writes dist/cli.js 0644 (GN-14j).
+dist: ## Build packages/ts/dist and make its bin dist/cli.js executable, for a consumer that links this checkout; offline
+	$(NPM) run --prefix packages/ts build
+	chmod 0755 packages/ts/dist/cli.js
 
 # toolchain-lock writes mise.lock with the mise of var/tools for the platforms of the deployment targets (plan T-2).
 TOOLCHAIN_LOCK_PLATFORMS := linux-x64,linux-arm64,macos-arm64
