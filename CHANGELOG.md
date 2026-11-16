@@ -39,6 +39,7 @@
 - A call of `after` may read a property of the receiver, with `args` `{}`, which every target already read as it reads a property; the contract check says so, and a test keeps it (CK-22, B2.361).
 - PHP stores a property `p` of an error unit as the private `polyspec_p`, which its method `p()` reads; the property `trace` of crud-ui `compose_load_error` met the private `trace` of `Exception`, and every raise of the error failed (GN-7b, B2.362).
 - A case whose `raises` gives the kind without its category takes the category of the kind from the contract; Node wrote `pkg. &&`, which does not parse, for every such case of hyper (GN-13bd, B2.372).
+- A call of `after` of a member without a result states `"result": null`, which the contract check requires, and the Node and WASM tests require no value of it, where they compared `undefined` with `null` (CK-22, B2.374).
 
 ## 0.0.13
 

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7e9dbb2d55f307ed24e8a7cfd5edc6899df5f47edfa3ac5ba439b8fbf141e3e8 -->
+<!-- source-sha256: a8d06d5daa95cea366de2147a54432c698b8a68991bdc3e69cfd67fbb1e810af -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -41,6 +41,7 @@
 - `after`의 호출은 `args` `{}`로 receiver의 property를 읽을 수 있다. 모든 target이 이미 그것을 property를 읽듯 읽었다. 계약 검사 문서가 그렇게 말하고, 시험 하나가 그것을 지킨다(CK-22, B2.361).
 - PHP는 오류 unit의 property `p`를 private `polyspec_p`로 저장하고 그 method `p()`가 읽는다. crud-ui `compose_load_error`의 property `trace`가 `Exception`의 private `trace`와 겹쳐서, 그 오류를 낼 때마다 실패했다(GN-7b, B2.362).
 - `raises`가 category 없이 kind만 주는 case는 그 kind의 category를 계약에서 가져온다. hyper의 그런 case마다 Node가 parse되지 않는 `pkg. &&`를 썼다(GN-13bd, B2.372).
+- 결과가 없는 member의 `after` 호출은 `"result": null`을 쓰고 계약 검사가 그것을 요구한다. Node와 WASM 시험은 그 호출에 값이 없기를 요구한다. 이전에는 `undefined`를 `null`과 비교했다(CK-22, B2.374).
 
 ## 0.0.13
 

@@ -1989,3 +1989,15 @@ describe('CK-96 a key that the tests of the repository read is declared in reads
     assert.equal(run(undefined).length, 2);
   });
 });
+
+test('B2.374: CK-22 requires the result null of a call of after of a member without a result', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const messages = (result: unknown): string[] => {
+    const cases = read('contracts/cases.json');
+    cases.ledger_size[0].after = [{ call: 'ledger.note', args: { key: 'b' }, result }, { call: 'ledger.size', args: {}, result: 2 }];
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => f.message).filter((m) => /after 0/.test(m));
+  };
+  assert.deepEqual(messages(null), []);
+  assert.deepEqual(messages(1), ['the case a_new_ledger_has_one_key of ledger.size: after 0 calls ledger.note, which has no result, so its result is null (G-5, GN-6ae)']);
+});

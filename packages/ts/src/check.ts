@@ -2406,6 +2406,8 @@ class Checker {
       if (called === undefined) continue;
       if (Object.hasOwn(call, 'raises')) this.callRaises(called, call, `after ${i}`, report);
       else if (!Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
+      // B2.374: a member without a result states the result null, which each language tests as no value.
+      else if (called.returns === 'none' && call['result'] !== null) report(`after ${i} calls ${called.id}, which has no result, so its result is null`);
     }
   }
 

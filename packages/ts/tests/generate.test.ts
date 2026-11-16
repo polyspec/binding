@@ -11342,3 +11342,20 @@ test('B2.373: a Go entry point gives the core a parameter named input by the loc
   assert.match(body, /polyspec_sample::seek\(&?input_\)/);
   assert.doesNotMatch(body, /polyspec_sample::seek\(&?input\)/);
 });
+
+test('B2.374: a call of after of a member without a result requires no value, the null of its case (CK-22)', () => {
+  // session-store memory_store.set, remove and renew in after with "result": null: Node and WASM compared undefined with null.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  cases.ledger_size[0].after = [{ call: 'ledger.note', args: { key: 'b' }, result: null }, { call: 'ledger.size', args: {}, result: 2 }];
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'wasm'] });
+  const near = (path: string, id: string): string => { const body = text(out, path); const at = body.indexOf(id); assert.ok(at >= 0, path); return body.slice(at, at + 600); };
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const body = near(path, 'a_new_ledger_has_one_key');
+    assert.match(body, /ordered\(receiver\.note\('b'\)\), ordered\(undefined\)/, path);
+    assert.doesNotMatch(body, /ordered\(receiver\.note\('b'\)\), ordered\(null\)/, path);
+  }
+  assert.match(near('packages/python/generated/tests/test_generated.py', 'a_new_ledger_has_one_key'), /expected_0 = None/);
+  assert.match(near('packages/php-ext/generated/tests/GeneratedTest.php', 'ANewLedgerHasOneKey'), /self::same\(null\), self::same\(\$receiver->note\("b"\)\)/);
+});

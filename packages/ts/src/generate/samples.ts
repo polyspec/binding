@@ -969,6 +969,9 @@ export class CaseRefused extends Unsupported {}
 // GN-6ae: the result that a step of a function fixture or a call of after requires, compared as a value of its type; a
 // result of a value alias, which a case compares by its tokens (GN-13e), is refused by name there.
 export function stepExpected(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+  // B2.374 (CK-22): a call of a member without a result states the result null, which is no value: Node and WASM give
+  // undefined for it, which the test requires, and Python and PHP give None and null.
+  if (fn.member.returns === 'none' && value === null && ctx.lang === 'node') return { text: 'undefined' };
   const expected = expectedText(model, ctx, fn, value);
   if ('tokens' in expected) throw new Unsupported(`the result of ${fn.member.id} in a step of a function fixture or in after is a value alias, which is not compared there yet (GN-6ae, GN-13e)`);
   return expected;
