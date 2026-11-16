@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 92d0ea6aa378543a221ab078825e9f90e1caf712b8756592424be0f38cd89ed9 -->
+<!-- source-sha256: 9656b5474541f002704f020fac55518c2a37d46d2b91b845921c98f2eb25958f -->
 # 생성기
 
 [English](generator.md)
@@ -524,7 +524,7 @@
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
   `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
   만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 parameter를 `func(<parameters>) (<R>, error)`로, `none`이면
-  `func(<parameters>) error`로 선언하고, nil func는 kind `invalid_argument_type`이다. Go 값은 어느 스레드에도 묶이지
+  `func(<parameters>) error`로 선언하고, func가 필수인 곳에서 nil func는 kind `invalid_argument_type`이다. Go 값은 어느 스레드에도 묶이지
   않으므로 Go에는 kind `wrong_thread`도 feature `thread-test`도 없다. func는 호출의 func와 그 안의 index로 들어오고,
   C ABI는 export `<prefix>__go_keep`에 `cgo.Handle`을 묻는다. package `binding`은 그때부터 그 handle 아래에 func의
   dispatch를 갖고, C ABI는 그 handle을 `Native`(GN-6u)로 갖는다. 그 `Native`는 호출보다 오래 살고, 마지막 drop이 어느
@@ -810,10 +810,7 @@
   호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
 - **GN-6bi** Go는 `tuple`의 `optional` 타입인 field나 값을 괄호 안의 포인터로 인코딩한다: `(*options.Range)[0]`.
   이유: 인덱스가 별표보다 먼저 묶이므로 `*options.Range[0]`은 포인터를 인덱싱하고, Go는 이를 거부한다(cannot indirect).
-  함수 타입(GN-6z)의 `optional`은 `*func(...)`이고 없음은 nil이며, 그 func는 괄호 안의 포인터로 부른다:
-  `(*cfg.AuditSource)()`. nil이 아닌 포인터 뒤의 func는 모든 func처럼 검사하고, nil func는 kind
-  `invalid_argument_type`이다. 이유: 호출도 별표보다 먼저 묶이므로 `*cfg.AuditSource()`는 포인터를 부르고, Go는 이를
-  거부한다(`is not a function`). orm `config.audit_source`가 그렇게 `go vet`에 실패했다.
+  함수 타입의 `optional`에는 역참조할 포인터가 없다(GN-15e).
 - **GN-6bj** Go entry point는 record parameter의 local을 디코더가 묶은 이름 그대로 코어에 준다: `input`이라는
   parameter는 `input_`이다(GN-15). 이유: entry point는 `input`을 호출의 바이트에 묶으므로, parameter를 원래 이름으로
   부르는 코어 호출은 그 바이트를 넘긴다.
@@ -1689,8 +1686,13 @@
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
   `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이
   아닌 포인터인 Go 타입은 `optional`일 때도, 기본값이 있는 parameter나 field일 때도 두 번째 포인터를 받지 않는다:
-  `map<T>`(`*Map[T]`), `keyed_map<T>`(`*KeyedMap[T]`), class의 인스턴스(`*<Class>`), 다른 레포의 value class(GN-6x)가
-  그렇다. 그 nil이 없는 값이고 C ABI는 그 nil에 값이 없다는 태그를 쓰므로 `optional<keyed_map<T>>`는 `*KeyedMap[T]`다.
+  `map<T>`(`*Map[T]`), `keyed_map<T>`(`*KeyedMap[T]`), 함수 타입(`func(...)`, GN-6z), class의 인스턴스(`*<Class>`), 다른
+  레포의 value class(GN-6x)가 그렇다. 그 nil이 없는 값이고 C ABI는 그 nil에 값이 없다는 태그를 쓰므로
+  `optional<keyed_map<T>>`는 `*KeyedMap[T]`이고, orm `config.audit_source` 같은 함수 타입의 `optional`은
+  `func() (*Map[any], error)`이며 `cfg.AuditSource()`로 부른다. `list<T>`는 nil slice가 빈 list이므로 포인터를 두고,
+  text, 수, bool은 zero 값이 값이므로 포인터를 둔다. 이유: Go의 func는 nil이 될 수 있고 그 nil은 func가 아니다.
+  `*Map[T]`나 인스턴스의 nil이 map이나 인스턴스가 아닌 것과 같다. 그래서 그것을 감싼 포인터는 없음에 두 꼴을 주었다.
+  nil 포인터와, GN-6z가 kind `invalid_argument_type`으로 만든 포인터 뒤의 nil func다. Go 호출자는 func를 nil로 뺀다.
   `optional`의 `optional`은 두 번째 포인터를 그대로 둔다. 안쪽 포인터의 nil이 바깥 타입의 값이기 때문이다.
 - **GN-15j** Go의 생성 Rust의 지역 변수(GN-15): 진입점은 `args`, `len`, `result`, `input`, `outcome`, `held`, `this`를
   묶고 `in_<record>`는 `input`을 받는다. record의 field는 두 범위 모두에서 묶인다. 이 이름을 가진 계약의 parameter나 field는 그 이름에
