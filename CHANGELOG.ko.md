@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d2b73d7cf1b8a0da5adb4e0497246a59b34a8ab5069e4c20c8322ef1d34a103c -->
+<!-- source-sha256: 4b8831ebdd5a02fe64c35dd28f5b4c89b7762bcf196ec0e47d9e6162628a9bec -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -35,6 +35,7 @@
 - Python의 U-2와 T-1 시험은 결과를 다른 저장소 값 class를 in row로 읽는 `_same`으로 비교한다. `assertEqual`은 같은 두 `polyspec.json.Value` 결과를 identity로 비교했다(GN-13z, B2.358).
 - `invalid_number`를 내는 case는 안전 정수 밖이면서 i64 범위 안의 `int`나 `uint` 인자를 줄 수 있다. 모든 target이 그것을 그 kind로 거부한다. 이전에는 CK-64가 그것을 보고해서 binding의 거부에 case가 없었다. Go 시험은 이제 그런 인자를 정수 literal로 쓴다(CK-64, GN-12a, B2.359).
 - Python: 계약의 모든 module `m`은 공개 이름과 내부 이름을 함께 갖는 비공개 module `<root>._module_m`이고, package root가 그것을 다시 내보낸다. template의 module 파일 `format.py`가 package의 함수 `format`을 module로 바꿨다(GN-6bs, B2.368). module `<root>.m`과 내부 module `<root>._m`은 없어졌다.
+- Go: test feature의 build tag는 `polyspec_template_fault_test`처럼 library 이름을 갖는 `polyspec_<library>_<feature>`다. 한 module의 태그 `polyspec_fault_test`가 그것이 import하는 모든 polyspec module의 태그 파일을 켰고, 그 파일들은 release 라이브러리와 링크되지 않았다(GN-13ba, B2.369). Go 시험을 돌리는 저장소는 태그 이름을 바꾼다.
 
 ## 0.0.13
 

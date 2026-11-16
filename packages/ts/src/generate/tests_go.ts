@@ -22,7 +22,7 @@ import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   foreignPackage, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
-  goOrder,
+  goOrder, goTestTag,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
@@ -2514,19 +2514,19 @@ ${testImports(model, module, body, scope, extraStd)}${body}`;
   const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers, composedText ? [{ path: 'encoding/json', alias: '_caseTextJSON' }, { path: 'unicode/utf8', alias: '_caseTextUTF8' }] : [])]];
   if (/\bsameValue\(/.test(all)) files.push(['zz_generated_value_comparison_test.go', file(undefined, [], `${SAME_VALUE}${FLOAT_COMPARISON_TEST}`.trimEnd())]);
   if (composedText) files.push(['zz_generated_case_json_string_test.go', file(undefined, [], `${CASE_JSON_STRING}${caseJSONGoldenTests()}`.trimEnd(), [{ path: 'encoding/json', alias: '_caseTextJSON' }, { path: 'unicode/utf8', alias: '_caseTextUTF8' }])]);
-  if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
-  if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
-  if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
-  if (out.thrown.length > 0) files.push(['zz_generated_thrown_count_test.go', file('polyspec_thrown_count_test', out.thrown)]);
-  if (out.thrownFault.length > 0) files.push(['zz_generated_thrown_count_fault_test.go', file('polyspec_thrown_count_test && polyspec_fault_test', out.thrownFault)]);
+  if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file(goTestTag(model, 'fault_test'), out.fault)]);
+  if (out.held.length > 0) files.push(['zz_generated_held_test.go', file(goTestTag(model, 'panic_test'), out.held)]);
+  if (native.length > 0) files.push(['zz_generated_native_count_test.go', file(goTestTag(model, 'native_count_test'), native)]);
+  if (out.thrown.length > 0) files.push(['zz_generated_thrown_count_test.go', file(goTestTag(model, 'thrown_count_test'), out.thrown)]);
+  if (out.thrownFault.length > 0) files.push(['zz_generated_thrown_count_fault_test.go', file(`${goTestTag(model, 'thrown_count_test')} && ${goTestTag(model, 'fault_test')}`, out.thrownFault)]);
   return files;
 }
 
 // B-7: the panic of the core reaches Go as the internal error type of kind internal.
-export function goPanicTest(internal: string): string {
+export function goPanicTest(internal: string, tag: string): string {
   return `${goHeader()}
 
-//go:build polyspec_panic_test
+//go:build ${tag}
 
 package binding
 
@@ -2756,7 +2756,7 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
   const std = [...['fmt', 'math', 'math/big', 'reflect', 'syscall', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
-//go:build polyspec_codec_test
+//go:build ${goTestTag(model, 'codec_test')}
 
 package binding
 

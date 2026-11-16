@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0840e54fbe388cd96de2519448044f142e0a2f4e1e10d6b6ea9961fbf10934d5 -->
+<!-- source-sha256: c5971198a21f0f47d7acb719ef188d4fb501609b22a05a5b0dc1724fa5139635 -->
 # 생성기
 
 [English](generator.md)
@@ -302,7 +302,7 @@
   case. GN-8a의 항목은 `faults`가 있는 계약에만 쓰기 때문이다. 지점을 가진 코어는 자기 자신을 dev-dependency `<core crate> = { path = ".", features = ["fault-test"] }`로
   두어, flag 없는 코어의 `cargo test`가 그 지점을 장전하게 한다. 모든 저장소가 같은 꼴을 쓴다(CK-65). WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go 시험은
-  build tag `polyspec_fault_test`와 `polyspec_codec_test`가 붙은 `internal/binding`의 함수로 닿는다(GN-13b).
+  build tag `polyspec_<library>_fault_test`와 `polyspec_<library>_codec_test`가 붙은 `internal/binding`의 함수로 닿는다(GN-13b).
 
 ## 코어 경계(T-1, I-2 (1))
 
@@ -1434,8 +1434,8 @@
     `Raised`의 key로 던져진 것을 table에서 꺼낸다. feature `thrown-count-test`(GN-5)의 진입점은 table의 항목 수를 준다.
     Node와 PHP에서는 대기열의 key를 제거한 뒤의 수다. callback이나 함수 타입을 받는 member의 case마다 생성된 시험은
     그 case의 호출과 `after`의 호출 뒤에 그 수가 0일 것을 요구한다. Go에서 그 수의 시험은 build tag
-    `polyspec_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에 있고, 그런 case마다 호출을 다시 실행한다.
-    실패를 주입하는 case는 `polyspec_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에 있다.
+    `polyspec_<library>_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에 있고, 그런 case마다 호출을 다시 실행한다.
+    실패를 주입하는 case는 `polyspec_<library>_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에 있다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
@@ -1726,7 +1726,7 @@
   때만 쓴다. 빠진 도우미만 쓰던 import는 그 도우미와 함께 빠진다. 쓰임은 build마다 센다. `zz_generated_binding.go`는
   build tag 없는 Go 코드가 부르는 도우미를 담고, build tag 뒤의 파일만 부르는 도우미는 패키지 `binding`의 파일
   `zz_generated_<tags>_helpers.go`에 그 tag들을 `||`로 이은 tag 뒤에 쓴다. 예컨대 정수가 없는 계약의 `Writer.Int`는
-  `polyspec_codec_test` 뒤의 codec 숫자 시험만 부른다. 이유: build tag 없는 deadcode나 unused lint의 실행은 tag 뒤의
+  `polyspec_<library>_codec_test` 뒤의 codec 숫자 시험만 부른다. 이유: build tag 없는 deadcode나 unused lint의 실행은 tag 뒤의
   파일을 컴파일하지 않으므로 그런 파일만 부르는 도우미는 그 실행에서 닿지 않고, build tag를 추적 파일에서 읽는 저장소의
   lint는 추적하지 않는 생성 모듈에 그 tag 없는 실행만 돌린다. 생성기는 쓰임을 주석과 literal 내용을 뺀 생성 Go
   코드에서 읽고, 남는 도우미가 다른 도우미를 부를 수 있으므로 더 남는 도우미가 없을 때까지 되풀이한다. 생성 코드는
@@ -2100,25 +2100,31 @@
   raise하는 contract case마다 B-4(E-2와 E-7의 정확한 타입, 그 category의 `errors.As`, kind, status, errno), raise하지 않는
   case마다 GN-13e, stringify마다 N-4. class의 case 값은 다른 target과 같이 쓴다: instance 값(GN-13f), origin value인
   class의 make member 호출, 또는 다른 class를 채우는 쌍(U-1, GN-13)이며 각각 시험의 지역 변수다. receiver, 인자, 결과를
-  쓰지 못하는 case는 그 이유로 실패하는 시험을 가지고, 다른 시험은 쓰인다(GN-13e). 실패를 장전하는 case는 build tag `polyspec_fault_test`가 붙은
+  쓰지 못하는 case는 그 이유로 실패하는 시험을 가지고, 다른 시험은 쓰인다(GN-13e). 실패를 장전하는 case는 build tag `polyspec_<library>_fault_test`가 붙은
   `zz_generated_fault_test.go`이며, 장전이 스레드의 것이므로 goroutine을 스레드에 묶는다. B-5c의 poison 시험은 build tag
-  `polyspec_panic_test`가 붙은 `zz_generated_held_test.go`다. 끝에서 끝까지 확인은 crate의 시험 feature마다 tag
-  `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 이 파일이 C ABI의
+  `polyspec_<library>_panic_test`가 붙은 `zz_generated_held_test.go`다. 끝에서 끝까지 확인은 crate의 시험 feature마다 tag
+  `polyspec_<library>_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_<library>_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 이 파일이 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
   latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`, `codec-test`,
   `native-count-test`, `thrown-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
   끝에서 끝까지 확인은 feature 없이 정적 라이브러리를 빌드해 시험용 진입점(`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`)이 있으면 실패한다. build tag `polyspec_<library>_codec_test`와 C ABI
   crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
   `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 이 레포 alias의
   case는 `AliasIn<Alias>`로 그 `in` 함수만 실행한다. 계약이 모든 key 종류를
   적지 않은 `keyed_map` parameter·field는 빠진 종류의 key로 kind `invalid_argument_type`을 시험한다. case의 latin1 값은 그 rune의 Go 문자열이다. case는 `map`을 순서대로의 항목을 가진 객체로,
   `keyed_map`을 GN-13처럼 준다.
+- **GN-13ba** Go: test feature의 build tag는 `polyspec_<library>_<feature>`다. library는 snake case이고 feature의 `-`는
+  `_`다(`polyspec_template_fault_test`). 이것은 module의 시험 파일이든 아니든 태그가 붙는 모든 파일에 쓰이고, 종단 검사는
+  시험하는 library의 태그만 준다. 이유: build tag는 build 전체에 걸린다. 그래서 template의 태그 `polyspec_fault_test`가
+  template이 import하는 json module의 `internal/binding` 태그 파일까지 켰다. 그 파일은 release에 없는 json 라이브러리의 test
+  진입점을 불러서 template의 Go 시험이 링크되지 않았다. Go 시험을 돌리는 저장소는 자기 library의 태그를 준다:
+  `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
-  계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_codec_test`는 진입점
+  계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점
   `<prefix>__number_in` 위에 `internal/binding`의 함수 `<Type>In(value any, subject string) error`(`UintIn`, `IntIn`,
   `Int64In`, `FloatIn`)를 준다. 함수는 Go 값을 host 값으로 encode한다: bool, int64 범위의 Go 정수, 그 위의 Go 정수, Go
   float, Go 문자열, 또는 그 밖의 값이다. 진입점은 그 값을 바인딩의 그 수 타입 변환으로 판정한다: 그 수 타입의 Go

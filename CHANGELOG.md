@@ -33,6 +33,7 @@
 - The Python U-2 and T-1 tests compare their outcomes by `_same`, which reads a value class of another repository by its in row; `assertEqual` compared two equal `polyspec.json.Value` results by identity (GN-13z, B2.358).
 - A case that raises `invalid_number` may give an `int` or `uint` argument of the range of i64 outside the safe integers, which every target refuses with that kind; CK-64 reported it, so the refusal of the binding had no case, and the Go tests now write such an argument as an integer literal (CK-64, GN-12a, B2.359).
 - Python: every module `m` of the contract is the private module `<root>._module_m`, with its public and internal names, which the package root re-exports; the module file `format.py` of template replaced the function `format` of the package by the module (GN-6bs, B2.368). A module `<root>.m` and the internal module `<root>._m` are gone.
+- Go: the build tag of a test feature names the library, `polyspec_<library>_<feature>` such as `polyspec_template_fault_test`; the tag `polyspec_fault_test` of one module turned on the tagged files of every polyspec module that it imports, which did not link with their release libraries (GN-13ba, B2.369). A repository that runs its Go tests renames its tags.
 
 ## 0.0.13
 

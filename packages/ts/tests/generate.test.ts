@@ -1409,7 +1409,7 @@ test('a generated test gives an object through a native row and back, and counts
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, /public function testGn6uSameGivesBackTheSameObjectAndReleasesIt\(\): void\n    \{\n        \\Polyspec\\Sample\\same\(new class \{\}\);\n        \$before = \\Polyspec\\Sample\\Internal\\nativeCount\(\);\n        \$subject = new class \{\};\n        self::assertSame\(\$subject, \\Polyspec\\Sample\\same\(\$subject\)\);/);
   const go = text(out, 'packages/go/zz_generated_native_count_test.go');
-  assert.match(go, /\/\/go:build polyspec_native_count_test/);
+  assert.match(go, /\/\/go:build polyspec_[a-z_]+_native_count_test/);
   assert.match(go, /before, err := binding\.NativeCount\(\)/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_native_count.go'), /func NativeCount\(\) \(uint64, error\) \{/);
   // The count is the entry point of the feature native-count-test.
@@ -6276,7 +6276,7 @@ test('fault injection points and the point of another library are armed for the 
   // Go arms the faults of a case through the entry points of the feature fault-test, in a test file of its build tag.
   const go = sampleWith(drop, ['go']);
   assert.match(text(go, 'packages/go/internal/ffi/generated/lib.rs'), /#\[cfg\(feature = "fault-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample___arm_faults\(/);
-  assert.match(text(go, 'packages/go/zz_generated_fault_test.go'), /^\/\/go:build polyspec_fault_test$/m);
+  assert.match(text(go, 'packages/go/zz_generated_fault_test.go'), /^\/\/go:build polyspec_[a-z_]+_fault_test$/m);
   assert.match(text(go, 'packages/go/zz_generated_fault_test.go'), /armed, armErr := binding\.ArmFaults\("sample\.measure", /);
   // WASM arms the faults of a case through the entry points of its feature fault-test.
   const wasm = sampleWith(drop, ['wasm']);
@@ -9999,7 +9999,7 @@ test('a crate that keeps what was thrown has the entry point of thrown-count-tes
   assert.match(go, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample___thrown_count\(args: \*const u8, len: usize, result: \*mut Buffer\) -> i32 \{/);
   assert.match(go, /uint_out\(&mut output, lock\(&THROWN\)\.len\(\)\);/);
   const binding = text(out, 'packages/go/internal/binding/zz_generated_thrown_count.go');
-  assert.match(binding, /\n\/\/go:build polyspec_thrown_count_test\n/);
+  assert.match(binding, /\n\/\/go:build polyspec_[a-z_]+_thrown_count_test\n/);
   assert.match(binding, /func ThrownCount\(\) \(uint64, error\) \{\n\tdec, err := invoke\(func\(pointer \*C\.uint8_t, length C\.size_t, result \*C\.polyspec_sample__buffer\) C\.int32_t \{\n\t\treturn C\.polyspec_sample___thrown_count\(pointer, length, result\)/);
 });
 
@@ -10043,7 +10043,7 @@ test('the generated test of a case of a member that takes a callback or a functi
   // Go: the test with the build tag runs the call of the case again; the file without a tag names no entry of a feature.
   assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /ThrownCount/);
   const go = text(out, 'packages/go/zz_generated_thrown_count_test.go');
-  assert.match(go, /\n\/\/go:build polyspec_thrown_count_test\n/);
+  assert.match(go, /\n\/\/go:build polyspec_[a-z_]+_thrown_count_test\n/);
   assert.match(go, /func TestGN13eStoreAttemptAFunctionThatRaisesAfterItWroteIsAnAttemptThatDidNotHoldKeepsNothingThrown\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)+?\tvalue0, err := made0\.Attempt\(function2\)\n(?:\t[^\n]*\n)+?\tif count, err := binding\.ThrownCount\(\); err != nil \|\| count != 0 \{\n\t\tt\.Fatalf\("GN-6ae: %d values that were thrown are kept after the call \(%v\)", count, err\)\n\t\}\n\}/);
   assert.match(go, /func TestGN13eTolerantATolerantKeyWhoseLookupRaisesWhatItDoesNotRecognizeGivesNoValueKeepsNothingThrown\(t \*testing\.T\) \{/);
   // Every case of such a member has the count, and a member that takes neither has none.
@@ -11216,4 +11216,13 @@ test('B2.368: every module of the contract is the private Python module _module_
   const init = text(out, `${pkg}__init__.py`);
   assert.match(init, /^from \._module_errors import \*/m);
   assert.doesNotMatch(init, /^from \.errors import/m);
+});
+
+test('B2.369: the Go build tag of a test feature names the library, so it turns on no tagged file of another module (GN-13ba)', () => {
+  // template: its tag polyspec_fault_test turned on the tagged files of the json module, which need the test entry
+  // points of a json library that its release does not have.
+  const sample = e2eGenerated().get('sample') ?? new Map();
+  const tagged = [...sample.keys()].filter((p) => p.startsWith('packages/go/') && p.endsWith('.go')).map((p) => [p, /^\/\/go:build (.+)$/m.exec(text(sample, p))?.[1]] as const).filter(([, tag]) => tag !== undefined && /polyspec_/.test(tag));
+  assert.ok(tagged.some(([p]) => p.endsWith('internal/binding/zz_generated_panic.go')), tagged.map(([p]) => p).join(', '));
+  for (const [path, tag] of tagged) for (const one of (tag ?? '').split(/\s*&&\s*/)) assert.match(one, /^polyspec_sample_[a-z_]+_test$/, `${path}: ${tag}`);
 });

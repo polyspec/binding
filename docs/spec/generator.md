@@ -370,7 +370,7 @@ the design ids are those of the binding design.
   points has itself as a dev-dependency, `<core crate> = { path = ".", features = ["fault-test"] }`, so that
   `cargo test` of the core without flags arms them, in every repository in the same form (CK-65). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. The Go tests reach
-  them through functions of `internal/binding` with the build tags `polyspec_fault_test` and `polyspec_codec_test`
+  them through functions of `internal/binding` with the build tags `polyspec_<library>_fault_test` and `polyspec_<library>_codec_test`
   (GN-13b).
 
 ## The core boundary (T-1, I-2 (1))
@@ -1748,8 +1748,8 @@ the design ids are those of the binding design.
     count of the entries of the table, in Node and PHP after it has removed the queued keys. The generated test of
     every case of a member that takes a callback or a function type requires, after the call of the case and the
     calls of its `after`, that the count is 0; the Go test of the count is in `zz_generated_thrown_count_test.go` with
-    the build tag `polyspec_thrown_count_test` and runs the call of each such case again, and a case that arms faults
-    is in `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_fault_test`.
+    the build tag `polyspec_<library>_thrown_count_test` and runs the call of each such case again, and a case that arms faults
+    is in `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_<library>_fault_test`.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
@@ -2108,7 +2108,7 @@ the design ids are those of the binding design.
   dropped helper used is dropped with it. The uses are counted per build: `zz_generated_binding.go` holds the helpers
   that the Go code without a build tag calls, and a helper that only the files behind build tags call, such as
   `Writer.Int` in a contract without an integer, whose only caller is the number test of the codec behind
-  `polyspec_codec_test`, is written in the file `zz_generated_<tags>_helpers.go` of package `binding` behind those tags
+  `polyspec_<library>_codec_test`, is written in the file `zz_generated_<tags>_helpers.go` of package `binding` behind those tags
   joined by `||`. Why: a run of deadcode or of the unused lint without a build tag compiles no file behind a tag, so a
   helper that only such a file calls is unreachable in it, and a repository whose lint takes its build tags from its
   tracked files runs only that untagged run on the generated module, whose files it does not track. The generator reads the uses from the generated Go code without its comments
@@ -2590,11 +2590,11 @@ the design ids are those of the binding design.
   class of origin value, or the pairs that fill another class (U-1, GN-13), each a local of the test; a case whose
   receiver, argument or result is not written has a test that fails with the reason, and the other tests are written
   (GN-13e). The cases
-  that arm faults are `zz_generated_fault_test.go` with the build tag `polyspec_fault_test`, and they lock the
+  that arm faults are `zz_generated_fault_test.go` with the build tag `polyspec_<library>_fault_test`, and they lock the
   goroutine to its thread, because the arming is of the thread; the poison tests of B-5c are
-  `zz_generated_held_test.go` with the build tag `polyspec_panic_test`. The end-to-end check runs `go test` with the
-  tag `polyspec_<feature>` of each test feature of the crate. B-7 is
-  `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
+  `zz_generated_held_test.go` with the build tag `polyspec_<library>_panic_test`. The end-to-end check runs `go test` with the
+  tag `polyspec_<library>_<feature>` of each test feature of the crate. B-7 is
+  `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_<library>_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
@@ -2602,17 +2602,24 @@ the design ids are those of the binding design.
   turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
   `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`). With the build tag
-  `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
+  `polyspec_<library>_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
   U+00FF, the order of a map and the order and kinds of the keys of a keyed map come back the same and that U+0100 is
   refused; the cases of an alias of this repository run its `in` function alone through `AliasIn<Alias>`. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
+- **GN-13ba** Go: the build tag of a test feature is `polyspec_<library>_<feature>`, the library in snake case and
+  the feature with `_` for `-` (`polyspec_template_fault_test`), on every tagged file of the module, test or not, and
+  the end-to-end check gives the tags of the library under test alone. Why: a build tag holds in the whole build, so
+  the tag `polyspec_fault_test` of template turned on the tagged files of `internal/binding` of the json module that
+  template imports, which call the test entry points of a json library that its release does not have, and the Go
+  tests of template did not link. A repository that runs its Go tests gives the tags of its own library:
+  `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
-  feature `codec-test` and the build tag `polyspec_codec_test` give the function `<Type>In(value any, subject string)
+  feature `codec-test` and the build tag `polyspec_<library>_codec_test` give the function `<Type>In(value any, subject string)
   error` of `internal/binding` (`UintIn`, `IntIn`, `Int64In`, `FloatIn`) over the entry point `<prefix>__number_in`.
   The function encodes the Go value as a host value: a bool, a Go integer in the range of int64, a Go integer above
   it, a Go float, a Go string, or any other value. The entry point judges it by the conversion of that number type

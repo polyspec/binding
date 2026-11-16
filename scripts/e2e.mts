@@ -793,7 +793,8 @@ if (targets.includes('php')) {
 
 if (targets.includes('go')) {
   // GN-5: the build tags of go test are the test features of the crate, polyspec_<feature>, each with _ for -.
-  const goTags = (p: Prepared): string => testFeatures(p, 'go').split(',').map((feature) => `polyspec_${feature.replaceAll('-', '_')}`).join(',');
+  // GN-13ba: the tag of a test feature names the library, polyspec_<library>_<feature>.
+  const goTags = (p: Prepared): string => testFeatures(p, 'go').split(',').map((feature) => `polyspec_${p.contract.library.replaceAll('-', '_')}_${feature.replaceAll('-', '_')}`).join(',');
   const goEnvOf = (p: Prepared): Record<string, string> => ({ CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: `-tags=${goTags(p)}`, CASES: cases ?? '' });
   const goCases = caseRunners && existsSync(join(e2e, 'cases_test.go'));
   for (const [i, p] of mainsOf('go').entries()) {

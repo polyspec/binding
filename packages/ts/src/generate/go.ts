@@ -3176,13 +3176,18 @@ func New${name}(${fields.map((x) => `${x.param} ${x.type}`).join(', ')}) (*${nam
 `;
 }
 
+// GN-13ba: the build tag of a test feature of the Go module of the library, polyspec_<library>_<feature>: a tag holds
+// in the whole build, so a tag without the library would turn on the tagged files of every polyspec module that the
+// build imports, which need the test entry points of a library that its release does not have.
+export const goTestTag = (model: Model, feature: string): string => `polyspec_${model.contract.library.replaceAll('-', '_')}_${feature}`;
+
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
   const written = model.objects.some((o) => poisoned(model, o));
   return `${goHeader()}
 
-//go:build polyspec_panic_test
+//go:build ${goTestTag(model, 'panic_test')}
 
 package binding
 
@@ -3221,7 +3226,7 @@ function goBindingThrownCount(model: Model): string {
   const p = prefix(model);
   return `${goHeader()}
 
-//go:build polyspec_thrown_count_test
+//go:build ${goTestTag(model, 'thrown_count_test')}
 
 package binding
 
@@ -3254,7 +3259,7 @@ function goBindingNativeCount(model: Model): string {
   const p = prefix(model);
   return `${goHeader()}
 
-//go:build polyspec_native_count_test
+//go:build ${goTestTag(model, 'native_count_test')}
 
 package binding
 
@@ -3287,7 +3292,7 @@ function goBindingFault(model: Model): string {
   const p = prefix(model);
   return `${goHeader()}
 
-//go:build polyspec_fault_test
+//go:build ${goTestTag(model, 'fault_test')}
 
 package binding
 
@@ -3433,7 +3438,7 @@ func numberIn(expected uint64, value any, subject string) error {
 `;
   return `${goHeader()}
 
-//go:build polyspec_codec_test
+//go:build ${goTestTag(model, 'codec_test')}
 
 package binding
 
@@ -3539,7 +3544,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${GO}/errors/zz_generated_errors.go`, goErrors(model));
   files.set(`${BINDING}/zz_generated_binding.go`, withExportsReached(goBinding(model)));
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
-  files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
+  files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model), goTestTag(model, 'panic_test')));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (passes(model)) files.set(`${BINDING}/zz_generated_passed_test.go`, goPassedTest(internalType(model)));
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
