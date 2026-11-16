@@ -350,7 +350,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `short` and only with it; `errno`, the symbol of an errno (`ENOSPC`), only with `io`; `nth` counts from 1; a fault has
   no other key. A case with `faults` fills only the kinds that its points have in `fills`, and one that expects another
   kind is refused, so the case of an input rule is an input. The `errno` of a case's `raises`, when it is a text, is
-  such a symbol. A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
+  such a symbol. A case's `raises` that leaves out `category` gives a kind of `errors.kinds` (its own rows and the
+  rows with `library`) or of E-1a, whose category the generated test takes (generator GN-13bd); another kind is
+  refused by name, because its test would name no class (B2.433). A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
   core error is one for every member: each error enum that has such a kind, the contract's own and that of each
   library whose kinds it passes on (E-1b (a)), has one case of any member that arms `<library>.internal` as `broken`
   and raises a kind of the category `internal`. The kinds of `in_raises` of a value alias have their cases in the

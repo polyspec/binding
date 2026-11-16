@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e32b8fcb44e83c30670d5e15ca66e9d7d78f4cfb76e836675a5ef4b8aa88edcf -->
+<!-- source-sha256: 52fd1edb86dd24a87e82820746bfd6d8c8b4325b40f9e766f84e9ec96fff5003 -->
 # 생성기
 
 [English](generator.md)
@@ -2380,7 +2380,12 @@
   가져온다. 계약은 모든 kind에 category를 준다(E-1). category를 쓴 case는 자기 것을 유지한다. 이유: 계약 검사는
   `{"kind": <kind>}`만을 받는데 시험은 case의 category의 class를 이름했다. 그래서 kind만 주는 hyper `csrf.mask`의 case들 때문에
   Node가 `error.constructor === pkg. &&`를 180번 썼고, 그 파일은 parse되지 않았다. Python, PHP, WASM, Go도 같은 빈 category를
-  읽었다.
+  읽었다. 바인딩이 스스로 내는 kind(E-1a: `invalid_number`, `invalid_argument_type`과 `binding_core::BindingError`의
+  다른 kind)는 `errors.kinds`의 어느 row에도 없고, E-1a의 고정 category를 가진다. `category`가 없는 `raises`의 kind가
+  `errors.kinds`의 kind도 E-1a의 kind도 아니면 class를 이름하지 못한다. `binding check`는 그것을 거부하고(CK-22),
+  생성기는 이름으로 거부하며 빈 class 이름을 결코 쓰지 않는다. 이유: `invalid_number`나 `invalid_argument_type`을 기대하는
+  crud-ui list-render의 case들이 kind만 주어 `errors.kinds`에서 category를 얻지 못했고, Python 시험이 parse되지 않는
+  `self.assertRaises(pkg.) as caught`를 열두 곳에 썼다(B2.433).
 - **GN-13be** 시험이 값으로 비교하는 value alias의 결과(function fixture의 step, `after`의 호출, alias를 담는 type의 자리)는
   값이 맞는 각 자리의 out row를 따른다: 값이 그 predicate를 만족하는 그 kind의 row, 또는 predicate가 없는 그 row다. row가
   text를 만드는 byte string, 곧 row `{"predicate": "utf8", "is": true}`의 UTF-8 bytes는 그 언어에서 그 bytes의 text다. kind의

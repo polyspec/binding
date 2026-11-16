@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- The `raises` of a case that gives a kind of E-1a (`invalid_number`, `invalid_argument_type` and the other kinds that the binding raises itself) without `category` takes the fixed category of that kind in the generated tests of the five targets (GN-13bd): such a kind is in no row of `errors.kinds`, so the tests named the class of an empty category, and the crud-ui list-render cases wrote the Python test `self.assertRaises(pkg.) as caught`, which does not parse, at twelve places, and the same empty name in Node, WASM, PHP and Go (B2.433). `binding check` refuses a `raises` without `category` whose kind is of neither `errors.kinds` nor E-1a (CK-22), and the generator refuses it by name instead of writing an empty class name. Verified by `node --test --test-name-pattern=B2.433 tests/contract-check.test.ts tests/generate.test.ts` in `packages/ts`, which failed before the change.
+
 ## 0.0.18
 
 - AGENTS.md names the gates before a version-bump commit, `make docs-check`, `make lint-rust`, `make typecheck-ts` and `make test-ts`, and states that only the job `e2e` of CI lints the generated crates of `tests/e2e` (B2.431).

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1e4b229f2346f7742bde0d1a9bd9f5e0a3240248d803bab2ed118fb8385a1946 -->
+<!-- source-sha256: 91f49780c3ba984227ba3bb728ea35b93c14f7090640142c4e512957a4d40f19 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -23,6 +23,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `category` 없이 E-1a의 kind(`invalid_number`, `invalid_argument_type`과 바인딩이 스스로 내는 다른 kind)를 주는 case의 `raises`는 다섯 target의 생성 시험에서 그 kind의 고정 category를 가진다(GN-13bd). 그런 kind는 `errors.kinds`의 어느 row에도 없어서 시험이 빈 category의 class를 이름했고, crud-ui list-render의 case들은 parse되지 않는 Python 시험 `self.assertRaises(pkg.) as caught`를 열두 곳에 썼으며 Node, WASM, PHP, Go에도 같은 빈 이름이 쓰였다(B2.433). `binding check`는 kind가 `errors.kinds`의 kind도 E-1a의 kind도 아닌, `category` 없는 `raises`를 거부하고(CK-22), 생성기는 빈 class 이름을 쓰는 대신 이름으로 거부한다. `packages/ts`에서 `node --test --test-name-pattern=B2.433 tests/contract-check.test.ts tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 
 ## 0.0.18
 

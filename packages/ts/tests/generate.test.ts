@@ -11521,6 +11521,32 @@ test('B2.372: the raises of a case without a category takes the category of its 
   assert.doesNotMatch(near('packages/go/zz_generated_test.go', /AKeyWithoutAValueIsMissing/), /errors\.As\(err, &\*?\)|var target \*?\s*$/m);
 });
 
+test('B2.433: the raises of a case with a kind of E-1a alone takes its fixed category, and no target writes an empty class (GN-13bd)', () => {
+  // crud-ui list-render: {"raises": {"kind": "invalid_number"}} wrote `self.assertRaises(pkg.) as caught` in Python.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (kind: string): ReturnType<typeof generateTargets> => {
+    const contract = read('packages/rust/interface.json');
+    const cases = read('contracts/cases.json');
+    const kase = cases.resolve.find((c: any) => c.id === 'a_key_without_a_value_is_missing');
+    kase.raises = { kind };
+    return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  };
+  const out = run('invalid_argument_type');
+  const near = (path: string, id: RegExp): string => { const body = text(out, path); const at = body.search(id); assert.ok(at >= 0, `${path} ${id}`); return body.slice(at, at + 1500); };
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const body = near(path, /a_key_without_a_value_is_missing/);
+    assert.doesNotMatch(body, /pkg\.\s*&&|pkg\.\)/, path);
+    assert.match(body, /pkg\.SampleTypeError/, path);
+  }
+  const python = near('packages/python/generated/tests/test_generated.py', /a_key_without_a_value_is_missing/);
+  assert.doesNotMatch(python, /pkg\.\)/);
+  assert.match(python, /assertRaises\(pkg\.SampleTypeError\)/);
+  assert.match(near('packages/php-ext/generated/tests/GeneratedTest.php', /AKeyWithoutAValueIsMissing/), /catch \(\\[\w\\]*SampleTypeError \$error\)/);
+  assert.doesNotMatch(near('packages/go/zz_generated_test.go', /AKeyWithoutAValueIsMissing/), /errors\.As\(err, &\*?\)|var target \*?\s*$/m);
+  // A kind of neither errors.kinds nor E-1a names no class, and the generator refuses it by name.
+  assert.throws(() => run('no_such_kind'), /raises the kind no_such_kind without a category, which is no kind of errors\.kinds nor of E-1a \(GN-13bd\)/);
+});
+
 test('B2.373: a Go entry point gives the core a parameter named input by the local that its decoding binds (GN-15)', () => {
   // crud-ui generator.resolve_action(input: ActionInput): the core took &input, the bytes of the arguments.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: cacc5478f095c2a67d381f49c06917d9c5b6d479ceb3795a92002a9dca966201 -->
+<!-- source-sha256: bce0cc465f542b3d7d36c23855c8dbc239dcc07775d4be92c9d9f10d5beba407 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -292,7 +292,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   것이고, `<id>`는 그 계약 `faults`의 점이다. `kind`는 그 점의 `inject` 중 하나다. `bytes`는 `short`에만, 그리고 `short`에는
   반드시 둔다. errno의 기호(`ENOSPC`)인 `errno`는 `io`에만 둔다. `nth`는 1부터 센다. fault에 다른 키는 없다. `faults`를
   가진 case는 그 점들의 `fills`에 있는 kind만 채우며, 다른 kind를 기대하는 그런 case는 거부한다. 입력 규칙의 case가
-  입력으로 남게 하기 위해서다. case `raises`의 `errno`가 텍스트이면 그런 기호다. category `internal`의 kind는 member마다
+  입력으로 남게 하기 위해서다. case `raises`의 `errno`가 텍스트이면 그런 기호다. `category`를 생략한 case의 `raises`는
+  `errors.kinds`(자기 row와 `library`가 있는 row)나 E-1a의 kind를 주고, 생성 시험은 그 category를 가져온다(generator
+  GN-13bd). 다른 kind는 이름으로 거부한다. 그 시험이 어떤 class도 이름하지 못하기 때문이다(B2.433). category `internal`의 kind는 member마다
   case를 요구하지 않는다(X-1). 코어 오류를 옮기는 match가 모든 member에 하나이기 때문이다. 그런 kind를 가진 오류
   enum마다, 곧 이 계약 자신의 것과 kind를 그대로 전달하는(E-1b (a)) 라이브러리마다, 어느 member의 case 하나가
   `<library>.internal`을 `broken`으로 장전하고 category `internal`의 kind를 낸다. 값 alias `in_raises`의 kind는 그 alias를
