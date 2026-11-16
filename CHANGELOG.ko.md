@@ -1,5 +1,7 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 64d58a011c690b962ef415878c28347c13541a9ce03cb98d3f7ba7783bb9a0e7 -->
+<!-- source-sha256: 6d32bdd5d5c54832a26c943516689a27b30f4bdd9bf93b5345bda94d7cfa5197 -->
+<!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
 <!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
@@ -16,6 +18,7 @@
 
 ## 0.0.15
 
+- `make consumers-check DIRS="<dir>..."`는 소비자 레포의 생성된 바인딩을 이 tree의 CLI와 `binding_core`로 한 번의 실행에서 컴파일한다: 각각의 commit된 tree를 복사하고, path patch로 이 바인딩을 offline으로 받으며, 각 target을 생성하고, 각 바인딩 crate를 시험 feature로 한 번, 없이 한 번 검사하고 Go package를 `go vet`과 `go test -c`로 검사하며, 실패한 칸마다 첫 오류 줄과 함께 소비자 × target 표를 출력한다(GN-14i, B2.391).
 - core가 framework를 필요로 하는 저장소, 예를 들어 security-framework를 쓰는 session-store의 Go 시험이 `Undefined symbols: _AuthorizationCreate`로 링크되지 않았다. 생성된 `internal/binding`이 OS마다 고정 목록의 시스템 라이브러리를 링크했다(macOS는 `-lSystem -lc -lm`). 이제 주 link 파일은 `-l<library>`만 쓴다. `release-go-static`은 각 라이브러리를 `cargo rustc --print native-static-libs`로 빌드하고 rustc가 출력한 것을 그 옆의 `native-static-libs`에 쓰며, `binding release-go-module`이 그것을 각 platform의 link 파일에 쓴다. 새 명령 `binding go-link --manifest <Cargo.toml> --target-dir <dir> [--features <features>]`는 checkout의 host 라이브러리를 빌드하고 그 Go 시험의 `CGO_LDFLAGS`를 출력하며, `make e2e`가 그것을 쓴다(GN-15k, B2.367). `packages/ts`에서 `node --test --test-name-pattern=B2.367 tests/*.test.ts`로 확인했다: 그 시험들은 변경 전에 실패했다. darwin arm64에서 `tests/e2e/sample`의 사본으로도 확인했다: 그 `go test`는 출력된 `-L<dir>/debug -lc -lm -liconv -lSystem -lc -lm`로 링크되었다.
 - cycle의 list나 map을 담은 record가 있는 cycle의 crate가 다시 build된다. core 값의 walk가 template의 node, python, php, wasm crate에 iterator를 빌리는 `for item0 in &value.body.iter() {`를 썼다(E0277). loop는 field를 받고 optional과 cycle unit만 그것을 빌린다(GN-6bt, B2.390).
 - 함수 타입의 optional field를 가진 record의 Go 바인딩이 다시 `go vet`을 통과한다. dispatch가 func를 포인터로 `*cfg.AuditSource()`처럼 불렀고 Go는 이를 `is not a function`으로 거부했다(orm `config.audit_source`). func는 `(*cfg.AuditSource)()`로 부른다(GN-6bi, B2.393). `packages/ts`에서 `node --test --test-name-pattern=B2.393 tests/generate.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다.
