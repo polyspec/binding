@@ -1287,15 +1287,6 @@ impl Scope {
     }
 }
 
-impl<F> Drop for Scoped<F> {
-    /// The scope of the machine ends with it: a call on a scope that a function kept fails (GN-13o).
-    fn drop(&mut self) {
-        self.scope
-            .open
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
 /// The steps of [`Scoped`].
 enum Stage {
     /// The scope is not begun.
@@ -1339,13 +1330,21 @@ impl<F> Scoped<F> {
         }
     }
 
+    /// Ends the machine and its scope: a call on a scope that a function kept fails from here on (GN-13o).
+    fn end(&mut self) {
+        self.stage = Stage::Ended;
+        self.scope
+            .open
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Ends with `failure` at once, or, with an audit, after the wait that writes the entry `audited`.
     fn failed(
         &mut self,
         failure: Failure<Error>,
     ) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
         if !self.audit {
-            self.stage = Stage::Ended;
+            self.end();
             return binding_core::machine::Step::Done(Err(failure));
         }
         let parent = self.scope.parent.clone();
@@ -1361,7 +1360,7 @@ impl<F> Scoped<F> {
         &mut self,
         detail: &str,
     ) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
-        self.stage = Stage::Ended;
+        self.end();
         binding_core::machine::Step::Done(Err(Failure::Kind(Error::Internal {
             detail: detail.to_owned(),
         })))
@@ -1416,7 +1415,7 @@ where
             },
             Stage::Commit => match self.outcome.take() {
                 Some(done) => {
-                    self.stage = Stage::Ended;
+                    self.end();
                     Step::Done(done)
                 }
                 None => self.broken("the committed scope has no value"),
