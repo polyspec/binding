@@ -21,7 +21,7 @@ import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  foreignPackage, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
+  foreignPackage, goDefault, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
   goOrder, goTestTag,
 } from './go.ts';
 import {
@@ -1724,9 +1724,15 @@ function callbackTypes(v: Values, cb: CallbackUnit): string {
     const raising = result === undefined
       ? `func (r raising${name}) ${method}(${params}) error { return r.err }`
       : `func (r raising${name}) ${method}(${params}) (${result}, error) {\n\tvar zero ${result}\n\treturn zero, r.err\n}`;
+    // GN-6d, G-5: a fixture whose case names no row of a member with a default leaves the member out, so it gives the
+    // default; the raising and the panicking objects leave it out, and the binding answers it.
+    const absent = m.member.default === undefined || result === undefined
+      ? ''
+      : `\tif !f.names(${goString(method)}) {\n\t\tvar returned ${result}\n${goDefault({ model: v.model, module: '', imports: new Set() }, m.returns, m.member.default.literal, m.member.id).map((line) => `\t\t${line}\n`).join('')}\t\treturn returned, nil\n\t}\n`;
     const fixture = result === undefined
       ? `func (f fixture${name}) ${method}(${params}) error {\n\t_, err := f.answer(${[goString(method), ...args].join(', ')})\n\treturn err\n}`
-      : `func (f fixture${name}) ${method}(${params}) (${result}, error) {\n\tresult, err := f.answer(${[goString(method), ...args].join(', ')})\n\tvalue, _ := result.(${result})\n\treturn value, err\n}`;
+      : `func (f fixture${name}) ${method}(${params}) (${result}, error) {\n${absent}\tresult, err := f.answer(${[goString(method), ...args].join(', ')})\n\tvalue, _ := result.(${result})\n\treturn value, err\n}`;
+    if (m.member.default !== undefined) return { raising: '', panicking: '', fixture };
     const panicking = `func (p panicking${name}) ${method}(${params}) ${result === undefined ? 'error' : `(${result}, error)`} { panic(p.value) }`;
     return { raising, panicking, fixture };
   });
@@ -1734,12 +1740,12 @@ function callbackTypes(v: Values, cb: CallbackUnit): string {
 // raising${name} is a ${name} whose methods return err, with a zero result (K-2).
 type raising${name} struct{ err error }
 
-${methods.map((m) => m.raising).join('\n\n')}
+${methods.filter((m) => m.raising !== '').map((m) => m.raising).join('\n\n')}
 
 // panicking${name} is a ${name} whose methods panic with value (U-3).
 type panicking${name} struct{ value any }
 
-${methods.map((m) => m.panicking).join('\n\n')}
+${methods.filter((m) => m.panicking !== '').map((m) => m.panicking).join('\n\n')}
 
 // fixture${name} is a ${name} that answers by the rows of a case (G-5).
 type fixture${name} struct{ *fixture }
@@ -1748,7 +1754,7 @@ ${methods.map((m) => m.fixture).join('\n\n')}
 `;
 }
 
-const FIXTURE = `
+const fixtureGo = (defaults: boolean): string => `
 // fixtureRow is a row of a callback fixture: the member, its arguments, its result and whether it answers once.
 type fixtureRow struct {
 	member string
@@ -1783,7 +1789,18 @@ func (f *fixture) answer(member string, args ...any) (any, error) {
 	f.unexpected = append(f.unexpected, call)
 	return nil, fmt.Errorf("G-5: no row answers %v", call)
 }
-`;
+${defaults ? `
+// names is whether a row of the fixture is of the member (GN-6d): a member with a default that no row names is left
+// out, and gives its default.
+func (f *fixture) names(member string) bool {
+	for _, row := range f.rows {
+		if row.member == member {
+			return true
+		}
+	}
+	return false
+}
+` : ''}`;
 
 const SAME_FAILURE = `
 // sameFailure is whether two calls failed alike: neither, or both with an error of the same type and kind (U-2).
@@ -2510,7 +2527,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     // GN-13x: the double fixture<Name> of every callback type embeds *fixture, so the type comes with every double.
-    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [FIXTURE] : []),
+    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [fixtureGo(doubles.some((cb) => cb.members.some((m) => m.member.default !== undefined)))] : []),
     ...doubles.map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = '', extraStd: readonly { path: string; alias: string }[] = []): string => {

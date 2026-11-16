@@ -11432,3 +11432,47 @@ test('B2.375: a Python result of an alias in after takes the bytes that leave as
   assert.match(body, /expected_1 = bytes\.fromhex\("ff"\)/);
   assert.match(body, /expected_2 = \["x", bytes\.fromhex\("ff"\)\]/);
 });
+
+test('B2.379: a member of a callback interface with a default may be left out by the host object, which gets the default (U-3, GN-6d)', () => {
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  for (const [id, trait] of [['lookup', 'Lookup'], ['source', 'Source']] as const) {
+    sample.units.find((u: any) => u.id === id).members.push({
+      id: `${id}.blocking_io`, name: ['blocking', 'io'], kind: 'method', visibility: 'public', parameters: [], returns: 'bool',
+      default: { literal: false }, async_allowed: false, core: { path: `polyspec_sample::${trait}::blocking_io`, receiver: '&self' },
+    });
+  }
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  // The entering object is refused only for a member that is there and is no function; the trait method answers an
+  // object without the member with the literal of the contract.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.ok(node.includes(`    let found: Unknown<'env> = object.get_named_property("blockingIo").map_err(internal)?;\n    if found.get_type().map_err(internal)? != ValueType::Undefined && found.get_type().map_err(internal)? != ValueType::Function {`), 'node in_lookup');
+  assert.match(node, /fn blocking_io\(&self\) -> Result<bool, [^\n]+\{\n(?:.*\n){4}            \/\/ GN-6d: [^\n]+\n            let found: Unknown<'env> = self\.object\.get_named_property\("blockingIo"\)[^\n]+\n            if found\.get_type\(\)[^\n]+== ValueType::Undefined \{\n                return Ok\(false\);/, 'node trait');
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export interface Lookup \{\n  find\(key: string\): string \| null;\n  blockingIo\?\(\): boolean;\n\}/);
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.ok(wasm.includes('    let found = Reflect::get(value, &JsValue::from_str("blockingIo")).map_err(|error| internal(&error))?;\n    if !found.is_undefined() && !found.is_function() {'), 'wasm in_lookup');
+  assert.match(wasm, /            if found\.is_undefined\(\) \{\n                return Ok\(false\);\n            \}/, 'wasm trait');
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /  blockingIo\?\(\): boolean;/);
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.ok(python.includes('    if value.hasattr("blocking_io")? && !value.getattr("blocking_io")?.is_callable() {'), 'python in_lookup');
+  assert.ok(python.includes('                if !self.object.bind(py_).hasattr("blocking_io")? {\n                    return Ok(false);\n                }'), 'python trait');
+  assert.doesNotMatch(text(out, 'packages/python/generated/python/polyspec/sample/_types.py'), /def blocking_io/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.doesNotMatch(php, /if !has_method\(object, "blockingIo"\) \{\n\s+return Err\(binding_error/, 'php in_lookup');
+  assert.ok(php.includes('            if !has_method(object, "blockingIo") {\n                return Ok(false);\n            }'), 'php trait');
+  assert.doesNotMatch(php, /FunctionBuilder::new_abstract\("blockingIo"\)/, 'php interface');
+  const go = text(out, 'packages/go/zz_generated_sample.go');
+  assert.doesNotMatch(go.slice(go.indexOf('type Lookup interface {'), go.indexOf('// dispatchLookup')), /BlockingIo/, 'go interface');
+  assert.ok(go.includes('\t\t\tvar returned bool\n\t\t\tif implemented, ok := object.(interface{ BlockingIo() (bool, error) }); ok {\n\t\t\t\tvar err error\n\t\t\t\treturned, err = implemented.BlockingIo()\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn err\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\treturned = false\n\t\t\t}\n'), 'go dispatch');
+  // GN-6w: a class that implements the interface calls its own trait method.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.ok(text(out, path).includes('<polyspec_sample::HeldSource as polyspec_sample::Source>::blocking_io('), path);
+  }
+  // G-5: the fixture of a case whose rows name no row of the member leaves it out, so the binding gives the default.
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.ok(text(out, path).includes(`const fixture0 = fixture(['find'], [['find', ['a'], null, false, null]]);`), path);
+  }
+  assert.ok(text(out, 'packages/python/generated/tests/test_generated.py').includes('_fixture(("find",), [("find", ("a",), None, False, None)])'));
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function blockingIo\(mixed \.\.\.\$args\)/);
+  assert.ok(text(out, 'packages/go/zz_generated_test.go').includes('func (f fixtureLookup) BlockingIo() (bool, error) {\n\tif !f.names("BlockingIo") {\n\t\tvar returned bool\n\t\treturned = false\n\t\treturn returned, nil\n\t}\n'));
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /func \(r raisingLookup\) BlockingIo/);
+});

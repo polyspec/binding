@@ -994,7 +994,11 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         let call = || -> Result<${result}, Thrown> {
             let Some(object) = self.object.object() else {
                 return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the callback is no object") })));
-            };
+            };${m.absent === undefined ? '' : `
+            // GN-6d: an object without the member gets the default of the contract.
+            if !has_method(object, ${rustString(method)}) {
+                return Ok(${m.absent});
+            }`}
 ${outs.join('\n')}
             // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
             // taken before the result is read.
@@ -1037,7 +1041,8 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     }
 }
 `).join('');
-  const checks = cb.members.map((m) => {
+  // GN-6d: a member with a default may be left out, which the call answers with the default.
+  const checks = cb.members.filter((m) => m.absent === undefined).map((m) => {
     const method = langName('php', m.member.name, 'callable');
     return `    if !has_method(object, ${rustString(method)}) {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
@@ -1587,7 +1592,8 @@ ${unitProperties}`;
   // GN-6ap: a generated interface is an interface of the extension without a method, which its classes implement.
   const registerInterfaces = [...model.callbacks, ...model.interfaces.map((unit) => ({ unit, members: [] as CallbackUnit['members'] }))].map((cb) => {
     const phpName = `${phpNamespace(layout, cb.unit.module)}\\${langName('php', cb.unit.name, 'class')}`;
-    const methods = cb.members.map((m) => `
+    // GN-6d: a member with a default is no abstract method, so a class that implements the interface may leave it out.
+    const methods = cb.members.filter((m) => m.absent === undefined).map((m) => `
         .method(
             FunctionBuilder::new_abstract(${rustString(langName('php', m.member.name, 'callable'))})${m.params.map((p) => `\n                .arg(Arg::new(${rustString(langName('php', p.name, 'variable'))}, DataType::Mixed))`).join('')}
                 .returns(DataType::Mixed, false, true),
@@ -2150,7 +2156,8 @@ ${props.join('\n')}
       }
     }
     for (const cb of model.callbacks.filter((c) => c.unit.module === module)) {
-      const lines = cb.members.map((m) => {
+      // GN-6d: a member with a default is no method of the interface, so a class that implements it may leave it out.
+      const lines = cb.members.filter((m) => m.absent === undefined).map((m) => {
         const docs = m.params.map((p) => `         * @param ${docType(p.type)} $${langName('php', p.name, 'variable')}`);
         return `        /**
          * U-3: the extension calls it; the value it returns is judged as it enters (T-8).

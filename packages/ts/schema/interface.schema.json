@@ -1508,6 +1508,24 @@
         "exclusive": {
           "description": "U-6: the rule by which the core refuses an overlapping call of this member of a &self unit with kind busy.",
           "$ref": "#/$defs/ruleId"
+        },
+        "default": {
+          "description": "U-3, GN-6d, CK-98: the value that a member of a callback interface gives when the host object leaves the member out.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
         }
       },
       "allOf": [

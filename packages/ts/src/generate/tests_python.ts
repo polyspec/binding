@@ -393,7 +393,7 @@ export function pythonTests(model: Model, module: string): string {
     },
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
-      const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
+      const members = 'missing' in how ? '' : (unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
       return `type(${pyString(langName('python', unit.name, 'class'))}, (), {${members}})()`;
     },
     // T-3, GN-6c: a record of another repository is the class of the package of that repository, which the test

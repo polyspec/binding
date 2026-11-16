@@ -2508,7 +2508,9 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
   const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
   const text = (value: string): string => (ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value));
   return {
-    members: members.map((_m, i) => text(name(i))),
+    // GN-6d, G-5: a member with a default that no row and no call of the case names is left out of the object, which
+    // the binding answers with the default.
+    members: members.flatMap((m, i) => (m.default !== undefined && !fixture.rows.some((row) => row.member === i) && !(fixture.calls ?? []).some((call) => call.member === i) ? [] : [text(name(i))])),
     rows: fixture.rows.map((row) => {
       const returns = members[row.member]?.returns ?? 'none';
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, typed(returns), row.result);
