@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 93a4963a843b13259ac4d426dc7f59edaaccc4d58845f86bfaf7b8100bbc469b -->
+<!-- source-sha256: 4485b34190c379c06ab866a85b1acf852c941c42a24f49ce0b3541122545fd2d -->
 <!-- source-sha256: ee8e4cc3881eaac1342e9d69e78eb86706a5b3d415911002b592970891962e01 -->
 <!-- source-sha256: 84e31f9a0e63dc4683841689cd148d048b6dc6f6b422e8cc382be5a6b8121ab2 -->
 <!-- source-sha256: 4bb141c4615d408df4a556db0d8e7d062fdeacafa7c86521d2727af54163bdec -->
@@ -246,3 +246,4 @@
 | B2.305 | 하나의 parameter가 `int64`인 생성자로 instance를 만드는 kind `int`의 out row를, kind의 내용이 i64인데도 거부한다(G-4, U-7). 명세 먼저(GN-6e), Red case, 그다음 make가 `int64`를 받는다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/alias_shared.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.305 tests/generate.test.ts | [o] |
 | B2.306 | 타입과 다른 JSON 종류의 case 값을 그 타입으로 바꾼다: uint의 lifetime `"60"`을 `60`으로, `true`를 Python에서 맨 `true`로 써서, 거부의 테스트가 다른 값으로 부르거나 NameError로 실패한다. 명세 먼저(GN-13d), Red case, 그다음 값을 그 JSON 종류로 쓴다. | `docs/spec/generator.md`(.ko); `packages/ts/src/generate/samples.ts`; `packages/ts/tests/generate.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test --test-name-pattern=B2.306 tests/generate.test.ts | [o] |
 | B2.307 | 0.0.11 release: `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `packages/core/rust/Cargo.lock`의 버전은 0.0.11이고, B2.297부터 B2.306까지의 변경은 두 changelog의 `## 0.0.11` 절이다. | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock` | make docs-check; make lint-rust; make test-ts | [o] |
+| B2.381 | `.gitignore`는 `node_modules/`를 적었는데, git은 그것을 디렉터리에만 맞춘다. 그래서 다른 checkout의 package를 잇는 worktree의 link `node_modules`가 무시되지 않았고, B2.378의 커밋이 그것을 담았다. 설치가 checkout에 넣는 것은 생성물이고 추적하지 않는다. Red 시험, 그다음 pattern `node_modules`. | `.gitignore`; `packages/ts/tests/gitignore.test.ts`; `CHANGELOG.md`(.ko) | cd packages/ts && node --test tests/gitignore.test.ts | [o] |

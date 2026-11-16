@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f266b04d7767d13e5c2ec294eab77d4ae1b289020336a6891df51fbd6979895f -->
+<!-- source-sha256: 6303c8cab91a7da1c1f614c481e942e1402a19cf7e01a1fa5502ca82867b6cb2 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -51,6 +51,7 @@
 - CK-22는 member의 경로, 곧 그 kind의 같은 library와 같은 호출 형태에서 kind를 내는 case를 어느 member의 것이든 받는다. 이전에는 member마다 case를 요구했다(B2.376).
 - CK-22는 다른 library의 kind에도 case를 요구한다. 그 행은 category를 그 library에서 가져온다. 이전에는 그런 행을 건너뛰었다(GN-7c, B2.376).
 - callback interface의 member는 `"default": {"literal": <value>}`를 쓸 수 있고, 그 member를 뺀 host 객체는 다섯 target에서 trait method로부터 그 literal을 받는다. 이전에는 kind `invalid_callback`으로 거부되었다. 그 interface를 구현하는 class는 자기 trait method를 호출하고, `binding check`는 다른 unit의 member에 붙은 default와 돌려주는 type이 아닌 type의 default를 보고한다(GN-6d, CK-98, B2.379).
+- `.gitignore`는 `node_modules`를 link로도 무시한다. 다른 checkout의 package를 잇는 worktree가 그런 link를 가진다. `node_modules/`는 디렉터리만 잡아서, 커밋이 그 link를 담았다(B2.381).
 
 ## 0.0.13
 
