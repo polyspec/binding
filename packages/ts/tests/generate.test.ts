@@ -14,7 +14,7 @@ import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
-import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
+import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
@@ -12382,4 +12382,36 @@ test('B2.418: every name that a generated Rust file imports is written bare in t
   }
   assert.ok(files > 0);
   assert.deepEqual([...new Set(unused)], []);
+});
+
+test('B2.430: the in conversion of an alias that only the codec-test entry points call is compiled under codec-test, and one that a member takes is not, in PHP, Python, Node and WASM (GN-4d)', () => {
+  // The fixture itself: blob has kinds and no member takes it (store.get_blob gives it); data is taken by members.
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    const before = (name: string): string => {
+      const at = lib.search(new RegExp(`\\nfn ${name}\\b`));
+      assert.ok(at >= 0, `${path}: fn ${name}`);
+      return lib.slice(lib.lastIndexOf('\n', at - 1) + 1, at);
+    };
+    assert.equal(before('in_blob'), '#[cfg(feature = "codec-test")]', path);
+    assert.notEqual(before('in_data'), '#[cfg(feature = "codec-test")]', path);
+  }
+});
+
+test('B2.430: an item under a feature ends at its block or its `;` alone, so a comma of its generics or of a turbofish cuts nothing, and a feature on a field or an arm is refused (GN-4)', () => {
+  // A statement whose turbofish holds a comma at its own level: the helper that it reads after the comma is read under
+  // the feature, not by the code outside it.
+  const statement = 'fn init(module: &Module) {\n    #[cfg(feature = "codec-test")]\n    module.add::<Pair, Second>(late_helper())?;\n    module.done();\n}\n';
+  const split = featureItems(statement);
+  assert.match(split.gated['codec-test'] ?? '', /late_helper\(\)\)\?;/);
+  assert.doesNotMatch(split.code, /late_helper/);
+  // An item whose generics hold a comma.
+  const item = '#[cfg(feature = "codec-test")]\nfn pair_of(value: HashMap<u8, Later>) -> Option<(u8, Later)> {\n    later_helper(value)\n}\nfn kept() {}\n';
+  const itemSplit = featureItems(item);
+  assert.match(itemSplit.gated['codec-test'] ?? '', /later_helper\(value\)\n\}/);
+  assert.match(itemSplit.code, /fn kept\(\) \{\}/);
+  // A field and an arm are never gated by the generator; one that is ends inside its bracket and is refused.
+  assert.throws(() => featureItems('struct S {\n    #[cfg(feature = "codec-test")]\n    pair: HashMap<u8, Later>,\n}\n'), /GN-4: .*ends inside a bracket/);
+  assert.throws(() => featureItems('match x {\n    #[cfg(feature = "codec-test")]\n    1 => helper(),\n    _ => other(),\n}\n'), /GN-4: .*ends inside a bracket/);
 });
