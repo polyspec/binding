@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d74540883424aeca26316b95daf4de60c6dfc2fcd176f646dca1431c2458e039 -->
+<!-- source-sha256: 3148c8f092da2f734441715afc0fd27cd84e523f38a26cdacb0592999a887917 -->
 <!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
@@ -27,6 +27,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- merge가 한쪽이 상태를 바꾼 task 행을 한 줄로 남긴다: `make hooks`가 changelog와 checklist에 kit의 merge driver `kit-changelog`, `kit-checklist`, `kit-twin`을 target `twin-merge`와 함께 선언한다. 검증 중 행과 main의 완료 행을 둘 다 남기던 `merge=union`을 대신하고, `make hooks-check`는 그것이 없는 checkout을 실패시킨다(K354, B2.424). 0.0.17 lane에 main을 merge한 것을 다시 해서 union에서 B2.418 행이 둘인 것을 보았고, `make hooks` 전에 `make hooks-check`가 실패하는 것으로 검증했다.
 
 ## 0.0.17
 

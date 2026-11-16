@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- A merge keeps one row of a task whose state one side changed: `make hooks` declares the merge drivers of kit for the changelogs and the checklists, `kit-changelog`, `kit-checklist` and `kit-twin` with the target `twin-merge`, in place of the `merge=union` that kept the verification row and the done row of main both, and `make hooks-check` fails a checkout without them (K354, B2.424). Verified by replaying the merge of main into the 0.0.17 lane, which gave two rows of B2.418 under union, and by `make hooks-check`, which failed before `make hooks`.
+
 ## 0.0.17
 
 - The Go test writes the expected result of a call of `after` and of a step of a function fixture by the out rows of a value alias, as it writes the result of a case and as the other four targets do (GN-13be): session-store found that after `Set("a", []byte("y"))` the test expected `[]byte("y")` from `Get("a")`, which gives a `*any` that holds the string "y" by the utf8 row of `php_value`. Verified by `node --test --test-name-pattern=B2.420 tests/generate.test.ts` in `packages/ts`, which failed before the change.
