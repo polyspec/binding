@@ -27,6 +27,7 @@ import {
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
   nativeRoundTrip,
+  caseName,
   callsCode,
   machineFunction,
 } from './model.ts';
@@ -296,13 +297,13 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   const variant = variantOf(v.model, type);
   if (variant !== undefined) {
     const fields = json as Record<string, unknown>;
-    const tag = langName('python', variant.unit.tag ?? [], 'variable');
+    const tag = caseName(variant.unit.tag ?? []);
     const kase = variant.cases.find((c) => c.value === fields[tag]);
     if (kase === undefined) throw new Unsupported(`a case value of the variant ${variant.unit.id} names no case by ${tag}: ${JSON.stringify(json)}`);
     const iface = typeName(v, type);
     const name = `${iface.slice(0, iface.length - goName(variant.unit.name).length)}${goName(kase.unit.name)}`;
     return `${name}{${(kase.unit.fields ?? []).map((f) => {
-      const key = langName('python', f.name, 'variable');
+      const key = caseName(f.name);
       if (!(key in fields)) {
         if (f.default !== undefined) return `${goName(f.name)}: nil`;
         throw new Unsupported(`a case value of the case ${kase.unit.id} has no field ${key}`);
@@ -324,7 +325,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (unit?.kind === 'record') {
     const fields = json as Record<string, unknown>;
     return `${typeName(v, type)}{${(unit.fields ?? []).map((f) => {
-      const key = langName('python', f.name, 'variable');
+      const key = caseName(f.name);
       if (!(key in fields)) {
         if (f.default !== undefined) return `${goName(f.name)}: nil`;
         throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);

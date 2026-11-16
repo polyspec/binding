@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6801bd4c83a3f64c9ba551a3192aa6ee4ed56a12af8d021a130cb2a9dc3caffb -->
+<!-- source-sha256: 6f3a3ea0363f6cc4a23ec34e5b2006e78f006358d478780d808213beca614685 -->
 # 생성기
 
 [English](generator.md)
@@ -810,7 +810,9 @@
 - **GN-6bk** parameter, field, callable의 Python 이름이 `else` 같은 Python 키워드이면, 그것을 부르는 모든 곳에서
   뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
   `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
-  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
+  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이며, 모든 target은 case value의 field를
+  그 키로 읽는다: Go 시험은 field를 `Else`로 이름하면서 그 값을 Python 이름 `else_`로 찾았으므로, template의 case
+  `Ternary`의 case value를 그 field가 없는 값으로 거부했다.
 - **GN-6bl** 다른 library의 callback unit의 trait은 그 소유자의 코어 오류로 실패한다: 소유자의 `errors.code`가
   이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
   선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신

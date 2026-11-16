@@ -1000,7 +1000,9 @@ the design ids are those of the binding design.
   trailing underscore, `else_`, in every place that names it: the dataclass, the stub, the native module and the
   tests. Why: a keyword is no identifier, so `else: list[Node] | None` is a SyntaxError, and PEP 8 names the trailing
   underscore for this case, which no name of the contract has. A key of a case file stays the snake_case name of
-  the contract, `else`, because a case file belongs to no language.
+  the contract, `else`, because a case file belongs to no language, and every target reads a field of a case value
+  by that key: the Go tests named the field `Else` but looked its value up by the Python name `else_`, so a case
+  value of the case `Ternary` of template was refused as one without the field.
 - **GN-6bl** The trait of a callback unit of another library fails with the core error of its owner: the struct
   that `errors.code` of the owner names (GN-7b), or the error enum of its kinds when it names none. Why: the core of
   the owner declares its trait with that error, as the binding of the owner writes it, so a consumer that wrote the
