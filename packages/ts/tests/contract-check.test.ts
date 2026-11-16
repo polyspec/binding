@@ -1849,7 +1849,7 @@ test('a row of cases that names an alias may have only, which names a target whe
   assert.ok(found.length > 0, JSON.stringify(found));
 });
 
-test('a function fixture names its parameters, which its steps and those inside it give as on and as a bound value (GN-13n, CK-22, B2.319)', () => {
+test('a function fixture names its parameters, which its steps and those inside it give as on and as a bound value (GN-13n, CK-22, B2.322)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const run = (change: (kase: any) => void): Finding[] => {
     const cases = read('contracts/cases.json');
@@ -1867,7 +1867,7 @@ test('a function fixture names its parameters, which its steps and those inside 
   assert.ok(on.some((f) => f.check === 'CK-22' && /is on nobody, which is neither a parameter/.test(f.message)), JSON.stringify(on));
 });
 
-test('a call of after on a kept argument, and a step, may raise a kind, which counts as a case of its member (GN-13o, CK-22, B2.320)', () => {
+test('a call of after on a kept argument, and a step, may raise a kind, which counts as a case of its member (GN-13o, CK-22, B2.323)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const run = (change: (kase: any) => void): Finding[] => {
     const cases = read('contracts/cases.json');
@@ -1885,7 +1885,7 @@ test('a call of after on a kept argument, and a step, may raise a kind, which co
   assert.ok(kind.some((f) => /after 0 raises the kind missing, which is no kind of the raises of scope\.size/.test(f.message)), JSON.stringify(kind));
 });
 
-test('a step of a function fixture of a case of a method may call on its receiver (GN-13p, CK-22, B2.321)', () => {
+test('a step of a function fixture of a case of a method may call on its receiver (GN-13p, CK-22, B2.324)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const cases = read('contracts/cases.json');
   cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it').work.function.calls.push({ on: 'receiver', call: 'store.get', args: { key: 'a' }, result: null });
@@ -1893,4 +1893,25 @@ test('a step of a function fixture of a case of a method may call on its receive
   cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it').work.function.calls.at(-1).call = 'scope.get';
   const found = checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
   assert.ok(found.some((f) => /calls scope\.get, which is no method of store/.test(f.message)), JSON.stringify(found));
+});
+
+describe('CK-96 a key that the tests of the repository read is declared in reads of its row (B2.319)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const run = (reads: string[] | undefined): Finding[] => {
+    const contract = read('packages/rust/interface.json');
+    const cases = read('contracts/cases.json');
+    const kase = cases['tag_name'].find((k: any) => k.id === 'b277_raw_path');
+    kase.bytes = 'AAEC';
+    kase.tre = 'a typo';
+    const row = contract.cases.find((r: any) => r.member === 'tag.name' && r.file === 'contracts/cases.json');
+    if (reads !== undefined) row.reads = reads;
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-96' || f.check === 'CK-1');
+  };
+  test('a key that reads names is accepted, and a key that it does not name is still reported', () => {
+    const found = run(['bytes']);
+    assert.deepEqual(found.map((f) => f.message), ['the case b277_raw_path of tag.name has the key tre, which is no parameter of tag.name, no key of its result and no key of a case (G-5)']);
+  });
+  test('without reads both keys are reported', () => {
+    assert.equal(run(undefined).length, 2);
+  });
 });

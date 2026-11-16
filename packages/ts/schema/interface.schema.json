@@ -2038,6 +2038,13 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
         },
+        "reads": {
+          "description": "The keys of the cases of the group that the tests of the repository itself read, such as its core tests and its hand-written host tests, and that no generator reads (CK-96).",
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$" }
+        },
         "only": {
           "$ref": "#/$defs/only",
           "description": "The targets whose tests hold the cases of the group (GN-13h); a row with member or with alias may have it."

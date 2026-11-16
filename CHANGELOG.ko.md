@@ -1,16 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7d26cbdaf63bfc7c87da2d900882d3d89fd68e22d605609206f1930c6a700703 -->
+<!-- source-sha256: a3595d0d55e6a4a183e3f8a1dd46cd55465aa7275c99f3b04159373536c0d916 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
-- method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.321).
+- method의 case에서 function fixture의 step은 시험이 보관한 case의 receiver 위에서 부른다(`"on": "receiver"`). 다섯 타깃에서 그렇다. `raises`와 함께 그 step은 receiver가 자기 호출의 callback이 도는 동안 주는 kind를 보인다. end-to-end sample은 `store.count`를 주고, 그것은 store의 transaction이 도는 동안 새 kind `busy`로 실패한다(GN-13p, B2.324).
 
-- function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.320).
+- function fixture의 step과 `after`의 호출은 kind를 raise할 수 있고, `after`의 호출은 함수가 반환한 뒤 function fixture가 보관한 인자 위의 호출일 수 있다. 그런 kind는 CK-22에서 그 호출의 member의 case로 센다. 다섯 타깃에서 그렇다. end-to-end sample은 `scope.size`를 주고, 그것은 transaction이 끝난 뒤 함수가 보관한 scope에서 새 kind `ended`로 실패한다(GN-13o, B2.323).
 
-- function fixture는 parameter에 이름을 붙이고(`names`), 그것이나 그 안의 fixture의 step은 이름 붙은 인자 위에서 부르고 그것을 `{"bound": <name>}`로 넘긴다. 다섯 타깃에서 그렇다. end-to-end sample은 새 member `scope.copy`로 중첩 scope의 값을 둘러싼 scope에 복사한다(GN-13n, B2.319).
+- function fixture는 parameter에 이름을 붙이고(`names`), 그것이나 그 안의 fixture의 step은 이름 붙은 인자 위에서 부르고 그것을 `{"bound": <name>}`로 넘긴다. 다섯 타깃에서 그렇다. end-to-end sample은 새 member `scope.copy`로 중첩 scope의 값을 둘러싼 scope에 복사한다(GN-13n, B2.322).
+## 0.0.13
+
+- `cases`의 행은 저장소의 시험이 읽고 어떤 생성기도 읽지 않는 case의 key를 `reads`에 선언하고, CK-96은 그것을 받는다(B2.319). CK-96은 그런 key를 모두 보고하여, core 시험이 자기 key를 읽는 계약에서 `binding generate`가 멈췄다: php-serialization에서 3769건(`bytes`, `tree`, `serialized`, `data`, `written`). 어떤 행도 선언하지 않은 key는 여전히 보고한다.
 
 ## 0.0.12
 

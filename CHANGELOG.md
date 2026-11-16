@@ -5,11 +5,14 @@
 
 ## Unreleased
 
-- A step of a function fixture in a case of a method calls on the receiver of the case (`"on": "receiver"`), which the test keeps, on the five targets; with `raises` it shows a kind that the receiver gives while the callback of its own call runs. The end-to-end sample gives `store.count`, which fails with the new kind `busy` while a transaction of the store runs (GN-13p, B2.321).
+- A step of a function fixture in a case of a method calls on the receiver of the case (`"on": "receiver"`), which the test keeps, on the five targets; with `raises` it shows a kind that the receiver gives while the callback of its own call runs. The end-to-end sample gives `store.count`, which fails with the new kind `busy` while a transaction of the store runs (GN-13p, B2.324).
 
-- A step of a function fixture and a call of `after` may raise a kind, and a call of `after` may be on an argument that a function fixture kept, after the function returned; such a kind counts as a case of the member of the call for CK-22, on the five targets. The end-to-end sample gives `scope.size`, which fails with the new kind `ended` on a scope that a function kept after its transaction ended (GN-13o, B2.320).
+- A step of a function fixture and a call of `after` may raise a kind, and a call of `after` may be on an argument that a function fixture kept, after the function returned; such a kind counts as a case of the member of the call for CK-22, on the five targets. The end-to-end sample gives `scope.size`, which fails with the new kind `ended` on a scope that a function kept after its transaction ended (GN-13o, B2.323).
 
-- A function fixture names its parameters (`names`), and a step of it or of a fixture inside it calls on a named argument and passes one as `{"bound": <name>}`, on the five targets; the end-to-end sample copies a value of a nested scope into the scope around it with the new member `scope.copy` (GN-13n, B2.319).
+- A function fixture names its parameters (`names`), and a step of it or of a fixture inside it calls on a named argument and passes one as `{"bound": <name>}`, on the five targets; the end-to-end sample copies a value of a nested scope into the scope around it with the new member `scope.copy` (GN-13n, B2.322).
+## 0.0.13
+
+- A row of `cases` declares in `reads` the keys of its cases that the tests of the repository read and no generator reads, and CK-96 accepts them (B2.319). CK-96 reported every such key, so `binding generate` stopped on a contract whose core tests read their own keys: 3769 findings for php-serialization (`bytes`, `tree`, `serialized`, `data`, `written`). A key that no row declares is still reported.
 
 ## 0.0.12
 

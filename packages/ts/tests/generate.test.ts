@@ -10589,7 +10589,7 @@ test('the cases of an alias row with only are tests of the targets that it lists
   assert.equal(named('php'), false);
 });
 
-test('a function fixture keeps its named arguments, and a step of a fixture inside it calls on one and passes one (GN-13n, B2.319)', () => {
+test('a function fixture keeps its named arguments, and a step of a fixture inside it calls on one and passes one (GN-13n, B2.322)', () => {
   const sample = e2eGenerated().get('sample') ?? new Map();
   const py = text(sample, 'packages/python/generated/tests/test_generated.py');
   assert.match(py, /_bound\["outer"\] = args\[0\]/);
@@ -10607,7 +10607,7 @@ test('a function fixture keeps its named arguments, and a step of a fixture insi
   assert.match(go, /bound_inner\.Copy\(bound_outer, "b"\)/);
 });
 
-test('a call of after on an argument that a function fixture kept fails with a kind, and so does a step that names raises (GN-13o, B2.320)', () => {
+test('a call of after on an argument that a function fixture kept fails with a kind, and so does a step that names raises (GN-13o, B2.323)', () => {
   const sample = e2eGenerated().get('sample') ?? new Map();
   assert.match(text(sample, 'packages/python/generated/tests/test_generated.py'), /assert _outcome\(lambda: _bound\["kept"\]\.size\(\)\)\[::2\] == \("error", "ended"\)/);
   assert.match(text(sample, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertStringContainsString\("'kind' => 'ended'", self::outcome\(fn \(\) => self::\$bound\["kept"\]->size\(\)\)/);
@@ -10625,7 +10625,7 @@ test('a call of after on an argument that a function fixture kept fails with a k
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /return nil, fmt\.Errorf\("GN-13o: scope\.size gave %#v, not the kind ended"/);
 });
 
-test('a step of a function fixture calls on the receiver of the case, which the test keeps (GN-13p, B2.321)', () => {
+test('a step of a function fixture calls on the receiver of the case, which the test keeps (GN-13p, B2.324)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const cases = read('sample/contracts/cases.json');
   const kase = cases.store_transaction.find((c: any) => c.id === 'a_scope_that_a_function_kept_has_ended_after_it');
