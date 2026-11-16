@@ -101,7 +101,9 @@ const lib = crate.replaceAll('-', '_');
 const name = crate.endsWith('-go') ? 'lib' + lib + '.a' : crate.endsWith('-wasm') ? lib + '.wasm' : crate.endsWith('-php-ext') ? 'libpolyspec_sample.' + (process.platform === 'darwin' ? 'dylib' : 'so') : 'lib' + lib;
 const dir = path.join(process.env.CARGO_TARGET_DIR, args.includes('--target') ? option('--target') : '', 'release');
 fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(path.join(dir, name), 'built');`);
+fs.writeFileSync(path.join(dir, name), 'built');
+// rustc prints the native-static-libs of a static library to the diagnostics (GN-15k).
+if (args[0] === 'rustc' && args.includes('native-static-libs')) process.stderr.write('note: link against the following native artifacts\\nnote: native-static-libs: -lnative_' + (args.includes('--target') ? option('--target') : 'host').replaceAll('-', '_') + ' -lc\\n');`);
   standIn(bin, 'binding', '');
   standIn(bin, 'git', `console.log('1767323045');`);
   // uv build runs the PEP 517 backend of maturin 1.16, which passes --compatibility off unless MATURIN_PEP517_ARGS names
@@ -172,7 +174,7 @@ const generation = (root: string, target: string): string[] => ['generate', '--c
 test('each recipe of a build generates the binding of its target before it builds (GN-19h)', (t) => {
   const box = sandbox(t, 'x86_64-unknown-linux-gnu');
   const steps: [string, string, string, ...string[]][] = [
-    ['release-go-static', 'go', 'cargo', 'build'],
+    ['release-go-static', 'go', 'cargo', 'rustc'],
     ['release-wheel', 'python', 'uv', 'build'],
     ['release-php-ext', 'php', 'cargo', 'build'],
     ['release-npm-platform', 'node', 'napi', 'build'],
@@ -197,7 +199,7 @@ test('the static library of the Go module is built for the GNU C library and for
   const linux = sandbox(t, 'aarch64-unknown-linux-gnu');
   const run = linux.make('release-go-static');
   assert.equal(run.status, 0, run.output);
-  const builds = linux.calls().filter((call) => call.tool === 'cargo' && call.args[0] === 'build');
+  const builds = linux.calls().filter((call) => call.tool === 'cargo' && call.args[0] === 'rustc');
   assert.deepEqual(builds.map((call) => call.args.includes('--target') ? call.args[call.args.indexOf('--target') + 1] : 'host'), ['host', 'aarch64-unknown-linux-musl']);
   for (const dir of ['linux_arm64', 'linux_arm64_musl']) {
     assert.equal(readFileSync(join(linux.root, 'var/release/assets/go', dir, 'libpolyspec_sample_go.a'), 'utf8'), 'stripped', dir);
@@ -209,6 +211,30 @@ test('the static library of the Go module is built for the GNU C library and for
   const refused = other.make('release-go-static');
   assert.equal(refused.status, 2);
   assert.match(refused.output, /the host x86_64-apple-darwin is no platform of the release/);
+});
+
+test('B2.367: release-go-static builds each library with the print of rustc and writes its native-static-libs beside it (GN-15k)', (t) => {
+  const linux = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const run = linux.make('release-go-static');
+  assert.equal(run.status, 0, run.output);
+  const builds = linux.calls().filter((call) => call.tool === 'cargo' && call.args[0] === 'rustc').map((call) => call.args);
+  assert.deepEqual(builds, [
+    ['rustc', '--release', '--locked', '--color', 'never', '-p', 'polyspec-sample-go', '--lib', '--crate-type', 'staticlib', '--', '--print', 'native-static-libs'],
+    ['rustc', '--release', '--locked', '--color', 'never', '-p', 'polyspec-sample-go', '--target', 'aarch64-unknown-linux-musl', '--lib', '--crate-type', 'staticlib', '--', '--print', 'native-static-libs'],
+  ]);
+  assert.equal(readFileSync(join(linux.root, 'var/release/assets/go/linux_arm64/native-static-libs'), 'utf8'), '-lnative_host -lc\n');
+  assert.equal(readFileSync(join(linux.root, 'var/release/assets/go/linux_arm64_musl/native-static-libs'), 'utf8'), '-lnative_aarch64_unknown_linux_musl -lc\n');
+  // The diagnostics of cargo stay in the output of the recipe.
+  assert.match(run.output, /note: native-static-libs: -lnative_host -lc/);
+});
+
+test('B2.367: release-go-static fails when cargo prints no native-static-libs, and writes no file (GN-15k)', (t) => {
+  const mac = sandbox(t, 'aarch64-apple-darwin');
+  writeFileSync(join(mac.bin, 'cargo'), readFileSync(join(mac.bin, 'cargo'), 'utf8').replace("args.includes('native-static-libs')", 'false'));
+  const run = mac.make('release-go-static');
+  assert.notEqual(run.status, 0);
+  assert.match(run.output, /release-go-static: cargo printed no native-static-libs of polyspec-sample-go for darwin_arm64 \(GN-15k\)/);
+  assert.equal(existsSync(join(mac.root, 'var/release/assets/go/darwin_arm64/native-static-libs')), false);
 });
 
 // Defect 2: the bindgen of ext-php-rs takes the libclang and the clang of the pinned LLVM, which the recipe checks first.
@@ -521,7 +547,7 @@ test('B2.279: release-assets-platform runs the builds of the platform of the hos
   const run = box.make('release-assets-platform');
   assert.equal(run.status, 0, run.output);
   const calls = box.calls();
-  callIndex(calls, 'cargo', 'build');
+  callIndex(calls, 'cargo', 'rustc');
   callIndex(calls, 'uv', 'build');
   callIndex(calls, 'napi', 'build');
   // A failed wheel stops neither the Go library nor the npm platform package, and the job fails.
@@ -531,7 +557,7 @@ test('B2.279: release-assets-platform runs the builds of the platform of the hos
   assert.notEqual(failed.status, 0, 'release-assets-platform passes after a failed wheel');
   assert.match(failed.output, /release-assets-platform: failed: release-wheel/);
   const after = box.calls();
-  callIndex(after, 'cargo', 'build');
+  callIndex(after, 'cargo', 'rustc');
   callIndex(after, 'napi', 'build');
 });
 

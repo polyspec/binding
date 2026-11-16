@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6801bd4c83a3f64c9ba551a3192aa6ee4ed56a12af8d021a130cb2a9dc3caffb -->
+<!-- source-sha256: cb42dacecc8c198b14c7bd40dcce1d642e99756dd229f241464da5ee54a5554f -->
 # 생성기
 
 [English](generator.md)
@@ -1748,10 +1748,15 @@
   rustc가 출력하는 `native-static-libs`(`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`)를
   그 순서대로 쓴 것이며, 생성기가 고정하는 목록이 아니다. release는 각 platform의 라이브러리를(GN-15g) 그 출력과 함께
   빌드하고, 그 라이브러리들을 그 platform link 파일의 지시문 `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`에
-  쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다. 라이브러리를 품지 않는 checkout은 CLI의 명령
+  쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다: `release-go-static`은 자기가 빌드하는 각
+  platform의 라이브러리들을 `RELEASE_ASSETS/go/<platform>`에서 그 라이브러리 옆의 파일 `native-static-libs`에 쓰고,
+  `binding release-go-module`은 그 파일이 없거나 그 파일이 라이브러리를 하나도 적지 않는 platform을 거부하며, 그 파일로
+  그 link 파일의 지시문을 module의 commit에 쓴다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
+  방식으로 출력과 함께 빌드하고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
   하나에서 그것을 얻는다: `binding go-link --manifest <Go crate의 Cargo.toml> --target-dir <dir> [--features <features>]`는
   host의 정적 라이브러리를 `cargo rustc --locked --offline --lib --crate-type staticlib`과 주어진 feature로 `<dir>`에 출력과
-  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. Cargo의 진단은
+  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
+  읽으므로 `<dir>`은 절대 경로로 바꾼다. Cargo의 진단은
   표준 오류로 가고, 빌드가 실패하면 명령은 Cargo의 status로 실패한다. Go 시험을 돌리는 recipe는 자기 라이브러리 빌드 대신
   그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
   파일은 `-l<library>`만 쓴다. 명령이 빌드 출력을 읽기만 하지 않고 빌드하는 이유: rustc는 정적 라이브러리를 링크하는 동안에만

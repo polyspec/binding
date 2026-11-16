@@ -133,7 +133,9 @@ export function releaseRecipes(contract: Contract): Recipes {
     add('release-go-static', `${head('release-go-static', `release-go-static builds the static library of the Go module of the platform of the host (GN-19b) and, on a Linux host,
 the one of the musl target of its arch into linux_<arch>_musl, because binding release-go-module requires the libraries of
 five Go platforms. It strips the debug sections of a copy of each with the llvm-strip of the component llvm-tools of the
-pinned toolchain, never the strip of PATH, and the stripped copy enters the assets under another name and is renamed there.`)}
+pinned toolchain, never the strip of PATH, and the stripped copy enters the assets under another name and is renamed there.
+cargo rustc builds each library with the print of rustc, and the native-static-libs that it printed enter the file
+native-static-libs beside the library, which binding release-go-module writes into the link file of the platform (GN-15k).`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${generate('go')}
 	@$(call binding_release_host,${name('release-go-static')}); \\
@@ -148,11 +150,22 @@ ${generate('go')}
 	cp "$$copy/${lib}" "$$out/.${lib}.part"; \\
 	mv "$$out/.${lib}.part" "$$out/${lib}"; \\
 	}; \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo build --release --locked -p ${crate('go')}; \\
-	publish $(RELEASE_TARGET)/release "$$go"; \\
+	build() { \\
+	mkdir -p $(RELEASE_TARGET); \\
+	log=$(RELEASE_TARGET)/native-static-libs-$$2.log; \\
+	status=0; \\
+	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo rustc --release --locked --color never -p ${crate('go')} $$3 --lib --crate-type staticlib -- --print native-static-libs 2> "$$log" || status=$$?; \\
+	cat "$$log" >&2; \\
+	test "$$status" = 0 || exit "$$status"; \\
+	libs=$$(sed -n 's/^note: native-static-libs: *//p' "$$log"); \\
+	test -n "$$libs" || { echo "${name('release-go-static')}: cargo printed no native-static-libs of ${crate('go')} for $$2 (GN-15k)" >&2; exit 1; }; \\
+	publish "$$1" "$$2"; \\
+	printf '%s\\n' "$$libs" > "$(RELEASE_ASSETS)/go/$$2/.native-static-libs.part"; \\
+	mv "$(RELEASE_ASSETS)/go/$$2/.native-static-libs.part" "$(RELEASE_ASSETS)/go/$$2/native-static-libs"; \\
+	}; \\
+	build $(RELEASE_TARGET)/release "$$go" ''; \\
 	if [ -n "$$musl" ]; then \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) cargo build --release --locked -p ${crate('go')} --target "$$musl"; \\
-	publish "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl; \\
+	build "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl "--target $$musl"; \\
 	fi
 `);
   }

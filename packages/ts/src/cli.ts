@@ -10,6 +10,9 @@
 // binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
 //     --work <directory> [--remote <name>]
 //   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
+// binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>]
+//   Builds the static library of the host with the print of rustc and prints the value of CGO_LDFLAGS for the Go tests
+//   of the checkout (GN-15k).
 // binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]
 //   Writes the release recipes of the binding, the make file that the Makefile of the repository includes (GN-19h).
 
@@ -26,7 +29,7 @@ import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } 
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
-import { Refused, releaseGoModule } from './release/go-module.ts';
+import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
 import { releaseRecipes } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
@@ -122,7 +125,7 @@ function fail(message: string): never {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -223,7 +226,36 @@ function releaseRecipesCommand(argv: string[]): never {
   process.exit(0);
 }
 
+// GN-15k: the static library of the host, built by cargo rustc with the print of rustc into the target directory, and
+// the value of CGO_LDFLAGS for the Go tests of the checkout on stdout. Both streams of cargo go to stderr, so stdout
+// holds the value alone; a failed build ends with the status of cargo. The directory is made absolute, because cgo
+// reads a relative -L from the directory of each package.
+function goLinkCommand(argv: string[]): never {
+  const given = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i];
+    const value = argv[i + 1];
+    if (key === undefined || value === undefined || !['--manifest', '--target-dir', '--features'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    given.set(key, value);
+  }
+  const manifestOption = given.get('--manifest');
+  const targetOption = given.get('--target-dir');
+  if (manifestOption === undefined || targetOption === undefined) usage('go-link takes --manifest and --target-dir');
+  const manifest = resolve(manifestOption);
+  const targetDir = resolve(targetOption);
+  const ran = spawnSync('cargo', goStaticBuildArgs({ manifest, targetDir, features: given.get('--features') }), { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['inherit', 'pipe', 'pipe'] });
+  if (ran.error !== undefined) fail(`cargo did not start: ${ran.error.message}`);
+  process.stderr.write(ran.stdout);
+  process.stderr.write(ran.stderr);
+  if (ran.status !== 0) process.exit(ran.status ?? 1);
+  const libs = nativeStaticLibs(ran.stderr);
+  if (libs === undefined) fail(`cargo printed no native-static-libs of the static library of ${manifest} (GN-15k)`);
+  process.stdout.write(`-L${join(targetDir, 'debug')} ${libs}\n`);
+  process.exit(0);
+}
+
 const [command, ...rest] = process.argv.slice(2);
+if (command === 'go-link') goLinkCommand(rest);
 if (command === 'release-go-module') releaseGoModuleCommand(rest);
 if (command === 'release-recipes') releaseRecipesCommand(rest);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);

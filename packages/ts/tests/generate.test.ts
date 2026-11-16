@@ -7600,6 +7600,14 @@ test('Go links the static library of each platform from its directory in the Go 
   assert.doesNotMatch(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /-L/);
 });
 
+// B2.367 (defect 26): the main link file wrote a fixed list of system libraries per OS, which missed the frameworks of
+// session-store; the libraries beside the static library are the native-static-libs of its build (GN-15k).
+test('B2.367: the main link file of the Go binding names only -l<library>, no fixed list of system libraries (GN-15k)', () => {
+  const out = sampleWith(() => undefined, ['go']);
+  const directives = text(out, 'packages/go/internal/binding/zz_generated_binding.go').split('\n').filter((line) => line.startsWith('#cgo'));
+  assert.deepEqual(directives, ['#cgo LDFLAGS: -lpolyspec_sample_go']);
+});
+
 // The sample with the classes store and scope of its core (GN-6ae): a transaction takes a function of a scope and
 // returns what the function returned.
 function scopedSample(targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> {

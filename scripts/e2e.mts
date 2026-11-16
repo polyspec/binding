@@ -105,10 +105,10 @@ const { libraryParts } = await import('../packages/ts/src/check.ts');
 const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
 const { convert, libraryName } = await import('../packages/ts/src/names.ts');
 const { componentBase, isHost, namedLibraries, place } = await import('../packages/ts/src/generate/packages.ts');
-const { GO_PLATFORMS } = await import('../packages/ts/src/generate/go.ts');
+const { GO_PLATFORMS, goLinkFile } = await import('../packages/ts/src/generate/go.ts');
 // GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
 // module are those of `binding release-go-module`.
-const { consumerFiles, debugSections, goRemote, goWork, requiredVersion, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
+const { consumerFiles, debugSections, goLinkDirective, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -179,6 +179,23 @@ function runBinding(argv: string[], copyDir: string): void {
   if (ran.status === 0) return;
   const lines = ran.stderr.split('\n').map((line) => line.trim().replaceAll(`${copyDir}/`, '')).filter((line) => line !== '' && !line.startsWith('usage:'));
   throw new Error(`binding ${argv[0] ?? ''} (status ${String(ran.status)}): ${lines.join('; ')}`);
+}
+
+// GN-15k: binding go-link of the commit builds the static library of a Go crate with the test features into the target
+// directory of the run and gives the value of CGO_LDFLAGS for its Go tests: the directory and the native-static-libs of
+// the library. Its stderr, the diagnostics of Cargo, is printed; a failure carries the errors of rustc and Cargo.
+function goLink(manifest: string, features: string): string {
+  const argv = ['go-link', '--manifest', manifest, '--target-dir', target, '--features', features];
+  process.stdout.write(`$ ${process.execPath} ${cli} ${argv.join(' ')}\n`);
+  const ran = spawnSync(process.execPath, [cli, ...argv], { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency } });
+  process.stdout.write(ran.stderr);
+  if (ran.error !== undefined) throw ran.error;
+  if (ran.status !== 0) {
+    const errors = ran.stderr.split('\n').filter((line) => /^(error(\[|:)|binding:)/.test(line)).map((line) => line.trim());
+    throw new Error(`binding go-link (status ${String(ran.status)})${errors.length > 0 ? `: ${errors.join('; ')}` : ''}`);
+  }
+  process.stdout.write(`CGO_LDFLAGS=${ran.stdout}`);
+  return ran.stdout.trim();
 }
 
 function step(name: string): void {
@@ -795,7 +812,8 @@ if (targets.includes('go')) {
   // GN-5: the build tags of go test are the test features of the crate, polyspec_<feature>, each with _ for -.
   // GN-13ba: the tag of a test feature names the library, polyspec_<library>_<feature>.
   const goTags = (p: Prepared): string => testFeatures(p, 'go').split(',').map((feature) => `polyspec_${p.contract.library.replaceAll('-', '_')}_${feature.replaceAll('-', '_')}`).join(',');
-  const goEnvOf = (p: Prepared): Record<string, string> => ({ CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: `-tags=${goTags(p)}`, CASES: cases ?? '' });
+  // GN-15k: CGO_LDFLAGS is the value of binding go-link, which the build of the static library sets.
+  const goEnvOf = (p: Prepared): Record<string, string> => ({ GOTOOLCHAIN: 'local', GOFLAGS: `-tags=${goTags(p)}`, CASES: cases ?? '' });
   const goCases = caseRunners && existsSync(join(e2e, 'cases_test.go'));
   for (const [i, p] of mainsOf('go').entries()) {
     const goModule = at(p, 'packages/go');
@@ -816,14 +834,16 @@ if (targets.includes('go')) {
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);
     stepOf(['go'], `build the static library${of} with the test features`, () => {
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', testFeatures(p, 'go')]);
+      const flags = [goLink(join(goModule, 'internal/ffi/Cargo.toml'), testFeatures(p, 'go'))];
       // GN-15f: the Go module of a dependency that go.mod requires is built in the same program, so its static library
-      // is built into the same directory, with its own test features, whose build tags the run gives every package.
+      // is built into the same directory, with its own test features, whose build tags the run gives every package; its
+      // native-static-libs follow those of the library of the module (GN-15k).
       const goMod = readFileSync(join(goModule, 'go.mod'), 'utf8');
       for (const d of dependencies.filter((d) => d.contract.targets.includes('go'))) {
         const module = (d.contract.packages['go'] as { module: string }).module;
-        if (new RegExp(`^require ${module.replaceAll('.', '\\.')} |^\\t${module.replaceAll('.', '\\.')} `, 'm').test(goMod)) run('cargo', ['build', '--manifest-path', join(d.copy, 'Cargo.toml'), '-p', `${d.contract.core.crate}-go`, '--features', testFeatures(d, 'go')]);
+        if (new RegExp(`^require ${module.replaceAll('.', '\\.')} |^\\t${module.replaceAll('.', '\\.')} `, 'm').test(goMod)) flags.push(goLink(join(at(d, 'packages/go'), 'internal/ffi/Cargo.toml'), testFeatures(d, 'go')).replace(/^-L\S*\s*/, ''));
       }
+      goEnv['CGO_LDFLAGS'] = flags.join(' ');
       // GN-14d: a dependency in the development form resolves to the Go module of its copy through the go.work of the
       // run, as the untracked go.work of a development checkout resolves it; without one, no go.work of a directory
       // above the copy is read.
@@ -954,7 +974,20 @@ if (targets.includes('go')) {
         const crate = r.p.contract.core.crate;
         const placed = place(r.p.contract, 'packages/go');
         if (placed !== r.remote.directory) throw new Error(`${moduleOf(r.p)}: the Go module is at ${placed} of its repository, not at ${r.remote.directory}, the directory of its module path (GN-15)`);
-        run('cargo', ['build', '--release', '--manifest-path', join(r.p.copy, 'Cargo.toml'), '-p', `${crate}-go`]);
+        // GN-15k: each library is built with the print of rustc, and its native-static-libs enter the link file of its
+        // platform, as binding release-go-module writes them.
+        const releaseBuild = (triple?: string): string => {
+          const argv = goStaticBuildArgs({ manifest: join(goModule, 'internal/ffi/Cargo.toml'), targetDir: target, release: true, target: triple });
+          process.stdout.write(`$ cargo ${argv.join(' ')}\n`);
+          const ran = spawnSync('cargo', argv, { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency } });
+          process.stdout.write(`${ran.stdout}${ran.stderr}`);
+          if (ran.error !== undefined) throw ran.error;
+          if (ran.status !== 0) throw new Error(`cargo rustc of ${crate}-go (status ${String(ran.status)}): ${ran.stderr.split('\n').filter((line) => /^error(\[|:)/.test(line)).join('; ')}`);
+          const libs = nativeStaticLibs(ran.stderr);
+          if (libs === undefined) throw new Error(`cargo printed no native-static-libs of ${crate}-go (GN-15k)`);
+          return libs;
+        };
+        const hostLibs = releaseBuild();
         const key = `${r.remote.owner}/${r.remote.repository}`;
         const source = sources.get(key) ?? { dir: join(root, 'source', key), tags: [] };
         sources.set(key, source);
@@ -969,7 +1002,12 @@ if (targets.includes('go')) {
         for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
-        const carry = (built: string, carriedPlatform: string): void => {
+        const carry = (built: string, carriedPlatform: string, libs: string): void => {
+          const linkPath = join(moduleDir, `internal/binding/zz_generated_link_${goLinkFile(carriedPlatform)}.go`);
+          const directive = goLinkDirective(carriedPlatform);
+          const linkText = readFileSync(linkPath, 'utf8');
+          if (!linkText.split('\n').includes(directive)) throw new Error(`${linkPath} has no line ${directive} (GN-15k)`);
+          writeFileSync(linkPath, linkText.split('\n').map((line) => (line === directive ? `${directive} ${libs}` : line)).join('\n'));
           const carriedLibrary = join(moduleDir, 'internal/ffi/lib', carriedPlatform, `lib${lib(r.p.contract, 'go')}.a`);
           copyFileSync(built, carriedLibrary);
           const size = statSync(carriedLibrary).size;
@@ -978,12 +1016,11 @@ if (targets.includes('go')) {
           if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform} holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
           process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${carriedPlatform}: ${String(size)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
         };
-        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform);
+        carry(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), platform, hostLibs);
         // On Linux the library of musl of the arch of the run, which make go-musl-check links on musl.
         if (muslTriple !== undefined) {
           const triple = `${muslTriple}-unknown-linux-musl`;
-          run('cargo', ['build', '--release', '--manifest-path', join(r.p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--target', triple]);
-          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`);
+          carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`, releaseBuild(triple));
         }
         // The packages that a consumer can import: the directories of the module with a Go file that is no test,
         // outside internal.

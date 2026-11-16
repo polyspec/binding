@@ -2133,11 +2133,16 @@ the design ids are those of the binding design.
   (`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`), in their order, and no list that the
   generator fixes. A release builds the library of each platform (GN-15g) with that print and writes the libraries
   into the directive of the link file of that platform, `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`,
-  so a consumer that fetches the module links them with no flag of its own. A checkout, whose tree holds no library,
+  so a consumer that fetches the module links them with no flag of its own: `release-go-static` writes the libraries
+  of each platform that it builds into the file `native-static-libs` beside its library in `RELEASE_ASSETS/go/<platform>`,
+  and `binding release-go-module` refuses a platform without that file, or whose file names no library, and writes the
+  directive of its link file from it into the commit of the module. The end-to-end check builds the libraries of its
+  released form (GN-14f) with the print in the same way and writes the same directive. A checkout, whose tree holds no library,
   gets them from one command of the CLI: `binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <dir>
   [--features <features>]` builds the static library of the host with `cargo rustc --locked --offline --lib
   --crate-type staticlib` and the given features into `<dir>`, with the print, and writes to its standard output the
-  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`; the diagnostics of Cargo go to
+  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`, with `<dir>` made absolute, because
+  cgo reads a relative `-L` from the directory of each package; the diagnostics of Cargo go to
   its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
   calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link ...)"` in the recipe line
   (GN-14), and `make e2e` calls the same command. The main link file names only `-l<library>`. Why the command builds
