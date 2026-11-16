@@ -8,6 +8,7 @@ import { variantPattern } from '../contract.ts';
 import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
+import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
@@ -41,6 +42,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  const leaf = cycleLeaf(model, WASM_CYCLE, type, value, subject);
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${value}, ${subject})`;
   if (unit !== undefined && (objectUnit(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   // GN-6aa: a callback of a parameter with keeps, and any callback of a unit that one holds, is held as a Native, which
@@ -102,6 +105,8 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('tuple' in type) return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, copied(t) ? `*${name}` : name), (parts) => `tuple_out(&[${parts.join(', ')}])`);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
+  const leaf = cycleLeaf(model, WASM_CYCLE, type, value, '');
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${rustField(unit.name)}(${value})`;
   const alias = aliasOf(model, type);
@@ -433,49 +438,105 @@ ${outArms}
 }
 
 function recordRust(model: Model, unit: Unit, library?: string): string {
+  const cycle = library === undefined ? cycleOf(wasmCycles(model), unit) : undefined;
+  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode));
+  const { ins, outs } = recordParts(model, unit, 'in');
   const name = recordFn(unit);
   const core = unit.core_type ?? '';
-  const fields = unit.fields ?? [];
-  const reads = fields.map((f) => {
-    const js = langName('wasm', f.name, 'variable');
-    // GN-6a: a field that may be left out is null when its member is missing or undefined.
-    const read = caseLeftOut(f) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-    return `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = ${read}?;${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(js), 'binding_error')}` : ''}`;
-  });
-  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
   return `
 /// T-4: a value of the record ${langName('wasm', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
-${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
+${ins}
 }
 
 fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
-    let value = value.borrow();
-    let object = Object::new();
-${writes.join('\n')}
-    Ok(object.into())
+${outs}
 }
 `;
 }
 
+// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
+  const core = unit.core_type ?? '';
+  const fields = unit.fields ?? [];
+  const kids = mode === 'kids';
+  const reads = fields.map((f) => {
+    const js = langName('wasm', f.name, 'variable');
+    // GN-6a: a field that may be left out is null when its member is missing or undefined.
+    const read = caseLeftOut(f) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
+    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
+    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
+    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(js), 'binding_error')}` : ''}`;
+  });
+  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
+  return {
+    ins: `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+    outs: `    let value = value.borrow();\n    let object = Object::new();\n${writes.join('\n')}\n    Ok(object.into())`,
+  };
+}
+
+// GN-6bt: the host of the walks of a cycle in WASM.
+const WASM_CYCLE: CycleHost = {
+  lang: 'JsValue',
+  made: 'JsValue',
+  inValue: '&JsValue',
+  give: (owned) => `&${owned}`,
+  own: (place) => `JsValue::clone(${place})`,
+  result: (type) => `Result<${type}, Fail>`,
+  internal: (detail) => `binding_error(BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
+  inGenerics: '',
+  inParams: '',
+  inArgs: '',
+  outGenerics: '',
+  outParams: '',
+  outArgs: '',
+};
+
+// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
+const wasmCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+
 // T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
 function variantRust(model: Model, variant: Variant): string {
+  const cycle = cycleOf(wasmCycles(model), variant.unit);
+  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode));
   const name = recordFn(variant.unit);
   const core = variant.unit.core_type ?? '';
   const jsName = langName('wasm', variant.unit.name, 'class');
   const tag = langName('wasm', variant.unit.tag ?? [], 'variable');
+  const { ins, outs } = variantParts(model, variant, 'in');
+  return `
+/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
+fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
+${ins}
+}
+
+/// T-9: a value of the variant ${jsName} leaves as the object of its case.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
+${outs}
+}
+`;
+}
+
+// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
+  const jsName = langName('wasm', variant.unit.name, 'class');
+  const tag = langName('wasm', variant.unit.tag ?? [], 'variable');
+  const kids = mode === 'kids';
   const set = (key: string, value: string): string => `            Reflect::set(&object, &JsValue::from_str(${rustString(key)}), &${value}?).map_err(|error| internal(&error))?;`;
-  const ins = variant.cases.map((kase) => {
+  const insArms = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
     const reads = fields.map((f) => {
       const js = langName('wasm', f.field.name, 'variable');
       // GN-6v: a field that may be left out is null when its member is missing or undefined.
       const read = caseLeftOut(f.field) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.field.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(js), 'binding_error')}` : ''}`;
+      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
+      const variable = `${kids ? '_' : ''}${f.variable}`;
+      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? `${read}?` : caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(js), 'binding_error')}` : ''}`;
     });
-    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
     return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
   });
   const arms = variant.cases.map((kase) => {
@@ -485,25 +546,18 @@ function variantRust(model: Model, variant: Variant): string {
     const writes = [set(tag, `text_out(${rustString(kase.value)})`), ...fields.map((f) => set(langName('wasm', f.field.name, 'variable'), convertOut(model, f.field.type, value(f))))];
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
   });
-  return `
-/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
-    let tag = text_in(&member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
+  return {
+    ins: `    let tag = text_in(&member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
     match tag.as_str() {
-${ins.join('\n')}
+${insArms.join('\n')}
         _ => Err(type_error(subject, ${rustString(jsName)})),
-    }
-}
-
-/// T-9: a value of the variant ${jsName} leaves as the object of its case.
-fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
-    let object = Object::new();
+    }`,
+    outs: `    let object = Object::new();
     match value.borrow() {
 ${arms.join('\n')}
     }
-    Ok(object.into())
-}
-`;
+    Ok(object.into())`,
+  };
 }
 
 // T-5: the name of the module's export of a member of a class, which the ES module calls from the class it defines.

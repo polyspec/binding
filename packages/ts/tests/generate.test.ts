@@ -4122,7 +4122,8 @@ test('a variant that holds itself has no conversion with a parameter that only i
   }
   // Node: figure holds itself and no value that reads the env_, so its conversion in takes none, and neither does a call of it.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /\nfn in_figure\(value: Unknown<'_>, subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{/);
+  // GN-6bt: the conversion in walks the cycle of figure, a lifetime of the walk being its one generic parameter.
+  assert.match(node, /\nfn in_figure<'v>\(value: Unknown<'v>, subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{/);
   assert.doesNotMatch(node, /\bin_figure\(env_, /);
   // The check finds such a parameter in a text that has one.
   assert.deepEqual(onlyInRecursion("\nfn in_a(env: &Env, value: Unknown<'_>) -> Result<A, Fail> {\n    in_a(env, value)\n}\n"), ['in_a(env)']);
@@ -4133,11 +4134,12 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   const out = variants();
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const rust = text(out, path);
-    assert.match(rust, /fn in_figure\(/, path);
+    assert.match(rust, /fn in_figure(?:<[^>]*>)?\(/, path);
     assert.match(rust, /fn out_figure/, path);
     // A case without fields is a struct pattern, and a field that holds the variant again is boxed; a list is not.
     assert.match(rust, /polyspec_variants::Figure::Dot \{\}/, path);
-    assert.match(rust, /let field_frame: Box<polyspec_variants::Figure> = [\s\S]*?Box::new\(in_figure\(/, path);
+    // GN-6bt: a place of the cycle takes the value that the walk made before.
+    assert.match(rust, /let field_frame: Box<polyspec_variants::Figure> = [\s\S]*?Box::new\(cycle0_u0\(made_next\(/, path);
     assert.match(rust, new RegExp(`let field_back: Option<Box<polyspec_variants::Figure>> = [\\s\\S]*?${helperName(path, 'in_optional')}\\([^\\n]*\\.map\\(Box::new\\)`), path);
     assert.match(rust, /let field_items: Vec<polyspec_variants::Figure> = /, path);
     assert.match(rust, /polyspec_variants::Figure::Group \{ items: field_items, frame: field_frame, back: field_back \}/, path);
@@ -4186,13 +4188,16 @@ test('a variant is an interface of Go and a struct of each case, which the C ABI
   assert.match(pkg, /^\tencodeFigure\(enc, figure\)$/m);
   assert.match(pkg, /^\tvalue0 = decodeFigure\(dec\)$/m);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(lib, /fn in_figure\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{\n\s*match uint_in\(input\)\? \{/);
+  // GN-6bt: in_figure walks the cycle, and node_in_figure reads the case.
+  assert.match(lib, /fn in_figure\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{\n\s*cycle0_u0\(Some\(cycle0_in\(input, 0, subject\)\?\)\)/);
+  assert.match(lib, /fn node_in_figure<'a>\(input: &mut &'a \[u8\], subject: &str, [^\n]*\{\n\s*match uint_in\(input\)\? \{/);
   assert.match(lib, /polyspec_variants::Figure::Dot \{\}/);
-  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(in_figure\(input, "Frame"\)\?\);/);
+  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(cycle0_u0\(made_take\(input, made\)\)[^\n]*\?\);/);
   assert.match(lib, /let field_back: Option<Box<polyspec_variants::Figure>> = optional_in\([^\n]*\.map\(Box::new\);/);
   assert.match(lib, /let field_items: Vec<polyspec_variants::Figure> = /);
   assert.match(lib, /_ => Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("Figure"\) \}\)\),/);
-  assert.match(lib, /fn out_figure\(output: &mut Vec<u8>, value: impl Borrow<polyspec_variants::Figure>\) \{\n\s*match value\.borrow\(\) \{/);
+  assert.match(lib, /fn out_figure\(output: &mut Vec<u8>, value: impl Borrow<polyspec_variants::Figure>\) \{\n\s*cycle0_out\(output, Cycle0::U0\(value\.borrow\(\)\)\);/);
+  assert.match(lib, /fn node_out_figure\(output: &mut Vec<u8>, value: impl Borrow<polyspec_variants::Figure>, [^\n]*\{\n\s*match value\.borrow\(\) \{/);
   assert.match(lib, /polyspec_variants::Figure::Circle \{ radius: field_radius \} => \{\n\s*uint_out\(output, 1_u64\);\n\s*float_out\(output, \*field_radius\);/);
   assert.doesNotMatch(lib, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/);
   // G-5: a case value is the struct of its case; a field left out is nil.
@@ -11475,4 +11480,22 @@ test('B2.379: a member of a callback interface with a default may be left out by
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function blockingIo\(mixed \.\.\.\$args\)/);
   assert.ok(text(out, 'packages/go/zz_generated_test.go').includes('func (f fixtureLookup) BlockingIo() (bool, error) {\n\tif !f.names("BlockingIo") {\n\t\tvar returned bool\n\t\treturned = false\n\t\treturn returned, nil\n\t}\n'));
   assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /func \(r raisingLookup\) BlockingIo/);
+});
+
+test('B2.377: the conversions of a recursive variant walk the value with a work stack on the heap and call no conversion of the cycle (GN-6bt)', () => {
+  // template parse depth-limit-unary: a Unary Expr nested 62 deep trapped in debug WASM with "memory access out of
+  // bounds", since out_expr called itself once for each level. Figure of tests/e2e/variants holds a Figure in a list,
+  // a Box and an optional Box.
+  const out = variants();
+  const libs = ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
+  for (const path of libs) {
+    const lib = text(out, path);
+    // Each function of the crate whose name is a conversion of the cycle, from its signature to the next item.
+    const fns = [...lib.matchAll(/\nfn ((?:out|in)_[a-z_]*figure[a-z_]*)\b[^\n]*\{\n([\s\S]*?)\n\}\n/g)];
+    assert.ok(fns.some((m) => m[1] === 'out_figure') && fns.some((m) => m[1] === 'in_figure'), `${path}: ${fns.map((m) => m[1]).join(', ')}`);
+    for (const [, name, body] of fns) {
+      assert.doesNotMatch(body ?? '', /\b(?:out|in)_figure\(/, `${path} ${name}`);
+    }
+    assert.match(lib, /GN-6bt/, path);
+  }
 });

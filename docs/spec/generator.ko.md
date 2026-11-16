@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 25e6ecc4b6b7d891f56ce6484a643f9a846242b8ada5ddedc8bb2e11e57f1b10 -->
+<!-- source-sha256: 6801bd4c83a3f64c9ba551a3192aa6ee4ed56a12af8d021a130cb2a9dc3caffb -->
 # 생성기
 
 [English](generator.md)
@@ -851,6 +851,20 @@
   이름에 따라 달라진다. 접두어 `_module_`은 고정 module `_errors`, `_types`, `_native`, `_root`를 같은 이름의 계약 module과
   구별한다. template의 legacy package는 API를 `polyspec.template`에서만 내보냈고(`__init__.py`) 하위 module `format`은
   없었으므로, 이 규칙이 지키는 공개 경로는 package root다.
+- **GN-6bt** cycle의 record나 variant, 즉 field의 type을 거쳐 하나가 자기 자신에 닿는 record와 variant의 집합의
+  변환은 다섯 target에서 값의 깊이에 비례하는 native stack을 쓰지 않는다. `out_<unit>`과 `in_<unit>`은 자기 자신도,
+  cycle의 다른 unit의 변환도 부르지 않는다. 각각 heap의 work stack으로 값을 loop에서 걷고, stack은 단계마다 frame
+  하나를 둔다. out은 core 값을 걷는다. 값이 담은 cycle unit의 값을 field 순서로 나열하고(`cycle<k>_kids`), 각각을
+  그것을 담은 값보다 먼저 만들며, `node_out_<unit>`이 그 자리에 만든 값으로 값을 만든다. in은 먼저 언어의 값을
+  `node_in_<unit>`처럼 판정하고 cycle unit 자리의 언어 값을 모아(`kids_<unit>`) 그것들을 변환한 뒤, 그것들로 값을
+  변환한다. 그런 자리 뒤의 field의 실패는 앞 자리들이 변환된 뒤에 나므로, field 순서에서 첫 실패가 전처럼 난다.
+  Go는 아직 변환되지 않은 첫 자리까지 byte를 읽고, 그 자리를 먼저 변환한 뒤 변환된 자리의 byte를 건너 값을 다시
+  읽으므로, 그런 자리가 `n`개인 값은 `n + 1`번 읽힌다. field가 callback이나 function을 담아 core type이 호출의
+  lifetime을 지니는 cycle, 또는 cycle unit을 담은 tuple을 가진 cycle은 서로 부르는 변환을 유지한다. field의 좁힘
+  (GN-12a)은 값이 변환될 때, 그 자리들 뒤에 판정된다. Why: debug WASM module의 stack은 1 MiB이고, template의 case
+  `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식은 단계마다 자기 자신을 부르는 `out_expr`에서 "memory access
+  out of bounds"로 trap했다. binding은 host의 stack을 늘릴 수 없고, 더 큰 stack은 process가 끝나는 깊이를 옮길 뿐이며,
+  value alias 변환도 같은 방식을 쓴다(GN-6as).
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

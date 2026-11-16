@@ -10,6 +10,7 @@ import { absentInits, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
+import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 
 const ROOT = 'packages/python/generated';
 const PYTHON_PACKAGE = `${ROOT}/python`;
@@ -389,6 +390,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined) {
     return `${unitFn('in', unit ?? { name: [] }, aliasOf(model, type)?.library)}(py_, ${value}, ${subject})`;
   }
+  const leaf = cycleLeaf(model, PYTHON_CYCLE, type, value, subject);
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(py_, ${value}, ${subject})`;
   throw new Unsupported(`no Python input conversion for ${JSON.stringify(type)}`);
 }
@@ -443,6 +446,8 @@ function convertOut(model: Model, type: Type, value: string): string {
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py_, ${value})`;
+  const leaf = cycleLeaf(model, PYTHON_CYCLE, type, value, '');
+  if (leaf !== undefined) return leaf;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('out', unit, libraryOf(type))}(py_, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `${unitFn('out', unit, aliasOf(model, type)?.library)}(py_, ${value})`;
   throw new Unsupported(`no Python output conversion for ${JSON.stringify(type)}`);
@@ -480,47 +485,112 @@ ${outArms}
 
 // T-4: the result form of a record, a frozen dataclass of _types that takes every field by name.
 function recordRust(model: Model, unit: Unit, library?: string): string {
+  const cycle = library === undefined ? cycleOf(pythonCycles(model), unit) : undefined;
+  if (cycle !== undefined) return cycleUnitRust(model, PYTHON_CYCLE, unit, cycle, 'PyErr', (typed, mode) => recordParts(typed, unit, mode, library));
   const name = recordFn(unit);
-  const typesOf = library === undefined ? 'types(py_)?' : `foreign_types(py_, ${rustString(`${(model.foreign.get(library)?.packages['python'] as { module: string }).module}._types`)})?`;
   const core = unit.core_type ?? '';
   const pyClass = langName('python', unit.name, 'class');
-  const fields = unit.fields ?? [];
-  const reads = fields.map((f) => {
-    const attr = langName('python', f.name, 'variable');
-    return `    let ${recordLocal(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) ? `\n    ${narrowed(recordLocal(f.name), rustString(attr), '|error| binding_error(py_, error)')}` : ''}`;
-  });
-  const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
+  const { ins, outs } = recordParts(model, unit, 'in', library);
   return `
 /// T-4: a value of the record ${pyClass} is an instance of the class itself; its fields are judged as they enter (T-8).
 fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
-    let class = ${typesOf}.getattr(${rustString(pyClass)})?;
-    if !value.is_instance(&class)? {
-        return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
-    }
-${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })
+${ins}
 }
 
 fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
-    let value = value.borrow();
-    let fields = PyDict::new(py_);
-${writes.join('\n')}
-    ${typesOf}.getattr(${rustString(pyClass)})?.call((), Some(&fields))
+${outs}
 }
 `;
 }
 
+// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids', library?: string): { ins: string; outs: string } {
+  const typesOf = library === undefined ? 'types(py_)?' : `foreign_types(py_, ${rustString(`${(model.foreign.get(library)?.packages['python'] as { module: string }).module}._types`)})?`;
+  const core = unit.core_type ?? '';
+  const pyClass = langName('python', unit.name, 'class');
+  const fields = unit.fields ?? [];
+  const kids = mode === 'kids';
+  const reads = fields.map((f) => {
+    const attr = langName('python', f.name, 'variable');
+    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
+    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
+    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(attr), '|error| binding_error(py_, error)')}` : ''}`;
+  });
+  const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
+  return {
+    ins: `    let class = ${typesOf}.getattr(${rustString(pyClass)})?;
+    if !value.is_instance(&class)? {
+        return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
+    }
+${reads.join('\n')}
+    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+    outs: `    let value = value.borrow();
+    let fields = PyDict::new(py_);
+${writes.join('\n')}
+    ${typesOf}.getattr(${rustString(pyClass)})?.call((), Some(&fields))`,
+  };
+}
+
+// GN-6bt: the host of the walks of a cycle in Python.
+const PYTHON_CYCLE: CycleHost = {
+  lang: "Bound<'py, PyAny>",
+  made: "Bound<'py, PyAny>",
+  inValue: "&Bound<'py, PyAny>",
+  give: (owned) => `&${owned}`,
+  own: (place) => `Bound::clone(${place})`,
+  result: (type) => `PyResult<${type}>`,
+  internal: (detail) => `binding_error(py_, BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
+  inGenerics: "<'py>",
+  inParams: "py_: Python<'py>, ",
+  kidContext: { param: "_py: Python<'py>, ", arg: 'py_, ' },
+  inArgs: 'py_, ',
+  outGenerics: "<'py>",
+  outParams: "py_: Python<'py>, ",
+  outArgs: 'py_, ',
+};
+
+// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
+const pythonCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+
 // T-9, GN-6v: a value of a variant is an instance of the dataclass of one of its cases, whose fields are judged as they
 // enter (T-8); a value leaves as the instance of the class of its case, by a match without a wildcard.
 function variantRust(model: Model, variant: Variant): string {
+  const cycle = cycleOf(pythonCycles(model), variant.unit);
+  if (cycle !== undefined) return cycleUnitRust(model, PYTHON_CYCLE, variant.unit, cycle, 'PyErr', (typed, mode) => variantParts(typed, variant, mode));
   const name = recordFn(variant.unit);
   const core = variant.unit.core_type ?? '';
   const pyName = langName('python', variant.unit.name, 'class');
-  const ins = variant.cases.map((kase) => {
+  const { ins, outs } = variantParts(model, variant, 'in');
+  return `
+/// T-9: a value of the variant ${pyName} is an instance of the class of one of its cases; its fields are judged as they enter (T-8).
+fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+${ins}
+}
+
+/// T-9: a value of the variant ${pyName} leaves as the instance of the class of its case.
+fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
+${outs}
+}
+`;
+}
+
+// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
+  const pyName = langName('python', variant.unit.name, 'class');
+  const kids = mode === 'kids';
+  const insArms = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => `        let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `&value.getattr(${rustString(langName('python', f.field.name, 'variable'))})?`, 'subject')}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n        ${narrowed(f.variable, rustString(langName('python', f.field.name, 'variable')), '|error| binding_error(py_, error)')}` : ''}`);
+    const reads = fields.map((f) => {
+      const attr = langName('python', f.field.name, 'variable');
+      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
+      const variable = `${kids ? '_' : ''}${f.variable}`;
+      const read = `${convertIn(model, f.field.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?`;
+      return `        let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? read : caseRead(f, read)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n        ${narrowed(variable, rustString(attr), '|error| binding_error(py_, error)')}` : ''}`;
+    });
     return `    if value.is_instance(&types.getattr(${rustString(langName('python', kase.unit.name, 'class'))})?)? {
-${reads.map((r) => `${r}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
+${reads.map((r) => `${r}\n`).join('')}        return ${kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`};
     }`;
   });
   const arms = variant.cases.map((kase) => {
@@ -529,23 +599,16 @@ ${reads.map((r) => `${r}\n`).join('')}        return Ok(${caseStruct(variant, ka
     const pyClass = rustString(langName('python', kase.unit.name, 'class'));
     return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => ${writes.length === 0 ? `${pyClass},` : `{\n${writes.join('\n')}\n            ${pyClass}\n        }`}`;
   });
-  return `
-/// T-9: a value of the variant ${pyName} is an instance of the class of one of its cases; its fields are judged as they enter (T-8).
-fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
-    let types = types(py_)?;
-${ins.join('\n')}
-    Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyName)}) }))
-}
-
-/// T-9: a value of the variant ${pyName} leaves as the instance of the class of its case.
-fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
-    let fields = PyDict::new(py_);
+  return {
+    ins: `    let types = types(py_)?;
+${insArms.join('\n')}
+    Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyName)}) }))`,
+    outs: `    let fields = PyDict::new(py_);
     let class = match value.borrow() {
 ${arms.join('\n')}
     };
-    types(py_)?.getattr(class)?.call((), Some(&fields))
-}
-`;
+    types(py_)?.getattr(class)?.call((), Some(&fields))`,
+  };
 }
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);

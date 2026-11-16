@@ -1050,6 +1050,24 @@ the design ids are those of the binding design.
   `_native` and `_root` apart from a module of the contract of the same name. The legacy package of template exported
   its API from `polyspec.template` alone (`__init__.py`) and no submodule `format`, so the package root is the public
   path that this keeps.
+- **GN-6bt** The conversions of a record or a variant of a cycle, a set of records and variants of which one
+  reaches itself through the types of their fields, use no native stack in proportion to the depth of the value, on
+  the five targets. `out_<unit>` and `in_<unit>` neither call themselves nor a conversion of another unit of the
+  cycle: each walks the value in a loop with a work stack on the heap, which holds one frame for each level. Out walks
+  the core value: the values of units of the cycle that a value holds are listed in the order of its fields
+  (`cycle<k>_kids`), each is made before the value that holds it, and `node_out_<unit>` makes the value with the made
+  ones at its places. In first judges a value of the language as `node_in_<unit>` does and keeps the values of the
+  language at its places of units of the cycle (`kids_<unit>`), converts them, and then converts the value with them;
+  a failure of a field of the value after such a place is raised after the places before it are converted, so the
+  first failure in the order of the fields is raised, as before. Go reads its bytes up to the first place whose bytes
+  are not converted yet, converts that place first and reads the value again past the bytes of the converted places,
+  so a value with `n` such places is read `n + 1` times. A cycle whose fields hold a callback or a function, whose core
+  types carry a lifetime of the call, or a tuple that holds a unit of the cycle, keeps the conversions that call each
+  other. A narrowing of a field (GN-12a) is judged when the value is converted, after its places. Why: a debug WASM
+  module has 1 MiB of stack, and the case `parse depth-limit-unary` of template, a `Unary` expression nested 62 deep,
+  trapped with "memory access out of bounds" in `out_expr`, which called itself at each level; the binding cannot
+  enlarge the stack of a host, a larger stack only moves the depth at which the process ends, and the value alias
+  conversions take the same approach (GN-6as).
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
