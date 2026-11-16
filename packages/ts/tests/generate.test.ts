@@ -14,7 +14,7 @@ import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
-import { closure, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
+import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
@@ -12397,4 +12397,21 @@ test('B2.430: the in conversion of an alias that only the codec-test entry point
     assert.equal(before('in_blob'), '#[cfg(feature = "codec-test")]', path);
     assert.notEqual(before('in_data'), '#[cfg(feature = "codec-test")]', path);
   }
+});
+
+test('B2.430: an item under a feature ends at its block or its `;` alone, so a comma of its generics or of a turbofish cuts nothing, and a feature on a field or an arm is refused (GN-4)', () => {
+  // A statement whose turbofish holds a comma at its own level: the helper that it reads after the comma is read under
+  // the feature, not by the code outside it.
+  const statement = 'fn init(module: &Module) {\n    #[cfg(feature = "codec-test")]\n    module.add::<Pair, Second>(late_helper())?;\n    module.done();\n}\n';
+  const split = featureItems(statement);
+  assert.match(split.gated['codec-test'] ?? '', /late_helper\(\)\)\?;/);
+  assert.doesNotMatch(split.code, /late_helper/);
+  // An item whose generics hold a comma.
+  const item = '#[cfg(feature = "codec-test")]\nfn pair_of(value: HashMap<u8, Later>) -> Option<(u8, Later)> {\n    later_helper(value)\n}\nfn kept() {}\n';
+  const itemSplit = featureItems(item);
+  assert.match(itemSplit.gated['codec-test'] ?? '', /later_helper\(value\)\n\}/);
+  assert.match(itemSplit.code, /fn kept\(\) \{\}/);
+  // A field and an arm are never gated by the generator; one that is ends inside its bracket and is refused.
+  assert.throws(() => featureItems('struct S {\n    #[cfg(feature = "codec-test")]\n    pair: HashMap<u8, Later>,\n}\n'), /GN-4: .*ends inside a bracket/);
+  assert.throws(() => featureItems('match x {\n    #[cfg(feature = "codec-test")]\n    1 => helper(),\n    _ => other(),\n}\n'), /GN-4: .*ends inside a bracket/);
 });

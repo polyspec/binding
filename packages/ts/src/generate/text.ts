@@ -447,9 +447,10 @@ export function withUsedHelpers(block: string, modules: Readonly<Record<string, 
 }
 
 // GN-4: Rust code split into the text outside the items and statements under one feature and, per feature, the text of
-// those items. An item ends at its block, or at a `;` or `,` of its own level, or before a bracket that closes around it.
-const ITEM_KEYWORDS = new Set(['fn', 'impl', 'struct', 'enum', 'trait', 'mod', 'const', 'static', 'type', 'use', 'let', 'macro_rules']);
-
+// those items. An item or a statement ends at its block or at the `;` of its own level, so a comma of its generics or of
+// a turbofish (`add::<A, B>(...)`) is inside it. The generator puts a feature on items and statements alone, never on a
+// field of a struct or an arm of a match; one that ends inside the bracket around it, as such a field or arm does, is
+// refused, since its end is no `;` and a comma of its type could not be told from its own.
 export function featureItems(source: string): { code: string; gated: Record<string, string> } {
   const tokens = rustTokens(source);
   const { close } = brackets(tokens);
@@ -461,15 +462,10 @@ export function featureItems(source: string): { code: string; gated: Record<stri
     let i = (close[first + 1] ?? tokens.length) + 1;
     while (tokens[i]?.text === '#' && tokens[i + 1]?.text === '[') i = (close[i + 1] ?? tokens.length) + 1;
     let end = source.length;
-    // An item or a let, whose generics and types hold commas, ends at its block or its `;` alone; a field or an arm ends
-    // at its comma too.
-    let head = i;
-    while (['pub', 'async', 'unsafe', 'extern', '""'].includes(tokens[head]?.text ?? '') || (tokens[head]?.text === '(' && tokens[head - 1]?.text === 'pub')) head = tokens[head]?.text === '(' ? (close[head] ?? head) + 1 : head + 1;
-    const commaEnds = !ITEM_KEYWORDS.has(tokens[head]?.text ?? '');
     for (; i < tokens.length; i += 1) {
       const word = tokens[i]?.text ?? '';
-      if (CLOSE.has(word)) { end = tokens[i]?.at ?? source.length; break; }
-      if (word === ';' || (word === ',' && commaEnds)) { end = (tokens[i]?.at ?? source.length) + 1; break; }
+      if (CLOSE.has(word)) throw new Error(`GN-4: the item under #[cfg(feature = "${found[1] ?? ''}")] at ${found.index} ends inside a bracket, as a field or an arm does; only an item or a statement is under a feature`);
+      if (word === ';') { end = (tokens[i]?.at ?? source.length) + 1; break; }
       if (OPEN.has(word)) {
         const shut = close[i] ?? tokens.length;
         if (word === '{' && tokens[shut + 1]?.text !== 'else' && tokens[shut + 1]?.text !== '.' && tokens[shut + 1]?.text !== '?') { end = (tokens[shut]?.at ?? source.length - 1) + 1; break; }
