@@ -2769,6 +2769,13 @@ class Checker {
           this.report('CK-98', `${path}/default`, `the default ${JSON.stringify(member.default.literal)} of ${member.id} is no value of its return type ${JSON.stringify(member.returns ?? 'none')} (U-3, GN-6d)`);
         }
       }
+      // CK-98, B2.409: the core passes every argument to a callback, so a parameter of a callback member has no default.
+      if (callback) {
+        for (const [p, parameter] of (member.parameters ?? []).entries()) {
+          if (parameter.default === undefined) continue;
+          this.report('CK-98', `${path}${pointer('parameters', p)}/default`, `the parameter ${parameter.name.join('_')} of the callback member ${member.id} of ${unit.id} has a default; the core passes every argument to a callback (U-3, CK-101)`);
+        }
+      }
       for (const [i, ref] of (member.errors?.recognize ?? []).entries()) {
         const refPath = `${path}/errors/recognize/${i}`;
         if (ref.library === undefined || ref.library === this.contract.library) {

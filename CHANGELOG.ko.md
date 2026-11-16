@@ -2,6 +2,7 @@
 <!-- source-sha256: 32d7f7e66efa0fb9ea2dacd62cf6e188f462a2e2efc9e954c3c8738039873f72 -->
 <!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
 <!-- source-sha256: b646290ae5ea803962330f63746a94ac9da97e8a45a6b26d46cdb132928f0d31 -->
+<!-- source-sha256: 7a126bae000ad4d441ea9a7810e363349700f7fd1cc2d8fd1f6d463f1cf8b511 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
@@ -30,6 +31,7 @@
 ## Unreleased
 
 - `binding release-recipes`가 쓰는 recipe 파일은 target `node`를 가진 계약에 대해 `checkout-node-addon`을 가진다(GN-3c, GN-19h). 그것은 Node 바인딩을 생성하고, 끝에서 끝까지 확인이 addon을 빌드하듯 test feature를 켠 debug 빌드 `$(CARGO) build $(CARGOFLAGS) --locked --all-features -p polyspec-<library>-node`를 실행하며, `$(CARGO) metadata`가 알려 주는 target directory의 cdylib를 생성된 진입점 옆의 `<name>.<platform>.node`로 복사한다. 진입점은 플랫폼 패키지가 설치되지 않았을 때 그것을 로드한다. 레포와 그 checkout에 연결한 소비자는 빌드, 플랫폼 이름, 복사를 스스로 쓰지 않는다. php-serialization에는 그것이 없어서 그 checkout을 연결한 소비자가 addon load에 실패했다(T2.43). 플랫폼 이름은 표 `NODE_PLATFORMS` 하나에서 나오고, 진입점과 그 test는 기계의 플랫폼을 한 식으로 계산한다(B2.407). `packages/ts`에서 `node --test --test-name-pattern=B2.407 tests/release-recipes.test.ts`로 검증했고, 변경 전에는 `No rule to make target 'checkout-node-addon'`으로 실패했다. 또 `tests/e2e/sample`의 `git archive` 사본에서 실제 cargo로 `make checkout-node-addon`을 실행하고, 그것이 둔 addon으로 생성된 Node test 226개를 실행했다.
+- `binding check`는 callback interface의 member의 parameter에 붙은 `default`를 거부하고 `the parameter <name> of the callback member <member> of <unit> has a default`로 이름을 댄다: 코어는 callback에 모든 인자를 넘기고 callback 행은 정확히 그 parameter를 주므로(CK-101) 그 default는 어느 target에서도 뜻이 없었고, 생성기는 이미 그런 member를 생성하지 않는 것으로 거부했다(CK-98, B2.409). `packages/ts`에서 `node --test --test-name-pattern=B2.409 tests/contract-check.test.ts`로 검증했으며, 변경 전에는 실패했다.
 
 ## 0.0.15
 

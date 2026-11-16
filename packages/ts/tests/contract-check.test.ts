@@ -2237,6 +2237,17 @@ describe('B2.379: CK-98 a default of a member is a literal of its return type on
     assert.equal(found.length, 1);
     assert.match(found[0]?.message ?? '', /only a member of a callback interface has a default/);
   });
+  test('B2.409: a default of a parameter of a callback member is reported by name', () => {
+    const found = run((c) => {
+      const key = lookup(c).members[0].parameters[0];
+      delete key.required;
+      key.default = { literal: 'k' };
+    }).filter((f) => f.check === 'CK-98');
+    assert.deepEqual(found.map((f) => f.message), [
+      'the parameter key of the callback member lookup.find of lookup has a default; the core passes every argument to a callback (U-3, CK-101)',
+    ]);
+    assert.match(found[0]?.path ?? '', /\/members\/0\/parameters\/0\/default$/);
+  });
 });
 
 test('B2.382: CK-22 takes one case of a kind of another library for all its kinds on the form of call (GN-7c)', () => {
