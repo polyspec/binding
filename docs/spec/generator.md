@@ -3244,12 +3244,17 @@ the design ids are those of the binding design.
   `packages/rust/interface.json`, or a package directory `packages/<component>` inside one, whose contract is
   `packages/<component>/rust/interface.json` (L-1). For each directory the run copies the committed tree of its
   checkout (`git archive HEAD`) into a work directory of the run under the temporary directory, outside the
-  checkout, and runs in the copy, in this order: the prerequisites of the target `bindings-check` (or `binding-check`) of the
+  checkout, and runs in the copy, in this order: `cargo fetch --locked` of the lock of the consumer, with the network, the
+  prerequisites of the target `bindings-check` (or `binding-check`) of the
   consumer's Makefile, each by `make -C <copy> <goal> NODE=<node of the run>`, such as `binding-cases` of hyper, which
   writes the case files that its contract names, then `binding scaffold`, the path patch
   `[patch."https://github.com/polyspec/binding.git"]` of `polyspec-binding-core` to `packages/core/rust` of this
   tree in the root `Cargo.toml`, `cargo update -p polyspec-binding-core --offline`, naming each release of it that the lock holds
   (or `cargo generate-lockfile --offline` without a lock), `binding check`, and `binding generate --target <t>` for each target of the contract.
+  A failed `binding check` is a failure of the cell `prepare`, and the targets still generate and compile to their
+  end, as `-k` runs (HR-86): each other cell of that consumer states "generated from a contract that failed the
+  check" in the table and the report, a refusal of the generator is the failure of its cell, which stops there, and
+  the run fails. Why: a run that stopped at the check hid the defects of every target until the contract was fixed.
   The run is evidence of one commit of binding: `EXPECT=<commit>`, the commit that the line `binding commit <commit>`
   of `MANIFEST.txt` of `DIST=<directory>` names, or else the HEAD of `CONSUMERS_LANE`, the checkout of the lane. Before
   the first consumer, and before any copy, it stops with a named error when the CLI of this tree is another commit or
@@ -3261,11 +3266,15 @@ the design ids are those of the binding design.
   runs `cargo check --all-targets` with the test features of its manifest (GN-5) and without them, WASM on
   `wasm32-unknown-unknown`; the Go target gets `CGO_LDFLAGS` from `binding go-link` (GN-15k) and runs `go vet` and
   `go test -c -o /dev/null`, which links, without tags and with the tags of the generated files (`goBuildTags`).
+  Every Go command runs with `GOWORK=off`, for every consumer alike. Why: the generated Go module is released on its
+  own, outside the `go.work` of its repository, and each consumer checks it so (orm `test-go-bindings`); a module that
+  builds only through that `go.work` fails for whoever requires it.
   A tree without `binding go-link` fails the Go cell by name, and the Go commands run without a link flag of the run.
-  Every command runs offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`): the other polyspec repositories that a consumer
-  depends on resolve as its `Cargo.toml` and `go.mod` resolve them, Go through the `go.work` of the committed tree
-  with its `go.work.sum` (`GOWORK=off` without one), from the caches of the machine, and a dependency
-  that is not there is a named failure of its cell. Each consumer and target runs to its end; the consumers run in
+  Every command but the fetch runs offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`): the other polyspec repositories that a
+  consumer depends on resolve as its `Cargo.toml` and `go.mod` resolve them, and a dependency that the fetch cannot get
+  is a named failure with its cause. Why the run fetches: a consumer installs the crates of its lock with `cargo fetch
+  --locked` before its offline steps, and an offline run without it would state what the cache of the machine holds,
+  not what the consumer or binding gives. Each consumer and target runs to its end; the consumers run in
   parallel, a bounded number at a time, and each cargo and go command takes its share of the processors. The run
   prints the table of each consumer and target (`prepare`, `php`, `python`, `node`, `go`, `wasm`), each failed cell
   with its failed steps, their first error lines and its log, writes the logs, `table.txt` and `report.json` into

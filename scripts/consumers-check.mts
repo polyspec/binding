@@ -12,7 +12,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { availableParallelism, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Contract, Lang } from '../packages/ts/src/contract.ts';
-import { TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
+import { TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, manifestCommit, noteUnchecked, compiles, exitStatus, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
 import { goBuildTags } from './e2e-lint.mts';
 import { llvmOf } from './e2e-llvm.mts';
 
@@ -165,10 +165,7 @@ async function checkConsumer(consumer: Consumer): Promise<{ cells: Cell[]; conne
   mkdirSync(logs, { recursive: true });
   const copyDir = join(work, safe(consumer.label));
   mkdirSync(copyDir, { recursive: true });
-  // Go resolves the modules of other repositories as the consumer does, through the go.work of its committed tree with
-  // its go.work.sum; without one, no go.work of a directory above the copy is read.
-  const goWork = join(copyDir, 'go.work');
-  const env = { ...baseEnv, CARGO_TARGET_DIR: join(copyDir, 'target'), GOWORK: existsSync(goWork) ? goWork : 'off' };
+  const env = { ...baseEnv, CARGO_TARGET_DIR: join(copyDir, 'target') };
   const copy: Copy = { copy: copyDir, contract: consumer.contract, node: process.execPath, cli, core, go: goFound, make: makeFound, jobs };
   const prepareLog = join(logs, 'prepare.log');
   const cells: Cell[] = [];
@@ -186,6 +183,7 @@ async function checkConsumer(consumer: Consumer): Promise<{ cells: Cell[]; conne
   if (prepare.state === 'passed' && !existsSync(contractPath)) fail(prepare, [{ step: 'the contract', errors: [`the committed tree has no ${consumer.contract} (L-1)`] }]);
   const contract = prepare.state === 'passed' ? (JSON.parse(readFileSync(contractPath, 'utf8')) as Contract) : undefined;
   const named = new Set<Lang>(contract?.targets ?? []);
+  let checkFailed = false;
   if (contract !== undefined) {
     const manifest = join(copyDir, 'Cargo.toml');
     const patch = (): void => {
@@ -200,16 +198,25 @@ async function checkConsumer(consumer: Consumer): Promise<{ cells: Cell[]; conne
     } catch (error) {
       fail(prepare, [{ step: 'the steps of the Makefile before bindings-check', errors: [error instanceof Error ? error.message : String(error)] }]);
     }
-    if (prepare.state === 'passed') fail(prepare, await runSteps(prepareSteps(copy, existsSync(lock) ? lockedCores(readFileSync(lock, 'utf8')) : undefined, patch, before), copyDir, env, prepareLog, true));
+    const steps = prepareSteps(copy, existsSync(lock) ? lockedCores(readFileSync(lock, 'utf8')) : undefined, patch, before);
+    const check = steps.at(-1);
+    if (prepare.state === 'passed') fail(prepare, await runSteps(steps.slice(0, -1), copyDir, env, prepareLog, true));
+    // A failed contract check fails the cell prepare, and the targets still generate and compile to their end (-k).
+    if (prepare.state === 'passed' && check !== undefined) {
+      const checkFailures = await runSteps([check], copyDir, env, prepareLog, true);
+      fail(prepare, checkFailures);
+      checkFailed = checkFailures.length > 0;
+    }
   }
   const targetCells = new Map<Lang, Cell>();
   for (const t of TARGETS) {
     const cell: Cell = { consumer: consumer.label, cell: t, state: named.has(t) ? 'passed' : 'not in contract', failures: [], log: join(logs, `${t}.log`) };
     targetCells.set(t, cell);
     cells.push(cell);
-    if (named.has(t) && prepare.state === 'failed') fail(cell, [{ step: 'prepare', errors: ['the copy could not take this binding; see the cell prepare'] }]);
+    if (named.has(t) && prepare.state === 'failed' && !checkFailed) fail(cell, [{ step: 'prepare', errors: ['the copy could not take this binding; see the cell prepare'] }]);
   }
-  if (contract === undefined || prepare.state === 'failed') return { cells, connections: undefined };
+  if (contract === undefined || (prepare.state === 'failed' && !checkFailed)) return { cells, connections: undefined };
+  if (checkFailed) noteUnchecked(cells);
   const live = TARGETS.filter((t) => named.has(t));
   for (const t of live) {
     const cell = targetCells.get(t);
@@ -227,7 +234,8 @@ async function checkConsumer(consumer: Consumer): Promise<{ cells: Cell[]; conne
 
   for (const t of live) {
     const cell = targetCells.get(t);
-    if (cell === undefined || cell.state === 'failed') continue;
+    // A cell whose generate failed, a refusal of an unchecked contract among them, stops there.
+    if (cell === undefined || !compiles(cell)) continue;
     const manifestPath = crateManifest(copy, contract, t);
     const features = existsSync(manifestPath) ? testFeatures(readFileSync(manifestPath, 'utf8')) : [];
     const steps: Step[] = existsSync(manifestPath) ? cargoSteps(copy, manifestPath, t, features) : [{ what: 'the binding crate', failure: `scaffold wrote no ${manifestPath.slice(copyDir.length + 1)}` }];
@@ -274,4 +282,4 @@ const text = table(cells, provenance);
 writeFileSync(join(report, 'table.txt'), `${text}\n`);
 writeFileSync(join(report, 'report.json'), `${JSON.stringify({ provenance, commit: head, clean: status === '', binding: here, cli, core, goLink, jobs, parallel, consumers: consumers.map((c, i) => ({ ...c, connections: results[i]?.connections })), cells }, null, 2)}\n`);
 process.stdout.write(`\n${text}\nthe report: ${report}\n`);
-process.exit(cells.some((c) => c.state === 'failed') ? 1 : 0);
+process.exit(exitStatus(cells));

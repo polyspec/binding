@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Contract } from '../src/contract.ts';
-import { consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Copy } from '../../../scripts/consumers.mts';
+import { UNCHECKED, compiles, exitStatus, noteUnchecked, consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Copy } from '../../../scripts/consumers.mts';
 
 const root = new URL('../../../', import.meta.url).pathname;
 const script = join(root, 'scripts/consumers-check.mts');
@@ -75,7 +75,7 @@ test('the path patch of binding_core is applied before binding check, after scaf
   const patch = names.findIndex((n) => n.startsWith('the path patch'));
   const lock = names.indexOf('cargo update -p polyspec-binding-core --offline');
   const check = names.indexOf('binding check');
-  assert.equal(names[0], 'binding scaffold');
+  assert.equal(names[1], 'binding scaffold');
   assert.ok(patch > 0 && patch < lock && lock < check, names.join(' | '));
   assert.equal(prepareSteps(copy, undefined, () => undefined).some((s) => s.what === 'cargo generate-lockfile --offline'), true);
   const step = steps[patch];
@@ -108,7 +108,7 @@ test('the test features of a binding crate are those of its manifest other than 
 test('a lock with several releases of binding_core updates each of them to the patch (GN-14i, B2.391)', () => {
   const lock = 'name = "polyspec-binding-core"\nversion = "0.0.10"\nsource = "git+x"\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "0.0.13"\n';
   assert.deepEqual(lockedCores(lock), ['0.0.10', '0.0.13']);
-  const update = prepareSteps(copy, lockedCores(lock), () => undefined)[2];
+  const update = prepareSteps(copy, lockedCores(lock), () => undefined).find((s) => s.what.startsWith('cargo update'));
   assert.ok(update !== undefined && 'argv' in update);
   assert.deepEqual(update.argv.slice(3, 7), ['-p', 'polyspec-binding-core@0.0.10', '-p', 'polyspec-binding-core@0.0.13']);
 });
@@ -120,11 +120,11 @@ test('the consumer steps before bindings-check of its Makefile run in the copy b
   assert.deepEqual(stepsBeforeCheck('binding-check:\n'), []);
   assert.throws(() => stepsBeforeCheck('bindings-check: $(CASES)\n'), /name a variable/);
   const steps = prepareSteps(copy, undefined, () => undefined, ['binding-cases']);
-  const first = steps[0];
+  const first = steps[1];
   assert.ok(first !== undefined && 'argv' in first);
   assert.equal(first.command, '/tools/gmake');
   assert.deepEqual(first.argv, ['-C', '/work/json', 'binding-cases', 'NODE=/tools/node']);
-  assert.equal(steps[1]?.what, 'binding scaffold');
+  assert.equal(steps[2]?.what, 'binding scaffold');
 });
 
 test('the first line of the table names the commit of the CLI and whether its tree is clean (GN-14i, B2.391)', () => {
@@ -152,4 +152,47 @@ test('a CLI of another commit stops the run before any copy is made (GN-14i, B2.
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
+});
+
+test('every Go command of the target runs with GOWORK=off, with go-link and without it (GN-14i, B2.391)', () => {
+  for (const goLink of [false, true]) {
+    const commands = goSteps(copy, contract, goLink, ['panic-test'], ['polyspec_json_panic_test']).filter((s) => 'command' in s && s.command === '/tools/go');
+    assert.equal(commands.length, 4);
+    for (const s of commands) assert.equal('env' in s ? s.env?.['GOWORK'] : undefined, 'off', s.what);
+  }
+});
+
+test('the crates of the lock of the consumer are fetched with the network before the update of binding_core (GN-14i, B2.391)', () => {
+  const steps = prepareSteps(copy, ['0.0.10', '0.0.13'], () => undefined);
+  const fetch = steps.findIndex((s) => s.what === 'cargo fetch --locked');
+  const update = steps.findIndex((s) => s.what.startsWith('cargo update'));
+  assert.equal(fetch, 0);
+  assert.ok(fetch < update);
+  const step = steps[fetch];
+  assert.ok(step !== undefined && 'argv' in step);
+  assert.deepEqual(step.argv, ['fetch', '--locked', '--manifest-path', '/work/json/Cargo.toml']);
+  assert.equal(step.env?.['CARGO_NET_OFFLINE'], 'false');
+});
+
+const cellOf = (cell: Cell['cell'], state: Cell['state']): Cell => ({ consumer: 'hyper', cell, state, failures: state === 'failed' ? [{ step: 'binding check', errors: ['CK-19 dependencies'] }] : [], log: `/r/${cell}.log` });
+
+test('each target cell of a consumer whose check failed states that its contract failed the check (GN-14i, B2.391)', () => {
+  const cells = [cellOf('prepare', 'failed'), cellOf('php', 'passed'), cellOf('go', 'failed'), cellOf('wasm', 'not in contract')];
+  noteUnchecked(cells);
+  assert.deepEqual(cells.map((c) => c.note), [undefined, UNCHECKED, UNCHECKED, undefined]);
+  const text = table(cells, provenanceLine('a'.repeat(40), true));
+  assert.match(text, /^hyper\s+failed\s+passed\*\s+-\s+-\s+failed\*\s+not in contract$/m);
+  assert.match(text, /^hyper php: passed, generated from a contract that failed the check \(log \/r\/php\.log\)$/m);
+  assert.match(text, /^hyper go: failed, generated from a contract that failed the check \(log \/r\/go\.log\)$/m);
+});
+
+test('a refusal of the generator is the failure of its cell, which then compiles nothing (GN-14i, B2.391)', () => {
+  const refused = { ...cellOf('node', 'failed'), failures: [{ step: 'binding generate --target node', errors: ['binding: refused'] }] };
+  assert.equal(compiles(refused), false);
+  assert.equal(compiles(cellOf('php', 'passed')), true);
+});
+
+test('the run fails when any cell failed, a failed check alone among them (GN-14i, B2.391)', () => {
+  assert.equal(exitStatus([cellOf('prepare', 'failed'), cellOf('php', 'passed')]), 1);
+  assert.equal(exitStatus([cellOf('prepare', 'passed'), cellOf('php', 'passed'), cellOf('go', 'not in contract')]), 0);
 });

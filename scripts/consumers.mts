@@ -94,6 +94,9 @@ export function prepareSteps(c: Copy, locked: readonly string[] | undefined, pat
   return [
     // The consumer's steps run with its Makefile in the copy; NODE is the node of this run, since the copy has no
     // var/tools of its own.
+    // The crates of the lock of the consumer, fetched as its own install target fetches them, with the network, so the
+    // later offline steps read what the lock names and not what the cache of the machine happens to hold.
+    { what: 'cargo fetch --locked', command: 'cargo', argv: ['fetch', '--locked', '--manifest-path', manifest], env: { CARGO_NET_OFFLINE: 'false' } },
     ...before.map((goal): Step => ({ what: `make ${goal} of the consumer`, command: c.make, argv: ['-C', c.copy, goal, `NODE=${c.node}`] })),
     { what: 'binding scaffold', command: c.node, argv: [c.cli, 'scaffold', '--contract', contract] },
     { what: `the path patch of polyspec-binding-core to ${c.core}`, write: patch },
@@ -137,6 +140,10 @@ export const hasGoLink = (cliSource: string): boolean => /command === 'go-link'/
 // The Go target, once without the build tags and once with the tags of the generated files: binding go-link builds the
 // static library and gives CGO_LDFLAGS (GN-15k), then go vet and go test -c, which links. Without go-link the cell
 // fails by name and the Go commands run without CGO_LDFLAGS: the run writes no link flag of its own.
+// The generated Go module is released on its own, outside the go.work of its repository, so each Go command reads it
+// alone, as the consumer checks it (orm test-go-bindings).
+const GO_ENV: Record<string, string> = { GOWORK: 'off' };
+
 export function goSteps(c: Copy, contract: Contract, goLink: boolean, features: readonly string[], tags: readonly string[]): Step[] {
   const module = goModuleDir(c, contract);
   const manifest = crateManifest(c, contract, 'go');
@@ -147,8 +154,8 @@ export function goSteps(c: Copy, contract: Contract, goLink: boolean, features: 
     const tagArgs = tagged && tags.length > 0 ? [`-tags=${tags.join(',')}`] : [];
     const of = tagged ? ` with -tags=${tags.join(',')}` : ' without tags';
     if (goLink) steps.push({ what: `binding go-link${tagged ? ` --features ${features.join(',')}` : ''}`, command: c.node, argv: [c.cli, 'go-link', '--manifest', manifest, '--target-dir', targetDir, ...(tagged ? ['--features', features.join(',')] : [])], capture: 'CGO_LDFLAGS' });
-    steps.push({ what: `go vet${of}`, command: c.go, argv: ['vet', ...tagArgs, './...'], cwd: module });
-    steps.push({ what: `go test -c${of}`, command: c.go, argv: ['test', '-c', '-o', '/dev/null', '-p', String(c.jobs), ...tagArgs, './...'], cwd: module });
+    steps.push({ what: `go vet${of}`, command: c.go, argv: ['vet', ...tagArgs, './...'], cwd: module, env: GO_ENV });
+    steps.push({ what: `go test -c${of}`, command: c.go, argv: ['test', '-c', '-o', '/dev/null', '-p', String(c.jobs), ...tagArgs, './...'], cwd: module, env: GO_ENV });
   }
   return steps;
 }
@@ -197,7 +204,22 @@ export interface Cell {
   // The failed steps, each with its first error lines.
   failures: { step: string; errors: string[] }[];
   log: string;
+  // UNCHECKED when the contract failed binding check and the cell ran on it all the same.
+  note?: string;
 }
+
+// The note of each target cell of a consumer whose contract failed binding check: its targets still generate and
+// compile, and each result says on what it stands.
+export const UNCHECKED = 'generated from a contract that failed the check';
+export function noteUnchecked(cells: Cell[]): void {
+  for (const cell of cells) if (cell.cell !== 'prepare' && cell.state !== 'not in contract') cell.note = UNCHECKED;
+}
+
+// A cell compiles only when it generated: a refusal of the generator is the failure of its cell, and the cell stops.
+export const compiles = (cell: Cell): boolean => cell.state === 'passed';
+
+// The status of the run: 1 when any cell failed, the cell prepare of a failed check among them.
+export const exitStatus = (cells: readonly Cell[]): number => (cells.some((c) => c.state === 'failed') ? 1 : 0);
 
 // The table of a run, a row for each consumer and a column for each target, then each failed cell with the step that
 // failed, its first error lines and its log. A copy that could not be prepared fails each target of its contract,
@@ -207,12 +229,15 @@ export function table(cells: readonly Cell[], provenance: string): string {
   const width = Math.max(10, ...consumers.map((c) => c.length));
   const header = `${'consumer'.padEnd(width)}  ${['prepare', ...TARGETS].map((t) => t.padEnd(15)).join('')}`.trimEnd();
   const rows = consumers.map((consumer) => {
-    const of = (cell: string): string => cells.find((c) => c.consumer === consumer && c.cell === cell)?.state ?? '-';
+    const of = (cell: string): string => {
+      const found = cells.find((c) => c.consumer === consumer && c.cell === cell);
+      return found === undefined ? '-' : `${found.state}${found.note === undefined ? '' : '*'}`;
+    };
     return `${consumer.padEnd(width)}  ${['prepare', ...TARGETS].map((t) => of(t).padEnd(15)).join('')}`.trimEnd();
   });
   const failed = cells.filter((c) => c.state === 'failed');
-  const causes = failed.flatMap((c) => [
-    `${c.consumer} ${c.cell}: failed (log ${c.log})`,
+  const causes = cells.filter((c) => c.state === 'failed' || c.note !== undefined).flatMap((c) => [
+    `${c.consumer} ${c.cell}: ${c.state}${c.note === undefined ? '' : `, ${c.note}`} (log ${c.log})`,
     ...c.failures.flatMap((f) => [`  ${f.step}`, ...f.errors.map((line) => `    ${line}`)]),
   ]);
   const summary = failed.length === 0 ? 'passed: every cell' : `failed: ${failed.map((c) => `${c.consumer} ${c.cell}`).join(', ')}`;

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7f09368c54e9c56df7a5c4d6b2998e94126eb621dcf354488728b338a30b8477 -->
+<!-- source-sha256: e3fd1a2f559522a4d1d291bf4a1e6baed0bde3fcdb7e5cffa2ab31489bfa5c47 -->
 # 생성기
 
 [English](generator.md)
@@ -2645,11 +2645,14 @@
   디렉터리는 checkout이고 그 계약은 `packages/rust/interface.json`이거나, checkout 안의 package 디렉터리
   `packages/<component>`이고 그 계약은 `packages/<component>/rust/interface.json`이다(L-1). 실행은 디렉터리마다 그
   checkout의 commit된 tree(`git archive HEAD`)를 임시 디렉터리 아래, checkout 밖의 실행 작업 디렉터리로 복사하고, 복사본에서
-  이 순서로 실행한다: 소비자 Makefile의 target `bindings-check`(또는 `binding-check`)의 prerequisite를 각각 `make -C <copy> <goal>
+  이 순서로 실행한다: 소비자 lock의 `cargo fetch --locked`(network 허용), 소비자 Makefile의 target `bindings-check`(또는 `binding-check`)의 prerequisite를 각각 `make -C <copy> <goal>
   NODE=<실행의 node>`로(hyper의 `binding-cases`처럼 계약이 이름하는 case 파일을 쓰는 것), 그다음 `binding scaffold`, 루트 `Cargo.toml`에 `polyspec-binding-core`를 이 tree의 `packages/core/rust`로
   가리키는 path patch `[patch."https://github.com/polyspec/binding.git"]`, `cargo update -p polyspec-binding-core
   --offline`(lock이 가진 각 release를 이름하며, lock이 없으면 `cargo generate-lockfile --offline`), `binding check`, 그리고 계약의 target마다 `binding
-  generate --target <t>`. 실행은 binding의 한 commit의 증거다: `EXPECT=<commit>`, `DIST=<directory>`의 `MANIFEST.txt`의 줄 `binding commit <commit>`이
+  generate --target <t>`. 실패한 `binding check`는 칸 `prepare`의 실패이고, target은 `-k`처럼 그래도 끝까지 생성하고
+  컴파일한다(HR-86): 그 소비자의 다른 칸은 표와 보고서에서 "generated from a contract that failed the check"를 밝히고, 생성기의
+  거부는 그 칸의 실패이며 칸은 거기서 멈추고, 실행은 실패한다. Why: check에서 멈춘 실행은 계약이 고쳐질 때까지 모든 target의
+  결함을 숨겼다. 실행은 binding의 한 commit의 증거다: `EXPECT=<commit>`, `DIST=<directory>`의 `MANIFEST.txt`의 줄 `binding commit <commit>`이
   이름하는 commit, 아니면 갈래의 checkout `CONSUMERS_LANE`의 HEAD. 첫 소비자 전에, 어떤 복사본보다 먼저, 이 tree의 CLI가 다른
   commit이거나 그 tree에 변경이 있으면 이름 있는 오류로 멈추고, 표와 보고서의 첫 줄은 그 commit과 tree가 깨끗한지를 이름한다.
   Why: 갈래의 수정 넷(B2.367, B2.386, B2.387, B2.390)이 없는 tree에서의 실행은 갈래의 결함처럼 보이는 칸을 주었고, 그것은 갈래의
@@ -2658,11 +2661,13 @@
   polyspec-binding-core`, CLI의 경로, 생성된 파일의 Go build tag. 그다음 각 바인딩 crate는 manifest의 시험 feature(GN-5)로
   한 번, 없이 한 번 `cargo check --all-targets`를 실행하고, WASM은 `wasm32-unknown-unknown`에서 실행한다. Go target은
   `binding go-link`(GN-15k)에서 `CGO_LDFLAGS`를 받아 tag 없이, 그리고 생성된 파일의 tag(`goBuildTags`)로 `go vet`과
-  링크하는 `go test -c -o /dev/null`을 실행한다. `binding go-link`가 없는 tree는 Go 칸을 이름으로 실패시키고, Go 명령은
-  실행이 만든 link flag 없이 실행된다. 모든 명령은 offline으로 실행된다(`CARGO_NET_OFFLINE`, `GOPROXY=off`): 소비자가
-  의존하는 다른 polyspec 레포는 그 `Cargo.toml`과 `go.mod`가 푸는 대로, Go는 commit된 tree의 `go.work`와 그 `go.work.sum`으로(없으면
-  `GOWORK=off`) 기계의 cache에서 풀리고, 거기 없는 의존성은 그 칸의
-  이름 있는 실패다. 각 소비자와 target은 끝까지 실행된다. 소비자는 정해진 수만큼씩 병렬로 실행되고, 각 cargo와 go 명령은
+  링크하는 `go test -c -o /dev/null`을 실행한다. 모든 Go 명령은 모든 소비자에서 똑같이 `GOWORK=off`로 실행된다. Why: 생성된 Go 모듈은 레포의 `go.work` 밖에서 홀로
+  release되고, 각 소비자도 그렇게 검사한다(orm `test-go-bindings`). 그 `go.work`로만 빌드되는 모듈은 그것을 require하는 쪽에서 실패한다.
+  `binding go-link`가 없는 tree는 Go 칸을 이름으로 실패시키고, Go 명령은
+  실행이 만든 link flag 없이 실행된다. fetch 외의 모든 명령은 offline으로 실행된다(`CARGO_NET_OFFLINE`, `GOPROXY=off`): 소비자가
+  의존하는 다른 polyspec 레포는 그 `Cargo.toml`과 `go.mod`가 푸는 대로 풀리고, fetch가 가져오지 못한 의존성은 원인과 함께 이름 있는
+  실패다. 실행이 fetch하는 까닭: 소비자는 offline 단계 전에 `cargo fetch --locked`로 lock의 crate를 설치하며, 그것 없는 offline
+  실행은 소비자나 binding이 주는 것이 아니라 기계의 cache가 가진 것을 말한다. 각 소비자와 target은 끝까지 실행된다. 소비자는 정해진 수만큼씩 병렬로 실행되고, 각 cargo와 go 명령은
   프로세서의 제 몫을 받는다. 실행은 소비자와 target(`prepare`, `php`, `python`, `node`, `go`, `wasm`)의 표와, 실패한 칸마다
   실패한 단계, 그 첫 오류 줄과 log를 출력하고, log와 `table.txt`, `report.json`을 `var/report/consumers/<run>/`에 쓰며,
   실패한 칸이 있으면 실패한다. 소비자의 복사본은 그 소비자의 칸이 끝나는 즉시 지우고 작업 디렉터리는 끝에 지우므로,
