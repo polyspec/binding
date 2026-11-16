@@ -2563,16 +2563,23 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
 export function callbackReachingArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> | undefined {
   const callback = callbackArg(model, fn);
   if (callback === undefined) return undefined;
+  // B2.385: a case whose callback rows all give a result comes first: with it the core passes on what the callback
+  // gives, while a core may answer a raise of the callback itself (sample tolerant swallows it for a key ?a).
+  let raising: ReadonlyMap<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     if (record['receiver'] !== undefined || record['faults'] !== undefined || record['files'] !== undefined || record['service'] !== undefined) continue;
     const args = argsOf(fn, record);
     const given = args?.get(callback);
     // A fixture whose calls are listed was called with these arguments, whatever the case then raises.
-    const calls = typeof given === 'object' && given !== null && 'callback' in given ? (given as { calls?: unknown[] }).calls : undefined;
-    if (args !== undefined && calls !== undefined && calls.length > 0) return args;
+    const fixture = typeof given === 'object' && given !== null && 'callback' in given ? (given as { callback?: unknown; calls?: unknown[] }) : undefined;
+    const calls = fixture?.calls;
+    if (args === undefined || calls === undefined || calls.length === 0) continue;
+    const rows = typeof fixture?.callback === 'object' && fixture.callback !== null ? Object.values(fixture.callback).flat() : [];
+    if (rows.every((row) => typeof row !== 'object' || row === null || !Object.hasOwn(row, 'raise'))) return args;
+    raising ??= args;
   }
-  return undefined;
+  return raising;
 }
 
 export function callbackArg(model: Model, fn: Fn): Arg | undefined {

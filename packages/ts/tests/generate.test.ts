@@ -11499,3 +11499,26 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
     assert.match(lib, /GN-6bt/, path);
   }
 });
+
+test('B2.385: the K-2 tests take a case whose callback rows give results before one whose callback raises (GN-13y, K-2)', () => {
+  // sample tolerant: its first case raises in the callback with the key ?a, whose raise the core swallows, so the K-2
+  // tests of an exception and of a result of another type failed with those arguments in every target.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const sample = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['node', 'python', 'go'] });
+  const node = text(sample, 'packages/ts/generated/tests/generated.test.mjs');
+  for (const name of ['lets the exception of a callback through', 'refuses a callback result of another type']) {
+    const at = node.indexOf(`test('K-2: tolerant ${name}'`);
+    assert.ok(at >= 0, name);
+    assert.match(node.slice(at, node.indexOf('\n});', at)), /pkg\.tolerant\([^\n]*, ['"]a['"]\)/, name);
+  }
+  const python = text(sample, 'packages/python/generated/tests/test_generated.py');
+  for (const name of ['lets_the_exception_of_a_callback_through', 'refuses_a_callback_result_of_another_type']) {
+    const py = python.indexOf(`def test_k2_tolerant_${name}`);
+    assert.ok(py >= 0, name);
+    assert.match(python.slice(py, python.indexOf('\n    def ', py + 1)), /pkg\.tolerant\([^\n]*, ['"]a['"]\)/, name);
+  }
+  const go = text(sample, 'packages/go/zz_generated_test.go');
+  const g = go.search(/func TestK2Tolerant[A-Za-z]*LetsTheError/);
+  assert.ok(g >= 0);
+  assert.match(go.slice(g, go.indexOf('\n}\n', g)), /Tolerant\([^\n]*, "a"\)/);
+});

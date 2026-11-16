@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6801bd4c83a3f64c9ba551a3192aa6ee4ed56a12af8d021a130cb2a9dc3caffb -->
+<!-- source-sha256: 529c1c5efc87ce5b7b8d215273ce11238bfb4714da0b1963881def4aa038fc8e -->
 # 생성기
 
 [English](generator.md)
@@ -2435,7 +2435,9 @@
   모든 target에서, callback fixture가 호출을 나열하는 그 member의 첫 case의 다른 인자를 주고, 그런 case가 없을 때만
   placeholder를 준다. 이유: core는 callback을 부르기 전에 다른 인자를 판정할 수 있는데, crud-ui validator는 placeholder
   `data`를 `invalid_form_input`으로 거부해서, 시험은 core가 닿지 않은 callback을 기대했다. fixture가 호출을 나열하는
-  case는 core가 callback을 부르는 인자를 말한다.
+  case는 core가 callback을 부르는 인자를 말한다. callback의 row가 모두 결과를 주는 case가 callback이 raise하는 case보다
+  먼저다(B2.385). 이유: core는 callback의 raise에 스스로 답할 수 있고, sample `tolerant`는 key `?a`에서 그것을 삼키므로,
+  첫 case로는 예외의 시험과 다른 타입 결과의 시험이 실패했다.
 - **GN-13z** Python의 U-2와 T-1 시험은 두 결과를 `assertEqual`이 아니라 `_same`으로 비교한다. `_same`은 다른 저장소의 값
   class instance를 in row의 member가 읽는 것으로 비교한다(B2.121). 이유: 소유자의 class는 `__eq__`를 선언하지 않아도
   되고 `polyspec.json.Value`는 선언하지 않아서, 같은 두 결과가 identity로 비교되어 달랐다(crud-ui validator). token으로

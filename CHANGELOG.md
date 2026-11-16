@@ -52,6 +52,7 @@
 - `.gitignore` ignores `node_modules` also as a link, which a worktree that links the packages of another checkout has; `node_modules/` matched a directory alone, so a commit took the link (B2.381).
 - CK-22 takes one case of any kind of another library for all its kinds on a form of call, whose conversion is the owner's; it asked a case of each (B2.382).
 - A step or a call of `after` passes `{"bound": <name>}` to a parameter of a generated interface, which CK-77 refused, and a call of `after` takes the names of `with` as bound arguments (CK-77, GN-13pa, B2.383).
+- The K-2 tests of a member that takes a callback take a case whose callback rows give results before one whose callback raises, which a core may answer itself; with the first case of sample `tolerant` they failed in every target (GN-13y, B2.385).
 
 ## 0.0.13
 

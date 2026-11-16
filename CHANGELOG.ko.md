@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b93faecf0b8e8cc4f7023e1eeee0f3c67bb7952107bde90185d63744384b9f96 -->
+<!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -58,6 +58,7 @@
 - `.gitignore`는 `node_modules`를 link로도 무시한다. 다른 checkout의 package를 잇는 worktree가 그런 link를 가진다. `node_modules/`는 디렉터리만 잡아서, 커밋이 그 link를 담았다(B2.381).
 - CK-22는 다른 library의 어느 kind의 case 하나를 호출 형태마다 그 모든 kind에 대해 받는다. 그 변환은 owner의 것이다. 이전에는 kind마다 case를 요구했다(B2.382).
 - step이나 `after` 호출은 generated interface의 parameter에 `{"bound": <name>}`을 넘긴다. 이전에는 CK-77이 그것을 거부했다. `after` 호출은 `with`의 이름을 bound argument로 받는다(CK-77, GN-13pa, B2.383).
+- callback을 받는 member의 K-2 시험은 callback row가 결과를 주는 case를 callback이 raise하는 case보다 먼저 쓴다. core는 그 raise에 스스로 답할 수 있다. sample `tolerant`의 첫 case로는 모든 target에서 실패했다(GN-13y, B2.385).
 
 ## 0.0.13
 
