@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7dd34b55e14baf34fd24f97c78db98c56fe0c3bda748c1a7dbae64eff9bfa8e5 -->
+<!-- source-sha256: d2b73d7cf1b8a0da5adb4e0497246a59b34a8ab5069e4c20c8322ef1d34a103c -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -34,6 +34,7 @@
 - callback을 받는 member의 K-2 시험은 callback fixture가 호출을 나열하는 case의 다른 인자를 주고, 그런 case가 없을 때만 placeholder를 준다. crud-ui validator는 callback을 부르기 전에 placeholder `data`를 거부했다(GN-13y, B2.357).
 - Python의 U-2와 T-1 시험은 결과를 다른 저장소 값 class를 in row로 읽는 `_same`으로 비교한다. `assertEqual`은 같은 두 `polyspec.json.Value` 결과를 identity로 비교했다(GN-13z, B2.358).
 - `invalid_number`를 내는 case는 안전 정수 밖이면서 i64 범위 안의 `int`나 `uint` 인자를 줄 수 있다. 모든 target이 그것을 그 kind로 거부한다. 이전에는 CK-64가 그것을 보고해서 binding의 거부에 case가 없었다. Go 시험은 이제 그런 인자를 정수 literal로 쓴다(CK-64, GN-12a, B2.359).
+- Python: 계약의 모든 module `m`은 공개 이름과 내부 이름을 함께 갖는 비공개 module `<root>._module_m`이고, package root가 그것을 다시 내보낸다. template의 module 파일 `format.py`가 package의 함수 `format`을 module로 바꿨다(GN-6bs, B2.368). module `<root>.m`과 내부 module `<root>._m`은 없어졌다.
 
 ## 0.0.13
 

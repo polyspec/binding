@@ -3679,15 +3679,15 @@ test('an internal unit is generated in every target and marked as no public API 
   const root = text(out, `${pkg}/_root.py`);
   assert.match(root, /from \._native import [^\n]*repeat as repeat/);
   assert.match(root, /__all__ = \[\]\n/);
-  assert.match(text(out, `${pkg}/_store.py`), /from \._native import Buffer as Buffer\n[\s\S]*__all__ = \[\]\n/);
+  assert.match(text(out, `${pkg}/_module_store.py`), /from \._native import Buffer as Buffer\n[\s\S]*__all__ = \[\]\n/);
   assert.equal(out.has(`${pkg}/store.py`), false);
   const init = text(out, `${pkg}/__init__.py`);
   assert.match(init, /__all__ = \["ShapesValueError", [^\n]*"Utf8Error"\]\n/);
-  assert.doesNotMatch(init, /from \._store import/);
+  assert.doesNotMatch(init, /from \._module_store import/);
   const tests = text(out, 'packages/python/generated/tests/test_generated.py');
-  assert.match(tests, /^import polyspec\.shapes\._store$/m);
+  assert.match(tests, /^import polyspec\.shapes\._module_store$/m);
   assert.match(tests, /pkg\._root\.repeat\(/);
-  assert.match(tests, /pkg\._store\.Buffer\(/);
+  assert.match(tests, /pkg\._module_store\.Buffer\(/);
   assert.doesNotMatch(tests, /pkg\.(repeat|Buffer|TextMeasure)\b/);
   // Node and WASM: the JSDoc of each declaration holds @internal.
   for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
@@ -6667,8 +6667,8 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /ClassBuilder::new\("Polyspec\\\\Shapes\\\\Errors\\\\Utf8Error"\)/);
   // Python: <root>.errors gives the class of <root>._errors, and <root> re-exports it.
   const pkg = 'packages/python/generated/python/polyspec/shapes';
-  assert.match(text(out, `${pkg}/errors.py`), /from \._errors import Utf8Error as Utf8Error\n\n__all__ = \["Utf8Error"\]/);
-  assert.match(text(out, `${pkg}/__init__.py`), /from \.errors import \*  # noqa: F403/);
+  assert.match(text(out, `${pkg}/_module_errors.py`), /from \._errors import Utf8Error as Utf8Error\n\n__all__ = \["Utf8Error"\]/);
+  assert.match(text(out, `${pkg}/__init__.py`), /from \._module_errors import \*  # noqa: F403/);
   // Node and WASM: the entries export the class by its name.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
@@ -11201,4 +11201,19 @@ test('B2.359: a case that gives 2^53 as an int argument and raises invalid_numbe
     assert.match(body.slice(at, at + 1500), literal, lang);
     assert.match(body.slice(at, at + 1500), /invalid_number/, lang);
   }
+});
+
+test('B2.368: every module of the contract is the private Python module _module_<m>, which no package attribute names (GN-6r, GN-6bs)', () => {
+  // template: the module file format.py rebound the package attribute format, the function of the contract, to the
+  // module, so pkg.format(...) was 'module' object is not callable.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });
+  const files = [...out.keys()].filter((p) => p.startsWith('packages/python/') && p.endsWith('.py') && !p.includes('/tests/'));
+  const pkg = files.find((p) => p.endsWith('/__init__.py'))?.replace(/__init__\.py$/, '') ?? '';
+  const modules = files.map((p) => p.slice(pkg.length));
+  assert.ok(modules.includes('_module_errors.py'), modules.join(', '));
+  assert.ok(modules.every((m) => m.startsWith('_') || m === '__init__.py'), modules.join(', '));
+  const init = text(out, `${pkg}__init__.py`);
+  assert.match(init, /^from \._module_errors import \*/m);
+  assert.doesNotMatch(init, /^from \.errors import/m);
 });

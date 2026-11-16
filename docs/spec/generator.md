@@ -1020,6 +1020,18 @@ the design ids are those of the binding design.
   Why: the make of a text takes a text of the language, which an unpaired surrogate is not in every language: json
   refused `Value.string("\ud800")` before the core ran, Go does not compile it, and PHP wrote U+FFFD, so the case
   passed without the refusal that it states; the row of `text16` (B2.81) gives the owner the text as the case states it.
+- **GN-6bs** Python: every module `m` of the contract is the one private module `<root>._module_m` (a `/` of `m`
+  is `__`), and the root module is `<root>._root`; each holds the public and the internal names of its module, its
+  `__all__` the public ones, and `<root>/__init__.py` re-exports them by `from ._module_m import *`. No module of the
+  package has the name of a module of the contract, and the module of a public unit, which its class names, is
+  `<root>`. The rule holds for every module, not only for one whose name a member takes. Why: a submodule that Python
+  imports rebinds the attribute of its name in the package, so the file `format.py` of the module `format` of
+  template replaced the function `format` that `__init__.py` re-exported by the module, and `pkg.format(...)` failed
+  with `'module' object is not callable`; a name that changed only where a member takes it would make the path of a
+  module depend on the names of the members, and the prefix `_module_` keeps the fixed modules `_errors`, `_types`,
+  `_native` and `_root` apart from a module of the contract of the same name. The legacy package of template exported
+  its API from `polyspec.template` alone (`__init__.py`) and no submodule `format`, so the package root is the public
+  path that this keeps.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -1587,8 +1599,8 @@ the design ids are those of the binding design.
   same conversions, refusals and generated tests, and each language marks it as no public API:
   - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
   - Python: its names are in no `__all__`, so `<root>` does not re-export them. The names of the root module are in
-    `<root>._root`, and those of the module `m` in `<root>._m`, a module of the internal names alone; the generated
-    tests call them there.
+    `<root>._root`, and those of the module `m` in `<root>._module_m` (GN-6bs), whose `__all__` holds only its public
+    names; the generated tests call them there.
   - Node and WASM: the JSDoc of each of its declarations holds the tag `@internal`, which a package that builds its
     declarations with `stripInternal` leaves out.
   - Go: the doc comment of each of its declarations ends with the sentence `It is internal to <library> (U-1) and is

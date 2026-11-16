@@ -26,9 +26,12 @@ export function pythonLayout(model: Model): PythonLayout {
   return { module, modulePath: module.replaceAll('.', '/') };
 }
 
-const moduleOf = (layout: PythonLayout, module: string): string => (module === '' ? layout.module : `${layout.module}.${module.replaceAll('/', '.')}`);
+// GN-6bs: a public unit of any module is a name of the package root, which re-exports it.
+const moduleOf = (layout: PythonLayout, module: string): string => { void module; return layout.module; };
 // GN-6r: the module of the internal names of a contract module: _root for the root module, _<module> for another.
-export const internalModule = (module: string): string => (module === '' ? '_root' : `_${module.replaceAll('/', '.')}`);
+// GN-6bs: every module of the contract is the private module _module_<m>, whose name neither the package attributes
+// of its members nor the fixed modules _errors, _types and _native take.
+export const internalModule = (module: string): string => (module === '' ? '_root' : `_module_${module.replaceAll('/', '__')}`);
 // The Python module that holds a unit of the module: internal units are in internalModule (GN-6r).
 const unitModule = (layout: PythonLayout, unit: Unit): string => (isInternal(unit) ? `${layout.module}.${internalModule(unit.module)}` : moduleOf(layout, unit.module));
 
@@ -1590,7 +1593,7 @@ __all__ = [${names.join(', ')}]${enums}${records}${variants}${callbacks}${interf
 // The names of a Python module file: the public names of the module, or with internal its internal names (GN-6r); the
 // file of the root module holds both, and its __all__ only the public ones.
 function modulePy(model: Model, module: string, internal: boolean): string {
-  const held = (unit: Unit): boolean => unit.module === module && (module === '' && !internal ? true : isInternal(unit) === internal);
+  const held = (unit: Unit): boolean => unit.module === module && (!internal ? true : isInternal(unit));
   const fns = [
     ...model.functions.filter((f) => held(f.unit)).flatMap((f) => [{ unit: f.unit, name: langName('python', f.member.name, 'callable') }, ...(awaits(f) ? [{ unit: f.unit, name: awaitedName(f) }] : [])]),
     ...model.objects.filter((o) => held(o.unit)).map((o) => ({ unit: o.unit, name: langName('python', o.unit.name, 'class') })),
@@ -1701,7 +1704,7 @@ const moduleUnits = (model: Model): Unit[] => [
 function initPy(model: Model): string {
   const modules = [...new Set(moduleUnits(model).filter((u) => u.module === '' || !isInternal(u)).map((u) => u.module))].sort();
   const open = <T>(items: T[], unit: (item: T) => Unit): T[] => items.filter((item) => !isInternal(unit(item)));
-  const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
+  const imports = modules.map((m) => `from .${internalModule(m)} import *  # noqa: F403`);
   const names = [
     ...model.classes.map((c) => c.name),
     ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class')),
@@ -1738,12 +1741,8 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/py.typed`, '');
   const units = moduleUnits(model);
   for (const module of [...new Set(units.map((u) => u.module))]) {
-    if (module === '') {
-      files.set(`${pkg}/_root.py`, modulePy(model, module, false));
-      continue;
-    }
-    if (units.some((u) => u.module === module && !isInternal(u))) files.set(`${pkg}/${module}.py`, modulePy(model, module, false));
-    if (units.some((u) => u.module === module && isInternal(u))) files.set(`${pkg}/_${module}.py`, modulePy(model, module, true));
+    // GN-6bs: one private file per module, with the public and the internal names, as the root module has.
+    files.set(`${pkg}/${internalModule(module)}.py`, modulePy(model, module, false));
   }
   files.set(`${pkg}/__init__.py`, initPy(model));
   files.set(`${ROOT}/tests/test_generated.py`, pythonTests(model, layout.module));

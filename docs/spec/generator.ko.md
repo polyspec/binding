@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 38d2a1214d5982bf23c4bdd65f2c8b87b3be8c7ab3ad9a440a3ae613dd42407d -->
+<!-- source-sha256: 0840e54fbe388cd96de2519448044f142e0a2f4e1e10d6b6ea9961fbf10934d5 -->
 # 생성기
 
 [English](generator.md)
@@ -826,6 +826,16 @@
   만든다. 다른 text는 kind `text`의 row로 만든다. 이유: text의 make는 언어의 text를 받는데 짝 없는 surrogate는 모든
   언어의 text가 아니다: json은 core 전에 `Value.string("\ud800")`를 거부했고, Go는 그것을 컴파일하지 않으며, PHP는
   U+FFFD를 써서 case가 말하는 거부 없이 통과했다. `text16`의 row(B2.81)는 소유자에게 case가 말하는 그대로의 text를 준다.
+- **GN-6bs** Python: 계약의 모든 module `m`은 비공개 module 하나 `<root>._module_m`이고(`m`의 `/`는 `__`), root
+  module은 `<root>._root`다. 각각은 그 module의 공개 이름과 내부 이름을 함께 갖고, `__all__`은 공개 이름만 갖는다.
+  `<root>/__init__.py`는 `from ._module_m import *`로 그것들을 다시 내보낸다. package의 어느 module도 계약 module의 이름을
+  갖지 않고, 공개 unit의 class가 이름 대는 module은 `<root>`다. 이 규칙은 member가 그 이름을 쓰는 module만이 아니라 모든
+  module에 적용된다. 이유: Python은 하위 module을 import하면 package에서 그 이름의 속성을 다시 묶는다. 그래서 template의
+  module `format`의 파일 `format.py`가 `__init__.py`가 다시 내보낸 함수 `format`을 module로 바꿨고, `pkg.format(...)`은
+  `'module' object is not callable`로 실패했다. member가 그 이름을 쓸 때만 바뀌는 이름이라면 module의 경로가 member의
+  이름에 따라 달라진다. 접두어 `_module_`은 고정 module `_errors`, `_types`, `_native`, `_root`를 같은 이름의 계약 module과
+  구별한다. template의 legacy package는 API를 `polyspec.template`에서만 내보냈고(`__init__.py`) 하위 module `format`은
+  없었으므로, 이 규칙이 지키는 공개 경로는 package root다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
@@ -1307,7 +1317,7 @@
   각 언어는 그것을 공개 API가 아니라고 표시한다.
   - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
   - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
-    module `m`의 이름은 internal 이름만 담은 module `<root>._m`에 있고, 생성 시험는 그 자리에서 부른다.
+    module `m`의 이름은 internal 이름만 담은 module `<root>._module_m`(GN-6bs)에 있고, 생성 시험는 그 자리에서 부른다.
   - Node와 WASM: 그 선언마다 JSDoc에 태그 `@internal`을 둔다. 선언을 `stripInternal`로 만드는 패키지는 그것을 뺀다.
   - Go: 그 선언마다 doc comment가 문장 `It is internal to <library> (U-1) and is no public API.`로 끝난다. Go에는 한
     module만 쓰는 export 이름을 나타내는 표시가 없기 때문이다.
