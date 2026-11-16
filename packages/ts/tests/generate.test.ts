@@ -11591,7 +11591,8 @@ test('B2.403: a value alias of another repository that only a callback interface
   const cases = caseFiles.get('contracts/cases.json') as Record<string, unknown>;
   cases['copy'] = [];
   cases['read'] = [];
-  const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.403' };
+  // The members that name data are of go and wasm alone, so php, python and node reach it only through source.
+  const only = { targets: ['go', 'wasm'], reason: 'B2.403' };
   const names = (value: unknown): boolean => /"unit":"data","library":"sample"/.test(JSON.stringify(value));
   for (const unit of contract.units) {
     // The variant note holds data in its fields; it holds a text instead, since a variant has no only.
@@ -11600,9 +11601,11 @@ test('B2.403: a value alias of another repository that only a callback interface
   }
   assert.ok(JSON.stringify(contract).includes('"unit":"source","library":"sample"'));
   assert.doesNotMatch(JSON.stringify(contract.units.filter((u: any) => u.only === undefined).map((u: any) => ({ ...u, members: (u.members ?? []).filter((m: any) => m.only === undefined) }))), /"unit":"data","library":"sample"/);
-  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(lib, /pub\(super\) fn in_data\(/);
-  assert.match(lib, /fn read\(&mut self[\s\S]*?library_sample::/);
+  const libs: Record<string, string> = { php: 'packages/php-ext/generated/lib.rs', python: 'packages/python/generated/lib.rs', node: 'packages/ts/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target as Lang] }), path);
+    assert.match(lib, /fn read\(&(mut )?self[\s\S]*?library_sample::/, target);
+  }
 });
 
 test('B2.396: a value alias that no generated member of a target uses is no alias of that target (Q-4, U-7)', () => {
