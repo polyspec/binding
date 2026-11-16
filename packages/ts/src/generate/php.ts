@@ -1892,7 +1892,7 @@ fn class_kinds(class: &ClassEntry) -> &'static [&'static str] {
     loop {
         if let Some(index) = CLASSES.iter().position(|registered| registered.get().is_some_and(|registered| std::ptr::eq(registered.0, scope))) {
             return match KINDS.get(index) {
-                Some(kinds) => *kinds,
+                Some(kinds) => kinds,
                 None => &[],
             };
         }
@@ -1906,9 +1906,8 @@ fn class_kinds(class: &ClassEntry) -> &'static [&'static str] {
 /// GN-7a: the arguments of the constructor of a library class: the message is a text (B-3), the kind a text and one
 /// of the kinds of the class, and the status and the errno each absent, null or an integer.
 fn error_arguments(class: &ClassEntry, message: Option<&Zval>, kind: Option<&Zval>, status: Option<&Zval>, errno: Option<&Zval>) -> Result<(String, String, Option<i64>, Option<i64>), Fail> {
-    let name = match class.name() {
-        Some(name) => name,
-        None => "the error",
+    let Some(name) = class.name() else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("GN-7a: a library class has no name") }));
     };
     let (Some(message), Some(kind)) = (message, kind) else {
         return Err(type_error(&format!("an argument of {name}::__construct"), "string"));

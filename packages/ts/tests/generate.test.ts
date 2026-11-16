@@ -11961,6 +11961,10 @@ test('B2.411: the constructor of a library class of PHP takes any value and judg
   assert.match(ext, /fn construct_error\(ex: &mut ExecuteData\) \{\n    let mut message = Arg::new\("message", DataType::Mixed\);\n    let mut kind = Arg::new\("kind", DataType::Mixed\);/);
   assert.match(ext, /if !class_kinds\(class\)\.contains\(&kind\.as_str\(\)\) \{/);
   assert.match(ext, /let message = text_in\(message, &format!\("the message of \{name\}"\)\)\?;/);
+  // cargo clippy -D warnings of the crate: no explicit deref (explicit_auto_deref) and no match that reimplements
+  // unwrap_or (manual_unwrap_or), which clippy.toml disallows in turn.
+  assert.match(ext, /return match KINDS\.get\(index\) \{\n\s*Some\(kinds\) => kinds,/);
+  assert.match(ext, /let Some\(name\) = class\.name\(\) else \{\n\s*return Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-7a: a library class has no name"\) \}\)\);\n\s*\};/);
 });
 
 test('B2.411: Raised<Unit> of Go gives an error for a kind that is no kind of the unit (GN-7a, GN-15d)', () => {
