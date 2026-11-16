@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 68c65a4ac7c813637661bc5777297b22aef55444de46288cb7f79e3891e0ad91 -->
+<!-- source-sha256: 7a126bae000ad4d441ea9a7810e363349700f7fd1cc2d8fd1f6d463f1cf8b511 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
@@ -26,6 +26,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `binding check`는 callback interface의 member의 parameter에 붙은 `default`를 거부하고 `the parameter <name> of the callback member <member> of <unit> has a default`로 이름을 댄다: 코어는 callback에 모든 인자를 넘기고 callback 행은 정확히 그 parameter를 주므로(CK-101) 그 default는 어느 target에서도 뜻이 없었고, 생성기는 이미 그런 member를 생성하지 않는 것으로 거부했다(CK-98, B2.409). `packages/ts`에서 `node --test --test-name-pattern=B2.409 tests/contract-check.test.ts`로 검증했으며, 변경 전에는 실패했다.
 
 ## 0.0.15
 

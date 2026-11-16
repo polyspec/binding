@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 0c0f72b2ad3d630823e35ac8fdbe52bd8a41dfd9feaa7f1ef2666be401f29afe -->
+<!-- source-sha256: cacc5478f095c2a67d381f49c06917d9c5b6d479ceb3795a92002a9dca966201 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -364,7 +364,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   붙은 default와, 돌려주는 type의 값이 아닌 literal을 보고하며, `none`을 돌려주는 member의 default도 그중 하나다.
   이유: default는 host 객체가 member를 뺄 때 trait method가 코어에 돌려주는 것이므로, 코어가 host 객체를 통해
   호출하지 않는 member의 default는 아무것도 말하지 않고, 다른 type의 literal은 trait method에서 컴파일되지 않거나
-  코어에 그 type이 갖지 않는 값을 준다.
+  코어에 그 type이 갖지 않는 값을 준다. callback interface의 member의 parameter는 `default`를 갖지 않으며(B2.409),
+  `binding check`는 그런 default를 unit, member, parameter를 대어 보고한다. 이유: 코어는 callback에 모든 인자를 넘기므로
+  그 parameter의 default는 쓰이지 않고, callback fixture의 행은 정확히 그 parameter를 주므로(CK-101), 그 default는 어떤
+  행도 어떤 target도 갖지 않는 호출 형태를 말하게 된다.
 - **CK-99** 코어 signature(I-1, I-2, generator GN-4a, GN-6g, GN-7; B2.398, 아직 실행하지 않음): `binding check`는 계약을
   컴파일러가 기술하는 코어의 public API와 target마다 비교한다. 출처: target마다 `core.path`의 코어 crate의 rustdoc
   JSON이며, `cargo rustdoc --lib --locked --offline`에 그 target의 빌드의 feature(GN-4a: 행이 있는 target은

@@ -433,7 +433,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   return type, a return of `none` among them. Why: the default is what the trait method returns to the core when the
   host object leaves the member out, so a default on a member that the core does not call through a host object
   states nothing, and a literal of another type would not compile in the trait method or would give the core a value
-  that its type does not hold.
+  that its type does not hold. A parameter of a member of a callback interface has no `default` (B2.409), and `binding
+  check` reports one with the unit, the member and the parameter. Why: the core passes every argument to a callback,
+  so a default of its parameter is never taken, and a row of a callback fixture gives exactly the parameters (CK-101),
+  so the default would state a form of call that no row and no target has.
 - **CK-99** The core signatures (I-1, I-2, generator GN-4a, GN-6g, GN-7; B2.398, not yet run): `binding check` compares
   the contract with the public API of the core as the compiler describes it, per target. Source: for each target, the
   rustdoc JSON of the core crate at `core.path`, built with `cargo rustdoc --lib --locked --offline` and the features of

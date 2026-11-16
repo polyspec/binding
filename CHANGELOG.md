@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `binding check` refuses a `default` on a parameter of a member of a callback interface and names it as `the parameter <name> of the callback member <member> of <unit> has a default`: the core passes every argument to a callback and a callback row gives exactly the parameters (CK-101), so the default had no meaning in any target, and the generator already refused such a member as not generated (CK-98, B2.409). Verified by `node --test --test-name-pattern=B2.409 tests/contract-check.test.ts` in `packages/ts`, which failed before the change.
+
 ## 0.0.15
 
 - `binding check` judges the `args` of every call form of a case by one rule (CK-101): a step of a function fixture and a call of `after` may leave out `args`, which is `{}`, and a parameter with a default, as `new`, `from` and `then` of an instance value already could, so a property in `after` needs no `args: {}`; a row and a call of `calls` of a callback fixture give every parameter, and leave out `args` only for a member without parameters. Every form names a missing parameter as `the args of <place> give no <key> of <member>` and an unknown key as `the args of <place> have no parameter <key> of <member>` (B2.408). Verified by `node --test --test-name-pattern=CK-101 tests/contract-check.test.ts` in `packages/ts`, which failed before the change for the step, `after` and callback forms.
