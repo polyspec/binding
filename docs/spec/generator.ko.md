@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8ca9de4e6f965f893a9ff4502628875c699bca9b0135ab251ccdbe61967c6aa0 -->
+<!-- source-sha256: 2ed88b9b11b3d8f574840dd3cffc60cfc6b2a3a297cdc915c99ae5eb8d24d2de -->
 # 생성기
 
 [English](generator.md)
@@ -1690,6 +1690,17 @@
   `binding_core`와 Rust 표준 라이브러리의 사본을 따로 담는다. end-to-end 검사가 그런 프로그램을 release 형태로 실행
   플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다. 그 검사는 `darwin_arm64`와
   `linux_arm64`에서 실행되었다.
+- **GN-15k** Go binding이 platform의 정적 라이브러리 옆에 링크하는 라이브러리는 그 platform에서 그 라이브러리를 빌드할 때
+  rustc가 출력하는 `native-static-libs`(`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`)를
+  그 순서대로 쓴 것이며, 생성기가 고정하는 목록이 아니다. release는 각 platform의 라이브러리를(GN-15g) 그 출력과 함께
+  빌드하고, 그 라이브러리들을 그 platform link 파일의 지시문 `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`에
+  쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다. 라이브러리를 품지 않는 checkout은 같은 출력과
+  함께 자기 라이브러리를 빌드하고, 그 Go 시험을 돌리는 recipe는 출력된 라이브러리를 `CGO_LDFLAGS`의 디렉터리 뒤에 준다
+  (GN-14): `CGO_LDFLAGS=-L<dir> <libraries>`. 주 link 파일은 `-l<library>`만 쓴다. 이유: 정적 라이브러리가 필요로 하는
+  라이브러리는 그것이 품는 crate를 따르는데 생성기는 그것을 읽지 않는다. 고정 목록 `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc`와
+  `-lSystem -lc -lm`은 session-store의 `-framework Security -framework CoreFoundation -liconv`를 빠뜨렸다. 그 crate
+  security-framework가 그것들을 참조해서 Go 시험이 링크되지 않았다. json의 `-liconv`도 빠뜨렸는데, json은 그것을 쓰는
+  object가 끌려오지 않는 동안만 링크된다.
 - **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
   `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을

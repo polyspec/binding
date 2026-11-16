@@ -2064,6 +2064,19 @@ the design ids are those of the binding design.
   holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
   a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
   one program. It has run on `darwin_arm64` and on `linux_arm64`.
+- **GN-15k** The libraries that the Go binding links beside the static library of a platform are the
+  `native-static-libs` that rustc prints for the build of that library on that platform
+  (`cargo rustc --lib --crate-type staticlib -- --print native-static-libs`), in their order, and no list that the
+  generator fixes. A release builds the library of each platform (GN-15g) with that print and writes the libraries
+  into the directive of the link file of that platform, `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`,
+  so a consumer that fetches the module links them with no flag of its own. A checkout, whose tree holds no library,
+  builds its library with the same print, and the recipe that runs its Go tests gives the printed libraries after the
+  directory in `CGO_LDFLAGS` (GN-14): `CGO_LDFLAGS=-L<dir> <libraries>`. The main link file names only `-l<library>`.
+  Why: the libraries that a static library needs follow the crates that it holds, which the generator does not read;
+  the fixed lists `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc` and `-lSystem -lc -lm` missed
+  `-framework Security -framework CoreFoundation -liconv` of session-store, whose crate security-framework refers to
+  them, so its Go tests did not link, and `-liconv` of json, which links only while no object that it holds is pulled
+  in.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
