@@ -1819,6 +1819,36 @@ describe('B2.359: CK-64 takes an argument outside the safe integers in a case of
   });
 });
 
+describe('B2.397: CK-99 a case value is a value of its declared type at every place (T-1, GN-13w)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): string[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-99').map((f) => f.message);
+  };
+  const refused = (kind: string): object => ({ kind, status: null, category: kind === 'invalid_number' ? 'value' : 'type', message: 'the argument is not a value of its type' });
+  test('the committed cases pass', () => {
+    assert.deepEqual(run(() => {}), []);
+  });
+  test('-1 in the optional uint field of a record, which Go writes as ptr(uint64(-1)) (crud-ui list-options-ignored)', () => {
+    const found = run((c) => { c.pad[1].options.width = -1; });
+    assert.equal(found.length, 1);
+    assert.match(found[0] ?? '', /the argument options\.width -1 is a negative integer, no value of the type uint/);
+  });
+  test('a fraction or a text in a list of uint, and a text at a uint result, are reported', () => {
+    assert.equal(run((c) => { c.width_sum[0].widths = [2, 1.5, 'x']; }).length, 2);
+    assert.equal(run((c) => { c.width_sum[0].result = 'nine'; }).length, 1);
+  });
+  test('an argument outside its type in a case that raises invalid_number or invalid_argument_type passes (GN-13w)', () => {
+    assert.deepEqual(run((c) => { c.repeat[0].times = -1; delete c.repeat[0].result; c.repeat[0].raises = refused('invalid_number'); }), []);
+    assert.deepEqual(run((c) => { c.repeat[0].times = 'two'; delete c.repeat[0].result; c.repeat[0].raises = refused('invalid_argument_type'); }), []);
+  });
+  test('a value inside the argument of such a case, which Go writes, and an argument of a case of another kind, are reported', () => {
+    assert.equal(run((c) => { c.pad[1].options.width = -1; delete c.pad[1].result; c.pad[1].raises = refused('invalid_number'); }).length, 1);
+    assert.equal(run((c) => { c.repeat[0].times = -1; delete c.repeat[0].result; c.repeat[0].raises = refused('unsupported'); }).length, 1);
+  });
+});
+
 describe('B2.360: CK-97 a case limited to targets has a case of the same arguments for every other target (GN-13bc)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
   const run = (change: (cases: any) => void): string[] => {

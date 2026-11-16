@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 5e79e1fdca915ce59d6db9513c7341395a041dd57799150c1948287bce2b1c9e -->
+<!-- source-sha256: f66c6319f1fe87f2a6205f3beeb6ea814aaceebb4323e3dea52279df56cd66da -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -150,7 +150,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   가리킨다(CK-17).
 - **CK-63** WASM 코어(GN-4b): `core.features.wasm`은 플랫폼 I/O의 feature `fs`, `blocking-io`, `process`, `net`을
   적지 않는다.
-- **CK-64** 타입 `int`나 `uint` 자리(인자, 그 타입을 담은 list·tuple·map·optional의 항목, 결과)에 있는 case의 정수는 안전
+- **CK-64** 타입 `int`나 `uint` 자리(인자, 그 타입을 담은 list·tuple·map·optional의 항목, record나 variant의 case의 field, 결과)에 있는 case의 정수는 안전
   정수다. 이것이 모든 target이 주는 T-1의 범위다(Node `number`). 그보다 큰 정수는 한 target에서는 `int64`이고 다른
   target에서는 `int`가 아니므로, case가 두 결과를 기대하게 된다. i64 범위를 받거나 주는 member는 `int64`를 적는다(GN-12a). kind `invalid_number`를 내는 case의 인자는 안전 정수 밖이면서 i64 범위 안의 정수여도 된다: 모든
   target이 그것을 그 kind로 거부하므로(GN-12a) case는 binding의 거부를 결과 하나로 말한다(B2.359, hyper
@@ -351,6 +351,19 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   이유: default는 host 객체가 member를 뺄 때 trait method가 코어에 돌려주는 것이므로, 코어가 host 객체를 통해
   호출하지 않는 member의 default는 아무것도 말하지 않고, 다른 type의 literal은 trait method에서 컴파일되지 않거나
   코어에 그 type이 갖지 않는 값을 준다.
+- **CK-99** case의 값은 그 자리의 type의 값이다(T-1). case가 값을 주는 모든 자리에서 그렇다: 인자, 결과, list의 항목
+  (반복 형태 `{"kind": "list", "value": ...}`의 값도), tuple의 부분, map이나 keyed map의 항목, optional의 값, record의
+  field와 tag가 가리키는 variant의 case의 field. `uint` 자리에서는 음이 아닌 정수, `int`에서는 정수, `int64`에서는 i64
+  범위의 정수, `float`에서는 숫자, `bool`에서는 bool, `text`나 `latin1`에서는 text다. `binding check`는 다른 값을 case,
+  자리, 값, type과 함께 보고한다. 객체 형태의 값(`{"float": ...}`, `{"ill_formed": ...}`, service 값, 조합된 text)은 그
+  형태의 규칙으로 판단한다(GN-13bc, GN-13j, GN-13l). kind `invalid_number`나 `invalid_argument_type`를 내는 case에서는
+  인자 자체, 또는 그 optional의 값이 type 밖이어도 된다: binding은 코어가 돌기 전에 그런 인자를 그 kind로 거부하고,
+  동적 target은 그것을 JSON kind 그대로 주며, Go는 그 test를 쓰지 않으므로(GN-13w) 그 case가 그 거부의 유일한 test다.
+  그런 인자 안의 값, 결과, 다른 kind를 내는 case의 인자는 target이 그 type의 literal로 쓰므로 계속 보고한다. 이유:
+  crud-ui generator의 case `list-options-ignored`가 `ListOptions`의 field `total`(`uint`의 `optional`)에 -1을 주었고,
+  `binding check`는 그것을 통과시켰으며, Go test는 `ptr(uint64(-1))`을 담아 `go vet`이 `uint64`를 넘치는 상수로
+  거부했다. target이 쓰는 자리에서 type 밖의 값은 case의 결함이므로, 검사는 target의 build가 실패하기 전에 그것을
+  지목한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
