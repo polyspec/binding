@@ -10,7 +10,7 @@ import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -1791,10 +1791,9 @@ function libRust(model: Model): string {
     // GN-6bp: the failure conversions of the owners, used as far as a conversion into the core uses them.
     foreignFailureNode(model),
   ].join('\n');
-  // I-3: the conversions of the properties of the error units count as uses.
-  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${RAISED}\n${enums}`, `${functions}${propertyUses}`, {},
-    libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasNode(model, a)));
+  // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
+  return withUsedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${RAISED}\n${enums}`,
+    libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasNode(model, a)), (used) => {
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
@@ -2003,6 +2002,7 @@ pub fn fault_left(env_: &Env, id: i64) -> napi::Result<Vec<String>> {
     .map_err(|fail| throw(env_, fail))
 }
 `}`;
+  });
 }
 
 // ---- JavaScript and declarations ----

@@ -12,7 +12,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -1399,10 +1399,9 @@ function libRust(model: Model): string {
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
   const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.filter((a) => a.library === undefined).map((a) => aliasWasm(model, a)), wasmHost(model)]), ...(usesNative(model) || keepsAny(model) ? [WASM_NATIVE] : [])];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits, foreignFailureWasm(model, failRest(model))].join('\n');
-  // I-3: the conversions of the properties of the error units count as uses.
-  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`, `${functions}${propertyUses}`, {},
-    libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasWasm(model, a)));
+  // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
+  return withUsedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`,
+    libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasWasm(model, a)), (used) => {
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   // The error of the crate (throw) names Array in every crate.
@@ -1593,6 +1592,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
     }
 }
 `;
+  });
 }
 
 // ---- JavaScript and declarations ----
