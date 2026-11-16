@@ -2139,7 +2139,7 @@ function entries(model: Model): string {
 
 // The Rust helpers that the contract's functions use.
 function rustUsed(model: Model): string {
-  const code = `${entries(model)}${takenCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}`;
+  const code = `${entries(model)}${takenCallbacks(model).map((c, i) => callbackRust(model, c, i)).join('')}${callBackRust(model)}${coreErrorRust(model)}${cancelsRust(model)}`;
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
@@ -2147,6 +2147,8 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.interfaces.map((i) => interfaceRust(model, i)),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasRust(model, a)),
+    // GN-6bp: the failure conversions of the owners, used as far as a conversion into the core uses them.
+    foreignFailureRust(model),
   ].join('\n');
   const libraries = libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasRust(model, a));
   const helpers = !readsValues(model) ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
@@ -2391,5 +2393,5 @@ pub unsafe extern "C" fn ${prefix(model)}__free(buffer: Buffer) {
         drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
     }
 }
-${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${model.faults.length === 0 && model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? ITERATED : ''}${callBackRust(model)}${foreignFailureRust(model)}${cancelsRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
+${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${model.faults.length === 0 && model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? ITERATED : ''}${callBackRust(model)}${cancelsRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
 }

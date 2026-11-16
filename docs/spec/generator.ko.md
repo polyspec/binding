@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 718f7955e31a5c599b2a893d358d344137c4eabe5cee7dbb0d6a3d1f13c691f1 -->
+<!-- source-sha256: bb8e7ed309380ad98d87aea4c5343e6d29cc554703d1183cb99027273b7d5a1a -->
 # 생성기
 
 [English](generator.md)
@@ -814,6 +814,10 @@
   manifest를 그 텍스트와 비교하므로 feature가 없는 manifest는 보고된다. 이유: crate는 entry point를
   `#[cfg(feature = "thread-test")]`로 가르는데, manifest가 선언하지 않은 feature는 `unexpected_cfgs` 경고이고
   `-D warnings`가 그것을 거부한다. parameter만 판정한 scaffold는 field 안의 함수(orm `config.audit_source`)를 빠뜨렸다.
+- **GN-6bp** 다른 저장소의 값 alias 소유자의 실패 변환 `error_of_<library>`와 `failure_of_<library>`(U-7 (a'))는 모든
+  target에서 crate의 helper다: crate는 그 소유자의 core로 들어가는 변환이 그것을 부르는 곳에서 그것을 쓰고, 그 소유자의
+  alias가 나가기만 하는 crate에는 없다. 이유: 소유자의 오류로 실패하는 것은 소유자의 `in`뿐이므로, `json_value`를 결과로만
+  주는 orm 같은 crate는 부르는 곳 없는 두 함수를 가졌고 `-D dead_code`가 그것을 거부한다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

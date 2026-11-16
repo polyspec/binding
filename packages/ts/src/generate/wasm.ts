@@ -1318,12 +1318,12 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model)].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
   const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.filter((a) => a.library === undefined).map((a) => aliasWasm(model, a)), wasmHost(model)]), ...(usesNative(model) || keepsAny(model) ? [WASM_NATIVE] : [])];
-  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
+  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits, foreignFailureWasm(model, failRest(model))].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`, `${functions}${propertyUses}`, {},

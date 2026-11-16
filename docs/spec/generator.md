@@ -1004,6 +1004,11 @@ the design ids are those of the binding design.
   feature is reported. Why: the crate gates the entry point with `#[cfg(feature = "thread-test")]`, and a feature that
   the manifest does not declare is an `unexpected_cfgs` warning, which `-D warnings` refuses; a scaffold that judged the
   parameters alone left out the function in a field (orm `config.audit_source`).
+- **GN-6bp** The failure conversions of the owner of a value alias of another repository, `error_of_<library>` and
+  `failure_of_<library>` (U-7 (a')), are helpers of the crate in every target: a crate writes them where a conversion
+  into the core of that owner calls them, and a crate whose alias of that owner only leaves has none. Why: only the
+  `in` of the owner fails with its error, so a crate that gives the alias only as a result, such as orm with
+  `json_value`, held both functions without a caller, which `-D dead_code` refuses.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b267b0a358ad01812ecf73e7f5b9e69b10067eb2799b206e2ca4405436e60961 -->
+<!-- source-sha256: c8c5c2db27467d9086b972996f2b350474553905b21d857bba553fb65e1b4706 -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -28,6 +28,7 @@
 - PHP 시험은 `in` row가 `stdClass`를 map으로 읽는 값 alias의 빈 map을 `new \stdClass()`로 준다. 빈 array `[]`는 빈 list로 읽혀서 template 시험 42건이 `data_unsupported_type`으로 실패했다(GN-13v, B2.351).
 - Python과 PHP에서 cleanup member가 있는 class의 B-10 시험은 버리는 instance를 닫지 않으므로, 시험이 기대하는 대로 destructor가 경고한다. B2.348이 그것도 닫아서 경고가 나지 않았다(GN-13u, B2.348-1).
 - Node와 PHP의 scaffold는 orm `config.audit_source`처럼 record parameter의 field 안에 있는 함수에도, 생성된 crate가 쓰는 대로 feature `thread-test`를 선언하고, CK-19는 그것이 없는 manifest를 보고한다. `-D warnings`가 `unexpected_cfgs`로 실패했다(GN-6bo, B2.353).
+- crate는 다른 저장소의 값 alias 소유자의 실패 변환을, Node, Python, WASM, Go에서 그 core로 들어가는 변환이 부르는 곳에서만 쓴다. `json_value`를 내보내기만 하는 orm처럼 alias가 나가기만 하는 crate가 `-D dead_code`에서 실패했다(GN-6bp, B2.354).
 
 ## 0.0.13
 

@@ -1695,7 +1695,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
@@ -1706,6 +1706,8 @@ function libRust(model: Model): string {
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasNode(model, a)),
     model.aliases.length > 0 ? nodeHost(model) : '',
     holdsNative(model) ? NODE_NATIVE : '',
+    // GN-6bp: the failure conversions of the owners, used as far as a conversion into the core uses them.
+    foreignFailureNode(model),
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');

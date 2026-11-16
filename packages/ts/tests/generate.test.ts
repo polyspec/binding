@@ -11071,3 +11071,33 @@ test('B2.353: the scaffold declares thread-test whenever the generated crate wri
     assert.equal(declares, writes, `${lib}: writes thread-test ${writes}, ${manifest} declares it ${declares}`);
   }
 });
+
+test('B2.354: a crate whose value alias of another repository only leaves writes no failure conversion of the owner (U-7, GN-6k)', () => {
+  // orm: json_value is only a result, and Node and Python declared error_of_json and failure_of_json, which nothing
+  // called, so -D dead_code failed.
+  const { contract, caseFiles, foreign } = consumerSample();
+  // Every place of the alias but the result of a function or a method of a class is a text, and no case is run.
+  const alias = (type: any): boolean => typeof type === 'object' && type !== null && type.unit === 'data' && type.library === 'sample';
+  const plain = (node: any): any => (alias(node) ? 'text' : Array.isArray(node) ? node.map(plain) : typeof node === 'object' && node !== null ? Object.fromEntries(Object.entries(node).map(([k, v]) => [k, plain(v)])) : node);
+  const kept: string[] = [];
+  contract.units = contract.units.map((unit: any) => ({ ...plain({ ...unit, members: [] }), members: unit.members }));
+  for (const unit of contract.units) {
+    const callback = unit.origin === 'callback' || unit.kind === 'interface';
+    for (const member of unit.members ?? []) {
+      member.parameters = plain(member.parameters ?? []);
+      if (callback || !JSON.stringify(member.returns).includes('"library":"sample"')) member.returns = plain(member.returns);
+      else kept.push(member.id);
+    }
+  }
+  contract.cases = [];
+  assert.ok(kept.length > 0);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node', 'python', 'php', 'wasm', 'go'] });
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    for (const name of ['error_of_sample', 'failure_of_sample']) {
+      const declared = new RegExp(`\\bfn ${name}\\(`).test(lib);
+      const called = (lib.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length > (declared ? 1 : 0) + (name === 'error_of_sample' && /\bfn failure_of_sample\(/.test(lib) ? 1 : 0);
+      assert.ok(!declared || called, `${path}: ${name} is declared and no code calls it`);
+    }
+  }
+});
