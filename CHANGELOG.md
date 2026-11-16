@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+## 0.0.17
+
+- The Go test writes the expected result of a call of `after` and of a step of a function fixture by the out rows of a value alias, as it writes the result of a case and as the other four targets do (GN-13be): session-store found that after `Set("a", []byte("y"))` the test expected `[]byte("y")` from `Get("a")`, which gives a `*any` that holds the string "y" by the utf8 row of `php_value`. Verified by `node --test --test-name-pattern=B2.420 tests/generate.test.ts` in `packages/ts`, which failed before the change.
+
 ## 0.0.16
 
 - A `use` declaration of a generated crate imports a name only when the crate writes it bare, with no `::` before it, or when the name is a trait that the crate imports for its methods (GN-4e). The Python crate of json imported `PyDict`, which it wrote only as `pyo3::types::PyDict`, and failed cargo clippy with `unused import: PyDict`. Verified by `node --test --test-name-pattern=B2.418 tests/generate.test.ts`, which checks every generated Rust file of each contract of tests/e2e, of the sample and of json and session-store. Also verified by `cargo clippy -- -D warnings` on the five binding crates of json v0.0.32.

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b708a1c94aabd7ba32c05e84de5cd0adc85284eb7e3244950c40af2e3a233dd5 -->
+<!-- source-sha256: d74540883424aeca26316b95daf4de60c6dfc2fcd176f646dca1431c2458e039 -->
 <!-- source-sha256: d11ca5821594f868c0c9f9238f925baadc7d6c896dae215db5148ed54cd3ac94 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
@@ -27,6 +27,10 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.17
+
+- Go 시험은 `after`의 호출과 function fixture의 step의 기대 결과를, case의 결과처럼 그리고 다른 네 target처럼, value alias의 out row로 쓴다(GN-13be): session-store는 `Set("a", []byte("y"))` 뒤에 시험이 `Get("a")`에서 `[]byte("y")`를 기대한다는 것을 찾았는데, 그 호출은 `php_value`의 utf8 row에 따라 문자열 "y"를 담은 `*any`를 준다. `packages/ts`에서 `node --test --test-name-pattern=B2.420 tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 
 ## 0.0.16
 

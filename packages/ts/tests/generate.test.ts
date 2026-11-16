@@ -11551,6 +11551,32 @@ test('B2.375: a Python result of an alias in after takes the bytes that leave as
   assert.match(body, /expected_2 = \["x", bytes\.fromhex\("ff"\)\]/);
 });
 
+test('B2.420: a Go result of an alias in after takes the bytes that leave as a text by the row that the value meets (GN-13be)', () => {
+  // session-store memory_store.get in after: after Set("a", []byte("y")), Get("a") gives a *any that holds the string
+  // "y", which the utf8 row of php_value makes, and the Go test expected []byte{0x79}.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'bytes');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  sample.units.find((u: any) => u.id === 'counter').members.push({ id: 'counter.held', name: ['held'], kind: 'property', visibility: 'public', parameters: [], returns: { optional: { unit: 'data' } }, raises: [], wait: 'none', core: { path: 'polyspec_sample::Counter::held', receiver: '&self' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, any[]>;
+  file['counter_add']![0].after = [
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: '79' } } },
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: 'ff' } } },
+  ];
+  const go = text(generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  const at = go.indexOf('AnAmountIsAdded(t *testing.T)');
+  assert.ok(at >= 0);
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  assert.ok(body.includes('if want := (*any)(ptr[any]("y")); '), 'utf8 bytes are a string');
+  assert.ok(!body.includes('[]byte("y")'), 'utf8 bytes are no []byte');
+  assert.ok(body.includes('if want := (*any)(ptr[any]([]byte("\\xff"))); '), 'other bytes stay a []byte');
+});
+
 test('B2.379: a member of a callback interface with a default may be left out by the host object, which gets the default (U-3, GN-6d)', () => {
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   for (const [id, trait] of [['lookup', 'Lookup'], ['source', 'Source']] as const) {
