@@ -803,6 +803,24 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
 }
 
 // The value of an argument in a case: undefined when the case leaves an argument with a default out (U-2).
+// GN-13w: why a case value is no value of its Go type, or undefined when it is one. Go is statically typed, so the
+// compiler refuses such a value at the call before the binding sees it; the case states the refusal of the binding
+// on the dynamic targets (GN-13d), and Go has no call to make for it.
+export function notGoValue(type: Type, json: unknown): string | undefined {
+  if (json === null || json === undefined) return undefined;
+  if (typeof type === 'object' && 'optional' in type) return notGoValue(type.optional, json);
+  if (typeof type !== 'string') return undefined;
+  const number = typeof json === 'number';
+  // A value in an object form, such as {"int": ...} or {"float": "nan"}, is judged by value().
+  if (typeof json === 'object') return undefined;
+  if (type === 'uint') return number && Number.isInteger(json) && (json as number) >= 0 ? undefined : `${JSON.stringify(json)} is no value of uint64`;
+  if (type === 'int' || type === 'int64') return number && Number.isInteger(json) ? undefined : `${JSON.stringify(json)} is no value of int64`;
+  if (type === 'float') return number ? undefined : `${JSON.stringify(json)} is no value of float64`;
+  if (type === 'bool') return typeof json === 'boolean' ? undefined : `${JSON.stringify(json)} is no value of bool`;
+  if (type === 'text' || type === 'latin1') return number || typeof json === 'boolean' ? `${JSON.stringify(json)} is no value of string` : undefined;
+  return undefined;
+}
+
 function caseValue(v: Values, b: Body, arg: Arg, args: ReadonlyMap<Arg, unknown>): string | undefined {
   if (arg.default !== undefined && !args.has(arg)) return undefined;
   return value(v, b, arg.type, args.get(arg) ?? null);
@@ -1377,6 +1395,14 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
   const counted = countsThrownGo(model) && callsCode(model, fn);
   // B-4: every case that raises.
   for (const kase of raisingCases(model, fn)) {
+    // GN-13w: a case whose argument is no value of its Go type is no Go test; the file names it and the reason.
+    const notOf = (f: Fn, args: ReadonlyMap<Arg, unknown>): string | undefined => f.args.map((a) => (args.has(a) ? notGoValue(a.type, args.get(a)) : undefined)).find((why) => why !== undefined);
+    const ofReceiver = (r: Receiver | undefined): string | undefined => (r === undefined ? undefined : notOf(r.factory, r.args) ?? ofReceiver(r.on));
+    const foreign = notOf(fn, kase.args) ?? ofReceiver(kase.receiver);
+    if (foreign !== undefined) {
+      out.main.push(`\n// GN-13w: the case ${kase.id} of ${fn.member.id} is no Go test: ${foreign}, which the Go compiler refuses.`);
+      continue;
+    }
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     // GN-13f: a receiver whose factory raises the kind of the case gives its failure as the err of the case, and the
@@ -2447,6 +2473,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   // The helpers are in the file without a build tag, which every run compiles.
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
   const composedText = v.usesCaseText === true;
+  const doubles = [...new Set([...out.callbacks, ...v.fixtures])];
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bmust\(/.test(all) ? [MUST] : []),
@@ -2462,8 +2489,9 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bcaseListener\(t\)/.test(all) ? [CASE_LISTENER] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
-    ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),
-    ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
+    // GN-13x: the double fixture<Name> of every callback type embeds *fixture, so the type comes with every double.
+    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [FIXTURE] : []),
+    ...doubles.map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = '', extraStd: readonly { path: string; alias: string }[] = []): string => {
     const body = `${extra}${tests.join('\n')}\n`;

@@ -2788,13 +2788,14 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   }
   assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\size\(\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)\)/);
   assert.match(text(out, RELAY_TESTS.go), /func TestU2SizeWithoutValueIsTheCallWithItsDefault\(t \*testing\.T\) \{\n\tvalue0, err0 := Size\(nil\)\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueObject\(made0\)\n[^]*?\tvalue1, err1 := Size\(made2\)\n/);
-  // A value alias: the empty map of the language.
+  // A value alias: the empty map of the language; in PHP the stdClass, since the rows of data read an empty array as a
+  // list (GN-13v, B2.351).
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
   const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   assert.match(text(own, RELAY_TESTS.python), /_outcome\(lambda: pkg\.size\(\)\),\n\s+_outcome\(lambda: pkg\.size\(\{\}\)\),/);
   assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
-  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(\[\]\)\),/);
+  assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(new \\stdClass\(\)\)\),/);
   assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
   // Any other {empty} of a value type stays refused by name.
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'list' };
@@ -6728,6 +6729,19 @@ test('Go reads a record whose callback field is optional and writes no output co
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(lib, /\nfn in_search\(input: &mut &\[u8\]\) -> Result<polyspec_sample::Search<'static>, Fail> \{/);
+  assert.doesNotMatch(lib, /\nfn out_search\(/);
+});
+
+test('B2.349: Go reads a record whose field holds a function type and writes no output conversion for it (GN-6bm)', () => {
+  // The record config of orm holds audit_source: { function: { returns: { map: { unit: orm_value } } } }; Go wrote
+  // out_config for it and was refused with "no Go output conversion for {"function":...}".
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const search = sample.units.find((u: { id: string }) => u.id === 'search');
+  search.fields = [search.fields[1], { name: ['source'], type: { optional: { function: { parameters: [], returns: { map: 'text' }, async_allowed: false } } }, default: { literal: null } }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_search\(input: &mut &\[u8\]\) -> Result</);
+  assert.match(lib, /kept_function_in\(/);
   assert.doesNotMatch(lib, /\nfn out_search\(/);
 });
 
@@ -10877,4 +10891,151 @@ test('a step of a function fixture calls on the receiver of the case, which the 
     const busy = node.slice(node.indexOf("a_store_is_busy_while_its_transaction_runs'"), node.indexOf('\n});', node.indexOf("a_store_is_busy_while_its_transaction_runs'")));
     assert.ok(busy.includes("(...args) => { assert.equal((outcome(() => bound.receiver.count())).kind, 'busy'"), `${path}:\n${busy}`);
   }
+});
+const sampleRead = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+const sampleOut = (contract: any, cases: any, targets: string[]): Map<string, string | Buffer> =>
+  generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: targets as Inputs['targets'] & string[] });
+
+test('Go encodes an optional tuple field through the parenthesized pointer (GN-6bi, B2.340)', () => {
+  // *options.Range[0] indexes the pointer before the star, which Go refuses: cannot indirect.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'search').fields.push({ name: ['range'], type: { optional: { tuple: ['uint', 'uint'] } } });
+  const cases = sampleRead('sample/contracts/cases.json');
+  for (const kase of cases.seek) kase.search.range = [1, 2];
+  const out = sampleOut(contract, cases, ['go']);
+  const go = [...out].filter(([path]) => path.endsWith('.go') && !path.endsWith('_test.go')).map(([, content]) => String(content)).join('\n');
+  assert.match(go, /enc\.Uint\(\(\*\w+\.Range\)\[0\]\)/);
+  assert.doesNotMatch(go, /\*\w+\.Range\[/);
+});
+
+test('a Go entry point passes the renamed local of a record parameter named input to the core (GN-6bj, B2.341)', () => {
+  // The local of the record takes input_, because the entry point binds input to its bytes; the core call named &input.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'index.supplied') member.parameters[0].name = ['input'];
+  const cases = sampleRead('sample/contracts/cases.json');
+  const renamed = JSON.parse(JSON.stringify(cases).replaceAll('"supply":', '"input":'));
+  for (const key of Object.keys(cases)) cases[key] = renamed[key];
+  const lib = text(sampleOut(contract, cases, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  const entry = lib.slice(lib.indexOf('contract member index.supplied'), lib.indexOf('contract member index.get'));
+  assert.match(entry, /let input_: /);
+  assert.doesNotMatch(entry, /supplied\(&?input\)/);
+  assert.match(entry, /supplied\(&?input_\)/);
+});
+
+test('the Go tests of a callback unit without a fixture case declare the type fixture with its double (GN-13x, B2.342)', () => {
+  // fixtureLookup embeds *fixture, which was declared only when a case body named a fixture.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  const cases = sampleRead('sample/contracts/cases.json');
+  const fixtured = new Set(Object.entries(cases).filter(([, kases]) => JSON.stringify(kases).includes('"callback"')).map(([group]) => group));
+  contract.cases = contract.cases.filter((row: any) => !fixtured.has(row.group));
+  for (const group of fixtured) delete cases[group];
+  const test = text(sampleOut(contract, cases, ['go']), 'packages/go/zz_generated_test.go');
+  assert.match(test, /type fixtureLookup struct\{ \*fixture \}/);
+  assert.match(test, /\ntype fixture struct/);
+  assert.match(test, /\n\t"fmt"\n/);
+});
+
+test('a raising case whose argument is no value of its Go type is no Go test and stays on the dynamic targets (GN-13w, B2.343)', () => {
+  // -1, 1.5 and "1" for a uint: Go does not compile the call, Python and Node give the value for the binding to refuse.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  const cases = sampleRead('sample/contracts/cases.json');
+  const refused = (id: string, amount: unknown): any => ({ id, start: 2, amount, raises: { kind: 'invalid_number', status: null, category: 'value', message: null } });
+  cases.counter_add.push(refused('a_negative_amount_fails', -1), refused('a_fraction_fails', 1.5), refused('a_text_amount_fails', '1'), refused('a_bool_amount_fails', true));
+  // The receiver of a property takes the value through its factory, counter.new.
+  cases.counter_total.push({ id: 'a_negative_start_fails', start: -1, raises: { kind: 'invalid_number', status: null, category: 'value', message: null } });
+  const out = sampleOut(contract, cases, ['python', 'node', 'go']);
+  const test = text(out, 'packages/go/zz_generated_test.go');
+  for (const id of ['ANegativeAmountFails', 'AFractionFails', 'ATextAmountFails', 'ABoolAmountFails']) assert.doesNotMatch(test, new RegExp(`func TestB4\\w*${id}\\(`));
+  assert.match(test, /\/\/ GN-13w: the case a_negative_amount_fails of counter\.add is no Go test: -1 is no value of uint64/);
+  assert.doesNotMatch(test, /func TestB4\w*ANegativeStartFails\(/);
+  const dynamic = [...out].filter(([path]) => !path.startsWith('packages/go/') && /test/i.test(path)).map(([, content]) => String(content)).join('\n');
+  for (const id of ['a_negative_amount_fails', 'a_fraction_fails', 'a_text_amount_fails', 'a_bool_amount_fails']) assert.match(dynamic, new RegExp(id.replaceAll('_', '_?'), 'i'), id);
+});
+
+test('a Python name that is a keyword takes a trailing underscore (GN-6bk, B2.344)', () => {
+  // else: list[Node] | None in a dataclass is a SyntaxError.
+  const contract = sampleRead('sample/packages/rust/interface.json');
+  contract.units.find((u: any) => u.id === 'search').fields.find((f: any) => f.name[0] === 'key').name = ['else'];
+  const cases = sampleRead('sample/contracts/cases.json');
+  for (const kase of cases.seek) { kase.search.else = kase.search.key; delete kase.search.key; }
+  const out = sampleOut(contract, cases, ['python']);
+  const python = [...out].filter(([path]) => path.endsWith('.py') || path.endsWith('.pyi')).map(([, content]) => String(content)).join('\n');
+  assert.match(python, /\belse_: str\b/);
+  assert.doesNotMatch(python, /^\s*else: str/m);
+  assert.doesNotMatch(python, /\belse=/);
+});
+
+test('a callback unit of another library fails with the core error of its owner, the struct that errors.code names (GN-6bl, B2.345)', () => {
+  // The trait took the code enum of the kinds of the owner, Failure<ValidateErrorCode>, where the owner's own binding
+  // and its core take the struct, Failure<ValidateError>.
+  const parts = consumerSample();
+  const owner = parts.foreign.get('sample');
+  const enumPath = owner.errors.kinds[0].variant.slice(0, owner.errors.kinds[0].variant.lastIndexOf('::'));
+  owner.errors.code = { error: 'polyspec_sample::SampleFailure', path: 'polyspec_sample::SampleFailure::code' };
+  const out = generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: ['node'] as Inputs['targets'] & string[] });
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(lib, /binding_core::Failure<polyspec_sample::SampleFailure>/);
+  assert.doesNotMatch(lib, new RegExp(`binding_core::Failure<${enumPath.replaceAll(':', '\\:')}>`));
+});
+
+test('a Python helper that makes a receiver takes the test case when a step calls a helper of it (GN-13s, B2.346)', () => {
+  // A path argument is self._case_path(...), which a function of the module without self named: NameError.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  for (const unit of contract.units) for (const member of unit.members ?? []) if (member.id === 'tag.new') member.parameters[0].type = 'path';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const helpers = [...python.matchAll(/\ndef (_made_\d+)\(([^)]*)\):  # noqa: ANN202\n((?: {4}.*\n)+)/g)];
+  assert.ok(helpers.some((h) => /self\._case_path\(/.test(h[3] ?? '')));
+  for (const [, name, params, body] of helpers) {
+    if (!/\bself\./.test(body ?? '')) continue;
+    assert.match(params ?? '', /^self\b/, name);
+    assert.match(python, new RegExp(`${name}\\(self\\b`), name);
+  }
+});
+
+test('the Python and PHP tests close an instance with a cleanup member that a case made, apart from the case (GN-13u, B2.348)', () => {
+  // A lease made by tag.lease for lease.holder was dropped without release, and its destructor warned (B-10).
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'php'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /made1 = made0\.lease\(\)\n\s+self\.addCleanup\(_closed, made1, "release"\)/);
+  assert.match(python, /\ndef _closed\(made, cleanup\):\n    try:\n        getattr\(made, cleanup\)\(\)\n    except Exception:/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\$made1 = \$made0->lease\(\);\s+self::\$made\[\] = \[\$made1, "release"\];/);
+  assert.match(php, /#\[\\PHPUnit\\Framework\\Attributes\\After\]\n    public function closeMade\(\): void\n/);
+});
+
+test('B2.350: a machine member that returns none binds no result of the core in Node and WASM (GN-6ab)', () => {
+  // orm db.execute, tx.execute and db.close: `let result = result.map_err(core_error)?;` was left unused, which
+  // -D warnings refuses.
+  const out = sampleWith((contract, cases) => {
+    const fn = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.resolve_driven');
+    fn.returns = 'none';
+    for (const c of cases.cases ?? []) if (c.member === 'sample.resolve_driven' && c.expect !== undefined && 'value' in c.expect) c.expect.value = null;
+  }, ['node', 'wasm']);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    const done = lib.slice(lib.indexOf('polyspec_sample::resolve_driven('));
+    const arm = done.slice(done.indexOf('binding_core::machine::Next::Done('), done.indexOf('binding_core::machine::Next::Done(') + 200);
+    assert.doesNotMatch(arm, /let result = result\.map_err/, path);
+    assert.match(arm, /Done\(result\) => \{\n\s+result\.map_err\((core_error|failure_error)\)\?;/, path);
+  }
+});
+
+test('B2.351: a PHP case value of an empty map of a value alias is the form that its in rows read as a map (GN-13v)', () => {
+  // template engine.render a null assign: an empty PHP array is a list (sequence_keys), so the core refused it as no
+  // map (data_unsupported_type); the in rows of the alias read a stdClass as a map.
+  const out = sampleWith((_contract, cases) => {
+    cases.echo.push(
+      { id: 'an_empty_map_comes_back', value: { kind: 'map', value: [] }, result: { kind: 'map', value: [] } },
+      { id: 'an_inner_empty_map_comes_back', value: { kind: 'list', value: [{ kind: 'map', value: [] }] }, result: { kind: 'list', value: [{ kind: 'map', value: [] }] } },
+    );
+  }, ['php']);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const at = (name: string): string => { const i = php.indexOf(`function ${name}(`); return php.slice(i, php.indexOf('\n    }\n', i)); };
+  assert.match(at('testGn13esameAnEmptyMapComesBack'), /\\Sample\\same\(new \\stdClass\(\)\)/);
+  assert.match(at('testGn13esameAnInnerEmptyMapComesBack'), /\\Sample\\same\(\[new \\stdClass\(\)\]\)/);
+  // A map with a key stays an array, which the in rows read as a map.
+  assert.doesNotMatch(php, /\\Sample\\same\(\[\]\)/);
 });

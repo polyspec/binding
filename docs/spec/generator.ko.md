@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 47212dc8105da7cab162f845b30591ff2ce7e0dc7e3f9dbfc8f6a22307087468 -->
+<!-- source-sha256: ac5d77de1370c9e679dc68f7d9f5d0bae2c6dcfe080f6a968cd3d00e495d32f7 -->
 # 생성기
 
 [English](generator.md)
@@ -787,6 +787,27 @@
 - **GN-6bh** 콜백을 직접 또는 그 record의 field로 가진 class 생성자의 parameter는 계약에 `keeps`가 없어도 `keeps`가
   선언한 것처럼(GN-6aa) 그 콜백을 보관한다. 이유: 인스턴스는 그 코어 값을 소유하므로(GN-6au) 생성자가 코어에 준 콜백은
   호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
+- **GN-6bi** Go는 `tuple`의 `optional` 타입인 field나 값을 괄호 안의 포인터로 인코딩한다: `(*options.Range)[0]`.
+  이유: 인덱스가 별표보다 먼저 묶이므로 `*options.Range[0]`은 포인터를 인덱싱하고, Go는 이를 거부한다(cannot indirect).
+- **GN-6bj** Go entry point는 record parameter의 local을 디코더가 묶은 이름 그대로 코어에 준다: `input`이라는
+  parameter는 `input_`이다(GN-15). 이유: entry point는 `input`을 호출의 바이트에 묶으므로, parameter를 원래 이름으로
+  부르는 코어 호출은 그 바이트를 넘긴다.
+- **GN-6bk** parameter, field, callable의 Python 이름이 `else` 같은 Python 키워드이면, 그것을 부르는 모든 곳에서
+  뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
+  `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
+  snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
+- **GN-6bl** 다른 library의 callback unit의 trait은 그 소유자의 코어 오류로 실패한다: 소유자의 `errors.code`가
+  이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
+  선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신
+  `Failure<ValidateErrorCode>`)는 다른 trait을 구현하게 되어 컴파일되지 않는다.
+- **GN-6bm** Go는 field가 함수 타입을 담는 record(`optional`, `list`, `map`, `tuple` 안도 포함)에 출력 변환
+  `out_<record>`를 쓰지 않고, 그 field는 모든 함수처럼 들어오는 값으로 읽는다(GN-6z): 반환값은 Go func에서 코어로
+  들어간다. 이유: 함수는 들어오기만 하므로 그런 record는 binding이 호출의 인자로 만들고 돌려주지 않는 값이며, 함수
+  타입에는 출력 변환이 없어서 어느 member도 필요로 하지 않는 record의 writer가 거부되었다(G-4).
+- **GN-6bn** Node와 WASM의 machine(GN-6ab)의 끝은 출력 변환이 코어의 결과를 읽을 때만 그 결과를 묶는다: 반환이
+  none인 fallible member는 결과를 `?`로 확인만 하고 묶지 않으며, fallible이 아니고 결과를 읽지 않는 member는 그것을
+  `_result`로 이름한다. 이유: none의 변환은 값을 읽지 않으므로 묶인 결과는 사용되지 않는 변수이고, `-D warnings`가
+  그것을 거부한다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
@@ -892,7 +913,7 @@
   코어 parameter는 그 형태의 `Option`이고, 바인딩은 생략된 값에 `None`을 넘기며, 값이 없으면 빈 객체라는 것은 코어가
   정한다. 선언은 Python에서 `...`, PHP에서 `null`(값 class는 배열을 받지 않기 때문이다), TypeScript에서 선택 parameter를
   보인다. GN-13d와 Go의 U-2 테스트는 그 자리에 case 값 `{"kind": "map", "value": []}`를 준다. 값 alias에서는 빈
-  `dict`, 배열, `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
+  `dict`, 배열(GN-13v에 따라 `stdClass`), `Map`, Go `map`이고, 다른 저장소의 값 class에서는 kind `map`의 out row의 member가 그 소유자의 빈 map으로
   만드는 instance다. 이유: json 값 같은 값 타입의 options 객체는 빈 객체가 자연스러운 부재이고, `None`이 무엇인지는
   이미 코어가 정한다. 이름을 대고 거부하는 것(G-4):
   기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, 값 타입의 다른 `{empty}` 기본값, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
@@ -1929,7 +1950,10 @@
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
   뺀다.
   B-4 case가 binding이 거부하도록 주는, 자리의 타입과 다른 JSON 종류의 case 값(숫자 자리의 text나 bool, text 자리의 숫자나
-  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306).
+  bool, bool 자리의 숫자나 text)은 그 JSON 종류의 값으로 쓰고 타입으로 바꾸지 않는다(B2.306). 숫자 타입(`int`, `int64`, `uint`, `float`) 자리에 온 숫자가 아닌 값은
+  text나 bool도 포함해, `uint`의 소수나 음수처럼 모든 target에서 B-2의 kind `invalid_number`이다. 그래서 그런 값을 주는
+  case는 `invalid_number`를 기대한다(B2.347). 이유: 모든 target의 숫자 변환은 그 타입의 숫자가 아닌 모든 값을 B-2의
+  한 kind로 거부한다.
 
 - **GN-13e** 모든 target은 실패하지 않고 `faults`가 없으며 hook(N-4)이 아닌 member의 contract case를 하나씩 실행해 그
   결과를 case의 값과 비교한다. Node와 WASM은 `Map`을 순서대로 놓은 항목으로 바꾼 뒤 `assert.deepStrictEqual`로, Python은
@@ -2263,9 +2287,32 @@
   시작하지 않는다. `service`가 있는 case와 같다. 이유: 연결을 받아들인 뒤 닫는 서버는 데이터베이스 client의 끊긴
   연결처럼 코어가 handshake 중에 만나는 네트워크의 상태다. 닫힌 port는 이 상태를 주지 않는다. 시스템이 닫힌 port로의
   연결을 handshake 전에 거부하기 때문이다. 그 자리의 fault injection point는 어떤 socket도 지나지 않는 경로를 실행한다.
+- **GN-13w** 정적 타입 언어(Go)의 target은, raise하는 case 중 인자나 그 receiver를 만드는 factory의 인자가 그 parameter의 선언된 타입의 값이 아닌 case의
+  시험을 쓰지 않는다: text에 수나 bool, 수에 text나 bool, `uint`에 음수, 정수에 소수, bool에 수나 text. 시험 파일은
+  그런 case마다 case, member, 이유를 적은 주석을 남긴다. 동적 target(Python, Node, WASM, PHP)은 그 case를 유지하고
+  값을 그 JSON 종류로 주어 binding이 거부하게 한다(GN-13d). 이유: 그런 case는 어떤 값이든 받는 binding의 거부를
+  말하는데, Go 컴파일러는 binding이 돌기 전에 호출에서 그 값을 거부하므로 Go에는 그 case의 호출이 없다. 동적 target에서는
+  그 case가 그 거부의 유일한 시험이므로 옳은 case이고, 그래서 `binding check`는 그것을 보고하지 않는다.
+- **GN-13x** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
+  쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
+  타입이 없는 double은 컴파일되지 않는다.
+- **GN-13s** receiver를 만드는 Python 모듈 함수(GN-13f)는, 그 단계 중 하나가 시험 case의 helper(`path` 인자의
+  `self._case_path`나 `self._future`)를 부르면 시험 case를 첫 parameter `self`로 받고, 그 호출은 `self`를 넘긴다.
+  이유: 모듈 함수에는 자신의 `self`가 없으므로, 그 단계가 case가 돌기 전에 NameError를 냈다.
+- **GN-13u** Python이나 PHP 시험은 case를 위해 만든 instance(GN-13f) 중 class에 cleanup member(B-10)가 있는 것을
+  시험 끝에 case의 assertion과 따로 닫는다: Python은 `self.addCleanup`으로, PHP는 attribute `After`가 붙은 method로
+  닫는다. cleanup member의 호출은 시험에 결과도 실패도 주지 않고, case가 이미 닫은 instance는 효과 없이 다시 닫힌다.
+  이유: cleanup 호출 없이 버린 instance는 B-10에 따라 경고하는데(ResourceWarning, E_WARNING), 이는 binding이 아니라
+  시험의 결함이며, 시험이 억제한 경고는 실제 결함의 같은 경고도 숨긴다.
+
 
 ## 끝에서 끝까지 확인
 
+- **GN-13v** PHP 시험은 값 alias의 빈 map case 값 `{"kind": "map", "value": []}`를, 그 alias의 PHP `in` row가 sequence
+  key의 array를 list로 읽고 `stdClass`를 map으로 읽을 때 `new \stdClass()`로 준다. 항목이 있는 map은 array로 남고,
+  다른 alias는 빈 array를 유지한다. 이유: 빈 PHP array의 key는 sequence key이므로 `array`의 row가 그것을 빈 list로
+  읽고 코어는 map이 아니라고 거부하지만(template `engine.render`, `data_unsupported_type`), `stdClass`의 row는 case가
+  말하는 빈 map을 읽는다.
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
   실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들어 그 실제 경로로 부르고, 실행이 끝날 때, 실패할 때, SIGINT와

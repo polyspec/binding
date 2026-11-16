@@ -972,6 +972,31 @@ the design ids are those of the binding design.
   keeps it, as `keeps` declares (GN-6aa), without `keeps` in the contract. Why: the instance owns its core value
   (GN-6au), so a callback that the constructor gives the core outlives the call, and in Node a callback that borrows
   the env of the call escapes the body of the constructor (E0521).
+- **GN-6bi** Go encodes a field or a value of the type `optional` of a `tuple` through the pointer in parentheses,
+  `(*options.Range)[0]`. Why: an index binds before the star, so `*options.Range[0]` indexes the pointer, which Go
+  refuses (cannot indirect).
+- **GN-6bj** The Go entry point gives the core the local of a record parameter by the same name that its decoder
+  binds, `input_` for a parameter named `input` (GN-15). Why: the entry point binds `input` to the bytes of the call,
+  so a core call that names the parameter by its plain name passes those bytes.
+- **GN-6bk** A Python name of a parameter, a field or a callable that is a keyword of Python, such as `else`, takes a
+  trailing underscore, `else_`, in every place that names it: the dataclass, the stub, the native module and the
+  tests. Why: a keyword is no identifier, so `else: list[Node] | None` is a SyntaxError, and PEP 8 names the trailing
+  underscore for this case, which no name of the contract has. A key of a case file stays the snake_case name of
+  the contract, `else`, because a case file belongs to no language.
+- **GN-6bl** The trait of a callback unit of another library fails with the core error of its owner: the struct
+  that `errors.code` of the owner names (GN-7b), or the error enum of its kinds when it names none. Why: the core of
+  the owner declares its trait with that error, as the binding of the owner writes it, so a consumer that wrote the
+  code enum (`Failure<ValidateErrorCode>` for `Failure<ValidateError>`) implemented another trait, which does not
+  compile.
+- **GN-6bm** Go writes no output conversion `out_<record>` for a record whose field holds a function type, in an
+  `optional`, a `list`, a `map` or a `tuple` too, and reads the field as every function enters (GN-6z): its return
+  value goes from the Go func into the core. Why: a function only enters, so such a record is a value that the
+  binding makes from the arguments of a call and never gives back, and a function type has no output conversion, so
+  the writer of the record was refused (G-4) where no member needs it.
+- **GN-6bn** The end of a machine (GN-6ab) in Node and WASM binds the result of the core only when its output
+  conversion reads it: a fallible member that returns none checks the result with `?` and binds nothing, and a
+  member that is not fallible and reads no result names it `_result`. Why: the conversion of none reads no value, so a
+  bound result is an unused variable, which `-D warnings` refuses.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
@@ -1099,7 +1124,7 @@ the design ids are those of the binding design.
   `Option` of its form, the binding passes `None` when it is left out, and the core decides that no value is the empty
   object. The declarations show `...` in Python, `null` in PHP, which a value class does not take as an array, and an
   optional parameter in TypeScript. The U-2 test of GN-13d and of Go gives in its place the case value
-  `{"kind": "map", "value": []}`: an empty `dict`, array, `Map` or Go `map` for a value alias, and for a value class of
+  `{"kind": "map", "value": []}`: an empty `dict`, array (a `stdClass` by GN-13v), `Map` or Go `map` for a value alias, and for a value class of
   another repository the instance that the member of the out row of the kind `map` makes from an empty map of its
   owner. Why: an options object of a value type, such as a json value, has an empty object as its natural absence, and
   the core already decides what `None` means. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
@@ -2376,7 +2401,10 @@ the design ids are those of the binding design.
   out of the call.
   A case value of another JSON kind than the type of its place, which a case of B-4 gives for the binding to refuse
   (a text or a bool for a number, a number or a bool for a text, a number or a text for a bool), is written as the
-  value of its JSON kind and never converted to the type (B2.306).
+  value of its JSON kind and never converted to the type (B2.306). A value that is no number at a place of a number type (`int`,
+  `int64`, `uint`, `float`), a text or a bool included, is kind `invalid_number` of B-2 in every target, as a fraction
+  or a negative number for a `uint` is, so a case that gives one expects `invalid_number` (B2.347). Why: the number
+  conversion of every target refuses every value that is no number of its type with the one kind of B-2.
 
 - **GN-13e** Every target runs each contract case of a member that does not raise, has no `faults` and is no hook
   (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
@@ -2773,9 +2801,37 @@ the design ids are those of the binding design.
   network that a core meets during its handshake, such as the lost connection of a database client, which a closed
   port does not give, because the system refuses a connection to a closed port before any handshake; a fault
   injection point in its place would run a path that no socket takes.
+- **GN-13w** A target whose language is statically typed (Go) writes no test for a case that raises and whose
+  argument, or an argument of the factory of its receiver, is no value of the declared type of its parameter: a number or a bool for a text, a text or a bool for a
+  number, a negative number for a `uint`, a fraction for an integer, a number or a text for a bool. The test file
+  names each such case with a comment that gives the case, the member and the reason; the dynamic targets (Python,
+  Node, WASM, PHP) keep the case and give the value as its JSON kind for the binding to refuse (GN-13d). Why: such a
+  case states the refusal of a binding that takes any value, and the Go compiler refuses the value at the call before
+  the binding runs, so the case has no Go call; `binding check` does not report it, because the case is right for
+  the dynamic targets, where it is the only test of that refusal.
+- **GN-13x** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
+  `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
+  when no case of it names a fixture, and a double without its type does not compile.
+- **GN-13s** A Python function of the module that makes a receiver (GN-13f) takes the test case as its first
+  parameter `self`, and its call passes `self`, when one of its steps calls a helper of the test case, such as
+  `self._case_path` for a `path` argument or `self._future`. Why: a function of the module has no `self` of its own,
+  so the step raised NameError before the case ran.
+- **GN-13u** A Python or PHP test closes each instance that it made for a case (GN-13f) whose class has a cleanup
+  member (B-10) at the end of the test, apart from the assertions of the case: Python by `self.addCleanup`, PHP by a
+  method with the attribute `After`. The call of the cleanup member gives no result and no failure to the test, and
+  an instance that the case already closed is closed again without effect. Why: an instance dropped without its
+  cleanup call warns by B-10 (ResourceWarning, E_WARNING), which is a defect of the test and not of the binding, and a
+  warning that a test suppressed would hide the same warning of a real defect.
+
 
 ## End-to-end check
 
+- **GN-13v** A PHP test gives the case value of an empty map, `{"kind": "map", "value": []}`, of a value alias as
+  `new \stdClass()` when the PHP `in` rows of the alias read an array with sequence keys as a list and a `stdClass`
+  as a map; a map with entries stays an array, and another alias keeps the empty array. Why: the keys of an empty
+  PHP array are sequence keys, so the row of `array` reads it as an empty list and the core refuses it as no map
+  (template `engine.render`, `data_unsupported_type`), while the row of `stdClass` reads the empty map that the case
+  states.
 - **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout in the directory `WORK`,
   or, without `WORK`, in a directory that the run makes under the temporary directory of the system, named by its real

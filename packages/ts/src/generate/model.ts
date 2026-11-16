@@ -532,7 +532,9 @@ export function collectModel(
       return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }) };
     });
     const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
-    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
+    // GN-6bl, GN-7b: the error of the trait is the core error of its owner, the struct that errors.code names or the enum.
+    const ownerError = owner.errors.code?.error ?? [...paths][0];
+    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 && ownerError !== undefined ? { error: ownerError } : {}) });
     return true;
   };
   // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
@@ -1720,9 +1722,18 @@ export const recordInit = (name: Name): string => (recordLocal(name) === rustFie
 export const rustVariant = (name: Name): string => convert(name, 'rust', 'class');
 
 // The language name of a symbol; naming exceptions are not generated yet, which buildModel refuses below.
+// GN-6bk: a Python name that is a keyword takes a trailing underscore, which no name of the contract has.
+const PYTHON_KEYWORDS = new Set([
+  'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+  'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise',
+  'return', 'try', 'while', 'with', 'yield',
+]);
 export function langName(lang: Lang, name: Name, role: 'class' | 'callable' | 'variable' | 'constant'): string {
-  return convert(name, lang, role);
+  const converted = convert(name, lang, role);
+  return lang === 'python' && PYTHON_KEYWORDS.has(converted) ? `${converted}_` : converted;
 }
+// G-5: the key of a parameter or a field in a case file, the snake_case name of the contract (never escaped).
+export const caseName = (name: Name): string => convert(name, 'python', 'variable');
 
 export function assertNoExceptions(contract: Contract): void {
   if (contract.naming.exceptions.length > 0) throw new Unsupported('naming exceptions are not generated yet');
@@ -1732,7 +1743,8 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 
 // The arguments of the core call of a member: the receiver first (U-2 core.receiver), then the parameters. The record
 // parameter is the record that the expanded fields built (T-4).
-export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
+// GN-6bj: record names the local of a record parameter, which the Go entry point renames like every other local.
+export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string, record: (parameter: Parameter) => string = (p) => rustField(p.name)): string[] {
   const held = places(model, fn);
   // GN-6ab: a state machine owns its arguments, so the core takes each by value, a class by the clone of its value.
   // Q-4, B2.253: a parameter with only that the language does not have is left out of the core call.
@@ -1748,7 +1760,7 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   const args = order.map((p) => {
     if (absent(p)) return 'None';
     // GN-6aa: a record that holds a callback, also inside an optional or a list of a field, moves into the core.
-    if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), a.type)) ? rustField(p.name) : `&${rustField(p.name)}`;
+    if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), a.type)) ? record(p) : `&${record(p)}`;
     // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
     // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
     // A parameter whose `core` is `value` gives a clone of the value under its read guard, as the contract names it.

@@ -102,6 +102,16 @@ const pythonSame = (foreign: string[]): string => (foreign.length === 0 ? PYTHON
 ));
 
 // G-5: what a call gives: its result, or the class and the kind of its failure.
+// GN-13u: the cleanup call of an instance that a test made, at the end of the test; its result is not judged.
+const PYTHON_CLOSED = `
+
+def _closed(made, cleanup):
+    try:
+        getattr(made, cleanup)()
+    except Exception:  # noqa: BLE001, S110
+        pass
+`;
+
 const PYTHON_OUTCOME = `
 
 def _outcome(call):
@@ -437,8 +447,11 @@ export function pythonTests(model: Model, module: string): string {
     const built = steps.apart(() => madeLines(model, madeForm, receiver));
     const needed = caseTextUses > mark;
     const helper = `_made_${helpers.length}`;
-    helpers.push(`\n\ndef ${helper}(${needed ? '_case_text_root' : ''}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
-    return withRoot(`${helper}(${needed ? '_case_text_root' : ''})`, needed);
+    // GN-13s: a step that calls a helper of the test case (self._case_path, self._future) takes the test case as self.
+    const takesSelf = [...built.lines, built.expr].some((line) => /\bself\./.test(line));
+    const params = [...(takesSelf ? ['self'] : []), ...(needed ? ['_case_text_root'] : [])].join(', ');
+    helpers.push(`\n\ndef ${helper}(${params}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
+    return withRoot(`${helper}(${params})`, needed);
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
   // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a
@@ -505,6 +518,10 @@ export function pythonTests(model: Model, module: string): string {
     left: (local, what) => `assert _native._fault_left(${local}) == [], ${pyString(`G-5: ${what}`)}`,
     state: (service, state, step, scope, value) => pyState(service, state, step, scope, value),
     peerNext: (service, scope, value) => `_service_peer_next(${pyString(service.id)}, ${pyString(scope)}, ${pyString(value)})`,
+    closing: (name, cleanup) => {
+      usesClosed = true;
+      return `self.addCleanup(_closed, ${name}, ${pyString(langName('python', cleanup.member.name, 'callable'))})`;
+    },
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -512,6 +529,7 @@ export function pythonTests(model: Model, module: string): string {
     return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
   };
   let usesOutcome = false;
+  let usesClosed = false;
   let usesKept = false;
   let usesAsyncio = false;
   let usesThreads = false;
@@ -1105,7 +1123,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.future
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesClosed ? PYTHON_CLOSED : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesByteFile ? PYTHON_CASE_BYTE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

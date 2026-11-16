@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b9b55b3caf2e7b8e699befccab378891ed72b0e102811cee299036a6984c638a -->
+<!-- source-sha256: 8f0852da1fe5290a7ab9933f9aea260acd36e75bd98689b585b9da21557d23dd -->
+<!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -13,6 +14,18 @@
 - case는 자신의 `service`의 `peer`로 service의 peer session을 자신의 session과 동시에 실행할 수 있다. WASM을 뺀 각 시험 생성기는 상태 program의 자식 process인 peer를 setup 뒤에 시작하고, 각 단계의 JSON을 한 줄로 쓰고 줄 `ready`를 읽으며(`peer`가 있는 `then` 호출 뒤에도), check 전에 끝내고, 시험의 cleanup에서 죽인다. `binding check`는 상태가 없는 service의 peer와 peer가 없는 case의 peer 단계를 보고한다(GN-13q, CK-95, B2.330). 두 행 잠금 사이의 deadlock에는 동시에 두 session이 필요했지만 어떤 case도 그것을 실행하지 못했다.
 - `@files`의 경로는 80부터 ff까지의 바이트 escape `\xHH`로 Unicode가 아닌 바이트 이름의 파일을 이름한다. 예: `"sets/\\xff.dbs"`. 다섯 시험 생성기 각각은 그 바이트로 파일을 쓰고, 그런 case의 시험은 Linux에서만 실행되며 다른 곳에서는 이유와 함께 건너뛴다(GN-13i, B2.326). `@files`의 키는 Unicode 텍스트였으므로 case는 그런 파일을 저장할 수 없었다.
 - case는 `"@listener": "accept_and_close"`를 가질 수 있다. 시스템이 정하는 port로 `127.0.0.1`에서 듣고 각 연결을 받아들인 뒤 바로 닫는 listener이며, 합성 텍스트는 부분 `{"listener": "port"}`로 그 port를 이름한다. 다섯 시험 생성기 각각은 case의 값보다 먼저 그것을 시작하고 시험 끝에서 멈추며, 시간 제한도 잠듦도 없다(GN-13r, CK-96, B2.325). case는 닫힌 port만 이름할 수 있었고 시스템은 그것을 handshake 전에 거부하므로, 서버가 handshake 중에 끊는 연결에는 case가 없었다.
+- Go는 optional tuple을 괄호 안의 포인터로 인코딩한다(`(*options.Range)[0]`). `*options.Range[0]`은 포인터를 인덱싱했고 Go가 이를 거부했다(GN-6bi, B2.340).
+- Go entry point는 `input`이라는 record parameter의 local `input_`을 코어에 넘긴다. 이전에는 호출의 바이트인 `&input`을 넘겼다(GN-6bj, B2.341).
+- Go 시험은 callback unit의 모든 double과 함께 타입 `fixture`와 그 import를 선언한다. fixture를 부르는 case가 없는 계약은 컴파일되지 않았다(GN-13x, B2.342).
+- Go는 인자가 그 parameter의 Go 타입의 값이 아닌 raise case(uint에 -1이나 `"60"` 등)의 시험을 쓰지 않고, 시험 파일은 주석으로 case와 이유를 적는다. 이전 시험은 컴파일되지 않거나 다른 값으로 호출했다. 동적 target은 case를 유지한다(GN-13w, B2.343). receiver를 만드는 factory의 인자도 같이 판정한다.
+- `else` 같은 키워드인 Python 이름은 뒤에 밑줄을 붙인다(`else_`). dataclass가 SyntaxError였다(GN-6bk, B2.344).
+- 다른 library의 callback unit의 trait은 소유자의 코어 오류, 즉 `errors.code`가 이름하는 struct로 실패한다. 이전에는 소유자의 코어가 선언하지 않은 kinds의 code enum을 썼다(GN-6bl, B2.345).
+- receiver를 만드는 Python 모듈 함수는 단계가 `self._case_path` 같은 시험 case의 helper를 부르면 시험 case를 `self`로 받는다. 그 단계가 NameError를 냈다(GN-13s, B2.346).
+- generator spec은 숫자 타입 자리의 숫자가 아닌 값(text나 bool 포함)이 모든 target에서 B-2의 kind `invalid_number`라고 명시한다. 변환은 이미 그렇게 거부한다(GN-13d, B2.347).
+- Python과 PHP 시험은 case가 만든 cleanup member가 있는 instance를 시험 끝에 case와 따로 닫는다. 이전에는 instance를 버려 소멸자가 경고했다(GN-13u, B2.348).
+- Go는 orm `config`의 `audit_source`처럼 field가 함수 타입을 담는 record를 출력 변환 없이 생성한다. 이전에는 `no Go output conversion for {"function":...}`로 생성이 거부되었다(GN-6bm, B2.349).
+- orm의 `db.execute`처럼 반환이 none인 machine member는 Node와 WASM에서 코어의 결과를 묶지 않고 확인한다. 사용되지 않는 `let result`가 `-D warnings`에서 실패했다(GN-6bn, B2.350).
+- PHP 시험은 `in` row가 `stdClass`를 map으로 읽는 값 alias의 빈 map을 `new \stdClass()`로 준다. 빈 array `[]`는 빈 list로 읽혀서 template 시험 42건이 `data_unsupported_type`으로 실패했다(GN-13v, B2.351).
 
 ## 0.0.13
 

@@ -623,7 +623,10 @@ function functionRust(model: Model, fn: Fn): string {
     // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
     // calls on the JavaScript thread and gives the promise of its next wait, whose future the event loop polls, or its
     // converted result.
-    const done = fn.fallible ? `let result = result.map_err(${failed})?;\n                    ` : '';
+    // GN-6ab: a result that the output conversion does not read, as of none, is checked and not bound.
+    const given = convertOut(model, fn.returns, 'result');
+    const reads = /\bresult\b/.test(given);
+    const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${failed})?;\n                    ` : '';
     const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())');
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
@@ -653,8 +656,8 @@ function functionRust(model: Model, fn: Fn): string {
                     Ok((0, promise))
                 }
                 ${awaitedValue}
-                binding_core::machine::Next::Done(result) => {
-                    ${done}Ok((2, ${convertOut(model, fn.returns, 'result')}?))
+                binding_core::machine::Next::Done(${reads || fn.fallible ? 'result' : '_result'}) => {
+                    ${done}Ok((2, ${given}?))
                 }
             }
         })))`);
