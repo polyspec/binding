@@ -10,7 +10,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -1537,10 +1537,6 @@ function libRust(model: Model, layout: PhpLayout): string {
     model.aliases.length > 0 ? `${phpHost(model)}${phpMaking(model)}` : '',
     holdsNative(model) ? PHP_NATIVE : '',
   ].join('\n');
-  // I-3: the conversions of the properties of the error units count as uses.
-  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`, {},
-    libraryBlocks(model, (unit, library) => recordRust(model, layout, unit, -1, library), (a) => aliasPhp(model, a)));
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
@@ -1762,7 +1758,9 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     const category = model.classes.find((c) => phpBaseFn(c.category) === fnName)?.category ?? 'value';
     return `fn ${fnName}() -> &'static ClassEntry {\n    builtin(${builtins.indexOf(phpBase(category))}, ext_php_rs::zend::ce::exception)\n}\n`;
   }).join('\n');
-  return `${header('//')}
+  // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
+  return withUsedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`,
+    libraryBlocks(model, (unit, library) => recordRust(model, layout, unit, -1, library), (a) => aliasPhp(model, a)), (used) => `${header('//')}
 // The extension ${layout.extension}. Its functions take the raw values and judge them (T-8); PHP counts the arguments
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
@@ -2151,7 +2149,7 @@ ${poisonRust(model, layout)}${caseTests.entries}
         module
     }
 }
-`;
+`);
 }
 
 const phpBase = (category: string): string =>

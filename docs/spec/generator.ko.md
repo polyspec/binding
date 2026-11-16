@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 51e3bd47e644be01988e0343bc11c0c4124df03c52b64211021af69d2324c98c -->
+<!-- source-sha256: bac202da85081a6c9fb9fed1e99b2dd5cdb1c074f404da8aaf18bbfd8938008a -->
 # 생성기
 
 [English](generator.md)
@@ -300,6 +300,13 @@
   함수이고, lint `non_snake_case`는 그것을 읽지 않는다. class의 해제는 심볼 `<prefix>__release_<class>`와 package
   `binding`의 함수 `Release<Class>`이고, 둘 다 class만 이름한다. module의 단어를 class의 단어 앞에 두면 module `tag`의
   class `k`와 root의 class `tag_k`가 한 함수 `ReleaseTagK`를 가졌다.
+- **GN-4d** PHP, Python, Node, WASM crate의 helper는 crate 전체의 텍스트에서 고른다. generator는 crate를 helper 없이
+  한 번 쓰고, 이 텍스트가 읽는 이름(GN-4)으로 crate가 가질 helper를 고른 뒤, 그 helper와 함께 crate를 쓴다. 그래서
+  crate의 어느 부분이 부르는 것이든, 예를 들어 library class의 생성자(GN-7a)나 수의 변환(GN-12a)이 부르는 helper는
+  남고, helper를 부르는 부분의 목록을 코드 옆에 따로 두지 않는다. 이유: 그 부분들을 손으로 나열했고, 그 밖에 더한
+  호출, PHP library class의 생성자에 있는 `text_in`과 `type_error`는 text parameter도 있는 계약에서만 컴파일되었다.
+  text parameter가 없는 계약은 빌드에 실패했다. Go crate는 목록을 유지한다. test feature만 쓰는 helper는 그 feature
+  아래에서 컴파일되기 때문이다(GN-4).
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -1870,13 +1877,22 @@
   쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다: `release-go-static`은 자기가 빌드하는 각
   platform의 라이브러리들을 `RELEASE_ASSETS/go/<platform>`에서 그 라이브러리 옆의 파일 `native-static-libs`에 쓰고,
   `binding release-go-module`은 그 파일이 없거나 그 파일이 라이브러리를 하나도 적지 않는 platform을 거부하며, 그 파일로
-  그 link 파일의 지시문을 module의 commit에 쓴다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
-  방식으로 출력과 함께 빌드하고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
+  그 link 파일의 지시문을 module의 commit에 쓴다. 그 라이브러리들이 적고 Rust toolchain이 target에
+  `lib/rustlib/<triple>/lib/self-contained`로 싣는 라이브러리로서 platform의 어느 C compiler도 가져오지 않는 것은 platform의
+  정적 라이브러리 옆 `internal/ffi/lib/<platform>`에 실려 지시문의 `-L`이 그것을 찾는다: musl target의 std가 `-bundle`로
+  링크하고 rustc가 `-lunwind`로 적는 LLVM unwinder `libunwind.a`이다. `release-go-static`은 그것을 라이브러리를 빌드한
+  toolchain에서 그 라이브러리 옆으로 복사하고, `binding release-go-module`은 라이브러리들이 그것을 적는데 파일이 없는
+  platform을 거부하며 그것을 commit에 넣는다. 이유: Alpine의 gcc와 musl-dev는 libunwind를 가져오지 않으므로 musl에서
+  소비자의 링크가 `ld: cannot find -lunwind`에서 멈췄다(B2.415). toolchain의 unwinder는 std가 빌드된 그 unwinder이며, 기계의
+  package는 소비자에게 자기 단계를 요구한다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
+  방식으로 출력과 함께 빌드하고, 같은 라이브러리를 싣고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
   하나에서 그것을 얻는다: `binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Go crate의 Cargo.toml> --target-dir <dir>
   [--features <features>]`는 host의 정적 라이브러리를 `<command> rustc <arguments> --locked --offline --lib --crate-type
   staticlib`(GN-1d)과 주어진 feature로 `<dir>`에 출력과
-  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
-  읽으므로 `<dir>`은 절대 경로로 바꾼다. Cargo의 진단은
+  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug -l<library> <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
+  읽으므로 `<dir>`은 절대 경로로 바꾼다. `<library>`는 manifest의 `[lib]` 이름이며 그것이 필요로 하는 라이브러리 앞에 온다.
+  cgo는 `CGO_LDFLAGS`를 패키지의 모든 `#cgo LDFLAGS` 앞에 두고, 인자를 순서대로 읽는 linker인 `--as-needed`의 GNU ld는 그것을
+  필요로 하는 정적 라이브러리 앞에 선 라이브러리를 버리기 때문이다(B2.414: linux glibc에서 consumer의 `undefined reference to pow`). Cargo의 진단은
   표준 오류로 가고, 빌드가 실패하면 명령은 Cargo의 status로 실패한다. Go 시험을 돌리는 recipe는 자기 라이브러리 빌드 대신
   그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)" ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
   파일은 `-l<library>`만 쓴다. 명령이 빌드 출력을 읽기만 하지 않고 빌드하는 이유: rustc는 정적 라이브러리를 링크하는 동안에만
@@ -2736,8 +2752,10 @@
   proxy의 배치인 모듈 cache의 download를 `<work>/go-release`에 남긴다. 그다음 `make go-musl-check WORK=<work>`가
   소비자를 musl에서 실행한다. `config/toolchain.json`의 `goMusl`의 Alpine image 컨테이너에서, sha256으로 확인한
   `mise.lock`의 Go와 `goMusl`의 정확한 버전인 Alpine의 `gcc`와 `musl-dev`로(`docs/operations/dependencies.md`), 그
-  proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, 시험이 하나도 실행되지
-  않거나 하나라도 실패하면 실패한다. 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
+  proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, go가 linker의 것 같은 빌드 오류를 보고하는
+  `go test -json`의 모든 `build-output` event의 출력을 찍으며(B2.416), 시험이 하나도 실행되지 않거나 하나라도 실패하면
+  실패한다. released form의 소비자가 없는 work 디렉터리(refusal fixture(GN-14k)의 것 같은)는 컨테이너가 시작하기 전에 그
+  이름과 함께 실패한다(B2.417). 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
   `DOCKER_HOST`의 Docker가 있는 기계에서 돌고, 그 기계는 작업 디렉터리를 `WORK`에 가지며, 컨테이너 이름은
   `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end 검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고
   musl 기계가 실행한 프로그램만이 musl의 라이브러리가 링크되고 실행된다는 것을 보인다.
@@ -2767,7 +2785,7 @@
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
   job `e2e`의 각 항목은 `make ci-e2e REPO=<레포> DEPS="<레포들>"`를 실행한다. 이 recipe는 모든 도구를 설치하고, 자기 work
-  디렉터리에서 끝에서 끝까지 확인을 실행하며, 확인이 통과하면 그 디렉터리로 `make go-musl-check`를 실행하므로, 각 Go 모듈의
+  디렉터리에서 끝에서 끝까지 확인을 실행하며, 확인이 통과하면 그 디렉터리로 `make go-musl-check`를 실행하므로(run이 refusal에서 끝나 release 형태를 만들지 않는 refusal fixture(GN-14k)는 제외), 각 Go 모듈의
   release 형태(GN-14f)는 linux/arm64의 musl에서도 링크되고 실행된다(GN-15g). 끝에서 work 디렉터리를 지운다. job
   `e2e-amd64`는 `ubuntu-26.04`에서 `tests/e2e/sample`에 같은 recipe인 `make ci-e2e-amd64`를 실행한다. `ubuntu-26.04-arm`에서
   돌지 않는 유일한 job이며, release가 `linux_amd64`와 `linux_amd64_musl`의 라이브러리를 싣고 amd64 기계만 그것들을 링크하고

@@ -368,6 +368,14 @@ the design ids are those of the binding design.
   release of a class is the symbol `<prefix>__release_<class>` and the function `Release<Class>` of package
   `binding`, which name the class alone: with the words of the module before those of the class, the class `k` of
   the module `tag` and the class `tag_k` of the root had one function `ReleaseTagK`.
+- **GN-4d** The helpers of a crate of PHP, Python, Node and WASM are chosen from the text of the whole crate: the
+  generator writes the crate once without its helpers, and the names that this text reads (GN-4) select the helpers
+  that the crate holds, which it then writes with them. A call that any part of the crate makes, such as the
+  constructor of a library class (GN-7a) or the conversion of a number (GN-12a), so keeps the helper that it calls,
+  and no list of the parts of the crate that call helpers is kept beside the code. Why: the parts were listed by hand,
+  and a call added outside them, `text_in` and `type_error` in the constructor of a library class of PHP, compiled
+  only for a contract that also had a text parameter; a contract without one failed the build. The Go crate keeps
+  its list, because a helper that only a test feature uses is compiled under that feature (GN-4).
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -2279,14 +2287,25 @@ the design ids are those of the binding design.
   so a consumer that fetches the module links them with no flag of its own: `release-go-static` writes the libraries
   of each platform that it builds into the file `native-static-libs` beside its library in `RELEASE_ASSETS/go/<platform>`,
   and `binding release-go-module` refuses a platform without that file, or whose file names no library, and writes the
-  directive of its link file from it into the commit of the module. The end-to-end check builds the libraries of its
-  released form (GN-14f) with the print in the same way and writes the same directive. A checkout, whose tree holds no library,
+  directive of its link file from it into the commit of the module. A library that the libraries name and that the
+  Rust toolchain ships for the target in `lib/rustlib/<triple>/lib/self-contained`, which no C compiler of the
+  platform brings, is carried beside the static library of the platform in `internal/ffi/lib/<platform>`, where the
+  `-L` of the directive finds it: `libunwind.a`, the LLVM unwinder that the std of a musl target links with `-bundle`
+  and that rustc names as `-lunwind`. `release-go-static` copies it from the toolchain that built the library beside
+  that library, and `binding release-go-module` refuses a platform whose libraries name it while the file is not there
+  and puts it into the commit. Why: gcc and musl-dev of Alpine bring no libunwind, so the link of a consumer on musl
+  stopped at `ld: cannot find -lunwind` (B2.415); the unwinder of the toolchain is the one that the std was built
+  against, and a package of the machine would ask the consumer for a step of its own. The end-to-end check builds the libraries of its
+  released form (GN-14f) with the print in the same way, carries the same libraries and writes the same directive. A checkout, whose tree holds no library,
   gets them from one command of the CLI: `binding go-link --cargo <command> [--cargo-flags
   <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <dir> [--features <features>]` builds the static
   library of the host with `<command> rustc <arguments> --locked --offline --lib --crate-type staticlib` (GN-1d) and
   the given features into `<dir>`, with the print, and writes to its standard output the
-  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`, with `<dir>` made absolute, because
-  cgo reads a relative `-L` from the directory of each package; the diagnostics of Cargo go to
+  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug -l<library> <libraries>`, with `<dir>` made absolute, because
+  cgo reads a relative `-L` from the directory of each package, and with `<library>` the name of `[lib]` of the
+  manifest before the libraries that it needs, because cgo puts `CGO_LDFLAGS` before every `#cgo LDFLAGS` of a package
+  and a linker that reads its arguments in order, GNU ld with `--as-needed`, drops a library that stands before the
+  static library that needs it (B2.414: `undefined reference to pow` of the consumer on linux glibc); the diagnostics of Cargo go to
   its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
   calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags
   "$(CARGOFLAGS)" ...)"` in the recipe line
@@ -3356,7 +3375,10 @@ the design ids are those of the binding design.
   `make go-musl-check WORK=<work>` then runs the consumer on musl: in a container of the Alpine image of `goMusl` of
   `config/toolchain.json`, with the Go of `mise.lock` checked by its sha256 and `gcc` and `musl-dev` of Alpine at the
   exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
-  every package of the fetched modules with that proxy as `GOPROXY`, and fails unless a test ran and none failed. The
+  every package of the fetched modules with that proxy as `GOPROXY`, prints the output of every `build-output` event of
+  `go test -json`, where go reports the error of a build such as one of the linker (B2.416), and fails unless a test
+  ran and none failed. A work directory without the consumer of a released form, such as the one of a refusal fixture
+  (GN-14k), fails with its name before the container starts (B2.417). The
   modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
   the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.
   Why a container: the end-to-end check runs on a machine of the GNU C library, and only a program that a C compiler
@@ -3394,7 +3416,7 @@ the design ids are those of the binding design.
   commit, and a contract that is silently left out of the job would look checked.
   Each entry of the job `e2e` runs `make ci-e2e REPO=<repository> DEPS="<repositories>"`, which installs every tool,
   runs the end-to-end check in a work directory of its own and, when the check passed, `make go-musl-check` on that
-  directory, so the released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g); it
+  directory, except for a refusal fixture (GN-14k), whose run ends at the refusal and makes no released form, so the released form of each Go module (GN-14f) also links and runs on musl of linux/arm64 (GN-15g); it
   removes the work directory at its end. The job `e2e-amd64` runs `make ci-e2e-amd64`, the same recipe for
   `tests/e2e/sample`, on `ubuntu-26.04`, the one job that does not
   run on `ubuntu-26.04-arm`, because a release carries the libraries of `linux_amd64` and `linux_amd64_musl` and only

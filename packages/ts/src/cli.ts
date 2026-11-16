@@ -250,6 +250,19 @@ function releaseRecipesCommand(argv: string[]): never {
 // the value of CGO_LDFLAGS for the Go tests of the checkout on stdout. Both streams of cargo go to stderr, so stdout
 // holds the value alone; a failed build ends with the status of cargo. The directory is made absolute, because cgo
 // reads a relative -L from the directory of each package.
+// GN-15k: the name of the static library of a Go crate, the name of [lib] of its manifest, which the scaffold writes.
+function staticLibraryOf(manifest: string): string {
+  let text: string;
+  try {
+    text = readFileSync(manifest, 'utf8');
+  } catch (error) {
+    fail(`cannot read ${manifest}: ${(error as Error).message} (GN-15k)`);
+  }
+  const name = /^\[lib\]\n(?:[^[\n][^\n]*\n)*?name = "([^"]+)"$/m.exec(text)?.[1];
+  if (name === undefined) fail(`${manifest} names no library in [lib] (GN-15k)`);
+  return name;
+}
+
 function goLinkCommand(argv: string[]): never {
   const given = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
@@ -265,6 +278,7 @@ function goLinkCommand(argv: string[]): never {
   if (manifestOption === undefined || targetOption === undefined) usage('go-link takes --manifest and --target-dir');
   const manifest = resolve(manifestOption);
   const targetDir = resolve(targetOption);
+  const library = staticLibraryOf(manifest);
   const ran = spawnSync(program, [...prefix, ...goStaticBuildArgs({ manifest, targetDir, features: given.get('--features'), flags })], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['inherit', 'pipe', 'pipe'] });
   if (ran.error !== undefined) fail(`cargo did not start: ${ran.error.message}`);
   process.stderr.write(ran.stdout);
@@ -272,7 +286,9 @@ function goLinkCommand(argv: string[]): never {
   if (ran.status !== 0) process.exit(ran.status ?? 1);
   const libs = nativeStaticLibs(ran.stderr);
   if (libs === undefined) fail(`cargo printed no native-static-libs of the static library of ${manifest} (GN-15k)`);
-  process.stdout.write(`-L${join(targetDir, 'debug')} ${libs}\n`);
+  // B2.414: cgo puts CGO_LDFLAGS before every #cgo LDFLAGS of a package, so the library comes first in the value and
+  // the libraries that it needs follow it; a linker that reads in order, GNU ld with --as-needed, needs them after it.
+  process.stdout.write(`-L${join(targetDir, 'debug')} -l${library} ${libs}\n`);
   process.exit(0);
 }
 

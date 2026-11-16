@@ -407,6 +407,13 @@ function helperGroups(block: string): HelperGroup[] {
   });
 }
 
+// GN-4d: a crate with the helpers of `block` (and of the modules of the libraries) that its own text reads. `render`
+// writes the whole crate around the helpers that it is given; it is written once without them, and that text is the code
+// whose reads select the helpers, so a call that any part of the crate makes keeps the helper that it calls.
+export function withUsedHelpers(block: string, modules: Readonly<Record<string, string>>, render: (used: string) => string): string {
+  return render(usedHelpers(block, render(''), {}, modules));
+}
+
 // The helpers of a block of Rust items that `code` uses, directly or through another helper, in their order in the
 // block. A group is kept when the code, or a group that is kept, reads a name that it declares; a group that declares
 // no name and holds impl blocks is kept with the type or the trait of the block that one of them is of, and stays when

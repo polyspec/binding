@@ -79,9 +79,11 @@ test('B2.401: check, scaffold and generate run cargo metadata through the comman
 test('B2.401: binding go-link runs the command of --cargo with --cargo-flags right after rustc, and not the cargo of PATH (GN-1d, GN-15k)', (t) => {
   const b = box(t, `if (args[2] !== 'rustc') process.exit(98);
 process.stderr.write('note: native-static-libs: -lSystem -lc -lm\\n');`);
+  // The manifest of the Go crate, whose [lib] names the static library (B2.414).
+  writeFileSync(join(b.root, 'Cargo.toml'), '[package]\nname = "polyspec-plot-go"\n\n[lib]\nname = "polyspec_plot_go"\n');
   const ran = b.run(['go-link', '--cargo', b.cargo, '--cargo-flags', '--ignore-rust-version -v', '--manifest', 'Cargo.toml', '--target-dir', 'target', '--features', 'panic-test']);
   assert.equal(ran.status, 0, ran.stderr);
-  assert.equal(ran.stdout, `-L${join(b.root, 'target/debug')} -lSystem -lc -lm\n`);
+  assert.equal(ran.stdout, `-L${join(b.root, 'target/debug')} -lpolyspec_plot_go -lSystem -lc -lm\n`);
   assert.equal(b.pathCargoRan(), false, 'the cargo of PATH ran');
   const [call, ...more] = b.linked();
   assert.deepEqual(more, []);
