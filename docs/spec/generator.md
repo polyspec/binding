@@ -2176,6 +2176,19 @@ the design ids are those of the binding design.
   `-framework Security -framework CoreFoundation -liconv` of session-store, whose crate security-framework refers to
   them, so its Go tests did not link, and `-liconv` of json, which links only while no object that it holds is pulled
   in.
+- **GN-15l** The `go.sum` of the Go module: binding scaffold writes `packages/go/go.sum` beside the `go.mod` that it
+  writes (L-2) when that `go.mod` requires a release (`<module> vX.Y.Z`, GN-15f), and CK-19 compares it as it compares
+  the `go.mod`. It holds the hash of each module that `go.mod` requires and the hash of the `go.mod` of each module of
+  its build list, sorted as Go writes them; a requirement at `v0.0.0`, the development form, has no sum and no line,
+  and a `go.mod` without a release requirement has no `go.sum`. The hashes are the `Sum` and `GoModSum` that
+  `go mod download -json all` gives for a module of those requirements, run with `GOWORK=off` and the `GOPROXY`,
+  `GOFLAGS` and module cache of the environment: they are the hashes that Go verifies against the checksum database
+  when it downloads, so binding computes none of its own, and offline (`GOPROXY=off`) Go reads the module cache alone.
+  A module that Go cannot give, offline or missing, refuses the `go.sum` with the error of Go: scaffold writes no
+  `go.sum` and names it as not written, and CK-19 names it as not written, never an empty or partial `go.sum`. Why: a
+  `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
+  `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
+  `go.mod`, and session-store, whose `go.mod` requires php-serialization, had none, so its module did not build alone.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`

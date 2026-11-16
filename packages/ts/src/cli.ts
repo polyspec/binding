@@ -28,7 +28,7 @@ import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
 import { releaseRecipes } from './release/recipes.ts';
 
@@ -398,7 +398,32 @@ function trackedOf(): Tracked {
     return { files: new Map(), refused: sentences(error).map((message) => ({ path: componentBase(checked), message })) };
   }
 }
-const tracked: Tracked = command === 'generate' ? { files: new Map(), refused: [] } : trackedOf();
+// GN-15l: the go.sum beside a go.mod that requires a release holds the sums that `go mod download -json all` gives for
+// a module of those requirements, with GOPROXY, GOFLAGS and the module cache of the environment: offline it reads the
+// cache alone. A module that Go cannot give refuses the go.sum with the cause; no empty or partial go.sum is written.
+function withGoSum(t: Tracked): Tracked {
+  const goModPath = `${goModuleDir(checked)}/go.mod`;
+  const goMod = t.files.get(goModPath);
+  if (goMod === undefined || releaseRequires(goMod).length === 0) return t;
+  const goSumPath = `${goModuleDir(checked)}/go.sum`;
+  const dir = mkdtempSync(join(tmpdir(), 'binding-go-sum-'));
+  try {
+    writeFileSync(join(dir, 'go.mod'), goSumModule(goMod));
+    const ran = spawnSync('go', ['mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
+    if (ran.error !== undefined) throw new Error(`go mod download did not start: ${ran.error.message}`);
+    const text = ran.stdout.trim();
+    const downloads = text === '' ? [] : (JSON.parse(`[${text.replace(/\}\s*\{/g, '},{')}]`) as GoDownload[]);
+    if (ran.status !== 0 && !downloads.some((d) => d.Error !== undefined)) throw new Error(`go mod download (status ${String(ran.status)}): ${ran.stderr.trim()}`);
+    const goSum = goSumOf(goMod, downloads);
+    if (goSum === undefined) return t;
+    return { files: new Map([...t.files, [goSumPath, goSum]]), refused: t.refused };
+  } catch (error) {
+    return { files: t.files, refused: [...t.refused, { path: goSumPath, message: error instanceof Error ? error.message : String(error) }] };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const tracked: Tracked = command === 'generate' ? { files: new Map(), refused: [] } : withGoSum(trackedOf());
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.

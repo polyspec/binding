@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 85942fe18ef9b5779749cce12f50d3bfced12a36c244946e6d9999aab3f7c21a -->
+<!-- source-sha256: 0e49cbb21a6b5e8bae3f3e2dad70a1968e37b716ba1579fec220f611ebe1dcd5 -->
 # 생성기
 
 [English](generator.md)
@@ -1787,6 +1787,17 @@
   `-lSystem -lc -lm`은 session-store의 `-framework Security -framework CoreFoundation -liconv`를 빠뜨렸다. 그 crate
   security-framework가 그것들을 참조해서 Go 시험이 링크되지 않았다. json의 `-liconv`도 빠뜨렸는데, json은 그것을 쓰는
   object가 끌려오지 않는 동안만 링크된다.
+- **GN-15l** Go 모듈의 `go.sum`: binding scaffold는 자기가 쓰는 `go.mod`가 release(`<module> vX.Y.Z`, GN-15f)를 require하면 그
+  옆에 `packages/go/go.sum`을 쓰고(L-2), CK-19는 그것을 `go.mod`처럼 비교한다. 그것은 `go.mod`가 require하는 각 모듈의 hash와
+  build list의 각 모듈의 `go.mod`의 hash를 Go가 쓰는 순서로 정렬해 담는다. 개발 형태인 `v0.0.0` requirement는 sum도 줄도 없고,
+  release requirement가 없는 `go.mod`에는 `go.sum`이 없다. hash는 그 requirement의 모듈에 대해 `GOWORK=off`와 환경의
+  `GOPROXY`, `GOFLAGS`, 모듈 cache로 실행한 `go mod download -json all`이 주는 `Sum`과 `GoModSum`이다: Go가 내려받을 때 checksum
+  database와 대조하는 hash이므로 binding은 스스로 계산하지 않고, offline(`GOPROXY=off`)이면 Go는 모듈 cache만 읽는다. Go가 줄 수
+  없는 모듈은 offline이든 없든 Go의 오류와 함께 `go.sum`을 거부한다: scaffold는 `go.sum`을 쓰지 않고 쓰지 않았다고 이름하며,
+  CK-19도 쓰지 않았다고 이름한다. 비거나 일부인 `go.sum`은 결코 쓰지 않는다. Why: requirement가 있는 `go.mod`는 그 sum이 있어야만
+  빌드되고, 생성된 모듈은 레포의 `go.work` 밖에서 검사되고 release된다(GN-14i). template과 crud-ui는 생성된 `go.mod` 옆에
+  `go.sum`을 손으로 commit해야 했고, `go.mod`가 php-serialization을 require하는 session-store에는 없어서 그 모듈이 홀로
+  빌드되지 않았다.
 - **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
   `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을
