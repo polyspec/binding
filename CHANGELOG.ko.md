@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 92758246b4211aa1ee812ba18e5eef42c85c5c8d8e4f7be978cc7f0f3bd5eda7 -->
+<!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
 <!-- source-sha256: 674ea6579107ac6d56917c779f845d491012a82c0e3786e87dbd1ed93d1ce010 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
@@ -26,6 +26,7 @@
 
 ## 0.0.15
 
+- 모든 라이브러리 클래스의 생성자가 인자를 판정하므로, 언어 코드는 binding이 그 클래스로 일으키지 않는 kind의 오류를 더는 만들지 않는다: json은 Node에서 `new ParseError('Expected JSON value', 0)`가 kind가 숫자 0인 오류를 만든다는 것을 찾았다. message는 text, kind는 text이며 binding이 바로 그 클래스의 인스턴스로 일으키는 kind 중 하나(오류 unit은 자기 행, category 클래스는 `class` 없는 그 category의 행과 binding의 kind), status와 errno는 없거나 null이거나 정수다. 그 밖은 Node, WASM, Python, PHP에서 kind `invalid_argument_type`이고, text 규칙을 어긴 message는 kind `invalid_text`다. Go의 `Raised<Unit>(kind, message)`는 `(*<Unit>, error)`를 돌려주며, 이는 공개 API를 바꾼다. case의 callback 행은 라이브러리의 오류가 아닌 언어의 예외 `"exception"`을 일으키고, `binding check`는 kind가 그 오류 unit의 kind가 아닌 fixture의 raise를 거부한다(GN-7a, GN-10, GN-15d, CK-22, B2.411). `packages/ts`에서 `node --test --test-name-pattern=B2.411 tests/generate.test.ts tests/contract-check.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다. Node와 WASM 시험은 생성된 클래스를 실행한다.
 - release는 pack한 npm manifest에 `optionalDependencies`를 쓰지 않는다. 소비자는 root `package.json`의 `dependencies`에 패키지를, `optionalDependencies`에 각 플랫폼 패키지를 release asset의 URL로 적고, 추적하는 `.npmrc`에 `allow-remote=root`를 둔다. release가 적던 버전 범위는 0.1 전에는 registry의 어떤 패키지도 가리키지 않아 npm이 건너뛰었고, 패키지를 URL로 설치한 소비자는 addon을 얻지 못했다. `make e2e`는 이제 loopback의 asset server에서 그 형식의 root manifest 하나로 설치한다(GN-3c, GN-19e, B2.405). `packages/ts`에서 `node --test --test-name-pattern=GN-3c tests/release-recipes.test.ts tests/e2e-npm.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다. CI의 job e2e가 첫 전체 실행이다.
 - `binding check`는 `args` 없는 호출이나 callback row, parameter 없는 member의 호출을 그대로 이름한다: 빈 목록을 적던 `are not the parameters  of query.for_update_no_wait` 대신 `step 1 of callback gives no args; query.for_update_no_wait takes no parameters, so its args are {}`라고 적는다(CK-22, G-5, B2.406). orm에서 `binding check`로 검증했다. int64를 텍스트로 주는 orm case의 CK-100 거절은 남는다. case 파일은 int64를 JSON integer로 적기 때문이다.
 - `keeps` 없는 parameter의 record field에 있는 callback은 모든 target에서 호출 동안만 살므로, 그것을 호출 뒤까지 갖는 코어는 더는 컴파일되지 않는다. Python, PHP, WASM, Go는 그 record를 `'static`으로 적었고, Go는 그때 끝난 호출의 handle로 보관된 callback을 실행했다(GN-6d, B2.402). `packages/ts`의 `node --test --test-name-pattern=B2.402 tests/generate.test.ts`로 확인했으며, 변경 전에는 실패했다. 빌린 record를 갖는 코어의 레포 `tests/e2e/lent`도 확인한다: `make e2e`는 각 바인딩 crate의 `cargo check`가 E0597로, Node는 E0521로 실패하기를 요구한다(GN-14k).

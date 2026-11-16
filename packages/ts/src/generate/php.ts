@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
+import { absentInits, classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -1883,20 +1883,74 @@ fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     }
 }
 
+/// GN-7a: the kinds that the extension raises as an instance of each library class itself, in the order of CLASSES.
+static KINDS: [&[&str]; ${model.classes.length + model.errorUnits.length}] = [${[...model.classes.map((c) => classKinds(model, c.category)), ...model.errorUnits.map((u) => classKinds(model, u))].map((kinds) => `&[${kinds.map(rustString).join(', ')}]`).join(', ')}];
+
+/// GN-7a: the kinds of a class, those of the nearest library class that it is or extends.
+fn class_kinds(class: &ClassEntry) -> &'static [&'static str] {
+    let mut scope = class;
+    loop {
+        if let Some(index) = CLASSES.iter().position(|registered| registered.get().is_some_and(|registered| std::ptr::eq(registered.0, scope))) {
+            return match KINDS.get(index) {
+                Some(kinds) => *kinds,
+                None => &[],
+            };
+        }
+        match scope.parent() {
+            Some(parent) => scope = parent,
+            None => return &[],
+        }
+    }
+}
+
+/// GN-7a: the arguments of the constructor of a library class: the message is a text (B-3), the kind a text and one
+/// of the kinds of the class, and the status and the errno each absent, null or an integer.
+fn error_arguments(class: &ClassEntry, message: Option<&Zval>, kind: Option<&Zval>, status: Option<&Zval>, errno: Option<&Zval>) -> Result<(String, String, Option<i64>, Option<i64>), Fail> {
+    let name = match class.name() {
+        Some(name) => name,
+        None => "the error",
+    };
+    let (Some(message), Some(kind)) = (message, kind) else {
+        return Err(type_error(&format!("an argument of {name}::__construct"), "string"));
+    };
+    let message = text_in(message, &format!("the message of {name}"))?;
+    let kind = text_in(kind, &format!("the kind of {name}"))?;
+    if !class_kinds(class).contains(&kind.as_str()) {
+        return Err(type_error(&format!("the kind {kind:?}"), &format!("a kind of {name}")));
+    }
+    let number = |value: Option<&Zval>, part: &str| -> Result<Option<i64>, Fail> {
+        match value {
+            None => Ok(None),
+            Some(value) if value.is_null() => Ok(None),
+            Some(value) => match value.long() {
+                Some(number) => Ok(Some(number)),
+                None => Err(type_error(&format!("the {part} of {name}"), "int or null")),
+            },
+        }
+    };
+    Ok((message, kind, number(status, "status")?, number(errno, "errno")?))
+}
+
 /// GN-10: the constructor of a category class, which an error unit inherits, so that PHP code makes an error with its
-/// kind. An error that the extension raises is made without it (B-4).
+/// kind. It takes each argument as any value and judges it (GN-7a). An error that the extension raises is made without
+/// it (B-4).
 fn construct_error(ex: &mut ExecuteData) {
-    let mut message = Arg::new("message", DataType::String);
-    let mut kind = Arg::new("kind", DataType::String);
-    let mut status = Arg::new("status", DataType::Long).allow_null();
-    let mut errno = Arg::new("errno", DataType::Long).allow_null();
+    let mut message = Arg::new("message", DataType::Mixed);
+    let mut kind = Arg::new("kind", DataType::Mixed);
+    let mut status = Arg::new("status", DataType::Mixed);
+    let mut errno = Arg::new("errno", DataType::Mixed);
     if ex.parser().arg(&mut message).arg(&mut kind).not_required().arg(&mut status).arg(&mut errno).parse().is_err() {
         return;
     }
-    let (Some(message), Some(kind)) = (message.val::<String>(), kind.val::<String>()) else { return };
-    let status = status.val::<i64>();
-    let errno = errno.val::<i64>();
+    let [message, kind, status, errno] = [message.zval(), kind.zval(), status.zval(), errno.zval()].map(|zval| zval.map(|zval| zval.shallow_clone()));
     let Some(this) = ex.get_self() else { return };
+    let (message, kind, status, errno) = match error_arguments(this.get_class_entry(), message.as_ref(), kind.as_ref(), status.as_ref(), errno.as_ref()) {
+        Ok(arguments) => arguments,
+        Err(fail) => {
+            fail.throw();
+            return;
+        }
+    };
     let class = ${scopeOf('this.get_class_entry()')};
     let written = with_scope(class, || -> ext_php_rs::error::Result<()> {
         this.set_property("message", message)?;

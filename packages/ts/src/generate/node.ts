@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
@@ -2030,12 +2030,41 @@ function tsType(model: Model, type: Type, input: boolean): string {
   return langName('node', unit.name, 'class');
 }
 
-const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
-function indexCjs(model: Model): string {
-  const base = addonBase(model);
-  const classes = model.classes.map((c) => `
-class ${c.name} extends globalThis.${nodeBase(c.category)} {
+// E-2, GN-7a: the classes of the categories and the error units of the JavaScript entry of Node (export '') and of WASM
+// (export 'export '). The constructor of a category class, which every error unit calls, judges its arguments against
+// the kinds of the class that is made, the nearest generated class of new.target (GN-10); an error that the binding
+// raises has a kind of its class.
+export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
+  const typeClass = model.classes.find((c) => c.category === 'type')?.name ?? '';
+  const valueClass = model.classes.find((c) => c.category === 'value')?.name ?? '';
+  const unitName = (u: ErrorUnit): string => langName(lang, u.unit.name, 'class');
+  const kinds = [
+    ...model.classes.map((c) => `KINDS.set(${c.name}, new Set([${classKinds(model, c.category).map(jsString).join(', ')}]));`),
+    ...model.errorUnits.map((u) => `KINDS.set(${unitName(u)}, new Set([${classKinds(model, u).map(jsString).join(', ')}]));`),
+  ];
+  const classes = `
+// GN-7a: the kinds that the binding raises as an instance of each class itself, the kinds that its constructor takes.
+const KINDS = new Map();
+
+// GN-7a: the arguments of the constructor of a library class: the message is a string without an unpaired surrogate
+// (B-3), the kind one of the kinds of the class that is made, or of its nearest generated class, and the status and
+// the errno each absent, null or an integer.
+function checkError(made, own, message, kind, status, errno) {
+  let owner = made;
+  while (owner !== null && !KINDS.has(owner)) owner = Object.getPrototypeOf(owner);
+  const name = (owner ?? own).name;
+  if (typeof message !== 'string') throw new ${typeClass}(\`the message of \${name} is not a string\`, 'invalid_argument_type');
+  if (!message.isWellFormed()) throw new ${valueClass}(\`the message of \${name} holds an unpaired surrogate\`, 'invalid_text');
+  if (typeof kind !== 'string') throw new ${typeClass}(\`the kind of \${name} is not a string\`, 'invalid_argument_type');
+  if (!KINDS.get(owner ?? own).has(kind)) throw new ${typeClass}(\`\${JSON.stringify(kind)} is no kind of \${name}\`, 'invalid_argument_type');
+  for (const [part, value] of [['status', status], ['errno', errno]]) {
+    if (value !== undefined && value !== null && !Number.isSafeInteger(value)) throw new ${typeClass}(\`the \${part} of \${name} is not an integer or null\`, 'invalid_argument_type');
+  }
+}
+${model.classes.map((c) => `
+${exported}class ${c.name} extends globalThis.${base(c.category)} {
   constructor(message, kind, status, errno) {
+    checkError(new.target, ${c.name}, message, kind, status, errno);
     super(message);
     Object.defineProperty(this, 'name', { value: ${jsString(c.name)}, configurable: true, writable: true });
     Object.defineProperties(this, {
@@ -2044,19 +2073,29 @@ class ${c.name} extends globalThis.${nodeBase(c.category)} {
       errno: { value: errno, enumerable: true },
     });
   }
-}`).join('\n');
-  // E-2: an error unit extends the class of its parent or of its category. The addon defines its properties (I-3).
-  const units = model.errorUnits.map((u) => {
-    const name = langName('node', u.unit.name, 'class');
-    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class');
+}`).join('\n')}`;
+  // E-2: an error unit extends the class of its parent or of its category. The addon or the module defines its
+  // properties (I-3).
+  const units = `${model.errorUnits.map((u) => {
+    const name = unitName(u);
+    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : unitName(u.parent);
     return `
-class ${name} extends ${parent} {
+${exported}class ${name} extends ${parent} {
   constructor(message, kind, status, errno) {
     super(message, kind, status, errno);
     Object.defineProperty(this, 'name', { value: ${jsString(name)}, configurable: true, writable: true });
   }
 }`;
-  }).join('\n');
+  }).join('\n')}
+${kinds.join('\n')}
+`;
+  return { classes, units };
+}
+
+const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
+function indexCjs(model: Model): string {
+  const base = addonBase(model);
+  const { classes, units } = jsErrorClasses(model, 'node', '', nodeBase);
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
   // GN-6m: the entry of a member that waits is an async function, so that every failure of the call, also one of its
   // arguments, rejects the promise.
@@ -2154,8 +2193,8 @@ function loadAddon() {
   return require(\`./${base}.\${platform}.node\`);
 }
 const addon = loadAddon();
-${classes}${units === '' ? '' : `\n${units}`}
-
+${classes}
+${units}
 
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.${recognizedOwners(model)}
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `recognized_${o.library.replaceAll('-', '_')}.${langName('node', o.unit.name, 'class')}`)].join(', ')}]);

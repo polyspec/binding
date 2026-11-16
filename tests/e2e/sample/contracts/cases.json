@@ -1651,10 +1651,7 @@
               "args": {
                 "key": "a"
               },
-              "raise": {
-                "error": "refused_error",
-                "kind": "unlisted"
-              }
+              "raise": "exception"
             }
           ]
         },

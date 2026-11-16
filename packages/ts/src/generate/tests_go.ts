@@ -34,7 +34,7 @@ import {
 import {
   type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
-  fixtureType,
+  fixtureType, ROW_EXCEPTION,
 } from './samples.ts';
 
 interface Values {
@@ -1043,8 +1043,16 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
     const result = row.result === null || returns === 'none' ? 'nil' : typed(returns, value(v, b, returns, row.result));
     // GN-13: a raise row returns the error unit with its kind, as Go code makes one.
     // GN-6s: an error unit of the owner of a callback unit of another repository is made by its package errors (GN-15d).
-    const maker = row.raise?.library === undefined ? 'binding' : ownerErrors(v.scope, row.raise.library);
-    const raise = row.raise === undefined ? '' : `, raise: ${maker}.Raised${goName(row.raise.unit.name)}(${goString(row.raise.kind)}, ${goString(`G-5: ${row.raise.kind}`)})`;
+    // GN-7a: a kind that is no kind of the unit is an error of Raised<Unit>, which fails the test.
+    let raise = '';
+    if (row.raise === 'exception') raise = `, raise: errors.New(${goString(ROW_EXCEPTION)})`;
+    else if (row.raise !== undefined) {
+      const maker = row.raise.library === undefined ? 'binding' : ownerErrors(v.scope, row.raise.library);
+      const raised = b.fresh('raised');
+      const refused = b.fresh('refused');
+      b.lines.push(`${raised}, ${refused} := ${maker}.Raised${goName(row.raise.unit.name)}(${goString(row.raise.kind)}, ${goString(`G-5: ${row.raise.kind}`)})`, `if ${refused} != nil {`, `\tt.Fatalf("G-5: %v", ${refused})`, '}');
+      raise = `, raise: ${raised}`;
+    }
     return `{member: ${memberName(row.member)}, args: ${argsOf(row.member, row.args)}, result: ${result}, once: ${String(row.once)}${raise}}`;
   });
   b.lines.push(`${name} := fixture${goName(fixture.unit.name)}{&fixture{rows: []fixtureRow{${rows.join(', ')}}}}`);

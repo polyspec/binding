@@ -359,8 +359,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `in_raises` has one. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
   `{"callback": {<member id>: [<row>]}}` whose member ids are members of that interface, whose rows and `calls` give
   in `args` exactly the parameters of their member, and whose rows have no key but `args`, `result`, `raise`, `once`
-  and `async`; a row with a `result` and a `raise`, a `raise` of an error unit that the member does not recognize
-  (U-3), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the
+  and `async`; a `raise` is `{"error": <error unit>, "kind": <kind>}` or `"exception"`; a row with a `result` and a
+  `raise`, a `raise` of an error unit that the member does not recognize (U-3), a `raise` of a function fixture or of
+  a row whose kind is no kind of its error unit, that is of no row of `errors.kinds` whose `class` is that unit,
+  which the constructor of the unit refuses (generator GN-7a), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the
   language (a class, a callback, a function, a host value), which a row cannot give, are reported. The same holds at
   every other place of a callback interface: a field of a record, an item of a list and an `optional`, where an
   instance value (GN-13f) of a class of the contract that `implements` the interface may stand for the fixture. A

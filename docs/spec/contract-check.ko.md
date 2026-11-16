@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 84a4321c827c810ca4afda54a6fcfe6b9d63edbbccc2ac3c03b5f54160959323 -->
+<!-- source-sha256: 8728520fcfb3d65af6f8a58a3a0c3a3f82215be44bce47cc3bc3de8776a612ae -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -301,8 +301,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   하나가 있다.
   callback interface를 parameter로 받는 member의 case는 그것을 callback fixture로 준다(G-5, GN-13):
   `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 그 member의
-  parameter를 정확히 주며, 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `result`와 `raise`를 함께 가진 행,
-  member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
+  parameter를 정확히 주며, 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `raise`는 `{"error": <오류 unit>,
+  "kind": <kind>}`이거나 `"exception"`이다. `result`와 `raise`를 함께 가진 행, member가 recognize하지 않는 오류 unit의
+  `raise`(U-3), kind가 그 오류 unit의 kind가 아닌, 곧 `class`가 그 unit인 `errors.kinds` 행의 kind가 아니어서 unit의
+  생성자가 거부하는 함수 fixture나 행의 `raise`(generator GN-7a), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
   fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고(generator GN-6z), 그 행의 키는 `args`, `result`, `once`뿐이며

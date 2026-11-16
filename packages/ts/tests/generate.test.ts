@@ -3195,11 +3195,12 @@ test('a callback unit of another repository recognizes the error units of its ow
   // The fixture of a case raises the error that Raised<Unit> of the owner's package errors makes.
   const goTests = text(out, 'packages/go/zz_generated_test.go');
   assert.match(goTests, /\n\tsampleerrors "github\.com\/polyspec\/sample\/packages\/go\/errors"\n/);
-  assert.match(goTests, /raise: sampleerrors\.RaisedRefusedError\("refused", "G-5: refused"\)/);
+  // GN-7a: Raised<Unit> gives an error for a kind that is no kind of the unit, which fails the test.
+  assert.match(goTests, /(raised\w*), (refused\w*) := sampleerrors\.RaisedRefusedError\("refused", "G-5: refused"\)\n\s*if \2 != nil \{\n\s*t\.Fatalf\("G-5: %v", \2\)\n\s*\}[^]*raise: \1\}/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /^import \* as foreign_sample from '@polyspec\/sample\/wasm';$[^]*\['find', \['a'\], null, false, new foreign_sample\.RefusedError\('G-5: refused', 'refused'\)\]/m);
   // GN-15d: the package errors of the owner gives Raised<Unit> of each unit that a member of its callbacks recognizes.
   const errors = text(sampleWith(() => undefined, ['go']), 'packages/go/errors/zz_generated_errors.go');
-  assert.match(errors, /\n\/\/ RaisedRefusedError is a RefusedError of the kind and the message, as Go code makes one[^\n]*\n(?:\/\/[^\n]*\n)*func RaisedRefusedError\(kind, message string\) \*RefusedError \{\n\treturn binding\.RaisedRefusedError\(kind, message\)\n\}\n/);
+  assert.match(errors, /\n\/\/ RaisedRefusedError is a RefusedError of the kind and the message, as Go code makes one[^\n]*\n(?:\/\/[^\n]*\n)*func RaisedRefusedError\(kind, message string\) \(\*RefusedError, error\) \{\n\treturn binding\.RaisedRefusedError\(kind, message\)\n\}\n/);
 });
 
 test('a callback unit of another repository carries language code, so a member that waits and takes it reaches language code (GN-6s, GN-6h, GN-6q, GN-6n)', () => {
@@ -7034,7 +7035,7 @@ test('a raise row of a callback fixture throws an instance of its error unit wit
   assert.match(ext, /\.method\(\s*FunctionBuilder::new\("__construct", error_construct\)\s*\.arg\(Arg::new\("message", DataType::String\)\)\s*\.arg\(Arg::new\("kind", DataType::String\)\)\s*\.not_required\(\)\s*\.arg\(Arg::new\("status", DataType::Long\)\.allow_null\(\)\.default\("null"\)\)\s*\.arg\(Arg::new\("errno", DataType::Long\)\.allow_null\(\)\.default\("null"\)\),\s*MethodFlags::Public,\s*\)/);
   assert.match(ext, /extern fn error_construct\(ex: &mut ExecuteData, _retval: &mut Zval\)/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /binding\.RaisedAbsentError\("absent", "G-5: absent"\)/);
-  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \*AbsentError \{/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \(\*AbsentError, error\) \{/);
 });
 
 test('a receiver self takes the value of its object, and a class with cleanup warns when it is destroyed without it (GN-6o, GN-6p, B-10)', () => {
@@ -11837,4 +11838,161 @@ test('B2.402: a callback that only a kept record field with a default holds is k
     // The kept holding is 'static and its lookup is no lent callback; the lent search still takes the call.
     assert.ok(!/let lookup: Option<Box<dyn polyspec_lent::Lookup \+ 'static>> = [^\n]*lent_lookup/.test(lib), `${path}: a kept lookup is anchored to the call`);
   }
+});
+
+// B2.411: the library classes of a generated JavaScript entry, run with a stand-in of the addon, which answers every
+// name with a function.
+const errorClassesOf = (out: Map<string, string | Buffer>, entry: 'node' | 'wasm'): Record<string, any> => {
+  const dir = mkdtempSync(join(tmpdir(), 'binding-errors-'));
+  try {
+    if (entry === 'node') {
+      const cjs = text(out, 'packages/ts/generated/index.cjs');
+      const addon = /require\(`([^$`]+)-\$\{platform\}`\)/.exec(cjs)?.[1] ?? '';
+      const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+      mkdirSync(join(dir, 'node_modules', `${addon}-${platform}`), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', `${addon}-${platform}`, 'index.js'), 'module.exports = new Proxy({}, { get: (target, name) => (name in target ? target[name] : (target[name] = function () {})) });\n');
+      for (const [, name] of cjs.matchAll(/require\('([^.'][^']*)'\)/g)) {
+        mkdirSync(join(dir, 'node_modules', name ?? ''), { recursive: true });
+        writeFileSync(join(dir, 'node_modules', name ?? '', 'index.js'), 'module.exports = new Proxy({}, { get: (target, name) => (name in target ? target[name] : (target[name] = class {})) });\n');
+      }
+      writeFileSync(join(dir, 'index.cjs'), cjs);
+      const run = spawnSync(process.execPath, ['-e', `const entry = require(${JSON.stringify(join(dir, 'index.cjs'))}); globalThis.entry = entry; ${CLASS_PROBE}`], { encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      return JSON.parse(run.stdout);
+    }
+    const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
+    const glue = /import load, \* as glue from '\.\/([^']+)\.js';/.exec(mjs)?.[1] ?? '';
+    const names = [...new Set([...mjs.matchAll(/\bglue\.(\w+)/g)].map((found) => found[1]))];
+    writeFileSync(join(dir, `${glue}.js`), `export default async function load() {}\n${names.map((name) => `export function ${name}() {}`).join('\n')}\n`);
+    writeFileSync(join(dir, `${glue}_bg.wasm`), '');
+    for (const [, local, specifier] of mjs.matchAll(/import \* as (\w+) from '([^.'][^']*)';/g)) {
+      const [scope, name, ...rest] = (specifier ?? '').split('/');
+      const root = join(dir, 'node_modules', scope ?? '', name ?? '');
+      const used = [...new Set([...mjs.matchAll(new RegExp(`\\b${local}\\.(\\w+)`, 'g'))].map((found) => found[1]))];
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: `${scope}/${name}`, type: 'module', exports: { [rest.length === 0 ? '.' : `./${rest.join('/')}`]: './stand-in.mjs' } }));
+      writeFileSync(join(root, 'stand-in.mjs'), used.map((member) => `export class ${member} {}`).join('\n'));
+    }
+    writeFileSync(join(dir, 'state.mjs'), text(out, 'packages/ts/wasm/generated/state.mjs'));
+    writeFileSync(join(dir, 'index.mjs'), mjs);
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', `globalThis.entry = await import(${JSON.stringify(join(dir, 'index.mjs'))}); ${CLASS_PROBE}`], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    return JSON.parse(run.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+// B2.411: each construction that the test makes, by its label: the class and the kind of what it made or threw.
+const CLASS_PROBE = `
+const made = {};
+const probe = (label, make) => {
+  try {
+    const error = make();
+    made[label] = { made: error.constructor.name, kind: error.kind };
+  } catch (error) {
+    made[label] = { threw: error.constructor.name, kind: error.kind, message: error.message };
+  }
+};
+const { ConsumerValueError, ConsumerTypeError, AbsentError } = globalThis.entry;
+probe('kind 0', () => new ConsumerValueError('Expected JSON value', 0));
+probe('kind of no row', () => new ConsumerValueError('m', 'no_such_kind'));
+probe('kind of a unit', () => new ConsumerValueError('m', 'absent'));
+probe('kind of the binding', () => new ConsumerValueError('m', 'invalid_number'));
+probe('kind of the type class', () => new ConsumerTypeError('m', 'invalid_argument_type'));
+probe('message 1', () => new ConsumerValueError(1, 'invalid_number'));
+probe('message surrogate', () => new ConsumerValueError('\\ud800', 'invalid_number'));
+probe('status text', () => new ConsumerValueError('m', 'invalid_number', '5'));
+probe('status 5', () => new ConsumerValueError('m', 'invalid_number', 5, null));
+probe('errno 1.5', () => new ConsumerValueError('m', 'invalid_number', null, 1.5));
+probe('unit', () => new AbsentError('G-5: absent', 'absent'));
+probe('unit kind of the category', () => new AbsentError('m', 'invalid_number'));
+class Own extends AbsentError {}
+probe('subclass', () => new Own('m', 'absent'));
+probe('subclass wrong', () => new Own('m', 'invalid_number'));
+process.stdout.write(JSON.stringify(made));
+`;
+
+for (const entry of ['node', 'wasm'] as const) {
+  test(`B2.411: the constructor of a library class of ${entry} judges its message, kind, status and errno (GN-7a, GN-10)`, () => {
+    const { contract, caseFiles, foreign } = consumerSample();
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [entry] });
+    const made = errorClassesOf(out, entry);
+    const refused = { threw: 'ConsumerTypeError', kind: 'invalid_argument_type' };
+    const pick = (label: string): unknown => ({ ...(made[label].made === undefined ? { threw: made[label].threw } : { made: made[label].made }), kind: made[label].kind });
+    assert.deepEqual(pick('kind 0'), refused, `${entry}: the json report, a kind that is a number`);
+    assert.deepEqual(pick('kind of no row'), refused, entry);
+    assert.deepEqual(pick('kind of a unit'), refused, `${entry}: a kind whose row names an error unit is raised as that unit`);
+    assert.deepEqual(pick('kind of the binding'), { made: 'ConsumerValueError', kind: 'invalid_number' }, entry);
+    assert.deepEqual(pick('kind of the type class'), { made: 'ConsumerTypeError', kind: 'invalid_argument_type' }, entry);
+    assert.deepEqual(pick('message 1'), refused, entry);
+    assert.deepEqual(pick('message surrogate'), { threw: 'ConsumerValueError', kind: 'invalid_text' }, entry);
+    assert.deepEqual(pick('status text'), refused, entry);
+    assert.deepEqual(pick('status 5'), { made: 'ConsumerValueError', kind: 'invalid_number' }, entry);
+    assert.deepEqual(pick('errno 1.5'), refused, entry);
+    assert.deepEqual(pick('unit'), { made: 'AbsentError', kind: 'absent' }, entry);
+    assert.deepEqual(pick('unit kind of the category'), refused, entry);
+    assert.deepEqual(pick('subclass'), { made: 'Own', kind: 'absent' }, `${entry}: a class of language code takes the kinds of its nearest generated class`);
+    assert.deepEqual(pick('subclass wrong'), refused, entry);
+  });
+}
+
+// B2.411: the consumer sample whose holder.get recognizes absent_error, so that Go has RaisedAbsentError.
+const recognizingConsumer = (targets: readonly Lang[]): Map<string, string | Buffer> => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get').errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets });
+};
+
+test('B2.411: the constructor of a library class of Python judges its arguments (GN-7a, GN-10)', () => {
+  const out = recognizingConsumer(['python']);
+  const errors = text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py');
+  assert.match(errors, /class ConsumerValueError\(builtins\.ValueError\):\n    """[^"]*"""\n\n    _polyspec_kinds: ClassVar\[frozenset\[str\]\] = frozenset\(\{[^}]*"invalid_number"[^}]*\}\)\n\n    def __init__\(self, message: str, kind: str, status: int \| None = None, errno: int \| None = None\) -> None:\n        _check_error\(type\(self\)\.__name__, type\(self\)\._polyspec_kinds, message, kind, status, errno\)\n        super\(\)\.__init__\(message\)/);
+  assert.doesNotMatch(/class ConsumerValueError[^]*?frozenset\(\{([^}]*)\}\)/.exec(errors)?.[1] ?? '', /"absent"/, 'a kind whose row names a unit is no kind of the category class');
+  assert.match(errors, /class AbsentError\(ConsumerValueError\):\n    """[^"]*"""\n\n    _polyspec_kinds: ClassVar\[frozenset\[str\]\] = frozenset\(\{"absent"\}\)/);
+  assert.match(errors, /    if kind not in kinds:\n        raise ConsumerTypeError\(f"\{kind!r\} is no kind of \{name\}", "invalid_argument_type"\)/);
+  assert.match(errors, /        if value is not None and \(not isinstance\(value, int\) or isinstance\(value, bool\)\):/);
+});
+
+test('B2.411: the constructor of a library class of PHP takes any value and judges it (GN-7a, GN-10)', () => {
+  const ext = text(recognizingConsumer(['php']), 'packages/php-ext/generated/lib.rs');
+  assert.match(ext, /static KINDS: \[&\[&str\]; 7\] = \[&\[[^\]]*"invalid_number"[^\]]*\], [^;]*&\["absent"\]\];/);
+  assert.match(ext, /fn construct_error\(ex: &mut ExecuteData\) \{\n    let mut message = Arg::new\("message", DataType::Mixed\);\n    let mut kind = Arg::new\("kind", DataType::Mixed\);/);
+  assert.match(ext, /if !class_kinds\(class\)\.contains\(&kind\.as_str\(\)\) \{/);
+  assert.match(ext, /let message = text_in\(message, &format!\("the message of \{name\}"\)\)\?;/);
+});
+
+test('B2.411: Raised<Unit> of Go gives an error for a kind that is no kind of the unit (GN-7a, GN-15d)', () => {
+  const out = recognizingConsumer(['go']);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /func RaisedAbsentError\(kind, message string\) \(\*AbsentError, error\) \{\n\tif !utf8\.ValidString\(message\) \{\n\t\treturn nil, &ConsumerValueError\{failure\{message: "the message of AbsentError is not UTF-8", kind: "invalid_text"\}\}\n\t\}\n\tswitch kind \{\n\tcase "absent":\n\t\treturn &AbsentError\{[^\n]*\}, nil\n\t\}\n\treturn nil, &ConsumerTypeError\{failure\{message: fmt\.Sprintf\("%q is no kind of AbsentError", kind\), kind: "invalid_argument_type"\}\}\n\}/);
+  assert.match(text(out, 'packages/go/errors/zz_generated_errors.go'), /func RaisedAbsentError\(kind, message string\) \(\*AbsentError, error\) \{/);
+});
+
+test('B2.411: a callback row raises "exception", an exception of the language that is no error of the library, and Go fails the test on an error of Raised<Unit> (GN-13, GN-7a)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get').errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.fetch.push({
+    id: 'a_holder_that_raises_absent_is_absent',
+    holder: { callback: { 'holder.get': [{ args: { key: 'b' }, raise: { error: 'absent_error', kind: 'absent' } }] } },
+    key: 'b',
+    raises: { kind: 'absent', status: null, category: 'value' },
+  });
+  cases.fetch.push({
+    id: 'a_holder_that_raises_an_exception_throws_it',
+    holder: { callback: { 'holder.get': [{ args: { key: 'c' }, raise: 'exception' }] } },
+    key: 'c',
+    raises: 'callback',
+  });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  assert.match(text(out, pythonTests), /RuntimeError\("G-5: exception"\)/);
+  assert.match(text(out, nodeTests), /new Error\('G-5: exception'\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new Error\('G-5: exception'\)/);
+  assert.match(text(out, phpTests), /new \\RuntimeException\("G-5: exception"\)/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /raise: errors\.New\("G-5: exception"\)/);
+  assert.match(go, /(raised\w*), (refused\w*) := binding\.RaisedAbsentError\("absent", "G-5: absent"\)\n\s*if \2 != nil \{\n\s*t\.Fatalf\("G-5: %v", \2\)\n\s*\}[^]*raise: \1\}/);
 });

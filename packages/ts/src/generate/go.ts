@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackMember, type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust} from './model.ts';
+import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust} from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
 import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
@@ -1689,10 +1689,20 @@ ${recognizedUnits.map((u) => {
       const field = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
       return `&${goName(unit.unit.name)}{${field}: ${parent}}`;
     };
+    const name = goName(u.unit.name);
+    const kinds = classKinds(model, u);
     return `
-// Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: it has no property value (G-5).
-func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
-\treturn ${made(u)}
+// Raised${name} is a ${name} of the kind and the message, as Go code makes one: it has no property value (G-5). A kind
+// that is no kind of ${name} is kind invalid_argument_type, and a message that is not UTF-8 kind invalid_text (GN-7a).
+func Raised${name}(kind, message string) (*${name}, error) {
+\tif !utf8.ValidString(message) {
+\t\treturn nil, &${categoryType(model, 'value')}{failure{message: ${goString(`the message of ${name} is not UTF-8`)}, kind: "invalid_text"}}
+\t}${kinds.length === 0 ? '' : `
+\tswitch kind {
+\tcase ${kinds.map(goString).join(', ')}:
+\t\treturn ${made(u)}, nil
+\t}`}
+\treturn nil, &${categoryType(model, 'type')}{failure{message: fmt.Sprintf(${goString(`%q is no kind of ${name}`)}, kind), kind: "invalid_argument_type"}}
 }
 `;
   }).join('')}${recognizedUnits.map((u) => `
@@ -1726,7 +1736,7 @@ func RecognizeAs[T interface {
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
     ...(cancelsAny(model) ? [`uint64_t ${p}__cancel_new(void);`, `void ${p}__cancel_fire(uint64_t key);`, `void ${p}__cancel_release(uint64_t key);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes ? ['errors'] : []), ...(passes(model) || keeps(model) ? ['sync'] : []), ...(cancelsAny(model) ? ['context'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes ? ['errors'] : []), ...(recognizedUnits.length > 0 ? ['unicode/utf8'] : []), ...(passes(model) || keeps(model) ? ['sync'] : []), ...(cancelsAny(model) ? ['context'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -3375,7 +3385,7 @@ type ${goName(u.unit.name)} = binding.${goName(u.unit.name)}
 `).join('')}${goRecognizedUnits(model).map((u) => `
 // Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: the error that Go code
 // of another module, which implements a callback unit of ${model.contract.library}, returns for the core to recognize (GN-15d, GN-6s).
-func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
+func Raised${goName(u.unit.name)}(kind, message string) (*${goName(u.unit.name)}, error) {
 	return binding.Raised${goName(u.unit.name)}(kind, message)
 }
 `).join('')}`;
