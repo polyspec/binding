@@ -10658,3 +10658,16 @@ test('a Python name that is a keyword takes a trailing underscore (GN-6bk, B2.34
   assert.doesNotMatch(python, /^\s*else: str/m);
   assert.doesNotMatch(python, /\belse=/);
 });
+
+test('a callback unit of another library fails with the core error of its owner, the struct that errors.code names (GN-6bl, B2.345)', () => {
+  // The trait took the code enum of the kinds of the owner, Failure<ValidateErrorCode>, where the owner's own binding
+  // and its core take the struct, Failure<ValidateError>.
+  const parts = consumerSample();
+  const owner = parts.foreign.get('sample');
+  const enumPath = owner.errors.kinds[0].variant.slice(0, owner.errors.kinds[0].variant.lastIndexOf('::'));
+  owner.errors.code = { error: 'polyspec_sample::SampleFailure', path: 'polyspec_sample::SampleFailure::code' };
+  const out = generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: ['node'] as Inputs['targets'] & string[] });
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(lib, /binding_core::Failure<polyspec_sample::SampleFailure>/);
+  assert.doesNotMatch(lib, new RegExp(`binding_core::Failure<${enumPath.replaceAll(':', '\\:')}>`));
+});

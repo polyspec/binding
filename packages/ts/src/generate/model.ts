@@ -532,7 +532,9 @@ export function collectModel(
       return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }) };
     });
     const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
-    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
+    // GN-6bl, GN-7b: the error of the trait is the core error of its owner, the struct that errors.code names or the enum.
+    const ownerError = owner.errors.code?.error ?? [...paths][0];
+    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 && ownerError !== undefined ? { error: ownerError } : {}) });
     return true;
   };
   // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.

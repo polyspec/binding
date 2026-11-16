@@ -11,6 +11,7 @@
 - Go 시험은 callback unit의 모든 double과 함께 타입 `fixture`와 그 import를 선언한다. fixture를 부르는 case가 없는 계약은 컴파일되지 않았다(GN-13r, B2.342).
 - Go는 인자가 그 parameter의 Go 타입의 값이 아닌 raise case(uint에 -1이나 `"60"` 등)의 시험을 쓰지 않고, 시험 파일은 주석으로 case와 이유를 적는다. 이전 시험은 컴파일되지 않거나 다른 값으로 호출했다. 동적 target은 case를 유지한다(GN-13q, B2.343).
 - `else` 같은 키워드인 Python 이름은 뒤에 밑줄을 붙인다(`else_`). dataclass가 SyntaxError였다(GN-6bk, B2.344).
+- 다른 library의 callback unit의 trait은 소유자의 코어 오류, 즉 `errors.code`가 이름하는 struct로 실패한다. 이전에는 소유자의 코어가 선언하지 않은 kinds의 code enum을 썼다(GN-6bl, B2.345).
 
 ## 0.0.12
 

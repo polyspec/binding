@@ -796,6 +796,10 @@
   뒤에 밑줄을 붙인다(`else_`): dataclass, stub, native module, 시험. 이유: 키워드는 식별자가 아니므로
   `else: list[Node] | None`은 SyntaxError이고, PEP 8은 이 경우에 뒤 밑줄을 정하며, 계약의 어떤 이름도 그것을 갖지 않는다. case 파일의 키는 계약의
   snake_case 이름 `else` 그대로다. case 파일은 어떤 언어에도 속하지 않기 때문이다.
+- **GN-6bl** 다른 library의 callback unit의 trait은 그 소유자의 코어 오류로 실패한다: 소유자의 `errors.code`가
+  이름하는 struct(GN-7b), 또는 그것이 없으면 그 kinds의 오류 enum이다. 이유: 소유자의 코어는 그 오류로 trait을
+  선언하고 소유자의 binding도 그렇게 쓰므로, code enum을 쓴 소비자(`Failure<ValidateError>` 대신
+  `Failure<ValidateErrorCode>`)는 다른 trait을 구현하게 되어 컴파일되지 않는다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

@@ -983,6 +983,11 @@ the design ids are those of the binding design.
   tests. Why: a keyword is no identifier, so `else: list[Node] | None` is a SyntaxError, and PEP 8 names the trailing
   underscore for this case, which no name of the contract has. A key of a case file stays the snake_case name of
   the contract, `else`, because a case file belongs to no language.
+- **GN-6bl** The trait of a callback unit of another library fails with the core error of its owner: the struct
+  that `errors.code` of the owner names (GN-7b), or the error enum of its kinds when it names none. Why: the core of
+  the owner declares its trait with that error, as the binding of the owner writes it, so a consumer that wrote the
+  code enum (`Failure<ValidateErrorCode>` for `Failure<ValidateError>`) implemented another trait, which does not
+  compile.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

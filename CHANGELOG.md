@@ -10,6 +10,7 @@
 - The Go tests declare the type `fixture` and its import with every double of a callback unit; a contract without a case that names a fixture did not compile (GN-13r, B2.342).
 - Go writes no test for a raising case whose argument is no value of the Go type of its parameter, such as -1 or `"60"` for a uint, and the test file names the case and the reason in a comment; the test did not compile or called with another value. The dynamic targets keep the case (GN-13q, B2.343).
 - A Python name that is a keyword, such as the field `else`, takes a trailing underscore, `else_`; the dataclass was a SyntaxError (GN-6bk, B2.344).
+- The trait of a callback unit of another library fails with the core error of its owner, the struct that `errors.code` names; it took the code enum of the kinds, which the core of the owner does not declare (GN-6bl, B2.345).
 
 ## 0.0.12
 
