@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1011cb17c3eda85faf5e23cd0cf74b5d9988c281cb2aa17820f3f90669736bf7 -->
+<!-- source-sha256: 718f7955e31a5c599b2a893d358d344137c4eabe5cee7dbb0d6a3d1f13c691f1 -->
 # 생성기
 
 [English](generator.md)
@@ -808,6 +808,12 @@
   none인 fallible member는 결과를 `?`로 확인만 하고 묶지 않으며, fallible이 아니고 결과를 읽지 않는 member는 그것을
   `_result`로 이름한다. 이유: none의 변환은 값을 읽지 않으므로 묶인 결과는 사용되지 않는 변수이고, `-D warnings`가
   그것을 거부한다.
+- **GN-6bo** `binding scaffold`가 Node와 PHP에 쓰는 manifest는, 생성된 crate가 feature `thread-test`(U-3)의 entry
+  point를 쓸 때마다 그 feature를 선언한다: parameter가 machine의 함수(GN-6z, GN-6ae)가 아닌 함수 타입을 담을 때이며,
+  `optional`, `list`, `map`, `tuple`, 또는 계약의 record field 안에 어떤 깊이로 있어도 같다. CK-19는 저장소의
+  manifest를 그 텍스트와 비교하므로 feature가 없는 manifest는 보고된다. 이유: crate는 entry point를
+  `#[cfg(feature = "thread-test")]`로 가르는데, manifest가 선언하지 않은 feature는 `unexpected_cfgs` 경고이고
+  `-D warnings`가 그것을 거부한다. parameter만 판정한 scaffold는 field 안의 함수(orm `config.audit_source`)를 빠뜨렸다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

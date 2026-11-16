@@ -11057,3 +11057,17 @@ test('B2.348-1: the B-10 test drops the instance that it made without closing it
   const phpB10 = php.slice(php.indexOf('function testB10LeaseWarnsWithoutRelease'), php.indexOf('function testB10LeaseDoesNotWarnAfterRelease'));
   assert.doesNotMatch(phpB10, /self::\$made\[\]/, phpB10);
 });
+
+test('B2.353: the scaffold declares thread-test whenever the generated crate writes it, also for a function in a record field (GN-6z, U-3)', () => {
+  // orm config.audit_source: Node and PHP wrote #[cfg(feature = "thread-test")] and the manifest declared no such
+  // feature, so -D warnings failed with unexpected_cfgs.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const search = sample.units.find((u: { id: string }) => u.id === 'search');
+  search.fields = [search.fields[1], { name: ['source'], type: { optional: { function: { parameters: [], returns: 'text', async_allowed: false } } }, default: { literal: null } }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'php'] });
+  for (const [lib, manifest] of [['packages/ts/generated/lib.rs', 'packages/ts/Cargo.toml'], ['packages/php-ext/generated/lib.rs', 'packages/php-ext/Cargo.toml']] as const) {
+    const writes = /feature = "thread-test"/.test(text(out, lib));
+    const declares = /\nthread-test = \[\]\n/.test(String(trackedPackages(sample, '0.0.0').get(manifest)));
+    assert.equal(declares, writes, `${lib}: writes thread-test ${writes}, ${manifest} declares it ${declares}`);
+  }
+});

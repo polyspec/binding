@@ -5,7 +5,7 @@
 // core version, so a contract that the generator cannot generate yet still has them.
 
 import { posix } from 'node:path';
-import type { Contract, Unit } from '../contract.ts';
+import type { Contract, Type, Unit } from '../contract.ts';
 import { type Files, header } from './text.ts';
 import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported, machineFunction, countsThrown } from './model.ts';
 
@@ -175,7 +175,22 @@ function testFeatures(contract: Contract, suffix: string, armed: string[], forei
   // U-3, GN-6z: thread-test adds the entry point that calls a function of the language on another thread, in a target
   // that holds a function on its owner thread.
   const owned = suffix === 'node' || suffix === 'php-ext';
-  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type) && !machineFunction(p.type)))) ? 'thread-test = []\n' : '';
+  // GN-6bo: a function in a field of a record parameter, at any depth, is taken as a parameter that holds one is, so
+  // the manifest declares the feature wherever the generated crate writes it.
+  const records = new Map(contract.units.filter((unit) => unit.kind === 'record').map((unit) => [unit.id, unit]));
+  const takes = (type: Type, seen: Set<string>): boolean => {
+    if (holdsFunction(type) && !machineFunction(type)) return true;
+    if (typeof type === 'string') return false;
+    if ('list' in type) return takes(type.list, seen);
+    if ('optional' in type) return takes(type.optional, seen);
+    if ('map' in type) return takes(type.map, seen);
+    if ('keyed_map' in type) return takes(type.keyed_map, seen);
+    if ('tuple' in type) return type.tuple.some((part: Type) => takes(part, seen));
+    if (!('unit' in type) || type.library !== undefined || seen.has(type.unit)) return false;
+    const record = records.get(type.unit);
+    return record !== undefined && (record.fields ?? []).some((field) => takes(field.type, new Set([...seen, type.unit])));
+  };
+  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => takes(p.type, new Set())))) ? 'thread-test = []\n' : '';
   // GN-6u: native-count-test adds the entry point that counts the Natives that the binding holds, in a target that
   // gives a Native back through a round trip.
   const lang = ({ node: 'node', 'php-ext': 'php', wasm: 'wasm', go: 'go' } as const)[suffix as 'node' | 'php-ext' | 'wasm' | 'go'];

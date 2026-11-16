@@ -997,6 +997,13 @@ the design ids are those of the binding design.
   conversion reads it: a fallible member that returns none checks the result with `?` and binds nothing, and a
   member that is not fallible and reads no result names it `_result`. Why: the conversion of none reads no value, so a
   bound result is an unused variable, which `-D warnings` refuses.
+- **GN-6bo** The manifest that `binding scaffold` writes for Node and PHP declares the feature `thread-test` (U-3)
+  whenever the generated crate writes the entry point of that feature: when a parameter holds a function type that is
+  no function of a machine (GN-6z, GN-6ae), in an `optional`, a `list`, a `map`, a `tuple` or a field of a record of
+  the contract at any depth. CK-19 compares the manifest of a repository with that text, so a manifest without the
+  feature is reported. Why: the crate gates the entry point with `#[cfg(feature = "thread-test")]`, and a feature that
+  the manifest does not declare is an `unexpected_cfgs` warning, which `-D warnings` refuses; a scaffold that judged the
+  parameters alone left out the function in a field (orm `config.audit_source`).
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

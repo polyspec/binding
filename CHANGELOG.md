@@ -25,6 +25,7 @@
 - A machine member that returns none, such as `db.execute` of orm, checks the result of the core in Node and WASM without binding it; the unused `let result` failed `-D warnings` (GN-6bn, B2.350).
 - A PHP test gives an empty map of a value alias whose `in` rows read a `stdClass` as a map as `new \stdClass()`; the empty array `[]` was read as an empty list, and 42 tests of template failed with `data_unsupported_type` (GN-13v, B2.351).
 - The B-10 test of a class with a cleanup member in Python and PHP does not close the instance that it drops, so its destructor warns as the test expects; B2.348 closed it too, and the warning was missing (GN-13u, B2.348-1).
+- The scaffold of Node and PHP declares the feature `thread-test` for a function in a field of a record parameter, such as `config.audit_source` of orm, as the generated crate writes it, and CK-19 reports a manifest without it; `-D warnings` failed with `unexpected_cfgs` (GN-6bo, B2.353).
 
 ## 0.0.13
 
