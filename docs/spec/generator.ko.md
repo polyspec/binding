@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0e49cbb21a6b5e8bae3f3e2dad70a1968e37b716ba1579fec220f611ebe1dcd5 -->
+<!-- source-sha256: 9a5b9f738e159ac9afb1b8408d34792815f022000fc672d4d8dae0ec6a0a7afb -->
 # 생성기
 
 [English](generator.md)
@@ -2679,6 +2679,10 @@
   commit이거나 그 tree에 변경이 있으면 이름 있는 오류로 멈추고, 표와 보고서의 첫 줄은 그 commit과 tree가 깨끗한지를 이름한다.
   Why: 갈래의 수정 넷(B2.367, B2.386, B2.387, B2.390)이 없는 tree에서의 실행은 갈래의 결함처럼 보이는 칸을 주었고, 그것은 갈래의
   증거가 아니었다.
+  path patch는 release되지 않은 의존성에 대해 Cargo가 문서화한 방법이고 `binding_core`의 source만 바꾼다: 칸은 소비자의 commit과
+  이 tree의 생성기와 `binding_core`의 증거이지, 소비자와 binding의 release tag의 증거가 아니다. 둘은 이 commit이 바뀌지 않고
+  tag될 때만 일치하고, tag 뒤 각 소비자의 CI가 최종 증거다. 표의 둘째 줄과 보고서의 `evidence`가 그것을 밝힌다. Why: 그러지
+  않으면 통과한 표를 읽는 사람이 그것을 release로 여긴다.
   컴파일 전에 복사본의 연결을 기록한다: 이 tree의 경로를 이름해야 하는 `cargo tree -i
   polyspec-binding-core`, CLI의 경로, 생성된 파일의 Go build tag. 그다음 각 바인딩 crate는 manifest의 시험 feature(GN-5)로
   한 번, 없이 한 번 `cargo check --all-targets`를 실행하고, WASM은 `wasm32-unknown-unknown`에서 실행한다. Go target은

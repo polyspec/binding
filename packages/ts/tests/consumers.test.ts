@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Contract } from '../src/contract.ts';
-import { UNCHECKED, expectedCommit, compiles, exitStatus, noteUnchecked, consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Copy } from '../../../scripts/consumers.mts';
+import { EVIDENCE, UNCHECKED, expectedCommit, compiles, exitStatus, noteUnchecked, consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Copy } from '../../../scripts/consumers.mts';
 
 const root = new URL('../../../', import.meta.url).pathname;
 const script = join(root, 'scripts/consumers-check.mts');
@@ -22,7 +22,7 @@ test('a failed cell is named in the table with the step that failed, its first e
     { consumer: 'json', cell: 'node', state: 'passed', failures: [], log: '/r/json/node.log' },
     { consumer: 'json', cell: 'wasm', state: 'not in contract', failures: [], log: '/r/json/wasm.log' },
   ], provenanceLine('a'.repeat(40), true));
-  const [, header, row] = text.split('\n');
+  const [, , header, row] = text.split('\n');
   assert.match(header ?? '', /^consumer\s+prepare\s+php\s+python\s+node\s+go\s+wasm$/);
   assert.match(row ?? '', /^json\s+passed\s+failed\s+-\s+passed\s+-\s+not in contract$/);
   assert.match(text, /^json php: failed \(log \/r\/json\/php\.log\)$/m);
@@ -205,4 +205,12 @@ test('without EXPECT or DIST the run is evidence of the HEAD of its checkout, wh
   assert.equal(expectedCommit(head, undefined, `binding commit ${other}\n`), other);
   assert.equal(provenanceProblem(head, '', expectedCommit(head, undefined, undefined)), undefined);
   assert.match(provenanceProblem(head, '?? scripts/new.mts\n', expectedCommit(head, undefined, undefined)) ?? '', /has changes that .* does not hold: \?\? scripts\/new\.mts/);
+});
+
+test('the second line of the table states what a run is evidence of, and what it is not (GN-14i, B2.391)', () => {
+  const lines = table([], provenanceLine('f'.repeat(40), true)).split('\n');
+  assert.equal(lines[1], EVIDENCE);
+  assert.match(EVIDENCE, /the commit of each consumer \+ the generator of this tree \+ its binding_core by the path patch of Cargo/);
+  assert.match(EVIDENCE, /not the consumer with a released tag/);
+  assert.match(EVIDENCE, /only when this commit is tagged unchanged, and the CI of each consumer after the tag is the final evidence/);
 });

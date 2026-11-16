@@ -3285,6 +3285,11 @@ the design ids are those of the binding design.
   its tree has a change, and the first line of the table and of the report names the commit and that the tree is clean.
   Why: a run on a tree that lacked four fixes of the lane (B2.367, B2.386, B2.387, B2.390) gave cells that looked like
   defects of the lane, which were no evidence of it.
+  The path patch is the way that Cargo documents for a dependency that is not released, and it changes only the
+  source of `binding_core`: a cell is evidence of the commit of the consumer with the generator and the `binding_core`
+  of this tree, not of the consumer with a released tag of binding. The two agree only when this commit is tagged
+  unchanged, and the CI of each consumer after the tag is the final evidence; the second line of the table and
+  `evidence` of the report state it. Why: a reader of a table that passed would otherwise take it for the release.
   Before it compiles, it records the connections of the copy: `cargo tree -i polyspec-binding-core`, which must name
   the path of this tree, the path of the CLI, and the Go build tags of the generated files. Then each binding crate
   runs `cargo check --all-targets` with the test features of its manifest (GN-5) and without them, WASM on

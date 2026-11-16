@@ -12,7 +12,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { availableParallelism, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Contract, Lang } from '../packages/ts/src/contract.ts';
-import { TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, expectedCommit, noteUnchecked, compiles, exitStatus, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
+import { EVIDENCE, TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, expectedCommit, noteUnchecked, compiles, exitStatus, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
 import { goBuildTags } from './e2e-lint.mts';
 import { llvmOf } from './e2e-llvm.mts';
 
@@ -275,6 +275,6 @@ try {
 const cells = results.flatMap((r) => r.cells);
 const text = table(cells, provenance);
 writeFileSync(join(report, 'table.txt'), `${text}\n`);
-writeFileSync(join(report, 'report.json'), `${JSON.stringify({ provenance, commit: head, clean: status === '', binding: here, cli, core, goLink, jobs, parallel, consumers: consumers.map((c, i) => ({ ...c, connections: results[i]?.connections })), cells }, null, 2)}\n`);
+writeFileSync(join(report, 'report.json'), `${JSON.stringify({ provenance, evidence: EVIDENCE, commit: head, clean: status === '', binding: here, cli, core, goLink, jobs, parallel, consumers: consumers.map((c, i) => ({ ...c, connections: results[i]?.connections })), cells }, null, 2)}\n`);
 process.stdout.write(`\n${text}\nthe report: ${report}\n`);
 process.exit(exitStatus(cells));
