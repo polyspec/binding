@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 85e1269857bed6d21440fd2779a10f9d1dbc2204d696fe106c32a375ea7b4a2b -->
+<!-- source-sha256: a73655acb7d92d2515016d3a2bccc3dfb4ff2f0245056f1e7554bee44bb49ac0 -->
 # 생성기
 
 [English](generator.md)
@@ -1266,6 +1266,10 @@
   list나 tuple을 받는다. `keyed_map<T>{key}`는 순서대로의 `dict`이며 key는 계약이 적은 종류의 `int`(`bool`이 아닌 것),
   `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `map<T>`는 key가
   `str`인 순서대로의 `dict`이며, 그 밖의 key는 kind `invalid_argument_type`이다. `polyspec`에는 `__init__.py`가 없다(P-1).
+- **GN-11a** Python: 호출의 꼴(keyword-only 인자를 위치로 넘긴 것, 인자의 수, 빠지거나 모르는 인자)은 언어의 호출 규칙이므로,
+  생성된 함수는 그것을 kind가 없는 Python의 `TypeError`에 맡긴다. 계약의 kind는 꼴이 맞는 호출의 값만 판정한다. 그래서
+  `options`가 keyword-only일 때 `parse("1", "options")`는 Python의 `TypeError`이며, 인자의 수가 틀린 TypeScript 호출이
+  kind가 아닌 것과 같다(G-7). 생성된 시험은 keyword-only 인자를 위치로 넘기고 그 `TypeError`를 기대한다.
 - **GN-12** Node: addon은 원시 값을 받는다(T-8). 생성된 CommonJS 진입점은 인자의 개수, 이름, options record member의 존재를
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로

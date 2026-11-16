@@ -4495,6 +4495,21 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
 });
 
+test('B2.426: a keyword-only parameter passed by position is the TypeError of Python, not a kind (GN-11a)', () => {
+  const out = shaped();
+  // The record fields of frame are keyword-only in the native module and its stub.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[pyo3\(signature = \(text, \*, prefix, upper = Given::Omitted, width = Given::Omitted\)\)\]/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def frame\(text: str, \*, prefix: str, /);
+  // The generated test passes the keyword-only argument by position and expects the TypeError of the language.
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  const at = py.indexOf('def test_gn11a_frame_takes_prefix_by_keyword_only(');
+  assert.ok(at >= 0, 'test_gn11a_frame_takes_prefix_by_keyword_only is generated');
+  const body = py.slice(at, py.indexOf('\n    def ', at + 1));
+  assert.match(body, /with self\.assertRaisesRegex\(TypeError, "positional"\) as caught:\n\s+pkg\.frame\([^\n=]*\)\n/);
+  assert.match(body, /self\.assertIs\(type\(caught\.exception\), TypeError\)/);
+  assert.doesNotMatch(body, /kind/);
+});
+
 test('a record parameter whose every field has a default may be left out as a whole (U-2 {empty: "object"}, GN-6i)', () => {
   const out = shaped();
   // Python and PHP take the fields as keywords and named arguments, which are all left out with the record.
