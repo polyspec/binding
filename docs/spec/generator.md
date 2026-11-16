@@ -971,6 +971,10 @@ the design ids are those of the binding design.
   targets generate the row. Refused by name (G-4): another make of the kind, a row with `when`, and a value type that
   `ValueType` does not have. Why: the core keeps a value of another repository inside its own value, and only the
   binding of that repository's value type knows how a language holds it.
+  The source is a parameter of the function that opens a level of the walk, in Go as in the other targets, because a
+  nested fn item of Rust captures no local of the function around it. Why: the Go crate of orm, whose value alias
+  `orm_value` makes a list, a map and a nested `json_value`, read the source of the make function inside its
+  `open_level` and failed with E0434.
 - **GN-6bc** An `out` row of a value alias whose make is a member of a class of this contract that takes one parameter
   of the type `list<alias>` (kind `list`) or `map<alias>` (kind `map`) is made in two steps: the walk makes the
   children by the rows of the alias into the array of the language, as the built-in form does, and when the last
@@ -995,7 +999,11 @@ the design ids are those of the binding design.
   the env of the call escapes the body of the constructor (E0521).
 - **GN-6bi** Go encodes a field or a value of the type `optional` of a `tuple` through the pointer in parentheses,
   `(*options.Range)[0]`. Why: an index binds before the star, so `*options.Range[0]` indexes the pointer, which Go
-  refuses (cannot indirect).
+  refuses (cannot indirect). An `optional` of a function type (GN-6z) is `*func(...)`, nil for none, and its func is
+  called through the pointer in parentheses, `(*cfg.AuditSource)()`; the func behind a pointer that is not nil is
+  checked as every func is, a nil func is kind `invalid_argument_type`. Why: a call binds before the star too, so
+  `*cfg.AuditSource()` calls the pointer, which Go refuses (`is not a function`); orm `config.audit_source` failed
+  `go vet` so.
 - **GN-6bj** The Go entry point gives the core the local of a record parameter by the same name that its decoder
   binds, `input_` for a parameter named `input` (GN-15). Why: the entry point binds `input` to the bytes of the call,
   so a core call that names the parameter by its plain name passes those bytes.
@@ -1155,7 +1163,10 @@ the design ids are those of the binding design.
   code returns the failure and matches the value, which has no variant, without an arm; the declarations say `never`
   in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
   with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
-  the tests of every other target. A parameter with `only` is a parameter of the targets that it lists alone: every
+  the tests of every other target; for a constant that is also its assertion against the constant of the core, and the
+  default of a field or a parameter that names it is asserted only where that field or parameter is generated. Why:
+  orm states `only` without `wasm` at `default_retry` and `default_pool_acquire_timeout_ms`, whose constants its core
+  defines only with the feature `runtime`, which the WASM build lacks, and the WASM crate asserted them (E0425). A parameter with `only` is a parameter of the targets that it lists alone: every
   other target has no such parameter in its signature, its declarations and its rules of place, and its binding gives
   the core the parameter
   as left out (`None`). The parameter therefore has a default or an `optional` type, whose core parameter is an

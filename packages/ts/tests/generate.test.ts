@@ -11543,6 +11543,67 @@ test('B2.377: the conversions of a recursive variant walk the value with a work 
   }
 });
 
+test('B2.395: a constant whose only leaves a target out is no constant of that target, nor its assertion of the core (Q-4, GN-6g)', () => {
+  // orm wasm lib.rs: `const _: () = assert!(polyspec_orm::DEFAULT_RETRY == 3);` of a constant with only without wasm
+  // was E0425, since the core builds for wasm without the feature that defines it. The functions fixture with such a
+  // constant, and a record field with only whose {const} default names it.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.395' };
+  contract.units[0].members.push({ id: 'default_retry', name: ['default', 'retry'], kind: 'constant', visibility: 'public', type: 'uint', value: 3, core: 'polyspec_functions::DEFAULT_RETRY', only });
+  contract.units.push({ id: 'apply_options', name: ['apply', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_functions::ApplyOptions', fields: [
+    { name: ['retry'], type: 'uint', default: { const: 'default_retry' }, default_core: 'polyspec_functions::DEFAULT_RETRY', only },
+    { name: ['limit'], type: 'uint', default: { literal: 7 }, default_core: 'polyspec_functions::DEFAULT_LIMIT' },
+  ] });
+  contract.units[0].members.push({ id: 'functions.apply_with', name: ['apply', 'with'], kind: 'function', visibility: 'public', parameters: [
+    { name: ['value'], type: 'text', required: true }, { name: ['options'], type: { unit: 'apply_options' }, required: true },
+  ], returns: 'text', raises: ['polyspec_functions::Error::Empty'], wait: 'none', core: 'polyspec_functions::apply_with' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const libs: Record<string, string> = { python: 'packages/python/generated/lib.rs', node: 'packages/ts/generated/lib.rs', wasm: 'packages/ts/wasm/generated/lib.rs', php: 'packages/php-ext/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(out, path);
+    assert.match(lib, /assert!\(polyspec_functions::DEFAULT_LIMIT == 7\)/, target);
+    if (target === 'wasm') assert.doesNotMatch(lib, /DEFAULT_RETRY/, target);
+    else assert.match(lib, /assert!\(polyspec_functions::DEFAULT_RETRY == 3\)/, target);
+  }
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /DEFAULT_RETRY/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.d.ts') + text(out, 'packages/ts/wasm/generated/index.mjs'), /DEFAULT_RETRY/);
+});
+
+test('B2.394: the Go walk of a value alias with a container and a nested row gives the source to open_level (GN-6bb, GN-6as)', () => {
+  // orm packages/go/internal/ffi/generated/lib.rs: the nested arm inside the fn item open_level read the source of
+  // make_value, which a fn item cannot capture (E0434). The nested sample with a list row too.
+  const { contract, caseFiles, foreign } = nestedSample();
+  const wrapped = contract.units.find((u: any) => u.id === 'wrapped');
+  wrapped.out.push({ kind: 'list', make: Object.fromEntries(FIVE.map((lang) => [lang, 'list'])) });
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  const open = lib.slice(lib.indexOf('fn make_wrapped('));
+  assert.match(open, /fn open_level\(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues/);
+  assert.match(open, /levels\.extend\(open_level\(output, out, source[,)]/);
+  // Without a container the make function names the source that the nested arm reads.
+  const plain = text(generate({ contract: nestedSample().contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(plain, /fn make_wrapped\(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues[,)]/);
+});
+
+test('B2.393: Go calls an optional func of a record field through the pointer in parentheses (GN-6bi, GN-6z)', () => {
+  // orm zz_generated_orm.go: `returned, err := *cfg.AuditSource()` failed go vet with `is not a function`, since a call
+  // binds before the star. The functions fixture with a record whose optional field holds a function type.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const convert = contract.units[0].members[0].parameters[0].type;
+  contract.units.push({ id: 'apply_options', name: ['apply', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_functions::ApplyOptions', fields: [
+    { name: ['convert'], type: { optional: convert }, default: { literal: null } },
+  ] });
+  contract.units[0].members.push({ id: 'functions.apply_with', name: ['apply', 'with'], kind: 'function', visibility: 'public', parameters: [
+    { name: ['value'], type: 'text', required: true }, { name: ['options'], type: { unit: 'apply_options' }, required: true },
+  ], returns: 'text', raises: ['polyspec_functions::Error::Empty'], wait: 'none', core: 'polyspec_functions::apply_with' });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+  const go = text(out, 'packages/go/zz_generated_functions.go');
+  assert.match(go, /Convert \*func\(string, \[\]int64\) \(string, error\)/);
+  assert.doesNotMatch(go, /:= \*options\.Convert\(/);
+  assert.match(go, /returned, err := \(\*options\.Convert\)\(arg0, arg1\)/);
+});
+
 test('B2.390: the work stack of a cycle walks a list and a map of a record field by the field and not by a borrow of its iterator (GN-6bt)', () => {
   // template wasm lib.rs: `for item0 in &value.body.iter() {` was E0277, since `&` takes the iterator and a reference
   // to an iterator is no iterator. A record of the cycle that holds a list, a map, an optional and a unit of it.

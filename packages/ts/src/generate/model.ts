@@ -2042,7 +2042,8 @@ export function membersFor(model: Model, lang: Lang): Model {
   return {
     ...model,
     functions: model.functions.filter(has).map(without),
-    constants: model.constants.filter((c) => unitHas(c.unit)),
+    // Q-4, B2.395: a constant whose only names other targets is no constant of the language, nor its assertion.
+    constants: model.constants.filter((c) => unitHas(c.unit) && (c.member.only === undefined || c.member.only.targets.includes(lang))),
     enums: model.enums.filter(unitHas),
     contract: { ...model.contract, units: model.contract.units.map((u) => unitForLanguage(u, lang)) },
     records: records(model.records),

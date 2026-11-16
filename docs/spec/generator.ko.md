@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 334df9342d0d1d88019c91d7cd3fdd29b208c36ccd6fc6660dfbb8ab2f42b80c -->
+<!-- source-sha256: 92d0ea6aa378543a221ab078825e9f90e1caf712b8756592424be0f38cd89ed9 -->
 # 생성기
 
 [English](generator.md)
@@ -786,6 +786,9 @@
   owner class가 없는 값 alias면 순회가 만든 container를 넘긴다. 다섯 타깃이 이 행을 생성한다. 이름을 대고 거부한다(G-4):
   그 kind의 다른 make, `when`이 있는 행, `ValueType`에 없는 값 타입. 이유: 코어는 다른 레포의 값을 자기 값 안에 담고,
   언어가 그 값을 어떻게 갖는지는 그 레포의 값 타입의 바인딩만 안다.
+  source는 다른 타깃처럼 Go에서도 순회의 level을 여는 함수의 parameter다. Rust의 중첩 fn item은 바깥 함수의 local을
+  capture하지 못하기 때문이다. 이유: list, map, 중첩 `json_value`를 만드는 값 alias `orm_value`를 가진 orm의 Go crate는
+  make 함수의 source를 `open_level` 안에서 읽어 E0434로 실패했다.
 - **GN-6bc** make가 이 계약의 class의 member이고 그 member가 `list<alias>`(kind `list`)나 `map<alias>`(kind `map`)
   타입의 parameter 하나를 받는 값 alias의 `out` 행은 두 단계로 만든다. 순회는 내장 꼴처럼 alias의 행으로 자식을 언어의
   배열에 만들고, 마지막 자식이 만들어지면 parameter의 변환이 그 배열을 받아 member의 코어 경로가 코어 값을 만들고 class의
@@ -807,6 +810,10 @@
   호출보다 오래 살고, Node에서 호출의 env를 빌린 콜백은 생성자 본문을 벗어난다(E0521).
 - **GN-6bi** Go는 `tuple`의 `optional` 타입인 field나 값을 괄호 안의 포인터로 인코딩한다: `(*options.Range)[0]`.
   이유: 인덱스가 별표보다 먼저 묶이므로 `*options.Range[0]`은 포인터를 인덱싱하고, Go는 이를 거부한다(cannot indirect).
+  함수 타입(GN-6z)의 `optional`은 `*func(...)`이고 없음은 nil이며, 그 func는 괄호 안의 포인터로 부른다:
+  `(*cfg.AuditSource)()`. nil이 아닌 포인터 뒤의 func는 모든 func처럼 검사하고, nil func는 kind
+  `invalid_argument_type`이다. 이유: 호출도 별표보다 먼저 묶이므로 `*cfg.AuditSource()`는 포인터를 부르고, Go는 이를
+  거부한다(`is not a function`). orm `config.audit_source`가 그렇게 `go vet`에 실패했다.
 - **GN-6bj** Go entry point는 record parameter의 local을 디코더가 묶은 이름 그대로 코어에 준다: `input`이라는
   parameter는 `input_`이다(GN-15). 이유: entry point는 `input`을 호출의 바이트에 묶으므로, parameter를 원래 이름으로
   부르는 코어 호출은 그 바이트를 넘긴다.
@@ -939,6 +946,10 @@
   `Result<Infallible, E>`를 돌려주는 코어를 부른다. 생성 코드는 실패를 돌려주고, 변형이 없는 그 값을 갈래 없는 match로
   받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
   거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
+  constant면 코어의 constant에 대한 그 assertion도 그렇고, 그것을 이름하는 field나 parameter의 default는 그 field나
+  parameter가 생성되는 곳에서만 assert한다. 이유: orm은 `default_retry`와 `default_pool_acquire_timeout_ms`에 `wasm` 없는
+  `only`를 적는데, 그 constant는 코어가 feature `runtime`으로만 정의하고 WASM build에는 그 feature가 없어, WASM crate가 그것을
+  assert하면 E0425였다.
   `only`가 있는 parameter는 그것이 적은 target에만 있는 parameter다. 다른 target은 signature, 선언, 자리 규칙에 그
   parameter가 없고, 그 바인딩은 코어에 그 parameter를 생략된 것(`None`)으로 준다. 그래서 그 parameter는 기본값이나 `optional` 타입을
   가지며, 그 코어 parameter는 `Option`이다. 둘 다 없으면 이름을 대고 거부한다(G-4). parameter에 값을 주는 case는
