@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 267c0e7612739e4613becf654238ca49b45a24961f8b9d875db060316473caab -->
+<!-- source-sha256: 05a347a182620b1679cafb600bdc7d008e64ed41049b2a14d1eb875092961256 -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
 <!-- source-sha256: 028d351266e7e17732e0e1862de6ed25e332d624f9e2ecc7c23bb6a7dc57c65e -->
@@ -26,6 +26,7 @@
 
 ## Unreleased
 
+- checkout이 kit 0.0.114 대신 0.0.118을 설치한다(B2.428). 그것이 설치하는 kit에서 `make install-packages`, `make docs-check`, `make hooks-check`, `make lint-rust`, `make typecheck-ts`, `make test-ts`로 검증했다.
 - 꼴이 틀린 생성된 Python 함수 호출(keyword-only 인자를 위치로 넘긴 것, 인자의 수, 빠지거나 모르는 인자)은 kind가 없는 Python의 `TypeError`이고, 계약의 kind는 꼴이 맞는 호출의 값만 판정한다(GN-11a): json이 `parse("1", "options")`가 plain `TypeError`를 낸다고 보고했는데, 그것이 규칙이다. keyword-only parameter가 있는 member의 생성된 Python 시험은 그것을 위치로 넘기고 그 `TypeError`를 기대한다(B2.426). `packages/ts`에서 `node --test --test-name-pattern=B2.426 tests/generate.test.ts`로 검증했고, 변경 전에는 실패했다.
 - 생성기가 거부된 값의 두 층을 정한다(GN-12a, B2.425): 바인딩은 자리의 계약 타입을 검사해 그 규칙의 kind를 주고, 계약이 맞는 타입의 값에 대해 정한 kind, 예를 들어 `uint`의 `list`에서 0xFFFF보다 큰 code unit의 `invalid_code_unit`은 core만 낸다. 그래서 거기의 `-1`은 Python, PHP, Node, WASM에서 `invalid_number`로, `"a"`는 `invalid_argument_type`으로 남는다. json 저장소는 그것들에 `invalid_code_unit`을 기대한다고 전했고 자기 RQ-029를 고친다. 생성되는 코드는 바뀌지 않는다. `packages/ts`에서 `node --test --test-name-pattern=B2.425 tests/generate.test.ts`로 검증했고, 이 guard는 변경 전에도 통과했다.
 - PRINCIPLES의 P25가 release가 하는 일을 말한다: verification item은 push를 허용하고, tag와 release는 CI run이 통과한 커밋에만 만들며, 그 run을 기록하는 커밋이 item을 done으로 옮긴다. 그래서 tag된 커밋에 verification item이 남아 있을 수 있다. 전에는 그런 item이 tag를 막는다고 했지만, release.yml은 verification 행이 있는 채로 v0.0.15, v0.0.16, v0.0.17을 tag했다(kit의 K1282, B2.427).
