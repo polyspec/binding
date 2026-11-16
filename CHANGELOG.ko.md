@@ -1,5 +1,6 @@
 <!-- doc-id: changelog -->
 <!-- source-sha256: 31d52d270e12f960657bdfd1a20a50988ebbdbb381677988266bf49de5004398 -->
+<!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -13,6 +14,7 @@
 
 ## 0.0.15
 
+- core가 framework를 필요로 하는 저장소, 예를 들어 security-framework를 쓰는 session-store의 Go 시험이 `Undefined symbols: _AuthorizationCreate`로 링크되지 않았다. 생성된 `internal/binding`이 OS마다 고정 목록의 시스템 라이브러리를 링크했다(macOS는 `-lSystem -lc -lm`). 이제 주 link 파일은 `-l<library>`만 쓴다. `release-go-static`은 각 라이브러리를 `cargo rustc --print native-static-libs`로 빌드하고 rustc가 출력한 것을 그 옆의 `native-static-libs`에 쓰며, `binding release-go-module`이 그것을 각 platform의 link 파일에 쓴다. 새 명령 `binding go-link --manifest <Cargo.toml> --target-dir <dir> [--features <features>]`는 checkout의 host 라이브러리를 빌드하고 그 Go 시험의 `CGO_LDFLAGS`를 출력하며, `make e2e`가 그것을 쓴다(GN-15k, B2.367). `packages/ts`에서 `node --test --test-name-pattern=B2.367 tests/*.test.ts`로 확인했다: 그 시험들은 변경 전에 실패했다. darwin arm64에서 `tests/e2e/sample`의 사본으로도 확인했다: 그 `go test`는 출력된 `-L<dir>/debug -lc -lm -liconv -lSystem -lc -lm`로 링크되었다.
 - 함수 parameter는 그 member가 나중 member가 부르도록 함수를 보관만 할 때 `keeps: true`를 적을 수 있다(hyper `pages.register`, 이것을 `page_request.next`가 부른다). 그 member는 `Failure` 없는 코어 오류를 돌려주고, 함수를 부르는 member가 `core.failure: true`를 적는다. 전에는 `binding check`가 함수의 `keeps`를 거부했으므로 함수의 실패가 그것을 보관하는 member에 자리했다. end-to-end functions가 `registry.register`에 그것을 적는다(GN-6aa, GN-7, CK-90, B2.378).
 - method의 case는 `with`, 곧 `{"<name>": {"new": <member id>, ...}}`로 instance value에 이름을 붙이고, 시험은 그것을 receiver 다음에 만들어 그 이름으로 보관한다. 다섯 타깃에서 그렇다. 어떤 깊이의 function fixture의 step도 그런 값 위에서 부르거나 그것을 `{"bound": <name>}`로 넘기고, `after`의 호출은 함수가 반환한 뒤 그것 위에서 부른다. step이나 `after`의 호출이 부르는 member는 CK-22에서 거기서 case를 가지므로, callback만 주는 class, 예를 들어 ORM의 transaction의 member에는 `cases`의 행이 필요 없다. end-to-end sample은 `busy`를 낸 step 뒤와 transaction 뒤에 `with`의 두 번째 store를 부른다(GN-13pa, CK-22, CK-96, B2.365).
 - 깊게 중첩된 record나 variant가 debug WASM에서 trap했다. cycle의 record나 variant의 변환 `out_<unit>`과 `in_<unit>`이 단계마다 자기 자신을 불러, template의 case `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식이 1 MiB stack을 다 써 "memory access out of bounds"로 끝났다. 이제 다섯 target에서 변환이 heap의 work stack으로 값을 loop에서 걷고 cycle의 변환을 부르지 않는다(GN-6bt, B2.377). `make test-ts`로 확인했다: 새 시험은 변경 전에 실패했다. `tests/e2e/variants`의 다섯 crate의 `cargo clippy`와, 2000단계 중첩된 figure를 더한 그 생성 Node 시험으로도 확인했다.
