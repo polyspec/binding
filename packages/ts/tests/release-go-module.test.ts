@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
-import { goModFindings, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
+import { carriedLibraries, goModFindings, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
 
@@ -329,6 +329,28 @@ test('B2.367: a platform without its native-static-libs, with an empty one, or w
     `${join(s.release.libraries, 'darwin_arm64/native-static-libs')}: the native-static-libs of darwin_arm64 are not there; release-go-static writes them beside the library (GN-15k)`,
   ]);
   assert.equal(s.lines().filter((line) => WRITES.test(line)).length, 0);
+});
+
+test('B2.415: the libraries that native-static-libs name and the Rust toolchain ships for the target are carried beside the library, and a missing one is refused (GN-15k)', (t) => {
+  assert.deepEqual(carriedLibraries('-lunwind -lc'), ['libunwind.a']);
+  assert.deepEqual(carriedLibraries('-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc'), []);
+  assert.deepEqual(carriedLibraries('-lunwind -lc -lunwind'), ['libunwind.a']);
+  const s = scene(t);
+  for (const platform of ['linux_amd64_musl', 'linux_arm64_musl']) {
+    writeFileSync(join(s.release.libraries, platform, 'native-static-libs'), '-lunwind -lc\n');
+    writeFileSync(join(s.release.libraries, platform, 'libunwind.a'), `unwinder of ${platform}`);
+  }
+  releaseGoModule(s.release);
+  for (const platform of ['linux_amd64_musl', 'linux_arm64_musl']) {
+    assert.ok(s.lines().includes(`git update-index --add --cacheinfo 100644,object-of:${join(s.release.libraries, platform, 'libunwind.a')},packages/go/internal/ffi/lib/${platform}/libunwind.a`), platform);
+  }
+  assert.equal(s.lines().some((line) => /lib\/(linux_(amd64|arm64)|darwin_arm64)\/libunwind\.a$/.test(line)), false, 'a platform whose libraries name no unwinder carries one');
+  const missing = scene(t);
+  writeFileSync(join(missing.release.libraries, 'linux_arm64_musl/native-static-libs'), '-lunwind -lc\n');
+  assert.deepEqual(refusal(() => releaseGoModule(missing.release)), [
+    `${join(missing.release.libraries, 'linux_arm64_musl/libunwind.a')}: the native-static-libs of linux_arm64_musl name libunwind.a, which the release carries beside the library and release-go-static copies from the Rust toolchain, and it is not there (GN-15k)`,
+  ]);
+  assert.equal(missing.lines().filter((line) => WRITES.test(line)).length, 0);
 });
 
 test('every failed check is named and the command changes nothing (GN-19f)', (t) => {

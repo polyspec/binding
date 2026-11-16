@@ -215,6 +215,18 @@ export function nativeStaticLibs(diagnostics: string): string | undefined {
   return found === undefined || found === '' ? undefined : found;
 }
 
+// GN-15k, B2.415: the libraries of native-static-libs that the Rust toolchain ships for the target in
+// lib/rustlib/<triple>/lib/self-contained and that no C compiler of the platform brings, so the release carries each
+// beside the static library of the platform: libunwind.a, the LLVM unwinder that the std of a musl target links with
+// -bundle. The files that carry the libraries that `libs` names, in their order.
+export const CARRIED_LIBRARIES = ['unwind'] as const;
+export function carriedLibraries(libs: string): string[] {
+  const named = libs.split(/\s+/).filter((word) => word.startsWith('-l')).map((word) => word.slice(2));
+  return [...new Set(named.filter((name) => (CARRIED_LIBRARIES as readonly string[]).includes(name)))].map((name) => `lib${name}.a`);
+}
+// The directory of the libraries that the Rust toolchain of `sysroot` ships for `triple`.
+export const selfContained = (sysroot: string, triple: string): string => join(sysroot, 'lib/rustlib', triple, 'lib/self-contained');
+
 // GN-15k: the directive of the link file of a platform as the generator writes it, with the directory alone.
 export const goLinkDirective = (platform: string): string => `// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}`;
 
@@ -323,6 +335,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   // GN-15k: the link file of each platform with the native-static-libs that the release build of that platform printed,
   // which release-go-static wrote beside its library; the commit takes it in place of the file of the work tree.
   const linked = new Map<string, string>();
+  const carried = new Map<string, string>();
   for (const platform of GO_PLATFORMS) {
     const link = `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`;
     for (const file of [link, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
@@ -332,6 +345,13 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     const libs = existsSync(libsPath) ? readFileSync(libsPath, 'utf8').trim() : undefined;
     if (libs === undefined) findings.push(`${libsPath}: the native-static-libs of ${platform} are not there; release-go-static writes them beside the library (GN-15k)`);
     else if (libs === '' || libs.includes('\n')) findings.push(`${libsPath}: the native-static-libs of ${platform} name no library (GN-15k)`);
+    else {
+      for (const file of carriedLibraries(libs)) {
+        const path = join(release.libraries, platform, file);
+        if (!existsSync(path) || !statSync(path).isFile()) findings.push(`${path}: the native-static-libs of ${platform} name ${file}, which the release carries beside the library and release-go-static copies from the Rust toolchain, and it is not there (GN-15k)`);
+        else carried.set(`${directory}/internal/ffi/lib/${platform}/${file}`, path);
+      }
+    }
     if (!generated.includes(link)) continue;
     const text = readFileSync(join(root, directory, link), 'utf8');
     const directive = goLinkDirective(platform);
@@ -363,6 +383,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const tracked = run('git', ['-C', root, 'ls-tree', '-r', '-z', '--name-only', parent, '--', directory]).split('\0').filter((path) => path !== '').map((path) => path.slice(directory.length + 1));
   const added = new Map<string, string>(generated.map((file) => [`${directory}/${file}`, join(root, directory, file)]));
   for (const platform of GO_PLATFORMS) added.set(`${directory}/internal/ffi/lib/${platform}/lib${release.library}.a`, libraryOf(platform));
+  for (const [path, source] of carried) added.set(path, source);
   mkdirSync(join(work, 'link'), { recursive: true });
   for (const [link, text] of linked) {
     const copy = join(work, 'link', link.slice(link.lastIndexOf('/') + 1));

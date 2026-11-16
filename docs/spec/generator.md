@@ -2279,8 +2279,16 @@ the design ids are those of the binding design.
   so a consumer that fetches the module links them with no flag of its own: `release-go-static` writes the libraries
   of each platform that it builds into the file `native-static-libs` beside its library in `RELEASE_ASSETS/go/<platform>`,
   and `binding release-go-module` refuses a platform without that file, or whose file names no library, and writes the
-  directive of its link file from it into the commit of the module. The end-to-end check builds the libraries of its
-  released form (GN-14f) with the print in the same way and writes the same directive. A checkout, whose tree holds no library,
+  directive of its link file from it into the commit of the module. A library that the libraries name and that the
+  Rust toolchain ships for the target in `lib/rustlib/<triple>/lib/self-contained`, which no C compiler of the
+  platform brings, is carried beside the static library of the platform in `internal/ffi/lib/<platform>`, where the
+  `-L` of the directive finds it: `libunwind.a`, the LLVM unwinder that the std of a musl target links with `-bundle`
+  and that rustc names as `-lunwind`. `release-go-static` copies it from the toolchain that built the library beside
+  that library, and `binding release-go-module` refuses a platform whose libraries name it while the file is not there
+  and puts it into the commit. Why: gcc and musl-dev of Alpine bring no libunwind, so the link of a consumer on musl
+  stopped at `ld: cannot find -lunwind` (B2.415); the unwinder of the toolchain is the one that the std was built
+  against, and a package of the machine would ask the consumer for a step of its own. The end-to-end check builds the libraries of its
+  released form (GN-14f) with the print in the same way, carries the same libraries and writes the same directive. A checkout, whose tree holds no library,
   gets them from one command of the CLI: `binding go-link --cargo <command> [--cargo-flags
   <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <dir> [--features <features>]` builds the static
   library of the host with `<command> rustc <arguments> --locked --offline --lib --crate-type staticlib` (GN-1d) and

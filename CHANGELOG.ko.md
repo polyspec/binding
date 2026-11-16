@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 365c02510b87a62109f8b6e24529d38929eab5e37f68c3011db3e719c07292fb -->
+<!-- source-sha256: 1baf075b616f5173772708202d3dfe9d93d1106fc2be699ee0f00fa925d2f611 -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
@@ -29,6 +29,7 @@
 
 ## 0.0.15
 
+- Go module의 release는 각 musl platform의 라이브러리 옆에 Rust toolchain의 `libunwind.a`를 싣는다. rustc는 musl target의 native-static-libs에 그 std가 `-bundle`로 링크하는 LLVM unwinder인 `-lunwind`를 적고, Alpine의 gcc와 musl-dev는 그것을 가져오지 않으므로 `make go-musl-check`가 `ld: cannot find -lunwind`에서 멈췄다. `release-go-static`은 그것을 `lib/rustlib/<triple>/lib/self-contained`에서 복사하고, `binding release-go-module`은 그것이 없는 platform을 거부하고 그것을 commit하며, end-to-end check는 자기 released form에 그것을 싣는다(GN-15k). `release-go-module`과 `release-recipes`의 unit test로, 그리고 Apple container의 고정된 Alpine image에서 확인했다: sample의 module은 그 파일 없이 `cannot find -lunwind`로 실패했고 그것과 함께 시험이 통과했다.
 - `binding go-link`는 `-L<dir>/debug -l<library> <libraries>`를, 즉 정적 라이브러리를 그것이 필요로 하는 라이브러리 앞에 쓴다. cgo는 `CGO_LDFLAGS`를 패키지의 모든 `#cgo LDFLAGS` 앞에 두므로 `--as-needed`의 GNU ld가 `-lm`을 버렸고, end-to-end check의 consumer의 Go 시험이 linux glibc에서 `undefined reference to pow`로 실패했다(GN-15k). `node --test tests/go-link.test.ts`와 macOS의 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`로 확인했고, GNU ld의 링크는 CI e2e가 확인한다.
 - `binding check`는 case의 모든 호출 형태의 `args`를 한 규칙으로 판정한다(CK-101): 함수 fixture의 step과 `after`의 호출은 인스턴스 값의 `new`, `from`, `then`이 이미 그랬듯 `args`를 뺄 수 있고(그것은 `{}`다) default가 있는 parameter도 뺄 수 있으므로, `after`의 property는 `args: {}`가 필요 없다. callback fixture의 행과 `calls`의 호출은 모든 parameter를 주고, parameter가 없는 member에서만 `args`를 뺀다. 어느 형태든 빠진 parameter는 `the args of <자리> give no <key> of <member>`로, 모르는 키는 `the args of <자리> have no parameter <key> of <member>`로 지적한다(B2.408). `packages/ts`에서 `node --test --test-name-pattern=CK-101 tests/contract-check.test.ts`로 검증했고, 변경 전에는 step, `after`, callback 형태에서 실패했다.
 - `constructible: false`인 클래스의 직접 생성은 Node, Python, PHP, WASM에서 kind `direct_construction`(범주 `type`)으로 실패하고 클래스를 이름 짓는다. 이전에는 kind 없이 실패했다(napi-rs의 일반 Error, pyo3의 TypeError, private 생성자에 대한 PHP의 Error, 일반 TypeError). PHP는 실패하는 public `__construct`를 선언하고, Go에는 거부할 직접 생성이 없다(GN-6b, B2.410).

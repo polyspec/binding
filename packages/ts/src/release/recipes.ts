@@ -9,6 +9,7 @@
 
 import type { Contract } from '../contract.ts';
 import { componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
+import { CARRIED_LIBRARIES } from './go-module.ts';
 
 // The steps of a release in the order that GN-19h names them; a contract has those of its targets.
 // GN-19c: the manylinux policy of a Linux wheel. The PEP 517 backend of maturin passes --compatibility off unless it is
@@ -137,7 +138,9 @@ the one of the musl target of its arch into linux_<arch>_musl, because binding r
 five Go platforms. It strips the debug sections of a copy of each with the llvm-strip of the component llvm-tools of the
 pinned toolchain, never the strip of PATH, and the stripped copy enters the assets under another name and is renamed there.
 $(CARGO) rustc builds each library with the print of rustc, and the native-static-libs that it printed enter the file
-native-static-libs beside the library, which binding release-go-module writes into the link file of the platform (GN-15k).`)}
+native-static-libs beside the library, which binding release-go-module writes into the link file of the platform (GN-15k).
+A library that they name and that the Rust toolchain ships for the target in its self-contained directory, which no C
+compiler of the platform brings (libunwind.a of musl), is copied from there beside the library (GN-15k).`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
 ${generate('go')}
@@ -163,12 +166,15 @@ ${generate('go')}
 	libs=$$(sed -n 's/^note: native-static-libs: *//p' "$$log"); \\
 	test -n "$$libs" || { echo "${name('release-go-static')}: cargo printed no native-static-libs of ${crate('go')} for $$2 (GN-15k)" >&2; exit 1; }; \\
 	publish "$$1" "$$2"; \\
+	for carried in ${CARRIED_LIBRARIES.join(' ')}; do \\
+	case " $$libs " in *" -l$$carried "*) cp "$$(rustc --print sysroot)/lib/rustlib/$$4/lib/self-contained/lib$$carried.a" "$(RELEASE_ASSETS)/go/$$2/lib$$carried.a" ;; esac; \\
+	done; \\
 	printf '%s\\n' "$$libs" > "$(RELEASE_ASSETS)/go/$$2/.native-static-libs.part"; \\
 	mv "$(RELEASE_ASSETS)/go/$$2/.native-static-libs.part" "$(RELEASE_ASSETS)/go/$$2/native-static-libs"; \\
 	}; \\
-	build $(RELEASE_TARGET)/release "$$go" ''; \\
+	build $(RELEASE_TARGET)/release "$$go" '' "$$host"; \\
 	if [ -n "$$musl" ]; then \\
-	build "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl "--target $$musl"; \\
+	build "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl "--target $$musl" "$$musl"; \\
 	fi
 `);
   }

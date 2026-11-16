@@ -228,6 +228,20 @@ test('B2.367: release-go-static builds each library with the print of rustc and 
   assert.match(run.output, /note: native-static-libs: -lnative_host -lc/);
 });
 
+test('B2.415: release-go-static copies a library that the native-static-libs name from the self-contained directory of the Rust toolchain of the target beside the library (GN-15k)', (t) => {
+  const linux = sandbox(t, 'aarch64-unknown-linux-gnu');
+  // rustc of a musl target prints the LLVM unwinder that its std links with -bundle; the host prints none.
+  writeFileSync(join(linux.bin, 'cargo'), readFileSync(join(linux.bin, 'cargo'), 'utf8').replace("' -lc\\n'", "(args.includes('--target') ? ' -lunwind' : '') + ' -lc\\n'"));
+  const selfContained = join(linux.root, '.sysroot/lib/rustlib/aarch64-unknown-linux-musl/lib/self-contained');
+  mkdirSync(selfContained, { recursive: true });
+  writeFileSync(join(selfContained, 'libunwind.a'), 'unwinder of musl');
+  const run = linux.make('release-go-static');
+  assert.equal(run.status, 0, run.output);
+  assert.equal(readFileSync(join(linux.root, 'var/release/assets/go/linux_arm64_musl/native-static-libs'), 'utf8'), '-lnative_aarch64_unknown_linux_musl -lunwind -lc\n');
+  assert.equal(readFileSync(join(linux.root, 'var/release/assets/go/linux_arm64_musl/libunwind.a'), 'utf8'), 'unwinder of musl');
+  assert.equal(existsSync(join(linux.root, 'var/release/assets/go/linux_arm64/libunwind.a')), false, 'the library of the GNU C library carries an unwinder that its libraries do not name');
+});
+
 test('B2.367: release-go-static fails when cargo prints no native-static-libs, and writes no file (GN-15k)', (t) => {
   const mac = sandbox(t, 'aarch64-apple-darwin');
   writeFileSync(join(mac.bin, 'cargo'), readFileSync(join(mac.bin, 'cargo'), 'utf8').replace("args.includes('native-static-libs')", 'false'));

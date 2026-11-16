@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2ecfddc567920c44f4a4c72dbed9770809482972a4054b7e451bbfcb896cbe59 -->
+<!-- source-sha256: 5e1b04091962448f05ae5561983e1da5d424e350e675770afac2b8ce9955df61 -->
 # 생성기
 
 [English](generator.md)
@@ -1870,8 +1870,15 @@
   쓴다. 그래서 module을 가져오는 소비자는 자기 flag 없이 그것들을 링크한다: `release-go-static`은 자기가 빌드하는 각
   platform의 라이브러리들을 `RELEASE_ASSETS/go/<platform>`에서 그 라이브러리 옆의 파일 `native-static-libs`에 쓰고,
   `binding release-go-module`은 그 파일이 없거나 그 파일이 라이브러리를 하나도 적지 않는 platform을 거부하며, 그 파일로
-  그 link 파일의 지시문을 module의 commit에 쓴다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
-  방식으로 출력과 함께 빌드하고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
+  그 link 파일의 지시문을 module의 commit에 쓴다. 그 라이브러리들이 적고 Rust toolchain이 target에
+  `lib/rustlib/<triple>/lib/self-contained`로 싣는 라이브러리로서 platform의 어느 C compiler도 가져오지 않는 것은 platform의
+  정적 라이브러리 옆 `internal/ffi/lib/<platform>`에 실려 지시문의 `-L`이 그것을 찾는다: musl target의 std가 `-bundle`로
+  링크하고 rustc가 `-lunwind`로 적는 LLVM unwinder `libunwind.a`이다. `release-go-static`은 그것을 라이브러리를 빌드한
+  toolchain에서 그 라이브러리 옆으로 복사하고, `binding release-go-module`은 라이브러리들이 그것을 적는데 파일이 없는
+  platform을 거부하며 그것을 commit에 넣는다. 이유: Alpine의 gcc와 musl-dev는 libunwind를 가져오지 않으므로 musl에서
+  소비자의 링크가 `ld: cannot find -lunwind`에서 멈췄다(B2.415). toolchain의 unwinder는 std가 빌드된 그 unwinder이며, 기계의
+  package는 소비자에게 자기 단계를 요구한다. end-to-end check는 자기 released form(GN-14f)의 라이브러리를 같은
+  방식으로 출력과 함께 빌드하고, 같은 라이브러리를 싣고 같은 지시문을 쓴다. 라이브러리를 품지 않는 checkout은 CLI의 명령
   하나에서 그것을 얻는다: `binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Go crate의 Cargo.toml> --target-dir <dir>
   [--features <features>]`는 host의 정적 라이브러리를 `<command> rustc <arguments> --locked --offline --lib --crate-type
   staticlib`(GN-1d)과 주어진 feature로 `<dir>`에 출력과
