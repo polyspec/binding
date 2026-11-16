@@ -11359,3 +11359,33 @@ test('B2.374: a call of after of a member without a result requires no value, th
   assert.match(near('packages/python/generated/tests/test_generated.py', 'a_new_ledger_has_one_key'), /expected_0 = None/);
   assert.match(near('packages/php-ext/generated/tests/GeneratedTest.php', 'ANewLedgerHasOneKey'), /self::same\(null\), self::same\(\$receiver->note\("b"\)\)/);
 });
+
+test('B2.375: a Python result of an alias in after takes the bytes that leave as a text by the row that the value meets (GN-13e)', () => {
+  // session-store memory_store.get in after: {"kind": "bytes", "value": {"hex": "78"}} of php_value leaves Python as
+  // the str "x", and the generator refused to compare it.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'bytes');
+  data.out.push(
+    { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
+    { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  // An object class, as memory_store is, with a property of an optional alias, as memory_store.get gives.
+  sample.units.find((u: any) => u.id === 'counter').members.push({ id: 'counter.held', name: ['held'], kind: 'property', visibility: 'public', parameters: [], returns: { optional: { unit: 'data' } }, raises: [], wait: 'none', core: { path: 'polyspec_sample::Counter::held', receiver: '&self' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, any[]>;
+  const kept = file['counter_add']![0];
+  kept.after = [
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: '6162' } } },
+    { call: 'counter.held', args: {}, result: { kind: 'bytes', value: { hex: 'ff' } } },
+    { call: 'counter.held', args: {}, result: { kind: 'list', value: [{ kind: 'bytes', value: { hex: '78' } }, { kind: 'bytes', value: { hex: 'ff' } }] } },
+  ];
+  const python = text(generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['python'] }), pythonTests);
+  const at = python.indexOf('_an_amount_is_added(self)');
+  assert.ok(at >= 0);
+  const body = python.slice(at, python.indexOf('\n\n', at));
+  assert.doesNotMatch(body, /not compared yet/);
+  assert.match(body, /expected_0 = "ab"/);
+  assert.match(body, /expected_1 = bytes\.fromhex\("ff"\)/);
+  assert.match(body, /expected_2 = \["x", bytes\.fromhex\("ff"\)\]/);
+});

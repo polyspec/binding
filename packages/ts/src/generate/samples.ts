@@ -699,8 +699,8 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return aliasCaseProjection(ctx, () => foreignClassValue(model, ctx, alias, library, value, `the class ${alias.unit.id} of ${library}`));
   }
   if (alias !== undefined) {
-    if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
-    return aliasCaseProjection(ctx, () => valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, unit, alias.library));
+    const built = out && unit !== undefined ? madeAsBuilt(unit, ctx.lang, value) : value;
+    return aliasCaseProjection(ctx, () => valueFromJson(model, ctx, built, `the alias ${String(unit?.id)}`, unit, alias.library));
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
@@ -944,18 +944,23 @@ function foreignClassValue(model: Model, ctx: Context, alias: ValueAlias, librar
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
 // built-in form of each kind; a kind whose out rows make another form in the language is not compared yet.
 const BUILT: Readonly<Record<string, string>> = { null: 'null', bool: 'bool', int: 'int', float: 'float', text: 'text', bytes: 'bytes', list: 'list', map: 'map' };
-function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
+// B2.375: the row that makes a value is the row of its kind whose predicate the value holds (aliasOutForm), and a
+// byte string that leaves as a text, the UTF-8 bytes of a row {"predicate": "utf8", "is": true}, is the text of its
+// bytes in the language, which the expected value is.
+function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): unknown {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
-  if (typeof kind !== 'string') return;
-  for (const row of (unit.out ?? []).filter((r) => r.kind === kind)) {
-    const make = row.make[lang];
+  if (record === undefined || typeof kind !== 'string') return value;
+  if ((unit.out ?? []).some((r) => r.kind === kind)) {
+    const make = aliasOutForm(unit, lang, kind, record);
+    if (kind === 'bytes' && make === 'text') return { kind: 'text', value: caseBytes(record['value']).toString('utf8') };
     if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${shown(make)}, with which a result is not compared yet`);
   }
-  const held = record?.['value'];
-  if (kind === 'list' && record?.['repeat'] !== undefined) madeAsBuilt(unit, lang, held);
-  if (kind === 'list' && Array.isArray(held)) for (const item of held) madeAsBuilt(unit, lang, item);
-  if (kind === 'map' && Array.isArray(held)) for (const pair of held) madeAsBuilt(unit, lang, (pair as unknown[])[1]);
+  const held = record['value'];
+  if (kind === 'list' && record['repeat'] !== undefined) return { ...record, value: madeAsBuilt(unit, lang, held) };
+  if (kind === 'list' && Array.isArray(held)) return { ...record, value: held.map((item) => madeAsBuilt(unit, lang, item)) };
+  if (kind === 'map' && Array.isArray(held)) return { ...record, value: held.map((pair) => [(pair as unknown[])[0], madeAsBuilt(unit, lang, (pair as unknown[])[1])]) };
+  return value;
 }
 
 // GN-13: a case whose value has no form in the language. It is an Unsupported, so the test of the case fails with

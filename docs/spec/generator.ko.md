@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6c752810c3addf79887177c78482510131fa2cabe0e5d9409df0fa790933b556 -->
+<!-- source-sha256: e90d916f1f30a2359ddb1a957577cb0961ec9aa6aeff027d1a229bed4f800403 -->
 # 생성기
 
 [English](generator.md)
@@ -2152,6 +2152,12 @@
   `{"kind": <kind>}`만을 받는데 시험은 case의 category의 class를 이름했다. 그래서 kind만 주는 hyper `csrf.mask`의 case들 때문에
   Node가 `error.constructor === pkg. &&`를 180번 썼고, 그 파일은 parse되지 않았다. Python, PHP, WASM, Go도 같은 빈 category를
   읽었다.
+- **GN-13be** 시험이 값으로 비교하는 value alias의 결과(function fixture의 step, `after`의 호출, alias를 담는 type의 자리)는
+  값이 맞는 각 자리의 out row를 따른다: 값이 그 predicate를 만족하는 그 kind의 row, 또는 predicate가 없는 그 row다. row가
+  text를 만드는 byte string, 곧 row `{"predicate": "utf8", "is": true}`의 UTF-8 bytes는 그 언어에서 그 bytes의 text다. kind의
+  내장 형태가 아닌 다른 형태는 이름을 들어 계속 거부한다. 이유: 생성기는 그런 row를 가진 alias의 모든 byte string을 거부했는데,
+  값은 bytes를 만드는 row나 text를 만드는 row 중 하나에 맞고, text가 그 언어가 주는 것이다: 결과가 optional `php_value`인
+  session-store `memory_store.get`이 Python에서 비교되지 않았다(시험 2개).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

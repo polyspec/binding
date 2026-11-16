@@ -2648,6 +2648,14 @@ the design ids are those of the binding design.
   Why: the contract check takes `{"kind": <kind>}` alone, and the tests named the class of the category of the case, so
   hyper `csrf.mask`, whose cases give the kind alone, made Node write `error.constructor === pkg. &&` 180 times, which
   does not parse; Python, PHP, WASM and Go read the same empty category.
+- **GN-13be** A result of a value alias that a test compares as a value (a step of a function fixture, a call of
+  `after`, or a place of a type that holds the alias) takes the out row of each place that the value meets: the row of
+  its kind whose predicate the value holds, or its row without a predicate. A byte string whose row makes a text, the
+  UTF-8 bytes of a row `{"predicate": "utf8", "is": true}`, is the text of its bytes in the language; another form than
+  the built-in form of the kind stays refused by name. Why: the generator refused every byte string of an alias with
+  such a row, though the value meets the row that makes bytes or the one that makes a text, and the text is what the
+  language gives: session-store `memory_store.get`, whose result is an optional `php_value`, was not compared in
+  Python (2 tests).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
