@@ -89,7 +89,9 @@ const baseEnv: Record<string, string> = {
 
 interface Ran {
   status: number;
+  // The output and the errors in the order written, and the output alone.
   output: string;
+  stdout: string;
 }
 
 function exec(command: string, argv: string[], cwd: string, env: Record<string, string>, log: string): Promise<Ran> {
@@ -97,18 +99,22 @@ function exec(command: string, argv: string[], cwd: string, env: Record<string, 
     const out = createWriteStream(log, { flags: 'a' });
     out.write(`\n$ ${command} ${argv.join(' ')}\n`);
     let output = '';
+    let stdout = '';
     const child = spawn(command, argv, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     const take = (chunk: Buffer): void => {
       output += chunk.toString();
       out.write(chunk);
     };
-    child.stdout.on('data', take);
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+      take(chunk);
+    });
     child.stderr.on('data', take);
     child.on('error', (error) => {
       output += `${error.message}\n`;
     });
     child.on('close', (code) => {
-      out.end(`(status ${String(code ?? 1)})\n`, () => done({ status: code ?? 1, output }));
+      out.end(`(status ${String(code ?? 1)})\n`, () => done({ status: code ?? 1, output, stdout }));
     });
   });
 }
@@ -132,7 +138,7 @@ async function runSteps(steps: readonly Step[], copyDir: string, env: Record<str
       }
     } else {
       const ran = await exec(step.command, step.argv, step.cwd ?? copyDir, { ...env, ...captured, ...step.env }, log);
-      if (ran.status === 0 && step.capture !== undefined) captured[step.capture] = ran.output.trim();
+      if (ran.status === 0 && step.capture !== undefined) captured[step.capture] = ran.stdout.trim();
       if (ran.status !== 0) failures.push({ step: step.what, errors: firstErrors(ran.output.replaceAll(`${copyDir}/`, '')) });
     }
     if (stop && failures.length > 0) break;
