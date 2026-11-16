@@ -11326,3 +11326,19 @@ test('B2.372: the raises of a case without a category takes the category of its 
   assert.match(near('packages/php-ext/generated/tests/GeneratedTest.php', /AKeyWithoutAValueIsMissing/), /catch \(\\[\w\\]*SampleValueError \$error\)/);
   assert.doesNotMatch(near('packages/go/zz_generated_test.go', /AKeyWithoutAValueIsMissing/), /errors\.As\(err, &\*?\)|var target \*?\s*$/m);
 });
+
+test('B2.373: a Go entry point gives the core a parameter named input by the local that its decoding binds (GN-15)', () => {
+  // crud-ui generator.resolve_action(input: ActionInput): the core took &input, the bytes of the arguments.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const seek = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
+  seek.parameters[0].name = ['input'];
+  contract.cases = [];
+  const go = text(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map(), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  const at = go.indexOf('fn polyspec_sample__seek');
+  assert.ok(at >= 0);
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  assert.match(body, /let input_: [\w:]+(?:<'static>)? = /);
+  assert.match(body, /polyspec_sample::seek\(&?input_\)/);
+  assert.doesNotMatch(body, /polyspec_sample::seek\(&?input\)/);
+});
