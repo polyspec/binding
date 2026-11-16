@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 68c65a4ac7c813637661bc5777297b22aef55444de46288cb7f79e3891e0ad91 -->
+<!-- source-sha256: 365c02510b87a62109f8b6e24529d38929eab5e37f68c3011db3e719c07292fb -->
 <!-- source-sha256: 03ed2af2349f78b1dc1dea7fa7776bf256303e5dc0a0e3c595a7c11987a34d1f -->
 <!-- source-sha256: 05aff5db87f043a41d1873b8537fb1067cf36205f3d392bc0a9e66288ba4f444 -->
 <!-- source-sha256: dc253948935d14d61d9d22df9ea88747ea0faa9da315e05e3862b5d116d5a8f4 -->
@@ -29,6 +29,7 @@
 
 ## 0.0.15
 
+- `binding go-link`는 `-L<dir>/debug -l<library> <libraries>`를, 즉 정적 라이브러리를 그것이 필요로 하는 라이브러리 앞에 쓴다. cgo는 `CGO_LDFLAGS`를 패키지의 모든 `#cgo LDFLAGS` 앞에 두므로 `--as-needed`의 GNU ld가 `-lm`을 버렸고, end-to-end check의 consumer의 Go 시험이 linux glibc에서 `undefined reference to pow`로 실패했다(GN-15k). `node --test tests/go-link.test.ts`와 macOS의 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`로 확인했고, GNU ld의 링크는 CI e2e가 확인한다.
 - `binding check`는 case의 모든 호출 형태의 `args`를 한 규칙으로 판정한다(CK-101): 함수 fixture의 step과 `after`의 호출은 인스턴스 값의 `new`, `from`, `then`이 이미 그랬듯 `args`를 뺄 수 있고(그것은 `{}`다) default가 있는 parameter도 뺄 수 있으므로, `after`의 property는 `args: {}`가 필요 없다. callback fixture의 행과 `calls`의 호출은 모든 parameter를 주고, parameter가 없는 member에서만 `args`를 뺀다. 어느 형태든 빠진 parameter는 `the args of <자리> give no <key> of <member>`로, 모르는 키는 `the args of <자리> have no parameter <key> of <member>`로 지적한다(B2.408). `packages/ts`에서 `node --test --test-name-pattern=CK-101 tests/contract-check.test.ts`로 검증했고, 변경 전에는 step, `after`, callback 형태에서 실패했다.
 - `constructible: false`인 클래스의 직접 생성은 Node, Python, PHP, WASM에서 kind `direct_construction`(범주 `type`)으로 실패하고 클래스를 이름 짓는다. 이전에는 kind 없이 실패했다(napi-rs의 일반 Error, pyo3의 TypeError, private 생성자에 대한 PHP의 Error, 일반 TypeError). PHP는 실패하는 public `__construct`를 선언하고, Go에는 거부할 직접 생성이 없다(GN-6b, B2.410).
 - 모든 라이브러리 클래스의 생성자가 인자를 판정하므로, 언어 코드는 binding이 그 클래스로 일으키지 않는 kind의 오류를 더는 만들지 않는다: json은 Node에서 `new ParseError('Expected JSON value', 0)`가 kind가 숫자 0인 오류를 만든다는 것을 찾았다. message는 text, kind는 text이며 binding이 바로 그 클래스의 인스턴스로 일으키는 kind 중 하나(오류 unit은 자기 행, category 클래스는 `class` 없는 그 category의 행과 binding의 kind), status와 errno는 없거나 null이거나 정수다. 그 밖은 Node, WASM, Python, PHP에서 kind `invalid_argument_type`이고, text 규칙을 어긴 message는 kind `invalid_text`다. Go의 `Raised<Unit>(kind, message)`는 `(*<Unit>, error)`를 돌려주며, 이는 공개 API를 바꾼다. case의 callback 행은 라이브러리의 오류가 아닌 언어의 예외 `"exception"`을 일으키고, `binding check`는 kind가 그 오류 unit의 kind가 아닌 fixture의 raise를 거부한다(GN-7a, GN-10, GN-15d, CK-22, B2.411). `packages/ts`에서 `node --test --test-name-pattern=B2.411 tests/generate.test.ts tests/contract-check.test.ts`로 확인했고, 이 시험은 변경 전에 실패했다. Node와 WASM 시험은 생성된 클래스를 실행한다.

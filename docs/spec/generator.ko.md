@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 51e3bd47e644be01988e0343bc11c0c4124df03c52b64211021af69d2324c98c -->
+<!-- source-sha256: 2ecfddc567920c44f4a4c72dbed9770809482972a4054b7e451bbfcb896cbe59 -->
 # 생성기
 
 [English](generator.md)
@@ -1875,8 +1875,10 @@
   하나에서 그것을 얻는다: `binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Go crate의 Cargo.toml> --target-dir <dir>
   [--features <features>]`는 host의 정적 라이브러리를 `<command> rustc <arguments> --locked --offline --lib --crate-type
   staticlib`(GN-1d)과 주어진 feature로 `<dir>`에 출력과
-  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
-  읽으므로 `<dir>`은 절대 경로로 바꾼다. Cargo의 진단은
+  함께 빌드하고, 그 checkout의 Go 시험용 `CGO_LDFLAGS` 값 `-L<dir>/debug -l<library> <libraries>`를 표준 출력에 쓴다. cgo는 상대 `-L`을 각 패키지의 디렉터리에서
+  읽으므로 `<dir>`은 절대 경로로 바꾼다. `<library>`는 manifest의 `[lib]` 이름이며 그것이 필요로 하는 라이브러리 앞에 온다.
+  cgo는 `CGO_LDFLAGS`를 패키지의 모든 `#cgo LDFLAGS` 앞에 두고, 인자를 순서대로 읽는 linker인 `--as-needed`의 GNU ld는 그것을
+  필요로 하는 정적 라이브러리 앞에 선 라이브러리를 버리기 때문이다(B2.414: linux glibc에서 consumer의 `undefined reference to pow`). Cargo의 진단은
   표준 오류로 가고, 빌드가 실패하면 명령은 Cargo의 status로 실패한다. Go 시험을 돌리는 recipe는 자기 라이브러리 빌드 대신
   그것을 recipe 줄에서 `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)" ...)"`로 부르고(GN-14), `make e2e`도 같은 명령을 부른다. 주 link
   파일은 `-l<library>`만 쓴다. 명령이 빌드 출력을 읽기만 하지 않고 빌드하는 이유: rustc는 정적 라이브러리를 링크하는 동안에만

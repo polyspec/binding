@@ -2285,8 +2285,11 @@ the design ids are those of the binding design.
   <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <dir> [--features <features>]` builds the static
   library of the host with `<command> rustc <arguments> --locked --offline --lib --crate-type staticlib` (GN-1d) and
   the given features into `<dir>`, with the print, and writes to its standard output the
-  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`, with `<dir>` made absolute, because
-  cgo reads a relative `-L` from the directory of each package; the diagnostics of Cargo go to
+  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug -l<library> <libraries>`, with `<dir>` made absolute, because
+  cgo reads a relative `-L` from the directory of each package, and with `<library>` the name of `[lib]` of the
+  manifest before the libraries that it needs, because cgo puts `CGO_LDFLAGS` before every `#cgo LDFLAGS` of a package
+  and a linker that reads its arguments in order, GNU ld with `--as-needed`, drops a library that stands before the
+  static library that needs it (B2.414: `undefined reference to pow` of the consumer on linux glibc); the diagnostics of Cargo go to
   its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
   calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link --cargo "$(CARGO)" --cargo-flags
   "$(CARGOFLAGS)" ...)"` in the recipe line

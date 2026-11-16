@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -28,6 +28,16 @@ test('B2.367: the native-static-libs are read from the note of rustc, and a buil
   assert.equal(nativeStaticLibs('note: native-static-libs: \n'), undefined);
 });
 
+const MANIFEST = `[package]
+name = "polyspec-session-store-go"
+version = "0.0.3"
+
+[lib]
+name = "polyspec_session_store_go"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+`;
+
 interface Box {
   dir: string;
   run: (argv: string[]) => { status: number | null; stdout: string; stderr: string };
@@ -47,6 +57,9 @@ process.exit(${String(status)});
 `);
   chmodSync(join(dir, 'cargo'), 0o755);
   writeFileSync(join(dir, 'calls.jsonl'), '');
+  // The manifest of the Go crate as the scaffold writes it, whose [lib] names the static library.
+  mkdirSync(join(dir, 'packages/go/internal/ffi'), { recursive: true });
+  for (const path of ['Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) writeFileSync(join(dir, path), MANIFEST);
   return {
     dir,
     run: (argv) => spawnSync(process.execPath, [cli, ...argv, '--cargo', 'cargo'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env['PATH'] ?? ''}` } }),
@@ -58,7 +71,7 @@ test('B2.367: binding go-link builds the host library with the print and writes 
   const b = box(t, DIAGNOSTICS);
   const ran = b.run(['go-link', '--manifest', 'packages/go/internal/ffi/Cargo.toml', '--target-dir', 'target', '--features', 'panic-test,codec-test']);
   assert.equal(ran.status, 0, ran.stderr);
-  assert.equal(ran.stdout, `-L${join(b.dir, 'target/debug')} -framework Security -framework CoreFoundation -liconv -lSystem -lc -lm\n`);
+  assert.equal(ran.stdout, `-L${join(b.dir, 'target/debug')} -lpolyspec_session_store_go -framework Security -framework CoreFoundation -liconv -lSystem -lc -lm\n`);
   // Cargo's output, both of its streams, goes to the standard error.
   assert.ok(ran.stderr.includes(DIAGNOSTICS), ran.stderr);
   assert.ok(ran.stderr.includes('stdout of cargo'), ran.stderr);
@@ -100,4 +113,21 @@ test('B2.367: the end-to-end check gives the Go tests the CGO_LDFLAGS of binding
   const script = readFileSync(new URL('../../../scripts/e2e.mts', import.meta.url), 'utf8');
   assert.match(script, /'go-link', '--cargo', 'cargo', '--manifest'/);
   assert.doesNotMatch(script, /CGO_LDFLAGS: `-L\$\{join\(target, 'debug'\)\}`/);
+});
+
+test('B2.414: binding go-link writes the static library before the libraries that it needs, which cgo then puts before every #cgo LDFLAGS of a package (GN-15k)', (t) => {
+  const b = box(t, DIAGNOSTICS);
+  const ran = b.run(['go-link', '--manifest', 'Cargo.toml', '--target-dir', 'target']);
+  assert.equal(ran.status, 0, ran.stderr);
+  const words = ran.stdout.trim().split(' ');
+  assert.equal(words[0], `-L${join(b.dir, 'target/debug')}`);
+  assert.equal(words[1], '-lpolyspec_session_store_go', 'the library does not stand before the libraries that it needs');
+  assert.ok(words.indexOf('-lm') > words.indexOf('-lpolyspec_session_store_go'));
+  // A manifest whose [lib] names no library fails by name, before cargo runs.
+  const unnamed = box(t, DIAGNOSTICS);
+  writeFileSync(join(unnamed.dir, 'Cargo.toml'), '[package]\nname = "x"\n');
+  const none = unnamed.run(['go-link', '--manifest', 'Cargo.toml', '--target-dir', 'target']);
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, /binding: .*Cargo\.toml names no library in \[lib\] \(GN-15k\)/);
+  assert.deepEqual(unnamed.calls(), []);
 });
