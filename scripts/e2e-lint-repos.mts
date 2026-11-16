@@ -3,7 +3,7 @@
 // end-to-end check of the HEAD of this checkout (scripts/e2e.mts) with --until lint: the copy, the generation with the
 // CLI of that commit, the lint of the core and cargo clippy -D warnings of each binding crate with its test features
 // and without them, and nothing after it, so no package is built and no test runs. Each repository runs to its end, and
-// the run fails when one failed. The Makefile target runs it with Cargo and npm offline.
+// the run fails when one failed. The Makefile target runs it with npm offline.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

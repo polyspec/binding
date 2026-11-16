@@ -76,5 +76,5 @@ test('B2.432: scripts/e2e.mts with --until lint stops after the lint of the bind
   const before = source.slice(0, stop);
   for (const runner of ['unittest(', 'nodeTest(', "'test', '-json'", 'phpunitRun(']) assert.ok(!before.includes(runner), `${runner} runs before the stop`);
   const makefile = readFileSync(join(top, 'Makefile'), 'utf8');
-  assert.match(makefile, /\ne2e-lint: ## [^\n]*\n\tnpm_config_offline=true \$\(NODE\) scripts\/e2e-lint-repos\.mts \$\(REPOS\)\n/);
+  assert.match(makefile, /\ne2e-lint: ## [^\n]*\n\t\$\(ONLINE\) npm_config_offline=true \$\(NODE\) scripts\/e2e-lint-repos\.mts \$\(REPOS\)\n/);
 });
