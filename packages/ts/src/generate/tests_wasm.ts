@@ -6,7 +6,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCase
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_CASE_FILE, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
+import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
 import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
@@ -28,7 +28,7 @@ export function wasmTests(model: Model): string {
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const foreignModules = new Set<string>();
-  const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
+  const ctx: Context = { lang: 'node', target: 'wasm', listenerPort: 'caseListenerPort', enumRef: (_name, value) => jsString(value),
     // GN-6aq: an AbortSignal that was aborted before the call, or one whose controller never aborts it.
     cancelNew: (fired) => (fired ? 'AbortSignal.abort()' : 'new AbortController().signal'),
     // GN-6x: a class of another repository, through the subpath ./wasm of the owner's package.
@@ -331,7 +331,7 @@ test('B-4: ${name} ${kase.id}', () => {
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((c) => `[${c.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       emit(`
-test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${nodeCaseFileLines(kase.files)}${receiverMade.lines}${before}${arming}
+test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -353,7 +353,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
       const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
       emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files)}${receiverMade.lines}
+test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
   assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
@@ -402,7 +402,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       emit(`
-test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${nodeCaseFileLines(kase.files)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
+test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.
@@ -528,11 +528,13 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   // A block may hold several tests, each of which is judged alone.
   const usesCaseText = textPaths.used();
   if (usesCaseText) nodeCaseTextProof(ctx, emit);
-  const blocks = out.map((block) => block.split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
+  const blocks = out.map((block) => linuxOnlyTests(block).split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
   // GN-13i: the files of a case are written with node:fs of the Node.js that runs the tests, as in Node.
-  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile('));
+  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile(') || block.includes('caseByteFile('));
+  // GN-13r: the listener of a case, a Worker of the Node.js that runs the tests, as in Node.
+  const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'wasm') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
@@ -543,10 +545,10 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   for (const form of forms) if (form.library !== undefined) foreignModules.add(form.library);
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test${usesStepGlue || usesCaseFile ? `, { ${[...(usesStepGlue ? ['before'] : []), ...(usesCaseFile ? ['afterEach'] : [])].join(', ')} }` : ''} from 'node:test';${usesCaseFile ? `${nodeCaseImports(true, usesCaseText)}\nimport { dirname, join } from 'node:path';` : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesStepGlue || usesCaseFile || usesListener ? `, { ${[...(usesStepGlue ? ['before'] : []), ...(usesCaseFile || usesListener ? ['afterEach'] : [])].join(', ')} }` : ''} from 'node:test';${usesCaseFile ? `${nodeCaseImports(true, usesCaseText)}\nimport { dirname, join } from 'node:path';` : ''}${usesListener ? "\nimport { Worker } from 'node:worker_threads';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesOrdered ? ordered : ''}${usesBound ? '\n// GN-13n: the arguments that the function fixtures of the test in progress keep by name.\nconst bound = {};\n' : ''}${usesTokens ? nodeTokens(forms) : ''}${usesOutcome ? `
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesListener ? NODE_CASE_LISTENER : ''}${usesOrdered ? ordered : ''}${usesBound ? '\n// GN-13n: the arguments that the function fixtures of the test in progress keep by name.\nconst bound = {};\n' : ''}${usesTokens ? nodeTokens(forms) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

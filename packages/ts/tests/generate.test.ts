@@ -5031,15 +5031,44 @@ test('a case writes its files into the directory of its test before its values a
     kase['@files'] = bad;
     const refusedOut = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles });
     const refusedWasm = generate({ contract: refusedContract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: refusedFiles, targets: ['wasm'] });
-    const reason = `the case ${kase.id} of shapes.length: @files of a case is an object from a relative path inside the directory of the test, without .., to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
+    const reason = `the case ${kase.id} of shapes.length: @files of a case is an object from a relative path inside the directory of the test, without .., with \\xHH for a byte from 80 to ff of a name that is no UTF-8, to a text or {"hex": "<lower-case hex>"} (GN-13i), not ${JSON.stringify(bad)}`;
     const written: [Map<string, string | Buffer>, string, string][] = [
       [refusedOut, 'packages/python/generated/tests/test_generated.py', `self.fail(${JSON.stringify(reason)})`],
-      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
-      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${JSON.stringify(reason)})`],
-      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${JSON.stringify(reason)})`],
-      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail('${reason.replaceAll("'", "\\'")}')`],
+      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${phpText(reason)})`],
+      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
+      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
     ];
     for (const [files, path, fails] of written) assert.ok(text(files, path).includes(fails), `${path}: ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a case names a file by bytes that are no Unicode with \\xHH, and its test runs only on Linux, in every target (G-5, GN-13i, B2.326)', () => {
+  const { contract, caseFiles } = shapes();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.length[0]['@files'] = { 'sets/\\xff.dbs': 'x', plain: 'y' };
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+  const wasmOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
+  const name = Buffer.concat([Buffer.from('sets/'), Buffer.from([0xff]), Buffer.from('.dbs')]).toString('hex');
+  const reason = 'a case verified only on Linux: it names a file by bytes that are no Unicode, which only a file system of Linux stores (GN-13i)';
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(`def test_gn13e_length_three_characters(self) -> None:\n        if sys.platform != "linux":\n            self.skipTest(${pyString(reason)})\n        self._case_byte_file("${name}", "78")\n        self._case_file("plain", "79")\n`), python);
+  assert.match(python, /def _case_byte_file\(self, relative: str, content: str\) -> None:\n {8}self\._case_file\(os\.fsdecode\(bytes\.fromhex\(relative\)\), content\)/);
+  assert.match(python, /^import sys$/m);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`test('GN-13e: length three_characters', (t) => {\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(reason)});\n    return;\n  }\n  caseByteFile('${name}', '78');\n  caseFile('plain', '79');\n`), node);
+  assert.match(node, /^function caseByteFile\(relative, content\) \{/m);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(`    {\n        if (PHP_OS_FAMILY !== 'Linux') {\n            self::markTestSkipped(${phpText(reason)});\n        }\n        $this->caseFile((string) hex2bin(${phpText(name)}), ${phpText('78')});\n`), php);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.ok(go.includes(`\tif runtime.GOOS != "linux" {\n\t\tt.Skip(${goString(reason)})\n\t}\n\tcaseFile(t, "sets/\\xff.dbs", "78")\n`), go);
+  assert.match(go, /"runtime"/);
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(wasm.includes(`test('GN-13e: length three_characters', (t) => {\n  if (process.platform !== 'linux') {\n    t.skip(${jsString(reason)});\n`), wasm);
+  assert.match(wasm, /^function caseByteFile\(relative, content\) \{/m);
+  // A byte below 80, a name that is UTF-8, another escape and a backslash alone fail the test of the case by name.
+  for (const bad of ['a\\x41', 'a\\xc3\\xa9', 'a\\xFF', 'a\\n', '../\\xff']) {
+    assert.throws(() => caseFilesOf({ [bad]: 'x' }), /with \\xHH for a byte from 80 to ff.*GN-13i/, bad);
   }
 });
 
@@ -5257,6 +5286,81 @@ test('B2.330: a case runs a peer session of its service at once with its own: st
       ['packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
     ];
     for (const [path, fails] of written) assert.ok(text(refusedOut, path).includes(fails), `${path}: ${message}\n${text(refusedOut, path).split('\n').filter((line) => line.includes('size_of_a_text') || line.includes('fail(')).join('\n')}`);
+  }
+});
+
+test('a case starts a listener that accepts each connection and closes it, whose port a composed text names, in every target (G-5, GN-13r, B2.325)', () => {
+  const listened = (change: (cases: any) => void = () => undefined): { out: Map<string, string | Buffer>; wasm: Map<string, string | Buffer> } => {
+    const { contract, caseFiles } = shapes();
+    const cases = caseFiles.get('contracts/cases.json') as any;
+    // shapes.repeat takes a text: the address of the listener of the case.
+    Object.assign(cases.repeat[0], { '@listener': 'accept_and_close', text: { text: ['127.0.0.1:', { listener: 'port' }] } });
+    // The case that raises starts its listener too.
+    Object.assign(cases.repeat[2], { '@listener': 'accept_and_close', text: { text: [{ listener: 'port' }] } });
+    change(cases);
+    return {
+      out: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles }),
+      wasm: generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] }),
+    };
+  };
+  const { out, wasm } = listened();
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes('def test_gn13e_repeat_twice_with_a_separator(self) -> None:\n        self._case_listener()\n'), python);
+  assert.ok(python.includes(`(${pyString('127.0.0.1:')} + _case_listener["port"])`), 'the port is a part of the text');
+  assert.match(python, /def test_b4_repeat_more_than_the_most\(self\) -> None:\n {8}self\._case_listener\(\)\n/);
+  assert.match(python, /def _case_listener\(self\) -> None:\n {8}server = subprocess\.Popen\(\[sys\.executable, "-I", "-c", _CASE_LISTENER_SERVER\]/);
+  assert.match(python, /self\.addCleanup\(stop\)/);
+  assert.match(python, /^import subprocess$/m);
+  assert.match(python, /^import sys$/m);
+  assert.doesNotMatch(python, /time\.sleep|timeout/);
+  // U-2 takes the values of the first case without its lines, so it takes none of a case with a listener.
+  const u2 = python.slice(python.indexOf('def test_u2_repeat_'), python.indexOf('\n    def ', python.indexOf('def test_u2_repeat_') + 1));
+  assert.ok(u2.length > 0 && !u2.includes('_case_listener'), u2);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes("test('GN-13e: repeat twice_with_a_separator', () => {\n  caseListener();\n"), node);
+  assert.ok(node.includes(`(${jsString('127.0.0.1:')} + caseListenerPort)`));
+  assert.match(node, /^function caseListener\(\) \{/m);
+  assert.match(node, /Atomics\.wait\(shared, 0, 0\);/);
+  assert.match(node, /await caseListenerWorker\.terminate\(\);/);
+  assert.match(node, /^import \{ Worker \} from 'node:worker_threads';$/m);
+  assert.match(node, /^import test, \{ afterEach \} from 'node:test';$/m);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes('function testGn13erepeatTwiceWithASeparator(): void\n    {\n        $this->caseListener();\n'), php);
+  assert.ok(php.includes(`(${phpText('127.0.0.1:')} . GeneratedTest::$caseListenerPort)`));
+  assert.match(php, /proc_open\(\[PHP_BINARY, '-n', '-r', \$server\]/);
+  assert.match(php, /stream_socket_accept\(\$server, -1\)/);
+  assert.match(php, /#\[\\PHPUnit\\Framework\\Attributes\\After\]\n {4}public function stopCaseListener\(\): void/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.ok(go.includes('func TestGN13eRepeatTwiceWithASeparator(t *testing.T) {\n\tcaseListener(t)\n'), go);
+  assert.ok(go.includes(`(${goString('127.0.0.1:')} + _caseListenerPort)`));
+  assert.match(go, /^func caseListener\(t \*testing\.T\) \{/m);
+  assert.match(go, /net\.Listen\("tcp", "127\.0\.0\.1:0"\)/);
+  assert.match(go, /"net"/);
+  assert.match(go, /"strconv"/);
+  // WASM starts the listener in a Worker of the Node.js that runs its tests, as Node does.
+  const wasmTests = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(wasmTests.includes("test('GN-13e: repeat twice_with_a_separator', () => {\n  caseListener();\n"), wasmTests);
+  assert.match(wasmTests, /^function caseListener\(\) \{/m);
+  assert.match(wasmTests, /^import \{ Worker \} from 'node:worker_threads';$/m);
+  // A case without a listener starts none.
+  assert.doesNotMatch(text(shaped(), 'packages/python/generated/tests/test_generated.py'), /_case_listener/);
+  // G-4, GN-13e: a listener that the case cannot run fails the test of the case by name in every target.
+  const refused: [string, (cases: any) => void][] = [
+    ['@listener of a case is "accept_and_close" (GN-13r), not "accept"', (cases) => { cases.repeat[2]['@listener'] = 'accept'; }],
+    ['a part {"listener": "port"} stands in a case without @listener (GN-13r)', (cases) => { delete cases.repeat[2]['@listener']; }],
+    ['a listener part of a composed case text is {"listener": "port"} (GN-13r), not {"listener":"host"}', (cases) => { cases.repeat[2].text = { text: [{ listener: 'host' }] }; }],
+  ];
+  for (const [message, change] of refused) {
+    const { out: refusedOut, wasm: refusedWasm } = listened(change);
+    const reason = `the case more_than_the_most of shapes.repeat: ${message}`;
+    const written: [Map<string, string | Buffer>, string, string][] = [
+      [refusedOut, 'packages/python/generated/tests/test_generated.py', `self.fail(${pyString(reason)})`],
+      [refusedOut, 'packages/ts/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+      [refusedOut, 'packages/php-ext/generated/tests/GeneratedTest.php', `self::fail(${phpText(reason)})`],
+      [refusedOut, 'packages/go/zz_generated_test.go', `t.Fatal(${goString(reason)})`],
+      [refusedWasm, 'packages/ts/wasm/generated/tests/generated.test.mjs', `assert.fail(${jsString(reason)})`],
+    ];
+    for (const [files, path, fails] of written) assert.ok(text(files, path).includes(fails), `${path}: ${message}\n${text(files, path).split('\n').filter((line) => line.includes('more_than_the_most') || line.includes('fail(')).join('\n')}`);
   }
 });
 

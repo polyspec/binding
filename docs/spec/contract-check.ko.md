@@ -305,7 +305,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-96** member case의 모든 key는 뜻을 가진다(G-5): member의 parameter의 snake_case 이름, receiver를 가진 member의
   case가 `receiver`를 주지 않으면 receiver를 만드는 그 class의 constructor나 static member의 parameter, 결과의
   key(CK-22), 또는 case의 key인 `id`, `rule`, `note`, `receiver`, `raises`, `after`, `then`, `faults`, `service`,
-  `@files`, `repeat`, `awaits`, 또는 `cases`의 행이 `reads`에 이름한 key. `reads`는 그 group의 case에서 저장소 자신의
+  `@files`, `@listener`, `repeat`, `awaits`, 또는 `cases`의 행이 `reads`에 이름한 key. `reads`는 그 group의 case에서 저장소 자신의
   시험이 읽고 어떤 생성기도 읽지 않는 snake_case key의 list다. 예를 들어 core 시험과 손으로 쓴 host 시험이 비교하는
   입력 bytes와 기대 tree다: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases",
   "result": "serialized", "reads": ["bytes", "data", "tree"]}`. `binding check`는 다른 key를 그 key, case, member와

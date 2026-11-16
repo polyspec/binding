@@ -365,7 +365,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-96** Every key of a member case has a meaning (G-5): a parameter of the member in snake_case; for a member
   with a receiver whose case gives no `receiver`, a parameter of a constructor or a static member of its class, which
   makes the receiver; the key of its result (CK-22); or a key of a case: `id`, `rule`, `note`, `receiver`, `raises`,
-  `after`, `then`, `faults`, `service`, `@files`, `repeat` and `awaits`; or a key that the row of `cases` names in
+  `after`, `then`, `faults`, `service`, `@files`, `@listener`, `repeat` and `awaits`; or a key that the row of `cases` names in
   `reads`. `reads` is a list of snake_case keys of the cases of the group that the tests of the repository itself
   read and no generator reads, such as the input bytes and the expected tree that its core tests and its hand-written
   host tests compare: `{"member": "serialize", "file": "contracts/php-serialize.json", "group": "cases", "result":

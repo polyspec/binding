@@ -32,7 +32,7 @@ import {
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
-  caseTextParts, CASE_JSON_STRING_GOLDENS,
+  caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType,
 } from './samples.ts';
 
@@ -213,6 +213,11 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
       if (type !== 'text') throw new Unsupported(`a composed case text stands at a place of the type text alone (GN-13l), not ${type}`);
       return `(${textParts.map((part) => {
         if (typeof part === 'string') return goString(part);
+        // GN-13r: the port of the listener of the case.
+        if ('listener' in part) {
+          part.listener.check();
+          return '_caseListenerPort';
+        }
         v.usesCaseText = true;
         const context = b.caseTextContext();
         return `_caseTextPath(${context.owner}, ${context.path}, ${goString(part.relative)}, ${String(part.jsonString)})`;
@@ -868,8 +873,15 @@ function made(v: Values, b: Body, r: Receiver): string {
 // is not written; the other tests of the target are written.
 // GN-13i: the lines that write the files of a case, first in the body of its test; files of another form are refused by
 // name (G-4), which written gives as the reason of the test of the case.
-function writeFiles(b: Body, files: unknown, service?: unknown): void {
-  b.lines.push(...caseFilesOf(files).map((file) => `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})`));
+// GN-13i: a Go string literal of the bytes of a hex, each byte that is no printable ASCII as \xHH.
+const goByteName = (hex: string): string => `"${[...Buffer.from(hex, 'hex')].map((byte) => (byte >= 0x20 && byte < 0x7f && byte !== 0x22 && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).padStart(2, '0')}`)).join('')}"`;
+
+function writeFiles(b: Body, files: unknown, service?: unknown, listener?: unknown): void {
+  // GN-13i: a case that names a file by bytes runs only on Linux, and Go writes the bytes of the name as a string.
+  if (caseFilesOf(files).some((file) => file.name !== undefined)) b.lines.push('if runtime.GOOS != "linux" {', `\tt.Skip(${goString(BYTE_NAME_LINUX)})`, '}');
+  b.lines.push(...caseFilesOf(files).map((file) => (file.name === undefined ? `caseFile(t, ${goString(file.path)}, ${goString(file.hex)})` : `caseFile(t, ${goByteName(file.name)}, ${goString(file.hex)})`)));
+  // GN-13r: the listener of the case, after the files and before the service.
+  if (caseListenerOf(listener) !== undefined) b.lines.push('caseListener(t)');
   // GN-13j: the address of the service of the case and its setup, after the files.
   const steps = serviceSteps(service, 'go');
   if (steps === undefined) return;
@@ -1371,7 +1383,7 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
     // member is called only on a receiver that was made.
     let making: string | undefined;
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files, kase.service);
+      writeFiles(b, kase.files, kase.service, kase.listener);
       let receiver = '';
       if (kase.receiver !== undefined && kase.receiverFails === true && goResultCount(kase.receiver.factory) === 1) {
         const factory = kase.receiver.factory;
@@ -1415,7 +1427,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
   for (const kase of callbackCases(model, fn)) {
     const b = new Body();
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files, kase.service);
+      writeFiles(b, kase.files, kase.service, kase.listener);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args)) };
     });
@@ -1451,7 +1463,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
     const later = (end: (returns: Type) => string): { lines: string[]; call: string; armed: boolean } | string => {
       const b = new Body();
       return written(fn, kase.id, () => {
-        writeFiles(b, kase.files, kase.service);
+        writeFiles(b, kase.files, kase.service, kase.listener);
         v.keptEnd = end;
         let receiver: string;
         try {
@@ -1495,7 +1507,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     const call = written(fn, kase.id, () => {
-      writeFiles(b, kase.files, kase.service);
+      writeFiles(b, kase.files, kase.service, kase.listener);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
       return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
     });
@@ -1878,6 +1890,41 @@ func caseFile(t *testing.T, relative string, content string) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("G-5: the file %s of the case: %v", relative, err)
 	}
+}
+`;
+
+// GN-13r: the listener of a case, in a goroutine beside the call of the test, which accepts each connection and closes
+// it at once; the cleanup of the test closes it and waits for the goroutine to end.
+const CASE_LISTENER = `
+// _caseListenerPort is the port of the listener of the test in progress (GN-13r).
+var _caseListenerPort string
+
+// caseListener starts the listener of the case of the test t on 127.0.0.1 at a port that the system assigns.
+func caseListener(t *testing.T) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("G-5: the listener of the case did not start: %v (GN-13r)", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			connection, err := listener.Accept()
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if err == nil {
+				_ = connection.Close()
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-done
+		_caseListenerPort = ""
+	})
+	_caseListenerPort = strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 }
 `;
 
@@ -2335,7 +2382,7 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope, extraStd: readonly { path: string; alias: string }[] = []): string {
-  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'net', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   // Owned-text helpers declare their imports without interpreting ordinary literals as code.
   std.push(...extraStd.map(({ path, alias }) => `${alias} ${goString(path)}`));
   std.push('"testing"');
@@ -2412,6 +2459,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(composedText ? [CASE_TEXT_PATH, caseTextWitness(v)] : []),
     ...(/\bservice(Address|State)\(t, /.test(all) ? [SERVICE] : []),
     ...(/\bservicePeer\(t, /.test(all) ? [PEER] : []),
+    ...(/\bcaseListener\(t\)/.test(all) ? [CASE_LISTENER] : []),
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),

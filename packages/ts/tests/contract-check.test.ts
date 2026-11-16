@@ -1849,6 +1849,9 @@ describe('CK-96 a key of a member case without a meaning (G-5, B2.312)', () => {
   test('the sample, whose cases give the files of a case as @files and receivers by their factory, has none', () => {
     assert.deepEqual(run(() => undefined), []);
   });
+  test('the listener of a case under @listener is a key of a case (GN-13r, B2.325)', () => {
+    assert.deepEqual(run((cases) => { cases['tag_name'].find((k: any) => k.id === 'b277_raw_path')['@listener'] = 'accept_and_close'; }), []);
+  });
   test('the files of a case under files, not @files, are named with the case and the member', () => {
     const found = run((cases) => {
       const kase = cases['tag_name'].find((k: any) => k.id === 'b277_raw_path');

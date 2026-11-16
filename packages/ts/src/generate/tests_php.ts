@@ -6,7 +6,7 @@ import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, clea
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
@@ -129,7 +129,70 @@ const PHP_CASE_FILE = `
 `;
 
 // GN-13i: the lines that write the files of a case, first in the body of its test.
-const caseFileLines = (files: unknown): string => caseFilesOf(files).map((file) => `\n        $this->caseFile(${phpText(file.path)}, ${phpText(file.hex)});`).join('');
+// GN-13r: then the line that starts the listener of the case.
+const caseFileLines = (files: unknown, listener?: unknown): string => `${caseFilesOf(files).some((file) => file.name !== undefined) ? `\n        if (PHP_OS_FAMILY !== 'Linux') {\n            self::markTestSkipped(${phpText(BYTE_NAME_LINUX)});\n        }` : ''}${caseFilesOf(files).map((file) => `\n        $this->caseFile(${file.name === undefined ? phpText(file.path) : `(string) hex2bin(${phpText(file.name)})`}, ${phpText(file.hex)});`).join('')}${caseListenerOf(listener) === undefined ? '' : '\n        $this->caseListener();'}`;
+
+// GN-13r: the listener of a case, a child process of PHP_BINARY, because a call of the extension blocks the process of
+// the test. It writes its port as one line, which the test reads before it makes the values of the case; an After method
+// kills it and waits for its end. The port is a public static property, so a closure or an anonymous class of a case
+// value reads it by the name of the class.
+const PHP_CASE_LISTENER = `
+    /** GN-13r: the port of the listener of the test in progress. */
+    public static ?string $caseListenerPort = null;
+
+    /** @var resource|null */
+    private $caseListenerProcess = null;
+
+    /** @var resource|null */
+    private $caseListenerOutput = null;
+
+    private function caseListener(): void
+    {
+        $server = <<<'SERVER'
+            $server = stream_socket_server('tcp://127.0.0.1:0', $code, $message);
+            if ($server === false) {
+                exit(1);
+            }
+            $name = (string) stream_socket_get_name($server, false);
+            fwrite(STDOUT, substr($name, strrpos($name, ':') + 1) . "\\n");
+            fflush(STDOUT);
+            while (true) {
+                $connection = stream_socket_accept($server, -1);
+                if ($connection !== false) {
+                    fclose($connection);
+                }
+            }
+            SERVER;
+        $pipes = [];
+        $process = proc_open([PHP_BINARY, '-n', '-r', $server], [1 => ['pipe', 'w']], $pipes);
+        if ($process === false) {
+            self::fail('G-5: the listener of the case did not start (GN-13r)');
+        }
+        $this->caseListenerProcess = $process;
+        $this->caseListenerOutput = $pipes[1];
+        $port = trim((string) fgets($pipes[1]));
+        if (!ctype_digit($port)) {
+            self::fail('G-5: the listener of the case did not start: it wrote no port (GN-13r)');
+        }
+        self::$caseListenerPort = $port;
+    }
+
+    #[\\PHPUnit\\Framework\\Attributes\\After]
+    public function stopCaseListener(): void
+    {
+        if ($this->caseListenerProcess === null) {
+            return;
+        }
+        proc_terminate($this->caseListenerProcess, 9);
+        if ($this->caseListenerOutput !== null) {
+            fclose($this->caseListenerOutput);
+        }
+        proc_close($this->caseListenerProcess);
+        $this->caseListenerProcess = null;
+        $this->caseListenerOutput = null;
+        self::$caseListenerPort = null;
+    }
+`;
 
 // GN-13j: the address of the service of a case, which the test run gives in an environment variable, and the program of
 // the state of the service, which the test runs with a step, the scope of the case and a JSON text on its input and
@@ -313,7 +376,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const ctx: Context = { lang: 'php', caseTextExpression, caseTextPath: (relative, jsonString) => {
     caseTextUses += 1;
     return `self::caseTextPath($_caseTextRoot, ${phpText(relative)}, ${jsonString ? 'true' : 'false'})`;
-  }, enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
+  }, enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, listenerPort: 'GeneratedTest::$caseListenerPort', cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
@@ -687,7 +750,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
       const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       append(`
     public function testB4${name}${id}(): void
-    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
         try {
             ${call};
             self::fail('no error');
@@ -717,7 +780,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
       usesRaised = true;
       append(`
     public function testGn6ae${name}${id}(): void
-    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
         self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});
         try {
             ${call};
@@ -787,7 +850,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       append(`
     public function testGn13e${name}${id}(): void
-    {${caseFileLines(kase.files)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -1043,7 +1106,7 @@ use PHPUnit\\Framework\\TestCase;
 
 /** The generated tests of the binding (G-5). */
 final class GeneratedTest extends TestCase
-{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('self::servicePeer(')) ? PHP_PEER : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesBound ? `
+{${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('self::servicePeer(')) ? PHP_PEER : ''}${methods.some((m) => m.includes('$this->caseListener();')) ? PHP_CASE_LISTENER : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesBound ? `
     /** GN-13n: the arguments that the function fixtures of the test in progress keep by name. @var array<string, mixed> */
     private static array $bound = [];
 ` : ''}${usesRaised ? `
