@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 529c1c5efc87ce5b7b8d215273ce11238bfb4714da0b1963881def4aa038fc8e -->
+<!-- source-sha256: 83a5123defa7bc55dbf92505bbff3f1f1dd119a436361317ba67613a4588caca -->
 # 생성기
 
 [English](generator.md)
@@ -861,7 +861,11 @@
   Go는 아직 변환되지 않은 첫 자리까지 byte를 읽고, 그 자리를 먼저 변환한 뒤 변환된 자리의 byte를 건너 값을 다시
   읽으므로, 그런 자리가 `n`개인 값은 `n + 1`번 읽힌다. field가 callback이나 function을 담아 core type이 호출의
   lifetime을 지니는 cycle, 또는 cycle unit을 담은 tuple을 가진 cycle은 서로 부르는 변환을 유지한다. field의 좁힘
-  (GN-12a)은 값이 변환될 때, 그 자리들 뒤에 판정된다. Why: debug WASM module의 stack은 1 MiB이고, template의 case
+  (GN-12a)은 값이 변환될 때, 그 자리들 뒤에 판정된다. core 값의 walk는 record field의 list나 map을 field 자체로
+  loop하고(`value.<field>.iter()`), reference가 필요한 자리, 즉 `optional`과 cycle unit에서만 field를 빌린다
+  (`&value.<field>`). variant case의 field와 loop의 item은 이미 reference다. 빌림의 Why: `&value.body.iter()`는
+  iterator를 빌리고, iterator의 reference는 iterator가 아니므로(E0277), template의 `body`, 즉 `Node`의 list가 모든
+  target의 build를 실패시켰다(B2.390). Why: debug WASM module의 stack은 1 MiB이고, template의 case
   `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식은 단계마다 자기 자신을 부르는 `out_expr`에서 "memory access
   out of bounds"로 trap했다. binding은 host의 stack을 늘릴 수 없고, 더 큰 stack은 process가 끝나는 깊이를 옮길 뿐이며,
   value alias 변환도 같은 방식을 쓴다(GN-6as).

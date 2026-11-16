@@ -146,20 +146,23 @@ export const madeParam = (host: CycleHost, cycle: Cycle, mode: 'out' | 'in' | 'k
 // the cycle, and the values of units of the cycle that it holds in the order of its fields.
 export function coreWalk(model: Model, cycle: Cycle): string {
   const k = cycle.index;
-  const walk = (type: Type, expr: string, depth: number): string[] => {
+  // The expression is a reference (an item, a field of a case) or a place of a record field, which the loop of a list
+  // or a map walks as it is and the other places borrow: `&value.body.iter()` would borrow the iterator (B2.390).
+  const walk = (type: Type, expr: string, depth: number, place = false): string[] => {
     if (!holdsCycle(model, cycle, type) || typeof type === 'string') return [];
     const item = `item${depth}`;
+    const ref = place ? `&${expr}` : expr;
     if ('list' in type) return [`for ${item} in ${expr}.iter() {`, ...walk(type.list, item, depth + 1).map((l) => `    ${l}`), '}'];
-    if ('optional' in type) return [`if let Some(${item}) = ${expr} {`, ...walk(type.optional, item, depth + 1).map((l) => `    ${l}`), '}'];
+    if ('optional' in type) return [`if let Some(${item}) = ${ref} {`, ...walk(type.optional, item, depth + 1).map((l) => `    ${l}`), '}'];
     if ('map' in type) return [`for (_key, ${item}) in ${expr}.iter() {`, ...walk(type.map, item, depth + 1).map((l) => `    ${l}`), '}'];
     if ('keyed_map' in type) return [`for (_key, ${item}) in ${expr}.iter() {`, ...walk(type.keyed_map, item, depth + 1).map((l) => `    ${l}`), '}'];
     const at = cycle.units.findIndex((u) => 'unit' in type && u.id === type.unit);
-    return at < 0 ? [] : [`kids.push(Cycle${k}::U${at}(${expr}));`];
+    return at < 0 ? [] : [`kids.push(Cycle${k}::U${at}(${ref}));`];
   };
   const arms = cycle.units.map((unit, at) => {
     const core = unit.core_type ?? '';
     if (unit.kind === 'record') {
-      const lines = (unit.fields ?? []).flatMap((f) => walk(f.type, `&value.${rustField(f.name)}`, 0));
+      const lines = (unit.fields ?? []).flatMap((f) => walk(f.type, `value.${rustField(f.name)}`, 0, true));
       return `        Cycle${k}::U${at}(value) => {\n${lines.map((l) => `            ${l}`).join('\n')}\n        }`;
     }
     const variant = model.variants.find((v) => v.unit.id === unit.id);
