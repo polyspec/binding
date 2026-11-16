@@ -3367,7 +3367,9 @@ the design ids are those of the binding design.
   `make go-musl-check WORK=<work>` then runs the consumer on musl: in a container of the Alpine image of `goMusl` of
   `config/toolchain.json`, with the Go of `mise.lock` checked by its sha256 and `gcc` and `musl-dev` of Alpine at the
   exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
-  every package of the fetched modules with that proxy as `GOPROXY`, and fails unless a test ran and none failed. The
+  every package of the fetched modules with that proxy as `GOPROXY`, prints the output of every `build-output` event of
+  `go test -json`, where go reports the error of a build such as one of the linker (B2.416), and fails unless a test
+  ran and none failed. The
   modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
   the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.
   Why a container: the end-to-end check runs on a machine of the GNU C library, and only a program that a C compiler

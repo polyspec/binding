@@ -12,7 +12,8 @@
 # machine runs it. The Go is the one of mise.lock for the arch of that machine, checked by its sha256; the C compiler
 # is gcc and musl-dev of Alpine at the exact versions of config/toolchain.json (goMusl). The modules come from the
 # module proxy that the run kept in <work>/go-release/proxy, the downloads that go.sum of the consumer pins, so no Git
-# takes part. It fails unless a test ran and none failed. The container has a
+# takes part. It prints the output of every build-output event of go test -json, where go reports an error of a
+# build, such as one of the linker (B2.416), and fails unless a test ran and none failed. The container has a
 # name that starts with polyspec- and is removed when it ends (docker run --rm), also on SIGINT and SIGTERM (HR-87).
 set -eu
 
@@ -56,18 +57,19 @@ wget -q -O /tmp/go.tar.gz "$GO_URL"
 echo "$GO_SUM  /tmp/go.tar.gz" | sha256sum -c -
 tar -C /usr/local -xzf /tmp/go.tar.gz
 export PATH=/usr/local/go/bin:$PATH
-cd "/work/go-release/consumer"
-export GOENV=off GOTOOLCHAIN=local GOPROXY="file:///work/go-release/proxy" GOSUMDB=off GOMODCACHE=/tmp/modcache GOCACHE=/tmp/gocache
+cd "$WORK_ROOT/go-release/consumer"
+export GOENV=off GOTOOLCHAIN=local GOPROXY="file://$WORK_ROOT/go-release/proxy" GOSUMDB=off GOMODCACHE=/tmp/modcache GOCACHE=/tmp/gocache
 export GOFLAGS=-tags=musl CGO_ENABLED=1 CGO_LDFLAGS= CC=gcc
 modules=$(go list -m -f "{{if not .Main}}{{.Path}}/...{{end}}" all)
 echo "\$ go test -tags musl -json -count=1 . $modules"
 status=0
 go test -json -count=1 . $modules > /tmp/events.json || status=$?
 grep -v "\"Action\":\"output\"" /tmp/events.json | grep "\"Test\":" | grep -E "\"Action\":\"(pass|fail|skip)\"" | sed -E "s/.*\"Action\":\"([a-z]+)\".*\"Package\":\"([^\"]+)\".*\"Test\":\"([^\"]+)\".*/\\1 \\2 \\3/" || true
+grep "\"Action\":\"build-output\"" /tmp/events.json | sed -E "s/.*\"Output\":\"(.*)\".*/\\1/" || true
 grep "\"Action\":\"output\"" /tmp/events.json | grep -E "FAIL|panic|undefined|cannot|error" | sed -E "s/.*\"Output\":\"(.*)\".*/\\1/" || true
 passed=$(grep -c "\"Action\":\"pass\",\"Package\":\"[^\"]*\",\"Test\"" /tmp/events.json || true)
 failed=$(grep -c "\"Action\":\"fail\",\"Package\":\"[^\"]*\",\"Test\"" /tmp/events.json || true)
 echo "go test -tags musl on $(cat /etc/alpine-release) (musl): $passed passed, $failed failed, exit $status"
 [ "$status" -eq 0 ] && [ "$failed" -eq 0 ] && [ "$passed" -gt 0 ]'
 
-docker run --rm --name "$name" -v "$work:/work" -e "PACKAGES=$packages" -e "GO_URL=$url" -e "GO_SUM=$sum" "$image" sh -c "$inner"
+docker run --rm --name "$name" -v "$work:/work" -e WORK_ROOT=/work -e "PACKAGES=$packages" -e "GO_URL=$url" -e "GO_SUM=$sum" "$image" sh -c "$inner"

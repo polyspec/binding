@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5e1b04091962448f05ae5561983e1da5d424e350e675770afac2b8ce9955df61 -->
+<!-- source-sha256: 9a7add5d68613ea07284893f69e642a8a0d910be7c921b55c04e2df201afe142 -->
 # 생성기
 
 [English](generator.md)
@@ -2745,8 +2745,9 @@
   proxy의 배치인 모듈 cache의 download를 `<work>/go-release`에 남긴다. 그다음 `make go-musl-check WORK=<work>`가
   소비자를 musl에서 실행한다. `config/toolchain.json`의 `goMusl`의 Alpine image 컨테이너에서, sha256으로 확인한
   `mise.lock`의 Go와 `goMusl`의 정확한 버전인 Alpine의 `gcc`와 `musl-dev`로(`docs/operations/dependencies.md`), 그
-  proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, 시험이 하나도 실행되지
-  않거나 하나라도 실패하면 실패한다. 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
+  proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, go가 linker의 것 같은 빌드 오류를 보고하는
+  `go test -json`의 모든 `build-output` event의 출력을 찍으며(B2.416), 시험이 하나도 실행되지 않거나 하나라도 실패하면
+  실패한다. 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
   `DOCKER_HOST`의 Docker가 있는 기계에서 돌고, 그 기계는 작업 디렉터리를 `WORK`에 가지며, 컨테이너 이름은
   `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end 검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고
   musl 기계가 실행한 프로그램만이 musl의 라이브러리가 링크되고 실행된다는 것을 보인다.
