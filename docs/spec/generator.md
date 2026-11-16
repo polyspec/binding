@@ -3256,7 +3256,7 @@ the design ids are those of the binding design.
   check" in the table and the report, a refusal of the generator is the failure of its cell, which stops there, and
   the run fails. Why: a run that stopped at the check hid the defects of every target until the contract was fixed.
   The run is evidence of one commit of binding: `EXPECT=<commit>`, the commit that the line `binding commit <commit>`
-  of `MANIFEST.txt` of `DIST=<directory>` names, or else the HEAD of `CONSUMERS_LANE`, the checkout of the lane. Before
+  of `MANIFEST.txt` of `DIST=<directory>` names, or else the HEAD of the checkout that runs the target. Before
   the first consumer, and before any copy, it stops with a named error when the CLI of this tree is another commit or
   its tree has a change, and the first line of the table and of the report names the commit and that the tree is clean.
   Why: a run on a tree that lacked four fixes of the lane (B2.367, B2.386, B2.387, B2.390) gave cells that looked like

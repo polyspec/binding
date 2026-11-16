@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Contract } from '../src/contract.ts';
-import { UNCHECKED, compiles, exitStatus, noteUnchecked, consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Copy } from '../../../scripts/consumers.mts';
+import { UNCHECKED, expectedCommit, compiles, exitStatus, noteUnchecked, consumerOf, firstErrors, goSteps, hasGoLink, lockedCores, manifestCommit, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Copy } from '../../../scripts/consumers.mts';
 
 const root = new URL('../../../', import.meta.url).pathname;
 const script = join(root, 'scripts/consumers-check.mts');
@@ -195,4 +195,14 @@ test('a refusal of the generator is the failure of its cell, which then compiles
 test('the run fails when any cell failed, a failed check alone among them (GN-14i, B2.391)', () => {
   assert.equal(exitStatus([cellOf('prepare', 'failed'), cellOf('php', 'passed')]), 1);
   assert.equal(exitStatus([cellOf('prepare', 'passed'), cellOf('php', 'passed'), cellOf('go', 'not in contract')]), 0);
+});
+
+test('without EXPECT or DIST the run is evidence of the HEAD of its checkout, which must be clean (GN-14i, B2.391)', () => {
+  const head = '89abcdef'.repeat(5);
+  const other = '01234567'.repeat(5);
+  assert.equal(expectedCommit(head, undefined, undefined), head);
+  assert.equal(expectedCommit(head, other, undefined), other);
+  assert.equal(expectedCommit(head, undefined, `binding commit ${other}\n`), other);
+  assert.equal(provenanceProblem(head, '', expectedCommit(head, undefined, undefined)), undefined);
+  assert.match(provenanceProblem(head, '?? scripts/new.mts\n', expectedCommit(head, undefined, undefined)) ?? '', /has changes that .* does not hold: \?\? scripts\/new\.mts/);
 });

@@ -12,7 +12,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { availableParallelism, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Contract, Lang } from '../packages/ts/src/contract.ts';
-import { TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, manifestCommit, noteUnchecked, compiles, exitStatus, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
+import { TARGETS, cargoSteps, consumerOf, crateManifest, firstErrors, generateStep, goModuleDir, goSteps, hasGoLink, lockedCores, expectedCommit, noteUnchecked, compiles, exitStatus, patchManifest, provenanceLine, provenanceProblem, stepsBeforeCheck, prepareSteps, table, testFeatures, type Cell, type Consumer, type Copy, type Step } from './consumers.mts';
 import { goBuildTags } from './e2e-lint.mts';
 import { llvmOf } from './e2e-llvm.mts';
 
@@ -21,7 +21,7 @@ const given = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i] ?? '';
   const value = process.argv[i + 1];
-  if (!['--dir', '--expect', '--dist', '--lane'].includes(key) || value === undefined) throw new Error(`unknown argument ${key}; the arguments are --dir <directory>... and --expect <commit>, --dist <directory> or --lane <checkout>`);
+  if (!['--dir', '--expect', '--dist'].includes(key) || value === undefined) throw new Error(`unknown argument ${key}; the arguments are --dir <directory>... and --expect <commit> or --dist <directory>`);
   if (key === '--dir') dirs.push(value);
   else given.set(key, value);
 }
@@ -32,24 +32,19 @@ if (dirs.length === 0) {
 
 const here = realpathSync(new URL('..', import.meta.url).pathname);
 const cli = join(here, 'packages/ts/src/cli.ts');
-// The run is evidence of one commit of binding: EXPECT, the commit of the MANIFEST.txt of DIST, or the HEAD of the lane
-// checkout that the Makefile names. The CLI of this tree must be that commit, without a change, or the run stops before
-// the first consumer.
+// The run is evidence of one commit of binding: EXPECT, the commit of the MANIFEST.txt of DIST, or else the HEAD of the
+// checkout that runs it. The CLI of this tree must be that commit, without a change, or the run stops before the
+// first consumer.
 const gitOut = (dir: string, argv: string[]): string => execFileSync('git', ['-C', dir, ...argv], { encoding: 'utf8' }).trim();
 const head = gitOut(here, ['rev-parse', 'HEAD']);
 const status = gitOut(here, ['status', '--porcelain', '--untracked-files=all']);
 const expectGiven = given.get('--expect');
 const dist = given.get('--dist');
-const lane = given.get('--lane');
-const expected = expectGiven !== undefined && expectGiven !== ''
-  ? spawnSync('git', ['-C', here, 'rev-parse', '--verify', '--quiet', `${expectGiven}^{commit}`], { encoding: 'utf8' }).stdout.trim() || expectGiven
-  : dist !== undefined && dist !== ''
-    ? manifestCommit(readFileSync(join(dist, 'MANIFEST.txt'), 'utf8'))
-    : lane !== undefined && lane !== '' ? gitOut(lane, ['rev-parse', 'HEAD']) : undefined;
-if (expected === undefined) {
-  process.stderr.write('consumers-check: no expected commit: give EXPECT=<commit>, DIST=<dist directory> or the lane checkout LANE\n');
-  process.exit(2);
-}
+const expected = expectedCommit(
+  head,
+  expectGiven === undefined || expectGiven === '' ? undefined : spawnSync('git', ['-C', here, 'rev-parse', '--verify', '--quiet', `${expectGiven}^{commit}`], { encoding: 'utf8' }).stdout.trim() || expectGiven,
+  dist === undefined || dist === '' ? undefined : readFileSync(join(dist, 'MANIFEST.txt'), 'utf8'),
+);
 const problem = provenanceProblem(head, status, expected);
 if (problem !== undefined) {
   process.stderr.write(`consumers-check: stopped before the first consumer: ${problem}\n`);

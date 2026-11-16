@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e3fd1a2f559522a4d1d291bf4a1e6baed0bde3fcdb7e5cffa2ab31489bfa5c47 -->
+<!-- source-sha256: eefdad6ad7a4b2dd86ab3f3f4fd00bb808d472cb9fa6dcb1996dce2ac709a2c4 -->
 # 생성기
 
 [English](generator.md)
@@ -2653,7 +2653,7 @@
   컴파일한다(HR-86): 그 소비자의 다른 칸은 표와 보고서에서 "generated from a contract that failed the check"를 밝히고, 생성기의
   거부는 그 칸의 실패이며 칸은 거기서 멈추고, 실행은 실패한다. Why: check에서 멈춘 실행은 계약이 고쳐질 때까지 모든 target의
   결함을 숨겼다. 실행은 binding의 한 commit의 증거다: `EXPECT=<commit>`, `DIST=<directory>`의 `MANIFEST.txt`의 줄 `binding commit <commit>`이
-  이름하는 commit, 아니면 갈래의 checkout `CONSUMERS_LANE`의 HEAD. 첫 소비자 전에, 어떤 복사본보다 먼저, 이 tree의 CLI가 다른
+  이름하는 commit, 아니면 target을 실행하는 checkout의 HEAD. 첫 소비자 전에, 어떤 복사본보다 먼저, 이 tree의 CLI가 다른
   commit이거나 그 tree에 변경이 있으면 이름 있는 오류로 멈추고, 표와 보고서의 첫 줄은 그 commit과 tree가 깨끗한지를 이름한다.
   Why: 갈래의 수정 넷(B2.367, B2.386, B2.387, B2.390)이 없는 tree에서의 실행은 갈래의 결함처럼 보이는 칸을 주었고, 그것은 갈래의
   증거가 아니었다.

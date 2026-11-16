@@ -184,6 +184,14 @@ export function manifestCommit(manifest: string): string {
   return commit;
 }
 
+// The commit that a run is evidence of: EXPECT, else the commit of the MANIFEST.txt of DIST, else the HEAD of the
+// checkout that runs it.
+export function expectedCommit(head: string, expect: string | undefined, distManifest: string | undefined): string {
+  if (expect !== undefined) return expect;
+  if (distManifest !== undefined) return manifestCommit(distManifest);
+  return head;
+}
+
 // Why a run would not be evidence of the expected commit: the CLI of this tree is at another commit, or its tree holds
 // a change that no commit holds. undefined when it is that commit, clean.
 export function provenanceProblem(head: string, status: string, expected: string): string | undefined {
