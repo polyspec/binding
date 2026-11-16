@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 95039ceed091b52f732b862683e5b93a5056fa675a4b6c1dfc20da685bde8091 -->
+<!-- source-sha256: 1be3f10bf276ec6499eddcecc5a89f2b1fc4e3c99bceb3eb111a946a40d3bacd -->
 # 생성기
 
 [English](generator.md)
@@ -2723,6 +2723,13 @@
   `binding_core`의 변경은 모든 소비자에 닿고, 소비자의 계약만 드러내는 결함은 그 바인딩의 컴파일이 찾는데, `make e2e`는
   그것을 실행하는 레포에서만 한다. 소비자 전체에 대한 한 번의 실행은 release 전에 그것들을 함께 보여주고, checkout을 바꾸거나
   소비자가 lock하지 않은 것을 가져온 실행은 소비자의 것이 아닌 다른 tree를 보여준다.
+
+- **GN-14j** `make dist`는 checkout의 tsc로 `packages/ts/dist`를 쓰고(`packages/ts`의 `npm run build`), 이어
+  package의 `bin`인 `dist/cli.js`에 mode 0755를 준다. npm install이 release의 bin에 주는 것과 같다. 이유: 다른
+  저장소는 `node_modules/@polyspec/binding`을 이 저장소의 checkout에 연결하고 tool을 npm의 bin link인
+  `node_modules/.bin/binding`으로 부른다(php-serialization `bindings-php`, session-store). tsc는 `dist/cli.js`를
+  mode 0644로 쓰고 연결은 파일을 그대로 가리키므로, 그 bin이 "Permission denied"(127)로 실패했다. mode는 각
+  소비자가 아니라 build의 출력에 속한다.
 
 ## 바인딩을 가진 레포의 release
 

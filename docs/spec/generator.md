@@ -3342,6 +3342,13 @@ the design ids are those of the binding design.
   together before a release, and a run that changed the checkout or fetched what the consumer did not lock would
   show another tree than the consumer's.
 
+- **GN-14j** `make dist` writes `packages/ts/dist` with the tsc of the checkout (`npm run build` of `packages/ts`)
+  and then gives `dist/cli.js`, the `bin` of the package, the mode 0755, as npm install gives the bin of a release.
+  Why: the other repositories link `node_modules/@polyspec/binding` to a checkout of this repository and run the
+  tool as `node_modules/.bin/binding`, the bin link of npm (php-serialization `bindings-php`, session-store); tsc
+  writes `dist/cli.js` with the mode 0644 and a link takes the file as it is, so the bin failed with "Permission
+  denied" (127). The mode belongs to the output of the build, not to each consumer.
+
 ## The release of a repository that holds a binding
 
 - **GN-19** A repository that holds a binding releases it by recipes of make, and the work is divided by one rule. A
