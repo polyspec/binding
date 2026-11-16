@@ -10720,7 +10720,7 @@ test('a member that takes the map of the alias makes the instance from the made 
   const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
   // The walk fills an array of its own for the member, as for a map, and closes it into the argument of the member.
   assert.match(php, /php_enter\(making, handle\)\?;\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len, index: 0, waiting: None, fill: OutFill::MadeEntries\(ZendHashTable::new\(\), None\) \}\)\)/);
-  assert.match(php, /zval\.set_hashtable\(array\);\n +let argument = map_in\(&zval, "value", [^\n]*\)\?;\n +out_entries\(polyspec_consumer::Entries::new\(argument\)\)/);
+  assert.match(php, /zval\.set_hashtable\(array\);\n +let argument = map_in\(&zval, "value", [^\n]*\)\?;\n +out_entries\(polyspec_consumer::Entries::new\(&argument\)\)/);
   // B2.305: the content of the kind int is the i64 that the int64 parameter takes.
   assert.match(php, /OutValue::Int\(value\) => out_count\(polyspec_consumer::Count::new\(value\.value\(\)\)\)/);
   const python = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), 'packages/python/generated/lib.rs');
@@ -11100,4 +11100,15 @@ test('B2.354: a crate whose value alias of another repository only leaves writes
       assert.ok(!declared || called, `${path}: ${name} is declared and no code calls it`);
     }
   }
+});
+
+test('B2.355: the PHP make of a map by a member passes its argument as the constructor of that class does (GN-6bc, T-1)', () => {
+  // orm map_value: the constructor called MapValue::new(&entries) and the walk out_map_value(MapValue::new(argument)),
+  // so no one signature of the core compiled both.
+  const { contract, caseFiles, foreign } = memberMadeSample();
+  const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  const constructed = /let result = (?:with_faults\("entries\.constructor", \|\| )?polyspec_consumer::Entries::new\(([^)]*)\)/.exec(php)?.[1];
+  const made = /out_entries\(polyspec_consumer::Entries::new\(([^)]*)\)\)/.exec(php)?.[1];
+  assert.ok(constructed !== undefined && made !== undefined, `constructor ${constructed}, make ${made}`);
+  assert.equal(made.startsWith('&'), constructed.startsWith('&'), `constructor Entries::new(${constructed}), make Entries::new(${made})`);
 });

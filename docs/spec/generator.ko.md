@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bb8e7ed309380ad98d87aea4c5343e6d29cc554703d1183cb99027273b7d5a1a -->
+<!-- source-sha256: 8fe8bf01c3498addea2bc52ffde697aaa13c259a5531561b2af3f081920ff718 -->
 # 생성기
 
 [English](generator.md)
@@ -818,6 +818,9 @@
   target에서 crate의 helper다: crate는 그 소유자의 core로 들어가는 변환이 그것을 부르는 곳에서 그것을 쓰고, 그 소유자의
   alias가 나가기만 하는 crate에는 없다. 이유: 소유자의 오류로 실패하는 것은 소유자의 `in`뿐이므로, `json_value`를 결과로만
   주는 orm 같은 crate는 부르는 곳 없는 두 함수를 가졌고 `-D dead_code`가 그것을 거부한다.
+- **GN-6bq** class의 member가 값 alias의 list나 map을 만들 때(GN-6bc), 그 member의 core path를 member의 entry point가
+  넘기는 형태의 인자, 즉 T-1에 따라 만든 list나 map의 빌림으로 부른다. 이유: 생성자와 make는 같은 path를 부르므로 core의 서명 하나가 둘을 다 받아야 하는데, make는 생성자가 빌림을
+  넘기는 자리에서 값을 넘겨서(orm `map_value`) 어느 서명도 둘을 다 컴파일하지 못했다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
   loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다

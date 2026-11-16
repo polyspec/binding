@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c8c5c2db27467d9086b972996f2b350474553905b21d857bba553fb65e1b4706 -->
+<!-- source-sha256: e07864fff12a4e6b553b0012e104b7bf438a684e33ef657078e57808e9a16e1f -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -29,6 +29,7 @@
 - Python과 PHP에서 cleanup member가 있는 class의 B-10 시험은 버리는 instance를 닫지 않으므로, 시험이 기대하는 대로 destructor가 경고한다. B2.348이 그것도 닫아서 경고가 나지 않았다(GN-13u, B2.348-1).
 - Node와 PHP의 scaffold는 orm `config.audit_source`처럼 record parameter의 field 안에 있는 함수에도, 생성된 crate가 쓰는 대로 feature `thread-test`를 선언하고, CK-19는 그것이 없는 manifest를 보고한다. `-D warnings`가 `unexpected_cfgs`로 실패했다(GN-6bo, B2.353).
 - crate는 다른 저장소의 값 alias 소유자의 실패 변환을, Node, Python, WASM, Go에서 그 core로 들어가는 변환이 부르는 곳에서만 쓴다. `json_value`를 내보내기만 하는 orm처럼 alias가 나가기만 하는 crate가 `-D dead_code`에서 실패했다(GN-6bp, B2.354).
+- member로 값 alias의 list나 map을 만드는 PHP make는, orm의 `MapValue::new(&argument)`처럼 만든 값을 그 class 생성자의 형태(기본은 빌림)로 넘긴다. 이전에는 값을 넘겨서 core의 어느 서명도 생성자와 함께 받지 못했다(GN-6bq, B2.355).
 
 ## 0.0.13
 

@@ -3,7 +3,7 @@
 
 import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField, unitFn } from './model.ts';
+import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField, unitFn } from './model.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -83,7 +83,9 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
   if (container_) {
     if (containerMake === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes the ${kind} of the alias, which a make by a member is generated for in PHP only (GN-6bc)`);
     if (factory.fallible || factory.failure) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} can fail, which a make by a member is not generated for yet (U-7)`);
-    return containerMake({ object, factory, kind, param, made: (arg) => `${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${arg}))` });
+    // GN-6bq: the core call passes the made argument in the form of the constructor of the class (T-1), so one
+    // signature of the core takes both.
+    return containerMake({ object, factory, kind, param, made: (arg) => `${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${coreCallArgs(model, factory, () => arg, '').join(', ')}))` });
   }
   const content = CONTENT[kind];
   if (content === undefined || typeof param !== 'string' || (param !== content.type && !(content.also ?? []).includes(param))) {

@@ -1009,6 +1009,11 @@ the design ids are those of the binding design.
   into the core of that owner calls them, and a crate whose alias of that owner only leaves has none. Why: only the
   `in` of the owner fails with its error, so a crate that gives the alias only as a result, such as orm with
   `json_value`, held both functions without a caller, which `-D dead_code` refuses.
+- **GN-6bq** A make of a list or a map of a value alias by a member of a class (GN-6bc) calls the core path of that
+  member with its argument in the form that the entry point of the member passes it, the borrow of the made list or
+  map by T-1. Why: the constructor and
+  the make call the same path, so one signature of the core must take both; the make passed the value where the
+  constructor passed the borrow (orm `map_value`), and no signature compiled both.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop

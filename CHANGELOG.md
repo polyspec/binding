@@ -27,6 +27,7 @@
 - The B-10 test of a class with a cleanup member in Python and PHP does not close the instance that it drops, so its destructor warns as the test expects; B2.348 closed it too, and the warning was missing (GN-13u, B2.348-1).
 - The scaffold of Node and PHP declares the feature `thread-test` for a function in a field of a record parameter, such as `config.audit_source` of orm, as the generated crate writes it, and CK-19 reports a manifest without it; `-D warnings` failed with `unexpected_cfgs` (GN-6bo, B2.353).
 - A crate writes the failure conversions of the owner of a value alias of another repository only where a conversion into that core calls them, in Node, Python, WASM and Go; a crate whose alias only leaves, such as orm with `json_value`, failed `-D dead_code` (GN-6bp, B2.354).
+- The PHP make of a list or a map of a value alias by a member passes the made value in the form of the constructor of the class, the borrow by default, such as `MapValue::new(&argument)` of orm; it passed the value, which no signature of the core takes with the constructor (GN-6bq, B2.355).
 
 ## 0.0.13
 
