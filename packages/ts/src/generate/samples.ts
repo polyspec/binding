@@ -2216,13 +2216,22 @@ export function mapEntries(value: unknown): [string, unknown][] {
   });
 }
 
+// B2.372 (K-1, E-1): the raises of a case with the category of its kind, which the case may leave out, since the
+// contract gives every kind its category (errors.kinds); a case that writes it keeps its own.
+export function withCategory<T extends { kind: string; category?: string }>(model: Model, raises: T): T & { category: string } {
+  if (typeof raises.category === 'string') return raises as T & { category: string };
+  const kind = model.kinds.find((k) => kindText(k.variant) === raises.kind);
+  return { ...raises, category: kind?.category ?? '' };
+}
+
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
   const out: RaisingCase[] = [];
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
-    const raises = record['raises'] as RaisingCase['raises'] | 'callback' | undefined;
+    const given = record['raises'] as RaisingCase['raises'] | 'callback' | undefined;
     // GN-6ae: a case that expects the exception of a function fixture is one of callbackCases.
-    if (raises === undefined || raises === 'callback') continue;
+    if (given === undefined || given === 'callback') continue;
+    const raises = withCategory(model, given);
     const args = argsOf(fn, record);
     if (args === undefined) {
       const missing = fn.args.map((a) => caseName(a.name)).filter((name) => !(name in record));
@@ -2705,7 +2714,8 @@ export function phpCaseTests(model: Model): CaseTest[] {
     // binding scaffold, which reads no contract of another library, finds them too.
     for (const record of (model.cases.get(fn.member.id) ?? []) as Record<string, unknown>[]) {
       const args = fn.special === undefined ? argsOf(fn, record) : undefined;
-      const raises = record['raises'] as RaisingCase['raises'] | undefined;
+      const given = record['raises'] as RaisingCase['raises'] | undefined;
+      const raises = given === undefined ? undefined : withCategory(model, given);
       if (args === undefined || (raises === undefined && record['faults'] !== undefined)) continue;
       const kase = { id: String(record['id']), args, ...(raises === undefined ? {} : { raises }) };
       for (const [arg, value] of kase.args) {

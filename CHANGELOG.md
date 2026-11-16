@@ -38,6 +38,7 @@
 - A case gives a float that JSON writes as an integer by `{"float": "<decimal>"}`, at any number place, and a case with `targets` is a test of those targets alone, with a case of the same arguments for every other target (CK-97); Node and WASM refuse a negative zero at an integer place as `invalid_number`, as PHP and Python refuse `-0.0`, where they took it as 0 (GN-12a, GN-13bc, B2.360).
 - A call of `after` may read a property of the receiver, with `args` `{}`, which every target already read as it reads a property; the contract check says so, and a test keeps it (CK-22, B2.361).
 - PHP stores a property `p` of an error unit as the private `polyspec_p`, which its method `p()` reads; the property `trace` of crud-ui `compose_load_error` met the private `trace` of `Exception`, and every raise of the error failed (GN-7b, B2.362).
+- A case whose `raises` gives the kind without its category takes the category of the kind from the contract; Node wrote `pkg. &&`, which does not parse, for every such case of hyper (GN-13bd, B2.372).
 
 ## 0.0.13
 

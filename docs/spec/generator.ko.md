@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b2d2e1a78d202b8def61c278065e20809f64d1e8d0a16346a6b06ffaada45e4b -->
+<!-- source-sha256: 6c752810c3addf79887177c78482510131fa2cabe0e5d9409df0fa790933b556 -->
 # 생성기
 
 [English](generator.md)
@@ -2147,6 +2147,11 @@
   binding이 받는 number 403이다. JSON은 `403.0`을 `403`으로, `-0.0`을 `-0`으로 쓰므로 어떤 case도 float를 줄 수 없었고,
   case 하나로 두 결과를 말할 수 없다. Node와 WASM이 구별할 수 있는 음의 0은 PHP와 Python처럼 거기서도 거부되므로
   (GN-12a) `targets`가 필요 없다. 짝 case는 그 입력에서 모든 target이 시험되게 한다.
+- **GN-13bd** case의 `raises`는 `category`를 생략할 수 있다: 생성 시험은 그 kind의 category를 계약의 `errors.kinds`에서
+  가져온다. 계약은 모든 kind에 category를 준다(E-1). category를 쓴 case는 자기 것을 유지한다. 이유: 계약 검사는
+  `{"kind": <kind>}`만을 받는데 시험은 case의 category의 class를 이름했다. 그래서 kind만 주는 hyper `csrf.mask`의 case들 때문에
+  Node가 `error.constructor === pkg. &&`를 180번 썼고, 그 파일은 parse되지 않았다. Python, PHP, WASM, Go도 같은 빈 category를
+  읽었다.
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7bed716fe6fa649a3fb7bbaa5b1100d396d0a855d095e71d8f112ee432d52fd8 -->
+<!-- source-sha256: 7e9dbb2d55f307ed24e8a7cfd5edc6899df5f47edfa3ac5ba439b8fbf141e3e8 -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -40,6 +40,7 @@
 - case는 JSON이 정수로 쓰는 float를 어느 숫자 자리에서나 `{"float": "<decimal>"}`로 주고, `targets`를 가진 case는 그 target만의 시험이며 다른 모든 target에 같은 인자의 case가 있다(CK-97). Node와 WASM은 정수 자리의 음의 0을, PHP와 Python이 `-0.0`을 거부하듯 `invalid_number`로 거부한다. 이전에는 그것을 0으로 받았다(GN-12a, GN-13bc, B2.360).
 - `after`의 호출은 `args` `{}`로 receiver의 property를 읽을 수 있다. 모든 target이 이미 그것을 property를 읽듯 읽었다. 계약 검사 문서가 그렇게 말하고, 시험 하나가 그것을 지킨다(CK-22, B2.361).
 - PHP는 오류 unit의 property `p`를 private `polyspec_p`로 저장하고 그 method `p()`가 읽는다. crud-ui `compose_load_error`의 property `trace`가 `Exception`의 private `trace`와 겹쳐서, 그 오류를 낼 때마다 실패했다(GN-7b, B2.362).
+- `raises`가 category 없이 kind만 주는 case는 그 kind의 category를 계약에서 가져온다. hyper의 그런 case마다 Node가 parse되지 않는 `pkg. &&`를 썼다(GN-13bd, B2.372).
 
 ## 0.0.13
 

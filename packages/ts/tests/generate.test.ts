@@ -11307,3 +11307,22 @@ test('B2.362: PHP stores a property of an error unit under a name of the binding
   // The PHP API is the method trace().
   assert.match(php, /FunctionBuilder::new\("trace", absent_error_trace_method\)/);
 });
+
+test('B2.372: the raises of a case without a category takes the category of its kind from the contract (K-1, E-1)', () => {
+  // hyper csrf.mask: {"raises": {"kind": "invalid_csrf_form"}} wrote `error.constructor === pkg. &&` in Node.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const kase = cases.resolve.find((c: any) => c.id === 'a_key_without_a_value_is_missing');
+  delete kase.raises.category;
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const near = (path: string, id: RegExp): string => { const body = text(out, path); const at = body.search(id); assert.ok(at >= 0, `${path} ${id}`); return body.slice(at, at + 1500); };
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const body = near(path, /a_key_without_a_value_is_missing/);
+    assert.doesNotMatch(body, /pkg\.\s*&&|pkg\.\)/, path);
+    assert.match(body, /error\.constructor === pkg\.SampleValueError/, path);
+  }
+  assert.match(near('packages/python/generated/tests/test_generated.py', /a_key_without_a_value_is_missing/), /assertRaises\(pkg\.SampleValueError\)/);
+  assert.match(near('packages/php-ext/generated/tests/GeneratedTest.php', /AKeyWithoutAValueIsMissing/), /catch \(\\[\w\\]*SampleValueError \$error\)/);
+  assert.doesNotMatch(near('packages/go/zz_generated_test.go', /AKeyWithoutAValueIsMissing/), /errors\.As\(err, &\*?\)|var target \*?\s*$/m);
+});
