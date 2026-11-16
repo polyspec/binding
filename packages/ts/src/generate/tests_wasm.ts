@@ -48,7 +48,7 @@ export function wasmTests(model: Model): string {
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
-      return `{ ${(unit.members ?? []).map((m) => `${langName('wasm', m.name, 'callable')}: ${body}`).join(', ')} }`;
+      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('wasm', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';

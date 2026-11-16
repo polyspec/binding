@@ -393,7 +393,7 @@ export function nodeTests(model: Model): string {
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
-      return `{ ${(unit.members ?? []).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
+      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields.

@@ -355,7 +355,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const callbackNew = (unit: Unit, how: CallbackHow): string => {
     if ('missing' in how) return 'new class {}';
     const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';
-    return `new class { ${(unit.members ?? []).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
+    return `new class { ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
   };
   // GN-6x: a class of another repository, by the namespace of the owner's package.
   const foreignClass = (library: string, unit: Unit): string => {

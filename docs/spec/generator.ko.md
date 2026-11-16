@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e90d916f1f30a2359ddb1a957577cb0961ec9aa6aeff027d1a229bed4f800403 -->
+<!-- source-sha256: 8aa19015d59271f673ff95d6ba8cce7f01c5b827de16c71b275107e9a520e34c -->
 # 생성기
 
 [English](generator.md)
@@ -473,7 +473,21 @@
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 unit의 member가 `&mut self`를 받으면 그 trait의 `&mut dyn`으로, 아니면 `&dyn`으로 받고, binding은 그것을
   `&mut`와 `&`로 넘긴다(B2.252). 코어가 `&`를 받는 곳의 `&mut`는 `clippy::unnecessary_mut_passed`가 거부한다. 객체가 들어올 때 각 member가 호출
-  가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
+  가능해야 한다(kind `invalid_callback`). 다만 `default`를 가진 member는 예외다(B2.379, CK-98): callback interface의
+  member에 붙는 `"default": {"literal": <value>}`는 parameter default의 U-2 형태로, 객체에 그 member가 없을 때 trait
+  method가 돌려주는 값을 말하고, 객체는 그 member를 가지면서 그것이 호출 가능하지 않을 때만 그 member 때문에 거부된다.
+  trait method의 각 호출은 먼저 객체에서 그 member를 찾고(Node와 WASM은 `undefined`가 아닌 property, Python은
+  `hasattr`, PHP는 그 class의 method) 없으면 호출 없이 literal을 돌려준다. Go는 그 member를 callback의 interface에서
+  빼고, dispatch는 객체가 그 method를 가지면(그 method 하나의 interface로의 type assertion) 그것을 호출하고 아니면
+  literal을 encode한다. 선언은 그 member를 PHP interface와 Python `Protocol`에서 빼고 TypeScript에서는 선택으로
+  선언한다(`blockingIo?(): boolean`). 그 interface를 `implements`하는 class(GN-6w)는 전과 같이 자기 trait method를
+  호출한다. 행과 호출이 그런 member의 행을 이름하지 않는 case fixture(G-5)는 객체에서 그 member를 빼므로 코어는
+  default를 받는다. 모든 case에 한 type인 Go fixture는 case의 어느 행도 그 member를 이름하지 않을 때 default로 답하고,
+  시험의 raising 객체와 panicking 객체는 그 member를 뺀다. bool, 숫자, text, 또는 그것의 `optional`이 아닌 type의
+  literal은 이름으로 거부된다(G-4). 이유: `polyspec_template::Loader`의 `fn blocking_io(&self) -> bool { false }`처럼
+  default body를 가진 코어 trait method는 host 객체가 구현할 필요가 없지만, 그 method를 override하는 Rust impl은
+  trait의 body를 호출할 수 없고 생성기는 Rust를 읽지 않으므로(I-2) 계약이 그 값을 말한다.
+  호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
   바인딩의 실패(다른 타입의 결과, Node와 PHP에서 `thread: owner`에 다른 스레드가 한 호출인 kind `wrong_thread`)는 바인딩 표의 그것을
   가리키는 `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은
   `Raised`의 마지막 drop은 GN-6u대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node

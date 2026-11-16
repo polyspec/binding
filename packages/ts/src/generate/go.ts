@@ -961,7 +961,7 @@ function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: Callba
     const results = goResults(scope, m.returns);
     return { m, method, params, signature: results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})` };
   });
-  const cases = methods.map(({ m, method }, index) => {
+  const cases = methods.map(({ m, method, params, signature }, index) => {
     const lines: string[] = [`\t\tcase ${index}:`];
     for (const p of m.params) {
       lines.push(`\t\t\tvar ${goParam(p.name, scope.model)} ${goType(scope, p.type)}`);
@@ -971,7 +971,13 @@ function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: Callba
     const args = m.params.map((p) => goParam(p.name, scope.model)).join(', ');
     // U-3, GN-6d: an error of a unit that the member recognizes goes to the core with its kind and its message.
     const failed = (m.recognized?.units ?? []).reduce((err, u) => (cb.library === undefined ? `binding.Recognize${goName(u.unit.name)}(${err})` : `binding.RecognizeAs[*${ownerErrors(scope, cb.library)}.${goName(u.unit.name)}](${err})`), 'err');
-    if (m.returns === 'none' && m.recognized === undefined) {
+    if (m.member.default !== undefined) {
+      // GN-6d: a member with a default is no method of the interface; an object without the method gets the default.
+      lines.push(`\t\t\tvar returned ${goType(scope, m.returns)}`);
+      lines.push(`\t\t\tif implemented, ok := object.(interface{ ${method}(${params}) ${signature} }); ok {`, '\t\t\t\tvar err error', `\t\t\t\treturned, err = implemented.${method}(${args})`, '\t\t\t\tif err != nil {', `\t\t\t\t\treturn ${failed}`, '\t\t\t\t}');
+      lines.push('\t\t\t} else {', ...goDefault(scope, m.returns, m.member.default.literal, m.member.id).map((line) => `\t\t\t\t${line}`), '\t\t\t}');
+      lines.push(...goEncode(scope, m.returns, 'returned', 3, 0), '\t\t\treturn nil');
+    } else if (m.returns === 'none' && m.recognized === undefined) {
       lines.push(`\t\t\treturn object.${method}(${args})`);
     } else if (m.returns === 'none') {
       lines.push(`\t\t\tif err := object.${method}(${args}); err != nil {`, `\t\t\t\treturn ${failed}`, '\t\t\t}', '\t\t\treturn nil');
@@ -984,6 +990,23 @@ function callbackCases(scope: GoScope, cb: CallbackUnit): { methods: { m: Callba
   return { methods, cases };
 }
 
+// GN-6d: the lines that set returned to the default literal of a callback member that the object leaves out.
+export function goDefault(scope: GoScope, type: Type, literal: unknown, where: string): string[] {
+  if (typeof type === 'object' && 'optional' in type) {
+    if (literal === null) return ['returned = nil'];
+    return [`value := ${goType(scope, type.optional)}(${goLiteral(type.optional, literal, where)})`, 'returned = &value'];
+  }
+  return [`returned = ${goLiteral(type, literal, where)}`];
+}
+
+// GN-6d: a Go literal of a bool, a number or a text of a callback default.
+function goLiteral(type: Type, literal: unknown, where: string): string {
+  if (type === 'bool' && typeof literal === 'boolean') return String(literal);
+  if ((type === 'int' || type === 'int64' || type === 'uint' || type === 'float') && typeof literal === 'number') return String(literal);
+  if (type === 'text' && typeof literal === 'string') return goString(literal);
+  throw new Unsupported(`${where}: the default ${JSON.stringify(literal)} of a callback member is not generated (U-3, GN-6d)`);
+}
+
 // U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
 function goCallback(scope: GoScope, cb: CallbackUnit): string {
   const name = goName(cb.unit.name);
@@ -993,7 +1016,7 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
 // the call that takes it, on the goroutine of that call. An error that a method returns ends that call, which returns
 // the same error.${internalDoc(scope.model, cb.unit)}
 type ${name} interface {
-${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
+${methods.filter(({ m }) => m.member.default === undefined).map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
 }
 ${goDispatch(scope, cb, cases)}`;
 }

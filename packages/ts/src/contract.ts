@@ -77,6 +77,8 @@ export interface Member {
   async_allowed?: boolean;
   errors?: { recognize: UnitRef[]; reason: string };
   exclusive?: string;
+  // U-3, GN-6d, CK-98: the value that a member of a callback interface gives when the host object leaves it out.
+  default?: { literal: unknown };
   only?: Only;
   native?: Native;
 }

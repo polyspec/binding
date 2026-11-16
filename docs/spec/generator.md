@@ -589,7 +589,23 @@ the design ids are those of the binding design.
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut dyn` of its trait when a member of the unit takes `&mut self`, and as
   `&dyn` otherwise, which the binding passes as `&mut` and `&` (B2.252); a `&mut` where the core takes `&` is refused by
   `clippy::unnecessary_mut_passed`.
-  When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
+  When the object enters, each member must be callable (kind `invalid_callback`), except a member with a `default`
+  (B2.379, CK-98): `"default": {"literal": <value>}` on a member of a callback interface, the U-2 form of a parameter
+  default, states the value that the trait method returns when the object has no such member, and the object is
+  refused for that member only when it has the member and the member is not callable. Each call of the trait method
+  first looks for the member on the object (Node and WASM a property that is not `undefined`, Python `hasattr`, PHP a
+  method of its class) and returns the literal without a call when it is missing; Go leaves the member out of the
+  interface of the callback, and its dispatch calls the method when the object has it (a type assertion to an
+  interface of the one method) and encodes the literal otherwise. The declarations leave the member out of the PHP
+  interface and of the Python `Protocol`, and declare it optional in TypeScript (`blockingIo?(): boolean`). A class
+  that `implements` the interface (GN-6w) calls its own trait method, as before. A case fixture (G-5) whose rows and
+  calls name no row of such a member leaves it out of the object, so the core gets the default; the Go fixture, one
+  type for every case, answers the default when no row of the case names the member, and the raising and panicking
+  objects of the tests leave it out. A literal of a type other than a bool, a number, a text or an `optional` of one
+  is refused by name (G-4). Why: a core trait method with a default body, such as `fn blocking_io(&self) -> bool {
+  false }` of `polyspec_template::Loader`, needs no host object to implement it, but a Rust impl that overrides the
+  method cannot call the body of the trait, and the generator reads no Rust (I-2), so the contract states the value.
+  A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner` on Node and PHP, kind `wrong_thread`), goes to the core
   as a `Raised` whose `Native` names it in the binding's table, and the generated caller throws the same object again.

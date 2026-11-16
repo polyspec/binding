@@ -42,6 +42,7 @@
 - A call of `after` of a member without a result states `"result": null`, which the contract check requires, and the Node and WASM tests require no value of it, where they compared `undefined` with `null` (CK-22, B2.374).
 - A result of a value alias compared as a value takes the out row that the value meets, so UTF-8 bytes that leave as a text are expected as that text, where Python refused them (GN-13be, B2.375).
 - CK-22 takes a case that raises a kind on the path of a member, the same library of the kind and the same form of call, from any member, where it asked a case of each member (B2.376).
+- A member of a callback interface may state `"default": {"literal": <value>}`, and a host object that leaves the member out gets the literal from the trait method on the five targets, where it was refused with kind `invalid_callback`; a class that implements the interface calls its own trait method, and `binding check` reports a default on a member of another unit or of another type than the return (GN-6d, CK-98, B2.379).
 
 ## 0.0.13
 

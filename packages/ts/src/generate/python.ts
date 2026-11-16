@@ -915,7 +915,11 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params.map((p) => `, ${p}`).join('')}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, ${failure}> {
         Python::attach(|py_| {
-            let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {
+            let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {${m.absent === undefined ? '' : `
+                // GN-6d: an object without the member gets the default of the contract.
+                if !self.object.bind(py_).hasattr(${rustString(method)})? {
+                    return Ok(${m.absent});
+                }`}
                 let returned = self.object.bind(py_).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                 ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
             };
@@ -938,6 +942,10 @@ fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
 `).join('');
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
+    // GN-6d: a member with a default may be left out, which the call answers with the default.
+    if (m.absent !== undefined) return `    if value.hasattr(${rustString(method)})? && !value.getattr(${rustString(method)})?.is_callable() {
+        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+    }`;
     return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
         return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
     }`;
@@ -1569,7 +1577,7 @@ type ${langName('python', v.unit.name, 'class')} = ${v.cases.map((kase) => langN
 class ${langName('python', cb.unit.name, 'class')}(Protocol):
     \"\"\"U-3: a callback that Python code implements; the binding checks the members of the object it receives.\"\"\"
 
-${cb.members.map((m) => `    def ${langName('python', m.member.name, 'callable')}(self${m.params.map((p) => `, ${langName('python', p.name, 'variable')}: ${pyType(model, p.type, false)}`).join('')}) -> ${pyType(model, m.returns, true)}: ...`).join('\n\n')}`).join('');
+${cb.members.filter((m) => m.absent === undefined).map((m) => `    def ${langName('python', m.member.name, 'callable')}(self${m.params.map((p) => `, ${langName('python', p.name, 'variable')}: ${pyType(model, p.type, false)}`).join('')}) -> ${pyType(model, m.returns, true)}: ...`).join('\n\n')}`).join('');
   // GN-6ap: a generated interface is an abstract base class, with which the package registers the classes that
   // implement it; a Protocol without a member would accept every value.
   const interfaces = model.interfaces.map((i) => `

@@ -5,6 +5,7 @@
 import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, outerVariant, variantPattern } from '../contract.ts';
 import { createHash } from 'node:crypto';
 import { convert, sameName } from '../names.ts';
+import { rustString } from './text.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
 export class Unsupported extends Error {
@@ -80,6 +81,25 @@ export interface CallbackMember {
   // U-3, GN-6d: the error units that the member recognizes, and the core error of each of their kinds, an expression
   // of errors.recognized with the message of the exception in `message`.
   recognized?: { units: ErrorUnit[]; kinds: { kind: string; error: string }[] };
+  // U-3, GN-6d: the Rust expression of the literal that the trait method returns when the host object has no such
+  // member; absent, every host object has the member.
+  absent?: string;
+}
+
+// U-3, GN-6d: the Rust expression of the default literal of a callback member, of the type that the member returns.
+export function callbackDefault(member: Member, returns: Type): string | undefined {
+  const declared = member.default;
+  if (declared === undefined) return undefined;
+  const literal = declared.literal;
+  const of = (type: Type, value: unknown): string => {
+    if (type === 'bool' && typeof value === 'boolean') return String(value);
+    if ((type === 'int' || type === 'int64' || type === 'uint') && typeof value === 'number' && Number.isInteger(value)) return String(value);
+    if (type === 'float' && typeof value === 'number') return `${Number.isInteger(value) ? `${value}.0` : String(value)}_f64`;
+    if (type === 'text' && typeof value === 'string') return `String::from(${rustString(value)})`;
+    if (typeof type === 'object' && 'optional' in type) return value === null ? 'None' : `Some(${of(type.optional, value)})`;
+    throw new Unsupported(`${member.id}: the default ${JSON.stringify(literal)} of a callback member that returns ${JSON.stringify(returns)} is not generated (U-3, GN-6d)`);
+  };
+  return of(returns, literal);
 }
 
 // U-7: a value alias that the core judges and gives through core: {in, out}, with its value table.
@@ -529,7 +549,8 @@ export function collectModel(
       const returns = qualify(member.returns ?? 'none');
       supportedType(returns, units, `${library}.${member.id} returns`, foreign);
       const recognized = (member.errors?.recognize ?? []).length === 0 ? undefined : ownerRecognized(owner, library, member);
-      return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }) };
+      const absent = callbackDefault(member, returns);
+      return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }), ...(absent === undefined ? {} : { absent }) };
     });
     const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
     // GN-6bl, GN-7b: the error of the trait is the core error of its owner, the struct that errors.code names or the enum.
@@ -896,7 +917,8 @@ export function collectModel(
         }
         const returns = member.returns ?? 'none';
         supportedType(returns, units, `${member.id} returns`, foreign);
-        members.push({ member, params, returns, receiver });
+        const absent = callbackDefault(member, returns);
+        members.push({ member, params, returns, receiver, ...(absent === undefined ? {} : { absent }) });
         return true;
       }
       if (refused) throw new Unsupported([]);

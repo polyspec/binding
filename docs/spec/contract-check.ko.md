@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: a62eafd1eb3533e830893f8884f71ace6ff8cace1eb0cf24f0700f7a6cc22b4a -->
+<!-- source-sha256: 00fa79a80450c403005605835bc2af93b05a005376df321ea5b9b69dc0bc05fa -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -328,6 +328,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `binding check`는 targets가 다른 target을 이름하거나 입력이 어떤 target에 case를 남기지 않는 case를 보고한다. 이유:
   `targets`를 가진 case는 언어의 숫자 모델에 따라 갈리는 결과를 말하고, 그 입력의 어느 case도 나열하지 않는 target은 run이
   통과하는 동안 그 입력을 시험하지 않은 채로 둔다.
+- **CK-98** member의 `default`(generator GN-6d, B2.379)는 callback interface(U-3)의 member에 붙는
+  `{"literal": <value>}`이고, 그 literal은 member가 돌려주는 type의 값이다: bool, 정수(`uint`이면 음이 아닌), 숫자,
+  text, 이 계약의 enum의 variant의 값, 또는 `optional`이면 `null`이나 그런 값. `binding check`는 다른 unit의 member에
+  붙은 default와, 돌려주는 type의 값이 아닌 literal을 보고하며, `none`을 돌려주는 member의 default도 그중 하나다.
+  이유: default는 host 객체가 member를 뺄 때 trait method가 코어에 돌려주는 것이므로, 코어가 host 객체를 통해
+  호출하지 않는 member의 default는 아무것도 말하지 않고, 다른 type의 literal은 trait method에서 컴파일되지 않거나
+  코어에 그 type이 갖지 않는 값을 준다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

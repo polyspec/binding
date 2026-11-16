@@ -1004,7 +1004,12 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         if std::thread::current().id() != self.owner {
             return Err(thrown(Thrown::Binding(binding_error(BindingError::WrongThread { subject: String::from(${rustString(`${jsName}.${method}()`)}) }))));
         }` : ''}
-        let call = || -> Result<${result}, Thrown> {${/\benv_\b/.test(returned) && m.returns !== 'none' ? '\n            let env_ = self.env_;' : ''}
+        let call = || -> Result<${result}, Thrown> {${/\benv_\b/.test(returned) && m.returns !== 'none' ? '\n            let env_ = self.env_;' : ''}${m.absent === undefined ? '' : `
+            // GN-6d: an object without the member gets the default of the contract.
+            let found: Unknown<'env> = self.object.get_named_property(${rustString(method)}).map_err(|error| Thrown::Binding(internal(error)))?;
+            if found.get_type().map_err(|error| Thrown::Binding(internal(error)))? == ValueType::Undefined {
+                return Ok(${m.absent});
+            }`}
             let function: Function<'env, ${argsType}, Unknown<'env>> =
                 self.object.get_named_property(${rustString(method)}).map_err(|error| Thrown::Binding(internal(error)))?;
 ${m.params.length === 0 ? '' : `            let args: ${argsType} = FnArgs::from((${outs.map((o) => `${o.replace(/\?$/, '')}.map_err(Thrown::Binding)?`).join(', ')}${outs.length === 1 ? ',' : ''}));
@@ -1048,8 +1053,9 @@ fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
 `).join('');
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
+    // GN-6d: a member with a default may be left out, which the call answers with the default.
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
-    if found.get_type().map_err(internal)? != ValueType::Function {
+    if ${m.absent === undefined ? '' : 'found.get_type().map_err(internal)? != ValueType::Undefined && '}found.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
     }`;
   }).join('\n');
@@ -2277,7 +2283,7 @@ ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.na
   const callbacks = model.callbacks.map((cb) => `
 /** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
 export interface ${langName('node', cb.unit.name, 'class')} {
-${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
+${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}${m.absent === undefined ? '' : '?'}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
   // GN-6ap: a generated interface, which the classes that implement it name.
   const interfaces = model.interfaces.map((i) => `

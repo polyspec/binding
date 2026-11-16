@@ -392,6 +392,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   list every such target; `binding check` reports a case whose targets name another target or whose input leaves a
   target without a case. Why: a case with `targets` states a result that differs by the model of numbers of the
   languages, and a target that no case of the input lists would leave that input untested while the run passes.
+- **CK-98** A `default` of a member (generator GN-6d, B2.379) is `{"literal": <value>}` on a member of a callback
+  interface (U-3), and the literal is a value of the type that the member returns: a bool, an integer (not negative
+  for `uint`), a number, a text, a value of a variant of an enum of this contract, or `null` or such a value for an
+  `optional`. `binding check` reports a default on a member of any other unit and a literal that is no value of the
+  return type, a return of `none` among them. Why: the default is what the trait method returns to the core when the
+  host object leaves the member out, so a default on a member that the core does not call through a host object
+  states nothing, and a literal of another type would not compile in the trait method or would give the core a value
+  that its type does not hold.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

@@ -982,9 +982,16 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             ${convertIn(model, m.returns, '&returned', rustString(`${jsName}.${method}() returns`))}.map_err(Thrown::Binding)`;
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let call = || -> Result<${result}, Thrown> {
+        let call = || -> Result<${result}, Thrown> {${m.absent === undefined ? `
             let function: Function = Reflect::get(&self.object, &JsValue::from_str(${rustString(method)}))
-                .and_then(|found| found.dyn_into::<Function>())
+                .and_then(|found| found.dyn_into::<Function>())` : `
+            let found = Reflect::get(&self.object, &JsValue::from_str(${rustString(method)})).map_err(|error| Thrown::Binding(internal(&error)))?;
+            // GN-6d: an object without the member gets the default of the contract.
+            if found.is_undefined() {
+                return Ok(${m.absent});
+            }
+            let function: Function = found
+                .dyn_into::<Function>()`}
                 .map_err(|error| Thrown::Binding(internal(&error)))?;
             let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};
             ${returned}
@@ -1014,7 +1021,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
   const checks = cb.members.map((m) => {
     const method = langName('wasm', m.member.name, 'callable');
     return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
-    if !found.is_function() {
+    if ${m.absent === undefined ? '' : '!found.is_undefined() && '}!found.is_function() {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
     }`;
   }).join('\n');
@@ -1888,7 +1895,7 @@ ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('wasm', f.na
   const callbacks = model.callbacks.map((cb) => `
 /** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
 export interface ${langName('wasm', cb.unit.name, 'class')} {
-${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
+${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}${m.absent === undefined ? '' : '?'}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
   // GN-6ap: a generated interface, which the classes that implement it name.
   const interfaces = model.interfaces.map((i) => `

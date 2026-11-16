@@ -2636,6 +2636,23 @@ class Checker {
 
   // ---- CK-17: callbacks (U-3, T-3) ----
 
+  // CK-98: whether a literal is a value of a type: a bool, an integer, a number, a text, the value of a variant of an
+  // enum, or null or a value of the inner type of an optional. A literal of no other type exists.
+  private literalOf(type: Type, value: unknown): boolean {
+    if (type === 'bool') return typeof value === 'boolean';
+    if (type === 'int' || type === 'int64') return Number.isInteger(value);
+    if (type === 'uint') return Number.isInteger(value) && (value as number) >= 0;
+    if (type === 'float') return typeof value === 'number';
+    if (type === 'text' || type === 'latin1') return typeof value === 'string';
+    if (typeof type !== 'object') return false;
+    if ('optional' in type) return value === null || this.literalOf(type.optional, value);
+    if ('unit' in type && (type.library === undefined || type.library === this.contract.library)) {
+      const unit = this.unit(type.unit);
+      return unit?.kind === 'enum' && (unit.variants ?? []).some((v) => v.value === value);
+    }
+    return false;
+  }
+
   callbacks(): void {
     for (const { member, unit, path } of this.members.values()) {
       const callback = unit.origin === 'callback';
@@ -2647,6 +2664,13 @@ class Checker {
       const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
       if (callback && receiver !== '&self' && receiver !== '&mut self') {
         this.report('CK-17', path, `the callback member ${member.id} does not name its trait method and receiver in core: {path, receiver: "&self" | "&mut self"} (U-3)`);
+      }
+      // CK-98, GN-6d: a default of a member is the value that a callback member gives when the host object leaves it out.
+      if (member.default !== undefined) {
+        if (!callback) this.report('CK-98', `${path}/default`, `only a member of a callback interface has a default; ${member.id} is a member of ${unit.id} (U-3, GN-6d)`);
+        else if (!this.literalOf(member.returns ?? 'none', member.default.literal)) {
+          this.report('CK-98', `${path}/default`, `the default ${JSON.stringify(member.default.literal)} of ${member.id} is no value of its return type ${JSON.stringify(member.returns ?? 'none')} (U-3, GN-6d)`);
+        }
       }
       for (const [i, ref] of (member.errors?.recognize ?? []).entries()) {
         const refPath = `${path}/errors/recognize/${i}`;

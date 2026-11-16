@@ -2019,3 +2019,36 @@ test('B2.376: CK-22 takes a case of any member with the same conversion and form
   // A call with wait rejects by another path, which no case of unsupported takes.
   assert.deepEqual(missing('blocking_io'), ['no case of counter.add raises the kind unsupported (K-1, B-4)']);
 });
+
+describe('B2.379: CK-98 a default of a member is a literal of its return type on a member of a callback interface (U-3, GN-6d)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const blockingIo = (literal: unknown, returns: unknown = 'bool'): any => ({
+    id: 'lookup.blocking_io', name: ['blocking', 'io'], kind: 'method', visibility: 'public', parameters: [], returns,
+    default: { literal }, async_allowed: false, core: { path: 'polyspec_sample::Lookup::blocking_io', receiver: '&self' },
+  });
+  const run = (change: (c: any) => void): Finding[] => {
+    const c = read('packages/rust/interface.json');
+    change(c);
+    return checkContract(c, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  };
+  const lookup = (c: any): any => c.units.find((u: any) => u.id === 'lookup');
+  test('a callback member whose default is a value of its return type passes', () => {
+    assert.deepEqual(run((c) => lookup(c).members.push(blockingIo(false))).map((f) => `${f.check} ${f.message}`), []);
+    assert.deepEqual(run((c) => lookup(c).members.push(blockingIo(null, { optional: 'text' }))).filter((f) => f.check === 'CK-98'), []);
+  });
+  test('a default that is no value of the return type is reported', () => {
+    const found = run((c) => lookup(c).members.push(blockingIo('no'))).filter((f) => f.check === 'CK-98');
+    assert.equal(found.length, 1);
+    assert.match(found[0]?.message ?? '', /lookup\.blocking_io is no value of its return type "bool"/);
+    assert.equal(run((c) => lookup(c).members.push(blockingIo(null))).filter((f) => f.check === 'CK-98').length, 1);
+    assert.equal(run((c) => lookup(c).members.push(blockingIo(1.5, 'int'))).filter((f) => f.check === 'CK-98').length, 1);
+  });
+  test('a default of a member of a unit that is no callback interface is reported', () => {
+    const found = run((c) => {
+      const member = c.units.flatMap((u: any) => (u.kind === 'class' ? u.members ?? [] : [])).find((m: any) => m.kind === 'method' && m.returns === 'bool');
+      member.default = { literal: false };
+    }).filter((f) => f.check === 'CK-98');
+    assert.equal(found.length, 1);
+    assert.match(found[0]?.message ?? '', /only a member of a callback interface has a default/);
+  });
+});
