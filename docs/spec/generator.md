@@ -2070,8 +2070,17 @@ the design ids are those of the binding design.
   generator fixes. A release builds the library of each platform (GN-15g) with that print and writes the libraries
   into the directive of the link file of that platform, `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform> <libraries>`,
   so a consumer that fetches the module links them with no flag of its own. A checkout, whose tree holds no library,
-  builds its library with the same print, and the recipe that runs its Go tests gives the printed libraries after the
-  directory in `CGO_LDFLAGS` (GN-14): `CGO_LDFLAGS=-L<dir> <libraries>`. The main link file names only `-l<library>`.
+  gets them from one command of the CLI: `binding go-link --manifest <Cargo.toml of the Go crate> --target-dir <dir>
+  [--features <features>]` builds the static library of the host with `cargo rustc --locked --offline --lib
+  --crate-type staticlib` and the given features into `<dir>`, with the print, and writes to its standard output the
+  value of `CGO_LDFLAGS` for the Go tests of that checkout, `-L<dir>/debug <libraries>`; the diagnostics of Cargo go to
+  its standard error, and a failed build fails the command with the status of Cargo. A recipe that runs the Go tests
+  calls it in place of its own build of the library, `CGO_LDFLAGS="$$($(BINDING) go-link ...)"` in the recipe line
+  (GN-14), and `make e2e` calls the same command. The main link file names only `-l<library>`. Why the command builds
+  and does not read an output of a build: rustc prints the libraries only while it links the static library, to its
+  diagnostics, and writes them to no file, so a command that only read them would need every recipe to ask for the
+  print and keep it, the logic that the command holds once; and the build of the command is the one build of the
+  library, not a second one.
   Why: the libraries that a static library needs follow the crates that it holds, which the generator does not read;
   the fixed lists `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc` and `-lSystem -lc -lm` missed
   `-framework Security -framework CoreFoundation -liconv` of session-store, whose crate security-framework refers to
