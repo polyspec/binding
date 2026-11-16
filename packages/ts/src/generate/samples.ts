@@ -2517,7 +2517,9 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
   const name = (member: number): string => langName(ctx.lang, members[member]?.name ?? [], 'callable');
   // T-3: a callback unit of another repository names the types of its owner's contract, which resolve there.
   const typed = fixtureType(model, fixture.unit);
-  const argsOf = (member: number, args: unknown[]): string[] => (members[member]?.parameters ?? []).map((p, i) => fromJson(model, ctx, typed(p.type), args[i] ?? null));
+  // GN-13be: an argument that the binding hands to the callback, in a row and in an expected call, leaves the binding
+  // as a result does, so it takes the out rows of an alias.
+  const argsOf = (member: number, args: unknown[]): string[] => (members[member]?.parameters ?? []).map((p, i) => fromJson(model, ctx, typed(p.type), args[i] ?? null, true));
   const none = ctx.lang === 'python' ? 'None' : 'null';
   const flag = (on: boolean): string => (ctx.lang === 'python' ? (on ? 'True' : 'False') : String(on));
   const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
@@ -2553,7 +2555,8 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
     const given = (row['args'] ?? {}) as Record<string, unknown>;
     const values = type.parameters.map((p, i) => {
       if (!(String(i) in given)) throw new Error(`${what} gives no argument ${String(i)} in a row (G-5)`);
-      return fromJson(model, ctx, p, given[String(i)]);
+      // GN-13be: an argument that the binding hands to the function leaves the binding as a result does.
+      return fromJson(model, ctx, p, given[String(i)], true);
     });
     const result = row['result'] === undefined || row['result'] === null || type.returns === 'none' ? none : fromJson(model, ctx, type.returns, row['result']);
     // A row of a function raises nothing: its last value is that of a fixture row without `raise` (GN-13).
