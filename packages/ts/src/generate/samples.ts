@@ -1900,7 +1900,7 @@ export interface MadeForm {
   left: (local: string, what: string) => string;
   // GN-13u: the statement that closes an instance that the test made, at the end of the test and apart from its
   // assertions, by the cleanup member of its class (B-10); a target without it closes nothing.
-  closing?: (name: string, cleanup: Fn) => string;
+  closing?: ((name: string, cleanup: Fn) => string) | undefined;
   // GN-13j: the statement that runs the program of the state of a service with a step, the scope and a JSON text.
   state?: (service: CaseService, state: string, step: 'setup' | 'change' | 'check', scope: string, value: string) => string;
   // GN-13q: the statement that writes the JSON text of a step to the peer of the scope and reads its line ready.

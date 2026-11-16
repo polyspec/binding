@@ -458,13 +458,14 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
   };
   // GN-13f: a receiver as one expression; an instance value is made in a closure that the expression calls.
-  const made = (receiver: Receiver): string => {
+  // GN-13u, B-10: open makes an instance that the test drops without its cleanup call, so it is not closed at the end.
+  const made = (receiver: Receiver, open = false): string => {
     const mark = caseTextUses;
     if (isPlain(receiver)) {
       const expression = invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
       return withRoot(expression, caseTextUses > mark);
     }
-    const built = madeLines(model, form, receiver);
+    const built = madeLines(model, open ? { ...form, closing: undefined } : form, receiver);
     const needed = caseTextUses > mark;
     return withRoot(`(function ()${needed ? ' use ($_caseTextRoot)' : ''} { ${built.lines.join(' ')} return ${built.expr}; })()`, needed);
   };
@@ -1026,7 +1027,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     if (cleanup === undefined || sample === undefined) continue;
     const label = `${langName('php', object.unit.name, 'class')}`;
     const warned = (call: string, expected: string): string => `
-        $held = ${made(sample)};
+        $held = ${made(sample, true)};
         $warnings = [];
         set_error_handler(function (int $level, string $message) use (&$warnings): bool {
             $warnings[] = [$level, $message];

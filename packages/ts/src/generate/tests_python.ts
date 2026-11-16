@@ -438,13 +438,14 @@ export function pythonTests(model: Model, module: string): string {
   // GN-13f: a receiver as one expression; an instance value is made in a function of the module that the expression
   // calls.
   const helpers: string[] = [];
-  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => {
+  // GN-13u, B-10: open makes an instance that the test drops without its cleanup call, so it is not closed at the end.
+  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined, open = false): string => {
     const mark = caseTextUses;
     if (isPlain(receiver)) {
       const expression = invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
       return withRoot(expression, caseTextUses > mark);
     }
-    const built = steps.apart(() => madeLines(model, madeForm, receiver));
+    const built = steps.apart(() => madeLines(model, open ? { ...madeForm, closing: undefined } : madeForm, receiver));
     const needed = caseTextUses > mark;
     const helper = `_made_${helpers.length}`;
     // GN-13s: a step that calls a helper of the test case (self._case_path, self._future) takes the test case as self.
@@ -1021,7 +1022,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     usesOutcome = true;
     const variable = langName('python', object.unit.name, 'variable');
     const callName = langName('python', cleanup.member.name, 'callable');
-    const recv = made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
+    const recv = made(sample, (arg) => caseValue(model, ctx, arg, sample.args), true);
     const warned = 'self.assertEqual([str(w.message) for w in caught if issubclass(w.category, ResourceWarning)], ';
     append(`
     def test_b10_${variable}_warns_without_${callName}(self) -> None:

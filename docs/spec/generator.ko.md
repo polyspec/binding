@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ac5d77de1370c9e679dc68f7d9f5d0bae2c6dcfe080f6a968cd3d00e495d32f7 -->
+<!-- source-sha256: 1011cb17c3eda85faf5e23cd0cf74b5d9988c281cb2aa17820f3f90669736bf7 -->
 # 생성기
 
 [English](generator.md)
@@ -2302,6 +2302,7 @@
 - **GN-13u** Python이나 PHP 시험은 case를 위해 만든 instance(GN-13f) 중 class에 cleanup member(B-10)가 있는 것을
   시험 끝에 case의 assertion과 따로 닫는다: Python은 `self.addCleanup`으로, PHP는 attribute `After`가 붙은 method로
   닫는다. cleanup member의 호출은 시험에 결과도 실패도 주지 않고, case가 이미 닫은 instance는 효과 없이 다시 닫힌다.
+  class의 B-10 시험이 만든 instance는 닫지 않는다: 그 시험은 경고를 보려고 그것을 cleanup 호출 없이 버린다.
   이유: cleanup 호출 없이 버린 instance는 B-10에 따라 경고하는데(ResourceWarning, E_WARNING), 이는 binding이 아니라
   시험의 결함이며, 시험이 억제한 경고는 실제 결함의 같은 경고도 숨긴다.
 

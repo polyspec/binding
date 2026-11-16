@@ -11039,3 +11039,21 @@ test('B2.351: a PHP case value of an empty map of a value alias is the form that
   // A map with a key stays an array, which the in rows read as a map.
   assert.doesNotMatch(php, /\\Sample\\same\(\[\]\)/);
 });
+
+test('B2.348-1: the B-10 test drops the instance that it made without closing it, so its destructor warns (GN-13u, B-10)', () => {
+  // make e2e of classes: test_b10_lease_warns_without_release saw no warning, because the instance was also closed at
+  // the end of the test.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'php'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const pyB10 = python.slice(python.indexOf('def test_b10_lease_warns_without_release'), python.indexOf('def test_b10_lease_does_not_warn'));
+  const helper = /held = (_made_\d+)\(/.exec(pyB10)?.[1];
+  if (helper !== undefined) {
+    const body = python.slice(python.indexOf(`def ${helper}(`), python.indexOf('return', python.indexOf(`def ${helper}(`)));
+    assert.doesNotMatch(body, /addCleanup/, body);
+  }
+  assert.doesNotMatch(pyB10, /addCleanup/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const phpB10 = php.slice(php.indexOf('function testB10LeaseWarnsWithoutRelease'), php.indexOf('function testB10LeaseDoesNotWarnAfterRelease'));
+  assert.doesNotMatch(phpB10, /self::\$made\[\]/, phpB10);
+});
