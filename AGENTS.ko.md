@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: aafc2ff6f47bf88863e68f23581f01bc3fb9c8c9b06ac3d29e2c8ec44e71cfb8 -->
+<!-- source-sha256: df7145d6c885aca3e595d3bdb5ed43d2bf069aad85289dcb2f51922c6a743ac7 -->
 # 개발
 
 [English](AGENTS.md)
@@ -99,7 +99,10 @@
   `gh workflow run release.yml -f run=<id>`가 그것을 다시 시작한다. 그 step 하나인 `make ci-release`가 실행하는 `make release-tag`가 그 commit에 annotated tag
   `vX.Y.Z`를 만들어 push하고, `make release-assets`, `make release-publish`, `make release-undraft`가 archive를 만들고
   GitHub Release를 만든다. tag를 손으로 만들지 않는다. 이유: release는 성공한 실행이 확인한 commit이고, 그 version은 그것이
-  release하는 모든 manifest의 version이다.
+  release하는 모든 manifest의 version이다. version-bump commit 전에 checkout은 `make docs-check`, `make lint-rust`,
+  `make typecheck-ts`, `make test-ts`를 통과한다. `tests/e2e` 레포들의 생성된 crate는 CI의 job `e2e`만 lint하므로, 그
+  push의 CI run이 그것들의 첫 lint다. 그래서 0.0.18은 생성된 crate 넷이 쓰이지 않는 helper를 가져 CI에서 실패했고(B2.430),
+  B2.432가 commit 전에 그것들을 오프라인으로 lint하는 target을 더한다.
   Enforced by: `make release-coverage`는 `config/release.json`이 분류하지 않은 package 파일을 실패시킨다. `make
   release-tag`는 성공한 실행의 commit에만 tag를 붙인다.
 - Own: `make docs-check`는 `config/documents.json`이 고른 문서를 하나씩 설치된 `@polyspec/kit`의 문서 검사로 읽는다: 그

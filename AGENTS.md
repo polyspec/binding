@@ -113,7 +113,10 @@ rules of this repository.
   starts it again: its one step `make ci-release` runs `make release-tag`, which creates and pushes the annotated tag `vX.Y.Z` at that commit, and `make
   release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. No
   tag is created by hand. Why: the release is the commit that a successful run checked, and its version is the version of
-  every manifest that it releases.
+  every manifest that it releases. Before the version-bump commit the checkout passes `make docs-check`, `make
+  lint-rust`, `make typecheck-ts` and `make test-ts`. The generated crates of the repositories of `tests/e2e` are linted
+  only by the job `e2e` of CI, so the CI run of that push is their first lint; 0.0.18 so failed in CI on a helper that
+  four generated crates held unused (B2.430), and B2.432 adds a target that lints them offline before the commit.
   Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
   release-tag`, which tags only the commit of a successful run.
 - Own: `make docs-check` reads each document that `config/documents.json` selects on its own with the document check of
