@@ -888,8 +888,48 @@
       "result": null
     }
   ],
+  "store_get_blob": [],
   "store_count": [],
   "store_transaction": [
+    {
+      "id": "a_committed_text_is_given_as_bytes_that_leave_as_a_text",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "y"
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "after": [
+        {
+          "call": "store.get_blob",
+          "args": {
+            "key": "a"
+          },
+          "result": {
+            "kind": "bytes",
+            "value": {
+              "hex": "79"
+            }
+          }
+        }
+      ]
+    },
     {
       "id": "the_entries_of_a_function_that_returns_are_committed",
       "work": {
@@ -1495,6 +1535,20 @@
         "value": {
           "hex": "ff"
         }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "blob_in": [
+    {
+      "id": "a_boolean_is_no_blob",
+      "value": {
+        "kind": "bool",
+        "value": true
       },
       "raises": {
         "kind": "unsupported",

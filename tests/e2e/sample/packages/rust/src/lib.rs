@@ -1,8 +1,8 @@
 //! A sample library for the end-to-end check of binding: a callback interface that language code implements (U-3).
 
 use binding_core::{
-    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Key, KeyedMap, Kinds, MapOut,
-    Native, OutValue, OutValues, ValueKind,
+    BytesOut, Failure, FloatOut, Handle, HostText, HostValue, HostValues, Key, KeyedMap, Kinds,
+    MapOut, Native, OutValue, OutValues, ValueKind,
 };
 use std::fmt;
 
@@ -904,6 +904,57 @@ pub fn data_to_out(value: &Data) -> (OutValue, DataOut<'_>) {
     (root, out)
 }
 
+/// A byte string, whose out rows make UTF-8 bytes a text of the language and other bytes its byte string, as the
+/// `php_value` of php-serialization does (GN-13be).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Blob(pub Vec<u8>);
+
+/// The bytes that a string or a byte string of the language holds (U-7 `in`): a string is the bytes of its UTF-8,
+/// and any other value is kind `unsupported`.
+///
+/// # Errors
+///
+/// Kind `unsupported` for a value that is no string or byte string, or a string with an unpaired surrogate.
+pub fn blob_from_host(
+    _host: &mut dyn HostValues,
+    value: HostValue,
+) -> Result<Blob, Failure<Error>> {
+    match value {
+        HostValue::Bytes(bytes) | HostValue::Text(HostText::Bytes(bytes)) => Ok(Blob(bytes)),
+        HostValue::Text(HostText::Utf16(units)) => String::from_utf16(&units)
+            .map(|text| Blob(text.into_bytes()))
+            .map_err(|_units| unsupported("an unpaired surrogate")),
+        HostValue::Text(HostText::CodePoints(points)) => points
+            .into_iter()
+            .map(char::from_u32)
+            .collect::<Option<String>>()
+            .map(|text| Blob(text.into_bytes()))
+            .ok_or_else(|| unsupported("an unpaired surrogate")),
+        other => Err(Failure::Kind(Error::Unsupported {
+            what: format!("{other:?}"),
+        })),
+    }
+}
+
+/// The children of a blob, which has none.
+pub struct BlobOut;
+
+impl OutValues for BlobOut {
+    fn item(&mut self, _list: Handle, _index: u64) -> OutValue {
+        OutValue::Null
+    }
+
+    fn entry(&mut self, _map: Handle, _index: u64) -> (OutValue, OutValue) {
+        (OutValue::Null, OutValue::Null)
+    }
+}
+
+/// The language form of a blob (U-7 `out`): its bytes, which the out rows make a text when they are UTF-8.
+#[must_use]
+pub fn blob_to_out(value: &Blob) -> (OutValue, BlobOut) {
+    (OutValue::Bytes(BytesOut::new(value.0.clone())), BlobOut)
+}
+
 /// The data itself, which crosses the boundary in and out.
 #[must_use]
 pub fn echo(value: &Data) -> Data {
@@ -1176,6 +1227,15 @@ impl Store {
     #[must_use]
     pub fn get(&self, key: &str) -> Option<String> {
         entries_of(&self.entries).get(key).cloned()
+    }
+
+    /// The committed value of a key as the bytes of its text (GN-13be: a result of a value alias whose out rows
+    /// make UTF-8 bytes a text).
+    #[must_use]
+    pub fn get_blob(&self, key: &str) -> Option<Blob> {
+        entries_of(&self.entries)
+            .get(key)
+            .map(|value| Blob(value.clone().into_bytes()))
     }
 
     /// The count of the committed entries.

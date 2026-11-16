@@ -1030,6 +1030,137 @@
       ]
     },
     {
+      "id": "blob",
+      "name": [
+        "blob"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Blob",
+      "core": {
+        "in": "polyspec_sample::blob_from_host",
+        "out": "polyspec_sample::blob_to_out"
+      },
+      "in_raises": [
+        "polyspec_sample::Error::Unsupported"
+      ],
+      "out": [
+        {
+          "kind": "bytes",
+          "when": {
+            "predicate": "utf8",
+            "is": true
+          },
+          "make": {
+            "php": "bytes",
+            "python": "text",
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
+          }
+        },
+        {
+          "kind": "bytes",
+          "when": {
+            "predicate": "utf8",
+            "is": false
+          },
+          "make": {
+            "php": "bytes",
+            "python": "bytes",
+            "node": "bytes",
+            "go": "bytes",
+            "wasm": "bytes"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "bytes",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Uint8Array",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]byte",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Uint8Array",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "data",
       "name": [
         "data"
@@ -2213,6 +2344,36 @@
           "optional_reason": "T-5"
         },
         {
+          "id": "store.get_blob",
+          "name": [
+            "get",
+            "blob"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": {
+              "unit": "blob"
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Store::get_blob",
+            "receiver": "&self"
+          },
+          "optional_reason": "T-5"
+        },
+        {
           "id": "store.count",
           "name": [
             "count"
@@ -2877,6 +3038,11 @@
       "group": "store_get"
     },
     {
+      "member": "store.get_blob",
+      "file": "contracts/cases.json",
+      "group": "store_get_blob"
+    },
+    {
       "member": "store.count",
       "file": "contracts/cases.json",
       "group": "store_count"
@@ -2920,6 +3086,11 @@
       "alias": "data",
       "file": "contracts/cases.json",
       "group": "data_in"
+    },
+    {
+      "alias": "blob",
+      "file": "contracts/cases.json",
+      "group": "blob_in"
     },
     {
       "member": "sample.first",

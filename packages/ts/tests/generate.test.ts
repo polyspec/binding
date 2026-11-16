@@ -2702,7 +2702,11 @@ test('the make function of a value alias walks the value with a work stack and c
   // The make function of each of the five targets is the walk (GN-6as).
   const wasm = 'packages/ts/wasm/generated/lib.rs';
   const libs = ['packages/ts/generated/lib.rs', wasm, 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs'];
+  // A value alias whose every out row makes a value without children (no list, map, reference or other container):
+  // its value has a depth of one, so its make function is the one match over the rows, with no walk (GN-6as).
+  const leaves = new Set(['null', 'bool', 'int', 'uint', 'float', 'text', 'bytes']);
   for (const [sample, inputs] of Object.entries(samples)) {
+    const flat = new Set<string>((inputs.contract.units as any[]).filter((u) => u.kind === 'alias' && Array.isArray(u.out) && u.out.every((row: any) => leaves.has(row.kind))).map((u) => (u.name as string[]).join('_')));
     const out = generate(inputs);
     const found = libs.filter((path) => out.has(path));
     // The contracts of sample and consumer are not generated for WASM (BD-27).
@@ -2715,6 +2719,11 @@ test('the make function of a value alias walks the value with a work stack and c
         // it calls no conversion of the alias, which would call it.
         assert.doesNotMatch(body, /\bmake(_\w+)?\b/, `${sample} ${path}: make_${name} names a make function`);
         assert.doesNotMatch(body, new RegExp(`\\b(in|out)_${name}\\(`), `${sample} ${path}: make_${name} calls a conversion of its alias`);
+        // A value without children is made by one match, with no loop and no stack (B2.421).
+        if (flat.has(name)) {
+          assert.doesNotMatch(body, /\bloop\b|\blevels\b|\bOutLevel\b/, `${sample} ${path}: make_${name} of a value without children has no walk`);
+          continue;
+        }
         // A value with a container is walked by a loop over the levels whose children are not all made.
         assert.match(body, /\n\s+let mut levels(: Vec<OutLevel(<'\w+>)?>)? = Vec::new\(\);\n(.*\n)*?\s+loop \{\n/, `${sample} ${path}: make_${name} walks by a work stack`);
       }
@@ -6499,11 +6508,12 @@ test('the kinds of an alias are checked against its error, run alone and through
   assert.match(text(out, nodeTests), /addon\(\)\.__aliasInData\(new Uint8Array\(Buffer\.from\('ff', 'hex'\)\)\)/);
   assert.match(text(out, phpTests), /\\Polyspec\\Sample\\Internal\\aliasInData\(hex2bin\("ff"\)\);/);
   const without = sampleWith((c, cases) => {
-    delete c.units.find((u: any) => u.id === 'data').in_raises;
+    // No alias of the contract states the kinds of its in function.
+    for (const unit of c.units) if (unit.kind === 'alias') delete unit.in_raises;
     c.cases = c.cases.filter((row: any) => row.alias === undefined);
     void cases;
   });
-  for (const path of LIBS) assert.doesNotMatch(text(without, path), /alias_in_data|the kinds of in_raises/, path);
+  for (const path of LIBS) assert.doesNotMatch(text(without, path), /alias_in_\w+|the kinds of in_raises/, path);
 });
 
 test('a binding crate has the test features that its contract needs (GN-5)', () => {
@@ -6515,7 +6525,8 @@ test('a binding crate has the test features that its contract needs (GN-5)', () 
     assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n\[/, path);
   }
   delete sample.faults;
-  delete sample.units.find((u: any) => u.id === 'data').in_raises;
+  // codec-test is a feature only of a contract with an alias that states the kinds of its in function.
+  for (const unit of sample.units) if (unit.kind === 'alias') delete unit.in_raises;
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nthrown-count-test = \[\]\n\n\[dependencies\]/);
   // GN-6ae: the count of what was thrown is a feature of every crate of a contract that keeps it, and of no other.
   assert.match(String(trackedPackages(load().contract, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\n\n\[dependencies\]/);
@@ -7677,7 +7688,7 @@ test('B2.367: the main link file of the Go binding names only -l<library>, no fi
 
 // The sample with the classes store and scope of its core (GN-6ae): a transaction takes a function of a scope and
 // returns what the function returned.
-function scopedSample(targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> {
+function scopedSample(targets: string[], change: (contract: any, cases: any) => void = () => undefined): Map<string, string | Buffer> {
   const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   if (!contract.units.some((u: any) => u.id === 'store')) {
     const work = { function: { parameters: [{ unit: 'scope' }], returns: { passthrough: 'T' }, async_allowed: true } };
@@ -7699,8 +7710,9 @@ function scopedSample(targets: string[], change: (contract: any) => void = () =>
       ],
     });
   }
-  change(contract);
-  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
+  const caseFiles = sampleCases();
+  change(contract, caseFiles.get('contracts/cases.json'));
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: targets as Inputs['targets'] & string[] });
 }
 
 test('PHP makes a closure of a callable, holds its value in the passthrough table and returns it unchanged (GN-6ae)', () => {
@@ -7864,7 +7876,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -8132,7 +8144,8 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -8145,7 +8158,8 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -8159,7 +8173,8 @@ test('no helper of the generated Go crate has a name of the conversions of a uni
   assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
   assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'source', 'scope', 'counter', 'ledger', 'store', 'shelf', 'slip', 'search', 'held_source', 'feed', 'index']);
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
+  const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
 });
@@ -8373,7 +8388,7 @@ test('the entry point of a function member of a Node or WASM crate does not take
 
 test('a Node crate whose only language code is a function parameter has no variant of an exception that nothing makes (GN-6ae)', () => {
   // The sample without its callback units and its value alias: no callback and no walk of a value gives a napi error.
-  const alone = (contract: any): void => {
+  const alone = (contract: any, cases: any): void => {
     const gone = new Set<string>(contract.units.filter((u: any) => u.origin === 'callback' || u.kind === 'alias').map((u: any) => u.id));
     const names = (value: unknown): boolean => [...gone].some((id) => JSON.stringify(value).includes(`"unit":"${id}"`));
     // A record whose field is such a unit goes with it, and so does a class that implements such a unit (GN-6w).
@@ -8389,6 +8404,9 @@ test('a Node crate whose only language code is a function parameter has no varia
     contract.units = contract.units.filter((u: any) => !gone.has(u.id));
     for (const unit of contract.units) for (const m of unit.members) kept.add(m.id);
     contract.cases = contract.cases.filter((k: any) => k.member !== undefined && kept.has(k.member));
+    // A case of a kept member whose steps call a member that went goes with it.
+    const calls = (value: unknown): string[] => [...JSON.stringify(value).matchAll(/"call":"([\w.]+)"/g)].map((found) => found[1] ?? '');
+    for (const [group, rows] of Object.entries(cases)) if (Array.isArray(rows)) cases[group] = rows.filter((row) => calls(row).every((id) => kept.has(id)));
   };
   const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
   assert.match(lib, /let work = callable_in\(env_, work, "work"\)\?;/);
@@ -11592,6 +11610,25 @@ test('B2.420: a Go result of an alias in after takes the bytes that leave as a t
   assert.ok(body.includes('if want := (*any)(ptr[any]([]byte("\\xff"))); '), 'other bytes stay a []byte');
 });
 
+test('B2.421: the sample has a value alias result whose UTF-8 bytes leave as a text, read in after, so CI runs its generated Go (GN-13be, GN-6as)', () => {
+  // The fixture itself, not a changed copy: the alias blob with the out rows of php_value, store.get_blob, and the case
+  // of store.transaction whose after reads the committed "y" through it.
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go'] });
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  const at = go.indexOf('ACommittedTextIsGivenAsBytesThatLeaveAsAText(t *testing.T)');
+  assert.ok(at >= 0, 'the case is a Go test');
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  assert.ok(body.includes('GetBlob('), 'after reads store.get_blob');
+  assert.ok(body.includes('ptr[any]("y")'), 'utf8 bytes are a string');
+  assert.ok(!body.includes('[]byte("y")'), 'utf8 bytes are no []byte');
+  // A value without children is made by one match over the rows, with no walk (GN-6as).
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const blob = makeFns(text(out, path)).find((fn) => fn.name === 'blob');
+    assert.ok(blob !== undefined, `${path}: make_blob`);
+    assert.doesNotMatch(blob.body, /\bloop\b|\blevels\b|\bmake(_\w+)?\b/, path);
+  }
+});
+
 test('B2.379: a member of a callback interface with a default may be left out by the host object, which gets the default (U-3, GN-6d)', () => {
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   for (const [id, trait] of [['lookup', 'Lookup'], ['source', 'Source']] as const) {
@@ -11695,11 +11732,20 @@ test('B2.396: a value alias that no generated member of a target uses is no alia
   const only = { targets: ['php', 'python', 'node', 'go'], reason: 'B2.396' };
   // As in orm, the value classes of the alias are of the other targets as a whole (orm map_value), and so is each
   // member of a functions unit that names it.
+  // Every value alias of the sample is so (data, and blob of B2.421), so no member of WASM uses a value alias.
+  const aliases = contract.units.filter((u: any) => u.kind === 'alias' && u.origin === 'value').map((u: any) => u.id);
+  const naming = (value: unknown): boolean => aliases.some((id: string) => JSON.stringify(value).includes(`"unit":"${id}"`));
   for (const unit of contract.units) {
-    if (unit.kind === 'class' && unit.origin === 'value' && JSON.stringify(unit).includes('"unit":"data"')) unit.only = only;
-    else for (const member of unit.members ?? []) if (JSON.stringify(member).includes('"unit":"data"')) member.only = only;
+    if (unit.kind === 'class' && unit.origin === 'value' && naming(unit)) unit.only = only;
+    else for (const member of unit.members ?? []) if (naming(member)) member.only = only;
   }
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  // A case leaves a target only through the only of its row (GN-13h): the row of a group whose case calls such a member
+  // in a step (the after of store.transaction reads store.get_blob) has the same only.
+  const gone = new Set<string>(contract.units.flatMap((u: any) => (u.members ?? []).filter((m: any) => m.only === only).map((m: any) => m.id)));
+  const caseFiles = sampleCases();
+  const groups = caseFiles.get('contracts/cases.json') as Record<string, unknown>;
+  for (const row of contract.cases) if (row.member !== undefined && row.only === undefined && [...JSON.stringify(groups[row.group] ?? []).matchAll(/"call":"([\w.]+)"/g)].some((found) => gone.has(found[1] ?? ''))) row.only = only;
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /mod exports/);
   assert.doesNotMatch(wasm, /aliasInData|alias_in_data|\bHostValues?\b|\bOutValues?\b|\bfn data_in\b|\bfn data_out\b/);
