@@ -1544,6 +1544,12 @@ the design ids are those of the binding design.
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
   map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind
   `invalid_argument_type`. `polyspec` has no `__init__.py` (P-1).
+- **GN-11a** Python: the shape of a call (a keyword-only argument passed by position, the count of the arguments, a
+  missing or an unknown argument) is the calling rule of the language, so a generated function leaves it to the
+  `TypeError` of Python, which has no kind; a kind of the contract judges only the values of a call of the right shape.
+  So `parse("1", "options")` with `options` keyword-only is the `TypeError` of Python, as a call of TypeScript with
+  the wrong number of arguments is no kind (G-7). The generated test passes the keyword-only arguments by position
+  and expects that `TypeError`.
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a

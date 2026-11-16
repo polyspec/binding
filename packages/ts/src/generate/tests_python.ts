@@ -992,6 +992,18 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
             ${target(callArgs(model, ctx, fn, values, 'None'))}
         with self.assertRaisesRegex(TypeError, "${unknown}"):
             ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
+    // GN-11a: a keyword-only argument passed by position is a call of the wrong shape, the TypeError of Python and
+    // no kind of the contract.
+    const keywordOnly = fn.args.find((a) => a.field);
+    if (keywordOnly !== undefined) {
+      const { record: _record, ...rest } = fn;
+      const byPosition: Fn = { ...rest, args: fn.args.map((a) => ({ ...a, field: false })) };
+      append(`
+    def test_gn11a_${name}_takes_${langName('python', keywordOnly.name, 'variable')}_by_keyword_only(self) -> None:
+        with self.assertRaisesRegex(TypeError, "positional") as caught:
+            ${target(callArgs(model, ctx, byPosition, values))}
+        self.assertIs(type(caught.exception), TypeError)`);
+    }
   }
   // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.
   const held = heldTests(model, ctx, invoke, 'held');
