@@ -284,7 +284,9 @@ PHP_CONFIG when the command line gives it and the one beside that PHP otherwise,
 the build script of ext-php-rs refuses a PHP that it cannot find by the path that PHP names. It builds with the libclang
 and the clang of the LLVM of config/toolchain.json, which it checks first. Each PHP minor and build builds in its own
 target directory, because the extension is compiled against the headers of that PHP. The extension must load into that
-PHP without a php.ini before it is packed under the name by which PIE finds a pre-packaged binary. Optional
+PHP without a php.ini before it is packed under the name by which PIE finds a pre-packaged binary, with the stub of the
+extension that binding generates beside it, because PIE installs that zip alone and Composer unpacks no php-ext
+package, so a consumer gets the stub from that zip only (B2.530). Optional
 EXPECTED_PHP_MINOR is the expected major.minor; the selected runtime and php-config header minor must agree before
 Cargo builds, and the recipe records their full versions. This checks the minor, not every ABI or patch flag.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
@@ -316,9 +318,10 @@ ${generate('php')}
 	mkdir -p "$$copy"; \\
 	cp "$$target/release/lib${extension}.$(BINDING_CDYLIB)" "$$copy/${extension}.so"; \\
 	"$$php" -n -d extension="$$copy/${extension}.so" -r 'exit(extension_loaded("${extension}") ? 0 : 1);'; \\
+	cp ${place(contract, `packages/php-ext/generated/${extension}.stub.php`)} "$$copy/${extension}.stub.php"; \\
 	name=php_${extension}-v"$$version"_php$$minor-$$pie$$build.zip; \\
 	rm -f "$$copy/$$name"; \\
-	(cd "$$copy" && zip -q -9 -X "$$name" ${extension}.so); \\
+	(cd "$$copy" && zip -q -9 -X "$$name" ${extension}.so ${extension}.stub.php); \\
 	out=$(RELEASE_ASSETS)/php-ext; \\
 	mkdir -p "$$out"; \\
 	cp "$$copy/$$name" "$$out/.$$name.part"; \\

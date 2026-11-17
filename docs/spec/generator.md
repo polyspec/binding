@@ -4394,9 +4394,12 @@ the design ids are those of the binding design.
 - **GN-19d** The PHP extension, on each platform and PHP minor: `PHP=<php> PHP_CONFIG=<php-config> $(CARGO) build
   $(CARGOFLAGS) --release --locked -p polyspec-<repository>-php-ext` (GN-1d), then the cdylib is copied as `<extension-name>.so`, and the
   recipe requires that `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'` ends
-  with 0 (GN-3g) before it packs `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name
-  part>[-debug]-<zts|nts>.zip <extension-name>.so`, the name by which PIE finds a pre-packaged binary (GN-3c). The
-  recipe reads `zts` and `debug` from that PHP (`PHP_ZTS`, `PHP_DEBUG`).
+  with 0 (GN-3g), copies the generated `packages/php-ext/generated/<extension-name>.stub.php` beside it, and packs
+  `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name part>[-debug]-<zts|nts>.zip <extension-name>.so
+  <extension-name>.stub.php`, the name by which PIE finds a pre-packaged binary (GN-3c). The stub is in the zip
+  because PIE installs that zip alone and Composer unpacks no php-ext package, so a consumer, and a static analyser
+  of the consumer, gets the classes of the extension from that zip only. The recipe reads `zts` and `debug` from
+  that PHP (`PHP_ZTS`, `PHP_DEBUG`).
   `release-php-ext` accepts optional `EXPECTED_PHP_MINOR` in `major.minor`
   form and refuses a different actual runtime minor before Cargo builds. It always compares the minor of the
   selected `php-config --version` with the runtime and records both full versions. This checks the header minor,
