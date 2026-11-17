@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bd1746550d4df52817be5c12866200c4d624cbbbc379dee460b21636d30ba036 -->
+<!-- source-sha256: f3e54875dbcf3e1440bf3e65d4dfb55866bff076cd74bde873130c30a697fbca -->
 # 생성기
 
 [English](generator.md)
@@ -2561,7 +2561,8 @@
   비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
   row로, B2.121)으로 비교하고 fixture는 그것을 `self::same(...)`로 받는다. Python은 `_same`으로 비교한다. Node와 WASM은
   `isDeepStrictEqual`로, Go는 `reflect.DeepEqual`로 비교하는데, 이것들은 이미 값을 비교한다. Go는 다른 저장소의 값 class
-  instance를 담은 인자를 먼저 `foreignRead`로 읽는다(GN-13bg). 이유: PHP에서 두 객체의
+  instance를 담은 인자를 먼저 `foreignRead`로 읽고, Node와 WASM은 fixture가 reader로 받는 `ordered`로 읽는다(GN-13bg).
+  이유: PHP에서 두 객체의
   `===`는 같은 instance일 때만 참이고, Python에서 `__eq__`가 없는 class의 `==`는 identity다. 그래서 binding이 만든, row의
   값과 같은 인자가 어느 row와도 맞지 않았다: 둘째 인자가 `Environment`인 template의 host function 셋이 매 호출마다
   `UnexpectedCall`을 냈다. 결과의 같은 비교는 B2.358이었다.
@@ -2609,7 +2610,13 @@
   가운데에는 field의 기본값이 JSON 값인 record가 있다. Node와 WASM의 `assert.deepStrictEqual`과 PHP의 `var_export`는 같은 두
   instance를 property 없이 비교했다. 그래서 그 U-2 시험은 어떤 두 JSON 값에도 통과했고 결과를 아무것도 검사하지 않았다. Go
   시험은 `after`의 호출 결과와 fixture의 인자도 handle로 비교했다. 또 기대하는 호출의 instance를 만드는 문장을, 시험의 줄을
-  이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445).
+  이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445). Node와 WASM은
+  callback fixture나 함수 값의 fixture가 row를 찾는 인자와 fixture의 기대 호출을, callback member의 parameter나 함수의
+  parameter가 그런 instance를 담는 곳에서 `ordered`로 읽는다: 시험은 parameter 자리에서도 다른 값 안에서도 fixture에
+  `ordered`를 reader로 주고, 호출의 `ordered`를 비교한다. 인자가 그런 instance를 담지 않는 fixture는 전과 같이 쓰인다.
+  이유: `isDeepStrictEqual`과 `assert.deepEqual`은 두 instance를 어떤 property로도 비교하지 않았다. 그래서 어떤 JSON
+  값으로 한 호출이든 다른 값의 row를 가져갔고 기대 호출은 어떤 값에도 성립했는데, Go와 PHP는 instance가 담은 것을
+  읽었다(B2.452).
 - **GN-13bh** case의 `raises`가 쓰는 `category`는 E-1의 여섯 category(`value`, `type`, `io`, `store`, `busy`,
   `internal`) 가운데 하나이고, kind가 category를 가지면 그 category다: `errors.kinds`가 그 kind에 주는 category(자기 row와
   `library`가 있는 row), 또는 E-1a kind의 고정 category다. `binding check`는 다른 `category`를 거부하고(CK-22), 생성기는

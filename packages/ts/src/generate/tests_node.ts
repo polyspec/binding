@@ -37,7 +37,7 @@ function unanswered() {
   return fixturesMade.flatMap(({ rows, left }, at) => left.filter((row) => row[3]).map((row) => \`the row \${rows.indexOf(row)} of the fixture \${at}: \${row[0]}(\${row[1].map(String).join(', ')})\`));
 }
 
-function fixture(members, rows) {
+function fixture(members, rows, read = (value) => value) {
   const unexpected = [];
   const calls = [];
   const left = [...rows];
@@ -46,7 +46,7 @@ function fixture(members, rows) {
   for (const [name, declare] of members) {
     object[name] = declare((...args) => {
       calls.push([name, args]);
-      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(row[1], args));
+      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(read(row[1]), read(args)));
       if (at < 0) {
         unexpected.push([name, args]);
         throw new UnexpectedCall(\`\${name}(\${args.map(String).join(', ')})\`);
@@ -60,6 +60,21 @@ function fixture(members, rows) {
   return { object, unexpected, calls };
 }
 `;
+
+// GN-13bg: the fixture of a test of Node or WASM from its values. Where an argument of a member holds an instance of a
+// value class of another repository, the fixture reads the arguments of a row and of a call through ordered, which
+// reads such an instance by its in row: isDeepStrictEqual compares two instances by no property, so any instance
+// found the row of another.
+export const nodeFixture = (values: { members: string[]; rows: string[][]; foreign: boolean }): string =>
+  `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]${values.foreign ? ', ordered' : ''})`;
+
+// G-5, GN-13bg: after the call, no call of the fixture was one that no row answers, and its calls are those that the
+// case names, read through ordered where an argument holds such an instance.
+export const nodeFixtureChecks = (name: string, values: { calls: string[][] | undefined; foreign: boolean }): string => {
+  if (values.calls === undefined) return `\n  assert.deepEqual(${name}.unexpected, []);`;
+  const calls = `[${values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]`;
+  return `\n  assert.deepEqual(${name}.unexpected, []);\n  assert.deepEqual(${values.foreign ? `ordered(${name}.calls), ordered(${calls})` : `${name}.calls, ${calls}`});`;
+};
 
 // GN-13e: a result in a form that assert.deepStrictEqual compares with the order of a Map: a Map is its entries.
 export const NODE_ORDERED = `
@@ -493,20 +508,22 @@ export function nodeTests(model: Model): string {
   ctx.fixtureNew = (values) => {
     usesFixture = true;
     onceMade += onceRows(values.rows);
-    return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
+    usesOrdered ||= values.foreign;
+    return `${nodeFixture(values)}.object`;
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
   ctx.functionMember = 'call';
-  ctx.functionNew = (rows, parameters) => {
+  ctx.functionNew = (rows, parameters, foreign) => {
     usesFixture = true;
     onceMade += onceRows(rows);
-    return `fixture([${jsDeclaredMember("'call'", parameters)}], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+    usesOrdered ||= foreign;
+    return `${nodeFixture({ members: [jsDeclaredMember("'call'", parameters)], rows, foreign })}.object.call`;
   };
   // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
   // of a fixture whose one member is the call; the test reads the record of each after the call.
-  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined }; use: string }[] => [
+  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined; foreign: boolean }; use: string }[] => [
     ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
-    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined }, use: `function${i}.object.call` })),
+    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined, foreign: f.foreign }, use: `function${i}.object.call` })),
   ];
   let usesOutcome = false;
   let usesOrdered = false;
@@ -720,10 +737,9 @@ test('B-4: ${name} ${kase.id}', () => {
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
       usesAddon ||= kase.faults !== undefined;
-      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
-      const after = fixtures
-        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
-        .join('');
+      usesOrdered ||= fixtures.some((f) => f.values.foreign);
+      const before = fixtures.map((f) => `\n  const ${f.name} = ${nodeFixture(f.values)};`).join('');
+      const after = fixtures.map((f) => nodeFixtureChecks(f.name, f.values)).join('');
       emit(`
 test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
@@ -774,10 +790,9 @@ test('GN-13e: ${name} ${kase.id}', () => {
       const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
-      const before =fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
-      const after = fixtures
-        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
-        .join('');
+      usesOrdered ||= fixtures.some((f) => f.values.foreign);
+      const before = fixtures.map((f) => `\n  const ${f.name} = ${nodeFixture(f.values)};`).join('');
+      const after = fixtures.map((f) => nodeFixtureChecks(f.name, f.values)).join('');
       const args = callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;

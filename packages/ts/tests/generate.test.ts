@@ -3445,7 +3445,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False, None\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.match(node, /\nfunction fixture\(members, rows\) \{/);
+  assert.match(node, /\nfunction fixture\(members, rows, read = \(value\) => value\) \{/);
   assert.match(node, /const fixture0 = fixture\(\[\['find', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
@@ -12951,6 +12951,49 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   const plain = consumerSample();
   const own = text(generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
+});
+
+test('B2.452: a Node and a WASM callback fixture find a row and compare the calls by what a JSON value of an argument holds, at a parameter and inside a list (GN-13bg, GN-13bb)', () => {
+  // isDeepStrictEqual and assert.deepEqual compare two instances of json.Value by no property, so a call with any
+  // JSON value took the row of another, and the expected calls held for any value.
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units.push({
+    id: 'sink', name: ['sink'], module: '', kind: 'interface', visibility: 'public', origin: 'callback', core: 'polyspec_relay::Sink', thread: 'owner',
+    members: [{ id: 'sink.put', name: ['put'], kind: 'method', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', required: true }], returns: 'none', async_allowed: false, core: { path: 'polyspec_relay::Sink::put', receiver: '&mut self' } }],
+  });
+  contract.units.find((u: any) => u.id === 'relay').members.push(
+    { id: 'relay.hand', name: ['hand'], kind: 'function', visibility: 'public', parameters: [{ name: ['sink'], type: { unit: 'sink' }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::hand' },
+    { id: 'relay.spread', name: ['spread'], kind: 'function', visibility: 'public', parameters: [{ name: ['sinks'], type: { list: { unit: 'sink' } }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::spread' },
+  );
+  contract.cases.push({ member: 'relay.hand', file: 'contracts/cases.json', group: 'hand' }, { member: 'relay.spread', file: 'contracts/cases.json', group: 'spread' });
+  const a = { kind: 'text', value: 'a' };
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, any[]>;
+  cases['hand'] = [{ id: 'a_value_is_handed', rule: 'RQ-036', sink: { callback: { 'sink.put': [{ args: { value: a }, result: null }] }, calls: [{ member: 'sink.put', args: { value: a } }] }, value: a, result: true }];
+  cases['spread'] = [{ id: 'a_value_is_spread', rule: 'RQ-036', sinks: [{ callback: { 'sink.put': [{ args: { value: a }, result: null }] } }], value: a, result: true }];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(out, RELAY_TESTS[target]);
+    // The fixture reads the arguments of a row and of a call through the reader that the test gives it.
+    assert.ok(tests.includes('\nfunction fixture(members, rows, read = (value) => value) {\n'), target);
+    assert.ok(tests.includes('      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(read(row[1]), read(args)));\n'), target);
+    assert.match(tests, /\nfunction ordered\(value\) \{\n {2}if \(value instanceof foreign_json\.Value \|\| value instanceof foreign_json\.OrderedMap\) return \{ foreign: readForeign\(value\) \};\n/, target);
+    const hand = bodiesOf(tests, /test\('GN-13e: hand a_value_is_handed'/, '\n});')[0] ?? '';
+    assert.match(hand, /\n {2}const fixture0 = fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\);\n/, `${target}: ${hand}`);
+    assert.match(hand, /\n {2}assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(ordered\(fixture0\.calls\), ordered\(\[\['put', \[[^\n]+\]\]\]\)\);/, `${target}: ${hand}`);
+    assert.doesNotMatch(hand, /assert\.deepEqual\(fixture0\.calls, /, `${target}: the calls are compared by no property`);
+    // A fixture inside a list is given the reader too.
+    const spread = bodiesOf(tests, /test\('GN-13e: spread a_value_is_spread'/, '\n});')[0] ?? '';
+    assert.match(spread, /\[fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\)\.object\]/, `${target}: ${spread}`);
+  }
+  // A fixture whose arguments hold no such instance is written as it was: no reader, and the calls as they are.
+  const plain = consumerSample();
+  const own = generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(own, RELAY_TESTS[target]);
+    assert.match(tests, /= fixture\(\[[^\n]+\]\);\n/, target);
+    assert.doesNotMatch(tests, /\], ordered\)/, target);
+    assert.doesNotMatch(tests, /ordered\(fixture\d+\.calls\)/, target);
+  }
 });
 
 test('B2.464: PHP gives the least int64 of a case of a contract type int64 as PHP_INT_MIN, as an argument, as an expected result and as a key of a keyed map (G-5, T-1)', () => {

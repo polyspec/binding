@@ -3143,7 +3143,8 @@ the design ids are those of the binding design.
   test class (an object by its class and its properties, an instance of a value class of another repository by its in
   row, B2.121), which the fixture takes as `self::same(...)`, and Python by `_same`. Node and WASM compare by
   `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already; Go reads arguments that hold an
-  instance of a value class of another repository by `foreignRead` first (GN-13bg). Why: PHP `===` of two objects holds
+  instance of a value class of another repository by `foreignRead` first, and Node and WASM by `ordered`, which the
+  fixture is given as its reader (GN-13bg). Why: PHP `===` of two objects holds
   for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
   made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
   an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
@@ -3201,7 +3202,13 @@ the design ids are those of the binding design.
   no property, so their U-2 tests passed for any two JSON values and checked nothing of the result. The Go test
   compared the result of a call of `after` and the arguments of a fixture by their handles too, and it added the
   statements that make an instance of an expected call to the lines of the test after it had written them, so the
-  test named a local that it did not declare (B2.445).
+  test named a local that it did not declare (B2.445). Node and WASM read through `ordered` the arguments by which a
+  callback fixture or the fixture of a function value finds its row, and the expected calls of a fixture, where a
+  parameter of a member of the callback, or of the function, holds such an instance: the test gives the fixture
+  `ordered` as its reader, at a parameter and inside another value, and compares `ordered` of the calls. A fixture
+  whose arguments hold no such instance is written as it was. Why: `isDeepStrictEqual` and `assert.deepEqual`
+  compared two instances by no property, so a call with any JSON value took the row of another value and the
+  expected calls held for any value, where Go and PHP read what the instance holds (B2.452).
 - **GN-13bh** The `category` that the `raises` of a case writes is one of the six categories of E-1 (`value`, `type`,
   `io`, `store`, `busy`, `internal`), and it is the category of the kind where the kind has one: the category that
   `errors.kinds` gives the kind (its own rows and the rows with `library`), or the fixed category of a kind of E-1a.
