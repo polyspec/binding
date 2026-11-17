@@ -11,7 +11,7 @@ import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
 import { CASE_JSON_STRING_GOLDENS, convertedCause, madeCategoryClass } from './samples.ts';
-import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots } from './tests_shared.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf } from './tests_shared.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
@@ -460,6 +460,21 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const unit = errorUnitOfKind(model, raises.kind);
     return unit === undefined ? cls(raises.category) : `\\${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
   };
+  // G-5: the check of the errno of a failure of a case. GN-8a: PHP has no table of the errno symbols of its machine, so
+  // the test reads the value of a symbol from the extension, whose entry point is of the feature panic-test that every
+  // test build turns on.
+  const errnoCheck = (kase: Parameters<typeof expectedErrno>[0]): string => {
+    const errno = expectedErrno(kase);
+    if (errno === null) return 'self::assertNull($error->errno());';
+    return `self::assertSame(${'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value)}, $error->errno());`;
+  };
+  // B-4: the checks of the failure of a case in its catch block: its exact class, its category, its kind, its status
+  // and its errno.
+  const raisedChecks = (kase: { id: string; raises: { kind: string; category: string; status?: number | null; errno?: unknown } }): string => `
+            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
+            self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
+            self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
+${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errnoCheck(kase)}`;
   const methods: string[] = [];
   const append = (...blocks: string[]): number => {
     roots.take(blocks.length);
@@ -579,21 +594,17 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `\n        self::assertSame(0, \\${layout.namespace}\\Internal\\thrownCount());`;
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
-  const afterChecks = (after: After[] | undefined, held: string): string =>
-    (after ?? []).map((call, i) => {
-      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
-      const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
-      if (call.raises !== undefined) {
-        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
-        const made = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `$after${i}_${n}`, (name, value) => `${name} = ${value};`);
-        return [...made.lines, form.fails(invoke(call.fn, made.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n        ${line}`).join('');
-      }
-      const receiver = on;
-      const expected = stepExpected(model, ctx, call.fn, call.result);
-      if ('refused' in expected) return `\n        self::fail(${phpText(expected.refused)});`;
+  const afterChecks = (after: After[] | undefined, held: string): string => afterCallChecks(model, ctx, {
+    invoke,
+    fails: form.fails,
+    local: (i, n) => `$after${i}_${n}`,
+    line: (name, value) => `${name} = ${value};`,
+    refused: (reason) => `\n        self::fail(${phpText(reason)});`,
+    check: (_i, call, expected) => {
       usesSame = true;
-      return `\n        self::assertSame(self::same(${expected.text}), self::same(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}));`;
-    }).join('');
+      return `\n        self::assertSame(self::same(${expected}), self::same(${call}));`;
+    },
+  }, after, held);
   for (const fn of callables(model)) {
     roots.methodMark = roots.uses;
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
@@ -807,9 +818,6 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const id = casePascal(kase.id);
       const entry = caseTestOf(kase.id);
       if (entry >= 0) {
-        const errno = expectedErrno(kase);
-        // GN-8a: the value of an errno symbol is read from the extension.
-        const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
         append(`
     /**
      * GN-13: the in function of ${caseTestList[entry]?.alias.unit.id ?? ''} runs on the value of the case as host values,
@@ -820,11 +828,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         try {
             \\${layout.namespace}\\Internal\\caseTest${entry}();
             self::fail('no error');
-        } catch (${cls(kase.raises.category)} $error) {
-            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
-            self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
-            self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
-${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+        } catch (${cls(kase.raises.category)} $error) {${raisedChecks(kase)}
         }
     }`);
         continue;
@@ -856,21 +860,13 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];
       const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
       const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
-      const errno = expectedErrno(kase);
-      // GN-8a: PHP has no table of the errno symbols of its machine, so the test reads the value of a symbol from the
-      // extension, whose entry point is of the feature panic-test that every test build turns on.
-      const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       append(`
     public function testB4${name}${id}(): void
     {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${raisedLines('php', kase.args)}${before}${arming}
         try {
             ${call};
             self::fail('no error');
-        } catch (${cls(kase.raises.category)} $error) {
-            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
-            self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
-            self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
-${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}${causeLines(convertedCause(model, kase.args))}
+        } catch (${cls(kase.raises.category)} $error) {${raisedChecks(kase)}${causeLines(convertedCause(model, kase.args))}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
@@ -968,13 +964,10 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
     const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
-    const callback = callbackArg(model, fn);
-    // GN-13y: the other arguments of a case that reaches the callback, where one exists.
-    const reaching = callbackReachingArgs(model, fn);
-    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
-    if (callback !== undefined && cbUnit !== undefined && reachable) {
-      const with_ = (how: CallbackHow): string =>
-        qualified(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
+    const callback = callbackOf(model, ctx, fn, classGiven);
+    const cbUnit = callback.unit;
+    if (cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string => qualified(callback.args(how));
       append(`
     public function testK2${name}RefusesACallbackWithoutItsMembers(): void
     {
@@ -1012,8 +1005,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     // (GN-8a).
     for (const place of reachable ? placeTests(model, 'php', fn) : []) {
       roots.methodMark = roots.uses;
-      const given = (value: string): string =>
-        qualified(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      const given = (value: string): string => qualified(callback.placed(place, value));
       const refused = (declares: Declares): string => `
         try {
             ${given(refusedPhp(place, declares))};
@@ -1215,8 +1207,6 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     roots.methodMark = roots.uses;
-    const errno = expectedErrno(kase);
-    const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
     const alias = langName('php', kase.alias.unit.name, 'class');
     // GN-13: a value of the case that has no PHP form runs through the entry point of the feature case-test.
     const entry = caseTestList.findIndex((t) => t.fn === undefined && t.alias === kase.alias && t.id === kase.id);
@@ -1236,7 +1226,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
         } catch (${cls(kase.category)} $error) {
             self::assertSame(${exactClass(kase)}::class, $error::class);
             self::assertSame(${phpText(kase.kind)}, $error->kind());${kase.raises.status === undefined ? '' : `\n            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());`}
-            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+            ${errnoCheck(kase)}
         }
     }`);
   }

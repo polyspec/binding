@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, exactClassOf } from './tests_shared.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf, exactClassOf } from './tests_shared.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, madeBeforeArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
@@ -638,21 +638,29 @@ export function pythonTests(model: Model, module: string): string {
     return '\n        self.assertEqual(_native._thrown_count(), 0)';
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
-  const afterChecks = (after: After[] | undefined, held: string): string =>
-    (after ?? []).map((call, i) => {
-      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
-      const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
-      if (call.raises !== undefined) {
-        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
-        const made = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `after_${i}_${n}`, (name, value) => `${name} = ${value}`);
-        return [...made.lines, madeForm.fails(invoke(call.fn, made.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n        ${line}`).join('');
-      }
-      const receiver = on;
-      const expected = stepExpected(model, ctx, call.fn, call.result);
-      if ('refused' in expected) return `\n        self.fail(${pyString(expected.refused)})`;
+  // G-5: the fixtures of a case, the lines that make them before its call and those that read their records after it.
+  const caseFixtures = (fn: Fn, kase: { id: string; args: Map<Fn['args'][number], unknown> }): { fixtures: ReturnType<typeof withFunctions>; before: string; after: string } => {
+    const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
+    usesFixture ||= fixtures.length > 0;
+    onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
+    const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
+    const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
+    const after = fixtures
+      .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
+      .join('');
+    return { fixtures, before, after };
+  };
+  const afterChecks = (after: After[] | undefined, held: string): string => afterCallChecks(model, ctx, {
+    invoke,
+    fails: madeForm.fails,
+    local: (i, n) => `after_${i}_${n}`,
+    line: (name, value) => `${name} = ${value}`,
+    refused: (reason) => `\n        self.fail(${pyString(reason)})`,
+    check: (i, call, expected) => {
       usesSame = true;
-      return `\n        after_${i} = ${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}\n        expected_${i} = ${expected.text}\n        self.assertTrue(_same(after_${i}, expected_${i}), f"{after_${i}!r} is not {expected_${i}!r}")`;
-    }).join('');
+      return `\n        after_${i} = ${call}\n        expected_${i} = ${expected}\n        self.assertTrue(_same(after_${i}, expected_${i}), f"{after_${i}!r} is not {expected_${i}!r}")`;
+    },
+  }, after, held);
   for (const fn of callables(model)) {
     roots.methodMark = roots.uses;
     const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
@@ -827,14 +835,7 @@ export function pythonTests(model: Model, module: string): string {
       if (heldReceiver) receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
       const receiver = heldReceiver ? 'receiver' : receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
-      usesFixture ||= fixtures.length > 0;
-      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
-      const tuple =(items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
-      const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
-      const after = fixtures
-        .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
-        .join('');
+      const { fixtures, before, after } = caseFixtures(fn, kase);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
@@ -894,14 +895,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         self.fail(${pyString(refusal)})`);
         continue;
       }
-      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
-      usesFixture ||= fixtures.length > 0;
-      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
-      const tuple =(items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
-      const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
-      const after = fixtures
-        .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
-        .join('');
+      const { fixtures, before, after } = caseFixtures(fn, kase);
       const receiverMade = receiverOfCase(kase.receiver);
       // GN-6ae: a case with after holds its receiver, which the calls of after observe.
       if (kase.after !== undefined && receiverMade.expr !== '') {
@@ -964,13 +958,10 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // GN-13t: an argument of a class of the G-7 and GN-11a tests is the case value of a case of the member, where one
     // gives it.
     const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
-    const callback = callbackArg(model, fn);
-    // GN-13y: the other arguments of a case that reaches the callback, where one exists.
-    const reaching = callbackReachingArgs(model, fn);
-    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
-    if (callback !== undefined && cbUnit !== undefined && reachable) {
-      const with_ = (how: CallbackHow): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
+    const callback = callbackOf(model, ctx, fn, classGiven);
+    const cbUnit = callback.unit;
+    if (cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string => target(callback.args(how));
       append(`
     def test_k2_${name}_refuses_a_callback_without_its_members(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
@@ -990,7 +981,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       // GN-6q: a member that reaches language code calls the callback on the worker thread of asyncio.to_thread.
       if (fn.reaches === true) {
         usesAsyncio = true;
-        const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching)));
+        const args = callback.args({ raise: 'raised' });
         const awaited = invoke(fn, args, recv).replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
         append(`
     def test_gn6q_${name}_awaits_a_callback_on_the_thread_of_to_thread(self) -> None:
@@ -1005,8 +996,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // an arming of the member stays for the next call (GN-8a).
     for (const place of reachable ? placeTests(model, 'python', fn) : []) {
       roots.methodMark = roots.uses;
-      const given = (value: string): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      const given = (value: string): string => target(callback.placed(place, value));
       const argName = langName('python', place.arg.name, 'variable');
       const refused = (declares: Declares): string => `
         with self.assertRaises(pkg.${cls('type')}) as caught:

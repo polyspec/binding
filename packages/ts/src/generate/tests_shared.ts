@@ -328,6 +328,44 @@ export const exactClassOf = (model: Model, lang: 'node' | 'wasm' | 'python', cls
     return unit === undefined ? cls(raises.category) : langName(lang, unit.unit.name, 'class');
   };
 
+// K-2: the callback parameter of a member, by the unit of its callback, and the arguments of a call of the member: args
+// with a callback made as how says, the other arguments those of a case that reaches the callback where one exists
+// (GN-13y); placed (GN-6bu) with a value at the place of a test of the arguments of a callback.
+export function callbackOf(model: Model, ctx: Context, fn: Fn, classGiven: ReturnType<typeof classCaseArgs>): { unit: Unit | undefined; args: (how: CallbackHow) => string; placed: (place: ReturnType<typeof placeTests>[number], value: string) => string } {
+  const callback = callbackArg(model, fn);
+  const reaching = callbackReachingArgs(model, fn);
+  const unit = callback === undefined ? undefined : unitOf(model, callback.type);
+  return {
+    unit,
+    args: (how) => callArgs(model, ctx, fn, (arg) => (arg === callback && unit !== undefined ? ctx.callbackNew(unit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))),
+    placed: (place, value) => callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))),
+  };
+}
+
+// GN-6ae: the calls of after of a case in PHP and Python, each on the receiver of the case (held) or on an argument
+// that a function fixture kept (GN-13o). B2.509: a call that fails with a kind makes an instance value of its args
+// before the outcome of the call, which holds the call alone; a call with a result is checked by check, and a result
+// that the generator refuses fails the test.
+export interface AfterForm {
+  invoke: (fn: Fn, args: string, receiver: string) => string;
+  fails: MadeForm['fails'];
+  local: (i: number, n: number) => string;
+  line: (name: string, value: string) => string;
+  refused: (reason: string) => string;
+  check: (i: number, call: string, expected: string) => string;
+}
+export const afterCallChecks = (model: Model, ctx: Context, form: AfterForm, after: After[] | undefined, held: string): string =>
+  (after ?? []).map((call, i) => {
+    const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
+    if (call.raises !== undefined) {
+      const made = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => form.local(i, n), form.line);
+      return [...made.lines, form.fails(form.invoke(call.fn, made.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n        ${line}`).join('');
+    }
+    const expected = stepExpected(model, ctx, call.fn, call.result);
+    if ('refused' in expected) return form.refused(expected.refused);
+    return form.check(i, form.invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on), expected.text);
+  }).join('');
+
 // GN-13l: the case root of the case texts in the tests of PHP and Python, whose methods are written apart and take the
 // root only where an expression of theirs takes a case text path: dependency records come from real generation calls,
 // never from literal marker text.
@@ -678,13 +716,10 @@ test('${pair.computed !== undefined ? `U-2: ${name} without ${argName} leaves it
       }
       caseTests(fn, name);
       // K-2: a member that takes a callback.
-      const callback = callbackArg(model, fn);
-      // GN-13y: the other arguments of a case that reaches the callback, where one exists.
-      const reaching = callbackReachingArgs(model, fn);
-      const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
-      if (callback !== undefined && cbUnit !== undefined && reachable) {
-        const with_ = (how: CallbackHow): string =>
-          call0(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
+      const callback = callbackOf(model, ctx, fn, classGiven);
+      const cbUnit = callback.unit;
+      if (cbUnit !== undefined && reachable) {
+        const with_ = (how: CallbackHow): string => call0(callback.args(how));
         emit(`
 test('K-2: ${name} refuses a callback without its members', () => {
   ${throwsKind(with_({ missing: true }), 'type', 'invalid_callback')}
@@ -702,8 +737,7 @@ test('K-2: ${name} refuses a callback result of another type', () => {
       // GN-6bu: a callback that names none of the arguments that the binding calls it with is refused before the member
       // runs: it is never called, and an arming of the member stays for the next call (GN-8a).
       for (const place of reachable ? placeTests(model, lang, fn) : []) {
-        const given = (value: string): string =>
-          call0(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+        const given = (value: string): string => call0(callback.placed(place, value));
         emit(`
 test('GN-6bu: ${name} refuses a ${langName(lang, place.arg.name, 'variable')} that takes no argument', () => {
   const calls = [];${place.armed === undefined ? '' : `\n  const armed = ${target.stepArm(fn.member.id, place.armed.faults)};`}
