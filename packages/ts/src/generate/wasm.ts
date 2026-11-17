@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -528,24 +528,11 @@ function functionRust(model: Model, fn: Fn): string {
   const params = [...(fn.receiver === undefined ? [] : ['this: u32']), ...fn.params.map((p) => `${rustField(p.name)}: JsValue`)].join(', ');
   const lines: string[] = [];
   if (fn.receiver !== undefined) lines.push(...receiverLines(model, fn));
-  // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
-  const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string, typed = model): string =>
-    arg?.default === undefined ? convertIn(typed, type, raw, subject) : leftOut(arg, `default_in(${raw}, ${closure(['value'], convertIn(typed, type, 'value', subject))})`);
+  const converted = argIn(convertIn);
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
-      // GN-6aa: the callbacks of the fields of a record parameter with keeps are held as Natives, and the record is 'static.
-      const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
-      for (const field of fn.record.unit.fields ?? []) {
-        const name = langName('wasm', field.name, 'variable');
-        const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `&${parameter.default === undefined ? 'member' : 'field_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('wasm', model, fn, field.type, name), typed))}?;`);
-        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
-      }
-      const recordType = fn.record.unit.core_type ?? '';
-      const recordLet = rustType(typed, { unit: fn.record.unit.id });
-      lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${(fn.record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(fn.record.unit)} };`);
+      lines.push(...recordParamLines(model, fn, parameter, 'wasm', (name) => `&${parameter.default === undefined ? 'member' : 'field_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`, converted));
     } else if (machineFunction(parameter.type)) {
       // GN-6ae: a function parameter is the closure that the machine of the member calls.
       lines.push(...functionClosure(model, parameter.type, variable, placeSubject('wasm', model, fn, parameter.type, langName('wasm', parameter.name, 'variable'))));
@@ -560,7 +547,7 @@ function functionRust(model: Model, fn: Fn): string {
       const typed = kept ? keptModel(model) : model;
       // GN-6bu: the subject of a parameter that holds a callback place names the member before it.
       const subject = placeSubject('wasm', model, fn, parameter.type, langName('wasm', parameter.name, 'variable'));
-      lines.push(`        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, `&${variable}`, subject)) : converted(arg, parameter.type, `&${variable}`, subject)}?;`);
+      lines.push(`        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, `&${variable}`, subject)) : converted(arg, parameter.type, `&${variable}`, subject, model)}?;`);
       if (arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, rustString(langName('wasm', parameter.name, 'variable')), 'binding_error')}`);
     }
   }

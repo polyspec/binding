@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -628,25 +628,11 @@ function entryRust(model: Model, fn: Fn): string {
   const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
-  // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
-  const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string, typed = model): string =>
-    arg?.default === undefined ? convertIn(typed, type, raw, subject) : leftOut(arg, `default_in(${raw}, ${closure(['value'], convertIn(typed, type, 'value', subject))})`);
+  const converted = argIn(convertIn);
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
-      // GN-6aa: the callbacks of the fields of a record parameter with keeps are held as Natives, and the record is 'static.
-      const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
-      for (const field of fn.record.unit.fields ?? []) {
-        const name = langName('node', field.name, 'variable');
-        const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('node', model, fn, field.type, name), typed))}?;`);
-        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
-      }
-      const recordType = fn.record.unit.core_type ?? '';
-      const recordLet = rustType(typed, { unit: fn.record.unit.id });
-      const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-      lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${fields}${absentInits(fn.record.unit)} };`);
+      lines.push(...recordParamLines(model, fn, parameter, 'node', (name) => `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`, converted));
     } else if (machineFunction(parameter.type)) {
       // GN-6ae: a function parameter is the closure that the machine of the member calls.
       lines.push(...functionClosure(model, parameter.type, variable, placeSubject('node', model, fn, parameter.type, langName('node', parameter.name, 'variable'))));
@@ -662,7 +648,7 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(owned !== undefined
         ? `        let ${variable} = owned_${rustField(owned.unit.name)}(env_, ${variable}, ${subject})?;`
         : held === undefined
-        ? `        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, variable, subject)) : converted(arg, parameter.type, variable, subject)}?;`
+        ? `        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, variable, subject)) : converted(arg, parameter.type, variable, subject, model)}?;`
         : `        let ${variable} = held_${rustField(held.unit.name)}(env_, ${variable}, ${subject})?;`);
       if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }

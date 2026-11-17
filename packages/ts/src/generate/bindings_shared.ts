@@ -2,9 +2,9 @@
 // takes what differs between the languages as its arguments (GN-14o).
 
 import type { Type, Unit } from '../contract.ts';
-import { functionGiven, givenRust } from './callback_arguments.ts';
+import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, borrowedItem, boxed, caseLeftOut, type Fn, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -188,6 +188,29 @@ function recordIns(model: Model, unit: Unit, kids: boolean, lang: 'node' | 'wasm
     return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(member), 'binding_error')}` : ''}`;
   });
   return `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${unit.core_type ?? ''} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`;
+}
+
+// U-2: the conversion in of an argument; one that may be left out is undefined when it is, and its variable an Option.
+export type ArgIn = (arg: Arg | undefined, type: Type, raw: string, subject: string, typed: Model) => string;
+export const argIn = (convert: (model: Model, type: Type, value: string, subject: string) => string): ArgIn => (arg, type, raw, subject, typed) =>
+  arg?.default === undefined ? convert(typed, type, raw, subject) : leftOut(arg, `default_in(${raw}, ${closure(['value'], convert(typed, type, 'value', subject))})`);
+
+// GN-6aa: the lines that read the fields of a record parameter in node and wasm, each from the member that raw gives,
+// and make the record; the callbacks of the fields of a record parameter with keeps are held as Natives, and the
+// record is 'static.
+export function recordParamLines(model: Model, fn: Fn, parameter: Fn['params'][number], lang: 'node' | 'wasm', raw: (member: string) => string, converted: ArgIn): string[] {
+  const record = fn.record;
+  if (record === undefined) return [];
+  const lines: string[] = [];
+  const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
+  for (const field of record.unit.fields ?? []) {
+    const name = langName(lang, field.name, 'variable');
+    const arg = fn.args.find((a) => a.field && a.name === field.name);
+    lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw(name), placeSubject(lang, model, fn, field.type, name), typed))}?;`);
+    if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
+  }
+  lines.push(`        let ${rustField(parameter.name)}: ${rustType(typed, { unit: record.unit.id })} = ${record.unit.core_type ?? ''} { ${(record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(record.unit)} };`);
+  return lines;
 }
 
 // The initializer of a field of a Rust struct from a variable, shortened when they have one name.
