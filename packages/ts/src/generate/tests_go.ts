@@ -17,7 +17,7 @@
 
 import type { Contract, Member, Name, Type, Unit } from '../contract.ts';
 import { classIn, holdsForeign } from './value_class.ts';
-import { defaultCaseValue } from './defaults.ts';
+import { computedRule, defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goHeader, goImport, goImportBlock, goMemberName, goName,
@@ -1466,7 +1466,9 @@ ${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value !
   const base = resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined);
   const receiverOf = base?.receiver ?? sample;
   for (const arg of reachable && comparable && !ofKept && (fn.receiver === undefined || receiverOf !== undefined) ? fn.args : []) {
-    const declared = defaultCaseValue(model, arg);
+    // GN-13d: the second call of a {computed} default of an optional type gives null, and only the outcomes are compared.
+    const computed = computedRule(arg);
+    const declared = computed === undefined ? defaultCaseValue(model, arg) : { value: null };
     if (declared === undefined) continue;
     const b = new Body();
     const side = (left: boolean): string => {
@@ -1479,9 +1481,16 @@ ${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value !
       return invoke(v, fn, args, receiver);
     };
     const left = side(true);
-    b.lines.push(`value0, err0 := ${left}`);
+    b.lines.push(`${computed === undefined ? 'value0' : '_'}, err0 := ${left}`);
     const right = side(false);
-    b.lines.push(`value1, err1 := ${right}`);
+    b.lines.push(`${computed === undefined ? 'value1' : '_'}, err1 := ${right}`);
+    if (computed !== undefined) {
+      out.main.push(`
+func TestU2${label}Without${testName(goParam(arg.name, v.model))}LeavesItsValueToTheCore${computed.replaceAll(/[^A-Za-z0-9]+/g, '')}(t *testing.T) {
+${indent([...b.lines, 'if !sameFailure(err0, err1) {', '\tt.Fatalf("U-2: %v is not %v", err0, err1)', '}'], 1)}
+}`);
+      continue;
+    }
     // GN-13bg: the two results are compared by what their instances of a value class of another repository hold.
     const [got, want] = goCompared(v, fn.returns, 'value0', 'value1');
     out.main.push(`
