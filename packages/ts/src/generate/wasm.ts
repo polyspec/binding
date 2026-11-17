@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, recordIns, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -444,43 +444,17 @@ ${outs}
 // The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
 // out.
 function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const core = unit.core_type ?? '';
-  const fields = unit.fields ?? [];
-  const kids = mode === 'kids';
-  const reads = fields.map((f) => {
-    const js = langName('wasm', f.name, 'variable');
-    // GN-6a: a field that may be left out is null when its member is missing or undefined.
-    const read = caseLeftOut(f) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
-    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
-    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(js), 'binding_error')}` : ''}`;
-  });
-  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
+  const writes = (unit.fields ?? []).map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
   return {
-    ins: `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+    ins: recordIns(model, unit, mode === 'kids', 'wasm', (member) => `&member(value, ${rustString(member)}, subject)?`, convertIn),
     outs: `    let value = value.borrow();\n    let object = Object::new();\n${writes.join('\n')}\n    Ok(object.into())`,
   };
 }
 
-// GN-6bt: the host of the walks of a cycle in WASM.
-const WASM_CYCLE: CycleHost = {
-  lang: 'JsValue',
-  made: 'JsValue',
-  inValue: '&JsValue',
-  give: (owned) => `&${owned}`,
-  own: (place) => `JsValue::clone(${place})`,
-  result: (type) => `Result<${type}, Fail>`,
-  internal: (detail) => `binding_error(BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
-  inGenerics: '',
-  inParams: '',
-  inArgs: '',
-  outGenerics: '',
-  outParams: '',
-  outArgs: '',
-};
-
-// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const wasmCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+// GN-6bt: the host of the walks of a cycle in WASM, and the cycles of the records and variants whose conversions the
+// crate holds.
+const WASM_CYCLE: CycleHost = plainCycleHost('JsValue', (place) => `JsValue::clone(${place})`);
+const wasmCycles = resultCycles;
 
 // T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.

@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, recordIns, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -551,20 +551,9 @@ ${outs}
 // The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
 // out.
 function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const core = unit.core_type ?? '';
-  const fields = unit.fields ?? [];
-  const kids = mode === 'kids';
-  const reads = fields.map((f) => {
-    const member = langName('node', f.name, 'variable');
-    // GN-6a: a field that may be left out is null when its member is missing or undefined.
-    const read = caseLeftOut(f) ? `default_in(member(value, ${rustString(member)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(member))}).map(Option::flatten)` : convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member));
-    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
-    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
-    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(member), 'binding_error')}` : ''}`;
-  });
-  const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
+  const writes = (unit.fields ?? []).map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return {
-    ins: `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
+    ins: recordIns(model, unit, mode === 'kids', 'node', (member) => `member(value, ${rustString(member)}, subject)?`, convertIn),
     outs: `    let value = value.borrow();\n    let mut object = Object::new(env_).map_err(internal)?;\n${writes.join('\n')}\n    Ok(object.to_unknown())`,
   };
 }
@@ -591,7 +580,7 @@ const nodeCycleHost = (model: Model, units: readonly Unit[]): CycleHost => {
 };
 
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const nodeCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+const nodeCycles = resultCycles;
 
 // T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.

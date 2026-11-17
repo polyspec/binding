@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, containerIn, containerOut, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -546,7 +546,7 @@ const PYTHON_CYCLE: CycleHost = {
 };
 
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const pythonCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+const pythonCycles = resultCycles;
 
 // T-9, GN-6v: a value of a variant is an instance of the dataclass of one of its cases, whose fields are judged as they
 // enter (T-8); a value leaves as the instance of the class of its case, by a match without a wildcard.

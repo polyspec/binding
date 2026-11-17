@@ -1,9 +1,10 @@
 // The parts of the binding generators node, wasm, php and python that they write alike: each is written here once and
 // takes what differs between the languages as its arguments (GN-14o).
 
-import type { Type } from '../contract.ts';
+import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust } from './callback_arguments.ts';
-import { boxed, keptFunctionType, type Model, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
+import { absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -51,6 +52,42 @@ ${body({ result, names, returns })}
 
 // T-1: the type of a function of a contract.
 export type FunctionType = { parameters: Type[]; returns: Type; async_allowed?: boolean };
+
+// GN-6bt: the host of the walks of a cycle in a language whose value is lang alone, with no lifetime and no token,
+// and which keeps a value of the language by own.
+export const plainCycleHost = (lang: string, own: (place: string) => string): CycleHost => ({
+  lang,
+  made: lang,
+  inValue: `&${lang}`,
+  give: (owned) => `&${owned}`,
+  own,
+  result: (type) => `Result<${type}, Fail>`,
+  internal: (detail) => `binding_error(BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
+  inGenerics: '',
+  inParams: '',
+  inArgs: '',
+  outGenerics: '',
+  outParams: '',
+  outArgs: '',
+});
+
+// GN-6bt: the cycles of the records and variants whose conversions the crate holds.
+export const resultCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+
+// T-4, GN-6bt: the conversion in of the fields of a record in node and wasm, or the walk of the places of units of its
+// cycle (kids): each field is read from its member, which place gives as the argument of the conversion.
+export function recordIns(model: Model, unit: Unit, kids: boolean, lang: 'node' | 'wasm', place: (member: string) => string, convert: (model: Model, type: Type, value: string, subject: string) => string): string {
+  const fields = unit.fields ?? [];
+  const reads = fields.map((f) => {
+    const member = langName(lang, f.name, 'variable');
+    // GN-6a: a field that may be left out is null when its member is missing or undefined.
+    const read = caseLeftOut(f) ? `default_in(${place(member)}, |value| ${convert(model, f.type, 'value', rustString(member))}).map(Option::flatten)` : convert(model, f.type, place(member), rustString(member));
+    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
+    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
+    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(member), 'binding_error')}` : ''}`;
+  });
+  return `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${unit.core_type ?? ''} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`;
+}
 
 // T-2: what the output conversion of a container differs by between the languages.
 export interface ContainersOut {

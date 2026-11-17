@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, containerIn, containerOut, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -645,24 +645,10 @@ ${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(Bindin
 
 // GN-6bt: the host of the walks of a cycle in PHP; a value of the language that the walk keeps is a shallow copy of
 // its Zval.
-const PHP_CYCLE: CycleHost = {
-  lang: 'Zval',
-  made: 'Zval',
-  inValue: '&Zval',
-  give: (owned) => `&${owned}`,
-  own: (place) => `Zval::shallow_clone(${place})`,
-  result: (type) => `Result<${type}, Fail>`,
-  internal: (detail) => `binding_error(BindingError::Internal { detail: String::from(${rustString(detail)}) })`,
-  inGenerics: '',
-  inParams: '',
-  inArgs: '',
-  outGenerics: '',
-  outParams: '',
-  outArgs: '',
-};
+const PHP_CYCLE: CycleHost = plainCycleHost('Zval', (place) => `Zval::shallow_clone(${place})`);
 
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const phpCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+const phpCycles = resultCycles;
 
 function recordConstructor(name: string, fields: Unit['fields'] & object, props: string[], args: string[]): string {
   // GN-6v: a case without fields takes no argument and holds nothing.
