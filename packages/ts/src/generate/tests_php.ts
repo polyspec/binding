@@ -4,7 +4,7 @@
 import type { Member, Unit } from '../contract.ts';
 import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { foreignReaders, phpForeignRead, foreignClassNames } from './value_class.ts';
+import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -704,12 +704,17 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       methodMark = caseTextUses;
       usesOutcome = true;
+      // GN-13bg: a result that holds an instance of a value class of another repository goes through same, which reads
+      // the instance by its in row, before outcome writes it: var_export writes two instances by no property.
+      const read = holdsForeign(model, fn.returns);
+      usesSame ||= read;
+      const result = (call: string): string => (read ? `self::same(${call})` : call);
       append(`
     public function testU2${name}${langName('php', pair.arg.name, 'class')}LeftOutIsItsDefault(): void
     {
         self::assertSame(
-            self::outcome(static fn (): mixed => ${qualified(callArgs(model, ctx, fn, pair.left))}),
-            self::outcome(static fn (): mixed => ${qualified(callArgs(model, ctx, fn, pair.right))}),
+            self::outcome(static fn (): mixed => ${result(qualified(callArgs(model, ctx, fn, pair.left)))}),
+            self::outcome(static fn (): mixed => ${result(qualified(callArgs(model, ctx, fn, pair.right)))}),
         );
     }`);
     }

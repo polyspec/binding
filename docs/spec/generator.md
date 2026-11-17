@@ -2913,7 +2913,8 @@ the design ids are those of the binding design.
   arguments of the call with those of the row by the rule by which the test compares a result: PHP by `same` of the
   test class (an object by its class and its properties, an instance of a value class of another repository by its in
   row, B2.121), which the fixture takes as `self::same(...)`, and Python by `_same`. Node and WASM compare by
-  `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already. Why: PHP `===` of two objects holds
+  `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already; Go reads arguments that hold an
+  instance of a value class of another repository by `foreignRead` first (GN-13bg). Why: PHP `===` of two objects holds
   for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
   made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
   an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
@@ -2953,6 +2954,24 @@ the design ids are those of the binding design.
   or of a function value, and an argument of an expected call of a fixture. Why: these were written as an argument of
   a call is, so an argument of an alias whose row makes UTF-8 bytes a text was expected as bytes, and the call that the
   binding made with the text matched no row (B2.422).
+- **GN-13bg** A generated test reads both sides of these comparisons through the in row of the owner, by the helper of
+  GN-13e (`foreignRead` of Go, `ordered` of Node and WASM, `same` of PHP, `_same` of Python), where a side holds an
+  instance of a value class of another repository (GN-6x), as it reads the result of a case and its value: the two
+  results of a U-2 or T-1 test in the five targets (Python by GN-13z), and in Go also the result of a call of `after`
+  or of a step of a function fixture (GN-6ae), the arguments by which a callback fixture finds its row, and the
+  expected calls of a fixture (GN-13bb). The helper is written where the type of the result, or of a parameter of the
+  callback, holds such an instance at any place of a list, an optional, a map, a tuple, a record or a variant; a
+  comparison of any other type is written as it was. In PHP the result goes through `same` before `outcome` writes it
+  as a text. The statements that make an argument of an expected call of a Go fixture stand in the test, before the
+  check of the calls. Why: an instance holds a handle of its core, so `reflect.DeepEqual` compared the handles of the
+  two results, and the Go U-2 test of every member that gives a `json.Value` failed with `&json.Value{ref:(*binding.Ref)(0x…)}
+  is not &json.Value{…}`: 29 tests of crud-ui (`build_list` 8, `build_detail` 8, `bind_buttons` 6, `bind_form` 5, the
+  add and the copy of a form 1 each), whose parameters have defaults, among them a record whose fields have defaults
+  of JSON values. `assert.deepStrictEqual` of Node and WASM and `var_export` of PHP compared the same two instances by
+  no property, so their U-2 tests passed for any two JSON values and checked nothing of the result. The Go test
+  compared the result of a call of `after` and the arguments of a fixture by their handles too, and it added the
+  statements that make an instance of an expected call to the lines of the test after it had written them, so the
+  test named a local that it did not declare (B2.445).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

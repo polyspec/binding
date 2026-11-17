@@ -4,7 +4,7 @@
 // writes as calls of the owner's language API.
 
 import type { Contract, Lang, Member, Type, Unit } from '../contract.ts';
-import { type Model, Unsupported, type ValueAlias, langName } from './model.ts';
+import { type Model, Unsupported, type ValueAlias, aliasOf, langName, unitOf } from './model.ts';
 import { jsString, phpText, pyString } from './text.ts';
 
 // The binding_core::ValueKind of each kind of an in case.
@@ -158,6 +158,22 @@ export interface ForeignReader {
   library: string;
   unit: Unit;
   row: ClassIn;
+}
+
+// GN-13e, GN-13bg, B2.121: whether a type holds an instance of a value class of another repository, at any place of a
+// list, an optional, a map, a tuple, a record or a variant. A test that compares two values of such a type reads both
+// through the in row.
+export function holdsForeign(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+  if (typeof type === 'string') return false;
+  const alias = aliasOf(model, type);
+  if (alias !== undefined) return alias.library !== undefined && alias.unit.kind === 'class';
+  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
+  const unit = unitOf(model, type);
+  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
+    seen.add(unit.id);
+    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
+  }
+  return inner.some((t) => holdsForeign(model, t, seen));
 }
 
 export function foreignReaders(model: Model, lang: Lang): ForeignReader[] {

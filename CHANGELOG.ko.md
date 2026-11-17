@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0b51911e311df4ace8e69cfeb25f2708fe417a3fb6c1bf5f14e9d6aa1b61e741 -->
+<!-- source-sha256: 039322d5b06eaee0a721c4003a5142617f8eb9910fdc12dff51ebd8856db3fd1 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -21,6 +21,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 생성 시험은 `json.Value` 같은 다른 저장소의 값 class instance를 담은 두 결과를, 소유자의 in row로 읽어서 instance가 담은 것으로 비교한다(GN-13bg, B2.445). Go U-2 시험은 두 결과를 `reflect.DeepEqual`로 비교했는데, 그것은 두 instance의 handle을 비교한다. 그래서 JSON 값을 주는 모든 member의 U-2 시험이 `&json.Value{ref:(*binding.Ref)(0x…)} is not &json.Value{…}`로 실패했다: crud-ui의 Go 시험 29개다. 이제 case의 시험처럼 두 결과의 `foreignRead`를 비교한다. Go는 `after`의 호출이나 function fixture의 step의 결과, callback fixture가 자기 row를 찾는 인자, fixture가 기대하는 호출도 그렇게 읽는다. 기대하는 호출의 instance를 만드는 문장도 이제 시험 안에 있다(시험이 선언하지 않은 지역 변수를 불렀다). Node와 WASM의 U-2, T-1 시험은 `ordered`를 거쳐 비교하고 PHP는 `same`을 거쳐 비교한다: 이들은 두 instance를 property 없이 비교해서, 어떤 두 JSON 값에도 통과했다. Python은 이미 `_same`으로 비교한다(GN-13z). 그런 instance를 담지 않은 결과는 전과 같이 비교한다. CI가 돌리는 `tests/e2e` 저장소에는 기본값과 그런 결과를 함께 가진 것이 없어서, 생성된 Go의 첫 실행은 소비자의 실행이다.
 
 ## 0.0.19
 

@@ -16,7 +16,7 @@
 // type (a method of the interface returns its declared type).
 
 import type { Contract, Member, Name, Type, Unit } from '../contract.ts';
-import { classIn } from './value_class.ts';
+import { classIn, holdsForeign } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
@@ -674,7 +674,9 @@ function comparedCall(v: Values, a: Body, fn: Fn, receiver: string, args: Readon
     } finally {
       v.result = outer;
     }
-    return [`if want := (${typeName(v, type)})(${made}); !reflect.DeepEqual(value${i}, want) {`, `\t${differs(i)}`, '}'];
+    // GN-13bg: a result that holds an instance of a value class of another repository is compared by what it holds.
+    const [got, wanted] = goCompared(v, type, `value${i}`, 'want');
+    return [`if want := (${typeName(v, type)})(${made}); !reflect.DeepEqual(${got}, ${wanted}) {`, `\t${differs(i)}`, '}'];
   });
   return [...a.lines, callLine(fn, invoke(v, fn, given, receiver), expects ? parts.map((_, i) => `value${i}`) : undefined), 'if err != nil {', `\t${failed}`, '}', ...compared];
 }
@@ -1087,10 +1089,21 @@ function fixtureChecks(fixtures: { fixture: Fixture; name: string }[], v: Values
     const named = fixtureType(v.model, fixture.unit);
     const lines = [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}'];
     if (fixture.calls !== undefined) {
-      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(named(p.type), handedValue(v, b, named(p.type), call.args[i] ?? null)))].join(', ')}}`);
+      // GN-13bg: the statements that make an expected argument stand before the check: the lines of the body were
+      // written before the call, so a statement added to them here was in no test.
+      const made = b.child();
+      const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(named(p.type), handedValue(v, made, named(p.type), call.args[i] ?? null)))].join(', ')}}`);
+      lines.push(...made.lines);
       // reflect.DeepEqual tells a nil slice from an empty one, so no expected call is read as the length 0.
       if (calls.length === 0) lines.push(`if len(${name}.calls) != 0 {`, `\tt.Fatalf("G-5: the calls %v are not none", ${name}.calls)`, '}');
-      else lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${name}.calls, want) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${name}.calls, want)`, '}');
+      else {
+        // GN-13bg: an argument that holds an instance of a value class of another repository is compared by what it
+        // holds.
+        const foreign = fixture.calls.some((call) => (members[call.member]?.parameters ?? []).some((p) => holdsForeign(v.model, named(p.type))));
+        if (foreign) v.readsForeign = true;
+        const [got, want] = foreign ? [`foreignRead(reflect.ValueOf(${name}.calls))`, 'foreignRead(reflect.ValueOf(want))'] : [`${name}.calls`, 'want'];
+        lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${got}, ${want}) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${got}, ${want})`, '}');
+      }
     }
     return lines;
   });
@@ -1138,19 +1151,12 @@ function holdsAlias(model: Model, type: Type): boolean {
   return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsAlias(model, inner));
 }
 
-// GN-13e, B2.121: whether a type holds an instance of a value class of another repository, at any place of a list, an
-// optional, a map, a tuple, a record or a variant.
-function holdsForeign(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
-  if (typeof type === 'string') return false;
-  const alias = aliasOf(model, type);
-  if (alias !== undefined) return alias.library !== undefined && alias.unit.kind === 'class';
-  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
-  const unit = unitOf(model, type);
-  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
-    seen.add(unit.id);
-    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
-  }
-  return inner.some((t) => holdsForeign(model, t, seen));
+// GN-13bg: the two sides of a Go comparison of two values of a type. Values that hold an instance of a value class of
+// another repository are read by foreignRead, because reflect.DeepEqual compares two instances by their handles.
+function goCompared(v: Values, type: Type, got: string, want: string): [string, string] {
+  if (!holdsForeign(v.model, type)) return [got, want];
+  v.readsForeign = true;
+  return [`foreignRead(reflect.ValueOf(${got}))`, `foreignRead(reflect.ValueOf(${want}))`];
 }
 
 // GN-13e, B2.121: foreignRead, the form of a result in which an instance of a value class of another repository, or of
@@ -1475,9 +1481,11 @@ ${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value !
     b.lines.push(`value0, err0 := ${left}`);
     const right = side(false);
     b.lines.push(`value1, err1 := ${right}`);
+    // GN-13bg: the two results are compared by what their instances of a value class of another repository hold.
+    const [got, want] = goCompared(v, fn.returns, 'value0', 'value1');
     out.main.push(`
 func TestU2${label}Without${testName(goParam(arg.name, v.model))}IsTheCallWithItsDefault(t *testing.T) {
-${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err0, err1) {', '\tt.Fatalf("U-2: %#v, %v is not %#v, %v", value0, err0, value1, err1)', '}'], 1)}
+${indent([...b.lines, `if !reflect.DeepEqual(${got}, ${want}) || !sameFailure(err0, err1) {`, `\tt.Fatalf("U-2: %#v, %v is not %#v, %v", ${got}, err0, ${want}, err1)`, '}'], 1)}
 }`);
   }
   // GN-6ae: a case of a member that takes a callback or a function runs again in a test of the build tag
@@ -1824,7 +1832,9 @@ ${methods.map((m) => m.fixture).join('\n\n')}
 `;
 }
 
-const fixtureGo = (defaults: boolean): string => `
+// GN-13bg: `foreign` is whether a parameter of a double holds an instance of a value class of another repository, whose
+// arguments a row is found by through foreignRead.
+const fixtureGo = (defaults: boolean, foreign: boolean): string => `
 // fixtureRow is a row of a callback fixture: the member, its arguments, its result and whether it answers once.
 type fixtureRow struct {
 	member string
@@ -1846,7 +1856,7 @@ func (f *fixture) answer(member string, args ...any) (any, error) {
 	call := append([]any{member}, args...)
 	f.calls = append(f.calls, call)
 	for at, row := range f.rows {
-		if row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {
+		if row.member == member && (${foreign ? 'reflect.DeepEqual(foreignRead(reflect.ValueOf(row.args)), foreignRead(reflect.ValueOf(args)))' : 'reflect.DeepEqual(row.args, args)'} || len(row.args)+len(args) == 0) {
 			if row.once {
 				f.rows = append(f.rows[:at:at], f.rows[at+1:]...)
 			}
@@ -2581,6 +2591,13 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
   const composedText = v.usesCaseText === true;
   const doubles = [...new Set([...out.callbacks, ...v.fixtures])];
+  // GN-13bg: a double whose parameter holds an instance of a value class of another repository finds its row by
+  // foreignRead.
+  const foreignDouble = doubles.some((cb) => {
+    const named = fixtureType(model, cb.unit);
+    return (cb.unit.members ?? []).some((m) => (m.parameters ?? []).some((p) => holdsForeign(model, named(p.type))));
+  });
+  if (foreignDouble) v.readsForeign = true;
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bmust\(/.test(all) ? [MUST] : []),
@@ -2597,7 +2614,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     // GN-13x: the double fixture<Name> of every callback type embeds *fixture, so the type comes with every double.
-    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [fixtureGo(doubles.some((cb) => cb.members.some((m) => m.member.default !== undefined)))] : []),
+    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [fixtureGo(doubles.some((cb) => cb.members.some((m) => m.member.default !== undefined)), foreignDouble)] : []),
     ...doubles.map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = '', extraStd: readonly { path: string; alias: string }[] = []): string => {
