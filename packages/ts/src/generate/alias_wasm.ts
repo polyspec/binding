@@ -6,7 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, convertedLibraries, ownerRecognizedUnits, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -698,13 +698,11 @@ export function wasmHost(model: Model): string {
   // instance read by its content has one handle within the walk, which the Map seen keeps.
   const foreign = model.aliases.some((a) => a.owner !== undefined) || foreignRowClasses(model, 'wasm').length > 0;
   const seen = foreignReads(model, 'wasm').some((row) => row.as === 'Content');
-  const foreignHeld = foreign ? "\n    Foreign(JsValue, Option<(&'static str, bool, ReadAs)>)," : '';
-  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(js_raised)';
+  const parts = foreignHostOf(foreign, 'JsValue', 'value', 'self.read_value(value).map_err(js_raised)');
+  const { held: foreignHeld, describe: foreignDescribe, read: foreignRead } = parts;
   const foreignHost = foreign ? valueClassesWasmHost(model) : '';
   if (reads.length === 0) {
-    return WASM_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', seen ? '\n    seen: Option<js_sys::Map>,' : '').replace('/*NEW*/', seen ? ', seen: None' : '').replace('/*IDENTITY*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
+    return hostWithoutReads(WASM_HOST, { SEEN: seen ? '\n    seen: Option<js_sys::Map>,' : '', NEW: seen ? ', seen: None' : '', IDENTITY: '' }, parts, 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
   }
   const kept = reads.some((r) => r.kept !== undefined);
   const describe = reads.map((r, index) => {

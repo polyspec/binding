@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -746,13 +746,11 @@ export function nodeHost(model: Model): string {
   const rows = foreignReads(model, 'node');
   const rowSeen = rows.some((row) => row.as === 'Content');
   const foreign = rows.length > 0 || model.aliases.some((a) => a.owner !== undefined);
-  const foreignHeld = foreign ? "\n    Foreign(Object<'env>, Option<(&'static str, bool, ReadAs)>)," : '';
-  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(js_raised)';
+  const parts = foreignHostOf(foreign, "Object<'env>", 'value, object', 'self.read_value(value).map_err(js_raised)');
+  const { held: foreignHeld, describe: foreignDescribe, read: foreignRead } = parts;
   const foreignHost = foreign ? valueClassesNodeHost(model) : '';
   if (reads.length === 0) {
-    return NODE_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : '').replace('/*NEW*/', rowSeen ? ', foreign_seen: None' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
+    return hostWithoutReads(NODE_HOST, { SEEN: rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : '', NEW: rowSeen ? ', foreign_seen: None' : '' }, parts, 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
   }
   const kept = reads.some((r) => r.kept !== undefined);
   const describe = reads.map((r, index) => {

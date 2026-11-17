@@ -5,7 +5,7 @@
 // takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, categoryClass,langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, foreignHostOf, hostWithoutReads, addItemsFill, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
@@ -536,13 +536,11 @@ export function pythonHost(model: Model): string {
   const reads = valueReads(model, 'python');
   const rows = foreignReads(model, 'python').length > 0;
   const foreign = rows || model.aliases.some((a) => a.owner !== undefined);
-  const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';
-  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(|error| raised(py_, error))';
+  const parts = foreignHostOf(foreign, "Bound<'py, PyAny>", 'value', 'self.read_value(value).map_err(|error| raised(py_, error))');
+  const { held: foreignHeld, describe: foreignDescribe, read: foreignRead } = parts;
   const foreignHost = foreign ? valueClassesHost(model) : '';
   if (reads.length === 0) {
-    return PYTHON_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rows ? '\n    seen: BTreeMap<usize, Handle>,' : '').replace('/*NEW*/', rows ? ', seen: BTreeMap::new()' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
+    return hostWithoutReads(PYTHON_HOST, { SEEN: rows ? '\n    seen: BTreeMap<usize, Handle>,' : '', NEW: rows ? ', seen: BTreeMap::new()' : '' }, parts, 'Err(raised(py_, binding_error(py_, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
   }
   const struct = (unit: Unit): string => `Py${langName('python', unit.name, 'class')}`;
   const describe = reads.map((r, index) => {

@@ -763,6 +763,30 @@ export const foreignClassParts = (model: Model, alias: ValueAlias, lang: 'node' 
 export const foreignRowIndex = (model: Model, lang: 'node' | 'wasm', library: string, unit: Unit): number =>
   foreignClasses(model).length + foreignRowClasses(model, lang).findIndex((c) => c.library === library && c.unit.id === unit.id);
 
+// B-1, GN-6x: what the host of a model takes for the value classes of other repositories, where it has any (foreign):
+// the variant Foreign of Held with the value of the language (value), the arm of describe that reads an instance of
+// such a class by the arguments of value_class (args), and the read of its member (read).
+export interface ForeignHost {
+  foreign: boolean;
+  held: string;
+  describe: string;
+  read: string;
+}
+export const foreignHostOf = (foreign: boolean, value: string, args: string, read: string): ForeignHost => ({
+  foreign,
+  held: foreign ? `\n    Foreign(${value}, Option<(&'static str, bool, ReadAs)>),` : '',
+  describe: foreign ? `\n        if let Some(described) = self.value_class(${args})? {\n            return Ok(described);\n        }` : '',
+  read,
+});
+
+// B-1: the host of a model whose in rows read no value class: the marks of the template (marks, by name) take the
+// values of other repositories alone, and read refuses any other value (refused).
+export function hostWithoutReads(host: string, marks: Record<string, string>, parts: ForeignHost, refused: string): string {
+  let text = host.replace('/*HELD*/', parts.held);
+  for (const [mark, value] of Object.entries(marks)) text = text.replace(`/*${mark}*/`, value);
+  return text.replace('/*DESCRIBE*/', parts.describe).replace('/*READ*/', parts.foreign ? 'value: Handle' : '_value: Handle').replace('/*READS*/', parts.foreign ? parts.read : refused);
+}
+
 // GN-6as: the last arm of the match of a make function, for a variant that no out row of the value makes (U-7, GN-6x).
 export const noOutRow = (shape: WalkShape, rule: string): string =>
   `other => ${shape.internal(`format!("${rule}: no out row of the kind {}", other.kind().as_str())`)},`;
