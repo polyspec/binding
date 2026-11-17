@@ -5,7 +5,7 @@ import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
 import { defaultAsserts } from './defaults.ts';
-import { takenCallbacks, conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { aliasOf, libraryOf, unitOf, takenCallbacks, conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -355,9 +355,28 @@ export function recordMembers(record: Unit, lang: 'node' | 'wasm'): { names: str
   };
 }
 
+// The TypeScript type of a contract type in the declarations of node and wasm. GN-6s: a callback unit of another
+// repository is the interface that its package declares, the WASM subpath of it for wasm; wasm takes no path.
+export function tsType(model: Model, type: Type, input: boolean, lang: 'node' | 'wasm'): string {
+  const common = tsCommon(type, input, (inner, given) => tsType(model, inner, given, lang), lang === 'node');
+  if (common !== undefined || typeof type === 'string') return common ?? 'unknown';
+  const unit = unitOf(model, type);
+  const library = libraryOf(type);
+  if (unit?.origin === 'callback' && library !== undefined) {
+    return `import(${JSON.stringify(`${(model.foreign.get(library)?.packages['node'] as { package: string }).package}${lang === 'wasm' ? '/wasm' : ''}`)}).${langName(lang, unit.name, 'class')}`;
+  }
+  // T-3: a record of another repository is a plain object, declared here by its fields.
+  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
+    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName(lang, f.name, 'variable')}: ${tsType(model, f.type, input, lang)}`).join('; ')} }`;
+  }
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
+  return langName(lang, unit.name, 'class');
+}
+
 // T-1, T-2: the TypeScript type of a scalar or a container in node and wasm, which differ by whether a path is
 // taken; undefined for a unit. ts is the type of the language for an inner type.
-export function tsCommon(type: Type, input: boolean, ts: (type: Type, input: boolean) => string, path: boolean): string | undefined {
+function tsCommon(type: Type, input: boolean, ts: (type: Type, input: boolean) => string, path: boolean): string | undefined {
   if (typeof type === 'string') {
     const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', ...(path ? { path: 'string | Uint8Array' } : {}), cancel: 'AbortSignal', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';

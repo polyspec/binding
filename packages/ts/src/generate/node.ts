@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsCommon, countCheck, recordMembers, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1979,23 +1979,7 @@ export const typeParameters = (fn: Fn): string => {
   return names.length === 0 ? '' : `<${names.join(', ')}>`;
 };
 
-function tsType(model: Model, type: Type, input: boolean): string {
-  const common = tsCommon(type, input, (inner, given) => tsType(model, inner, given), true);
-  if (common !== undefined || typeof type === 'string') return common ?? 'unknown';
-  const unit = unitOf(model, type);
-  // GN-6s: a callback unit of another repository is the interface that its package declares.
-  const library = libraryOf(type);
-  if (unit?.origin === 'callback' && library !== undefined) {
-    return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
-  }
-  // T-3: a record of another repository is a plain object, declared here by its fields.
-  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
-    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
-  }
-  // U-7: a value alias is any value that its core judges.
-  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
-  return langName('node', unit.name, 'class');
-}
+const tsType = (model: Model, type: Type, input: boolean): string => jsTsType(model, type, input, 'node');
 
 // E-2, GN-7a: the classes of the categories and the error units of the JavaScript entry of Node (export '') and of WASM
 // (export 'export '). The constructor of a category class, which every error unit calls, judges its arguments against

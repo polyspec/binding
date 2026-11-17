@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsCommon, countCheck, recordMembers, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1566,23 +1566,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
 
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
-function tsType(model: Model, type: Type, input: boolean): string {
-  const common = tsCommon(type, input, (inner, given) => tsType(model, inner, given), false);
-  if (common !== undefined || typeof type === 'string') return common ?? 'unknown';
-  const unit = unitOf(model, type);
-  // GN-6s: a callback unit of another repository is the interface that the WASM subpath of its package declares.
-  const library = libraryOf(type);
-  if (unit?.origin === 'callback' && library !== undefined) {
-    return `import(${JSON.stringify(`${(model.foreign.get(library)?.packages['node'] as { package: string }).package}/wasm`)}).${langName('wasm', unit.name, 'class')}`;
-  }
-  // T-3: a record of another repository is a plain object, declared here by its fields.
-  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
-    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
-  }
-  // U-7: a value alias is any value that its core judges.
-  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
-  return langName('wasm', unit.name, 'class');
-}
+const tsType = (model: Model, type: Type, input: boolean): string => jsTsType(model, type, input, 'wasm');
 
 function indexMjs(model: Model): string {
   const glue = wasmGlue(model);
