@@ -1837,6 +1837,23 @@
       "result": "1"
     }
   ],
+  "store_tagged": [
+    {
+      "id": "a_transaction_without_options_commits_the_tag_of_its_default",
+      "rule": "GN-6i",
+      "work": {"function": {"calls": [{"on": "0", "call": "scope.put", "args": {"key": "a", "value": "1"}}], "result": {"kind": "text", "value": "done"}}},
+      "result": {"kind": "text", "value": "done"},
+      "after": [{"call": "store.get", "args": {"key": "tag"}, "result": "plain"}, {"call": "store.get", "args": {"key": "a"}, "result": "1"}]
+    },
+    {
+      "id": "a_transaction_with_options_commits_the_tag_that_they_give",
+      "rule": "GN-6i",
+      "work": {"function": {"calls": [{"on": "0", "call": "scope.put", "args": {"key": "a", "value": "1"}}], "result": {"kind": "text", "value": "done"}}},
+      "options": {"tag": "given"},
+      "result": {"kind": "text", "value": "done"},
+      "after": [{"call": "store.get", "args": {"key": "tag"}, "result": "given"}, {"call": "store.get", "args": {"key": "a"}, "result": "1"}]
+    }
+  ],
   "store_audited": [
     {
       "id": "a_function_that_returns_is_committed_and_audited",

@@ -118,7 +118,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
   takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once. A row with
   `library` names the variant `<outer>/<inner>`, whose `<inner>` the library's contract declares, and a row without
-  `library` names no `/` (GN-7c). A variant
+  `library` names no `/` (GN-7c). A row with `library` may hold `"through": {"unit": "<unit>", "library":
+  "<library>"}`: the kind reaches a member only through an object of that unit, which the package of the library
+  makes, and by no call of the core of this contract (CK-22 states what the check then asks). A kind that reaches a
+  member both ways has no `through`. The schema allows the
+  key only on a row with `library`. Its `library` is the library of the row and its `unit` a callback unit of the
+  contract of that library, and each member that states the row in its `raises` takes that unit as an argument, also
+  inside a record; each other form is refused with the row, or with the member and the variant. A variant
   of `kinds`, `raises` and `in_raises` is a Rust path or the nested path `<outer>/<inner>` of GN-7c, and `errors.code`
   names the core error type and its projection to the code enum of the kinds (`{error, path}`, generator GN-7b); whether
   they name a variant, a type and a function of the core is judged by the compiler on the generated crate (I-2).
@@ -433,8 +439,32 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   of that call, and read the kind of the case itself only to count it as a case of a kind, so a case that expects a
   kind that its member does not declare passed, and its test could only fail on every target (B2.449). A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
   core error is one for every member: each error enum that has such a kind, the contract's own and that of each
-  library whose kinds it passes on (E-1b (a)), has one case of any member that arms `<library>.internal` as `broken`
-  and raises a kind of the category `internal`. The kinds of `in_raises` of a value alias have their cases in the
+  library whose kinds it passes on by a call of its core (E-1b (a)), a row without `through` (CK-10), has one case of
+  any member that arms `<library>.internal` as `broken` and raises a kind of the category `internal`. A row with
+  `through` states that its kind reaches a member only through an object that the package of its library makes, the
+  callback unit that the row names. Such a row is asked neither the case of X-1 nor the case of its path (the case of
+  a kind above, which one case of any kind of a library shows for the rows of that library without `through`), and a
+  case of a kind of such a row shows no path for another row: its proof is the case of the contract of that library
+  itself and the tests of the core of this library. A case, or a call of `then`, that arms a point of another
+  library is refused when every row of this contract that passes on a kind that the point fills has `through`:
+  `the case <id> of <member> arms the point <library>.<point>, which fills only kinds that the contract states reach
+  it through the unit <unit> of <library> (through): the point fires in the package of <library>, whose arming a
+  generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`. Why: hyper takes
+  the callback unit `store` of session-store in `open_page`, and 16 of the 17 kinds of session-store that it passes
+  on reach it only as what that object raised. `Random` reaches it both ways: as what `renew` of the store raised,
+  and from the call of `polyspec_session_store::random_hex` by the core of hyper; so its row has no `through`, and
+  its case, which arms `session_store.random` for that call, is asked. A kind that reaches a member both through an
+  object of the package of its library and by a call of the core of this contract keeps no `through`: the call of
+  the core reaches the point, so its X-1 case and its path case are asked as for any row without the key, and the
+  generated test proves the call of the core alone, not the way through the object. The package of session-store links a `binding_core` of its own
+  (generator GN-5), so a test of hyper that armed `session_store.internal` armed nothing that the store read: with
+  the case the generated Node test failed with "Missing expected rejection", and without it the check reported the
+  missing case, and the missing case of the path for each of those rows. What stays unproven: the check does not
+  guess from the Cargo dependencies whether a kind arrives by a call of the core, so a `through` on a row whose kind
+  the core does reach by a call is not caught, and its X-1 case and its path case are then asked of no one here; what
+  still guards such a row is the X-1 case of the contract of that library, the compile check of GN-7c and the tests
+  of the core of the consumer. And the `class` of a row with `through` that overrides its class (`record_error` on
+  `Record` and `RecordWrite` of hyper) is proven by no generated test. The kinds of `in_raises` of a value alias have their cases in the
   group of a `cases` row that names the alias (U-7), a group that no row of a member names: such a case is
   `{"id", "value", "raises"}` (and `note`, `rule`) whose `raises.kind` is a kind of `in_raises`, and every kind of
   `in_raises` has one. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
@@ -592,6 +622,19 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   because session-store refuses `-1`, `1.5`, `"60"` and `true` in the uint fields `lifetime` and `lock_expire` of the
   record argument `options` of `redis_sessions.new` with `invalid_number`; a check that took the top level alone
   would refuse the one test of that refusal of the binding.
+- **CK-103** A `{computed}` default has a case that leaves it to the core (U-2, generator GN-13d): for each public
+  member of a public unit that takes a parameter with a `{computed}` default, or a record of this contract (also as
+  an `optional`) with a field that has one, the contract has a case of that member that names no `raises`, arms no
+  fault (no `faults`, and no fault in a call of `then` of its instance values) and leaves that parameter or field to
+  the core: the key is missing or null, or, for a field, the record is missing or null or has no such key or null
+  under it. `binding check` reports each parameter and field without such a case, with the member, the place and the
+  rule id of the default. A member of a callback unit, of a host unit and of an error unit, and a constant, are not
+  asked, as in CK-22. A member whose only cases are steps of a function fixture or calls of `after` is reported: the
+  case is a case of the member itself. Why: a `{computed}` default is a value that the core makes at the call, such
+  as the random key of a new row of crud-ui (`Form.addRow`), so the test of U-2 compares no value of it and only the
+  outcome of the two calls (GN-13d). The proof of what the core makes is then the case of the rule that the default
+  names; without this check a declaration of `{computed}` would switch the test of the default off and put nothing
+  in its place.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

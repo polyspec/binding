@@ -1274,6 +1274,17 @@ fn entries_of(
     }
 }
 
+/// The tag of [`Store::tagged`] when its options leave it out (GN-6i).
+pub const DEFAULT_TAG: &str = "plain";
+
+/// The options of [`Store::tagged`], each of which may be left out (GN-6i: the record with the default
+/// `{empty: "object"}`, whose fields are then `None`).
+#[derive(Debug, Clone, Default)]
+pub struct TagOptions {
+    /// The tag that the transaction writes, [`DEFAULT_TAG`] when it is `None`.
+    pub tag: Option<String>,
+}
+
 /// A store of committed entries, a handle whose clones share one state (GN-6ae): a transaction gives language code a
 /// scope of pending entries, which it commits when the code returns and drops when the code raises.
 #[derive(Debug, Clone, Default)]
@@ -1329,6 +1340,20 @@ impl Store {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let mut scoped = Scoped::new(self.entries, function);
         scoped.running = Some(self.running);
+        scoped
+    }
+
+    /// Runs `function` as [`Store::transaction`] does, with the pending entry `tag` written before the function runs:
+    /// the tag of `options`, or [`DEFAULT_TAG`] when the options leave it out (GN-6ab, GN-6i: a member with machine
+    /// takes a record parameter with a default, which the machine owns).
+    pub fn tagged<F>(self, function: F, options: TagOptions) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        let scoped = self.transaction(function);
+        scoped
+            .scope
+            .put("tag", options.tag.as_deref().unwrap_or(DEFAULT_TAG));
         scoped
     }
 

@@ -270,8 +270,9 @@ fn member(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> 
 }
 
 /// U-2 {empty: "object"}: a member of an options record that may be left out; a record that is left out (undefined)
-/// leaves out each of its members.
-fn member_or_undefined(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> {
+/// leaves out each of its members. GN-4c: its name does not begin with member_, which the entries of the members of a
+/// class take in the module of the class, so a member named or_undefined does not hide it.
+fn field_or_undefined(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> {
     if record.is_undefined() {
         return Ok(JsValue::UNDEFINED);
     }
@@ -646,7 +647,7 @@ function functionRust(model: Model, fn: Fn): string {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('wasm', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `&${parameter.default === undefined ? 'member' : 'member_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
+        const raw = `&${parameter.default === undefined ? 'member' : 'field_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('wasm', model, fn, field.type, name), typed))}?;`);
         if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
