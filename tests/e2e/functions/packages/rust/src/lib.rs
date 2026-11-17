@@ -90,12 +90,12 @@ pub fn apply(convert: Convert, value: &str) -> Result<String, Failure<Error>> {
 /// # Errors
 ///
 /// Kind `empty` for a value without a character, and the failure of a function.
-pub fn chain(functions: OrderedMap<Convert>, value: &str) -> Result<String, Failure<Error>> {
+pub fn chain(functions: &OrderedMap<Convert>, value: &str) -> Result<String, Failure<Error>> {
     if value.is_empty() {
         return Err(Failure::Kind(Error::Empty));
     }
     let mut converted = value.to_owned();
-    for (_name, convert) in functions {
+    for (_name, convert) in functions.iter() {
         converted = convert(&converted, &lengths(&converted))?;
     }
     Ok(converted)
