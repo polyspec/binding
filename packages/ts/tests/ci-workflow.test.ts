@@ -512,6 +512,39 @@ if (args[0] === 'scripts/release-candidate-version.mts') {
   assert.ok(makefile.includes('RELEASE_ASSETS=var/release/assets '), 'release-assets no longer names var/release/assets');
 });
 
+// B2.505: every asset of the release of binding is built after the tag (release-tag, release-checkout, release-assets),
+// so release-candidate-assets, which CI runs before any tag, ends with the check of the sizes of GN-19g. The stand-in of
+// node packs the archives that EMPTY names empty, and runs the CLI of the tree for the check.
+test('B2.505: make release-candidate-assets fails on an empty archive at its end, naming it, before any tag (GN-19g)', (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'binding-candidate-sizes-')));
+  t.after(() => { rmSync(root, { recursive: true, force: true }); });
+  copyFileSync(`${top}Makefile`, join(root, 'Makefile'));
+  const node = join(root, 'node-stand-in.cjs');
+  writeFileSync(node, `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args[0] === 'packages/ts/src/cli.ts') {
+  const ran = require('node:child_process').spawnSync(${JSON.stringify(process.execPath)}, [path.join(${JSON.stringify(top)}, args[0]), ...args.slice(1)], { stdio: 'inherit' });
+  process.exit(ran.status ?? 1);
+}
+if (args[1] === 'candidate-assets') {
+  fs.mkdirSync(process.env.RELEASE_ASSETS, { recursive: true });
+  fs.writeFileSync(path.join(process.env.RELEASE_ASSETS, 'binding-' + args[2] + '.tgz'), process.env.EMPTY ? '' : 'archive');
+}
+`);
+  chmodSync(node, 0o755);
+  const run = (env: Record<string, string>): { status: number | null; output: string } => {
+    const ran = spawnSync('make', ['--no-print-directory', '-C', root, 'release-candidate-assets', `NODE=${node}`, 'VERSION=1.2.3'], { env: { PATH: '/usr/bin:/bin', ...env }, encoding: 'utf8' });
+    return { status: ran.status, output: `${ran.stdout}${ran.stderr}` };
+  };
+  const packed = run({});
+  assert.equal(packed.status, 0, packed.output);
+  const empty = run({ EMPTY: '1' });
+  assert.equal(empty.status, 2, `release-candidate-assets passes with an empty archive: ${empty.output}`);
+  assert.match(empty.output, /release-candidate-assets: var\/release-candidate\/assets\/binding-1\.2\.3\.tgz is empty, and GitHub takes no empty asset/);
+});
+
 test('B2.455: the entry ts of the job check runs release-candidate-assets after its other targets, and no entry gives it a VERSION', () => {
   const check = jobs().get('check') ?? [];
   const entries = matrix(check);

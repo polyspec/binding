@@ -114,7 +114,12 @@ fs.writeFileSync(path.join(dir, name), 'built');
 if (args[0] === 'rustc' && args.includes('native-static-libs')) process.stderr.write('note: link against the following native artifacts\\nnote: native-static-libs: -lnative_' + (args.includes('--target') ? option('--target') : 'host').replaceAll('-', '_') + ' -lc\\n');`);
   // binding generate --target node writes the generated entry of the npm package, beside which the addon of a
   // checkout lies (GN-3c).
-  standIn(bin, 'binding', `if (args[0] === 'generate' && option('--target') === 'node') {
+  // B2.505: binding asset-sizes is the check of the sizes of GN-19g, which the stand-in runs with the CLI of the tree.
+  standIn(bin, 'binding', `if (args[0] === 'asset-sizes') {
+  const ran = require('child_process').spawnSync(process.execPath, [${JSON.stringify(cli)}, ...args], { stdio: 'inherit' });
+  process.exit(ran.status ?? 1);
+}
+if (args[0] === 'generate' && option('--target') === 'node') {
   fs.mkdirSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated'), { recursive: true });
   fs.writeFileSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated/index.cjs'), 'generated');
 }`);
@@ -686,6 +691,23 @@ test('B2.496: release-platform-assets REHEARSAL=1 runs the checks of the labels 
     assert.equal(empty.status, 2, empty.output);
     assert.match(empty.output, /release-platform-assets: .*npm\/polyspec-sample-0\.0\.3\.tgz is empty, and GitHub takes no empty asset/);
     assert.deepEqual(box.calls().filter((call) => call.tool === 'gh'), []);
+  }
+});
+
+// B2.505: every asset of a release is built after the tag, so the check of the sizes of GN-19g runs at the end of the
+// build recipes that CI runs on the same tree before any tag, and an empty asset fails there and burns no tag.
+test('B2.505: release-assets-platform and release-assets-npm fail on an empty asset at their end, naming it, before any tag (GN-19g, GN-19i)', (t) => {
+  for (const [job, path, vars] of [['release-assets-platform', 'wheel/polyspec_sample-0.0.3-cp314-abi3-empty.whl', []], ['release-assets-npm', 'npm/polyspec-sample-0.0.3.tgz', ['MISE=']]] as const) {
+    const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+    const extra = vars.map((v) => (v === 'MISE=' ? `MISE=${join(box.bin, 'mise')}` : v));
+    const passed = box.make(job, ...extra);
+    assert.equal(passed.status, 0, `${job}: ${passed.output}`);
+    const file = join(box.root, 'var/release/assets', path);
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, '');
+    const run = box.make(job, ...extra);
+    assert.equal(run.status, 2, `${job} passes with an empty asset: ${run.output}`);
+    assert.match(run.output, new RegExp(`${job}: var/release/assets/${path.replaceAll('.', '\\.')} is empty, and GitHub takes no empty asset`));
   }
 });
 
