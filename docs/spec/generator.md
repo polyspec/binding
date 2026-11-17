@@ -2530,7 +2530,10 @@ the design ids are those of the binding design.
   ...<Type>Property) (*<Type>, error)`, which judges its arguments as GN-7a does, with `<Type><Property>(value)` for
   each property of the unit and its parents; a category type, which has no property, takes no `properties`. It is
   public API because a test of another Go module must call it, and it is the only way such a module makes an error
-  of that library with values (GN-7a). A contract with a member that converts an exception of another library
+  of that library with values (GN-7a). Package `binding` of that library has the generated test
+  `zz_generated_maker_test.go`, which makes each type with a kind of the type and each of its properties and requires
+  that a kind of no type is refused. Why: only a test of another module calls `Make<Type>` otherwise, so the
+  `deadcode -test` of the module itself (GN-14) would report it. A contract with a member that converts an exception of another library
   (GN-7c) gives its category types the method `Cause() error`, the error that the converted error came from, nil for
   every other error; `Unwrap` keeps giving the category or the parent, so `errors.As` does not find the type of the
   other library in a converted error, as `instanceof` does not in the other targets.

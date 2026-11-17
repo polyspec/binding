@@ -2100,6 +2100,41 @@ func Make${name}(kind, message string, status, errno *int${properties.length ===
   }).join('');
 }
 
+// B2.489 (GN-7a, GN-15d): the test of package binding that makes each type of goMakers with a kind of the type and
+// each of its properties, and refuses a kind that is no kind of it. Only a test of another module calls Make<Type>
+// otherwise, so deadcode -test of the module that writes it, which the end-to-end check runs (GN-14), reaches it
+// through this test.
+export function goMakerTest(model: Model): string | undefined {
+  if (model.callbacks.length === 0) return undefined;
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const tests = goMade(model).flatMap(({ name, unit, category }) => {
+    const kind = classKinds(model, unit ?? (category as Category))[0];
+    if (kind === undefined) return [];
+    const properties = (unit === undefined ? [] : errorProperties(unit)).map(({ property }) => {
+      const type = goType(scope, property.returns);
+      return `, ${name}${goName(property.member.name)}(${type.startsWith('*') ? 'nil' : `*new(${type})`})`;
+    }).join('');
+    return [`
+func TestGN7aMake${name}(t *testing.T) {
+	made, err := Make${name}(${goString(kind)}, "GN-7a", nil, nil${properties})
+	if err != nil || made.Kind() != ${goString(kind)} {
+		t.Fatalf("GN-7a: %#v, %v", made, err)
+	}
+	if _, err := Make${name}("GN-7a: no kind", "GN-7a", nil, nil); err == nil {
+		t.Fatalf("GN-7a: Make${name} makes a kind that is no kind of it")
+	}
+}
+`];
+  });
+  if (tests.length === 0) return undefined;
+  return `${goHeader()}
+
+package binding
+
+import "testing"
+${tests.join('')}`;
+}
+
 // B2.489 (GN-15d): Make<Type> in package errors, the public API that a test of another Go module calls.
 function goErrorsMakers(model: Model): string {
   if (model.callbacks.length === 0) return '';
@@ -3839,6 +3874,8 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model), goTestTag(model, 'panic_test')));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (passes(model)) files.set(`${BINDING}/zz_generated_passed_test.go`, goPassedTest(internalType(model)));
+  const makerTest = goMakerTest(model);
+  if (makerTest !== undefined) files.set(`${BINDING}/zz_generated_maker_test.go`, makerTest);
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
   // GN-6ae, GN-15h: ThrownCount is written only for the generated tests of the count, which run the cases of a member

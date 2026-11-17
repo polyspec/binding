@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ee3d9d307ac4470a0e56e3f2e723bff14d6bd0ba54dbe33c88041a2015ae6f1f -->
+<!-- source-sha256: f2f6b8f275338686c361568ce615b44c059bf71a56ff2815396e9d6d48782a97 -->
 # 생성기
 
 [English](generator.md)
@@ -2086,6 +2086,9 @@
   status, errno *int, properties ...<Type>Property) (*<Type>, error)`도 있으며, GN-7a처럼 인자를 판정한다. unit과 그
   parent의 property마다 `<Type><Property>(value)`가 있고, property가 없는 category 타입은 `properties`를 받지 않는다. 다른 Go
   module의 시험이 불러야 하고, 그런 module이 그 라이브러리의 오류를 값과 함께 만드는 유일한 길이므로 공개 API다(GN-7a).
+  그 라이브러리의 패키지 `binding`에는 생성된 시험 `zz_generated_maker_test.go`가 있어, 타입마다 그 타입의 kind와 각
+  property로 만들고 어느 타입의 kind도 아닌 kind는 거부됨을 요구한다. 이유: 그 밖에는 다른 module의 시험만 `Make<Type>`을
+  부르므로, module 자신의 `deadcode -test`(GN-14)가 이를 보고한다.
   다른 라이브러리의 예외를 변환하는 member(GN-7c)를 가진 계약은 category 타입에 method `Cause() error`를 준다. 변환된 오류가
   나온 오류이고, 다른 모든 오류에서는 nil이다. `Unwrap`은 계속 category나 parent를 주므로, 다른 target에서 `instanceof`가
   그렇듯 `errors.As`는 변환된 오류에서 다른 라이브러리의 타입을 찾지 않는다.
