@@ -20,7 +20,7 @@ test('a php of another minor than .php-version is named with both, and the minor
       return file;
     };
     assert.equal(phpMinorProblem('8.4', php('8.4')), undefined);
-    assert.equal(phpMinorProblem('8.4', php('8.5')), `the PHP of the checkout must be the minor 8.4 of .php-version; ${join(root, 'php-8.5')} is PHP 8.5: put the php of PHP 8.4 first on PATH and run make install-tools again`);
+    assert.equal(phpMinorProblem('8.4', php('8.5')), `the PHP of the checkout must be the minor 8.4 of .php-version; ${join(root, 'php-8.5')} is PHP 8.5: remove ${join(root, 'php-8.5')}, put the php of PHP 8.4 first on PATH and run make install-tools again`);
     assert.match(phpMinorProblem('8.4', join(root, 'absent')) ?? '', /is PHP that does not run/);
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 export function phpMinorProblem(want: string, php: string): string | undefined {
   const minor = spawnSync(php, ['-r', 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'], { encoding: 'utf8' }).stdout?.trim() ?? '';
   if (minor === want) return undefined;
-  return `the PHP of the checkout must be the minor ${want} of .php-version; ${php} is PHP ${minor === '' ? 'that does not run' : minor}${minor === '' ? '' : `: put the php of PHP ${want} first on PATH and run make install-tools again`}`;
+  // B2.499: install-php of kit keeps an existing wrapper (K283, K1271), so the step removes it first.
+  return `the PHP of the checkout must be the minor ${want} of .php-version; ${php} is PHP ${minor === '' ? 'that does not run' : minor}${minor === '' ? '' : `: remove ${php}, put the php of PHP ${want} first on PATH and run make install-tools again`}`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
