@@ -52,6 +52,7 @@ export const NOT_READ: readonly Input[] = [
   { path: 'scripts/consumer-gate.mts', why: 'make consumer-gate imports it, which names the list, the steps and the table of the consumer gate (GN-14m); a run of make e2e does not' },
   { path: 'scripts/consumer-gate-run.mts', why: 'make consumer-gate runs it (GN-14m); a run of make e2e does not' },
   { path: 'config/consumers.json', why: 'the list of the consumer gate, which make consumer-gate reads (GN-14m); a run of make e2e does not' },
+  { path: 'config/duplication.json', why: 'the rule of make duplication-check, which the duplication-check of kit reads (GN-14o); a run of make e2e does not' },
   { path: 'scripts/e2e-npm-install.mts', why: 'the script of the tree of the commit runs it from that tree to install the npm packages as a consumer of a release does (GN-3c); the script of the checkout does not import it' },
   { path: 'scripts/e2e-pip-install.mts', why: 'the script of the tree of the commit runs it from that tree to install the wheels as a consumer of a release does (GN-3h); the script of the checkout does not import it' },
   { path: 'scripts/e2e-assets.mts', why: 'the two install scripts of the tree of the commit import it, which serves the assets of a run on the loopback; the script of the checkout does not import it' },
