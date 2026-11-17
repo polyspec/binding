@@ -172,6 +172,13 @@ fmt-e2e:
 docs-check: ## Check the documents, the changelogs and the checklists; offline
 	$(NODE) $(KIT)/check-documents.mjs --checklist-place --private-path /Users/ --private-path /home/ --kit-rows
 
+# duplication-check runs the duplication-check of kit (jscpd) over the code of the checkout by config/duplication.json:
+# the TypeScript of packages/ts/src and scripts, a piece of 6 lines or more. It fails on today's tree until the
+# duplications that its first run found are removed (B2.517 to B2.521); then the check job of ci.yml runs it (B2.515).
+.PHONY: duplication-check
+duplication-check: ## Fail on a piece of 6 lines or more of code that exists twice outside the globs of config/duplication.json; offline
+	$(NODE) $(KIT)/duplication-check.mjs
+
 documents-stamp: ## Write the source-sha256 of each English document into the Korean twins of PATHS, or of every twin whose source moved; offline
 	$(NODE) $(KIT)/documents-stamp.mjs $(PATHS)
 
