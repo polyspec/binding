@@ -1140,6 +1140,21 @@ function isUtf8(bytes: Buffer): boolean {
 
 const SAFE = 2n ** 53n - 1n;
 
+// GN-13e, CK-104 (B2.490): whether the keys of a case map are the sequence of the key form that the alias states: the
+// texts "0" to "n-1" in order under text, the ints 0 to n-1 in order under int. The empty map has sequence keys under
+// both, and a map whose keys are the sequence of neither form has none. A map whose keys are the sequence of one form,
+// of an alias that states no form, is not judged: the keys' shape is no answer (CK-104 refuses the contract).
+export function sequenceKeys(alias: Unit, pairs: readonly unknown[][]): boolean {
+  if (pairs.length === 0) return true;
+  const text = pairs.every((pair, i) => pair[0] === String(i));
+  const int = pairs.every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+  const form = alias.sequence_keys?.keys;
+  if (form === 'text') return text;
+  if (form === 'int') return int;
+  if (text || int) throw new Unsupported(`${alias.id} selects a row by sequence_keys and states no sequence_keys.keys, so the case map with the keys ${text ? 'texts' : 'ints'} 0 to ${pairs.length - 1} is not judged (CK-104)`);
+  return false;
+}
+
 // GN-13e: whether a case value of the kind holds the predicate of an out row of the alias.
 function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>, predicate: string): boolean {
   const held = node['value'];
@@ -1154,7 +1169,7 @@ function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>
     }
     case 'sequence_keys':
       if (kind !== 'list' && !Array.isArray(held)) throw new Unsupported(`a case value of the kind ${kind} of ${alias.id} is ${JSON.stringify(held)}, not an array of [key, value] pairs (G-5)`);
-      return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+      return kind === 'list' || sequenceKeys(alias, held as unknown[][]);
     default:
       throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
   }
@@ -1413,6 +1428,10 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   const kind = String(record['kind']);
   const alias = making.alias;
   if (alias === undefined || making.library !== undefined || !CLASSED_KINDS.has(kind) || !(alias.out ?? []).some((row) => row.kind === kind)) return built;
+  // U-7 (f), B2.493: an out row makes an OutValue int, an i64, so an int outside i64 is no value of an out row; it is
+  // the built-in integer of the target (a Node bigint enters as a large integer), which the in function judges
+  // (orm: IntegerValue(2^63) was refused by its int64 parameter before the in function of orm_value ran).
+  if (kind === 'int' && outsideI64(record['value'])) return built;
   const form = aliasOutForm(alias, ctx.target ?? ctx.lang, kind, record);
   if (typeof form !== 'string' || !form.endsWith('.constructor')) return built;
   const factory = memberById(model, form);
@@ -1425,6 +1444,12 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   if (cls === undefined || ctx.lang === 'php') throw new Unsupported(`a case value of the kind ${kind} of ${where} is an instance of ${form}, which this target does not make in a case yet (GN-13)`);
   return ctx.lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(${built})` : `new pkg.${langName('node', cls.name, 'class')}(${built})`;
 }
+
+// Whether an integer of a case, a number, a bigint or a decimal text, is outside the range of i64.
+const outsideI64 = (held: unknown): boolean => {
+  const token = typeof held === 'bigint' ? held : typeof held === 'number' && Number.isInteger(held) ? BigInt(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? BigInt(held) : undefined;
+  return token !== undefined && (token < -(2n ** 63n) || token >= 2n ** 63n);
+};
 
 // GN-13, B2.465: the kinds whose value an out row may make as an instance of a value class of one value.
 const CLASSED_KINDS: ReadonlySet<string> = new Set(['int', 'int64', 'float', 'text', 'bytes', 'list', 'map']);
@@ -2772,12 +2797,18 @@ export function callbackReachingArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unk
   return raising;
 }
 
+// GN-13t: whether an argument takes the case value of a case of its member: an argument of a class or of a generated
+// interface (GN-6ap).
+const takesCaseInstance = (model: Model, arg: Arg): boolean => objectUnit(model, arg.type) !== undefined || interfaceOf(model, arg.type) !== undefined;
+
 // GN-13t: the arguments of the first case of a member that gives every argument, arms no faults, writes no files and
 // runs against no service, one that does not raise before one that raises, or undefined. A test that gives one argument
 // a value of its own gives an argument of a class this case value, because the core of a class may refuse the
-// placeholder arguments of its first constructor (crud-ui: FormTemplate.from_json of a JSON null).
+// placeholder arguments of its first constructor (crud-ui: FormTemplate.from_json of a JSON null). An argument of a
+// generated interface (GN-6ap) is such an argument too, because its placeholder is made by the first factory of a class
+// that implements it (orm: Db::connect with a cache size 0, B2.493).
 export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> | undefined {
-  if (!fn.args.some((a) => objectUnit(model, a.type) !== undefined)) return undefined;
+  if (!fn.args.some((a) => takesCaseInstance(model, a))) return undefined;
   let raising: ReadonlyMap<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
@@ -2791,9 +2822,9 @@ export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> |
 }
 
 // GN-13t: the value of another argument of a test that gives one argument a value of its own: the case value of an
-// argument of a class in the case of classCaseArgs, and the placeholder of GN-13 otherwise.
+// argument of a class or of a generated interface in the case of classCaseArgs, and the placeholder of GN-13 otherwise.
 export function otherValue(model: Model, ctx: Context, arg: Arg, given: ReadonlyMap<Arg, unknown> | undefined, rich = false): string {
-  if (given !== undefined && given.has(arg) && objectUnit(model, arg.type) !== undefined) {
+  if (given !== undefined && given.has(arg) && takesCaseInstance(model, arg)) {
     // G-4: a case value that the generator does not write in the target fails the test of its own case by name
     // (GN-13e) and supplies no value here, so the placeholder stands, as when no case exists.
     try {
@@ -3123,9 +3154,29 @@ def _tokens(top):
 `;
 }
 
-// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, and a
-// place of an array or of an object that is a PHP reference is php_reference before its value.
-export const PHP_TOKENS = `
+// GN-13e, B2.492: a value class of an out row of PHP in the tokens: its unit, its class with the namespace, the method of
+// its property, and whether its content is a map, whose array aliasTokens writes as a map even when its keys are 0 to
+// n-1.
+export type PhpTokenForm = { unit: string; cls: string; method: string; map: boolean };
+
+// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, a
+// place of an array or of an object that is a PHP reference is php_reference before its value, and an instance of a
+// value class of an out row is `<unit> #k`, then its content (B2.492: before, it was `other <class>`).
+export const phpTokens = (forms: PhpTokenForm[]): string => PHP_TOKENS.replace('/*KEPT*/', forms.map((f) => `
+            } elseif ($value instanceof ${f.cls}) {
+                $id = 'object ' . spl_object_id($value);
+                if (isset($numbers[$id])) {
+                    $out[] = ${phpText(f.unit)} . ' again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $out[] = ${phpText(f.unit)} . ' #' . $numbers[$id];${f.map ? `
+                $entries = $value->${f.method}();
+                $out[] = 'map ' . count($entries);
+                self::places($entries, false, $stack);` : `
+                $stack[] = [$value->${f.method}(), null];`}`).join(''));
+
+const PHP_TOKENS = `
 
     /**
      * GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each
@@ -3177,7 +3228,7 @@ export const PHP_TOKENS = `
                 $numbers[$id] = $count++;
                 $properties = (array) $value;
                 $out[] = 'php_object #' . $numbers[$id] . ' ' . count($properties);
-                self::places($properties, false, $stack);
+                self::places($properties, false, $stack);/*KEPT*/
             } else {
                 $out[] = 'other ' . get_debug_type($value);
             }

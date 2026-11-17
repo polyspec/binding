@@ -1621,7 +1621,7 @@ fn _alias_in_${rustField(alias.unit.name)}(py_: Python<'_>, value: &Bound<'_, Py
 fn _alias_round_${rustField(alias.unit.name)}<'py>(py_: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     guard(py_, || {
         let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(py_, value, "value")?;
-        out_${rustField(alias.unit.name)}(py_, &value)
+        out_${rustField(alias.unit.name)}(py_, value)
     })
 }
 `).join('')}

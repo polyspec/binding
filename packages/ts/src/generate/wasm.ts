@@ -1673,7 +1673,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
     pub fn alias_round_${rustField(alias.unit.name)}(value: JsValue) -> Result<JsValue, JsValue> {
         guard(|| {
             let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(&value, "value")?;
-            out_${rustField(alias.unit.name)}(&value)
+            out_${rustField(alias.unit.name)}(value)
         })
         .map_err(throw)
     }

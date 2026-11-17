@@ -1211,8 +1211,10 @@ the design ids are those of the binding design.
   its field when the property is writable and its method otherwise, as node 11 with one handle per pointer of a call,
   and describes the keyed map of the owner that such an instance keeps as a map of its entries; an `out` row is node
   14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
-  owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
-  (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
+  owner on an empty keyed map or on nil and then sets its entries or its writable property. An `in` row of Go may
+  also name a class with core_type of the owner, as Node and WASM read it: node 11 with the kind of the row, whose
+  read calls the method of the property, which gives its value and an error (B2.497). Refused by name in Go (G-4): an
+  `out` row that makes a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. The generated tests of Python, Node and Go write a case value of the kind of
   such a row as an instance of the class of the owner, and read a result by the classes of the owner, both through
   the package of the owner, which the test imports (GN-13, GN-13e). Go makes the instance by `New<Class>` of the
@@ -2094,7 +2096,15 @@ the design ids are those of the binding design.
   instance of it as `HostValue::Value` with the kind of the row; the handle is the same for the same instance within
   one walk of the core, so that the core sees one object at each of its positions. `read` of `HostValues` gives, for
   the handle, the property that the row names as `read`: the kept value, described again, or the value that the core
-  path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
+  path of the property returns (a bool, an integer or a float). This holds in every target that generates the class,
+  PHP included: PHP tells the instance by its class, and `read` calls the PHP method of the property and describes its
+  result again by the rules of PHP, so a property of any kind (bytes, a map) is read as PHP gives it (B2.492). Before
+  B2.492 the PHP host had no such arm, so an instance that a case value or the code of the user passed entered as
+  `HostValue::Object`, which orm's core refuses as "an object of the language". Go reads a class with `core_type` the
+  same way: package binding cannot name a struct of a module, which imports it, so each module gives
+  `binding.ReadValues`, when it is loaded, the kind of the row of each such class of its own and a read that calls the
+  method of the property, whose result is described again (B2.497: before, Go passed such a row over, and the instance
+  entered as a native or was refused as unsupported). An `out` row whose make names the constructor of a
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node, WASM and Go generate these
@@ -3084,6 +3094,9 @@ the design ids are those of the binding design.
   kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
   from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
   `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  An `int` outside the range of i64 is the built-in value: an out row makes an `OutValue` int, an i64, so no out
+  row makes it, and a Node `bigint` outside i64 enters as a large integer, which the in function judges (U-7 (f),
+  B2.493; orm: `IntegerValue(9223372036854775808n)` was refused by its `int64` parameter before the in function ran).
   Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
   alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
   sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value
@@ -3191,8 +3204,9 @@ the design ids are those of the binding design.
   places in pre-order, depth first, which a loop writes on both sides, so a value nested deeper than a recursion
   takes is compared too. The generator writes the texts of the case value by the out rows of the alias: for each
   place, the row of its kind whose predicate the value has (`utf8`, `safe_integer`, `integral_float`,
-  `sequence_keys`; a case value of the kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no
-  row of its kind) and the form of the row in the language. The test writes the texts of the result by the type of
+  `sequence_keys`, whose keys are those of the form that the alias states, texts or ints, CK-104; a case value of the
+  kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no row of its kind) and the form of the
+  row in the language. The test writes the texts of the result by the type of
   each place. A text names the form: `null`; `bool true` or `bool false`; `int <decimal>` in Python and PHP; `number
   <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
   PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
@@ -3204,7 +3218,10 @@ the design ids are those of the binding design.
   `integer_value` or `bytes_value` was expected as the bare value), a PHP `stdClass` and a PHP reference, numbered
   together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
-  `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. The texts of a result
+  write such an instance in the same way in every language, PHP included, where the method of the property gives the
+  field and a field that is a map is `map <n>` even when its keys are 0 to n-1 (B2.492, where the PHP texts wrote
+  `other <class>` for it, so orm's PHP results of `bytes_value` and `map_value` never matched). A PHP reference whose
   id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one
   place holds, because `ReflectionReference::fromArrayElement` gives null for it and `zend_array_dup` copies its
   value, so the reference that the binding makes for that place cannot be seen. The result of an
@@ -3667,6 +3684,10 @@ the design ids are those of the binding design.
   Existing plain text, `ill_formed` and typed `path` keep their meanings. Private helpers that defer a new text
   conversion carry the same case owner through a hidden argument or a private closure; they resolve no global
   root and add no lifetime beyond the existing case. Helpers that do not use this form remain unchanged.
+  Each test sets the root in its own body when an expression of that test takes it, and only then: a target makes the
+  expressions of a test as it writes that test, so no test takes a root that another test set (B2.493). Why: the B-5c
+  tests of orm were all made before the first was written, so the instance of `StepRunner` took a root that only the
+  test of `Query` set (PHP: `caseTextPath()` with a null root; Node: `_caseTextRoot is not defined`).
 
   A JSON string token escapes quote, backslash and U+0000–001F, using `\b`, `\t`, `\n`, `\f`, `\r` for their named
   controls and lower-case `\u00xx` for the others. Slash, non-ASCII Unicode, `<`, `>`, `&`, U+2028 and U+2029 remain
@@ -3746,7 +3767,12 @@ the design ids are those of the binding design.
   `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so the B-3 test failed in its argument before the
   call that it checks. A case value that the generator does not write in a target supplies no value there, and the
   placeholder stands: that case fails its own test by name (G-4, GN-13e), and the tests of the other rules are written.
-  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463). A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
+  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463).
+  An argument of a generated interface (GN-6ap) takes the case value by the same rule, because its placeholder is an
+  instance that the first factory of a class that implements it makes of placeholders (B2.493). Why: the connection of
+  orm `Query.connect` and `StepRunner.new` is an interface, whose placeholder was `Db::connect("a", 0, …)` with a
+  cache size 0, which the core refuses with `config: cache sizes must be positive` before the argument count that
+  the G-7 test checks. A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
   at two places, the receiver of the call that takes that instance as an argument, and the other instance of GN-8a)
   as the tests that need any receiver do: from the factory arguments of the first case of the class that does not
   raise, arms no faults, writes no files and runs against no service (GN-13f); the placeholder of GN-13 stands there

@@ -567,6 +567,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a
   function fixture and a call of `after` may then name it as `on`, a step argument may be `{"bound": <name>}`, and a
   `with` of a case of a member without a receiver is reported.
+- **CK-108** A case id is unique within its member (K-1, G-5), across all the groups that the rows of `cases` name for
+  that member: two groups of one member do not hold the same id. `binding check` reports the id, the member and both
+  groups, each with its file; a row that names a group again reads the same cases and is no finding. Why: a case id is
+  the name that picks one case within a member, and the `CASES` selection, the reports and the name of each
+  generated test (GN-13e) find a case by its id, so an id that two groups hold picks two cases, and the Go test of
+  each is defined twice.
 - **CK-101** The `args` of a call (G-5) follow one rule in every form. A call that the test makes, `new` and `from`
   of an instance value and each call of its `then` (generator GN-13f), a step of a function fixture and a call of
   `after` (CK-22), names in `args` only parameters of its member in snake_case and every parameter without a
@@ -667,6 +673,17 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   because session-store refuses `-1`, `1.5`, `"60"` and `true` in the uint fields `lifetime` and `lock_expire` of the
   record argument `options` of `redis_sessions.new` with `invalid_number`; a check that took the top level alone
   would refuse the one test of that refusal of the binding.
+- **CK-104** A value alias with a row, in or out, whose `when.predicate` is `sequence_keys` states the key form that
+  the predicate means, `"sequence_keys": {"keys": "text"}` or `{"keys": "int"}`: `text`, the keys are the texts `"0"`
+  to `"n-1"` in order; `int`, the ints `0` to `n-1` in order. The empty map has sequence keys under both. An alias
+  that has such a row and no statement is refused, with the alias and the row; there is no default. The generator
+  judges `sequence_keys` of a case map by the stated form (GN-13e). Why: the core computes the predicate from its own
+  keys, and the generator guessed it from the shape of the case keys, as ints. orm's core means the texts
+  (`orm_value.rs` compares a key with the text of its position), so its maps with the keys `"0"`, `"1"` were judged
+  without sequence keys: the PHP test of `codec.decode` / `sequence_map_kind` expected a bare map where the core gives
+  the `map_value` of the row, and `map_value.constructor` / `kinds` and `map_value.entries` / `kinds` gave the value
+  as a bare array, which PHP reads as a list, since PHP turns the key `"0"` into the int `0` (B2.490). A default
+  would be that guess, wrong for orm and template and passing silently.
 - **CK-103** A `{computed}` default has a case that leaves it to the core (U-2, generator GN-13d): for each public
   member of a public unit that takes a parameter with a `{computed}` default, or a record of this contract (also as
   an `optional`) with a field that has one, the contract has a case of that member that names no `raises`, arms no

@@ -8,7 +8,7 @@ import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailure
 import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
-import { convertIn, foreignPhpClass } from './php.ts';
+import { convertIn, foreignPhpClass, phpLayout, phpNamespace } from './php.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
@@ -223,8 +223,58 @@ function valueClassesPhpHost(model: Model): string {
   return readAsVariants(valueClassesPhpHostAll(model));
 }
 
+// GN-6af, B2.492: an in row of PHP of a value alias of this contract that names a class of this contract, which PHP
+// generates (a class without core_type names `only` without PHP, CK-78): its class, the kind of its one case, and the
+// PHP method of the property that the case reads.
+export interface PhpOwnRead {
+  cls: string;
+  variant: string;
+  read: string;
+}
+
+export function phpOwnReads(model: Model): PhpOwnRead[] {
+  const layout = phpLayout(model);
+  const reads: (PhpOwnRead & { unit: Unit })[] = [];
+  for (const alias of model.aliases.filter((a) => a.library === undefined && a.owner === undefined)) {
+    for (const row of alias.unit.in ?? []) {
+      const named = row['php'];
+      if (typeof named !== 'string') continue;
+      const unit = model.contract.units.find((u) => u.id === named && u.kind === 'class' && (u.only === undefined || u.only.targets.includes('php')));
+      if (unit === undefined || reads.some((r) => r.unit === unit)) continue;
+      const cases = row.cases ?? [];
+      const [only] = cases;
+      if (only === undefined || cases.length > 1 || only.when !== undefined) throw new Unsupported(`${alias.unit.id}: the php in row of the class ${named} has one case without when (GN-6af)`);
+      const property = (unit.members ?? []).find((m) => m.id === only.read && m.kind === 'property');
+      if (property === undefined) throw new Unsupported(`${alias.unit.id}: the php in row of the class ${named} reads ${String(only.read)}, which is no property of the class (GN-6af)`);
+      const variant = `ValueKind::${only.kind.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`;
+      reads.push({ unit, cls: `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`, variant, read: langName('php', property.name, 'callable') });
+    }
+  }
+  return reads.map(({ cls, variant, read }) => ({ cls, variant, read }));
+}
+
+// GN-6x, GN-6af: whether the PHP host holds values that a member of PHP reads: an instance of a value class of another
+// repository, or of a class of this contract that an in row names (B2.492).
+export const phpReadsValues = (model: Model): boolean => model.aliases.some((a) => a.owner !== undefined) || phpOwnReads(model).length > 0;
+
+// GN-6x, B2.492: php_value_class takes the owned entries only where a PHP in row of a value class of another repository
+// has a map, whose iterator it reads into them; elsewhere the parameter would have no use, which clippy refuses.
+const phpClassOwns = (model: Model): boolean => model.aliases.some((a) => a.owner !== undefined && classIn(a, 'php').maps.length > 0);
+const phpValueClassCall = (model: Model, value: string): string => `php_value_class(${value}, &mut self.values${phpClassOwns(model) ? ', &mut self.owned' : ''})`;
+
 function valueClassesPhpHostAll(model: Model): string {
-  const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
+  // GN-6af, B2.492: an instance of a class of this contract that an in row names is HostValue::Value with the kind of
+  // the row, under one handle within the walk; read calls the PHP method of the property of the row, whose result is
+  // described again by the rules of the language, so a property of any kind (bytes, a map) is read as PHP gives it.
+  const ownChecks = phpOwnReads(model).map((r) => `    if php_instance(value, ${rustString(r.cls)}) {
+        let identity = value.object().map(|object| std::ptr::from_ref(object).addr());
+        if let Some(position) = values.iter().position(|(held, _read)| held.object().map(|object| std::ptr::from_ref(object).addr()) == identity) {
+            return Ok(Some(HostValue::Value { kind: ${r.variant}, handle: Handle::new(VALUE | handle_count(position)) }));
+        }
+        values.push((value.shallow_clone(), Some((${rustString(r.read)}, ReadAs::Content))));
+        return Ok(Some(HostValue::Value { kind: ${r.variant}, handle: Handle::new(VALUE | handle_count(values.len() - 1)) }));
+    }`);
+  const checks = [...ownChecks, ...model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
     const row = classIn(alias, 'php');
     const own = ownerName(alias, alias.unit);
     const arms = row.cases.map((kase) => {
@@ -265,7 +315,7 @@ ${arms}
         owned.push(entries);
         return Ok(Some(HostValue::Map { handle: Handle::new(HOST_OWNED | handle_count(owned.len() - 1)), len }));
     }`)];
-  });
+  })];
   return `
 /// GN-6x: the bits of a handle of a value that the host owns: an instance of a value class of another repository, or
 /// the entries of a value that a read member gave; any other handle is of a value that the caller lent.
@@ -330,8 +380,9 @@ fn php_thrown(error: Thrown) -> Fail {
 }
 
 /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance of
-/// a class of its owner that a read member gives, as a map of the pairs of its iterator.
-fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, ReadAs)>)>, owned: &mut Vec<Vec<(Zval, Zval)>>) -> Result<Option<HostValue>, Fail> {
+/// a class of its owner that a read member gives, as a map of the pairs of its iterator. GN-6af (B2.492): an instance
+/// of a class of this contract that an in row names, with the kind of the row.
+fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, ReadAs)>)>${phpClassOwns(model) ? ', owned: &mut Vec<Vec<(Zval, Zval)>>' : ''}) -> Result<Option<HostValue>, Fail> {
 ${checks.join('\n')}
     Ok(None)
 }
@@ -340,7 +391,7 @@ impl PhpHost<'_> {
     /// GN-6x: a value that the host owns, which a read member gave: an array as its entries, an instance as describe
     /// gives it, and a scalar or a string as its kind.
     fn describe_owned(&mut self, value: Zval) -> Result<HostValue, Fail> {
-        if let Some(described) = php_value_class(&value, &mut self.values, &mut self.owned)? {
+        if let Some(described) = ${phpValueClassCall(model, '&value')}? {
             return Ok(described);
         }
         if let Some(array) = value.array() {
@@ -470,10 +521,10 @@ enum ReadAs {
 export function phpHost(model: Model): string {
   // GN-6ar: PHP has no class of a value alias (GN-6af), so a PHP row that names one is refused by name.
   refuseForeignReads(model, 'php');
-  if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
+  if (!phpReadsValues(model)) return PHP_HOST;
   const host = PHP_HOST
     .replace("    marked: u64,\n}", "    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
-    .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
+    .replace("        if let Some(object) = value.object() {\n            let type_name", `        if let Some(described) = ${phpValueClassCall(model, 'value')}? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name`)
     .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
     .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
@@ -482,7 +533,7 @@ export function phpHost(model: Model): string {
 `);
   // Each change above replaces a text of PHP_HOST; a text that PHP_HOST no longer has would leave the host without that
   // part, which only the compiler of the generated crate would report.
-  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', 'php_value_class(value, &mut self.values, &mut self.owned)', 'self.owned_entry(list, index)', 'self.read_value(value)']) {
+  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', phpValueClassCall(model, 'value'),'self.owned_entry(list, index)', 'self.read_value(value)']) {
     if (!host.includes(part)) throw new Error(`GN-6x: the PHP host of a value class of another repository has no ${part.trim()}`);
   }
   return host + valueClassesPhpHost(model);
@@ -529,7 +580,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = PhpHost { held: Vec::new(), objects: std::collections::BTreeMap::new(), marked: 0${model.aliases.some((a) => a.owner !== undefined) ? ', owned: Vec::new(), values: Vec::new()' : ''} };
+    let mut host = PhpHost { held: Vec::new(), objects: std::collections::BTreeMap::new(), marked: 0${phpReadsValues(model) ? ', owned: Vec::new(), values: Vec::new()' : ''} };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }

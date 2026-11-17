@@ -1833,9 +1833,10 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   if (fn.machine === true) {
     const owned = order.map((p) => (absent(p) ? 'None' : held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
     if (fn.receiver === undefined) return owned;
-    // GN-6ae: the receiver is a clone of the value of the instance, a handle whose clones share one state.
+    // GN-6ae, CK-69: the receiver is a clone of the value of the instance, a handle whose clones share one state, which
+    // the call lends to the core, whose receiver is &self as the assertion of GN-6h names it.
     // GN-6h: the receiver of a class with a lock is the borrow of the value that its guard holds.
-    return [held.some((h) => h.param === undefined) ? `Clone::clone(${RECEIVER_GUARD})` : `Clone::clone(&*${receiver})`, ...owned];
+    return [held.some((h) => h.param === undefined) ? `&Clone::clone(${RECEIVER_GUARD})` : `&Clone::clone(&*${receiver})`, ...owned];
   }
   const args = order.map((p) => {
     if (absent(p)) return 'None';
@@ -2361,7 +2362,8 @@ export const pointName = (model: Model, point: FaultPoint): string => `${model.c
 
 // G-5: the Rust items of a binding crate for the fault injection points. Each constant that the contract names exists
 // in the core (I-2); with_faults runs the core call of an entry point with the faults that a test armed for its
-// member, and shielded runs the work of an entry point with none.
+// member, and shielded runs the work of an entry point with none. B2.498: armed_future is written only for a member of
+// wait async_driver without a machine, the one caller of futureOf without wait; the waits of a machine take armed_waits.
 export function faultRust(model: Model): string {
   if (model.faults.length === 0) return '';
   return `
@@ -2380,7 +2382,7 @@ fn with_faults<T>(_member: &str, call: impl FnOnce() -> T) -> T {
     call()
 }
 
-${drivesAsync(model) ? `/// G-5, GN-6n: the future of a member with wait async_driver, with the arming that a test armed for its member on this
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => waitsAsync(fn) && fn.machine !== true) ? `/// G-5, GN-6n: the future of a member with wait async_driver, with the arming that a test armed for its member on this
 /// thread installed around each poll.
 #[cfg(feature = "fault-test")]
 fn armed_future<F: std::future::Future>(member: &str, future: F) -> binding_core::fault::Around<F> {

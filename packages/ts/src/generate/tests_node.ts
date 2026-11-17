@@ -900,13 +900,16 @@ test('G-7: ${name} counts and names its arguments', () => {${once.lines}${fn.par
   const held = heldTests(model, ctx, invoke, 'held');
   const refused = (category: string, kind: string, call: string): string => `
   assert.throws(() => ${call}, (error) => error.constructor === pkg.${cls(category)} && error.kind === ${jsString(kind)});`;
-  for (const test of held.poison) {
+  // GN-13l: each test is made as it is written, so it marks the root of the case texts that its own expressions take.
+  for (const make of held.poison) {
+    const test = make();
     emit(`
 test('B-5c: ${langName('node', test.object.unit.name, 'class')} refuses a poisoned object', () => {
   const held = ${test.instance};${[`addon().${POISON_ENTRY.node}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
 });`);
   }
-  for (const test of held.busy) {
+  for (const make of held.busy) {
+    const test = make();
     emit(`
 test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', test.fn.member.name, 'callable')} refuses the instance at two places', () => {
   const held = ${test.instance};${test.armed === undefined ? '' : `\n  const armed = addon().__armFaults(${jsString(test.fn.member.id)}, ${jsString(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n  ${test.after};`}${test.armed === undefined ? '' : `

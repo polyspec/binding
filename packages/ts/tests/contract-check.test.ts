@@ -2452,6 +2452,41 @@ test('B2.376: CK-22 takes a case of a kind on the path of its library, its own o
   assert.deepEqual(reported(other, own), finding);
 });
 
+// CK-108 (K-1, G-5): a case id is unique within its member, across all the groups of its member. orm named
+// the_rows_of_a_page_of_an_order in rows.keys.page and in rows.keys.lookahead_page, both groups of rows.keys, so
+// the Go test of GN-13e was defined twice.
+describe('CK-108: a case id is unique within its member across its groups (K-1, G-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any, contract: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    const contract = read('packages/rust/interface.json');
+    change(cases, contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-108');
+  };
+  const again = (cases: any, contract: any, ids: (id: string) => string): void => {
+    cases.frame_again = structuredClone(cases.frame).map((kase: any) => ({ ...kase, id: ids(kase.id) }));
+    const at = contract.cases.findIndex((row: any) => row.member === 'shapes.frame');
+    contract.cases.splice(at + 1, 0, { ...contract.cases[at], group: 'frame_again' });
+  };
+  test('the fixture holds each case id of a member once', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('two groups of one member with other ids are no finding', () => {
+    assert.deepEqual(run((cases, contract) => again(cases, contract, (id) => `${id}_again`)), []);
+  });
+  test('two groups of one member that hold the same id are refused with the member, both groups and the id', () => {
+    const contract = read('packages/rust/interface.json');
+    const at = contract.cases.findIndex((row: any) => row.member === 'shapes.frame');
+    const first = read('contracts/cases.json').frame[0].id;
+    const found = run((cases, c) => { again(cases, c, (id) => (id === first ? id : `${id}_again`)); });
+    assert.deepEqual(found, [{
+      check: 'CK-108',
+      path: `/cases/${at + 1}`,
+      message: `the case id ${first} of shapes.frame is in the group frame of contracts/cases.json and in the group frame_again of contracts/cases.json: a case id is unique within its member, across all its groups (K-1, G-5)`,
+    }]);
+  });
+});
+
 describe('B2.436: CK-103 a {computed} default has a case that leaves it to the core (U-2, GN-13d)', () => {
   // tests/e2e/shapes: shapes.frame takes frame_options, whose width is {computed: SH-1}, and shapes.pad takes
   // pad_options, whose width is an optional with {computed: SH-2}.
@@ -2588,4 +2623,34 @@ test('B2.383: a value of a generated interface may be {"bound": <name>} of a cla
   const unknown = run({ n: { new: 'tag.new', args: { name: 'b' } } }, { bound: 'm' });
   assert.equal(unknown.length, 1, unknown.join('\n'));
   assert.match(unknown[0] ?? '', /no function fixture around it gives that name/);
+});
+
+// B2.490: the alias data of tests/e2e/sample selects its map rows, out and in, by sequence_keys.
+describe('B2.490: CK-104', () => {
+  const root = new URL('../../../tests/e2e/sample/', import.meta.url);
+  const sampleCheck = (change: (data: any) => void): Finding[] => {
+    const c = JSON.parse(readFileSync(new URL('packages/rust/interface.json', root), 'utf8'));
+    change(c.units.find((u: any) => u.id === 'data'));
+    return checkContract(c, { caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('contracts/cases.json', root), 'utf8'))]]) });
+  };
+  test('an alias that states the key form text or int passes', () => {
+    assert.deepEqual(sampleCheck((data) => { data.sequence_keys = { keys: 'text' }; }), []);
+    assert.deepEqual(sampleCheck((data) => { data.sequence_keys = { keys: 'int' }; }), []);
+  });
+  test('an alias that selects a row by sequence_keys and states no key form is refused with the alias and the row; there is no default', () => {
+    const result = sampleCheck((data) => { delete data.sequence_keys; });
+    assert.deepEqual(result.map((f) => f.check), ['CK-104']);
+    assert.match(result[0]?.message ?? '', /^the alias data selects the row \/units\/\d+\/out\/\d+ by sequence_keys and states no sequence_keys\.keys, text or int/);
+  });
+  test('a case of an in row alone by sequence_keys needs the key form too', () => {
+    const result = sampleCheck((data) => {
+      delete data.sequence_keys;
+      for (const row of data.out) if (row.when?.predicate === 'sequence_keys') delete row.when;
+      data.out = data.out.filter((row: any, i: number, all: any[]) => row.kind !== 'map' || all.findIndex((r) => r.kind === 'map') === i);
+    });
+    assert.ok(result.some((f) => f.check === 'CK-104' && /selects the row \/units\/\d+\/in\/\d+\/cases\/\d+ by sequence_keys/.test(f.message)), JSON.stringify(result, null, 2));
+  });
+  test('an alias without a sequence_keys row needs no statement', () => {
+    assert.deepEqual(checkContract(contract(), { dependencies: deps() }), []);
+  });
 });

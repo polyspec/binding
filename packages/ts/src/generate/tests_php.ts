@@ -6,7 +6,7 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, phpTokens, type PhpTokenForm, tokenForms, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
@@ -388,6 +388,20 @@ const serviceEnd = (service: unknown): string => {
   const peer = steps?.peer === undefined ? '' : `\n        self::servicePeerEnd(${phpText(steps.service.id)}, ${phpText(steps.scope)});`;
   return `${peer}${steps?.check === undefined ? '' : `\n        ${phpState(steps.service, steps.check.state, 'check', steps.scope, steps.check.value)}`}`;
 };
+
+// GN-13e, B2.492: the value classes that the PHP out rows of the aliases make, as the tokens of a result read them: the
+// class in the namespace of its contract, the method of the property that gives the one value of its constructor, and
+// whether that value is a map.
+function phpTokenForms(model: Model, layout: PhpLayout): PhpTokenForm[] {
+  return tokenForms(model, 'php').map((form) => {
+    const owner = form.library === undefined ? model.contract : model.foreign.get(form.library);
+    const unit = owner?.units.find((u) => u.id === form.unit);
+    const namespace = form.library === undefined ? layout.namespace : (owner?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+    const param = unit?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
+    const map = typeof param === 'object' && param !== null && ('map' in param || 'keyed_map' in param);
+    return { unit: form.unit, cls: `\\${phpNamespace({ ...layout, namespace }, unit?.module ?? '')}\\${form.cls}`, method: form.field, map };
+  });
+}
 
 export function phpTests(model: Model, layout: PhpLayout): string {
   checkCaseNames(model, casePascal, true);
@@ -1098,14 +1112,19 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertSame(${cls(category)}::class, $error::class);
             self::assertSame('${kind}', $error->kind());
         }`;
-  for (const test of held.poison) {
+  // GN-13l: each test marks the root of the case texts that its own expressions take.
+  for (const make of held.poison) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     public function testB5c${langName('php', test.object.unit.name, 'class')}RefusesAPoisonedObject(): void
     {
         $held = ${test.instance};${[`\\${layout.namespace}\\Internal\\${POISON_ENTRY.php}($held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
     }`);
   }
-  for (const test of held.busy) {
+  for (const make of held.busy) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     public function testB5c${langName('php', test.fn.unit.name, 'class')}${langName('php', test.fn.member.name, 'class')}RefusesTheInstanceAtTwoPlaces(): void
     {
@@ -1314,7 +1333,7 @@ final class GeneratedTest extends TestCase
             self::assertSame($line, $error->getLine());
         }
     }
-${renderedMethods.join('\n')}${usesTokens ? PHP_TOKENS : ''}${usesSame ? `
+${renderedMethods.join('\n')}${usesTokens ? phpTokens(phpTokenForms(model, layout)) : ''}${usesSame ? `
 
     /**
      * GN-13e: a result in a form that assertSame compares: an object other than an enum case is its class and its

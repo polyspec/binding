@@ -33,12 +33,15 @@ export interface BusyTest {
 const hasFactory = (model: Model, object: ObjectClass): boolean =>
   object.members.some((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
 
+// GN-13l: each test is made when its target writes it, because the expressions of a test mark the root of the case
+// texts of the test that is being written; a test made before the one written earlier would mark that one (orm: the
+// instance of StepRunner took the root that only the B-5c test of Query set, B2.493).
 export function heldTests(
   model: Model,
   ctx: Context,
   invoke: (fn: Fn, args: string, receiver: string) => string,
   held: string,
-): { poison: PoisonTest[]; busy: BusyTest[] } {
+): { poison: (() => PoisonTest)[]; busy: (() => BusyTest)[] } {
   // GN-13t: an instance of the class is made from the first case of the class that does not raise, because the core
   // may refuse the placeholder arguments of its first factory (orm: Schema.load of three texts "a"); the placeholder
   // of GN-13 stands only when no case of the class makes an instance.
@@ -58,8 +61,8 @@ export function heldTests(
     object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
     object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
   const callables = [...model.functions, ...model.objects.flatMap((o) => o.members.filter((m) => m.kind !== 'iterate' && m.special === undefined))];
-  const poison: PoisonTest[] = [];
-  const busy: BusyTest[] = [];
+  const poison: (() => PoisonTest)[] = [];
+  const busy: (() => BusyTest)[] = [];
   for (const object of model.objects) {
     if (object.lock?.writes !== true || !hasFactory(model, object)) continue;
     const receiverFn = onReceiver(object);
@@ -69,12 +72,12 @@ export function heldTests(
       return fn.receiver === undefined || (owner !== undefined && hasFactory(model, owner));
     });
     const paramOwner = paramFn === undefined ? undefined : objectOf(paramFn);
-    poison.push({
+    poison.push(() => ({
       object,
       instance: instanceOf(object),
       receiver: receiverFn === undefined ? undefined : callWith(receiverFn, held),
       parameter: paramFn === undefined ? undefined : callWith(paramFn, paramFn.receiver === undefined || paramOwner === undefined ? '' : instanceOf(paramOwner), takes(paramFn, object)),
-    });
+    }));
     for (const fn of object.members) {
       const arg = takes(fn, object);
       if (arg === undefined || !places(model, fn).some((p) => p.param === undefined && p.write)) continue;
@@ -82,10 +85,12 @@ export function heldTests(
       const point = model.faults.find((p) => p.place === fn.corePath && p.fills.length === 1 && p.inject.some((i) => i !== 'short'));
       const filled = point === undefined ? undefined : model.kinds.find((k) => k.unit === undefined && kindText(k.variant) === point.fills[0]);
       const inject = point?.inject.find((i) => i !== 'short');
-      const armed = point === undefined || filled === undefined || inject === undefined
-        ? undefined
-        : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held, arg, instanceOf(object)), kind: kindText(filled.variant), category: filled.category };
-      busy.push({ fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed });
+      busy.push(() => {
+        const armed = point === undefined || filled === undefined || inject === undefined
+          ? undefined
+          : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held, arg, instanceOf(object)), kind: kindText(filled.variant), category: filled.category };
+        return { fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed };
+      });
     }
   }
   return { poison, busy };

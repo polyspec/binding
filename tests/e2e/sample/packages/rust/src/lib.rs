@@ -828,6 +828,26 @@ impl Ratio {
     }
 }
 
+/// A float that a class of PHP holds, which the alias amount gathers (B2.492): the class weight.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Weight {
+    value: f64,
+}
+
+impl Weight {
+    /// The weight of a float.
+    #[must_use]
+    pub fn new(value: f64) -> Self {
+        Self { value }
+    }
+
+    /// The float of the weight.
+    #[must_use]
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+}
+
 /// The language form of data (U-7 `out`): the root and the children of its containers by their handles.
 pub struct DataOut<'a> {
     held: Vec<&'a Data>,
@@ -963,6 +983,63 @@ impl OutValues for BlobOut {
 #[must_use]
 pub fn blob_to_out(value: &Blob) -> (OutValue, BlobOut) {
     (OutValue::Bytes(BytesOut::new(value.0.clone())), BlobOut)
+}
+
+/// A float whose out rows make an integral float an instance of weight in PHP, as the `orm_value` of orm makes an int
+/// an instance of `integer_value` (B2.492), so that the case value of a PHP test is that instance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Amount(pub f64);
+
+/// The float that a float or an instance of weight of the language holds (U-7 `in`); any other value is kind
+/// `unsupported`, as orm refuses "an object of the language".
+///
+/// # Errors
+///
+/// Kind `unsupported` for a value that is no float and no instance of weight.
+pub fn amount_from_host(
+    host: &mut dyn HostValues,
+    value: HostValue,
+) -> Result<Amount, Failure<Error>> {
+    match value {
+        HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
+        // B2.492: an instance of weight gives its float when it is read.
+        HostValue::Value {
+            kind: ValueKind::Float,
+            handle,
+        } => match host.read(handle).map_err(Failure::Raised)? {
+            HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
+            _other => Err(unsupported("a weight whose value is no float")),
+        },
+        other => Err(Failure::Kind(Error::Unsupported {
+            what: format!("{other:?}"),
+        })),
+    }
+}
+
+/// The children of an amount, which has none.
+pub struct AmountOut;
+
+impl OutValues for AmountOut {
+    fn item(&mut self, _list: Handle, _index: u64) -> OutValue {
+        OutValue::Null
+    }
+
+    fn entry(&mut self, _map: Handle, _index: u64) -> (OutValue, OutValue) {
+        (OutValue::Null, OutValue::Null)
+    }
+}
+
+/// The language form of an amount (U-7 `out`): its float, which the out rows of PHP make an instance of weight when it
+/// is integral.
+#[must_use]
+pub fn amount_to_out(value: &Amount) -> (OutValue, AmountOut) {
+    (OutValue::Float(FloatOut::new(value.0)), AmountOut)
+}
+
+/// The float of an amount.
+#[must_use]
+pub fn weigh(value: &Amount) -> f64 {
+    value.0
 }
 
 /// The data itself, which crosses the boundary in and out.
@@ -1275,21 +1352,21 @@ impl Store {
     /// future, the function is language code that the driver calls on its thread, and its value, which may be an
     /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
     /// and dropped when it raises, whose exception the machine returns.
-    pub fn transaction<F>(self, function: F) -> Scoped<F>
+    pub fn transaction<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        let mut scoped = Scoped::new(self.entries, function);
-        scoped.running = Some(self.running);
+        let mut scoped = Scoped::new(self.entries.clone(), function);
+        scoped.running = Some(self.running.clone());
         scoped
     }
 
     /// Runs `function` as [`Store::transaction`] does, with the pending entry `tag` written before the function runs:
     /// the tag of `options`, or [`DEFAULT_TAG`] when the options leave it out (GN-6ab, GN-6i: a member with machine
     /// takes a record parameter with a default, which the machine owns).
-    pub fn tagged<F>(self, function: F, options: TagOptions) -> Scoped<F>
+    pub fn tagged<F>(&self, function: F, options: TagOptions) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
@@ -1302,12 +1379,13 @@ impl Store {
 
     /// Runs `function` as [`Store::transaction`] does and then writes the entry `audited` of the store by an I/O
     /// future, also when the function raised: the machine goes on to a wait after language code raised, and returns
-    /// the exception when the wait is over (GN-6ae).
-    pub fn audited<F>(self, function: F) -> Scoped<F>
+    /// the exception when the wait is over (GN-6ae). Its receiver is `&self`, as CK-69 names it: the binding lends the
+    /// core a clone of the value of the instance, whose entries the machine keeps by a clone of their handle.
+    pub fn audited<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        let mut scoped = Scoped::new(self.entries, function);
+        let mut scoped = Scoped::new(self.entries.clone(), function);
         scoped.audit = true;
         scoped
     }
@@ -1317,13 +1395,13 @@ impl Store {
     /// core answers its exception by dropping the `Raised`, on another thread where the target has one, so the call
     /// gives `false` and ends without the exception (U-3, GN-6u). A function that raised before it wrote an entry
     /// made no attempt, and its exception returns.
-    pub fn attempt<F>(self, function: F) -> Attempted<F>
+    pub fn attempt<F>(&self, function: F) -> Attempted<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         Attempted {
             scope: Scope {
-                parent: self.entries,
+                parent: self.entries.clone(),
                 pending: Entries::default(),
                 open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             },
@@ -1397,11 +1475,11 @@ impl Scope {
 
     /// Runs `function` with an inner scope over the pending entries of this scope, as [`Store::transaction`] does: the
     /// entries of the inner scope become pending entries of this scope when the function returns.
-    pub fn nested<F>(self, function: F) -> Scoped<F>
+    pub fn nested<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped::new(self.pending, function)
+        Scoped::new(self.pending.clone(), function)
     }
 }
 

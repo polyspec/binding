@@ -1,5 +1,5 @@
 {
-  "comment": "B2.363: the findings that the check of this tree gives a whole copy of a consumer contract of this directory, each with its reason and the condition that ends it, which is a task of that repository and not of binding. keys is the CK-96 finding of each member: the keys of its cases that are no parameter, no key of its result, no key of a case and no key that its row of cases names in reads. packages/ts/tests/generate.test.ts fails a finding that is not here and an entry whose finding is gone; a copy that is not listed has no finding.",
+  "comment": "B2.363: the findings that the check of this tree gives a whole copy of a consumer contract of this directory, each with its reason and the condition that ends it, which is a task of that repository and not of binding. findings holds every other finding as its path, its check and its message. keys is the CK-96 finding of each member: the keys of its cases that are no parameter, no key of its result, no key of a case and no key that its row of cases names in reads. packages/ts/tests/generate.test.ts fails a finding that is not here and an entry whose finding is gone; a copy that is not listed has no finding.",
   "consumers": [
     {
       "consumer": "http-form",
@@ -49,6 +49,30 @@
         "machine.target": ["returns"],
         "machine.validate": ["returns"]
       }
+    },
+    {
+      "consumer": "php-serialization",
+      "reason": "CK-104 is a rule of binding 0.0.21 (B2.490), and php-serialization v0.0.15 was released before it: php_value selects its map rows by sequence_keys and states no key form; its core means the ints 0 to n-1 (packages/rust/src/out.rs compares Key::Int with the position), as do its 99 case maps with sequence keys",
+      "until": "php-serialization releases a contract whose php_value states \"sequence_keys\": {\"keys\": \"int\"}, and the copy is taken again from that release tag",
+      "findings": [
+        "/units/5: CK-104 the alias php_value selects the row /units/5/out/8 by sequence_keys and states no sequence_keys.keys, text or int (B2.490)"
+      ]
+    },
+    {
+      "consumer": "template",
+      "reason": "CK-104 is a rule of binding 0.0.21 (B2.490), and template v0.0.28 was released before it: template_value selects its map rows by sequence_keys and states no key form; its core means the texts \"0\" to \"n-1\" (packages/rust/src/value/host.rs compares a key with the text of its position), and no case map with keys has sequence keys",
+      "until": "template releases a contract whose template_value states \"sequence_keys\": {\"keys\": \"text\"}, and the copy is taken again from that release tag",
+      "findings": [
+        "/units/0: CK-104 the alias template_value selects the row /units/0/out/5 by sequence_keys and states no sequence_keys.keys, text or int (B2.490)"
+      ]
+    },
+    {
+      "consumer": "orm",
+      "reason": "CK-104 is a rule of binding 0.0.21 (B2.490), and the copy of orm is of a branch before it: orm_value selects its map rows by sequence_keys and states no key form; its core means the texts \"0\" to \"n-1\" (packages/rust/src/orm_value.rs compares a key with the text of its position), as do the 4 case maps with sequence keys of contracts/interface/core.json",
+      "until": "orm commits a contract whose orm_value states \"sequence_keys\": {\"keys\": \"text\"}, and the copy is taken again from it",
+      "findings": [
+        "/units/15: CK-104 the alias orm_value selects the row /units/15/out/11 by sequence_keys and states no sequence_keys.keys, text or int (B2.490)"
+      ]
     }
   ]
 }

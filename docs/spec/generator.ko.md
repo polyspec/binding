@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d70aa9da94a80d8aeda73e7c61c4b8c354ab3901ff5e9941be6cc4ceba85f815 -->
+<!-- source-sha256: 4594580267be0716d1adfd290e9f9a9fd79e16bff83447cb5ec5e50305d0949b -->
 # 생성기
 
 [English](generator.md)
@@ -992,7 +992,9 @@
   property를, writable이면 그 field로 아니면 그 method로 읽어 한 호출에서 pointer마다 handle 하나인 node 11로 묘사하고,
   그런 인스턴스가 보관하는 owner의 keyed map은 entry의 map으로 묘사한다. `out` 행은 class의 위치를 가진 결과의 node
   14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
-  property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
+  property를 채운다. Go의 `in` 행은 Node와 WASM이 읽듯 owner의 core_type이 있는 class도 이름할 수 있다. 그것은 행의
+  kind를 가진 node 11이며, 그 read는 값과 오류를 주는 property의 method를 부른다(B2.497). Go에서 이름을 대고 거부하는
+  것(G-4): core_type이 있는 class를 만드는 `out` 행, bool, 정수, float을 받는 constructor.
   PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. Python, Node, Go의 생성 시험은
   그런 행의 kind인 case 값을 owner의 class의 인스턴스로 쓰고 결과를 owner의 class로 읽으며, 둘 다 시험이 import하는
@@ -1735,7 +1737,14 @@
   인자는 addon이 판정한다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind를 가진
   `HostValue::Value`로 기술한다. 코어가 자기 각 위치에서 한 객체를 보도록, 코어의 한 walk 안에서 같은 instance의
   handle은 같다. `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한
-  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
+  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. 이는 그 class를 생성하는 모든 target에서,
+  PHP에서도 그렇다: PHP는 instance를 그 class로 알아보고, `read`는 property의 PHP method를 불러 그 결과를 PHP의
+  규칙으로 다시 기술하므로, 어떤 kind의 property(bytes, map)든 PHP가 주는 대로 읽힌다(B2.492). B2.492 전에는 PHP
+  host에 그 갈래가 없어서, case 값이나 사용자 코드가 넘긴 instance가 `HostValue::Object`로 들어갔고, orm의 코어는
+  그것을 "an object of the language"로 거부했다. Go는 `core_type`이 있는 class를 같은 방식으로 읽는다. package
+  binding은 자신을 import하는 module의 struct를 이름할 수 없으므로, 각 module은 load될 때 `binding.ReadValues`에 자기의
+  그런 class마다 행의 kind와 property의 method를 부르는 read를 주고, 그 결과는 다시 기술된다(B2.497: 전에는 Go가 그런
+  행을 건너뛰어 instance가 native로 들어가거나 unsupported로 거부되었다). make가 `core_type`이 없는 class의
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM, Go가 이 class를 생성하며, Go는 GN-15c가 적은
@@ -2525,7 +2534,10 @@
   `-0.0`은 0이기 때문이다. 그 target에서 alias의 out 행, 곧 그 kind의 행 중 값이
   `when`을 만족하는 행이 값 class의 인스턴스를 만드는(`<unit>.constructor`) 값은, 내장 값으로 만든 그 인스턴스다. 행이
   그렇게 만드는 모든 kind(`int`, `int64`, `float`, `text`, `bytes`, `list`, `map`)에서, PHP, Python, Node, WASM에서,
-  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
+  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). i64 범위 밖의 `int`는 내장 값이다. out 행은 i64인
+  `OutValue` int를 만들므로 어느 out 행도 그것을 만들지 않고, i64 밖의 Node `bigint`는 큰 정수로 들어가 in 함수가
+  판정한다(U-7 (f), B2.493. orm: `IntegerValue(9223372036854775808n)`는 in 함수 전에 `int64` parameter에서
+  거부되었다). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
   정수 float을 `int`로 실어 나른다. orm의 alias는 PHP `int`를 `int64`로, `integer_value`의 인스턴스를 `int`로 읽고,
   sequence key를 가진 PHP array(빈 array도 그렇다)를 list로, `map_value`의 인스턴스를 map으로 읽어서, 내장 값은 다른
   kind로 들어갔다. GN-13v는 빈 map에 class를 만드는 행이 없는 alias의 규칙으로 남는다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
@@ -2612,7 +2624,7 @@
   결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
   적은 텍스트로 비교한다. 양쪽 모두 반복문이 쓰므로, 재귀가 받지 못하는 깊이의 값도 비교한다. 생성기는 case 값의
   텍스트를 alias의 out 행으로 쓴다. 각 자리에서 그 kind의 행 가운데 값이 가진 predicate(`utf8`, `safe_integer`,
-  `integral_float`, `sequence_keys`)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
+  `integral_float`, 키가 alias가 밝힌 형태(text나 int)인 `sequence_keys`, CK-104)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
   `map`이나 `bytes`의 행을 쓴다), 그 행의 그 언어 형태를 쓴다. 시험은 결과의 텍스트를 각 자리의 타입으로 쓴다. 텍스트는
   형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
   bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
@@ -2623,7 +2635,9 @@
   `float`과 `map`만 그랬고, orm이 `integer_value`나 `bytes_value`의 인스턴스로 주는 `int`나 byte string을 맨 값으로
   기대했다), PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
-  자리의 동일성과 각 순환을 비교한다. case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
+  자리의 동일성과 각 순환을 비교한다. 결과의 텍스트는 그런 인스턴스를 PHP를 포함한 모든 언어에서 같이 적는다. PHP에서는
+  property의 method가 field를 주고, map인 field는 key가 0부터 n-1이어도 `map <n>`이다(B2.492. 전에는 PHP 텍스트가 그것을
+  `other <class>`로 적어서 orm의 `bytes_value`와 `map_value`의 PHP 결과가 맞은 적이 없다). case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
   PHP는 한 자리가 가진 reference를 유지하지 않는다. `ReflectionReference::fromArrayElement`는 그것에 null을 주고
   `zend_array_dup`은 그 값을 복사하므로, 바인딩이 그 자리에 만드는 reference는 보이지 않는다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
   거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
@@ -3012,6 +3026,10 @@
   `path`의 의미는 유지한다. 새 text 변환을 나중에 수행하는 private helper는 숨은 인자나 private closure로
   같은 case owner를 전달한다. 전역 root를 풀지 않고 기존 case 밖의 수명을 더하지 않는다. 이 형태를 쓰지
   않는 helper는 바꾸지 않는다.
+  각 시험은 그 시험의 표현식이 root를 받을 때, 그때에만 자기 본문에서 root를 정한다. target은 시험의 표현식을 그
+  시험을 쓸 때 만들므로, 어떤 시험도 다른 시험이 정한 root를 받지 않는다(B2.493). 이유: orm의 B-5c 시험은 첫 시험을
+  쓰기 전에 모두 만들어져서, `StepRunner`의 instance가 `Query`의 시험만 정한 root를 받았다(PHP: null root의
+  `caseTextPath()`, Node: `_caseTextRoot is not defined`).
 
   JSON string token은 따옴표, backslash, U+0000–001F를 escape한다. 이름이 있는 제어 문자는 `\b`, `\t`,
   `\n`, `\f`, `\r`로 쓰고 나머지는 소문자 `\u00xx`로 쓴다. slash, 비-ASCII Unicode, `<`, `>`, `&`,
@@ -3081,7 +3099,11 @@
   `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, B-3 시험은 검사하는 호출 전에 그 인자에서 실패했다.
   생성기가 어떤 target에서 쓰지 못하는 case 값은 거기서 값을 주지 않고 placeholder가 선다. 그 case는 자기 시험이 이름을
   대며 실패하고(G-4, GN-13e), 다른 규칙의 시험은 쓰인다.
-  member의 G-7 시험과 Python의 GN-11a 시험도 class의 인자를 같은 규칙으로 준다(B2.463). B-5c 시험은 필요한 class의
+  member의 G-7 시험과 Python의 GN-11a 시험도 class의 인자를 같은 규칙으로 준다(B2.463).
+  생성 interface(GN-6ap)의 인자도 같은 규칙으로 case 값을 받는다. 그 placeholder는 그것을 구현하는 class의 첫
+  factory가 placeholder로 만드는 instance이기 때문이다(B2.493). 이유: orm `Query.connect`와 `StepRunner.new`의
+  connection은 interface이고, 그 placeholder는 cache 크기 0의 `Db::connect("a", 0, …)`였으며, core는 G-7 시험이
+  검사하는 인자 수 전에 그것을 `config: cache sizes must be positive`로 거부했다. B-5c 시험은 필요한 class의
   instance 각각(poison하거나 두 자리에 주는 instance, 그 instance를 인자로 받는 호출의 receiver, GN-8a의 다른
   instance)을 아무 receiver나 필요한 시험이 만드는 대로 만든다. 곧 raise하지 않고, fault를 걸지 않고, 파일을 쓰지 않고,
   service에 대해 돌지 않는 그 class의 첫 case의 factory 인자로 만든다(GN-13f). 그 class의 어느 case도 instance를 만들지

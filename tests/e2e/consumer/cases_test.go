@@ -184,6 +184,15 @@ func TestMeasureAndPair(t *testing.T) {
 			t.Errorf("%s: %#v, %v, want %#v", c.ID, got, err, want)
 		}
 	}
+	// B2.497, GN-6ar: the owner reads an instance of ratio, a class with core_type of sample, as its float, as Node and
+	// WASM read it.
+	ratio, err := sample.NewRatio(0.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := consumer.Pair(ratio); err != nil || !reflect.DeepEqual(got, []any{0.5, 0.5}) {
+		t.Errorf("pair of a ratio: %#v, %v, want [0.5 0.5]", got, err)
+	}
 }
 
 func TestTheHolderGivesAndTakesData(t *testing.T) {

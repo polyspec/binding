@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 78520d36bf358dd6249dbdbf6e3b261817d45834dceea0175e0b60d32e586792 -->
+<!-- source-sha256: 6aa61f8c945de3027484c8dbd9fe331a32359c39bc2c8b4cfeb875fc428650bd -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -474,6 +474,11 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
   `after`의 호출은 그것을 `on`으로 이름할 수 있고, step의 인자는 `{"bound": <name>}`일 수 있다. receiver가 없는 member의
   case의 `with`는 보고된다.
+- **CK-108** case id는 그 member 안에서 유일하다(K-1, G-5). `cases`의 행들이 그 member에 대해 가리키는 모든 group에
+  걸쳐서도 그렇다. 곧 한 member의 두 group이 같은 id를 갖지 않는다. `binding check`는 그 id, member, 두 group을 각각의
+  파일과 함께 보고한다. 한 group을 다시 가리키는 행은 같은 case를 읽으므로 finding이 아니다. 이유: case id는 member 안에서
+  case 하나를 고르는 이름이다. `CASES` 선택, 보고, 각 생성 시험의 이름(GN-13e)이 id로 case를 찾는다. 그래서 두 group이
+  가진 id는 case 둘을 고르고, 각각의 Go 시험이 두 번 정의된다.
 - **CK-101** 호출의 `args`(G-5)는 모든 형태에서 한 규칙을 따른다. 시험이 하는 호출, 곧 인스턴스 값의 `new`와 `from`과
   그 `then`의 각 호출(generator GN-13f), 함수 fixture의 step, `after`의 호출(CK-22)은 `args`에 그 member의 parameter
   이름만 snake_case로 적고, `default`가 없는 parameter는 모두 적는다. `default`가 있는 parameter는 빠질 수 있고 생성된
@@ -560,6 +565,16 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   지목한다. 이 허용이 인자 자체에서처럼 인자 안에서도 성립하는 것은 session-store가 `redis_sessions.new`의 record 인자
   `options`의 uint field `lifetime`과 `lock_expire`에 든 `-1`, `1.5`, `"60"`, `true`를 `invalid_number`로 거부하기
   때문이다. 최상위만 받는 검사는 binding의 그 거부의 유일한 test를 거부하게 된다.
+- **CK-104** 들어오거나 나가는 행 중 `when.predicate`가 `sequence_keys`인 행을 가진 value alias는 그 술어가 뜻하는 키
+  형태를 `"sequence_keys": {"keys": "text"}`나 `{"keys": "int"}`로 밝힌다: `text`는 키가 차례로 text `"0"`부터
+  `"n-1"`이고, `int`는 차례로 int `0`부터 `n-1`이다. 빈 map은 두 형태에서 모두 sequence 키를 가진다. 그런 행이 있고
+  밝힘이 없는 alias는 alias와 그 행과 함께 거부된다. 기본값은 없다. 생성기는 case map의 `sequence_keys`를 밝힌 형태로
+  판단한다(GN-13e). 이유: 코어는 자기 키로 술어를 계산하고, 생성기는 case 키의 모양으로 int라고 짐작했다. orm의 코어는
+  text를 뜻하므로(`orm_value.rs`는 키를 그 위치의 text와 비교한다) 키가 `"0"`, `"1"`인 map이 sequence 키가 없다고
+  판단되었다: `codec.decode` / `sequence_map_kind`의 PHP test는 코어가 행의 `map_value`를 주는 곳에서 bare map을
+  기대했고, `map_value.constructor` / `kinds`와 `map_value.entries` / `kinds`는 그 값을 bare array로 주었는데, PHP는
+  키 `"0"`을 int `0`으로 바꾸므로 그것을 list로 읽는다(B2.490). 기본값은 바로 그 짐작이고, orm과 template에서 틀리며
+  조용히 통과한다.
 - **CK-103** `{computed}` 기본값에는 그것을 코어에 맡기는 case가 있다(U-2, generator GN-13d): public unit의 public member가
   `{computed}` 기본값이 있는 parameter를 받거나, 그런 field가 있는 이 계약의 record를(`optional`로도) 받으면, 계약에는 그
   member의 case 가운데 `raises`를 적지 않고, fault를 걸지 않으며(`faults`가 없고, instance 값의 `then` 호출에도 fault가

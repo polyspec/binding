@@ -172,7 +172,7 @@ interface ThenFaults {
 // the generator writes for every contract (packages/ts/src/generate/go.ts); a test compares this list with that file.
 export const GO_BINDING_NAMES: ReadonlySet<string> = new Set([
   'ArmFaults', 'BytesKey', 'Call', 'Callback', 'Cancel', 'Failed', 'FailedOf', 'FaultLeft', 'Function', 'IntKey', 'Kept', 'Key', 'KeyedMap', 'Malformed', 'Map', 'NativeCount', 'NewCall',
-  'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'Reader', 'RecognizeAs', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
+  'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'ReadValues', 'Reader', 'RecognizeAs', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
 ]);
 
 // GN-17: the words of a name in snake_case, the prefix of the C symbols of a contract, and whether Go takes a unit or
@@ -589,6 +589,18 @@ class Checker {
     for (const { value: unit, path } of this.units.values()) {
       if (unit.kind === 'alias' && unit.origin !== 'value') {
         this.report('CK-8', `${path}/origin`, 'an alias names a union of value types; its origin is value (U-7 (a))');
+      }
+      // CK-104 (B2.490): the predicate sequence_keys means the texts "0".."n-1" or the ints 0..n-1, which the keys'
+      // shape cannot tell apart on PHP, so an alias that selects a row by it states the form; there is no default.
+      if (unit.kind === 'alias' && unit.sequence_keys === undefined) {
+        const rows = [
+          ...(unit.out ?? []).map((r, i) => ({ when: r.when, at: `${path}/out/${i}` })),
+          ...(unit.in ?? []).flatMap((r, i) => (r.cases ?? []).map((c, j) => ({ when: c.when, at: `${path}/in/${i}/cases/${j}` }))),
+        ];
+        const row = rows.find((r) => typeof r.when === 'object' && r.when !== null && r.when.predicate === 'sequence_keys');
+        if (row !== undefined) {
+          this.report('CK-104', path, `the alias ${unit.id} selects the row ${row.at} by sequence_keys and states no sequence_keys.keys, text or int (B2.490)`);
+        }
       }
       if (unit.origin !== 'value') continue;
       const by = gathered.get(unit.id);
@@ -1521,6 +1533,8 @@ class Checker {
     const groups = new Map<string, 'member' | 'alias'>();
     // CK-103: the {computed} defaults that a case leaves to the core, as "<member id> <place>".
     const leftToCore = new Set<string>();
+    // CK-108: the group, as "group of file", that holds each case id of a member, by member and id.
+    const caseIds = new Map<string, Map<string, string>>();
     for (const [i, row] of this.contract.cases.entries()) {
       const document = files.get(row.file);
       const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
@@ -1552,6 +1566,18 @@ class Checker {
         this.report('CK-92', `/cases/${i}`, `the row of ${row.member} names in only ${row.only.targets.join(', ')}, where ${row.member} is not generated (GN-13h, Q-4)`);
       }
       this.caseTargets(row.member, group, row.result ?? 'result', row.only?.targets, `/cases/${i}`);
+      // CK-108: a case id is unique within its member, across all its groups. A row that names a group again reads
+      // the same cases, which hold their ids once.
+      const ids = caseIds.get(row.member) ?? new Map<string, string>();
+      caseIds.set(row.member, ids);
+      const here = `the group ${row.group} of ${row.file}`;
+      for (const kase of group) {
+        const id = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['id'] : undefined;
+        if (typeof id !== 'string') continue;
+        const held = ids.get(id);
+        if (held !== undefined && held !== here) this.report('CK-108', `/cases/${i}`, `the case id ${id} of ${row.member} is in ${held} and in ${here}: a case id is unique within its member, across all its groups (K-1, G-5)`);
+        if (held === undefined) ids.set(id, here);
+      }
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);

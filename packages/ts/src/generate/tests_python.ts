@@ -1098,12 +1098,17 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
             ${call}
         self.assertIs(type(caught.exception), pkg.${cls(category)})
         self.assertEqual(caught.exception.kind, ${pyString(kind)})`;
-  for (const test of held.poison) {
+  // GN-13l: each test marks the root of the case texts that its own expressions take.
+  for (const make of held.poison) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     def test_b5c_${langName('python', test.object.unit.name, 'variable')}_refuses_a_poisoned_object(self) -> None:
         held = ${test.instance}${[`_native.${POISON_ENTRY.python}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}`);
   }
-  for (const test of held.busy) {
+  for (const make of held.busy) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
         held = ${test.instance}${test.armed === undefined ? '' : `\n        armed = _native._arm_faults(${pyString(test.fn.member.id)}, ${pyString(test.armed.faults)})`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}${test.armed === undefined ? '' : `

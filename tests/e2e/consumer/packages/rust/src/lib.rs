@@ -12,6 +12,8 @@ pub enum Error {
     Absent {
         /// The key.
         key: String,
+        /// The parts of the key between its dots.
+        parts: Vec<String>,
     },
     /// An error of the sample library, which a source of that library raised (B2.489, GN-7c).
     Sample(polyspec_sample::Error),
@@ -31,8 +33,17 @@ impl Error {
     #[must_use]
     pub fn key(&self) -> &str {
         match self {
-            Self::Absent { key } => key,
+            Self::Absent { key, .. } => key,
             Self::Sample(_) => "",
+        }
+    }
+
+    /// The parts of the key between its dots, which the error lends, empty for an error of the sample library.
+    #[must_use]
+    pub fn parts(&self) -> &[String] {
+        match self {
+            Self::Absent { parts, .. } => parts,
+            Self::Sample(_) => &[],
         }
     }
 
@@ -48,7 +59,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Absent { key } => write!(f, "the holder has no {key}"),
+            Self::Absent { key, .. } => write!(f, "the holder has no {key}"),
             Self::Sample(error) => fmt::Display::fmt(error, f),
         }
     }
@@ -115,6 +126,7 @@ pub fn fetch(holder: &mut dyn Holder, key: &str) -> Result<Data, Failure<Error>>
         Some(value) => Ok(value),
         None => Err(Failure::Kind(Error::Absent {
             key: key.to_owned(),
+            parts: key.split('.').map(str::to_owned).collect(),
         })),
     }
 }

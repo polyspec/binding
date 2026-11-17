@@ -127,6 +127,8 @@ export interface Unit {
   fields?: Field[];
   tag?: Name;
   cases?: { value: string; fields: Field[] }[];
+  // CK-104, GN-13e: the key form that the predicate sequence_keys of a value alias means.
+  sequence_keys?: { keys: 'text' | 'int' };
   out?: OutRow[];
   in?: InRow[];
 }
