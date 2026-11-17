@@ -7790,7 +7790,7 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   assert.match(lib, /fn called\(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>\) -> Result<Zval, Thrown> \{/);
   assert.match(lib, /if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n {8}return Err\(Thrown::Php\(exception\)\);/);
   // The machine takes a clone of the value of the instance and the closure, and PHP settles an awaited value at once.
-  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), armed_waits\("store\.transaction", \|io\| driven\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   // B-3: the table of the values, its release function, and the result that leaves the table unchanged.
   assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Zval>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
   assert.match(lib, /fn pass\(value: Zval\) -> binding_core::Passthrough \{[^}]*binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);
@@ -7835,7 +7835,7 @@ test('Go takes a func as a callback of the call, holds its value in the table of
   assert.match(lib, /fn polyspec_sample___go_release_passed\(handle: u64\);/);
   assert.match(lib, /fn release_passed\(handle: Handle\) \{\n[^\n]*\n {4}unsafe \{ polyspec_sample___go_release_passed\(handle\.raw\(\)\) \};\n\}/);
   // The machine takes a clone of the value of the instance and the closure, and Go settles an awaited value at once.
-  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), armed_waits\("store\.transaction", \|io\| driven\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   // A result passthrough crosses the C ABI as its handle; no helper has a name of the form out_<unit>.
   assert.match(lib, /fn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{\n {4}uint_out\(output, value\.into_handle\(\)\.raw\(\)\);\n\}/);
   assert.match(lib, /\n\s+passed_out\(output, result\);\n/);
@@ -8308,7 +8308,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(lib, /async def on_loop\(member, \/, \*args, \*\*kwargs\):\\n {4}return await asyncio\.to_thread\(member, asyncio\.get_running_loop\(\), \*args, \*\*kwargs\)/);
   // The machine takes a clone of the value of the instance and the closure, waits without the GIL, and the driver
   // settles each value that the function returned.
-  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\(py_\.detach\([^\n]*\)\), \|value\| settled\(py_, value, event_loop_, "work", "atransaction"\)\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), armed_waits\("store\.transaction", \|io\| driven\(py_\.detach\([^\n]*\)\)\), \|value\| settled\(py_, value, event_loop_, "work", "atransaction"\)\)/);
   // An awaitable is awaited as a coroutine on the event loop of the caller, and without a loop it is kind
   // invalid_callback with the name of the awaited member; a value that is no awaitable is settled at once.
   assert.match(lib, /fn settled<'py>\(py_: Python<'py>, value: binding_core::Passthrough, event_loop: Option<&Bound<'py, PyAny>>, subject: &str, awaited: &str\) -> Result<Result<binding_core::Passthrough, binding_core::Raised>, BindingError> \{/);
