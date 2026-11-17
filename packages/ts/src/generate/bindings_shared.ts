@@ -5,8 +5,8 @@ import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
 import { defaultAsserts } from './defaults.ts';
-import { aliasOf, libraryOf, unitOf, takenCallbacks, conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
-import { closure, optionRef, rustString } from './text.ts';
+import { aliasOf, type KeptClass, libraryOf, unitOf, takenCallbacks, conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { closure, jsString, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
 // language that differ, and undefined for a scalar that the language does not take.
@@ -346,6 +346,35 @@ export function countCheck(fn: Fn, label: string): string[] {
   const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
   return [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
 }
+
+// GN-6af: the JavaScript class of a value class without core_type in node and wasm: the count of the arguments (G-7),
+// the check of the binding, which check writes from the class name and the crossed arguments, and the kept values as
+// own enumerable data properties. A keyed map crosses as the Map itself, which the binding reads and judges (GN-12).
+export function keptClass(kept: KeptClass, lang: 'node' | 'wasm', prefix: string, check: (cls: string, crossed: string) => string): string {
+  const cls = langName(lang, kept.unit.name, 'class');
+  const count = kept.fields.length;
+  const least = kept.fields.filter((f) => f.default === undefined).length;
+  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+  const crossed = kept.fields.map((f, i) => (typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`));
+  const empty = { null: 'null', map: 'new Map()', list: '[]' };
+  const defined = kept.fields.map((f, i) => {
+    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
+    return `    Object.defineProperty(this, ${jsString(langName(lang, f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
+  });
+  return `
+${prefix}class ${cls} {
+  constructor(...args) {
+    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
+      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
+    }
+    ${check(cls, crossed.join(', '))};
+${defined.join('\n')}
+  }
+}`;
+}
+
+// The base class of the error class of a category in JavaScript.
+export const jsErrorBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
 // G-7: the members of a record parameter in JavaScript, and those of them that may not be left out.
 export function recordMembers(record: Unit, lang: 'node' | 'wasm'): { names: string[]; required: string[] } {

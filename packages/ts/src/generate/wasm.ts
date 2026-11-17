@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1564,7 +1564,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
 
 // ---- JavaScript and declarations ----
 
-const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
+const jsBase = jsErrorBase;
 
 const tsType = (model: Model, type: Type, input: boolean): string => jsTsType(model, type, input, 'wasm');
 
@@ -1747,32 +1747,9 @@ ${constants}
 `;
 }
 
-// GN-6af: the class of the ES module of a value class without core_type, as for Node (keptClassJs): the count of the
-// arguments (G-7), the check of the module, and the kept values as own enumerable data properties.
-function keptClassWasm(kept: KeptClass, internal: string): string {
-  const cls = langName('wasm', kept.unit.name, 'class');
-  const count = kept.fields.length;
-  const least = kept.fields.filter((f) => f.default === undefined).length;
-  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
-  const crossed = kept.fields.map((f, i) => {
-    return typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
-  });
-  const empty = { null: 'null', map: 'new Map()', list: '[]' };
-  const defined = kept.fields.map((f, i) => {
-    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
-    return `    Object.defineProperty(this, ${jsString(langName('wasm', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
-  });
-  return `
-export class ${cls} {
-  constructor(...args) {
-    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
-      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
-    }
-    enter(${internal}, () => glue.__check${cls}(${crossed.join(', ')}));
-${defined.join('\n')}
-  }
-}`;
-}
+// GN-6af: the class of the ES module of a value class without core_type, as for Node (keptClassJs), which the module
+// checks.
+const keptClassWasm = (kept: KeptClass, internal: string): string => keptClass(kept, 'wasm', 'export ', (cls, crossed) => `enter(${internal}, () => glue.__check${cls}(${crossed}))`);
 
 // GW-7: the state of the instance, a module of its own that the package does not export, so the generated B-7 test can
 // run the panic entry point under the same rule. A trap (WebAssembly.RuntimeError: a panic with panic=abort, the

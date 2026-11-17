@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -2230,35 +2230,10 @@ module.exports = { ${exports.join(', ')} };
 `;
 }
 
-// GN-6af: the class of the entry of a value class without core_type: the count of the arguments (G-7), the check of the
-// addon, and the kept values as own enumerable data properties. A keyed map crosses as the Map itself, which the addon
-// reads and judges (GN-12).
-export function keptClassJs(kept: KeptClass): string {
-  const cls = langName('node', kept.unit.name, 'class');
-  const count = kept.fields.length;
-  const least = kept.fields.filter((f) => f.default === undefined).length;
-  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
-  const crossed = kept.fields.map((f, i) => {
-    return typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
-  });
-  const empty = { null: 'null', map: 'new Map()', list: '[]' };
-  const defined = kept.fields.map((f, i) => {
-    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
-    return `    Object.defineProperty(this, ${jsString(langName('node', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
-  });
-  return `
-class ${cls} {
-  constructor(...args) {
-    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
-      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
-    }
-    addon.__check${cls}(${crossed.join(', ')});
-${defined.join('\n')}
-  }
-}`;
-}
+// GN-6af: the class of the entry of a value class without core_type, which the addon checks.
+export const keptClassJs = (kept: KeptClass): string => keptClass(kept, 'node', '', (cls, crossed) => `addon.__check${cls}(${crossed})`);
 
-const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
+const nodeBase = jsErrorBase;
 
 // The names that the package exports: the error classes, the functions, the classes and the constants.
 const exportsOf = (model: Model): string[] => [
