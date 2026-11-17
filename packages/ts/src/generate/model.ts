@@ -1580,6 +1580,24 @@ export function machineFunction(type: Type): type is MachineFunction {
   return typeof type === 'object' && 'function' in type && typeof type.function.returns === 'object' && 'passthrough' in type.function.returns;
 }
 
+// GN-6z, GN-6ae, CK-17: the one rule of the `async_allowed` of a function type, which `binding check` and the
+// generator of every target read. The binding awaits what a function returns only through the machine of a member
+// (Step::Await of a Passthrough), so only a function type that returns passthrough states `async_allowed: true`. Any
+// other function type is the function of GN-6z, which the core calls as a plain Fn and may keep (keeps): its result
+// is converted when the call returns, so no awaitable is awaited. The sentence of the refusal, or undefined.
+export function asyncFunctionRefusal(fn: { returns: Type; async_allowed?: boolean }): string | undefined {
+  if (fn.async_allowed !== true || machineFunction({ function: { parameters: [], ...fn } })) return undefined;
+  return `a function type that returns ${JSON.stringify(fn.returns)} states async_allowed: true, and the binding awaits only a function that returns passthrough, the function of a member with machine (GN-6ae); a function that the core calls as a value or keeps (GN-6z) is not awaited, so it states async_allowed: false`;
+}
+
+// GN-6z: the function type of a function that the core calls as a value or keeps, as the helper kept_function_in of
+// each target names it: never awaited, by the rule of asyncFunctionRefusal, which refuses another by name (G-4).
+export function keptFunctionType(fn: { parameters: Type[]; returns: Type; async_allowed?: boolean }): Type {
+  const refusal = asyncFunctionRefusal(fn);
+  if (refusal !== undefined) throw new Unsupported(refusal);
+  return { function: { ...fn, async_allowed: false } };
+}
+
 // GN-6z: whether a type holds a function type, at any place of a list, an optional, a map or a tuple.
 export function holdsFunction(type: Type): boolean {
   if (typeof type === 'string') return false;

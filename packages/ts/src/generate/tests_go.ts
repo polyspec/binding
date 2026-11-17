@@ -65,6 +65,16 @@ class Body {
   armed = false;
   // GN-6z: the fixtures of the funcs of a function type that the body made, which the test reads after its call.
   functions: string[] = [];
+  // GN-13bi: whether the test of the body is the test of a case, which requires at its end that each row once of its
+  // fixtures answered a call, and whether the body or a block of it made a fixture with such a row. A fixture is a
+  // local of its block, so each is added to the slice onceFixtures of the test where it is made.
+  answers = false;
+  onceMade = false;
+  once(fixture: string): void {
+    if (!this.root.answers) return;
+    this.root.onceMade = true;
+    this.lines.push(`onceFixtures = append(onceFixtures, ${fixture})`);
+  }
   // The count of the locals of a test, which the bodies of its funcs share, so that no local has the name of another.
   private readonly counter: { next: number };
   private readonly root: Body;
@@ -639,6 +649,7 @@ function keptFunctionValue(v: Values, b: Body, type: FunctionType, json: unknown
   });
   const fixture = b.fresh('function');
   b.lines.push(`${fixture} := &fixture{rows: []fixtureRow{${texts.join(', ')}}}`);
+  if ((rows as Record<string, unknown>[]).some((row) => row['once'] === true)) b.once(fixture);
   b.functions.push(fixture);
   const answer = `${fixture}.answer(${['"call"', ...type.parameters.map((_part, i) => `arg${i}`)].join(', ')})`;
   const name = b.fresh('call');
@@ -653,6 +664,14 @@ function keptFunctionValue(v: Values, b: Body, type: FunctionType, json: unknown
 // GN-6z: after the call of a case, no func of a function type of the case was called in a way that no row answers.
 const functionChecks = (b: Body): string[] =>
   b.functions.flatMap((name) => [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}']);
+
+// GN-13bi: the end of the test of a case, after the calls of after: each row once of a fixture of the test answered a
+// call. The declaration of the slice stands before every line of the test.
+function onceChecked(b: Body, lines: string[]): void {
+  if (!b.onceMade) return;
+  lines.unshift('var onceFixtures []*fixture');
+  lines.push('for at, made := range onceFixtures {', '\tif left := made.unanswered(); len(left) != 0 {', '\t\tt.Fatalf("G-5: the rows once of the fixture %d that answered no call: %v", at, left)', '\t}', '}');
+}
 
 // GN-6ae (CK-22): the statements of a call of a member on a receiver whose results are compared with the value that a
 // case names, when it names one: `failed` is the statement for an error of the call, and `differs` the statement
@@ -1082,6 +1101,7 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
     return `{member: ${memberName(row.member)}, args: ${argsOf(row.member, row.args)}, result: ${result}, once: ${String(row.once)}${raise}}`;
   });
   b.lines.push(`${name} := fixture${goName(fixture.unit.name)}{&fixture{rows: []fixtureRow{${rows.join(', ')}}}}`);
+  if (fixture.rows.some((row) => row.once)) b.once(`${name}.fixture`);
   return name;
 }
 
@@ -1512,6 +1532,7 @@ ${indent([...b.lines, `if !reflect.DeepEqual(${got}, ${want}) || !sameFailure(er
       continue;
     }
     const b = new Body();
+    b.answers = true;
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     // GN-13f: a receiver whose factory raises the kind of the case gives its failure as the err of the case, and the
     // member is called only on a receiver that was made.
@@ -1547,6 +1568,7 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
     }
     lines.push(...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
+    onceChecked(b, lines);
     b.completeCaseTextContext(lines, captured);
     (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
@@ -1560,6 +1582,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
   // GN-6ae: a case whose function fixture returns the error that the test holds gets the same error value.
   for (const kase of callbackCases(model, fn)) {
     const b = new Body();
+    b.answers = true;
     const call = written(fn, kase.id, () => {
       writeFiles(b, kase.files, kase.service, kase.listener);
       const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
@@ -1578,6 +1601,7 @@ ${indent([...lines, ...KEPT_NOTHING], 1)}
         ...afterLines(v, b, fn, kase.id, kase.after, call.receiver),
         ...serviceCheck(kase.service),
       ];
+    if (typeof call !== 'string') onceChecked(b, lines);
     if (typeof call !== 'string') b.completeCaseTextContext(lines, captured);
     out.main.push(`
 func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
@@ -1639,6 +1663,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       continue;
     }
     const b = new Body();
+    b.answers = true;
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
     const call = written(fn, kase.id, () => {
       writeFiles(b, kase.files, kase.service, kase.listener);
@@ -1690,6 +1715,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     const lines = refused === undefined
       ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver), ...serviceCheck(kase.service)]
       : [`t.Fatal(${goString(refused)})`];
+    if (refused === undefined) onceChecked(b, lines);
     if (refused === undefined) b.completeCaseTextContext(lines, captured);
     (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
@@ -1866,7 +1892,10 @@ ${methods.map((m) => m.fixture).join('\n\n')}
 
 // GN-13bg: `foreign` is whether a parameter of a double holds an instance of a value class of another repository, whose
 // arguments a row is found by through foreignRead.
-const fixtureGo = (defaults: boolean, foreign: boolean): string => `
+// GN-13bi: `once` is whether a test of the package requires the rows once of its fixtures to have answered a call: the
+// fixture then holds the place of each row that is left among the rows that it was made with, and names by it the
+// rows once that are left.
+const fixtureGo = (defaults: boolean, foreign: boolean, once: boolean): string => `
 // fixtureRow is a row of a callback fixture: the member, its arguments, its result and whether it answers once.
 type fixtureRow struct {
 	member string
@@ -1881,16 +1910,16 @@ type fixtureRow struct {
 type fixture struct {
 	rows       []fixtureRow
 	calls      [][]any
-	unexpected [][]any
+	unexpected [][]any${once ? '\n\tplaces     []int' : ''}
 }
 
 func (f *fixture) answer(member string, args ...any) (any, error) {
 	call := append([]any{member}, args...)
-	f.calls = append(f.calls, call)
+	f.calls = append(f.calls, call)${once ? '\n\tf.placed()' : ''}
 	for at, row := range f.rows {
 		if row.member == member && (${foreign ? 'reflect.DeepEqual(foreignRead(reflect.ValueOf(row.args)), foreignRead(reflect.ValueOf(args)))' : 'reflect.DeepEqual(row.args, args)'} || len(row.args)+len(args) == 0) {
 			if row.once {
-				f.rows = append(f.rows[:at:at], f.rows[at+1:]...)
+				f.rows = append(f.rows[:at:at], f.rows[at+1:]...)${once ? '\n\t\t\t\tf.places = append(f.places[:at:at], f.places[at+1:]...)' : ''}
 			}
 			if row.raise != nil {
 				return nil, row.raise
@@ -1901,7 +1930,28 @@ func (f *fixture) answer(member string, args ...any) (any, error) {
 	f.unexpected = append(f.unexpected, call)
 	return nil, fmt.Errorf("G-5: no row answers %v", call)
 }
-${defaults ? `
+${once ? `
+// placed gives each row its place among the rows that the fixture was made with, before a row is taken out (GN-13bi).
+func (f *fixture) placed() {
+	if f.places == nil {
+		for at := range f.rows {
+			f.places = append(f.places, at)
+		}
+	}
+}
+
+// unanswered gives the rows once that answered no call, each by its place, its member and its arguments (GN-13bi).
+func (f *fixture) unanswered() []string {
+	f.placed()
+	var left []string
+	for at, row := range f.rows {
+		if row.once {
+			left = append(left, fmt.Sprintf("the row %d: %s%v", f.places[at], row.member, row.args))
+		}
+	}
+	return left
+}
+` : ''}${defaults ? `
 // names is whether a row of the fixture is of the member (GN-6d): a member with a default that no row names is left
 // out, and gives its default.
 func (f *fixture) names(member string) bool {
@@ -2645,7 +2695,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(/\bcancellation\(/.test(all) ? [CANCELLATION] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     // GN-13x: the double fixture<Name> of every callback type embeds *fixture, so the type comes with every double.
-    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [fixtureGo(doubles.some((cb) => cb.members.some((m) => m.member.default !== undefined)), foreignDouble)] : []),
+    ...(/\bfixture[A-Z]|&fixture\{/.test(all) || doubles.length > 0 ? [fixtureGo(doubles.some((cb) => cb.members.some((m) => m.member.default !== undefined)), foreignDouble, /\.unanswered\(\)/.test(all))] : []),
     ...doubles.map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = '', extraStd: readonly { path: string; alias: string }[] = []): string => {

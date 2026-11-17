@@ -3577,7 +3577,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False, None\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.match(node, /\nfunction fixture\(members, rows\) \{/);
+  assert.match(node, /\nfunction fixture\(members, rows, read = \(value\) => value\) \{/);
   assert.match(node, /const fixture0 = fixture\(\[\['find', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
@@ -13310,6 +13310,49 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
 });
 
+test('B2.452: a Node and a WASM callback fixture find a row and compare the calls by what a JSON value of an argument holds, at a parameter and inside a list (GN-13bg, GN-13bb)', () => {
+  // isDeepStrictEqual and assert.deepEqual compare two instances of json.Value by no property, so a call with any
+  // JSON value took the row of another, and the expected calls held for any value.
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units.push({
+    id: 'sink', name: ['sink'], module: '', kind: 'interface', visibility: 'public', origin: 'callback', core: 'polyspec_relay::Sink', thread: 'owner',
+    members: [{ id: 'sink.put', name: ['put'], kind: 'method', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', required: true }], returns: 'none', async_allowed: false, core: { path: 'polyspec_relay::Sink::put', receiver: '&mut self' } }],
+  });
+  contract.units.find((u: any) => u.id === 'relay').members.push(
+    { id: 'relay.hand', name: ['hand'], kind: 'function', visibility: 'public', parameters: [{ name: ['sink'], type: { unit: 'sink' }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::hand' },
+    { id: 'relay.spread', name: ['spread'], kind: 'function', visibility: 'public', parameters: [{ name: ['sinks'], type: { list: { unit: 'sink' } }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::spread' },
+  );
+  contract.cases.push({ member: 'relay.hand', file: 'contracts/cases.json', group: 'hand' }, { member: 'relay.spread', file: 'contracts/cases.json', group: 'spread' });
+  const a = { kind: 'text', value: 'a' };
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, any[]>;
+  cases['hand'] = [{ id: 'a_value_is_handed', rule: 'RQ-036', sink: { callback: { 'sink.put': [{ args: { value: a }, result: null }] }, calls: [{ member: 'sink.put', args: { value: a } }] }, value: a, result: true }];
+  cases['spread'] = [{ id: 'a_value_is_spread', rule: 'RQ-036', sinks: [{ callback: { 'sink.put': [{ args: { value: a }, result: null }] } }], value: a, result: true }];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(out, RELAY_TESTS[target]);
+    // The fixture reads the arguments of a row and of a call through the reader that the test gives it.
+    assert.ok(tests.includes('\nfunction fixture(members, rows, read = (value) => value) {\n'), target);
+    assert.ok(tests.includes('      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(read(row[1]), read(args)));\n'), target);
+    assert.match(tests, /\nfunction ordered\(value\) \{\n {2}if \(value instanceof foreign_json\.Value \|\| value instanceof foreign_json\.OrderedMap\) return \{ foreign: readForeign\(value\) \};\n/, target);
+    const hand = bodiesOf(tests, /test\('GN-13e: hand a_value_is_handed'/, '\n});')[0] ?? '';
+    assert.match(hand, /\n {2}const fixture0 = fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\);\n/, `${target}: ${hand}`);
+    assert.match(hand, /\n {2}assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(ordered\(fixture0\.calls\), ordered\(\[\['put', \[[^\n]+\]\]\]\)\);/, `${target}: ${hand}`);
+    assert.doesNotMatch(hand, /assert\.deepEqual\(fixture0\.calls, /, `${target}: the calls are compared by no property`);
+    // A fixture inside a list is given the reader too.
+    const spread = bodiesOf(tests, /test\('GN-13e: spread a_value_is_spread'/, '\n});')[0] ?? '';
+    assert.match(spread, /\[fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\)\.object\]/, `${target}: ${spread}`);
+  }
+  // A fixture whose arguments hold no such instance is written as it was: no reader, and the calls as they are.
+  const plain = consumerSample();
+  const own = generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(own, RELAY_TESTS[target]);
+    assert.match(tests, /= fixture\(\[[^\n]+\]\);\n/, target);
+    assert.doesNotMatch(tests, /\], ordered\)/, target);
+    assert.doesNotMatch(tests, /ordered\(fixture\d+\.calls\)/, target);
+  }
+});
+
 test('B2.464: PHP gives the least int64 of a case of a contract type int64 as PHP_INT_MIN, as an argument, as an expected result and as a key of a keyed map (G-5, T-1)', () => {
   // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the argument was a float,
   // which the binding refuses as no int. A case file gives the integer as its token, which cli reads as a bigint.
@@ -13610,6 +13653,139 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
     assert.match(body, /\.Add\(1\)/, body);
     assert.doesNotMatch(body, /NewCounter\(0\)/, body);
   }
+});
+
+test('B2.480: the generator of every target refuses, with the sentence of binding check, a function type that the core calls as a value or keeps and that states async_allowed: true (GN-6z, CK-17)', () => {
+  // orm: binding check accepted async_allowed: true of a kept function while every generator wrote the function as
+  // one that is never awaited. Both read asyncFunctionRefusal now.
+  const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  for (const id of ['functions.apply', 'registry.register']) {
+    const { contract, cases } = e2eContract('functions');
+    const parameter = member(contract, id).parameters.find((p: any) => typeof p.type === 'object' && 'function' in p.type);
+    assert.equal(parameter.keeps === true, id === 'registry.register');
+    parameter.type.function.async_allowed = true;
+    const sentence = 'a function type that returns "text" states async_allowed: true, and the binding awaits only a function that returns passthrough, the function of a member with machine (GN-6ae); a function that the core calls as a value or keeps (GN-6z) is not awaited, so it states async_allowed: false';
+    assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17').map((f) => f.message), [sentence], id);
+    for (const target of ['python', 'node', 'wasm', 'php', 'go'] as const) {
+      assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: [target] }), (error: Error) => error.message.includes(sentence), `${id} ${target}`);
+    }
+  }
+  // The contract as it is states async_allowed: false, which the check and the five targets take.
+  const { contract, cases } = e2eContract('functions');
+  assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17'), []);
+  assert.ok(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] }).size > 0);
+});
+
+// B2.482: the paths of the generated tests of the five targets, and the end of a test in each.
+const ONCE_TESTS = { ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' } as const;
+const ONCE_END = { ...STATEFUL_END, go: '\n}\n' } as const;
+// The contract of tests/e2e of a name with its cases, which a test changes.
+const e2eContract = (repo: string): { contract: any; cases: any } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  return { contract: read('packages/rust/interface.json'), cases: read('contracts/cases.json') };
+};
+const onceOut = (repo: string, change: (cases: any) => void): Record<keyof typeof ONCE_TESTS, string> => {
+  const { contract, cases } = e2eContract(repo);
+  change(cases);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library}`, caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  return Object.fromEntries(Object.entries(ONCE_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof ONCE_TESTS, string>;
+};
+// The line of the end of the test of a case that requires each row once of its fixtures to have answered a call.
+const ONCE_CHECK = {
+  python: '\n        self.assertEqual(_unanswered(), [])',
+  node: '\n  assert.deepEqual(unanswered(), []);',
+  wasm: '\n  assert.deepEqual(unanswered(), []);',
+  php: '\n        self::assertSame([], self::unanswered());',
+  go: '\n\tfor at, made := range onceFixtures {\n\t\tif left := made.unanswered(); len(left) != 0 {\n\t\t\tt.Fatalf("G-5: the rows once of the fixture %d that answered no call: %v", at, left)\n\t\t}\n\t}',
+} as const;
+const onceBody = (tests: Record<keyof typeof ONCE_TESTS, string>, target: keyof typeof ONCE_TESTS, start: RegExp): string => {
+  const [body] = bodiesOf(tests[target], start, ONCE_END[target]);
+  assert.ok(body !== undefined, `${target}: no test ${String(start)}`);
+  return body;
+};
+
+test('B2.482: the test of a case requires at its end that each row once of a function fixture answered a call, in the five targets (GN-13bi)', () => {
+  // orm: a fixture failed only on a call that no row answers, so the test of a case passed for a core that never
+  // calls the function.
+  const tests = onceOut('functions', (cases) => {
+    // The member calls the function in the call.
+    cases.apply[0].convert.function[0].once = true;
+    // The member raises before it calls the function: the row once answered no call, which the test finds.
+    cases.apply[1].convert.function.push({ args: { 0: 'x', 1: [] }, result: 'X', once: true });
+    // The core keeps the function, which a call of then of the receiver gave, and the member of the case calls it.
+    cases.registry_call[0].receiver.then[0].args.convert.function[0].once = true;
+  });
+  const starts = (pascal: string, snake: string, name: string, rule: string): Record<keyof typeof ONCE_TESTS, RegExp> => ({
+    python: new RegExp(`def test_${rule.toLowerCase().replace('-', '')}_${snake}\\(`), node: new RegExp(`test\\('${rule}: ${name}'`), wasm: new RegExp(`test\\('${rule}: ${name}'`),
+    php: new RegExp(`function test${rule === 'B-4' ? 'B4' : 'Gn13e'}${pascal.replace(/^[A-Z]/, (c) => (pascal.startsWith('Registry') ? c : c.toLowerCase()))}\\(`), go: new RegExp(`func Test${rule.replace('-', '')}${pascal}\\(`),
+  });
+  const cases = [
+    starts('ApplyTheFunctionConvertsTheValue', 'apply_the_function_converts_the_value', 'apply the_function_converts_the_value', 'GN-13e'),
+    starts('ApplyAValueWithoutACharacterIsEmpty', 'apply_a_value_without_a_character_is_empty', 'apply a_value_without_a_character_is_empty', 'B-4'),
+    starts('RegistryCallTheKeptFunctionConvertsTheValue', 'registry_call_the_kept_function_converts_the_value', 'Registry\\.call the_kept_function_converts_the_value', 'GN-13e'),
+  ];
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of cases) {
+      const body = onceBody(tests, target, start[target]);
+      const at = body.indexOf(ONCE_CHECK[target]);
+      assert.ok(at >= 0, `${target}: ${body}`);
+      // The check stands after the call of the member and after the check of the calls that no row answers.
+      assert.ok(at > body.search(/unexpected|\.call\(|Call\(/), `${target}: ${body}`);
+    }
+    // A case whose fixtures have no row once has no such check: a row without once answers any count of calls.
+    assert.ok(!onceBody(tests, target, starts('RegistryRegisterANameWithoutACharacterIsEmpty', 'registry_register_a_name_without_a_character_is_empty', 'Registry\\.register a_name_without_a_character_is_empty', 'B-4')[target]).includes('nanswered'), target);
+  }
+  // The fixtures of a test are those made since it began, and a row once that is left is named by its place.
+  for (const target of ['node', 'wasm'] as const) {
+    assert.ok(tests[target].includes('\nconst fixturesMade = [];\ntest.beforeEach(() => {\n  fixturesMade.length = 0;\n});\n'), target);
+    assert.ok(tests[target].includes('\n  const left = [...rows];\n  fixturesMade.push({ rows, left });\n'), target);
+    assert.match(tests[target], /\nfunction unanswered\(\) \{\n {2}return fixturesMade\.flatMap\(\(\{ rows, left \}, at\) => left\.filter\(\(row\) => row\[3\]\)\.map\(/, target);
+  }
+  assert.ok(tests.python.includes('\n    def setUp(self) -> None:\n        _fixtures_made.clear()\n'));
+  assert.ok(tests.python.includes('\n    left = list(rows)\n    _fixtures_made.append((rows, left))\n'));
+  assert.match(tests.python, /\ndef _unanswered\(\):\n/);
+  assert.ok(tests.php.includes('\n    protected function setUp(): void\n    {\n        self::$fixturesMade = [];\n    }\n'));
+  assert.ok(tests.php.includes('$function0 = self::made(new class([["call", ["ab c", [2, 1]], "AB C", true, null]], self::same(...)) {'), tests.php);
+  assert.match(tests.php, /\n {12}public function unanswered\(\): array\n/);
+  assert.ok(tests.go.includes('\n\tvar onceFixtures []*fixture\n\tfunction0 := &fixture{rows: []fixtureRow{{member: "call", args: []any{"ab c", []int64{2, 1}}, result: "AB C", once: true}}}\n\tonceFixtures = append(onceFixtures, function0)\n'), tests.go);
+  assert.match(tests.go, /\nfunc \(f \*fixture\) unanswered\(\) \[\]string \{\n/);
+});
+
+test('B2.482: the check of the rows once covers a callback fixture at a parameter, in a list and in the receiver, and a contract without a row once has none (GN-13bi)', () => {
+  const change = (cases: any): void => {
+    // A callback parameter of a case that raises, a callback in a list, and one that the receiver keeps.
+    cases.resolve[0].lookup.callback['lookup.find'][0].once = true;
+    cases.first[0].lookups[1].callback['lookup.find'][0].once = true;
+    cases.index_get[3].receiver.args.source.callback['feed.get'][0].once = true;
+  };
+  const tests = onceOut('sample', change);
+  const plain = onceOut('sample', () => undefined);
+  const starts: Record<keyof typeof ONCE_TESTS, RegExp[]> = {
+    python: [/def test_b4_resolve_a_key_without_a_value_is_missing\(/, /def test_gn13e_first_the_first_lookup_that_holds_the_key_gives_its_value\(/, /def test_gn13e_index_get_a_source_kept_alone_gives_its_value_in_a_later_call\(/],
+    node: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    wasm: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    php: [/function testB4resolveAKeyWithoutAValueIsMissing\(/, /function testGn13efirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /function testGn13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+    go: [/func TestB4ResolveAKeyWithoutAValueIsMissing\(/, /func TestGN13eFirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /func TestGN13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+  };
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of starts[target]) {
+      const body = onceBody(tests, target, start);
+      assert.ok(body.includes(ONCE_CHECK[target]), `${target}: ${body}`);
+      // Before the row once, the same case had no check of a call that did not come.
+      assert.ok(!onceBody(plain, target, start).includes('nanswered'), `${target}: ${String(start)}`);
+    }
+    // The cases of the contract as it is name no row once, so no test of it has the check.
+    assert.ok(!plain[target].includes(ONCE_CHECK[target]), target);
+  }
+  // Go adds a fixture to the slice of the test where it is made: the fixture of the list and that of the receiver.
+  const first = onceBody(tests, 'go', starts.go[1] as RegExp);
+  assert.match(first, /\n\t(fixture\d+) := fixtureLookup\{&fixture\{rows: \[\]fixtureRow\{[^\n]*once: true\}\}\}\}\n\tonceFixtures = append\(onceFixtures, \1\.fixture\)\n/, first);
+  assert.equal(first.match(/onceFixtures = append/g)?.length, 1, first);
+  // PHP makes only a fixture with a row once through made.
+  const php = onceBody(tests, 'php', starts.php[1] as RegExp);
+  assert.equal(php.match(/self::made\(new class\(/g)?.length, 1, php);
+  assert.equal(php.match(/new class\(/g)?.length, 2, php);
+  assert.ok(!plain.php.includes('self::made(') && !plain.php.includes('$fixturesMade') && !plain.go.includes('f.places') &&!plain.go.includes('onceFixtures'));
 });
 
 test('B2.478: the hidden names of a construction and of an iteration are names that no member takes, in Node and WASM (GN-6b)', () => {

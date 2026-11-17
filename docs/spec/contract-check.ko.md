@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: d493c634ebfcfd60735ef3d66a5b99d4f42cd24cae9a7966d2189b87f5afe69b -->
+<!-- source-sha256: 8a9a743ba08ef6e0233a5a00ab56fd30c53c2de6466b419d84bcc03fa243011c -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -161,7 +161,13 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   실패할 수 있는 언어 코드에 닿지 않기 때문이다. callback이나 함수를 담은 `keeps` 없는 parameter가 있는 member에는
   `core.failure: false`를 두지 않고, `core.result: false`인 member에는 `core.failure: true`를 두지 않는다. 언어 코드의
   실패는 `Result` 안의 `Failure<E>`로 돌아오기 때문이다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
-  가리킨다(CK-17).
+  가리킨다(CK-17). 함수 타입은 반환이 `passthrough`일 때만 `async_allowed: true`를 적는다: 바인딩은 함수가 돌려준 것을
+  member의 machine을 거쳐서만 기다리고(generator GN-6ae), 그 밖의 함수 타입은 코어가 값으로 부르거나 보관하는(`keeps`,
+  CK-90) generator GN-6z의 함수이며 어느 target도 그것을 기다리지 않는다. 그런 타입의 `async_allowed: true`는 `keeps`가
+  있든 없든 그 타입의 반환과 함께 CK-17로 보고되고, 모든 target의 생성기는 같은 타입을 같은 문장으로 거부한다. 둘이 함수
+  하나를 읽기 때문이다. 이유: 검사는 코어가 보관하는 함수의 `async_allowed: true`를 받아들였는데 모든 생성기는 그 함수를
+  결코 기다리지 않는 함수로 썼다. 그래서 계약이 어느 바인딩도 하지 않는 기다림을 적었다(orm, B2.480). 보관된 함수를
+  기다리는 일은 아직 설계되지 않았다(B2.483).
 - **CK-63** WASM 코어(GN-4b): `core.features.wasm`은 플랫폼 I/O의 feature `fs`, `blocking-io`, `process`, `net`을
   적지 않는다.
 - **CK-64** 타입 `int`나 `uint` 자리(인자, 그 타입을 담은 list·tuple·map·optional의 항목, record나 variant의 case의 field, 결과)에 있는 case의 정수는 안전

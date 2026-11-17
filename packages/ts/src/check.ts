@@ -23,7 +23,7 @@ import {
   kindsOf,
   outerVariant,
 } from './contract.ts';
-import { carriers } from './generate/model.ts';
+import { asyncFunctionRefusal, carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KINDS, builtinTypes, madePredicates } from './values.ts';
 
@@ -3077,6 +3077,9 @@ class Checker {
       for (const type of Checker.walk(value)) {
         if (typeof type !== 'object' || !('function' in type)) continue;
         if (type.function.async_allowed === undefined) this.report('CK-17', path, 'a function type does not state async_allowed (T-2, U-3)');
+        // GN-6z, GN-6ae: the rule of the generator, by its own function: only the function of a machine is awaited.
+        const refusal = asyncFunctionRefusal(type.function);
+        if (refusal !== undefined) this.report('CK-17', path, refusal);
         for (const ref of type.function.errors?.recognize ?? []) {
           if (ref.library === undefined || ref.library === this.contract.library) {
             if (this.unit(ref.unit)?.kind !== 'error') this.report('CK-17', path, `${ref.unit} is not an error unit`);

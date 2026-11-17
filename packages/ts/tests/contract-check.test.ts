@@ -419,6 +419,22 @@ describe('CK-17 callbacks', () => {
     fails('CK-17', `${at('store')}/members/0/errors/recognize/0`, (c) => { delete c.errors.recognized; }));
   test('a generated implementation that waits, behind a callback member that is not async_allowed', () =>
     fails('CK-17', `${at('store')}/members/0`, (c) => { member(c, 'store.read').async_allowed = false; }));
+  test('B2.480: a function type that does not return passthrough and states async_allowed: true is refused, with keeps and without (GN-6z, GN-6ae)', () => {
+    // orm: the check accepted async_allowed: true of a function that the core keeps, which no generator awaits.
+    const found = (returns: unknown, asyncAllowed: boolean, keeps: boolean): string[] =>
+      findings((c) => {
+        const parse = member(c, 'forms.parse');
+        parse.parameters = [...(parse.parameters ?? []), { name: ['hook'], type: { function: { parameters: ['text'], returns, async_allowed: asyncAllowed } }, required: true, ...(keeps ? { keeps: true } : {}) }];
+      }).filter((f) => f.check === 'CK-17').map((f) => f.message);
+    for (const keeps of [true, false]) {
+      assert.deepEqual(found('text', true, keeps), [
+        'a function type that returns "text" states async_allowed: true, and the binding awaits only a function that returns passthrough, the function of a member with machine (GN-6ae); a function that the core calls as a value or keeps (GN-6z) is not awaited, so it states async_allowed: false',
+      ]);
+      assert.deepEqual(found('text', false, keeps), []);
+    }
+    // The function of a machine is awaited, so it may state it.
+    assert.deepEqual(found({ passthrough: 'T' }, true, false), []);
+  });
 });
 
 describe('CK-8 nested values', () => {

@@ -889,7 +889,15 @@ the design ids are those of the binding design.
   digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
   crate, because the lints deny the boxed type at a `let` and as the result of a closure
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
-  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`) and, where
+  is `'static`, `Send` and `Sync`. The form returns its result when the call returns, so the binding awaits nothing
+  that such a function returns: its type states `async_allowed: false`, with `keeps` and without, and a type of this
+  form that states `async_allowed: true` is refused by `binding check` (CK-17) and by the generator of every target
+  with one sentence, which both read from one function (`asyncFunctionRefusal`). Only the function of a machine
+  (GN-6ae), whose return is `passthrough`, is awaited. A Node or WASM function of this form that returns a promise
+  is not awaited: the promise is the value that the binding converts as the declared return, which is kind
+  `invalid_argument_type` of the conversion for a return that a promise is no value of, a `Raised` for the core;
+  where the return is `none` the promise is dropped, and its rejection reaches no caller. Awaiting a kept function is
+  not designed yet (B2.483). When the value enters it must be callable (kind `invalid_argument_type`) and, where
   the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
@@ -2956,8 +2964,8 @@ the design ids are those of the binding design.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
-  none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
-  <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
+  none) and `"once": true` for a row that answers one call, which the case expects (GN-13bi). A row with
+  `"raise": {"error": <error unit>, "kind": <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
   `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
   message and the kind (GN-10); Go by
   `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
@@ -3273,7 +3281,8 @@ the design ids are those of the binding design.
   test class (an object by its class and its properties, an instance of a value class of another repository by its in
   row, B2.121), which the fixture takes as `self::same(...)`, and Python by `_same`. Node and WASM compare by
   `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already; Go reads arguments that hold an
-  instance of a value class of another repository by `foreignRead` first (GN-13bg). Why: PHP `===` of two objects holds
+  instance of a value class of another repository by `foreignRead` first, and Node and WASM by `ordered`, which the
+  fixture is given as its reader (GN-13bg). Why: PHP `===` of two objects holds
   for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
   made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
   an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
@@ -3331,7 +3340,13 @@ the design ids are those of the binding design.
   no property, so their U-2 tests passed for any two JSON values and checked nothing of the result. The Go test
   compared the result of a call of `after` and the arguments of a fixture by their handles too, and it added the
   statements that make an instance of an expected call to the lines of the test after it had written them, so the
-  test named a local that it did not declare (B2.445).
+  test named a local that it did not declare (B2.445). Node and WASM read through `ordered` the arguments by which a
+  callback fixture or the fixture of a function value finds its row, and the expected calls of a fixture, where a
+  parameter of a member of the callback, or of the function, holds such an instance: the test gives the fixture
+  `ordered` as its reader, at a parameter and inside another value, and compares `ordered` of the calls. A fixture
+  whose arguments hold no such instance is written as it was. Why: `isDeepStrictEqual` and `assert.deepEqual`
+  compared two instances by no property, so a call with any JSON value took the row of another value and the
+  expected calls held for any value, where Go and PHP read what the instance holds (B2.452).
 - **GN-13bh** The `category` that the `raises` of a case writes is one of the six categories of E-1 (`value`, `type`,
   `io`, `store`, `busy`, `internal`), and it is the category of the kind where the kind has one: the category that
   `errors.kinds` gives the kind (its own rows and the rows with `library`), or the fixed category of a kind of E-1a.
@@ -3347,6 +3362,29 @@ the design ids are those of the binding design.
   parses, so no generated test of those two targets ran, and Python, Node and WASM wrote `pkg.` in the same place. A
   category that is one of the six but not that of the kind names the class of another category, which the test of
   the case then fails at run time for a reason that the contract already shows (B2.448).
+- **GN-13bi** The rows of a callback fixture and of a function value of a case (G-5, GN-6z, CK-22) are a table of
+  answers, and a row with `"once": true` is also a call that the case expects. A call takes the first row of its
+  member that is left and whose arguments equal the call's (GN-13bb). A row without `once` stays: it answers any
+  number of calls, none included, and requires no call. A row with `once` answers one call and is then taken out, so
+  it answers exactly one. At the end of the test of a case, after the call of the case and its calls of `after`, the
+  generated test of each of the five targets requires that every row with `once` of every fixture that the test made
+  answered a call: a row with `once` that is left fails the test, which names the fixture by its place among the
+  fixtures of the test, the row by its place among the rows of the fixture, the member and the arguments. The rule
+  holds when the member returns and when it raises, so a case whose member fails before it calls the callback gives
+  that callback no row with `once`. The fixtures of the test are those at every place of the case: a parameter of a
+  callback or of a function type, a field of a record, an item of a list, an `optional`, the receiver and its calls
+  of `then`, a call of `after` and a step of a function fixture. So a callback or a function that the core keeps
+  (GN-6aa) and a later member calls is judged at the end of the case, not after the member that stored it. A contract
+  that requires a call writes its row with `once`, one row for each call; a contract that requires the calls of a
+  callback in their order names `calls` too. A function fixture of GN-6ae has no rows and is not judged here: its
+  steps run when the function is called. Python, Node and WASM hold the fixtures of the running test in a list of
+  the test module, which is emptied before each test (`setUp`, `test.beforeEach`), and require `_unanswered()` or
+  `unanswered()` to be empty. PHP makes a fixture with such a row through `self::made` of the test class, which
+  `setUp` empties, and requires `self::unanswered()` to be empty. Go adds each fixture with such a row to the slice
+  `onceFixtures` of the test where the fixture is made, also inside a block, and requires `unanswered()` of each to
+  be empty. The test of a case whose fixtures have no row with `once` is written as it was. Why: a fixture failed
+  only on a call that no row answers, so the test of a case passed for a core that never calls the callback or the
+  function, and no case could state that a call must come (orm, B2.482).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

@@ -6,7 +6,7 @@
 import type { Lang, Name, Type } from '../contract.ts';
 import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
-import { classMakes } from './value_class.ts';
+import { classMakes, holdsForeign } from './value_class.ts';
 import { computedRule, defaultCaseValue } from './defaults.ts';
 import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { CATEGORIES, kindsOf } from '../contract.ts';
@@ -41,11 +41,13 @@ export interface Context {
   instanceNew?: (receiver: Receiver) => string;
   // GN-6z: the expression of a function value of a case from its rows, where the test reads no record of its calls.
   // GN-6bu: with the count of the arguments of the function, which a JavaScript fixture declares.
-  functionNew?: (rows: string[][], parameters: number) => string;
+  // GN-13bg: `foreign` is whether an argument of the function holds an instance of a value class of another repository,
+  // whose rows a JavaScript fixture finds by what the instance holds.
+  functionNew?: (rows: string[][], parameters: number, foreign: boolean) => string;
   // GN-6z: the member of the fixture that functionNew makes, which its rows name; `__call__` when the language names none.
   functionMember?: string;
   // GN-6aa: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
-  fixtureNew?: (values: { members: string[]; rows: string[][] }) => string;
+  fixtureNew?: (values: { members: string[]; rows: string[][]; foreign: boolean }) => string;
   // GN-6x: how the generated test names a class of another repository, through the owner's package, which the test
   // imports: the value class and the classes that its out rows fill.
   foreignClass?: (library: string, unit: Unit) => string;
@@ -756,7 +758,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   }
   if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) return ctx.instanceNew(callbackInstance(model, unit, libraryOf(type), value));
   // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
-  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'), type.function.parameters.length);
+  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'), type.function.parameters.length, type.function.parameters.some((p) => holdsForeign(model, p)));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
@@ -2613,7 +2615,7 @@ export const ROW_EXCEPTION = 'G-5: exception';
 
 // The rows and the expected calls of a fixture as the values of a language: the member name, the arguments, and for a
 // row the result and whether it is used once.
-export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture, 'arg'>): { members: string[]; rows: string[][]; calls: string[][] | undefined } {
+export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture, 'arg'>): { members: string[]; rows: string[][]; calls: string[][] | undefined; foreign: boolean } {
   const members = fixture.unit.members ?? [];
   const name = (member: number): string => langName(ctx.lang, members[member]?.name ?? [], 'callable');
   // T-3: a callback unit of another repository names the types of its owner's contract, which resolve there.
@@ -2640,8 +2642,15 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
       return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once), raised];
     }),
     calls: fixture.calls?.map((call) => [text(name(call.member)), list(argsOf(call.member, call.args))]),
+    // GN-13bg: whether an argument of a member holds an instance of a value class of another repository, by which a
+    // fixture of Node and WASM finds its row and compares its calls through ordered, as Go does through foreignRead.
+    foreign: members.some((m) => (m.parameters ?? []).some((p) => holdsForeign(model, typed(p.type)))),
   };
 }
+
+// GN-13bi: the count of the rows of a fixture that state `once`, as fixtureValues and functionRows write the flag of a
+// row. The test of a case that made such a row requires, at its end, that each of them answered a call.
+export const onceRows = (rows: string[][]): number => rows.filter((row) => row[3] === 'true' || row[3] === 'True').length;
 
 // GN-6z: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
 // with "result" (absent for a return of none) and "once". The contract check has judged the form (CK-22). The rows are
@@ -2667,7 +2676,7 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
 }
 
 // GN-6z: the function value of a case for each parameter of a function type, as a fixture whose record the test reads.
-export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: string, args: Map<Arg, unknown>, call: string): { arg: Arg; members: string[]; rows: string[][] }[] {
+export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: string, args: Map<Arg, unknown>, call: string): { arg: Arg; members: string[]; rows: string[][]; foreign: boolean }[] {
   const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   return fn.args.flatMap((arg) => {
     const type = arg.type;
@@ -2675,7 +2684,7 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
     if (typeof type !== 'object' || !('function' in type) || machineFunction(type)) return [];
     const what = `the case ${id} of ${fn.member.id} for ${caseName(arg.name)}`;
     // GN-6bu: the call of a JavaScript fixture declares the arguments that the binding calls the function with.
-    return [{ arg, members: [ctx.lang === 'node' ? jsDeclaredMember(text(call), type.function.parameters.length) : text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
+    return [{ arg, members: [ctx.lang === 'node' ? jsDeclaredMember(text(call), type.function.parameters.length) : text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call), foreign: type.function.parameters.some((p) => holdsForeign(model, p)) }];
   });
 }
 

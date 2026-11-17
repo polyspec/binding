@@ -188,7 +188,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   parameter without `keeps` that holds a callback or a function, and a member with `core.result: false` has no
   `core.failure: true`, because the failure of
   language code is returned in a `Result` as `Failure<E>`. A function type (T-2) states `async_allowed` and
-  its `recognize` names error units, as a callback member does (CK-17).
+  its `recognize` names error units, as a callback member does (CK-17). A function type states `async_allowed: true`
+  only when its return is `passthrough`: the binding awaits what a function returns only through the machine of a
+  member (generator GN-6ae), and any other function type is the function of generator GN-6z, which the core calls as
+  a value or keeps (`keeps`, CK-90) and which no target awaits. `async_allowed: true` on such a type, with `keeps` or
+  without, is reported under CK-17 with the return of the type, and the generator of every target refuses the same
+  type with the same sentence, because both read one function. Why: the check accepted `async_allowed: true` of a
+  function that the core keeps while every generator wrote that function as one that is never awaited, so a contract
+  stated an awaiting that no binding does (orm, B2.480). Awaiting a kept function is not designed yet (B2.483).
 - **CK-63** The WASM core (GN-4b): `core.features.wasm` names none of the features of platform I/O, `fs`,
   `blocking-io`, `process` and `net`.
 - **CK-64** An integer of a case at a place of the type `int` or `uint` (an argument, an item of a list, tuple,

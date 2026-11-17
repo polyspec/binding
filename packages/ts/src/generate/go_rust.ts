@@ -11,7 +11,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust, aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew, heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync, machineFunction, unitFn, libraryBlocks, type KeptClass, type KeptField, countsThrown,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
-  errorMatched, keepsAny, keptCallbacks, keptModel, keptRecognizes,
+  errorMatched, keptFunctionType, keepsAny, keptCallbacks, keptModel, keptRecognizes,
   recognizedFn,
   recognizedMatch,
   interfaceOf, implementorsOf,
@@ -1072,7 +1072,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
 // by that handle through the export of package binding, in a call of its run, and reads the result through that call,
 // which it then ends; the error or the panic of the func, which package binding keeps in its table, or a failure of the
 // binding in the call, goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, input: string, subject: string): string {
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },input: string, subject: string): string {
   const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
@@ -1081,7 +1081,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, i
   const decode = type.returns === 'none'
     ? '                    finish_input(&bytes)?;\n                    Ok(())'
     : `                    let mut input: &[u8] = &bytes;\n                    let value: ${result} = ${convertIn(model, type.returns, '&mut input', returns)}?;\n                    finish_input(input)?;\n                    Ok(value)`;
-  return `kept_function_in(${input}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(${input}, ${subject}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, ${failure}> {
                 let ${names.length === 0 ? '' : 'mut '}args = Vec::new();${names.length === 0 ? '' : `
                 {

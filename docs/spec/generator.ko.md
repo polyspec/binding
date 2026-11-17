@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
+<!-- source-sha256: 32f3521fd71696c96f7981bbb31022d0e7530c9bfdff89b62c499b0feac34f5e -->
 # 생성기
 
 [English](generator.md)
@@ -728,7 +728,14 @@
   생성된 crate는 이 타입을 type alias로 이름한다. alias의 이름은 `Function`과 그 타입의 SHA-256의 16진 여덟 자리이고,
   타입은 crate 끝의 alias 정의에 한 번만 쓴다. lint가 `let`과 closure의 결과에 쓴 boxed 타입을
   거부하기 때문이다(`clippy::type_complexity`).
-  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
+  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 이 꼴은
+  호출이 돌아올 때 결과를 돌려주므로, 바인딩은 그런 함수가 돌려준 것을 기다리지 않는다: 그 타입은 `keeps`가 있든 없든
+  `async_allowed: false`를 적고, 이 꼴의 타입이 `async_allowed: true`를 적으면 `binding check`(CK-17)와 모든 target의
+  생성기가 한 문장으로 거부하며, 둘은 그 문장을 함수 하나(`asyncFunctionRefusal`)에서 읽는다. 반환이 `passthrough`인
+  machine의 함수(GN-6ae)만 기다린다. promise를 돌려주는 이 꼴의 Node나 WASM 함수는 기다려지지 않는다: 그 promise는
+  바인딩이 선언된 반환으로 변환하는 값이고, promise가 그 타입의 값이 아닌 반환에서는 변환의 kind
+  `invalid_argument_type`, 곧 코어에게 `Raised`다. 반환이 `none`이면 promise는 버려지고 그 거부는 어느 호출자에게도
+  닿지 않는다. 보관된 함수를 기다리는 일은 아직 설계되지 않았다(B2.483). 값이
   들어올 때 호출 가능해야 하고(kind `invalid_argument_type`), 함수가 인자를 하나 이상 받는 곳에서는 그 인자를 받아야
   한다(kind `invalid_callback`, GN-6bu). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는
@@ -2420,7 +2427,7 @@
   case는 callback parameter를 fixture로 준다:
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
-  답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
+  답하는 행, 곧 case가 기대하는 호출의 `"once": true`를 더한 것이다(GN-13bi). `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
   unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·PHP·WASM은
   메시지와 kind를 받는 그 클래스의 생성자로 만든다(GN-10). Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
   `Raised<Unit>(kind, message)`로 만들고, 그 오류는 시험을 실패시킨다(GN-7a). `"raise": "exception"`인 행은 결과 대신 라이브러리의 오류가 아닌 그 언어의 예외를 메시지
@@ -2674,7 +2681,8 @@
   비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
   row로, B2.121)으로 비교하고 fixture는 그것을 `self::same(...)`로 받는다. Python은 `_same`으로 비교한다. Node와 WASM은
   `isDeepStrictEqual`로, Go는 `reflect.DeepEqual`로 비교하는데, 이것들은 이미 값을 비교한다. Go는 다른 저장소의 값 class
-  instance를 담은 인자를 먼저 `foreignRead`로 읽는다(GN-13bg). 이유: PHP에서 두 객체의
+  instance를 담은 인자를 먼저 `foreignRead`로 읽고, Node와 WASM은 fixture가 reader로 받는 `ordered`로 읽는다(GN-13bg).
+  이유: PHP에서 두 객체의
   `===`는 같은 instance일 때만 참이고, Python에서 `__eq__`가 없는 class의 `==`는 identity다. 그래서 binding이 만든, row의
   값과 같은 인자가 어느 row와도 맞지 않았다: 둘째 인자가 `Environment`인 template의 host function 셋이 매 호출마다
   `UnexpectedCall`을 냈다. 결과의 같은 비교는 B2.358이었다.
@@ -2722,7 +2730,13 @@
   가운데에는 field의 기본값이 JSON 값인 record가 있다. Node와 WASM의 `assert.deepStrictEqual`과 PHP의 `var_export`는 같은 두
   instance를 property 없이 비교했다. 그래서 그 U-2 시험은 어떤 두 JSON 값에도 통과했고 결과를 아무것도 검사하지 않았다. Go
   시험은 `after`의 호출 결과와 fixture의 인자도 handle로 비교했다. 또 기대하는 호출의 instance를 만드는 문장을, 시험의 줄을
-  이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445).
+  이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445). Node와 WASM은
+  callback fixture나 함수 값의 fixture가 row를 찾는 인자와 fixture의 기대 호출을, callback member의 parameter나 함수의
+  parameter가 그런 instance를 담는 곳에서 `ordered`로 읽는다: 시험은 parameter 자리에서도 다른 값 안에서도 fixture에
+  `ordered`를 reader로 주고, 호출의 `ordered`를 비교한다. 인자가 그런 instance를 담지 않는 fixture는 전과 같이 쓰인다.
+  이유: `isDeepStrictEqual`과 `assert.deepEqual`은 두 instance를 어떤 property로도 비교하지 않았다. 그래서 어떤 JSON
+  값으로 한 호출이든 다른 값의 row를 가져갔고 기대 호출은 어떤 값에도 성립했는데, Go와 PHP는 instance가 담은 것을
+  읽었다(B2.452).
 - **GN-13bh** case의 `raises`가 쓰는 `category`는 E-1의 여섯 category(`value`, `type`, `io`, `store`, `busy`,
   `internal`) 가운데 하나이고, kind가 category를 가지면 그 category다: `errors.kinds`가 그 kind에 주는 category(자기 row와
   `library`가 있는 row), 또는 E-1a kind의 고정 category다. `binding check`는 다른 `category`를 거부하고(CK-22), 생성기는
@@ -2736,6 +2750,25 @@
   파일은 compile도 parse도 되지 않아 그 두 target의 생성 시험이 하나도 돌지 않았고, Python, Node, WASM은 같은 자리에
   `pkg.`를 썼다. 여섯 가운데 하나이지만 그 kind의 것이 아닌 category는 다른 category의 class를 이름한다. 그러면 그 case의
   시험은 계약이 이미 보여 주는 이유로 실행 때 실패한다(B2.448).
+- **GN-13bi** callback fixture의 행과 case의 함수 값의 행(G-5, GN-6z, CK-22)은 답의 표이고, `"once": true`가 있는 행은
+  case가 기대하는 호출이기도 하다. 호출은 자기 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 가져간다(GN-13bb).
+  `once`가 없는 행은 남는다: 몇 번의 호출에든 답하고, 한 번도 답하지 않아도 되며, 호출을 요구하지 않는다. `once`가 있는
+  행은 호출 하나에 답한 뒤 빠지므로 정확히 한 번 답한다. case 시험의 끝에서, 곧 case의 호출과 그 `after` 호출 뒤에, 다섯
+  target 각각의 생성 시험은 그 시험이 만든 모든 fixture의 `once` 행이 모두 호출에 답했기를 요구한다: 남은 `once` 행은 시험을
+  실패시키고, 시험은 그 fixture를 시험의 fixture 가운데 자리로, 그 행을 fixture의 행 가운데 자리로, 그리고 member와 인자를
+  이름한다. 이 규칙은 member가 돌아올 때와 예외를 낼 때 모두 성립한다. 그래서 member가 callback을 부르기 전에 실패하는
+  case는 그 callback에 `once` 행을 주지 않는다. 시험의 fixture는 case의 모든 자리의 것이다: callback이나 함수 타입의
+  parameter, record의 field, list의 항목, `optional`, receiver와 그 `then` 호출, `after` 호출, 함수 fixture의 단계. 그래서
+  코어가 보관하고(GN-6aa) 나중 member가 부르는 callback이나 함수는 그것을 저장한 member 뒤가 아니라 case의 끝에서
+  판정된다. 호출을 요구하는 계약은 그 행을 `once`로 쓰되 호출마다 행 하나를 쓴다. callback의 호출을 순서대로 요구하는
+  계약은 `calls`도 적는다. GN-6ae의 함수 fixture는 행이 없어 여기서 판정하지 않는다: 그 단계는 함수가 불릴 때 실행된다.
+  Python, Node, WASM은 실행 중인 시험의 fixture를 시험 모듈의 목록에 두고, 그 목록은 시험마다 그 전에 비워지며(`setUp`,
+  `test.beforeEach`), `_unanswered()`나 `unanswered()`가 비어 있기를 요구한다. PHP는 그런 행이 있는 fixture를 시험 클래스의
+  `self::made`로 만들고, `setUp`이 그것을 비우며, `self::unanswered()`가 비어 있기를 요구한다. Go는 그런 행이 있는 fixture를
+  그것이 만들어지는 곳에서, 블록 안에서도, 시험의 slice `onceFixtures`에 더하고, 각각의 `unanswered()`가 비어 있기를
+  요구한다. fixture에 `once` 행이 없는 case의 시험은 전과 같이 쓰인다. 이유: fixture는 어느 행도 답하지 않는 호출에서만
+  실패했다. 그래서 callback이나 함수를 한 번도 부르지 않는 코어에서도 case의 시험이 통과했고, 어떤 case도 호출이 와야
+  한다고 적을 수 없었다(orm, B2.482).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점
