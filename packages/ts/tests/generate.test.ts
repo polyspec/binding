@@ -13057,8 +13057,9 @@ test('B2.363: the check of this tree gives the whole copy of each consumer contr
 });
 
 test('B2.497: the Go host describes an instance of a class with core_type that a Go in row of a value alias names as node 11 with the kind of the row, in the contracts of orm and json (GN-6af, GN-15c)', () => {
+  // json is no whole copy of WHOLE_CONSUMERS, so its entry is written here as the others are.
   const copy = (name: string): WholeConsumer => {
-    const found = WHOLE_CONSUMERS.find((c) => c.name === name);
+    const found = name === 'json' ? { name: 'json', coreLib: 'polyspec_json' } : WHOLE_CONSUMERS.find((c) => c.name === name);
     assert.ok(found !== undefined, name);
     return found;
   };

@@ -1211,8 +1211,10 @@ the design ids are those of the binding design.
   its field when the property is writable and its method otherwise, as node 11 with one handle per pointer of a call,
   and describes the keyed map of the owner that such an instance keeps as a map of its entries; an `out` row is node
   14 of the result (GN-15c) with the position of the class, whose decoder makes the instance by the constructor of the
-  owner on an empty keyed map or on nil and then sets its entries or its writable property. Refused by name in Go
-  (G-4): a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
+  owner on an empty keyed map or on nil and then sets its entries or its writable property. An `in` row of Go may
+  also name a class with core_type of the owner, as Node and WASM read it: node 11 with the kind of the row, whose
+  read calls the method of the property, which gives its value and an error (B2.497). Refused by name in Go (G-4): an
+  `out` row that makes a class with core_type, and a constructor that takes a bool, an integer or a float. PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. The generated tests of Python, Node and Go write a case value of the kind of
   such a row as an instance of the class of the owner, and read a result by the classes of the owner, both through
   the package of the owner, which the test imports (GN-13, GN-13e). Go makes the instance by `New<Class>` of the
@@ -2058,7 +2060,11 @@ the design ids are those of the binding design.
   instance of it as `HostValue::Value` with the kind of the row; the handle is the same for the same instance within
   one walk of the core, so that the core sees one object at each of its positions. `read` of `HostValues` gives, for
   the handle, the property that the row names as `read`: the kept value, described again, or the value that the core
-  path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
+  path of the property returns (a bool, an integer or a float). Go reads a class with `core_type` the same way:
+  package binding cannot name a struct of a module, which imports it, so each module gives `binding.ReadValues`, when
+  it is loaded, the kind of the row of each such class of its own and a read that calls the method of the property,
+  whose result is described again (B2.497: before, Go passed such a row over, and the instance entered as a native
+  or was refused as unsupported). An `out` row whose make names the constructor of a
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node, WASM and Go generate these

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 32f3521fd71696c96f7981bbb31022d0e7530c9bfdff89b62c499b0feac34f5e -->
+<!-- source-sha256: 9e62f5401069d788381f935b9acab9d96074c9687125a87d47ea1979a43b2530 -->
 # 생성기
 
 [English](generator.md)
@@ -992,7 +992,9 @@
   property를, writable이면 그 field로 아니면 그 method로 읽어 한 호출에서 pointer마다 handle 하나인 node 11로 묘사하고,
   그런 인스턴스가 보관하는 owner의 keyed map은 entry의 map으로 묘사한다. `out` 행은 class의 위치를 가진 결과의 node
   14(GN-15c)이며, 그 decoder는 owner의 constructor로 빈 keyed map이나 nil 위에 인스턴스를 만든 다음 entry나 writable
-  property를 채운다. Go에서 이름을 대고 거부하는 것(G-4): core_type이 있는 class, bool, 정수, float을 받는 constructor.
+  property를 채운다. Go의 `in` 행은 Node와 WASM이 읽듯 owner의 core_type이 있는 class도 이름할 수 있다. 그것은 행의
+  kind를 가진 node 11이며, 그 read는 값과 오류를 주는 property의 method를 부른다(B2.497). Go에서 이름을 대고 거부하는
+  것(G-4): core_type이 있는 class를 만드는 `out` 행, bool, 정수, float을 받는 constructor.
   PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. Python, Node, Go의 생성 시험은
   그런 행의 kind인 case 값을 owner의 class의 인스턴스로 쓰고 결과를 owner의 class로 읽으며, 둘 다 시험이 import하는
@@ -1706,7 +1708,10 @@
   인자는 addon이 판정한다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind를 가진
   `HostValue::Value`로 기술한다. 코어가 자기 각 위치에서 한 객체를 보도록, 코어의 한 walk 안에서 같은 instance의
   handle은 같다. `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한
-  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
+  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. Go는 `core_type`이 있는 class를 같은 방식으로
+  읽는다. package binding은 자신을 import하는 module의 struct를 이름할 수 없으므로, 각 module은 load될 때
+  `binding.ReadValues`에 자기의 그런 class마다 행의 kind와 property의 method를 부르는 read를 주고, 그 결과는 다시
+  기술된다(B2.497: 전에는 Go가 그런 행을 건너뛰어 instance가 native로 들어가거나 unsupported로 거부되었다). make가 `core_type`이 없는 class의
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM, Go가 이 class를 생성하며, Go는 GN-15c가 적은

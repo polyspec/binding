@@ -14,7 +14,7 @@ import { CATEGORIES, type Contract, type Default, type Member, type Name, type T
 import { convert, libraryName } from '../names.ts';
 import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust, knownCategory} from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
-import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
+import { type ForeignMake, type ValueRead, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles, guardGoTestTags } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -1112,6 +1112,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(model, o.unit), ...o.members.map((f) => goCallable(scope, f)), goImplements(scope, o)]),
+    goReadValues(model, module),
     ...model.interfaces.filter((i) => i.module === module).map((i) => goInterface(model, i)),
     ...model.kept.filter((k) => k.unit.module === module).map((k) => goKeptAlias(scope, k)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
@@ -2570,20 +2571,59 @@ function describesKeyedMap(model: Model): boolean {
 // Go code of the static library runs Go code that panics, and the type is not written.
 const makesPanicked = (model: Model): boolean => runsGo(model) || keeps(model);
 
-// GN-15c: whether describeOwn has a case: a *KeyedMap[any] or a pointer to a value class without core_type.
-const describesOwn = (model: Model): boolean => describesKeyedMap(model) || keptReads(model).some((r) => r.kept !== undefined);
+// GN-15c: whether describeOwn has a case: a *KeyedMap[any], a pointer to a value class without core_type, or an
+// instance of a class with core_type that an in row names (B2.497).
+const describesOwn = (model: Model): boolean => describesKeyedMap(model) || keptReads(model).length > 0;
+
+// GN-6af, GN-15c, B2.497: the kind, as its number of node 11, of an in row of Go that names a class of this contract.
+const goReadKind = (r: ValueRead, id: string): number => {
+  const kind = GO_VALUE_KINDS.indexOf(r.variant.replace('ValueKind::', ''));
+  if (kind < 0) throw new Unsupported(`${id}: the kind ${r.kind} of the Go in row of the class ${id} is not generated (GN-15c)`);
+  return kind;
+};
+
+// GN-6af, GN-15c, B2.497: the in rows of Go that name a class with core_type of a module: package binding cannot name
+// the struct of a module, which imports it, so the module gives binding.ReadValues, when it is loaded, the kind of the
+// row of each such class and a read that calls the method of its property; the question read describes its result
+// again.
+function goReadValues(model: Model, module: string): string {
+  const reads = keptReads(model).filter((r) => r.object !== undefined && r.object.unit.unit.module === module);
+  if (reads.length === 0) return '';
+  const cases = reads.map((r) => {
+    const o = r.object;
+    if (o === undefined) return '';
+    return `		case *${goName(o.unit.unit.name)}:
+			if found == nil {
+				return 0, nil, false
+			}
+			return ${goReadKind(r, o.unit.unit.id)}, func() (any, error) { return found.${goName(o.property.member.name)}() }, true
+`;
+  }).join('');
+  return `
+// GN-6af: an instance of a class of this package that an in row of a value alias names enters as node 11 with the kind
+// of the row, and the question read gives the value of its property (B2.497).
+func init() {
+	binding.ReadValues(func(value any) (byte, func() (any, error), bool) {
+		switch found := value.(type) {
+${cases}		}
+		return 0, nil, false
+	})
+}
+`;
+}
 
 // GN-6af, GN-15c: the description of the values of package binding itself: a *KeyedMap[any] as a map of its entries
 // in their order, and a pointer to a value class without core_type as node 11 with the kind of its in row and one
-// handle per pointer of a call, whose kept value the question read gives.
+// handle per pointer of a call, whose kept value the question read gives; an instance of a class with core_type that
+// an in row names is node 11 the same way, by the read that its module gave ReadValues (B2.497).
 function goDescribeOwn(model: Model): string {
   const reads = keptReads(model);
+  const registered = reads.some((r) => r.object !== undefined);
   const cases = reads.map((r) => {
     const kept = r.kept;
     if (kept === undefined) return '';
     const name = goName(kept.unit.unit.name);
-    const kind = GO_VALUE_KINDS.indexOf(r.variant.replace('ValueKind::', ''));
-    if (kind < 0) throw new Unsupported(`${kept.unit.unit.id}: the kind ${r.kind} of the Go in row of a value class without core_type is not generated (GN-15c)`);
+    const kind = goReadKind(r, kept.unit.unit.id);
     return `	case *${name}:
 		if found == nil {
 			return false
@@ -2593,11 +2633,29 @@ function goDescribeOwn(model: Model): string {
 `;
   }).join('');
   const keyed = describesKeyedMap(model);
-  const own = !describesOwn(model) ? '' : `// describeOwn describes a value of a type of this package${keyed ? ': a *KeyedMap[any] as a map of its entries in their order,\n// each key an integer, a text or a byte string' : ''}${reads.length === 0 ? '' : `${keyed ? ',' : ':'} and a pointer to a value class without core_type by the in row of\n// its class (GN-6af)`}.
+  const switched = keyed || cases !== '';
+  const own = !describesOwn(model) ? '' : `${!registered ? '' : `// readValues are the reads that the modules of the binding gave ReadValues when they were loaded (GN-6af, B2.497).
+var readValues []func(value any) (byte, func() (any, error), bool)
+
+// ReadValues adds the read of the instances of the classes with core_type of a module that an in row of a value alias
+// names: for such an instance, the kind of the row as its number of node 11 and the read of its property (GN-6af,
+// B2.497).
+func ReadValues(read func(value any) (byte, func() (any, error), bool)) {
+	readValues = append(readValues, read)
+}
+
+`}// describeOwn describes a value of a type of this package${keyed ? ': a *KeyedMap[any] as a map of its entries in their order,\n// each key an integer, a text or a byte string' : ''}${!reads.some((r) => r.kept !== undefined) ? '' : `${keyed ? ',' : ':'} and a pointer to a value class without core_type by the in row of\n// its class (GN-6af)`}${!registered ? '' : `${keyed || reads.some((r) => r.kept !== undefined) ? ',' : ':'} and an instance of a class\n// with core_type of a module by the read that the module gave ReadValues (GN-6af, B2.497)`}.
 func (c *Call) describeOwn(enc *Writer, value reflect.Value) bool {
 	if !value.CanInterface() {
 		return false
-	}
+	}${!registered ? '' : `
+	found := value.Interface()
+	for _, read := range readValues {
+		if kind, content, ok := read(found); ok {
+			c.describeKept(enc, kind, found, content)
+			return true
+		}
+	}`}${!switched ? '' : `
 	switch found := value.Interface().(type) {${!keyed ? '' : `
 	case *KeyedMap[any]:
 		var pairs [][2]reflect.Value
@@ -2616,7 +2674,7 @@ func (c *Call) describeOwn(enc *Writer, value reflect.Value) bool {
 		enc.Uint(c.hold(held{entries: pairs}))
 		enc.Uint(uint64(len(pairs)))
 		return true`}
-${cases}	}
+${cases}	}`}
 	return false
 }
 
@@ -2652,11 +2710,13 @@ function goDescribeRows(model: Model): string {
     const kind = GO_VALUE_KINDS.indexOf(row.variant.replace('ValueKind::', ''));
     if (kind < 0) throw new Unsupported(`${row.alias.unit.id}: the kind ${row.variant} of the go in row of the class ${row.unit.id} of ${row.library} is not generated (GN-15c)`);
     const field = goName(row.read.name);
+    // B2.497: the property of a class with core_type is a method of the owner that returns its value and an error.
+    const read = row.unit.core_type !== undefined ? `found.${field}()` : `found.${row.read.writable === true ? field : `${field}()`}, nil`;
     return `	case *${ownerType(row.owner, row.unit).name}:
 		if found == nil {
 			return false
 		}
-		c.describeKept(enc, ${kind}, found, func() (any, error) { return found.${row.read.writable === true ? field : `${field}()`}, nil })
+		c.describeKept(enc, ${kind}, found, func() (any, error) { return ${read} })
 		return true
 `;
   });
