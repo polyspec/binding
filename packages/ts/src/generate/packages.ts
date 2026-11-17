@@ -29,7 +29,9 @@ export interface Generator {
 // check of a release reports (CK-70).
 const generatorLine = (generator: Generator | undefined): Record<string, string> =>
   generator !== undefined && generator.commit === undefined ? { git: BINDING_GIT, tag: `v${generator.version}` } : { git: BINDING_GIT, branch: 'v1/rust-core' };
-const SOURCE_KEYS = ['git', 'branch', 'tag', 'rev', 'version', 'path', 'registry'];
+// B2.457: `workspace` is a source too: a core that inherits the line gives binding crates that inherit it, which are
+// members of the same workspace; without it the line of a binding crate named no source at all.
+const SOURCE_KEYS = ['workspace', 'git', 'branch', 'tag', 'rev', 'version', 'path', 'registry'];
 function bindingCore(spec: unknown, depth: number, driver: boolean, generator: Generator | undefined): string {
   const fields = spec === undefined ? generatorLine(generator) : typeof spec === 'object' && spec !== null ? spec as Record<string, unknown> : { version: spec };
   const source = Object.entries(fields).filter(([key]) => SOURCE_KEYS.includes(key)).map(([key, value]): [string, unknown] =>
@@ -73,12 +75,51 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/lib.rs"));
 // package with it and writes the others, and check reports it (CK-19).
 export class Refused extends Error {}
 
+// B2.457: the line of [workspace.dependencies] of the root manifest beside a line that inherits it (workspace = true).
+// It is a symbol, so the line that a manifest writes from the entry (tomlValue) stays `workspace = true` with its own
+// keys, as the core has it.
+export const WORKSPACE_LINE: unique symbol = Symbol('the line of [workspace.dependencies]');
+
+// B2.457: the lines of a dependency table, each line that inherits from the workspace with the line of
+// [workspace.dependencies] that it inherits; a line that the workspace does not hold gets none.
+export function inheritedLines(dependencies: Record<string, unknown>, workspace: Record<string, unknown> = {}): Map<string, unknown> {
+  return new Map(Object.entries(dependencies).map(([crate, spec]): [string, unknown] => {
+    if (typeof spec !== 'object' || spec === null || (spec as { workspace?: unknown }).workspace !== true) return [crate, spec];
+    const renamed = (spec as { package?: unknown }).package;
+    const line = workspace[typeof renamed === 'string' ? renamed : crate];
+    return [crate, line === undefined ? spec : { ...spec, [WORKSPACE_LINE]: line }];
+  }));
+}
+
 // GN-3e: the form of the dependency line of the core on another polyspec library. A line with the version =X.Y.Z or
 // the tag vX.Y.Z and no branch or commit is the release form, whose version a manifest names; every other line is a
 // development form, which named says in the words of a finding (CK-70). path is the path of a path dependency.
-export function dependencyForm(spec: unknown): { version?: string; path?: string; named: string } {
-  const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown; git?: unknown } : { version: spec };
-  if (typeof fields.path === 'string') return { path: fields.path, named: `the path ${fields.path}` };
+// B2.460: core is the place of the manifest of the line in the repository (core.path of the contract). A path that,
+// joined to it, stays inside the root of the repository names a library of the same repository and no other
+// repository, so with the one version of that library beside it the line is a release form too: `=X.Y.Z`, or `0.0.Z`,
+// which Cargo reads as that one version (a caret requirement of 0.0.Z holds no other). inside marks such a path
+// without that version, whose finding says what is missing. A path that leaves the repository, an absolute one, and
+// every path of a caller that gives no core are development forms.
+export function dependencyForm(spec: unknown, core?: string): { version?: string; path?: string; inside?: true; named: string } {
+  const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown; git?: unknown; workspace?: unknown; [WORKSPACE_LINE]?: unknown } : { version: spec };
+  // B2.457: a line that the crate inherits (workspace = true) has the form of the line of [workspace.dependencies] of
+  // the root manifest, which inheritedLines put beside it. A path of that line is read from the root of the
+  // repository, and given from the place of the crate, as a path of its own line is.
+  if (fields.workspace === true) {
+    const line = fields[WORKSPACE_LINE];
+    if (line === undefined) return { named: 'workspace = true, and [workspace.dependencies] of the root manifest holds no line of it' };
+    const form = dependencyForm(line, core === undefined ? undefined : '.');
+    const path = form.path === undefined || core === undefined || form.path.startsWith('/') ? form.path : posix.relative(core, posix.normalize(form.path));
+    return { ...form, ...(path === undefined ? {} : { path }), named: `${form.named}, by the line of [workspace.dependencies] of the root manifest` };
+  }
+  if (typeof fields.path === 'string') {
+    const at = core === undefined || fields.path.startsWith('/') ? '..' : posix.normalize(posix.join(core, fields.path));
+    if (at === '..' || at.startsWith('../')) return { path: fields.path, named: `the path ${fields.path}` };
+    const one = typeof fields.version === 'string' ? /^(?:=(\d+\.\d+\.\d+)|(0\.0\.\d+))$/.exec(fields.version) : null;
+    const version = one?.[1] ?? one?.[2];
+    if (version !== undefined) return { version, path: fields.path, named: `the version ${version} of the path ${fields.path}` };
+    return { path: fields.path, inside: true, named: `the path ${fields.path}, which stays inside the repository, with ${typeof fields.version === 'string' ? `the version range ${fields.version}` : 'no version'} beside it` };
+  }
   if (typeof fields.branch === 'string') return { named: `the branch ${fields.branch}` };
   if (typeof fields.rev === 'string') return { named: `the commit ${fields.rev}` };
   const exact = typeof fields.version === 'string' ? /^=(\d+\.\d+\.\d+)$/.exec(fields.version)?.[1] : undefined;
@@ -305,13 +346,27 @@ function armedLibraries(contract: Contract, coreDependencies: CoreDependencies, 
   });
 }
 
-const developmentFinding = (crate: string, named: string): string =>
-  `the dependency line of ${crate} names ${named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+// B2.460: a path inside the repository is refused for the version that it lacks, which the sentence names.
+// B2.457: table is the table of the line when it is not [dependencies].
+const developmentFinding = (crate: string, form: { inside?: true; named: string }, table = 'dependencies'): string => form.inside === true
+  ? `the dependency line of ${crate}${table === 'dependencies' ? '' : ` in [${table}]`} names ${form.named}, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)`
+  : `the dependency line of ${crate}${table === 'dependencies' ? '' : ` in [${table}]`} names ${form.named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
 
 // CK-70: the development forms among the dependency lines of the core on the libraries whose types the contract names
 // or whose points a case arms, each a finding of the check of a release (GN-3e). A library that the core does not
 // depend on is no finding here: no package is written for it, which CK-19 reports.
 export function releaseFindings(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
+  return releaseJudged(contract, coreDependencies, armedPoints, foreign).flatMap((crate) => {
+    if (!coreDependencies.has(crate)) return [];
+    const form = dependencyForm(coreDependencies.get(crate), contract.core.path);
+    return form.version !== undefined ? [] : [developmentFinding(crate, form)];
+  });
+}
+
+// CK-70: the crates whose lines of [dependencies] of the core releaseFindings judges, from which scaffold writes the
+// manifests of the binding packages: polyspec-binding-core and the libraries whose types the contract names or whose
+// points a case arms. The other polyspec lines of the manifest are judged by manifestReleaseFindings (B2.457).
+export function releaseJudged(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
   let armed: string[] = [];
   try {
     armed = armedLibraries(contract, coreDependencies, armedPoints);
@@ -320,27 +375,58 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
   }
   // The line on polyspec-binding-core of the core, when it has one; the lines of the binding crates are read from
   // their tracked manifests (bindingCoreFinding).
-  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
-    if (!coreDependencies.has(crate)) return [];
-    const form = dependencyForm(coreDependencies.get(crate));
-    return form.version !== undefined ? [] : [developmentFinding(crate, form.named)];
-  });
+  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => `polyspec-${library}`)];
+}
+
+// CK-70, B2.457: the tables of a Cargo manifest whose lines name a crate with its source: the three dependency tables,
+// the same three of each [target.<target>], and [patch.<source>] of the root manifest, which replaces the source of a
+// crate for every member. Each is given with the name that a finding writes.
+function dependencyTables(manifest: unknown): { table: string; lines: Record<string, unknown> }[] {
+  const KINDS = ['dependencies', 'dev-dependencies', 'build-dependencies'] as const;
+  const record = (value: unknown): Record<string, unknown> => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {});
+  const top = record(manifest);
+  return [
+    ...KINDS.map((kind) => ({ table: kind as string, lines: record(top[kind]) })),
+    ...Object.entries(record(top['target'])).flatMap(([target, tables]) => KINDS.map((kind) => ({ table: `target.'${target}'.${kind}`, lines: record(record(tables)[kind]) }))),
+    ...Object.entries(record(top['patch'])).map(([source, lines]) => ({ table: `patch.${JSON.stringify(source)}`, lines: record(lines) })),
+  ];
+}
+
+// CK-70, B2.457: the development forms among the polyspec lines of a tracked Cargo manifest of the repository, in every
+// table that names a crate (dependencyTables). The rule follows from what a committed tree may hold: a tracked file
+// names another polyspec repository by a tag or a version of a release, never by a branch, a commit or a checkout
+// beside the repository. So every line whose crate (its `package`, or its key) is polyspec-<name> is read, also in
+// [dev-dependencies], where no contract names a crate. A line of the crate on itself (CK-65) and a path that stays
+// inside the repository name no other repository and are no finding here, with or without a version: only the lines
+// from which scaffold writes the manifests of the binding packages need the version, and those are `judged`, the
+// crates of [dependencies] that the caller judges itself (releaseFindings, bindingCoreFinding).
+// at: the directory of the manifest in the repository. workspace: [workspace.dependencies] of the root manifest.
+export function manifestReleaseFindings(manifest: unknown, at: string, judged: ReadonlySet<string>, workspace?: Record<string, unknown>): string[] {
+  const own = (manifest as { package?: { name?: unknown } } | undefined)?.package?.name;
+  return dependencyTables(manifest).flatMap(({ table, lines }) => [...inheritedLines(lines, workspace)].flatMap(([key, spec]) => {
+    const renamed = typeof spec === 'object' && spec !== null ? (spec as { package?: unknown }).package : undefined;
+    const crate = typeof renamed === 'string' ? renamed : key;
+    if (!crate.startsWith('polyspec-') || crate === own || (table === 'dependencies' && judged.has(crate))) return [];
+    const form = dependencyForm(spec, at);
+    return form.version !== undefined || form.inside === true ? [] : [developmentFinding(crate, form, table)];
+  }));
 }
 
 // GN-3e: the requirement of pyproject.toml on the Python package of another library: at the version of a release form of
 // the dependency line of the core, and the name alone for a development form, which the development install resolves.
-function pythonRequirement(library: string, dependencies: CoreDependencies): string {
-  const version = dependencyForm(dependencies.get(`polyspec-${library}`)).version;
+function pythonRequirement(library: string, dependencies: CoreDependencies, core: string): string {
+  const version = dependencyForm(dependencies.get(`polyspec-${library}`), core).version;
   return JSON.stringify(`polyspec-${library}${version === undefined ? '' : `==${version}`}`);
 }
 
 // CK-70: the finding of the line on polyspec-binding-core of a tracked binding crate, from its manifest as TOML; none
 // for a release form and for a manifest without the line.
-export function bindingCoreFinding(manifest: unknown): string | undefined {
+// workspace: [workspace.dependencies] of the root manifest, whose line a crate that inherits it has (B2.457).
+export function bindingCoreFinding(manifest: unknown, workspace?: Record<string, unknown>): string | undefined {
   const dependencies = (manifest as { dependencies?: Record<string, unknown> } | undefined)?.dependencies ?? {};
   if (!(BINDING_CORE in dependencies)) return undefined;
-  const form = dependencyForm(dependencies[BINDING_CORE]);
-  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form.named);
+  const form = dependencyForm(inheritedLines(dependencies, workspace).get(BINDING_CORE));
+  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form);
 }
 
 // What scaffold writes: the tracked files, and each package that it cannot write with its reason (GN-3e).
@@ -412,7 +498,7 @@ build-backend = "maturin"
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
 requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract, foreign).length === 0 ? '' : `
-dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
+dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies, contract.core.path)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}
@@ -540,7 +626,7 @@ function npmLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>
 
 // GN-3e: the version of the package of another library in package.json and composer.json: the version of a release form
 // of the dependency line of the core, and `*` for a development form, which the development install resolves.
-const packageVersion = (library: string, dependencies: CoreDependencies): string => dependencyForm(dependencies.get(`polyspec-${library}`)).version ?? '*';
+const packageVersion = (library: string, dependencies: CoreDependencies, core: string): string => dependencyForm(dependencies.get(`polyspec-${library}`), core).version ?? '*';
 
 // GN-3e: the npm package of each library that the generated Node and WASM code imports or requires (npmLibraries).
 function npmPackages(contract: Contract, foreign: ReadonlyMap<string, Contract>): { library: string; name: string }[] {
@@ -552,7 +638,7 @@ function npmPackages(contract: Contract, foreign: ReadonlyMap<string, Contract>)
 
 // GN-3e: those packages with their versions, which the manifest that scaffold writes names in dependencies.
 function npmDependencies(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
-  return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies)]));
+  return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies, contract.core.path)]));
 }
 
 // GN-3e, B2.441: the extension `ext-<extension name>` of every other library whose extension the generated extension
@@ -571,7 +657,7 @@ function composerRequires(contract: Contract, dependencies: CoreDependencies, fo
     const name = (owner?.packages['php'] as { package?: string } | undefined)?.package;
     if (owner === undefined || name === undefined) return [];
     const instances = kinds.has('record') || kinds.has('value class');
-    return [[`ext-${extensionName(owner)}`, '*'], ...(instances ? [[name, packageVersion(library, dependencies)] as [string, string]] : [])];
+    return [[`ext-${extensionName(owner)}`, '*'], ...(instances ? [[name, packageVersion(library, dependencies, contract.core.path)] as [string, string]] : [])];
   }));
 }
 
@@ -673,8 +759,10 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
     const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
     if (module === undefined) throw new Refused(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
     const crate = `polyspec-${library}`;
-    const form = dependencyForm(dependencies.get(crate));
-    if (form.path !== undefined) {
+    const form = dependencyForm(dependencies.get(crate), contract.core.path);
+    // B2.460: a path inside the repository with the version of the library is a release form, which requires the Go
+    // module at that version with no replace line, as a consumer of the tag resolves it (GN-19f).
+    if (form.path !== undefined && form.version === undefined) {
       const root = posix.normalize(posix.join(contract.core.path, form.path));
       if (root !== owner.core.path && !root.endsWith(`/${owner.core.path}`)) throw new Refused(`${crate}: the path ${form.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
       const target = posix.join(root.slice(0, -owner.core.path.length), componentBase(owner), 'go');
@@ -706,12 +794,21 @@ export function releaseRequires(goMod: string): string[] {
   return found;
 }
 
+// GN-15l, B2.460: the release requirements whose sums the tracked go.sum holds: those of the modules of other
+// repositories. A module of the same repository (the same first three elements of the module path, GN-14f) at the
+// version of this release is carried by a commit that the release makes (GN-19f), so no tracked file can hold its
+// hash, and Go is not asked for it.
+export function sumRequires(goMod: string): string[] {
+  const repository = (/^module (\S+)$/m.exec(goMod)?.[1] ?? '').split('/').slice(0, 3).join('/');
+  return releaseRequires(goMod).filter((r) => (r.split(' ')[0] ?? '').split('/').slice(0, 3).join('/') !== repository);
+}
+
 // GN-15l: the go.mod of the module that `go mod download -json all` reads for the sums: the module and go lines of the
 // go.mod that scaffold writes, with its release requirements alone.
 export function goSumModule(goMod: string): string {
   const module = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
   const go = /^go (\S+)$/m.exec(goMod)?.[1] ?? '';
-  return `module ${module}\n\ngo ${go}\n\n${releaseRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
+  return `module ${module}\n\ngo ${go}\n\n${sumRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
 }
 
 // One object of `go mod download -json`.
@@ -727,7 +824,7 @@ export interface GoDownload {
 // go.mod of each module of its build list, as Go verifies them, sorted as Go writes them. undefined for a go.mod
 // without a release requirement. A module that Go could not give is a failure that names it, never a partial go.sum.
 export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string | undefined {
-  const required = releaseRequires(goMod);
+  const required = sumRequires(goMod);
   if (required.length === 0) return undefined;
   const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
   if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);

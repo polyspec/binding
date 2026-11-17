@@ -10,6 +10,7 @@ import type { Unit } from '../contract.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
+import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 
 // B-2: the numbers that break the rule of each number type (kind invalid_number), and the values of another type than
 // the number that the place takes (kind invalid_argument_type, GN-12a), a null only where it is no absent value.
@@ -20,7 +21,8 @@ const BAD_NUMBERS: Record<string, string[]> = {
 const OTHER_TYPES: Record<string, string[]> = { uint: ['true', "'7'", '7n'], int: ['true', "'7'", '7n'], int64: ['true', "'7'"], float: ['true', "'7'", '7n'] };
 
 // G-5: the callback fixture. A call that no row answers is recorded and throws, so a core that swallows the exception
-// still fails the test, which reads the record.
+// still fails the test, which reads the record. GN-6bu: a member is given as its name and the function that declares
+// its arguments and passes them on, so the member of the object names the arguments that the binding calls it with.
 export const NODE_FIXTURE = `
 class UnexpectedCall extends Error {}
 
@@ -29,8 +31,8 @@ function fixture(members, rows) {
   const calls = [];
   const left = [...rows];
   const object = {};
-  for (const name of members) {
-    object[name] = (...args) => {
+  for (const [name, declare] of members) {
+    object[name] = declare((...args) => {
       calls.push([name, args]);
       const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(row[1], args));
       if (at < 0) {
@@ -41,7 +43,7 @@ function fixture(members, rows) {
       if (once) left.splice(at, 1);
       if (raised !== null) throw raised;
       return result;
-    };
+    });
   }
   return { object, unexpected, calls };
 }
@@ -394,8 +396,9 @@ export function nodeTests(model: Model): string {
     },
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
-      const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
-      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
+      // GN-6bu: each member declares the arguments that the binding calls it with.
+      const body = (count: number): string => `(${jsArguments(count)}) => ${'raise' in how ? `{ throw ${how.raise}; }` : how.returns === 'wrong' ? 'Symbol()' : 'null'}`;
+      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('node', m.name, 'callable')}: ${body((m.parameters ?? []).length)}`).join(', ')} }`;
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields.
@@ -477,9 +480,9 @@ export function nodeTests(model: Model): string {
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
   ctx.functionMember = 'call';
-  ctx.functionNew = (rows) => {
+  ctx.functionNew = (rows, parameters) => {
     usesFixture = true;
-    return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+    return `fixture([${jsDeclaredMember("'call'", parameters)}], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
   };
   // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
   // of a fixture whose one member is the call; the test reads the record of each after the call.
@@ -501,9 +504,9 @@ export function nodeTests(model: Model): string {
   };
   ctx.boundSet = (name, expr) => `${ctx.boundValue?.(name) ?? ''} = ${expr};`;
   ctx.machineFunctionNew = (fixture) => {
-    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = args[${i}]; `).join('');
+    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = arg${i}; `).join('');
     const steps = kept + fixture.steps.map((step, i) => {
-      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `args[${step.on}]` : (ctx.boundValue?.(step.on) ?? ''));
+      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `arg${step.on}` : (ctx.boundValue?.(step.on) ?? ''));
       // GN-13o: a step that names raises fails with that kind.
       if (step.raises !== undefined) return `${form.fails(call, step.raises, `step ${i} fails with ${step.raises}`)} `;
       // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
@@ -514,8 +517,8 @@ export function nodeTests(model: Model): string {
     }).join('');
     const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
     // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
-    // awaits the call of a member that waits.
-    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+    // awaits the call of a member that waits. GN-6bu: the function declares the arguments that the machine calls it with.
+    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(${jsArguments(fixture.parameters)}) => { ${steps}${end} }`;
   };
   // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
   // was thrown, which the entry point of thrown-count-test counts.
@@ -797,6 +800,22 @@ test('K-2: ${name} lets the exception of a callback through', () => {
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });` : ''}`);
+    }
+    // GN-6bu: a callback that names none of the arguments that the binding calls it with is refused before the member
+    // runs: it is never called, and an arming of the member stays for the next call (GN-8a).
+    for (const place of reachable ? placeTests(model, 'node', fn) : []) {
+      const given = (value: string): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      if (place.armed !== undefined) usesAddon = true;
+      emit(`
+test('GN-6bu: ${name} refuses a ${langName('node', place.arg.name, 'variable')} that takes no argument', () => {
+  const calls = [];${place.armed === undefined ? '' : `\n  const armed = addon().__armFaults(${jsString(fn.member.id)}, ${jsString(place.armed.faults)});`}
+  assert.throws(() => ${given(refusedJs(place, 'none'))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback' && error.message.includes(${jsString(place.given)}));
+  assert.deepEqual(calls, []);${place.armed === undefined ? '' : `
+  // GN-8a: the refused call did not reach the core, so the next call takes the arming.
+  assert.throws(() => ${given(placeholder(model, ctx, place.arg.type, true))}, (error) => error.constructor === pkg.${cls(place.armed.category)} && error.kind === ${jsString(place.armed.kind)});
+  assert.deepEqual(addon().__faultLeft(armed), []);`}
+});`);
     }
     for (const kase of primitiveCases(model, ctx, fn)) {
       const instance = receiverOfCase(kase.receiver);

@@ -1111,11 +1111,13 @@ fn native_object<'env>(env_: &'env Env, native: &Native) -> Result<Unknown<'env>
     }
 }
 
-/// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
-fn kept_function_in(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
+/// GN-6z: a value of a function type is a function (kind invalid_argument_type) that names the arguments that the
+/// binding calls it with (GN-6bu, kind invalid_callback), held as a Native.
+fn kept_function_in(env_: &Env, value: Unknown<'_>, subject: &str, given: &[&str]) -> Result<Native, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
     }
+    takes_in(env_, value, subject, "", given)?;
     js_native(env_, value).map_err(internal)
 }
 

@@ -60,6 +60,9 @@ pub mod fault {
     /// The read of the total of `Counter::tally`.
     #[doc(hidden)]
     pub const TALLY: &str = "sample.tally";
+    /// The invariant of `resolve`, a member that takes a callback (GN-6bu).
+    #[doc(hidden)]
+    pub const RESOLVE: &str = "sample.resolve";
 }
 
 impl Error {
@@ -175,12 +178,19 @@ impl Source for HeldSource {
     }
 }
 
-/// The value of a key, which the lookup must hold.
+/// The value of a key, which the lookup must hold (GN-8a, GN-6bu: a member that takes a callback before a core that
+/// holds a fault injection point).
 ///
 /// # Errors
 ///
-/// Kind `missing` when the lookup holds no value, and the failure of the lookup.
+/// Kind `missing` when the lookup holds no value, kind `internal` when the invariant of the sample is broken, and the
+/// failure of the lookup.
 pub fn resolve(lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Error>> {
+    if binding_core::fault::point!(fault::RESOLVE).is_some() {
+        return Err(Failure::Kind(Error::Internal {
+            detail: String::from("the value of a key is unknown"),
+        }));
+    }
     match lookup.find(key)? {
         Some(value) => Ok(value),
         None => Err(Failure::Kind(Error::Missing {

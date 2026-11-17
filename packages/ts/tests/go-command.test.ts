@@ -40,14 +40,22 @@ function box(t: TestContext, release: boolean): Box {
   mkdirSync(join(root, 'bin'));
   mkdirSync(join(root, 'tools'));
   const metadata = JSON.stringify({ packages: [{ name: 'polyspec-points', manifest_path: join(root, 'points/packages/rust/Cargo.toml') }] });
-  writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  // A stand-in starts no command of PATH: the PATH of a run is without each directory that holds a go, which on a
+  // machine whose go is beside cat and sed is without them too (B2.456, the check job of CI). So each is a script of
+  // Node, which /bin/sh starts by the path of the Node of the run.
+  const standIn = (file: string, script: string): void => {
+    writeFileSync(`${file}.mjs`, script);
+    writeFileSync(file, `#!/bin/sh\nexec '${process.execPath}' '${file}.mjs' "$@"\n`, { mode: 0o755 });
+  };
+  standIn(join(root, 'bin/cargo'), `process.stdout.write(${JSON.stringify(`${metadata}\n`)});\n`);
   const calls = join(root, 'go-calls');
-  writeFileSync(join(root, 'tools/go-stand-in'), `#!/bin/sh
-echo "$*" >> '${calls}'
-sed -n 's/^require \\([^ ]*\\) \\(v[^ ]*\\)$/\\1 \\2/p' go.mod | while read -r module version; do
-  printf '{"Path":"%s","Version":"%s","Sum":"h1:zip-%s=","GoModSum":"h1:mod-%s="}\\n' "$module" "$version" "$version" "$version"
-done
-`, { mode: 0o755 });
+  standIn(join(root, 'tools/go-stand-in'), `import { appendFileSync, readFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n');
+for (const line of readFileSync('go.mod', 'utf8').split('\\n')) {
+  const found = /^require ([^ ]*) (v[^ ]*)$/.exec(line);
+  if (found !== null) process.stdout.write(JSON.stringify({ Path: found[1], Version: found[2], Sum: 'h1:zip-' + found[2] + '=', GoModSum: 'h1:mod-' + found[2] + '=' }) + '\\n');
+}
+`);
   if (release) {
     const manifest = join(root, 'plot/packages/rust/Cargo.toml');
     const path = 'polyspec-points = { path = "../../../points/packages/rust" }';

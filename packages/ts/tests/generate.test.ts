@@ -16,7 +16,7 @@ import { carriers, categoryClass } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
-import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, dependencyForm, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -3415,7 +3415,7 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /#\[napi\(js_name = "toString", enumerable = false\)\]/);
   assert.match(node, /#\[napi\(js_name = "toJSON", enumerable = false\)\]/);
-  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|toString\(\.\.\.args\)/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|\['toString'\]\(/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /toString\(\): string;\n {2}toJSON\(\): never;/);
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
@@ -3448,7 +3448,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, /\nfunction fixture\(members, rows\) \{/);
-  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
+  assert.match(node, /const fixture0 = fixture\(\[\['find', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false, null\]\], self::same\(\.\.\.\)\) \{/);
@@ -3638,7 +3638,7 @@ test('Python takes a function type as a boxed Fn that calls the callable, and Go
   assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(py_, /);
   assert.match(lib, /polyspec_shapes::apply\(convert, /);
   // The callable is checked as it enters, and each call converts the arguments out and the result in.
-  assert.match(lib, /fn kept_function_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n    if !value\.is_callable\(\) \{/);
+  assert.match(lib, /fn kept_function_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &\[&str\]\) -> PyResult<Py<PyAny>> \{\n    if !value\.is_callable\(\) \{/);
   assert.match(lib, /\.call1\(\(text_out\(py_, [a-z0-9_]+\)\?, list_out\(py_, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py_, error\)\)/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
@@ -3665,9 +3665,9 @@ test('Node holds a function as a Native, which a call from another thread finds 
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['node'] });
   const lib = text(out, 'packages/ts/generated/lib.rs');
   assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(env_, /);
-  assert.match(lib, /fn kept_function_in\(env_: &Env, value: Unknown<'_>, subject: &str\) -> Result<Native, Fail> \{\n    if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{/);
+  assert.match(lib, /fn kept_function_in\(env_: &Env, value: Unknown<'_>, subject: &str, given: &\[&str\]\) -> Result<Native, Fail> \{\n    if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{/);
   // Each call runs on the owner thread, in the env of the owner table.
-  assert.match(lib, /let env_ = match native_env\(&native, "convert"\) \{\n\s+Ok\(env_\) => env_,\n\s+Err\(error\) => return Err\(thrown_elsewhere\(error\)\),/);
+  assert.match(lib, /let env_ = match native_env\(&native, "apply\(\): convert"\) \{\n\s+Ok\(env_\) => env_,\n\s+Err\(error\) => return Err\(thrown_elsewhere\(error\)\),/);
   assert.match(lib, /fn native_env\(native: &Native, subject: &str\) -> Result<Env, BindingError> \{/);
   assert.match(lib, /return Err\(BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}\);/);
   // A failure on another thread is kept as its BindingError, which the owner thread makes its error.
@@ -3679,7 +3679,7 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/ts/Cargo.toml')), /\nthread-test = \[\]\n/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false, null]]);`), tests);
+  assert.ok(tests.includes(`const function0 = fixture([['call', (call) => (arg0, arg1) => call(arg0, arg1)]], [['call', ['a', [1]], 'A', false, null]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
   assert.match(tests, /assert\.equal\(addon\(\)\.__threadTest\(\(\) => null\), 'wrong_thread'\);/);
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
@@ -3695,8 +3695,8 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['php'] });
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(/);
-  assert.match(lib, /fn kept_function_in\(value: &Zval, subject: &str\) -> Result<Native, Fail> \{/);
-  assert.match(lib, /if let Err\(error\) = native_thread\(&native, "convert"\) \{\n\s+return Err\(thrown_elsewhere\(error\)\);/);
+  assert.match(lib, /fn kept_function_in\(value: &Zval, subject: &str, given: &\[&str\]\) -> Result<Native, Fail> \{/);
+  assert.match(lib, /if let Err\(error\) = native_thread\(&native, "apply\(\): convert"\) \{\n\s+return Err\(thrown_elsewhere\(error\)\);/);
   assert.match(lib, /let returned = function\.try_call\(vec!\[&arg0, &arg1\]\)/);
   assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
   assert.match(lib, /let module = module\.request_shutdown_function\(release_native\);/);
@@ -3720,12 +3720,12 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(/);
-  assert.match(lib, /fn kept_function_in\(value: &JsValue, subject: &str\) -> Result<Native, Fail> \{\n    if !value\.is_function\(\) \{/);
+  assert.match(lib, /fn kept_function_in\(value: &JsValue, subject: &str, given: &\[&str\]\) -> Result<Native, Fail> \{\n    if !value\.is_function\(\) \{/);
   assert.match(lib, /let function: Function = native_object\(&native\)\.map_err\(Thrown::Binding\)\?\.dyn_into::<Function>\(\)/);
   assert.match(lib, /struct WasmNative \{\n    key: u64,\n\}/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
   const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
-  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false, null]]);`), tests);
+  assert.ok(tests.includes(`const function0 = fixture([['call', (call) => (arg0, arg1) => call(arg0, arg1)]], [['call', ['a', [1]], 'A', false, null]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
@@ -4142,7 +4142,11 @@ test('PHP takes the exception of a call of PHP code out of the engine before it 
     const php = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
     const all = (php.match(/\.try_call(?:_method)?\(/g) ?? []).length;
     const taken = (php.match(/let returned = [^;]*?\.try_call(?:_method)?\([^;]*\);\n\s*if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n\s*return Err\(Thrown::Php\(exception\)\);\n\s*\}\n\s*let returned = returned\.map_err\(/g) ?? []).length;
-    assert.equal(taken, all, `${name}: ${String(all - taken)} of ${String(all)} calls of PHP code read their result before the exception is taken`);
+    // GN-6bu: a call of Reflection for the check of a callback goes through `answered`, which takes the exception of
+    // the call out of the engine before it reads the answer and gives none for a call that threw.
+    const asked = (php.match(/\banswered\([^;\n]*?\.try_call(?:_method)?\(/g) ?? []).length;
+    if (asked > 0) assert.match(php, /\nfn answered<T>\(called: ext_php_rs::error::Result<Zval>, read: impl FnOnce\(&Zval\) -> Option<T>\) -> Option<T> \{\n {4}if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n {8}drop\(exception\);\n {8}return None;\n {4}\}\n {4}match called \{\n {8}Ok\(answer\) => read\(&answer\),\n {8}Err\(_refused\) => None,\n {4}\}\n\}/, name);
+    assert.equal(taken + asked, all, `${name}: ${String(all - taken - asked)} of ${String(all)} calls of PHP code read their result before the exception is taken`);
     calls += all;
   }
   assert.ok(calls > 0, 'no crate calls PHP code, so this test checked nothing');
@@ -4157,9 +4161,12 @@ test('a function value inside a case value is a fixture whose rows name the memb
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
   for (const [name, mjs] of [['node', node], ['wasm', wasm]] as const) {
-    assert.match(mjs, /test\('GN-13e: Registry\.call the_kept_function_converts_the_value', \(\) => \{\n[^\n]*\n {2}made0\.register\('up', fixture\(\['call'\], \[\['call', \['ab c', \[2, 1\]\], 'AB C', false, null\]\]\)\.object\.call\);/, name);
+    assert.match(mjs, /test\('GN-13e: Registry\.call the_kept_function_converts_the_value', \(\) => \{\n[^\n]*\n {2}made0\.register\('up', fixture\(\[\['call', \(call\) => \(arg0, arg1\) => call\(arg0, arg1\)\]\], \[\['call', \['ab c', \[2, 1\]\], 'AB C', false, null\]\]\)\.object\.call\);/, name);
     // Every row of a fixture names a member of that fixture.
-    for (const made of mjs.matchAll(/\bfixture\(\[([^\]]*)\], \[\[('[^']*')/g)) assert.ok((made[1] ?? '').split(', ').includes(made[2] ?? ''), `${name}: ${made[0]}`);
+    // GN-6bu: a member of a fixture is its name and the function that declares its arguments.
+    const fixtures = [...mjs.matchAll(/\bfixture\(\[((?:\['[^']*', \(call\) => \([^)]*\) => call\([^)]*\)\](?:, )?)*)\], \[\[('[^']*')/g)];
+    assert.ok(fixtures.length > 0, name);
+    for (const made of fixtures) assert.ok([...(made[1] ?? '').matchAll(/\[('[^']*'), /g)].some((member) => member[1] === made[2]), `${name}: ${made[0]}`);
   }
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   const phpCase = php.slice(php.indexOf('function testGn13eRegistryCallTheKeptFunctionConvertsTheValue'));
@@ -6057,7 +6064,7 @@ test('a member named by a word that JavaScript reserves is defined by its key, a
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node', 'wasm'] });
   const node = text(out, 'packages/ts/generated/index.cjs');
   for (const word of RESERVED) assert.ok(!new RegExp(`function ${word}\\(`).test(node), `no function expression is named ${word}`);
-  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\(\.\.\.args\) \{/);
+  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\((?:arg\d+(?:, )?)*\) \{\n\s+const args = arguments;/);
   const dir = mkdtempSync(join(tmpdir(), 'binding-reserved-'));
   try {
     writeFileSync(join(dir, 'index.cjs'), node);
@@ -6199,7 +6206,7 @@ test('WASM: a value alias, its in_raises and a callback unit are generated as fo
   const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
   assert.match(tests, /test\('U-7: data in [^']+', async \(\) => \{\n {2}const glue = await glueModule\(\);\n {2}assert\.throws\(\(\) => glue\.__aliasInData\(/);
   assert.match(tests, /test\('K-2: resolve lets the exception of a callback through'/);
-  assert.match(tests, /const fixture0 = fixture\(\['find'\], /);
+  assert.match(tests, /const fixture0 = fixture\(\[\['find', \(call\) => \(arg0\) => call\(arg0\)\]\], /);
   assert.match(String(trackedPackages(full, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n/);
 });
 
@@ -6829,7 +6836,7 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   const py = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.ok(py.includes(`pkg.first([_fixture(("find",), [("find", ("a",), None, False, None)])[0], _fixture(("find",), [("find", ("a",), "b", False, None)])[0]], "a")`), 'python list');
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false, null]]).object`), 'node');
+  assert.ok(node.includes(`fixture([['find', (call) => (arg0) => call(arg0)]], [['find', ['a'], null, false, null]]).object`), 'node');
 });
 
 test('the cases of a row of cases with only are tests of the targets that it lists alone, and the other cases of the member stay (GN-13h)', () => {
@@ -7296,7 +7303,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, text_out\)/);
   assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\((?:arg\d+(?:, )?)*\) \{/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-13e: settle a_name_is_settled', async \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(\(await pkg\.settle\('a'\)\)\)/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
@@ -7317,7 +7324,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Gate\) EnterLater\(\) \(string, error\) \{/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, text_out\)/);
-  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\((?:arg\d+(?:, )?)*\) \{/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
 });
@@ -7486,7 +7493,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);/);
   // The machine outlives the call that made it, so the callback that it owns holds a reference of napi.
-  assert.match(node, /let lookup = owned_lookup\(env_, lookup, "lookup"\)\?;/);
+  assert.match(node, /let lookup = owned_lookup\(env_, lookup, "resolveDriven\(\): lookup"\)\?;/);
   assert.match(node, /pub struct OwnedCbLookup \{\n {4}object: Owned,\n/);
   assert.match(node, /impl Drop for Owned \{\n {4}fn drop\(&mut self\) \{\n[^\n]*\n {8}unsafe \{ napi::sys::napi_delete_reference\(self\.env_, self\.reference\) \};/);
   assert.match(node, /Driven::start\(env_, advancing\(move \|env_, _settled\| \{/);
@@ -7526,7 +7533,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(wasm, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{/);
   const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
   assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}let settled;\n {4}for \(;;\) \{\n {6}const \[step, value\] = enter\(Internal, \(\) => driven\.advance\(settled\)\);\n {6}settled = undefined;\n {6}if \(step === 2\) return value;\n {6}if \(step === 0\) \{\n {8}await value;\n {8}continue;\n {6}\}\n {6}try \{\n {8}settled = \[true, await value\];\n {6}\} catch \(reason\) \{\n {8}settled = \[false, reason\];\n {6}\}\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
-  assert.match(mjs, /export async function resolveDriven\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
+  assert.match(mjs, /export async function resolveDriven\(arg0, arg1\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveDriven lets the exception of a callback through', async \(\) => \{/);
   // A method with machine is refused by name.
@@ -7767,12 +7774,12 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   const out = scopedSample(['php']);
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
-  assert.match(lib, /let work = callable_in\(work, "work"\)\?;/);
+  assert.match(lib, /let work = callable_in\(work, "Store::transaction\(\): work", &\["scope"\]\)\?;/);
   // No helper of the crate has a name of the form in_<unit>, which the conversion of a class named scope would have,
   // and a class that only a function takes has no conversion in (T-5).
   assert.match(lib, /\nfn with_scope<R>\(class: &ClassEntry, body: impl FnOnce\(\) -> R\) -> R \{/);
   assert.doesNotMatch(lib, /\bfn in_scope\b/);
-  assert.match(lib, /fn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn callable_in\(value: &Zval, subject: &str, given: &\[&str\]\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure makes a new instance of the class of each class argument, calls the callable and stores what it
   // returned in the table; an exception of the callable is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0: Zval = out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+Ok\(pass\(called\(&work, vec!\[&arg0\]\)\?\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -7814,7 +7821,7 @@ test('Go takes a func as a callback of the call, holds its value in the table of
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   // The func enters as the call and its index in it, and a nil func is kind invalid_callback.
   assert.match(lib, /let work = go_function\(&mut input, "work"\)\?;/);
-  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure writes each argument, a class argument as the handle of a new instance, and calls the func through
   // the trampoline of the callbacks; what the func returned is the Passthrough of its handle in the table of Go, and
   // an error of the func is a Raised.
@@ -7886,8 +7893,8 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['node']);
   const lib = text(out, 'packages/ts/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns a reference of napi to it.
-  assert.match(lib, /let work = callable_in\(env_, work, "work"\)\?;/);
-  assert.match(lib, /fn callable_in\(env_: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env_, value\)\n\}/);
+  assert.match(lib, /let work = callable_in\(env_, work, "Store\.transaction\(\): work", &\["scope"\]\)\?;/);
+  assert.match(lib, /fn callable_in\(env_: &Env, value: Unknown<'_>, subject: &str, given: &\[&str\]\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);\n {4}\}\n {4}takes_in\(env_, value, subject, "", given\)\?;\n {4}Owned::new\(env_, value\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function on the JavaScript thread
   // of its reference and stores what it returned in the table; an exception of the function is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let env_ = &Env::from_raw\(work\.env_\);\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0 = out_scope\(env_, arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+let returned = called\(env_, &work, &\[arg0\]\)\?;\n\s+pass\(env_, returned\)\.map_err\(Thrown::Binding\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -7995,21 +8002,21 @@ test('the Node test writes a function fixture, the exception of raises callback 
   // function (CK-22); the function returns its result, a value of GN-13; after observes the receiver of the case.
   has(`test('GN-13e: Store.transaction the_entries_of_a_function_that_returns_are_committed', async () => {
   const receiver = new pkg.Store();
-  assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
+  assert.deepStrictEqual(ordered((await receiver.transaction((arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); return 'done'; }))), ordered('done'));
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
   assert.equal(addon().__thrownCount(), 0);
 });`);
   // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
   // that waits is async, so the member awaits the promise that it returns.
-  has(`receiver.transaction(async (...args) => { args[0].put('a', '1'); (await args[0].nested((...args) => { assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return 2; })`);
+  has(`receiver.transaction(async (arg0) => { arg0.put('a', '1'); (await arg0.nested((arg0) => { assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); arg0.put('b', '2'); assert.deepStrictEqual(ordered(arg0.get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(arg0.get('b')), ordered('2')); return 2; })`);
   // awaits: the function is async also where no step of it waits, so the member awaits its promise.
-  has(`(await args[0].nested(async (...args) => { args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return null; }));`);
+  has(`(await arg0.nested(async (arg0) => { arg0.put('b', '2'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); return null; }));`);
   // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
   // after observes the receiver after the failed call.
   has(`test('GN-6ae: Store.transaction the_entries_of_a_function_that_raises_are_dropped', async () => {
   const receiver = new pkg.Store();
   const raised = new Error('raised by the function of the case');
-  await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  await assert.rejects(async () => (await receiver.transaction((arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
   assert.equal(addon().__thrownCount(), 0);
 });`);
@@ -8017,7 +8024,7 @@ test('the Node test writes a function fixture, the exception of raises callback 
   has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
   const receiver = new pkg.Store();
   const raised = new Error('raised by the function of the case');
-  await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  await assert.rejects(async () => (await receiver.transaction(async (arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
   assert.equal(addon().__thrownCount(), 0);
 });`);
@@ -8033,8 +8040,8 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['wasm']);
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns it as a value of the module.
-  assert.match(lib, /let work = callable_in\(&work, "work"\)\?;/);
-  assert.match(lib, /fn callable_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
+  assert.match(lib, /let work = callable_in\(&work, "Store\.transaction\(\): work", &\["scope"\]\)\?;/);
+  assert.match(lib, /fn callable_in\(value: &JsValue, subject: &str, given: &\[&str\]\) -> Result<Function, Fail> \{\n {4}let function = value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\)\?;\n {4}takes_in\(value, subject, "", given\)\?;\n {4}Ok\(function\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function with the receiver
   // undefined and stores what it returned in the table; the value that the function threw is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let args: Array = \[out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?\]\.iter\(\)\.collect\(\);\n\s+let returned = work\.apply\(&JsValue::UNDEFINED, &args\)\.map_err\(Thrown::Js\)\?;\n\s+Ok\(pass\(returned\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -8116,21 +8123,21 @@ test('the WASM test writes a function fixture, the exception of raises callback 
   // function (CK-22); the function returns its result, a value of GN-13; after observes the receiver of the case.
   has(`test('GN-13e: Store.transaction the_entries_of_a_function_that_returns_are_committed', async () => {
   const receiver = new pkg.Store();
-  assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
+  assert.deepStrictEqual(ordered((await receiver.transaction((arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); return 'done'; }))), ordered('done'));
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
   assert.equal(stepGlue.__thrownCount(), 0);
 });`);
   // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
   // that waits is async, so the member awaits the promise that it returns.
-  has(`receiver.transaction(async (...args) => { args[0].put('a', '1'); (await args[0].nested((...args) => { assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return 2; })`);
+  has(`receiver.transaction(async (arg0) => { arg0.put('a', '1'); (await arg0.nested((arg0) => { assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); arg0.put('b', '2'); assert.deepStrictEqual(ordered(arg0.get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(arg0.get('b')), ordered('2')); return 2; })`);
   // awaits: the function is async also where no step of it waits, so the member awaits its promise.
-  has(`(await args[0].nested(async (...args) => { args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return null; }));`);
+  has(`(await arg0.nested(async (arg0) => { arg0.put('b', '2'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); return null; }));`);
   // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
   // after observes the receiver after the failed call.
   has(`test('GN-6ae: Store.transaction the_entries_of_a_function_that_raises_are_dropped', async () => {
   const receiver = new pkg.Store();
   const raised = new Error('raised by the function of the case');
-  await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  await assert.rejects(async () => (await receiver.transaction((arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
   assert.equal(stepGlue.__thrownCount(), 0);
 });`);
@@ -8138,7 +8145,7 @@ test('the WASM test writes a function fixture, the exception of raises callback 
   has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
   const receiver = new pkg.Store();
   const raised = new Error('raised by the function of the case');
-  await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  await assert.rejects(async () => (await receiver.transaction(async (arg0) => { arg0.put('a', '1'); assert.deepStrictEqual(ordered(arg0.get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
   assert.equal(stepGlue.__thrownCount(), 0);
 });`);
@@ -8189,7 +8196,7 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, name);
   assert.match(lib, /\/\/\/ T-6: a value of the enum is one of its cases; any other value is refused\.\nfn in_default\(value: &Zval, subject: &str\) -> Result<polyspec_sample::Default, Fail> \{/);
   assert.match(lib, /\nfn default_in<T>\(value: Option<&Zval>,/);
-  assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
+  assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str, given: &\[&str\]\) -> Result<Zval, Fail> \{/);
   assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
   // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
   const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
@@ -8204,7 +8211,7 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, name);
   assert.match(lib, /\nfn in_default\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<polyspec_sample::Default> \{/);
   assert.match(lib, /\nfn default_in<'py, T>\(/);
-  assert.match(lib, /\nfn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
+  assert.match(lib, /\nfn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &\[&str\]\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
   const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
@@ -8231,10 +8238,10 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   const out = scopedSample(['python']);
   const lib = text(out, 'packages/python/generated/lib.rs');
   // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
-  assert.match(lib, /fn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(py_, BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &\[&str\]\) -> PyResult<Py<PyAny>> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(py_, BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure takes the GIL on the thread of its call, makes a new instance of the class of each class argument,
   // calls the callable and stores what it returned in the table; an exception of the callable is a Raised.
-  assert.match(lib, /let work = callable_in\(py_, work, "work"\)\?;\n\s+let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+Python::attach\(\|py_\| \{\n\s+let call = \|\| -> PyResult<binding_core::Passthrough> \{\n\s+let returned = work\.bind\(py_\)\.call1\(\(out_scope\(py_, arg0\)\?,\)\)\?;\n\s+Ok\(pass\(returned\.unbind\(\)\)\)\n\s+\};\n\s+call\(\)\.map_err\(\|error\| thrown\(py_, error\)\)\n\s+\}\)\n\s+\};/);
+  assert.match(lib, /let work = callable_in\(py_, work, "Store\.transaction\(\): work", &\["scope"\]\)\?;\n\s+let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+Python::attach\(\|py_\| \{\n\s+let call = \|\| -> PyResult<binding_core::Passthrough> \{\n\s+let returned = work\.bind\(py_\)\.call1\(\(out_scope\(py_, arg0\)\?,\)\)\?;\n\s+Ok\(pass\(returned\.unbind\(\)\)\)\n\s+\};\n\s+call\(\)\.map_err\(\|error\| thrown\(py_, error\)\)\n\s+\}\)\n\s+\};/);
   // The plain member has no event loop; _<name>_on_loop takes one, positional only, and a<name> runs it in a thread of
   // asyncio with the running event loop of its caller.
   assert.match(lib, /#\[pyo3\(name = "transaction", signature = \(work\)\)\]\n {4}fn member_transaction<'py>\(&self, py_: Python<'py>, work: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n {8}self\.on_loop_transaction\(py_, None, work\)\n {4}\}/);
@@ -8248,7 +8255,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   // invalid_callback with the name of the awaited member; a value that is no awaitable is settled at once.
   assert.match(lib, /fn settled<'py>\(py_: Python<'py>, value: binding_core::Passthrough, event_loop: Option<&Bound<'py, PyAny>>, subject: &str, awaited: &str\) -> Result<Result<binding_core::Passthrough, binding_core::Raised>, BindingError> \{/);
   assert.match(lib, /Ok\(false\) => return Ok\(Ok\(pass\(object\.unbind\(\)\)\)\),/);
-  assert.match(lib, /return Err\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: format!\("that returns no awaitable; \{awaited\} awaits one"\) \}\);/);
+  assert.match(lib, /return Err\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: format!\("that returns no awaitable; \{awaited\} awaits one"\), arguments: None \}\);/);
   assert.match(lib, /let coroutine = awaiting\(py_, "settle"\)\?\.call1\(\(&object,\)\)\?;\n\s+let future = py_\.import\("asyncio"\)\?\.getattr\("run_coroutine_threadsafe"\)\?\.call1\(\(coroutine, event_loop\)\)\?;\n\s+future\.call_method0\("result"\)/);
   // B-3: the table of the values of a thread, its release function, and the result that leaves the table unchanged.
   assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Py<PyAny>>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
@@ -8457,7 +8464,7 @@ test('a Node crate whose only language code is a function parameter has no varia
     for (const [group, rows] of Object.entries(cases)) if (Array.isArray(rows)) cases[group] = rows.filter((row) => calls(row).every((id) => kept.has(id)));
   };
   const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
-  assert.match(lib, /let work = callable_in\(env_, work, "work"\)\?;/);
+  assert.match(lib, /let work = callable_in\(env_, work, "[A-Za-z.]+\(\): work", &\["scope"\]\)\?;/);
   assert.doesNotMatch(lib, /CbLookup|describe\(/);
   // Every variant of Thrown that the crate names is made somewhere in it.
   const variants = [...(/enum Thrown \{\n([\s\S]*?)\n\}/.exec(lib)?.[1] ?? '').matchAll(/^ {4}([A-Z][a-z]+)\(/gm)].map((found) => found[1] ?? '');
@@ -9892,14 +9899,14 @@ test('a callback of a parameter with keeps is held as a Native in Node, PHP and 
   const out = sampleOf();
   // Node: the box is 'static, the wrapper holds a Native and borrows the object in the env of its owner for a call.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(env_, item, "sources"\)\.map\(/);
+  assert.match(node, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "new Index\(\): sources", \|item\| kept_feed\(env_, item, "new Index\(\): sources"\)\.map\(/);
   assert.match(node, /pub struct KeptCbFeed \{\n    native: Native,\n\}/);
   assert.match(node, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_env\(&self\.native, "Feed\.get\(\)"\)\.map_err\(thrown_elsewhere\)\?;[\s\S]*?CbFeed::get\(&borrowed, key\)/);
   // A parameter without keeps keeps the box of the call.
   assert.match(node, /let lookups: Vec<Box<dyn polyspec_sample::Lookup \+ 'env>> = /);
   // PHP: the wrapper holds a Native and checks its thread before it borrows the object.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "sources", \|item\| kept_feed\(item, "sources"\)/);
+  assert.match(php, /let sources: Vec<Box<dyn polyspec_sample::Feed \+ 'static>> = list_in\(sources, "new Index\(\): sources", \|item\| kept_feed\(item, "new Index\(\): sources"\)/);
   assert.match(php, /impl polyspec_sample::Feed for KeptCbFeed \{[\s\S]*?native_thread\(&self\.native, "Feed::get\(\)"\)[\s\S]*?thrown_elsewhere\(error\)/);
   // WASM: the wrapper holds a Native of the one thread of the module.
   const wasm = text(sampleOf(undefined, ['wasm']), 'packages/ts/wasm/generated/lib.rs');
@@ -9918,8 +9925,8 @@ test('a callback parameter with keeps that is no item of a list or an optional m
   const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
   const libs: [string, RegExp][] = [
-    ['packages/ts/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(env_, source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
-    ['packages/php-ext/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(source, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/ts/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(env_, source, "Index\\.single\\(\\): source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
+    ['packages/php-ext/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(source, "Index::single\\(\\): source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
     ['packages/go/internal/ffi/generated/lib.rs', new RegExp(`let source: ${box} = kept_feed\\(&mut input, "source"\\)\\.map\\(\\|callback\\| -> ${box} \\{ Box::new\\(callback\\) \\}\\)\\?;`)],
   ];
   for (const [path, line] of libs) {
@@ -9929,7 +9936,7 @@ test('a callback parameter with keeps that is no item of a list or an optional m
     assert.match(lib, /polyspec_sample::Index::single\(source\)/, path);
   }
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&source, "source"\\)\\.map\\(`));
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&source, "Index\\.single\\(\\): source"\\)\\.map\\(`));
   assert.match(wasm, /polyspec_sample::Index::single\(source\)/);
   // A callback parameter without keeps is still the struct of the call, which the core borrows.
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /&mut \{ lookup \}/);
@@ -9944,8 +9951,8 @@ test('a record parameter with keeps holds the callbacks of its fields as Natives
   const wasmOut = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const box = "Box<dyn polyspec_sample::Feed \\+ 'static>";
   const libs: [string, string][] = [
-    ['packages/ts/generated/lib.rs', 'kept_feed\\(env_, member\\(supply, "source", "supply"\\)\\?, "source"\\)'],
-    ['packages/php-ext/generated/lib.rs', 'kept_feed\\(source, "source"\\)'],
+    ['packages/ts/generated/lib.rs', 'kept_feed\\(env_, member\\(supply, "source", "supply"\\)\\?, "Index\\.supplied\\(\\): source"\\)'],
+    ['packages/php-ext/generated/lib.rs', 'kept_feed\\(source, "Index::supplied\\(\\): source"\\)'],
     ['packages/go/internal/ffi/generated/lib.rs', 'kept_feed\\(&mut input, "Source"\\)'],
   ];
   for (const [path, read] of libs) {
@@ -9955,7 +9962,7 @@ test('a record parameter with keeps holds the callbacks of its fields as Natives
     assert.match(lib, /polyspec_sample::Index::supplied\(supply\)/, path);
   }
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&member\\(&supply, "source", "supply"\\)\\?, "source"\\)\\.map\\(`));
+  assert.match(wasm, new RegExp(`let source: ${box} = kept_feed\\(&member\\(&supply, "source", "supply"\\)\\?, "Index\\.supplied\\(\\): source"\\)\\.map\\(`));
   assert.match(wasm, /let supply: polyspec_sample::Supply<'static> = polyspec_sample::Supply \{ source, label \};/);
   // Go keeps the func of the field in the call.
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func IndexSupplied\(supply Supply\)[\s\S]*?call\.Keep\(enc, func[\s\S]*?dispatchFeed\(supply\.Source\)/);
@@ -10681,9 +10688,9 @@ test('a callback unit that one parameter lends and another keeps is called throu
   // Feed of the sample requires Send and Sync; sample.ask lends a feed for its call, and the index keeps its feeds.
   const sample = e2eGenerated().get('sample') ?? new Map();
   const libs: [string, RegExp][] = [
-    ['packages/ts/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(env_, feed, "feed"\)\?;/],
-    ['packages/php-ext/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(feed, "feed"\)\?;/],
-    ['packages/ts/wasm/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(&feed, "feed"\)\?;/],
+    ['packages/ts/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(env_, feed, "ask\(\): feed"\)\?;/],
+    ['packages/php-ext/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(feed, "ask\(\): feed"\)\?;/],
+    ['packages/ts/wasm/generated/lib.rs', /let feed: KeptCbFeed = kept_feed\(&feed, "ask\(\): feed"\)\?;/],
   ];
   for (const [path, read] of libs) {
     const lib = text(sample, path);
@@ -10971,7 +10978,7 @@ test('a constructor holds the callbacks that it takes as Natives, without keeps 
   delete cases.index_new;
   const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['node'] as Inputs['targets'] & string[] });
   const lib = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(lib, /let sources: Vec<Box<dyn polyspec_sample::Lookup \+ 'static>> = list_in\(sources, "sources", \|item\| kept_lookup\(env_, /);
+  assert.match(lib, /let sources: Vec<Box<dyn polyspec_sample::Lookup \+ 'static>> = list_in\(sources, "new Index\(\): sources", \|item\| kept_lookup\(env_, /);
   // The core path stays the Result with the failure of a callback that the contract declares (E-1c).
   const construct = lib.slice(lib.indexOf('pub struct Index'), lib.indexOf('pub struct Index') + 3000);
   assert.match(construct, /Err\(error\) => return Err\(failure_error\(error\)\)/);
@@ -10990,6 +10997,191 @@ test('go.mod replaces the Go module of a library of the same repository by its p
   const packages = trackedPackages(own, '0.0.0', new Map<string, unknown>([['polyspec-plot-points', { path: '../../points/rust' }], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], new Map([...foreign, ['plot-points', points]]));
   const goMod = String([...packages].find(([path]) => path.endsWith('go.mod'))?.[1]);
   assert.match(goMod, /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/points\/go\n$/);
+});
+
+// B2.460: the library plot-figures at packages/figures/rust, which names the record of its sibling plot-points at
+// packages/points/rust of the same repository, as the generator of crud-ui names its validator.
+const siblingSample = (): { own: any; foreign: Map<string, any>; packages: (spec: unknown) => Map<string, string> } => {
+  const { contract, foreign } = plotSample();
+  const points = JSON.parse(JSON.stringify(foreign.get('points')).replaceAll('"library":"points"', '"library":"plot-points"'));
+  points.library = 'plot-points';
+  points.core.path = 'packages/points/rust';
+  const own = JSON.parse(JSON.stringify(contract).replaceAll('"library":"points"', '"library":"plot-points"'));
+  own.library = 'plot-figures';
+  own.core.path = 'packages/figures/rust';
+  const libraries = new Map([...foreign, ['plot-points', points]]);
+  return { own, foreign: libraries, packages: (spec) => trackedPackages(own, '0.0.0', new Map<string, unknown>([['polyspec-plot-points', spec], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries) };
+};
+
+test('B2.460: a path that stays inside the repository with the version of the library beside it is a release form, which CK-70 passes (GN-3e, CK-70)', () => {
+  // The line of the generator of crud-ui on its validator.
+  const line = { path: '../../validator/rust', version: '0.0.20' };
+  assert.equal(dependencyForm(line, 'packages/generator/rust').version, '0.0.20');
+  assert.equal(dependencyForm({ path: '../../validator/rust', version: '=1.2.3' }, 'packages/generator/rust').version, '1.2.3');
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  assert.deepEqual(findings({ path: '../../points/rust', version: '0.0.20' }), []);
+  assert.deepEqual(findings({ path: '../../points/rust', version: '=0.1.2' }), []);
+});
+
+test('B2.460: a path that leaves the repository is a development form, with a version beside it too (GN-3e, CK-70)', () => {
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  // The core is three directories below the root, so a path of four `..` leaves the repository.
+  for (const path of ['../../../../points/packages/rust', '../../../../../work/points/rust', '/work/points/packages/rust']) {
+    assert.equal(dependencyForm({ path, version: '0.0.20' }, 'packages/figures/rust').version, undefined, path);
+    assert.deepEqual(findings({ path, version: '0.0.20' }), [`the dependency line of polyspec-plot-points names the path ${path}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`], path);
+  }
+  // Without the place of the core in the repository no path is known to stay inside it.
+  assert.equal(dependencyForm({ path: '../../points/rust', version: '0.0.20' }).version, undefined);
+});
+
+test('B2.460: a path inside the repository without the one version of the library is refused with a sentence that says so (GN-3e, CK-70)', () => {
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  assert.deepEqual(findings({ path: '../../points/rust' }), ['the dependency line of polyspec-plot-points names the path ../../points/rust, which stays inside the repository, with no version beside it, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)']);
+  // A range that holds more than one version names no version of a release.
+  for (const version of ['0.1.2', '^0.0.20', '1', '>=0.0.20']) {
+    assert.deepEqual(findings({ path: '../../points/rust', version }), [`the dependency line of polyspec-plot-points names the path ../../points/rust, which stays inside the repository, with the version range ${version} beside it, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)`], version);
+  }
+});
+
+test('B2.460: the manifests name a library of the same repository at the version beside its path, as they name a release (GN-3e, GN-15f)', () => {
+  const { packages } = siblingSample();
+  const released = packages({ path: '../../points/rust', version: '0.0.20' });
+  const file = (files: Map<string, string>, end: string): string => String([...files].find(([path]) => path.endsWith(end))?.[1]);
+  // go.mod requires the Go module at the version, with no replace line: a consumer of the tag cannot resolve one (GN-19f).
+  assert.match(file(released, 'go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.20\n$/);
+  assert.doesNotMatch(file(released, 'go/go.mod'), /replace/);
+  assert.match(file(released, 'python/pyproject.toml'), /\ndependencies = \["polyspec-plot-points==0\.0\.20"\]\n/);
+  const composer = JSON.parse(file(released, 'php-ext/composer.json')) as { require: Record<string, string> };
+  assert.deepEqual(Object.entries(composer.require).filter(([name]) => name.includes('/')).map(([, version]) => version), ['0.0.20']);
+  // Each binding crate keeps the line of the core, with the path from its own place.
+  assert.match(file(released, 'python/Cargo.toml'), /\npolyspec-plot-points = \{ path = "\.\.\/\.\.\/points\/rust", version = "0\.0\.20" \}\n/);
+  // Without the version the line is the development form of today: v0.0.0 with a replace line, and the name alone.
+  const development = packages({ path: '../../points/rust' });
+  assert.match(file(development, 'go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/points\/go\n$/);
+  assert.match(file(development, 'python/pyproject.toml'), /\ndependencies = \["polyspec-plot-points"\]\n/);
+});
+
+test('B2.460: package.json names the npm package of a library of the same repository at the version beside its path (GN-3e)', () => {
+  // The consumer takes the callback units of sample, whose npm package its entries import.
+  const { contract, foreign } = consumerSample();
+  contract.core.path = 'packages/consumer/rust';
+  foreign.get('sample').core.path = 'packages/sample/rust';
+  const npm = (spec: unknown): Record<string, string> => (JSON.parse(String(trackedPackages(contract, '0.0.0', new Map<string, unknown>([['polyspec-sample', spec], ['polyspec-points', '=0.1.2']]), [], foreign).get('packages/consumer/ts/package.json'))) as { dependencies: Record<string, string> }).dependencies;
+  const name = (foreign.get('sample').packages.node as { package: string }).package;
+  assert.equal(npm({ path: '../../sample/rust', version: '0.0.20' })[name], '0.0.20');
+  assert.equal(npm({ path: '../../../../sample/packages/sample/rust', version: '0.0.20' })[name], '*');
+  assert.equal(npm({ path: '../../sample/rust' })[name], '*');
+});
+
+test('B2.460: the go.sum that scaffold tracks holds no line of a module of the same repository, whose commit the release makes (GN-15l)', () => {
+  const goMod = 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/validator/go v0.0.20\n\tgithub.com/polyspec/json/packages/go v0.0.34\n)\n';
+  assert.deepEqual(releaseRequires(goMod), ['github.com/polyspec/crud-ui/packages/validator/go v0.0.20', 'github.com/polyspec/json/packages/go v0.0.34']);
+  assert.deepEqual(sumRequires(goMod), ['github.com/polyspec/json/packages/go v0.0.34']);
+  assert.equal(goSumModule(goMod), 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.34\n');
+  assert.equal(goSumOf(goMod, [{ Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.34', Sum: 'h1:zip=', GoModSum: 'h1:mod=' }]), 'github.com/polyspec/json/packages/go v0.0.34 h1:zip=\ngithub.com/polyspec/json/packages/go v0.0.34/go.mod h1:mod=\n');
+  // A go.mod that requires a module of its own repository alone has no go.sum, and starts no Go.
+  assert.equal(goSumOf('module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/validator/go v0.0.20\n', []), undefined);
+});
+
+test('B2.457: CK-70 reads the polyspec lines of every dependency table of a manifest, those of a target and of [patch] among them (CK-70)', () => {
+  const branch = { git: 'https://github.com/polyspec/json.git', branch: 'main' };
+  const tag = { git: 'https://github.com/polyspec/json.git', tag: 'v0.0.34' };
+  const finding = (table: string, crate = 'polyspec-json'): string => `the dependency line of ${crate} in [${table}] names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+  const found = (manifest: unknown): string[] => manifestReleaseFindings(manifest, 'packages/rust', new Set());
+  // The line of a consumer: a branch in [dev-dependencies].
+  assert.deepEqual(found({ package: { name: 'polyspec-plot' }, 'dev-dependencies': { 'polyspec-json': branch } }), [finding('dev-dependencies')]);
+  assert.deepEqual(found({ 'build-dependencies': { 'polyspec-json': branch } }), [finding('build-dependencies')]);
+  // The three tables of a target, by its name as the manifest writes it.
+  const target = 'cfg(target_arch = "wasm32")';
+  assert.deepEqual(found({ target: { [target]: { dependencies: { 'polyspec-json': branch }, 'dev-dependencies': { 'polyspec-json': branch }, 'build-dependencies': { 'polyspec-json': branch } } } }),
+    [`target.'${target}'.dependencies`, `target.'${target}'.dev-dependencies`, `target.'${target}'.build-dependencies`].map((table) => finding(table)));
+  // A line of [dependencies] that the contract does not name, and a crate under another name of the manifest.
+  assert.deepEqual(found({ dependencies: { 'polyspec-json': branch, json: { ...branch, package: 'polyspec-json-codec' } } }), [
+    'the dependency line of polyspec-json names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)',
+    'the dependency line of polyspec-json-codec names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)',
+  ]);
+  // [patch] of the root manifest replaces the source of a crate for every member.
+  assert.deepEqual(manifestReleaseFindings({ patch: { 'https://github.com/polyspec/json.git': { 'polyspec-json': { path: '../json/packages/rust' } } } }, '.', new Set()),
+    ['the dependency line of polyspec-json in [patch."https://github.com/polyspec/json.git"] names the path ../json/packages/rust, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // A release form in each table is no finding, and neither is a crate that is no polyspec crate, in any form.
+  assert.deepEqual(found({ dependencies: { 'polyspec-json': tag, serde: { git: 'https://github.com/serde-rs/serde.git', branch: 'master' } }, 'dev-dependencies': { 'polyspec-json': '=0.0.34', libtest: { path: '../../../libtest' } }, target: { [target]: { dependencies: { 'polyspec-json': tag } } } }), []);
+  // The line of a crate on itself (CK-65) and a path that stays inside the repository name no other repository; no
+  // manifest of a binding package names a version from them, so they need none.
+  assert.deepEqual(found({ package: { name: 'polyspec-plot' }, 'dev-dependencies': { 'polyspec-plot': { path: '.', features: ['fault-test'] }, 'polyspec-plot-tools': { path: '../tools/rust' } } }), []);
+  assert.deepEqual(found({ 'dev-dependencies': { 'polyspec-points': { path: '../../../points/packages/rust' } } }), ['the dependency line of polyspec-points in [dev-dependencies] names the path ../../../points/packages/rust, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // A line of [dependencies] that the caller judges itself (the lines that the contract names) is left to it.
+  assert.deepEqual(manifestReleaseFindings({ dependencies: { 'polyspec-json': branch }, 'dev-dependencies': { 'polyspec-json': branch } }, 'packages/rust', new Set(['polyspec-json'])), [finding('dev-dependencies')]);
+});
+
+test('B2.457: a line that a crate inherits from the workspace has the form of the line of [workspace.dependencies] (GN-3e, CK-70)', () => {
+  const workspace = { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }, 'polyspec-json': { git: 'https://github.com/polyspec/json.git', branch: 'main' }, 'polyspec-near': { path: 'packages/near/rust', version: '0.0.3' }, 'polyspec-far': { path: '../far/packages/rust' } };
+  const lines = inheritedLines({ 'polyspec-points': { workspace: true }, 'polyspec-json': { workspace: true, features: ['x'] }, 'polyspec-near': { workspace: true }, 'polyspec-far': { workspace: true }, 'polyspec-none': { workspace: true }, serde: '1' }, workspace);
+  // A release form of the workspace is one of the crate, and a development form is named with its place.
+  assert.equal(dependencyForm(lines.get('polyspec-points'), 'packages/rust').version, '0.1.2');
+  assert.equal(dependencyForm(lines.get('polyspec-json'), 'packages/rust').version, undefined);
+  assert.equal(dependencyForm(lines.get('polyspec-json'), 'packages/rust').named, 'the branch main, by the line of [workspace.dependencies] of the root manifest');
+  // A path of the workspace is read from the root of the repository, and given from the place of the crate.
+  assert.deepEqual(dependencyForm(lines.get('polyspec-near'), 'packages/rust'), { version: '0.0.3', path: '../near/rust', named: 'the version 0.0.3 of the path packages/near/rust, by the line of [workspace.dependencies] of the root manifest' });
+  assert.equal(dependencyForm(lines.get('polyspec-far'), 'packages/rust').version, undefined);
+  assert.equal(dependencyForm(lines.get('polyspec-far'), 'packages/rust').path, '../../../far/packages/rust');
+  // A line that the workspace does not hold, and a line read without the workspace, name no version.
+  assert.equal(dependencyForm(lines.get('polyspec-none'), 'packages/rust').named, 'workspace = true, and [workspace.dependencies] of the root manifest holds no line of it');
+  assert.equal(dependencyForm({ workspace: true }, 'packages/rust').version, undefined);
+  // The manifests of the binding packages follow: the version of the workspace's tag, and the line as the core has it.
+  const { contract, foreign } = plotSample();
+  const packages = (line: unknown): Map<string, string> => trackedPackages(contract, '0.0.0', inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': line }), [], foreign);
+  const released = packages({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' });
+  assert.match(String(released.get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+  assert.match(String(released.get('packages/python/pyproject.toml')), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  assert.match(String(released.get('packages/python/Cargo.toml')), /\npolyspec-points = \{ workspace = true \}\n/);
+  assert.deepEqual(releaseFindings(contract, inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' } }), [], foreign), []);
+  const development = packages({ git: 'https://github.com/polyspec/points.git', branch: 'main' });
+  assert.match(String(development.get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n$/);
+  assert.deepEqual(releaseFindings(contract, inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', branch: 'main' } }), [], foreign),
+    ['the dependency line of polyspec-points names the branch main, by the line of [workspace.dependencies] of the root manifest, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // The line on polyspec-binding-core that the core inherits is inherited by each binding crate, with its features.
+  const inheritedCore = trackedPackages(contract, '0.0.0', inheritedLines({ 'polyspec-points': '=0.1.2', 'polyspec-binding-core': { workspace: true } }, { 'polyspec-binding-core': { git: 'https://github.com/polyspec/binding.git', tag: 'v0.3.0' } }), [], foreign);
+  assert.match(String(inheritedCore.get('packages/python/Cargo.toml')), /\npolyspec-binding-core = \{ workspace = true, features = \["construct", "lock"\] \}\n/);
+});
+
+test('B2.457: binding check --release reads a branch line of [dev-dependencies] and a line inherited from the workspace (CK-70)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    const contract = join(root, 'plot/packages/rust/interface.json');
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
+    const text = readFileSync(manifest, 'utf8')
+      .replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { workspace = true }')
+      .replace('branch = "v1/rust-core"', 'tag = "v0.3.0"');
+    const rootManifest = join(root, 'plot/Cargo.toml');
+    const workspace = (line: string): void => writeFileSync(rootManifest, `${readFileSync(new URL('../../../tests/e2e/plot/Cargo.toml', import.meta.url), 'utf8')}\n[workspace.dependencies]\npolyspec-points = ${line}\n`);
+    // A tree of release forms alone passes CK-70.
+    writeFileSync(manifest, text);
+    workspace('{ git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }');
+    assert.equal(run('scaffold', '--root', join(root, 'plot')).status, 0);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+    assert.doesNotMatch(run('check', contract, '--release').stderr, /CK-70/);
+    // The branch of the workspace's line is the form of the line that inherits it.
+    workspace('{ git = "https://github.com/polyspec/points.git", branch = "main" }');
+    assert.match(run('check', contract, '--release').stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-points names the branch main, by the line of \[workspace\.dependencies\] of the root manifest, a development form/);
+    // A branch line of [dev-dependencies], which no contract names.
+    workspace('{ git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }');
+    writeFileSync(manifest, text.replace('\n[lints]', '\n[dev-dependencies]\npolyspec-json = { git = "https://github.com/polyspec/json.git", branch = "main" }\n\n[lints]'));
+    const release = run('check', contract, '--release');
+    assert.equal(release.status, 1);
+    assert.match(release.stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-json in \[dev-dependencies\] names the branch main, a development form, and a release names the version =X\.Y\.Z or the tag vX\.Y\.Z \(GN-3e\)\n/);
+    // [patch] of the root manifest.
+    writeFileSync(manifest, text);
+    writeFileSync(rootManifest, `${readFileSync(rootManifest, 'utf8')}\n[patch."https://github.com/polyspec/points.git"]\npolyspec-points = { path = "../points/packages/rust" }\n`);
+    assert.match(run('check', contract, '--release').stderr, /plot\/Cargo\.toml: CK-70 the dependency line of polyspec-points in \[patch\."https:\/\/github\.com\/polyspec\/points\.git"\] names the path \.\.\/points\/packages\/rust, a development form/);
+    // A check without --release reads none of them.
+    assert.doesNotMatch(run('check', contract).stderr, /CK-70/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('the cases of an alias row with only are tests of the targets that it lists alone (GN-13h, B2.317)', () => {
@@ -11012,7 +11204,7 @@ test('a function fixture keeps its named arguments, and a step of a fixture insi
   assert.match(php, /private static array \$bound = \[\];/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const js = text(sample, path);
-    assert.match(js, /bound\.outer = args\[0\]; /, path);
+    assert.match(js, /bound\.outer = arg0; /, path);
     assert.match(js, /bound\.inner\.copy\(bound\.outer, 'b'\)/, path);
   }
   const go = text(sample, 'packages/go/zz_generated_test.go');
@@ -11057,7 +11249,7 @@ test('a step of a function fixture calls on the receiver of the case, which the 
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const node = text(out, path);
     const busy = node.slice(node.indexOf("a_store_is_busy_while_its_transaction_runs'"), node.indexOf('\n});', node.indexOf("a_store_is_busy_while_its_transaction_runs'")));
-    assert.ok(busy.includes("(...args) => { assert.equal((outcome(() => bound.receiver.count())).kind, 'busy'"), `${path}:\n${busy}`);
+    assert.ok(busy.includes("(arg0) => { assert.equal((outcome(() => bound.receiver.count())).kind, 'busy'"), `${path}:\n${busy}`);
   }
 });
 test('B2.365: the test makes each value of with after the receiver and keeps it, and a step after a step that raised calls on it, as does a call of after (GN-13pa)', () => {
@@ -11861,7 +12053,7 @@ test('B2.379: a member of a callback interface with a default may be left out by
   }
   // G-5: the fixture of a case whose rows name no row of the member leaves it out, so the binding gives the default.
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
-    assert.ok(text(out, path).includes(`const fixture0 = fixture(['find'], [['find', ['a'], null, false, null]]);`), path);
+    assert.ok(text(out, path).includes(`const fixture0 = fixture([['find', (call) => (arg0) => call(arg0)]], [['find', ['a'], null, false, null]]);`), path);
   }
   assert.ok(text(out, 'packages/python/generated/tests/test_generated.py').includes('_fixture(("find",), [("find", ("a",), None, False, None)])'));
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function blockingIo\(mixed \.\.\.\$args\)/);

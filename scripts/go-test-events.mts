@@ -67,10 +67,11 @@ export function goTagGuardFailure(read: GoTestEvents, status: number | null): st
 // contract cases that the run copied into tests/cases_test.go, as the other targets run their generated tests and the
 // contract cases alone. Every other test file of the module is a test of the repository, whose inputs its own runner
 // gives; the overlay of go test and go vet treats each as absent, so no file of the copy changes. The paths are those
-// of the module directory, and the overlay names them by their absolute paths.
-export function goTestScope(moduleDir: string, files: readonly string[], cases: boolean): { dropped: string[]; overlay: string | undefined } {
-  const generated = /(^|\/)zz_generated[^/]*_test\.go$/;
-  const dropped = files.filter((path) => path.endsWith('_test.go') && !generated.test(path) && !(cases && path === 'tests/cases_test.go')).sort();
+// of the module directory, and the overlay names them by their absolute paths. `repositoryTest` is the rule of a test
+// of the repository, isGoRepositoryTest of the generator, by which the released form leaves the same files out
+// (GN-14f, GN-15g); the run gives it, since this file reads no source of the generator (GN-14b).
+export function goTestScope(moduleDir: string, files: readonly string[], cases: boolean, repositoryTest: (path: string) => boolean): { dropped: string[]; overlay: string | undefined } {
+  const dropped = files.filter((path) => repositoryTest(path) && !(cases && path === 'tests/cases_test.go')).sort();
   if (dropped.length === 0) return { dropped, overlay: undefined };
   return { dropped, overlay: `${JSON.stringify({ Replace: Object.fromEntries(dropped.map((path) => [`${moduleDir}/${path}`, ''])) }, null, 2)}\n` };
 }

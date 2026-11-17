@@ -9,6 +9,7 @@ import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
+import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
@@ -944,6 +945,41 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertContains($error->kind(), ['invalid_argument_type', 'invalid_number', 'invalid_text']);
         }
     }` : ''}`);
+    }
+    // GN-6bu: a callback that takes none of the arguments that the binding calls it with, and one that requires more,
+    // is refused before the member runs: it is never called, and an arming of the member stays for the next call
+    // (GN-8a).
+    for (const place of reachable ? placeTests(model, 'php', fn) : []) {
+      methodMark = caseTextUses;
+      const given = (value: string): string =>
+        qualified(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      const refused = (declares: Declares): string => `
+        try {
+            ${given(refusedPhp(place, declares))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_callback', $error->kind());
+            self::assertStringContainsString(${phpText(place.given)}, $error->getMessage());
+        }
+        self::assertCount(0, $calls);`;
+      append(`
+    public function testGn6bu${name}${langName('php', place.arg.name, 'class')}RefusesWhatTakesNoArgument(): void
+    {
+        $calls = new \\ArrayObject();${place.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(place.armed.faults)});`}${refused('none')}${place.armed === undefined ? '' : `
+        // GN-8a: the refused call did not reach the core, so the next call takes the arming.
+        try {
+            ${given(placeholder(model, ctx, place.arg.type, true))};
+            self::fail('no error');
+        } catch (${cls(place.armed.category)} $error) {
+            self::assertSame(${phpText(place.armed.kind)}, $error->kind());
+        }
+        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
+    }
+
+    public function testGn6bu${name}${langName('php', place.arg.name, 'class')}RefusesWhatRequiresMoreArguments(): void
+    {
+        $calls = new \\ArrayObject();${refused('more')}
+    }`);
     }
     for (const kase of stringCases(model, fn)) {
       methodMark = caseTextUses;

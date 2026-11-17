@@ -179,6 +179,7 @@ mod awaits {
             Err(BindingError::InvalidCallback {
                 subject: String::from("scope"),
                 member: String::from("an awaitable"),
+                arguments: None,
             })
         });
         assert!(matches!(failed, Err(BindingError::InvalidCallback { .. })));

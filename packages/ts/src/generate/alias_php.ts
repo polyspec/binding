@@ -1047,8 +1047,9 @@ fn php_failed(error: ext_php_rs::error::Error) -> Fail {
     binding_error(BindingError::Internal { detail: error.to_string() })
 }
 
-/// GN-6z: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
-fn kept_function_in(value: &Zval, subject: &str) -> Result<Native, Fail> {
+/// GN-6z: a value of a function type is a Closure (kind invalid_argument_type) that takes the arguments that the
+/// binding calls it with (GN-6bu, kind invalid_callback), held as a Native.
+fn kept_function_in(value: &Zval, subject: &str, given: &[&str]) -> Result<Native, Fail> {
     let closure = match value.object() {
         Some(object) => object.get_class_name().map_err(php_failed)? == "Closure",
         None => false,
@@ -1056,6 +1057,7 @@ fn kept_function_in(value: &Zval, subject: &str) -> Result<Native, Fail> {
     if !closure {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a Closure") }));
     }
+    takes_in(|| reflected("ReflectionFunction", vec![value]), subject, "", given)?;
     php_native(value)
 }
 
