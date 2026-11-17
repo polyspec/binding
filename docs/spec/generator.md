@@ -1694,7 +1694,11 @@ the design ids are those of the binding design.
   repository takes an object of this library only through a callback unit of this library, so the binding needs
   not know which contracts name its rows, and a library without a callback unit gives no exception to another
   contract. Why: an instance that language code makes has no property value, so a fixture of another repository
-  that raises an error of this library had only null to compare (CK-106).
+  that raises an error of this library had only null to compare (CK-106). The generated test of the other contract
+  writes a raise row `{"library": L, "kind", "message", "status", "errno", "properties"}` (CK-22) as one call of the
+  maker of L: on the error unit of L's row of the kind, or on the class of its category, with the values of the row
+  and null for an absent `status` or `errno`; Go passes `ptr(<n>)` or `nil` and a `<Type><Property>` for each property.
+  The test then reads the converted instance of the member as for any case of a kind.
 - **GN-7b** PHP: the binding stores a property `p` of an error unit in the private property `polyspec_p` of the class
   that declares it, and the method `p()` of the class reads it (I-3). Why: the PHP API of the property is its method,
   and `Exception` has properties of its own (`message`, `code`, `file`, `line`, `trace`, `previous`), whose private

@@ -174,6 +174,43 @@
       },
       "key": "b",
       "result": null
+    },
+    {
+      "id": "an_unreadable_error_of_the_sample_library_from_the_source_is_an_error_of_this_library",
+      "source": {
+        "callback": {
+          "source.read": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "library": "sample",
+                "kind": "unreadable",
+                "message": "the source could not read a",
+                "status": 7,
+                "errno": 5
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "source.read",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "unreadable",
+        "status": 7,
+        "errno": 5,
+        "category": "io",
+        "message": "the source could not read a"
+      }
     }
   ],
   "turned": [

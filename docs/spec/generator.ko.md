@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8ca771ebf87c3056413ec928f70ee9cd2768033ce848c2a247a8530a46a59bfc -->
+<!-- source-sha256: d70aa9da94a80d8aeda73e7c61c4b8c354ab3901ff5e9941be6cc4ceba85f815 -->
 # 생성기
 
 [English](generator.md)
@@ -1397,7 +1397,10 @@
   사용자용 API가 아니다. 이 계약만으로 끌어낸다(GN-2). 다른 레포의 계약은 이 라이브러리의 객체를 이 라이브러리의 callback
   unit을 통해서만 받으므로 binding은 어느 계약이 이 라이브러리의 행을 적는지 알 필요가 없고, callback unit이 없는 라이브러리는
   다른 계약에 예외를 주지 않는다. 이유: 언어 코드가 만든 인스턴스는 property 값이 없어서, 이 라이브러리의 오류를 던지는 다른
-  레포의 fixture는 비교할 것이 null뿐이었다(CK-106).
+  레포의 fixture는 비교할 것이 null뿐이었다(CK-106). 다른 계약의 생성된 테스트는 raise 행 `{"library": L, "kind",
+  "message", "status", "errno", "properties"}`(CK-22)를 L의 maker 호출 하나로 쓴다. 그 kind에 대한 L의 행의 오류 unit이나
+  그 category의 클래스에서 호출하고, 행의 값을 넘기며, 없는 `status`나 `errno`는 null로 넘긴다. Go는 `ptr(<n>)`이나 `nil`을
+  넘기고 property마다 `<Type><Property>`를 넘긴다. 그다음 테스트는 다른 kind의 case처럼 member가 변환한 인스턴스를 읽는다.
 - **GN-7b** PHP: binding은 오류 unit의 property `p`를 그것을 선언한 class의 private property `polyspec_p`에 저장하고,
   class의 method `p()`가 그것을 읽는다(I-3). 이유: property의 PHP API는 그 method이고, `Exception`은 자기 property
   (`message`, `code`, `file`, `line`, `trace`, `previous`)를 가진다. 그중 private `trace`가 crud-ui `compose_load_error`의

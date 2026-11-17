@@ -994,15 +994,25 @@ ${lookups.map((lookup) => `    match ${lookup} {
 /// which the class of the other library and this one both define.
 type ConvertedRow = (usize, &'static str, &'static [&'static str]);
 
-/// B2.489: an integer of a converted exception, or None for null, undefined or a value outside the range.
-fn converted_integer<T: TryFrom<i64>>(value: &JsValue) -> Option<T> {
-    let number = value.as_f64()?;
+/// B2.489: an integer of a converted exception, None for null or undefined, and an error for another value or one
+/// outside the range of the type.
+fn converted_integer<T: TryFrom<i64>>(value: &JsValue, name: &str) -> Result<Option<T>, JsValue> {
+    if value.is_null() || value.is_undefined() {
+        return Ok(None);
+    }
+    let outside = || JsValue::from_str(&format!("B2.489: the {name} of the exception is no {name}"));
+    let Some(number) = value.as_f64() else {
+        return Err(outside());
+    };
     if number.fract() != 0.0 || !(-9_007_199_254_740_991.0..=9_007_199_254_740_991.0).contains(&number) {
-        return None;
+        return Err(outside());
     }
     #[allow(clippy::cast_possible_truncation, reason = "B2.489: a safe integer, checked above")]
     let whole = number as i64;
-    T::try_from(whole).ok()
+    match T::try_from(whole) {
+        Ok(integer) => Ok(Some(integer)),
+        Err(_range) => Err(outside()),
+    }
 }
 
 /// B2.489 (GN-7c): the failure of an exception that is an instance of one of the registered classes of another
@@ -1032,9 +1042,11 @@ fn read_converted(value: &JsValue, classes: std::ops::Range<usize>, row: fn(&str
         let Some((class, kind, names)) = Reflect::get(value, &JsValue::from_str("kind"))?.as_string().as_deref().and_then(row) else {
             return Ok(None);
         };
-        let message = Reflect::get(value, &JsValue::from_str("message"))?.as_string().unwrap_or_default();
-        let status = converted_integer::<u16>(&Reflect::get(value, &JsValue::from_str("status"))?);
-        let errno = converted_integer::<i32>(&Reflect::get(value, &JsValue::from_str("errno"))?);
+        let Some(message) = Reflect::get(value, &JsValue::from_str("message"))?.as_string() else {
+            return Err(JsValue::from_str("B2.489: the message of the exception is no string"));
+        };
+        let status = converted_integer::<u16>(&Reflect::get(value, &JsValue::from_str("status"))?, "status")?;
+        let errno = converted_integer::<i32>(&Reflect::get(value, &JsValue::from_str("errno"))?, "errno")?;
         let mut properties = Vec::new();
         for name in names {
             properties.push((*name, Reflect::get(value, &JsValue::from_str(name))?));

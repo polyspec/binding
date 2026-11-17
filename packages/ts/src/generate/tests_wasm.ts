@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
@@ -43,6 +43,11 @@ export function wasmTests(model: Model): string {
     errorNew: (unit, kind, message, library) => {
       if (library !== undefined) foreignModules.add(library);
       return `new ${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`;
+    },
+    // B2.489 (GN-7a): an instance of a class of another library with values, by the internal maker of its module.
+    madeNew: (made, properties) => {
+      foreignModules.add(made.library);
+      return jsMade(made, properties, 'wasm', `foreign_${made.library.replaceAll('-', '_')}`);
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.

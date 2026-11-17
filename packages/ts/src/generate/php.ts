@@ -1551,8 +1551,14 @@ fn read_converted(exception: &ZendObject, classes: &[(&str, &str)], row: fn(&str
             return Ok(None);
         };
         let message = with_scope(scope, || exception.get_property::<String>("message")).map_err(|error| error.to_string())?;
-        let status = read("status")?.and_then(|status| u16::try_from(status).ok());
-        let errno = read("errno")?.and_then(|errno| i32::try_from(errno).ok());
+        let status = match read("status")? {
+            Some(status) => Some(u16::try_from(status).map_err(|_range| format!("B2.489: the status {status} of the exception is no status"))?),
+            None => None,
+        };
+        let errno = match read("errno")? {
+            Some(errno) => Some(i32::try_from(errno).map_err(|_range| format!("B2.489: the errno {errno} of the exception is no errno"))?),
+            None => None,
+        };
         let mut object = error_object(target, &message, kind, status, errno).map_err(|_fail| format!("B-4: the error {kind} could not be made"))?;
         for (declaring, property, ours) in properties {
             let (Some(owner), Some(Class(entry))) = (ClassEntry::try_find(declaring), CLASSES.get(*ours).and_then(OnceLock::get).copied()) else {

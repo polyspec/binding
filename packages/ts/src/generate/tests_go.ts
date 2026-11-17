@@ -20,7 +20,7 @@ import { classIn, holdsForeign } from './value_class.ts';
 import { computedRule, defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
-  type GoScope, callbackOf, callablesOf, categoryType, goBytes, goHeader, goImport, goImportBlock, goMemberName, goName,
+  type GoScope, callbackOf, callablesOf, categoryType, goErrorTypes, goBytes, goHeader, goImport, goImportBlock, goMemberName, goName,
   foreignPackage, goDefault, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
   goOrder, goTestTag, goBuildConstraint, GO_TAG_GUARD_FILE,
 } from './go.ts';
@@ -1091,7 +1091,23 @@ function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: s
     // GN-7a: a kind that is no kind of the unit is an error of Raised<Unit>, which fails the test.
     let raise = '';
     if (row.raise === 'exception') raise = `, raise: errors.New(${goString(ROW_EXCEPTION)})`;
-    else if (row.raise !== undefined) {
+    else if (row.raise !== undefined && 'made' in row.raise) {
+      // B2.489 (GN-15d): an error of another library with values, by Make<Type> of its package errors.
+      const made = row.raise.made;
+      v.usesPtr = true;
+      const type = made.unit === undefined ? goErrorTypes(made.owner).find(([category]) => category === made.category)?.[1] ?? '' : goName(made.unit.name);
+      const integer = (n: number | null): string => (n === null ? 'nil' : `ptr(${n})`);
+      const errorsPkg = ownerErrors(v.scope, made.library);
+      const properties = made.properties.map((p) => {
+        const property = (made.unit?.members ?? []).find((m) => m.kind === 'property' && m.name.join('_') === p.name.join('_'));
+        const valueType = property?.returns ?? 'none';
+        return `, ${errorsPkg}.${type}${goName(p.name)}(${p.value === null ? 'nil' : `ptr(${value(v, b, named(valueType), p.value)})`})`;
+      }).join('');
+      const raised = b.fresh('raised');
+      const refused = b.fresh('refused');
+      b.lines.push(`${raised}, ${refused} := ${errorsPkg}.Make${type}(${goString(made.kind)}, ${goString(made.message)}, ${integer(made.status)}, ${integer(made.errno)}${properties})`, `if ${refused} != nil {`, `\tt.Fatalf("G-5: %v", ${refused})`, '}');
+      raise = `, raise: ${raised}`;
+    } else if (row.raise !== undefined) {
       const maker = row.raise.library === undefined ? 'binding' : ownerErrors(v.scope, row.raise.library);
       const raised = b.fresh('raised');
       const refused = b.fresh('refused');

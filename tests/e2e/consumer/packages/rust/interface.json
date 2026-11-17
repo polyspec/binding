@@ -106,6 +106,14 @@
         "variant": "polyspec_consumer::Error::Absent",
         "category": "value",
         "class": "absent_error"
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
       }
     ],
     "binding": [],
@@ -351,7 +359,9 @@
             "optional": "text"
           },
           "optional_reason": "U-3",
-          "raises": [],
+          "raises": [
+            "polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable"
+          ],
           "wait": "none",
           "core": "polyspec_consumer::read"
         },

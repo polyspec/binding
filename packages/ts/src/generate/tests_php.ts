@@ -6,11 +6,11 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
-import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
+import { CASE_JSON_STRING_GOLDENS, madeCategoryClass } from './samples.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
@@ -418,6 +418,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // GN-6s: an error unit of the owner of a callback unit of another repository, by the namespace of its package.
   const errorNew = (unit: Unit, kind: string, message: string, library?: string): string =>
     `new ${library === undefined ? `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignClass(library, unit)}(${phpText(message)}, ${phpText(kind)})`;
+  // B2.489 (GN-7a): an instance of a class of another library with values, by the static polyspec_make of its class.
+  const madeNew = (made: MadeRaise, properties: string[]): string => {
+    const cls = made.unit === undefined ? `\\${madeCategoryClass(made, 'php')}` : foreignClass(made.library, made.unit);
+    const integer = (n: number | null): string => (n === null ? 'null' : String(n));
+    return `${cls}::polyspec_make(${phpText(made.kind)}, ${phpText(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, [${made.properties.map((p, i) => `${phpText(langName('php', p.name, 'variable'))} => ${properties[i] ?? 'null'}`).join(', ')}])`;
+  };
   // GN-13l: dependency records come from real generation calls, never from literal marker text.
   let caseTextUses = 0;
   let methodMark = 0;
@@ -449,7 +455,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const ctx: Context = { lang: 'php', caseTextExpression, caseTextPath: (relative, jsonString) => {
     caseTextUses += 1;
     return `self::caseTextPath($_caseTextRoot, ${phpText(relative)}, ${jsonString ? 'true' : 'false'})`;
-  }, enumRef, recordNew, callbackNew, errorNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, listenerPort: 'GeneratedTest::$caseListenerPort', cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
+  }, enumRef, recordNew, callbackNew, errorNew, madeNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, listenerPort: 'GeneratedTest::$caseListenerPort', cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${categoryClass(model, category)}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.

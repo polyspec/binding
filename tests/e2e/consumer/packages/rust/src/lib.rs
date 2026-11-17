@@ -13,6 +13,8 @@ pub enum Error {
         /// The key.
         key: String,
     },
+    /// An error of the sample library, which a source of that library raised (B2.489, GN-7c).
+    Sample(polyspec_sample::Error),
 }
 
 impl Error {
@@ -21,23 +23,25 @@ impl Error {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Absent { .. } => "absent",
+            Self::Sample(error) => error.kind(),
         }
     }
 
-    /// The key that the error names.
+    /// The key that the error names, empty for an error of the sample library.
     #[must_use]
     pub fn key(&self) -> &str {
         match self {
             Self::Absent { key } => key,
+            Self::Sample(_) => "",
         }
     }
 
     /// The length of the key in bytes, or `None` when the key is empty.
     #[must_use]
     pub fn length(&self) -> Option<u64> {
-        match self {
-            Self::Absent { key } => u64::try_from(key.len()).ok().filter(|length| *length > 0),
-        }
+        u64::try_from(self.key().len())
+            .ok()
+            .filter(|length| *length > 0)
     }
 }
 
@@ -45,6 +49,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Absent { key } => write!(f, "the holder has no {key}"),
+            Self::Sample(error) => fmt::Display::fmt(error, f),
         }
     }
 }
@@ -57,11 +62,17 @@ impl Kinds for Error {
     }
 
     fn status(&self) -> Option<u16> {
-        None
+        match self {
+            Self::Absent { .. } => None,
+            Self::Sample(error) => Kinds::status(error),
+        }
     }
 
     fn errno(&self) -> Option<i32> {
-        None
+        match self {
+            Self::Absent { .. } => None,
+            Self::Sample(error) => Kinds::errno(error),
+        }
     }
 }
 
@@ -129,7 +140,8 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
 /// # Errors
 ///
 /// An exception of the source, which goes back to the caller as it was thrown. The source recognizes no error unit, so
-/// no kind of the sample library comes back; a function of this library fails with the errors of this library alone.
+/// no kind of the sample library comes back as a kind; an exception of the sample library of the kind `unreadable`
+/// becomes an error of this library at the binding, which keeps it as the cause (B2.489, GN-7c).
 pub fn read(
     source: &dyn polyspec_sample::Source,
     key: &str,

@@ -1530,8 +1530,14 @@ const consumerFixture = (): { contract: any; caseFiles: Map<string, unknown>; fo
 const consumerSample = (): ReturnType<typeof consumerFixture> => {
   const parts = consumerFixture();
   plainSample(parts.foreign.get('sample'));
-  const cases = parts.caseFiles.get('contracts/cases.json') as { pair: { id: string }[] };
+  const cases = parts.caseFiles.get('contracts/cases.json') as { pair: { id: string }[]; read: { id: string }[] };
   cases.pair = cases.pair.filter((kase) => kase.id !== 'a_reference_of_the_owner_twice');
+  // B2.489: the row of sample that consumer.read converts, and its case, are left out, so that the tests of the other
+  // forms read the consumer without a conversion table; tests/converted-errors.test.ts and the clippy check read it.
+  parts.contract.errors.kinds = parts.contract.errors.kinds.filter((row: { library?: string }) => row.library === undefined);
+  const read = parts.contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'consumer.read');
+  read.raises = [];
+  cases.read = cases.read.filter((kase) => kase.id !== 'an_unreadable_error_of_the_sample_library_from_the_source_is_an_error_of_this_library');
   return parts;
 };
 
@@ -8544,7 +8550,9 @@ test('the helpers of the error of another library share no name with a helper of
     const owner = foreign.get('sample');
     owner.library = library;
     const renamed = JSON.parse(JSON.stringify(contract).replaceAll('"library":"sample"', `"library":"${library}"`));
-    const out = generate({ contract: renamed, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign: new Map([[library, owner]]) });
+    // B2.489: a raise row with values names the library too (CK-22).
+    const renamedCases = new Map([...caseFiles].map(([path, body]) => [path, JSON.parse(JSON.stringify(body).replaceAll('"library":"sample"', `"library":"${library}"`))]));
+    const out = generate({ contract: renamed, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: renamedCases, foreign: new Map([[library, owner]]) });
     const libs = [...out].filter(([path]) => path.endsWith('generated/lib.rs'));
     assert.ok(libs.length >= 3, library);
     for (const [path, lib] of libs) {
@@ -9825,6 +9833,8 @@ test('no generated Rust calls a method that the clippy.toml of a repository disa
     functions: () => own('functions'),
     points: () => own('points'),
     consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    // B2.489: the consumer with the conversion table of consumer.read.
+    converted: () => generate({ ...consumerFixture(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
     plot: () => generate({ ...plotSample(), version: '0.0.0', coreLib: 'polyspec_plot' }),
     relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
   };

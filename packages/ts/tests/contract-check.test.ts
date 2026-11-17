@@ -2552,6 +2552,9 @@ test('B2.382: CK-22 takes one case of a kind of another library for all its kind
   const kinds = ['Missing', 'Unsupported', 'Refused', 'Unreadable', 'Ended'];
   const findings = (withCase: boolean, own: boolean): string[] => {
     const contract = read('consumer/packages/rust/interface.json');
+    // The row of sample that consumer.read converts (B2.489) is left out, so that each kind here is declared once.
+    contract.errors.kinds = contract.errors.kinds.filter((row: any) => row.library === undefined);
+    for (const m of contract.units.flatMap((u: any) => u.members ?? [])) if (Array.isArray(m.raises)) m.raises = m.raises.filter((v: string) => !v.includes('/'));
     const fetch = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'consumer.fetch');
     for (const kind of kinds) {
       const variant = own ? `polyspec_consumer::Error::${kind}` : `polyspec_consumer::Error::Sample/polyspec_sample::Error::${kind}`;

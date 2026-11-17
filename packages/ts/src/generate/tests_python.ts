@@ -10,7 +10,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLin
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
-import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
+import { CASE_JSON_STRING_GOLDENS, madeCategoryClass } from './samples.ts';
 
 // GN-13l: native JSON string quoting preserves valid Unicode and rejects surrogate replacement.
 const PYTHON_CASE_TEXT_PATH = `
@@ -414,6 +414,14 @@ export function pythonTests(model: Model, module: string): string {
     errorNew: (unit, kind, message, library) => {
       if (library !== undefined) foreignModules.add(library);
       return `${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`;
+    },
+    // B2.489 (GN-7a): an instance of a class of another library with values, by the internal maker of its package.
+    madeNew: (made, properties) => {
+      foreignModules.add(made.library);
+      const pkgName = `foreign_${made.library.replaceAll('-', '_')}`;
+      const cls = made.unit === undefined ? madeCategoryClass(made, 'python').split('.').pop() ?? '' : langName('python', made.unit.name, 'class');
+      const integer = (n: number | null): string => (n === null ? 'None' : String(n));
+      return `${pkgName}._errors._polyspec_make(${pkgName}.${cls}, ${pyString(made.kind)}, ${pyString(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, {${made.properties.map((p, i) => `${pyString(langName('python', p.name, 'variable'))}: ${properties[i] ?? 'None'}`).join(', ')}})`;
     },
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';

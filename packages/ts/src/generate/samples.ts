@@ -30,6 +30,9 @@ export interface Context {
   // GN-13: how the generated test makes an instance of an error unit with a kind and a message, as language code does.
   // GN-6s: an error unit of the owner of a callback unit of another repository names that library.
   errorNew?: (unit: Unit, kind: string, message: string, library?: string) => string;
+  // B2.489 (GN-7a): how the generated test makes an instance of a class of another library with values, by the
+  // internal maker of that library's package; each property value is already a value of the language.
+  madeNew?: (made: MadeRaise, properties: string[]) => string;
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
@@ -2525,6 +2528,21 @@ export function unsafeKeyMap(model: Model, ctx: Context, type: Type): string | u
 // U-3: the first parameter of a member that is a callback, for the tests of K-2.
 // G-5 callback fixture: the value of a callback parameter in a case, {"callback": {<callback member id>: [<row>]},
 // "calls": [{"member", "args"}]}. A row is {"args": {...}} with "result" (absent for a return of none) and "once".
+// B2.489 (CK-22, CK-106, GN-7a): a raise row of a callback unit of another library L by {"library": L, "kind", ...}:
+// an instance of the class of L for the kind, which the internal maker of L's package makes with the values. unit is
+// the error unit of the kind, absent for the class of its category; properties are in the order of the row.
+export interface MadeRaise {
+  library: string;
+  owner: Contract;
+  category: string;
+  unit?: Unit;
+  kind: string;
+  message: string;
+  status: number | null;
+  errno: number | null;
+  properties: { name: Name; value: unknown }[];
+}
+
 export interface Fixture {
   arg: Arg;
   unit: Unit;
@@ -2532,7 +2550,7 @@ export interface Fixture {
   // result and whether the row is used once, each a case value.
   // GN-13: a row raises an instance of an error unit with its kind, or, by "exception", an exception of the language
   // that is no error of the library.
-  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string; library?: string } | 'exception' }[];
+  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string; library?: string } | 'exception' | { made: MadeRaise } }[];
   // The calls that the core makes in order, when the case names them.
   calls?: { member: number; args: unknown[] }[];
 }
@@ -2599,6 +2617,10 @@ export function fixtureOf(model: Model, unit: Unit, given: unknown, where: strin
         rows.push({ ...base, raise: 'exception' });
         continue;
       }
+      if (given !== undefined && 'library' in given) {
+        rows.push({ ...base, raise: { made: madeRaise(model, given as unknown as Record<string, unknown>, where) } });
+        continue;
+      }
       const raise = given;
       // GN-6s: a row of a callback unit of another repository raises an error unit of that repository.
       const raised = raise === undefined ? undefined : library === undefined ? model.errorUnits.find((u) => u.unit.id === raise.error)?.unit : model.foreign.get(library)?.units.find((u) => u.id === raise.error && u.kind === 'error');
@@ -2608,6 +2630,35 @@ export function fixtureOf(model: Model, unit: Unit, given: unknown, where: strin
   }
   const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
   return { unit, rows, ...(calls === undefined ? {} : { calls }) };
+}
+
+// B2.489 (CK-22, CK-106): the instance that a raise row {"library": L, "kind", "message", "status", "errno",
+// "properties"} names: the class of L's row of the kind, its error unit or the class of its category. The contract
+// check has judged the form; a kind that L does not declare is refused by name (G-4).
+export const madeCategoryClass = (made: MadeRaise, lang: Lang): string => {
+  const row = (made.owner.errors.classes as Record<string, Partial<Record<Lang, string>>>)[made.category];
+  const name = lang === 'wasm' ? (row?.wasm ?? row?.node) : row?.[lang];
+  if (name === undefined) throw new Unsupported(`${made.library} names no ${lang} class of the category ${made.category} (GN-7a)`);
+  return name;
+};
+
+// B2.489 (GN-7a): the call of the maker of Node and WASM under Symbol.for('polyspec.binding.make') of the class.
+export const jsMade = (made: MadeRaise, properties: string[], lang: 'node' | 'wasm', pkgName: string): string => {
+  const cls = made.unit === undefined ? madeCategoryClass(made, lang) : langName(lang, made.unit.name, 'class');
+  const integer = (n: number | null): string => (n === null ? 'null' : String(n));
+  return `${pkgName}.${cls}[Symbol.for('polyspec.binding.make')](${JSON.stringify(made.kind)}, ${JSON.stringify(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, { ${made.properties.map((p, i) => `${JSON.stringify(langName(lang, p.name, 'variable'))}: ${properties[i] ?? 'null'}`).join(', ')} })`;
+};
+
+function madeRaise(model: Model, given: Record<string, unknown>, where: string): MadeRaise {
+  const library = String(given['library']);
+  const kind = String(given['kind']);
+  const owner = model.foreign.get(library);
+  const row = owner?.errors.kinds.find((r) => kindsOf(r).includes(kind));
+  if (owner === undefined || row === undefined) throw new Unsupported(`${where}: the raise row names the kind ${kind} of ${library}, which ${library} does not declare (CK-22)`);
+  const unit = row.class === undefined ? undefined : owner.units.find((u) => u.id === row.class && u.kind === 'error');
+  const integer = (key: string): number | null => (typeof given[key] === 'number' ? (given[key] as number) : null);
+  const properties = Object.entries((given['properties'] ?? {}) as Record<string, unknown>).map(([name, value]) => ({ name: name.split('_'), value }));
+  return { library, owner, category: unit?.category ?? row.category ?? 'internal', ...(unit === undefined ? {} : { unit }), kind, message: String(given['message']), status: integer('status'), errno: integer('errno'), properties };
 }
 
 // GN-13: the message of the exception of a callback row whose raise is "exception".
@@ -2636,6 +2687,14 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
       const returns = members[row.member]?.returns ?? 'none';
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, typed(returns), row.result);
       const raise = row.raise;
+      if (raise !== undefined && raise !== 'exception' && 'made' in raise) {
+        if (ctx.madeNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} with values is not generated for ${ctx.target ?? ctx.lang} yet`);
+        const values = raise.made.properties.map(({ name, value }) => {
+          const property = (raise.made.unit?.members ?? []).find((m) => m.kind === 'property' && m.name.join('_') === name.join('_'));
+          return value === null || property === undefined ? none : fromJson(model, ctx, typed(property.returns ?? 'none'), value);
+        });
+        return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once), ctx.madeNew(raise.made, values)];
+      }
       if (raise !== undefined && raise !== 'exception' && ctx.errorNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} is not generated for ${ctx.target ?? ctx.lang} yet`);
       const exception = ctx.lang === 'python' ? `RuntimeError(${pyString(ROW_EXCEPTION)})` : ctx.lang === 'node' ? `new Error(${jsString(ROW_EXCEPTION)})` : `new \\RuntimeException(${phpText(ROW_EXCEPTION)})`;
       const raised = raise === undefined ? none : raise === 'exception' ? exception : ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`, raise.library);

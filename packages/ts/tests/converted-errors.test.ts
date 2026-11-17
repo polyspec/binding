@@ -165,6 +165,20 @@ test('B2.489: a row with through converts by the same rule as a row without it (
   assert.equal(crate(through), crate(hyper('php')));
 });
 
+test('B2.489: a raise row with values of a callback unit of another library makes its instance by the maker of that library in each target (CK-22, CK-106, GN-7a)', () => {
+  const e2e = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = e2e('consumer/packages/rust/interface.json');
+  const files = [...new Set((contract.cases as { file: string }[]).map((row) => row.file))];
+  const out = generateOnStack({ contract, caseFiles: new Map(files.map((file) => [file, e2e(`consumer/${file}`)])), foreign: new Map([['sample', e2e('sample/packages/rust/interface.json')]]), version: '0.0.0', coreLib: 'polyspec_consumer' });
+  const text = (suffix: string, mark: string): string => fileWith(out, suffix, mark);
+  assert.match(text('GeneratedTest.php', 'polyspec_make('), /\\Polyspec\\Sample\\SampleIoError::polyspec_make\("unreadable", "the source could not read a", 7, 5, \[\]\)/);
+  assert.match(text('test_generated.py', '_polyspec_make('), /foreign_sample\._errors\._polyspec_make\(foreign_sample\.SampleIoError, "unreadable", "the source could not read a", 7, 5, \{\}\)/);
+  for (const suffix of ['ts/generated/tests/generated.test.mjs', 'wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(suffix, "Symbol.for('polyspec.binding.make')]("), /foreign_sample\.SampleIoError\[Symbol\.for\('polyspec\.binding\.make'\)\]\("unreadable", "the source could not read a", 7, 5, \{ {2}\}\)/);
+  }
+  assert.match(text('zz_generated_test.go', 'MakeSampleIoError('), /sampleerrors\.MakeSampleIoError\("unreadable", "the source could not read a", ptr\(7\), ptr\(5\)\)/);
+});
+
 // The text of a refusal of the generator, with the refusals by name that it holds (G-4).
 const refusal = (change: (contract: any) => void): string => {
   try {
@@ -223,7 +237,7 @@ test('B2.489: the WASM module converts an exception of session-store into the cl
   // An exception of no row is thrown again unchanged.
   assert.match(open, /\n    Fail \{ thrown: Some\(value\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \}\n\}/);
   const read = rustFn(crate, 'read_converted');
-  assert.match(read, /let status = converted_integer::<u16>\(&Reflect::get\(value, &JsValue::from_str\("status"\)\)\?\);/);
+  assert.match(read, /let status = converted_integer::<u16>\(&Reflect::get\(value, &JsValue::from_str\("status"\)\)\?, "status"\)\?;/);
   assert.match(read, /properties\.push\(\("cause", value\.clone\(\)\)\);/);
   assert.match(crate, /if classes\.len\(\) != 14 \{/);
   const entry = fileWith(out, '.mjs', 'glue.__register([');
