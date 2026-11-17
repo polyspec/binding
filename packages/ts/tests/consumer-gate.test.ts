@@ -86,8 +86,10 @@ test('B2.494: the update of the gate changes the lock of the tag in polyspec-bin
   const git = 'git+https://github.com/polyspec/binding.git?tag=v0.0.20#06dfc6accfee6b272f96b32f12c8e7fb6182d59b';
   const crate = 'registry+https://github.com/rust-lang/crates.io-index';
   const tagLock = ['version = 4\n', pkg('polyspec-binding-core', '0.0.20', git, ['serde']), pkg('polyspec-json', '0.0.36', undefined, ['polyspec-binding-core', 'serde']), pkg('serde', '1.0.200', crate)].join('\n');
-  const lockOf = (text: string): string => {
-    writeFileSync(join(dir, 'Cargo.lock'), tagLock);
+  const lockOf = (text: string): string => lockOfFrom(tagLock, text);
+  // The message of the comparison of the lock text after the update with the lock of the tag, or '' when it passes.
+  function lockOfFrom(tag: string, text: string): string {
+    writeFileSync(join(dir, 'Cargo.lock'), tag);
     const steps = gateSteps({ ...gate, work }, json, ['0.0.20'], ['php'], () => {});
     const keep = steps.find((s) => s.step.what === 'the lock of the tag, kept for the comparison')?.step;
     const check = steps.find((s) => s.step.what === 'the lock changes in polyspec-binding-core alone')?.step;
@@ -100,7 +102,7 @@ test('B2.494: the update of the gate changes the lock of the tag in polyspec-bin
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
-  };
+  }
   // The patch alone: the entry of binding-core takes the path, its dependents keep their names.
   const patched = ['version = 4\n', pkg('polyspec-binding-core', '0.0.22', undefined, ['serde']), pkg('polyspec-json', '0.0.36', undefined, ['polyspec-binding-core', 'serde']), pkg('serde', '1.0.200', crate)].join('\n');
   assert.equal(lockOf(patched), '');
@@ -111,6 +113,14 @@ test('B2.494: the update of the gate changes the lock of the tag in polyspec-bin
   assert.match(message, /removed serde 1\.0\.200/);
   assert.match(message, /added serde 1\.0\.228/);
   assert.match(message, /added itoa 1\.0\.15/);
+  // Session-store: the resolver unifies again the dependencies of the changed core, so an entry whose name, version
+  // and source stay names another release of a crate that the lock already holds; no code changes, so it passes.
+  const windows = (v: string): string => pkg('windows-sys', v, crate);
+  const twoWindows = (rustix: string): string => ['version = 4\n', pkg('polyspec-binding-core', '0.0.20', git, ['rustix']), pkg('rustix', '1.1.6', crate, [rustix]), windows('0.52.0'), windows('0.61.2')].join('\n');
+  const unified = (rustix: string): string => lockOfFrom(twoWindows('windows-sys 0.61.2'), twoWindows(rustix).replace(git, '').replace('version = "0.0.20"\nsource = ""', 'version = "0.0.22"'));
+  assert.equal(unified('windows-sys 0.52.0'), '');
+  // A list that names a release that the lock does not hold is not such a unification: it fails, naming the entry.
+  assert.match(unified('windows-sys 0.60.0'), /rustix 1\.1\.6 .* names windows-sys 0\.60\.0, which the lock does not hold/);
 });
 
 test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then runs its own goals: install, bindings and test-bindings offline, and the rehearsal with no cache (GN-14m)', () => {
@@ -126,6 +136,7 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
     ['prepare', 'cargo update -p polyspec-binding-core'],
     ['prepare', 'the lock changes in polyspec-binding-core alone'],
     ['prepare', 'binding scaffold of the run'],
+    ['prepare', 'make bootstrap of the consumer'],
     ['prepare', 'make install of the consumer'],
     ['generate', 'make bindings of the consumer'],
     ['test', 'make test-bindings of the consumer'],
