@@ -4502,7 +4502,10 @@ the design ids are those of the binding design.
   the tag (B2.496): it runs the same checks, writes the list of the upload, one line `<size> <file>#<label>` for each
   asset, to `WORK/platform-assets.txt`, writes nothing outside `WORK`, calls neither `gh` nor `git`, and ends with the
   line `no upload`; `REHEARSAL=1` without `WORK` is refused. Why: the upload followed the check of the labels at once,
-  so a rehearsal could not reach the step, and template 0.0.28 was lost in its asset job.
+  so a rehearsal could not reach the step, and template 0.0.28 was lost in its asset job. The check of the sizes runs
+  in the real upload too, and there it runs after the tag: the release job runs `release-tag` of kit first, which
+  creates the tag and pushes it, and the upload goes to the draft GitHub Release of that tag, so a check that fails
+  in the upload cannot save the tag. Only the rehearsal before the tag can.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]` writes
   the release recipes of the contract into `<packages of the contract>/release.mk`: `packages/release.mk` for a core
   at `packages/rust`, and `packages/<component>/release.mk` for a core at `packages/<component>/rust`, whose targets

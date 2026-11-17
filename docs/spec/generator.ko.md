@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ab59d41ad8cb33d8aa3e196b140e68ed65eb4313b41e3685982eb481b2d42620 -->
+<!-- source-sha256: d875413c0a124c0a9d1a07938918a0840a8f7019d474bf4ca41780716b2c1f5c -->
 # 생성기
 
 [English](generator.md)
@@ -3705,7 +3705,9 @@
   WORK=<directory>`는 tag 전의 rehearsal이다(B2.496). 같은 검사를 돌고, upload 목록을 asset마다 한 줄
   `<size> <file>#<label>`로 `WORK/platform-assets.txt`에 쓰며, `WORK` 밖에는 쓰지 않고, `gh`도 `git`도 부르지 않으며,
   마지막 줄은 `no upload`다. `WORK` 없는 `REHEARSAL=1`은 거부된다. 이유: upload가 label 검사 바로 뒤에 이어져
-  rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다.
+  rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다. 크기 검사는 실제 upload에서도 돌고,
+  거기서는 tag 뒤에 돈다. release job은 먼저 kit의 `release-tag`로 tag를 만들어 push하고, upload는 그 tag의 draft
+  GitHub Release로 가므로, upload에서 실패한 검사는 tag를 구하지 못한다. tag 전의 rehearsal만이 구한다.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]`는 계약의
   release recipe를 `<계약의 packages>/release.mk`에 쓴다. core가 `packages/rust`이면 `packages/release.mk`이고, core가
   `packages/<component>/rust`이면 `packages/<component>/release.mk`이며, 그 target은 `-<component>`로 끝나서 한 레포의 두
