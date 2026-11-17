@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 502fc09681f3f0d9059e11210d95489a2136634614174fb4f3cb18833bc8b68a -->
+<!-- source-sha256: 077afedc3bccac40f2613cc945d44b9fc3daa888102f25199f38d4a20e6475d5 -->
 # 생성기
 
 [English](generator.md)
@@ -3338,7 +3338,14 @@
   거부의 목록이 아니다. 생성기나 계약 검사가 거부하는 target은 이름 붙은 실패로 남고, 그 파일이 적는 시험은 fixture의
   설계로 실패한다. `tests/e2e/falsepass`가 그런 레포다. `after` 호출의 인자를 그 호출이 기대하는 kind로 실패하는
   static이 만들므로, 그 호출의 시험은 모든 target에서 static에서 실패한다(GN-13f, GN-13o). 이유: 아무것도 확인하지 않고
-  통과하는 시험은 확인하는 시험처럼 보이며, 그 실패를 요구하는 실행만이 그것을 드러낸다.
+  통과하는 시험은 확인하는 시험처럼 보이며, 그 실패를 요구하는 실행만이 그것을 드러낸다. 실행은 그 레포가 자신이
+  검사하는 binding tree의 `tests/e2e/falsepass`일 때만, real path로 비교해, `expected-failures.json`을 읽으며, 그 파일을
+  가진 다른 레포의 실행은 그 파일을 이름하며 실패한다. 이유: 그렇지 않으면 consumer의 레포처럼 binding 밖의 레포가 그
+  파일 하나로 자기 시험의 어떤 실패든 숨길 수 있다. unittest의 실패한 시험은 `<class>.<method>`로 이름하며, 그 실패의
+  header에서 Python 3.11 이후의 형식(`<module>.<class>.<method>`)과 그 이전의 형식(`<module>.<class>`)으로 읽는다. 이유:
+  두 class의 method는 이름이 같을 수 있고, 그렇지 않으면 한 쪽의 실패가 다른 쪽의 기대된 실패를 대신한다. 이름에
+  `.Test`가 없는 go test의 실패한 시험은, example처럼, 그것을 이름하는 실패로 읽기를 실패시킨다. 이유: 그 이름은 그
+  파일이 담을 수 있는 이름이 아니며, 기대된 시험과 맞아서도 버려져서도 안 된다.
 - **GN-14l** 실행의 release 형식(B2.458; GN-3e, GN-3h). 레포의 코어가 `[dependencies]`의 한 줄에서 `DEPS`의 레포를
   `path`로 적는 실행은, 의존이 있는 `tests/e2e`의 모든 레포가 그런데, development 형식의 모든 단계 뒤에 release 형식의
   단계들로 끝난다. 이 단계들은 실행에 더해지며 어떤 단계도 대신하지 않는다. development 형식은 의존이 release를 가질

@@ -4066,7 +4066,15 @@ the design ids are those of the binding design.
   file names fails by the design of its fixture. `tests/e2e/falsepass` is such a repository: the argument of a call
   of `after` is made by a static that fails with the kind that the call expects, so the test of that call fails on
   the static in every target (GN-13f, GN-13o). Why: a test that passes having checked nothing looks like one that
-  checks, and only a run that requires its failure shows it.
+  checks, and only a run that requires its failure shows it. A run reads `expected-failures.json` only when its
+  repository is `tests/e2e/falsepass` of the tree of binding that it checks, compared by real path, and the run of
+  any other repository that holds the file fails, naming the file. Why: a repository outside binding, such as one of
+  a consumer, would otherwise hide any failure of its tests with that one file. A failed test of unittest is named
+  `<class>.<method>`, read from the header of its failure in the form of Python 3.11 and later
+  (`<module>.<class>.<method>`) and in the earlier one (`<module>.<class>`). Why: methods of two classes may share a
+  name, and a failure of one would otherwise stand for the expected failure of the other. A failed test of go test
+  whose name holds no `.Test`, such as an example, fails the read with a failure that names it. Why: that name is no
+  name that the file can hold, and it must neither match an expected test nor be dropped.
 - **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
   by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
   does, ends with the steps of the release form, after every step of the development form. The steps are added to
