@@ -283,6 +283,14 @@ test('B2.489: package binding of a contract with a callback unit tests each Make
   assert.match(maker, /\tmade, err := MakeRecordError\("record", "GN-7a", nil, nil, RecordErrorOffset\(nil\)\)\n\tif err != nil \|\| made\.Kind\(\) != "record" \{/);
   assert.match(maker, /\tif _, err := MakeRecordError\("GN-7a: no kind", "GN-7a", nil, nil\); err == nil \{/);
   assert.match(maker, /func TestGN7aMakeSessionStoreIoError\(t \*testing\.T\) \{\n\tmade, err := MakeSessionStoreIoError\("/);
+  // A type without a kind, whose maker refuses every kind, is tested too, so that deadcode reaches every maker.
+  const binding = fileWith(go, 'internal/binding/zz_generated_binding.go', 'func MakeRecordError(');
+  for (const [, name] of binding.matchAll(/^func Make(\w+)\(/gm)) assert.match(maker, new RegExp(`^func TestGN7aMake${name}\\(`, 'm'), `Make${name} is tested`);
+  const kindless = generateOnStack({ ...inputsOf('session-store', 'polyspec_session_store', { 'php-serialization': 'session-store/php-serialization.json' }, (c) => {
+    c.errors.kinds = c.errors.kinds.filter((k: { category: string }) => k.category !== 'io');
+  }), targets: ['go'] });
+  const kindlessTest = fileWith(kindless, 'internal/binding/zz_generated_maker_test.go', 'func TestGN7aMake');
+  assert.match(kindlessTest, /func TestGN7aMakeSessionStoreIoError\(t \*testing\.T\) \{\n\tif _, err := MakeSessionStoreIoError\("GN-7a: no kind", "GN-7a", nil, nil\); err == nil \{/);
   // hyper has no callback unit of its own, so it has no maker and no test of one.
   const hyperGo = generateOnStack({ ...inputsOf('hyper', 'polyspec_hyper', HYPER_FOREIGN), targets: ['go'] });
   assert.ok(![...hyperGo.keys()].some((path) => path.endsWith('zz_generated_maker_test.go')), 'hyper has no maker test');
