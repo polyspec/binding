@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1070,11 +1070,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
         call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
     }`;
   }).join('\n');
-  // GN-6s: an error unit of the owner of a callback unit of another repository is registered after the library classes.
-  const ownerUnits = ownerRecognizedUnits(model);
-  const classIndex = (u: ErrorUnit): number => cb.library === undefined
-    ? model.classes.length + model.errorUnits.indexOf(u)
-    : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
+  const classIndex = recognizedClassIndex(model, cb);
   const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
 /// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
 /// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.

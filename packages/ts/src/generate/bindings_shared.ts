@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, type ErrorUnit, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -211,6 +211,15 @@ export function recordParamLines(model: Model, fn: Fn, parameter: Fn['params'][n
   }
   lines.push(`        let ${rustField(parameter.name)}: ${rustType(typed, { unit: record.unit.id })} = ${record.unit.core_type ?? ''} { ${(record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(record.unit)} };`);
   return lines;
+}
+
+// GN-6s: the index of the class of an error unit that a callback unit recognizes; an error unit of the owner of a
+// callback unit of another repository is registered after the library classes.
+export function recognizedClassIndex(model: Model, cb: CallbackUnit): (u: ErrorUnit) => number {
+  const ownerUnits = ownerRecognizedUnits(model);
+  return (u) => cb.library === undefined
+    ? model.classes.length + model.errorUnits.indexOf(u)
+    : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
 }
 
 // The initializer of a field of a Rust struct from a variable, shortened when they have one name.
