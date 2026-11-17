@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: aa7cbde707f8a5e7bc7a7a3fb5625f0a687a38ab46232c75ccd7d2b685598860 -->
+<!-- source-sha256: 9e4015eb4c9480860448f2f2134f179abb0ced2f626f85b4203730fbbc72b77c -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -163,8 +163,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
 - **CK-70** release의 의존(generator GN-3e), `binding check --release`만 실행한다: 계약이 타입을 이름하거나 case가 실패 주입점을
   장전하는 `polyspec-<library>`마다 코어의 의존 줄은 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않는다. 코어의
-  `polyspec-binding-core` 의존 줄(있을 때)과 추적하는 바인딩 crate 각각의 그 줄도 그렇다. 개발
-  꼴(path, branch, commit, 버전 범위)은 그 줄의 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
+  `polyspec-binding-core` 의존 줄(있을 때)과 추적하는 바인딩 crate 각각의 그 줄도 그렇다. `path`가 레포의
+  root 안에 머물고 그 옆에 그 라이브러리의 한 버전(`version = "=X.Y.Z"` 또는 `"0.0.Z"`)이 있는 줄도 release 꼴이다. 같은 레포의
+  라이브러리를 이름하기 때문이다(generator GN-3e, B2.460). 그런 경로에 그 버전이 없으면 finding이며, 그 문장은 버전이 빠졌다고
+  말한다: ``names the path <path>, which stays inside the repository, with no version beside it, and a release names beside
+  such a path the one version of that library``. 개발
+  꼴(레포를 벗어나는 path, branch, commit, 버전 범위)은 그 줄의 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
   manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
 - **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의

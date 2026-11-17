@@ -76,9 +76,22 @@ export class Refused extends Error {}
 // GN-3e: the form of the dependency line of the core on another polyspec library. A line with the version =X.Y.Z or
 // the tag vX.Y.Z and no branch or commit is the release form, whose version a manifest names; every other line is a
 // development form, which named says in the words of a finding (CK-70). path is the path of a path dependency.
-export function dependencyForm(spec: unknown): { version?: string; path?: string; named: string } {
+// B2.460: core is the place of the manifest of the line in the repository (core.path of the contract). A path that,
+// joined to it, stays inside the root of the repository names a library of the same repository and no other
+// repository, so with the one version of that library beside it the line is a release form too: `=X.Y.Z`, or `0.0.Z`,
+// which Cargo reads as that one version (a caret requirement of 0.0.Z holds no other). inside marks such a path
+// without that version, whose finding says what is missing. A path that leaves the repository, an absolute one, and
+// every path of a caller that gives no core are development forms.
+export function dependencyForm(spec: unknown, core?: string): { version?: string; path?: string; inside?: true; named: string } {
   const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown; git?: unknown } : { version: spec };
-  if (typeof fields.path === 'string') return { path: fields.path, named: `the path ${fields.path}` };
+  if (typeof fields.path === 'string') {
+    const at = core === undefined || fields.path.startsWith('/') ? '..' : posix.normalize(posix.join(core, fields.path));
+    if (at === '..' || at.startsWith('../')) return { path: fields.path, named: `the path ${fields.path}` };
+    const one = typeof fields.version === 'string' ? /^(?:=(\d+\.\d+\.\d+)|(0\.0\.\d+))$/.exec(fields.version) : null;
+    const version = one?.[1] ?? one?.[2];
+    if (version !== undefined) return { version, path: fields.path, named: `the version ${version} of the path ${fields.path}` };
+    return { path: fields.path, inside: true, named: `the path ${fields.path}, which stays inside the repository, with ${typeof fields.version === 'string' ? `the version range ${fields.version}` : 'no version'} beside it` };
+  }
   if (typeof fields.branch === 'string') return { named: `the branch ${fields.branch}` };
   if (typeof fields.rev === 'string') return { named: `the commit ${fields.rev}` };
   const exact = typeof fields.version === 'string' ? /^=(\d+\.\d+\.\d+)$/.exec(fields.version)?.[1] : undefined;
@@ -305,8 +318,10 @@ function armedLibraries(contract: Contract, coreDependencies: CoreDependencies, 
   });
 }
 
-const developmentFinding = (crate: string, named: string): string =>
-  `the dependency line of ${crate} names ${named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+// B2.460: a path inside the repository is refused for the version that it lacks, which the sentence names.
+const developmentFinding = (crate: string, form: { inside?: true; named: string }): string => form.inside === true
+  ? `the dependency line of ${crate} names ${form.named}, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)`
+  : `the dependency line of ${crate} names ${form.named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
 
 // CK-70: the development forms among the dependency lines of the core on the libraries whose types the contract names
 // or whose points a case arms, each a finding of the check of a release (GN-3e). A library that the core does not
@@ -322,15 +337,15 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
   // their tracked manifests (bindingCoreFinding).
   return [BINDING_CORE, ...[...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
     if (!coreDependencies.has(crate)) return [];
-    const form = dependencyForm(coreDependencies.get(crate));
-    return form.version !== undefined ? [] : [developmentFinding(crate, form.named)];
+    const form = dependencyForm(coreDependencies.get(crate), contract.core.path);
+    return form.version !== undefined ? [] : [developmentFinding(crate, form)];
   });
 }
 
 // GN-3e: the requirement of pyproject.toml on the Python package of another library: at the version of a release form of
 // the dependency line of the core, and the name alone for a development form, which the development install resolves.
-function pythonRequirement(library: string, dependencies: CoreDependencies): string {
-  const version = dependencyForm(dependencies.get(`polyspec-${library}`)).version;
+function pythonRequirement(library: string, dependencies: CoreDependencies, core: string): string {
+  const version = dependencyForm(dependencies.get(`polyspec-${library}`), core).version;
   return JSON.stringify(`polyspec-${library}${version === undefined ? '' : `==${version}`}`);
 }
 
@@ -340,7 +355,7 @@ export function bindingCoreFinding(manifest: unknown): string | undefined {
   const dependencies = (manifest as { dependencies?: Record<string, unknown> } | undefined)?.dependencies ?? {};
   if (!(BINDING_CORE in dependencies)) return undefined;
   const form = dependencyForm(dependencies[BINDING_CORE]);
-  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form.named);
+  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form);
 }
 
 // What scaffold writes: the tracked files, and each package that it cannot write with its reason (GN-3e).
@@ -412,7 +427,7 @@ build-backend = "maturin"
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
 requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract, foreign).length === 0 ? '' : `
-dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
+dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies, contract.core.path)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}
@@ -540,7 +555,7 @@ function npmLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>
 
 // GN-3e: the version of the package of another library in package.json and composer.json: the version of a release form
 // of the dependency line of the core, and `*` for a development form, which the development install resolves.
-const packageVersion = (library: string, dependencies: CoreDependencies): string => dependencyForm(dependencies.get(`polyspec-${library}`)).version ?? '*';
+const packageVersion = (library: string, dependencies: CoreDependencies, core: string): string => dependencyForm(dependencies.get(`polyspec-${library}`), core).version ?? '*';
 
 // GN-3e: the npm package of each library that the generated Node and WASM code imports or requires (npmLibraries).
 function npmPackages(contract: Contract, foreign: ReadonlyMap<string, Contract>): { library: string; name: string }[] {
@@ -552,7 +567,7 @@ function npmPackages(contract: Contract, foreign: ReadonlyMap<string, Contract>)
 
 // GN-3e: those packages with their versions, which the manifest that scaffold writes names in dependencies.
 function npmDependencies(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
-  return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies)]));
+  return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies, contract.core.path)]));
 }
 
 // GN-3e, B2.441: the extension `ext-<extension name>` of every other library whose extension the generated extension
@@ -571,7 +586,7 @@ function composerRequires(contract: Contract, dependencies: CoreDependencies, fo
     const name = (owner?.packages['php'] as { package?: string } | undefined)?.package;
     if (owner === undefined || name === undefined) return [];
     const instances = kinds.has('record') || kinds.has('value class');
-    return [[`ext-${extensionName(owner)}`, '*'], ...(instances ? [[name, packageVersion(library, dependencies)] as [string, string]] : [])];
+    return [[`ext-${extensionName(owner)}`, '*'], ...(instances ? [[name, packageVersion(library, dependencies, contract.core.path)] as [string, string]] : [])];
   }));
 }
 
@@ -673,8 +688,10 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
     const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
     if (module === undefined) throw new Refused(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
     const crate = `polyspec-${library}`;
-    const form = dependencyForm(dependencies.get(crate));
-    if (form.path !== undefined) {
+    const form = dependencyForm(dependencies.get(crate), contract.core.path);
+    // B2.460: a path inside the repository with the version of the library is a release form, which requires the Go
+    // module at that version with no replace line, as a consumer of the tag resolves it (GN-19f).
+    if (form.path !== undefined && form.version === undefined) {
       const root = posix.normalize(posix.join(contract.core.path, form.path));
       if (root !== owner.core.path && !root.endsWith(`/${owner.core.path}`)) throw new Refused(`${crate}: the path ${form.path} of the dependency line of the core is not the core ${owner.core.path} of ${library} (GN-15f)`);
       const target = posix.join(root.slice(0, -owner.core.path.length), componentBase(owner), 'go');
@@ -706,12 +723,21 @@ export function releaseRequires(goMod: string): string[] {
   return found;
 }
 
+// GN-15l, B2.460: the release requirements whose sums the tracked go.sum holds: those of the modules of other
+// repositories. A module of the same repository (the same first three elements of the module path, GN-14f) at the
+// version of this release is carried by a commit that the release makes (GN-19f), so no tracked file can hold its
+// hash, and Go is not asked for it.
+export function sumRequires(goMod: string): string[] {
+  const repository = (/^module (\S+)$/m.exec(goMod)?.[1] ?? '').split('/').slice(0, 3).join('/');
+  return releaseRequires(goMod).filter((r) => (r.split(' ')[0] ?? '').split('/').slice(0, 3).join('/') !== repository);
+}
+
 // GN-15l: the go.mod of the module that `go mod download -json all` reads for the sums: the module and go lines of the
 // go.mod that scaffold writes, with its release requirements alone.
 export function goSumModule(goMod: string): string {
   const module = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
   const go = /^go (\S+)$/m.exec(goMod)?.[1] ?? '';
-  return `module ${module}\n\ngo ${go}\n\n${releaseRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
+  return `module ${module}\n\ngo ${go}\n\n${sumRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
 }
 
 // One object of `go mod download -json`.
@@ -727,7 +753,7 @@ export interface GoDownload {
 // go.mod of each module of its build list, as Go verifies them, sorted as Go writes them. undefined for a go.mod
 // without a release requirement. A module that Go could not give is a failure that names it, never a partial go.sum.
 export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string | undefined {
-  const required = releaseRequires(goMod);
+  const required = sumRequires(goMod);
   if (required.length === 0) return undefined;
   const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
   if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);

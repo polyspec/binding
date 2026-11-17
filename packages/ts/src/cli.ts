@@ -32,7 +32,7 @@ import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes } from './release/recipes.ts';
@@ -465,7 +465,8 @@ function trackedOf(): Tracked {
 function withGoSum(t: Tracked): Tracked {
   const goModPath = `${goModuleDir(checked)}/go.mod`;
   const goMod = t.files.get(goModPath);
-  const releases = goMod === undefined ? [] : releaseRequires(goMod);
+  // B2.460: a module of the same repository has no line in the tracked go.sum (sumRequires), so it starts no Go.
+  const releases = goMod === undefined ? [] : sumRequires(goMod);
   if (goMod === undefined || releases.length === 0) return t;
   const resolved = goCommand(go, process.env, `${join(root, goModPath)} requires the release ${releases.join(', ')} of another polyspec Go module, so its go.sum is written from \`go mod download\` (GN-15l)`);
   if ('refusal' in resolved) fail(resolved.refusal);

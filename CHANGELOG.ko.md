@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bf94bfa9a1845e248ce56e4301afb7c9b2db216384f0577a7bcba87de1a85d3c -->
+<!-- source-sha256: 95762b454b59c9c083bcdcac19bc9db387a2f82cba3cb4490eef01d619e2c7cc -->
 <!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
 <!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- 코어의 의존 줄에서 `path`가 레포의 root 안에 머물고 그 옆에 그 라이브러리의 한 버전(`version = "=X.Y.Z"`, 또는 Cargo가 그 한 버전으로 읽는 `"0.0.Z"`)이 있으면 release 꼴이다(GN-3e, GN-15f, CK-70, B2.460). `binding check --release`는 crud-ui의 generator가 적은 `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`를 path라고 거부했고, 그래서 그 레포는 release 검사를 통과할 수 없었다. 이제 `scaffold`가 쓰는 manifest는 그런 라이브러리를 tag를 적을 때처럼 그 버전으로 적는다: `go.mod`는 `replace` 줄 없이 `require <module> vX.Y.Z`, `pyproject.toml`은 `polyspec-<library>==X.Y.Z`, `package.json`과 `composer.json`은 버전 `X.Y.Z`. 추적하는 `go.sum`은 같은 레포의 모듈의 줄을 담지 않고 Go에 그것을 묻지 않는다. 그 모듈의 commit은 release가 만들기 때문이다(GN-15l). 레포 안의 path에 버전이 없거나 여러 버전을 담는 범위가 있으면 버전이 빠졌다고 말하는 문장으로 거부하고, 레포를 벗어나는 path는 전과 같이 거부한다. 그런 줄이 있는 레포가 할 일: path 옆에 그 한 버전을 적고 `binding scaffold`를 다시 실행해 manifest를 commit한다. 자기 라이브러리의 Go module의 `replace` 줄과 `v0.0.0`이 `vX.Y.Z`로 바뀐다. 개발 checkout은 그 Go module을 `go.work`로 해석하므로 `go.work`가 두 모듈을 모두 담아야 한다. 자기 레포의 모듈을 require하는 라이브러리의 Go module release(`binding release-go-module`, GN-19f)는 이 항목이 바꾸지 않는다.
 
 
 ## 0.0.20

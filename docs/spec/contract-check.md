@@ -192,7 +192,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-70** The dependencies of a release (generator GN-3e), run by `binding check --release` alone: the dependency
   line of the core on each `polyspec-<library>` whose types the contract names or whose fault injection points a case
   arms names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit, and so does the dependency line on
-  `polyspec-binding-core` of the core, when it has one, and of each tracked binding crate. A development form (a path, a branch, a
+  `polyspec-binding-core` of the core, when it has one, and of each tracked binding crate. A line with a `path` that
+  stays inside the root of the repository and the one version of that library beside it (`version = "=X.Y.Z"`, or
+  `"0.0.Z"`) is a release form too, because it names a library of the same repository (generator GN-3e, B2.460); such
+  a path without that version is a finding whose sentence says that the version is missing, ``names the path <path>,
+  which stays inside the repository, with no version beside it, and a release names beside such a path the one version
+  of that library``. A development form (a path that leaves the repository, a branch, a
   commit, a version range) is a finding that names the manifest of the line, the crate and the form, because the manifests
   that `scaffold` writes from it name no version of a release (`go.mod` `v0.0.0`, a dependency of
   `pyproject.toml` without a version). It is a check of its own and no
