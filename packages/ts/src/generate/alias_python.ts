@@ -5,7 +5,7 @@
 // takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, categoryClass,langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
@@ -174,14 +174,14 @@ function valueClassPython(alias: ValueAlias, name: string, core: string, failure
       return `        ${variant} => ${walk.leaf(call(make.member, make.params === 0 ? '' : 'value'))},`;
     }
     if (make.form === 'list') {
-      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The list of the made items of a list.', type: "Bound<'py, PyList>", pattern: 'OutFill::Items(items)', put: PUT_APPENDED('items'), next: 'Some(source.item(level.handle, level.index))' });
+      addItemsFill(fills, 'The list of the made items of a list.', "Bound<'py, PyList>", PUT_APPENDED('items'));
       closes.set('Items', call(make.member, 'items'));
       return `        OutValue::List { handle, len } => {
             let items = PyList::empty(py_);
             ${walk.level({ walks: true, fill: 'OutFill::Items(items)' })}
         }`;
     }
-    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: "Bound<'py, PyAny>, Option<Bound<'py, PyAny>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(`map.call_method1(${rustString(access(make.insert).name)}, (key, value))?;`), next: NEXT_ENTRY });
+    addEntriesFill(fills, "Bound<'py, PyAny>, Option<Bound<'py, PyAny>>", `map.call_method1(${rustString(access(make.insert).name)}, (key, value))?;`);
     closes.set('Entries', call(make.member, 'map'));
     return `        OutValue::Map(value) => {
             let handle = value.handle();
@@ -203,22 +203,11 @@ fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyRes
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py_, failure))
 }
-
-/// GN-6x: a core value of ${langName('python', alias.unit.name, 'class')} leaves as the instance that the members of its owner make.
-fn out_${name}<'py>(py_: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
-    let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(py_, root, &mut source)
-}
-${walkRust(PYTHON_WALK, name, fills, arms, 'other => Err(binding_error(py_, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
+${foreignClassOut(PYTHON_WALK, alias, name, core, langName('python', alias.unit.name, 'class'), { fills, arms, opened, head: ownClass, closes })}`;
 }
 
-// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
-// member gives (B2.89), or the content.
-function readAs(kase: ReadCase): string {
-  if (kase.kind === 'Text16') return 'ReadAs::Units';
-  if (kase.units === undefined) return 'ReadAs::Content';
-  return `ReadAs::TextOr(${rustString(access(kase.units).name)}, ${String(access(kase.units).call)})`;
-}
+// GN-6x: the ReadAs of an in case, by the name of the member of Python and whether it is called.
+const readAs = (kase: ReadCase): string => readAsOf(kase, access);
 
 // GN-6x: the description of an instance of each value class of another repository by its in row, and of an instance of
 // a class of its owner that a read member gives, as a map of the entries of its iteration.
@@ -529,29 +518,13 @@ fn handle_position(value: u64) -> usize {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailurePython(model: Model): string {
-  return foreignAliasLibraries(model).map((alias) => {
-    const library = (alias.library ?? '').replaceAll('-', '_');
-    const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(categoryClass(model, k.category))},`).join('\n');
-    return `
-/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn error_of_${library}(py_: Python<'_>, error: ${error.path}) -> PyErr {
-    let class = match ${errorMatched({ codeOf: error.code }, 'error')} {
-${arms}
-    };
-    library_error(py_, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
-}
-
-fn failure_of_${library}(py_: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
-    match failure {
-        binding_core::Failure::Kind(error) => error_of_${library}(py_, error),
-        binding_core::Failure::Raised(raised) => failure_error(py_, binding_core::Failure::Raised(raised)),
-        binding_core::Failure::Callback(error) => failure_error(py_, binding_core::Failure::Callback(error)),
-    }
-}
-`;
-  }).join('');
+  return foreignFailureRust(model, {
+    env: { params: "py_: Python<'_>, ", args: 'py_, ' },
+    fail: 'PyErr',
+    classType: '',
+    classOf: (category) => rustString(categoryClass(model, category)),
+    made: 'library_error(py_, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))',
+  });
 }
 
 // B-1, GN-6af: the PyHost of a model. An instance of a class that an in row of a value alias names is HostValue::Value

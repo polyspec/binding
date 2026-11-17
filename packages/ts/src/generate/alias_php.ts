@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
+import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { convertIn, foreignPhpClass, phpLayout, phpNamespace } from './php.ts';
@@ -171,12 +171,12 @@ function valueClassPhp(alias: ValueAlias, name: string, core: string, failure: s
       return `        OutValue::${variant}(value) => ${walk.leaf(call(make.member, '&value'))},`;
     }
     if (make.form === 'list') {
-      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The array of the made items of a list.', type: 'ZBox<ZendHashTable>', pattern: 'OutFill::Items(items)', put: PUT_PUSHED('items'), next: 'Some(source.item(level.handle, level.index))' });
+      addItemsFill(fills, 'The array of the made items of a list.', 'ZBox<ZendHashTable>', PUT_PUSHED('items'));
       closes.set('Items', `let items = items.into_zval(false).map_err(php_failed)?;
 ${call(make.member, '&items')}`);
       return `        OutValue::List { handle, len } => ${walk.level({ walks: true, fill: 'OutFill::Items(ZendHashTable::new())' })},`;
     }
-    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: 'Zval, Option<Zval>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(`php_method(map, ${rustString(langName('php', make.insert.name, 'callable'))}, vec![&key, &value]).map_err(php_thrown)?;`), next: NEXT_ENTRY });
+    addEntriesFill(fills, 'Zval, Option<Zval>', `php_method(map, ${rustString(langName('php', make.insert.name, 'callable'))}, vec![&key, &value]).map_err(php_thrown)?;`);
     closes.set('Entries', call(make.member, '&map'));
     return `        OutValue::Map(value) => {
             let handle = value.handle();
@@ -199,13 +199,7 @@ fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
-
-/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
-fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
-    let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(root, &mut source)
-}
-${walkRust(PHP_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', '', undefined, { head: '', of: (fill) => closes.get(fill.name) ?? '' })}`;
+${foreignClassOut(PHP_WALK, alias, name, core, label, { fills, arms, opened: '', head: '', closes })}`;
 }
 
 // GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
@@ -860,29 +854,13 @@ fn raised(error: Thrown) -> binding_core::Raised {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailurePhp(model: Model): string {
-  return foreignAliasLibraries(model).map((alias) => {
-    const library = (alias.library ?? '').replaceAll('-', '_');
-    const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
-    return `
-/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn error_of_${library}(error: ${error.path}) -> Fail {
-    let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
-${arms}
-    };
-    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
-}
-
-fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
-    match failure {
-        binding_core::Failure::Kind(error) => error_of_${library}(error),
-        binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
-        binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
-    }
-}
-`;
-  }).join('');
+  return foreignFailureRust(model, {
+    env: { params: '', args: '' },
+    fail: 'Fail',
+    classType: ': usize',
+    classOf: (category) => String(model.classes.findIndex((c) => c.category === category)),
+    made: 'library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))',
+  });
 }
 
 // GN-13: the case-test entry points of the cases whose value has no PHP form. Each makes the value of its case as the

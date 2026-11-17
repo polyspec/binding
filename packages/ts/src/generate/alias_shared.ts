@@ -3,7 +3,9 @@
 
 import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField, unitFn } from './model.ts';
+import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, errorMatched, foreignAliasLibraries, resolveNamedTypes, rustField, unitFn } from './model.ts';
+import { variantPattern } from '../contract.ts';
+import { rustString } from './text.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -735,6 +737,79 @@ export interface WalkShape {
   result: (type: string) => string;
   internal: (detail: string) => string;
   language: string;
+}
+
+// GN-6as: the last arm of the match of a make function, for a variant that no out row of the value makes (U-7, GN-6x).
+export const noOutRow = (shape: WalkShape, rule: string): string =>
+  `other => ${shape.internal(`format!("${rule}: no out row of the kind {}", other.kind().as_str())`)},`;
+
+// GN-6as: the fill of the items of a list and that of the entries of a map class of the owner, added once to the fills
+// of a walk: type is the type of the made container, put how a made item enters it, and insert how a made entry does.
+export const addItemsFill = (fills: Fill[], doc: string, type: string, put: string): void => {
+  if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc, type, pattern: 'OutFill::Items(items)', put, next: 'Some(source.item(level.handle, level.index))' });
+};
+export const addEntriesFill = (fills: Fill[], type: string, insert: string): void => {
+  if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type, pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(insert), next: NEXT_ENTRY });
+};
+
+// GN-6x: the out function of a value class of another repository, whose core value leaves as the instance that the
+// members of the owner make, and its make function: opened opens the class of the owner where an arm takes it, head
+// does so before a member makes a container from its made children, and closes gives that member for each fill.
+export function foreignClassOut(shape: WalkShape, alias: ValueAlias, name: string, core: string, label: string, walk: { fills: Fill[]; arms: (walk: Walk) => string; opened: string; head: string; closes: Map<string, string> }): string {
+  return `
+/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
+fn out_${name}${shape.generics}(${shape.env.params}value: impl Borrow<${core}>) -> ${shape.result(shape.value)} {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(${shape.env.args}root, &mut source)
+}
+${walkRust(shape, name, walk.fills, walk.arms, noOutRow(shape, 'GN-6x'), walk.opened, undefined, { head: walk.head, of: (fill) => walk.closes.get(fill.name) ?? '' })}`;
+}
+
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), by the name of the member and whether it is called, or the content.
+export function readAsOf(kase: { kind: string; units?: Member | undefined }, member: (units: Member) => { name: string; call: boolean }): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  const { name, call } = member(kase.units);
+  return `ReadAs::TextOr(${rustString(name)}, ${String(call)})`;
+}
+
+// U-7 (a'): the failure of the `in` of a value alias of another repository, in the Rust of a binding crate. Its kind,
+// status and errno are the owner's; its class is this repository's class of the category that the owner's E-1 gives
+// the variant, by a match without a wildcard (I-2 (3)). An exception that language code raised while the owner's core
+// walked the value is thrown again. The form gives the first parameter and argument of the language, the type of the
+// failure and of the class, the class of a category, and the expression that makes the failure from class and error.
+export interface ForeignFailureForm {
+  env: { params: string; args: string };
+  fail: string;
+  classType: string;
+  classOf: (category: string) => string;
+  made: string;
+}
+export function foreignFailureRust(model: Model, form: ForeignFailureForm): string {
+  return foreignAliasLibraries(model).map((alias) => {
+    const library = (alias.library ?? '').replaceAll('-', '_');
+    const error = alias.error ?? { path: '', kinds: [] };
+    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${form.classOf(k.category)},`).join('\n');
+    return `
+/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+fn error_of_${library}(${form.env.params}error: ${error.path}) -> ${form.fail} {
+    let class${form.classType} = match ${errorMatched({ codeOf: error.code }, 'error')} {
+${arms}
+    };
+    ${form.made}
+}
+
+fn failure_of_${library}(${form.env.params}failure: binding_core::Failure<${error.path}>) -> ${form.fail} {
+    match failure {
+        binding_core::Failure::Kind(error) => error_of_${library}(${form.env.args}error),
+        binding_core::Failure::Raised(raised) => failure_error(${form.env.args}binding_core::Failure::Raised(raised)),
+        binding_core::Failure::Callback(error) => failure_error(${form.env.args}binding_core::Failure::Callback(error)),
+    }
+}
+`;
+  }).join('');
 }
 
 // GN-6as: the make function of a value alias: the items of the walk, the function that opens one OutValue by the arms of
