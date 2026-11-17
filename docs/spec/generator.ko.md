@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 3dd7f42d5bcb438f1e5b58a2d448bde9080780bf0730e59bce7ee7fee1c1fcb0 -->
+<!-- source-sha256: b08599a2fcf6d44a23628eefbc2b73f3ae458e39b96dd2a547e786b3e7416ecf -->
 # 생성기
 
 [English](generator.md)
@@ -301,6 +301,18 @@
   각 `composer.json`의 `extension-name`에 대해 `extension_loaded`가 참인지 묻고, 참이 아니면 그 프로세스는 시험이 실행되기
   전에 그 이름과 함께 실패한다. 이유: PIE와 release 도구는 binary를 로드하고 PHP에 `extension-name`으로 확장을 묻는다.
   그래서 다른 이름의 확장은 설치되고도 로드되지 않았다고 보고된다.
+- **GN-3i** Python 바인딩 crate의 라이브러리는 그 crate의 이름을 따른다. manifest의 `[lib] name`은
+  `polyspec_<library>_python`이고, 라이브러리 이름의 `-`는 `_`로 적는다. 다른 바인딩 crate의 라이브러리가 자기 crate의
+  이름을 따르는 것과 같다. 라이브러리의 이름은 Python이 import하는 module의 이름이 아니다. 그 module은 그대로
+  `<module>._native`(host 패키지에서는 `<module>._binding._native`, GN-3b)이고 두 항목이 그것을 이름한다. 생성된 소스는
+  `#[pymodule(name = "_native")]`로 그것을 선언하고, 이것이 CPython이 확장 파일에 묻는 symbol `PyInit__native`를 준다.
+  `pyproject.toml`의 `tool.maturin.module-name`은 maturin이 wheel과 개발 설치에서 라이브러리를 복사해 두는 파일
+  (`_native.abi3.so`)을 이름한다. 어떤 recipe도, end-to-end 확인의 어떤 단계도 Python crate의 라이브러리를 파일 이름으로
+  읽지 않는다. maturin이 자기가 실행한 빌드에서 그것을 받는다. 이유: Cargo는 workspace의 모든 구성원의 라이브러리를 한
+  디렉터리에 `target/<profile>/deps/lib<name>`으로 쓴다. 그래서 한 workspace의 두 Python crate가 모두 `_native`라는
+  이름이면(crud-ui의 `packages/validator/python`과 `packages/generator/python`) 한 파일을 썼고, 둘을 함께 빌드하면 Cargo가
+  출력 파일 이름 충돌을 경고했으며(Cargo는 이것이 오류가 될 수 있다고 적는다) 한 crate의 라이브러리가 다른 crate의 것을
+  덮어썼다(B2.352).
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
