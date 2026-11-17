@@ -571,7 +571,8 @@ for (const t of targets) for (const p of copiesOf(t)) generateOf(t, p);
 
 // GN-14n (B2.509): a repository with expected-failures.json names, for each target, the generated tests that must
 // fail, each with a text of its failure. Each run of tests of the target then passes only when exactly those tests
-// fail with their texts, and they count as its passed tests; a repository without the file counts as before.
+// fail with their texts, and they count as its passed tests; a repository without the file counts as before. Only
+// tests/e2e/falsepass of the tree may hold the file; the run of any other repository with it fails here, naming it.
 const expectedFailures = expectedFailuresOf(resolve(repo), binding) as Partial<Record<Lang, ExpectedFailure[]>> | undefined;
 const judgedCount = (t: Lang, what: string, passed: number, failedTests: FailedTest[], failures: number, skipped: number, skippedNames: string[] = []): void => {
   if (expectedFailures === undefined) {

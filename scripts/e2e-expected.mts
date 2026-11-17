@@ -4,8 +4,8 @@
 // text: a named test that passes or does not run, a failure without its text, and a failure of another test fail the
 // step, so the fixture checks that a defect of the generator fails a test, and never that a test is left out.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import type { GoTestEvents } from './go-test-events.mts';
 
 // The one repository that holds expected-failures.json, a fixture built to fail (AGENTS.md).
@@ -30,11 +30,13 @@ export function strayExpectedFailures(root: string): string[] {
 }
 
 // The expected failures of a run of the repository repo, by target, or undefined when it has none; binding is the
-// tree of binding that the run checks.
+// tree of binding that the run checks. Only tests/e2e/falsepass of that tree, compared by real path, has them: the
+// file in any other repository, such as one outside the tree, fails the run, so no failure is hidden by it.
 export function expectedFailuresOf(repo: string, binding: string): Partial<Record<string, ExpectedFailure[]>> | undefined {
-  void binding;
   const path = join(repo, 'expected-failures.json');
   if (!existsSync(path)) return undefined;
+  const home = join(binding, dirname(EXPECTED_FAILURES_HOME));
+  if (!existsSync(home) || realpathSync(repo) !== realpathSync(home)) throw new Error(`${path} lists expected failures, which only ${dirname(EXPECTED_FAILURES_HOME)} of binding may, so no failure of a target is hidden by it (GN-14n)`);
   return (JSON.parse(readFileSync(path, 'utf8')) as { failures: Partial<Record<string, ExpectedFailure[]>> }).failures;
 }
 
@@ -70,22 +72,33 @@ export function expectedFailureProblem(failed: readonly FailedTest[], expected: 
 }
 
 // The failed tests of a run of unittest by its stderr: each block "FAIL: <name> (<path>)" or "ERROR: <name> (<path>)"
-// and the traceback below it, up to the next block or the line "Ran <n> tests".
+// and the traceback below it, up to the next block or the line "Ran <n> tests". A test is named <class>.<method>, since
+// methods of two classes may share a name: the path is <module>.<class>.<method> from Python 3.11 and
+// <module>.<class> before it.
 export function unittestFailures(stderr: string): FailedTest[] {
   const failed: FailedTest[] = [];
   const blocks = stderr.split(/^={20,}$/m).slice(1);
   for (const block of blocks) {
     const head = /^\s*(?:FAIL|ERROR): (\S+)(?: \(([^)]*)\))?/.exec(block);
     if (head === null) continue;
-    failed.push({ name: head[1] ?? '', text: block.split(/^-{20,}\nRan \d+ tests? in /m)[0] ?? block });
+    const method = head[1] ?? '';
+    const path = (head[2] ?? '').split('.');
+    if (path.at(-1) === method) path.pop();
+    const name = path.length >= 2 ? `${path.at(-1) ?? ''}.${method}` : method;
+    failed.push({ name, text: block.split(/^-{20,}\nRan \d+ tests? in /m)[0] ?? block });
   }
   return failed;
 }
 
 // The failed tests of a run of go test -json, by the name of the test without its package, with its output.
 export function goFailures(read: GoTestEvents): FailedTest[] {
-  // The name of a Go test starts with Test, and the path of its package may hold dots.
-  return read.counts.fail.map((name) => ({ name: name.slice(name.search(/\.Test/) + 1), text: read.outputs.get(name) ?? '' }));
+  // The name of a Go test starts with Test, and the path of its package may hold dots. A failure whose name holds no
+  // .Test, such as one of an example, has no name that expected-failures.json can hold, so the read fails naming it.
+  return read.counts.fail.map((name) => {
+    const at = name.search(/\.Test/);
+    if (at < 0) throw new Error(`go test reported the failure ${name}, whose name holds no .Test, so it is no test that expected-failures.json can name (GN-14n)`);
+    return { name: name.slice(at + 1), text: read.outputs.get(name) ?? '' };
+  });
 }
 
 const unescaped =(text: string): string =>

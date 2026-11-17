@@ -53,7 +53,7 @@ test('GN-14n: the failed tests of unittest, node --test, PHPUnit and go test are
     'FAILED (failures=1, errors=1)',
   ].join('\n');
   const python = unittestFailures(stderr);
-  assert.deepEqual(python.map((f) => f.name), ['test_after', 'test_other']);
+  assert.deepEqual(python.map((f) => f.name), ['GeneratedTest.test_after', 'GeneratedTest.test_other']);
   assert.match(python[0]?.text ?? '', /no value for text/);
   assert.doesNotMatch(python[1]?.text ?? '', /Ran 3 tests/);
   const xml = '<testsuites><testsuite name="x"><testcase name="GN-13e: Seal.check a" classname="t"><failure message="no value for text" type="testCodeFailure">Error: no value for text&#10;</failure></testcase><testcase name="passes &quot;ok&quot;" classname="t"></testcase><testcase name="testB" class="T"><error type="E">testB&#10;E: boom</error></testcase></testsuite></testsuites>';
