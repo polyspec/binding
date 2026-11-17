@@ -408,26 +408,35 @@ ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loo
 
   // GN-19i: the build recipes of the jobs of assets.yml. Each build of a job runs as a make of its own to its end, and the
   // recipe names the builds that failed; an install that a build needs comes first and stops the recipe when it fails.
+  // B2.457: the first step of each is the check of a release (release-binding-check), a make of its own, which stops the
+  // recipe when it fails: the job of CI and the job of a release run this one recipe, so what fails after the tag fails
+  // in CI first, and no Makefile and no workflow holds a condition that runs the check in a release alone.
+  const check = `\t$(MAKE) --no-print-directory ${name('release-binding-check')}`;
   const runAll = (job: string, steps: string[]): string => `\t@failed=; for goal in ${steps.join(' ')}; do $(MAKE) --no-print-directory "$$goal" || failed="$$failed $$goal"; done; \\
 \tif [ -n "$$failed" ]; then echo "${job}: failed:$$failed" >&2; exit 1; fi`;
   const platformSteps = [...(has('go') ? ['release-go-static'] : []), ...(has('python') ? ['release-wheel'] : []), ...(has('node') ? ['release-npm-platform'] : [])].map(name);
   if (platformSteps.length > 0) {
     const job = name('release-assets-platform');
     add('release-assets-platform', `${head('release-assets-platform', `release-assets-platform is the build of the job platform of assets.yml (GN-19i): ${platformSteps.join(', ')} on the
-platform of the host, each to its end; it fails naming each build that failed.`, '')}
+platform of the host, each to its end; it fails naming each build that failed. Its first step is
+${name('release-binding-check')}, which stops it.`, '')}
+${check}
 ${runAll(job, platformSteps)}
 `);
   }
   if (has('php')) {
     const job = name('release-assets-php');
     add('release-assets-php', `${head('release-assets-php', `release-assets-php is the build of an entry of the job php of assets.yml (GN-19i): release-php-ext for the PHP of
-PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry.`, '')}
+PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry. Its first
+step is ${name('release-binding-check')}.`, '')}
+${check}
 	@test -n "$(EXPECTED_PHP_MINOR)" || { echo '${job} needs EXPECTED_PHP_MINOR: the PHP minor of the entry, for example make ${job} EXPECTED_PHP_MINOR=8.4' >&2; exit 2; }
 	$(MAKE) --no-print-directory ${name('release-php-ext')} PHP=php EXPECTED_PHP_MINOR=$(EXPECTED_PHP_MINOR)
 `);
   }
   if (has('node') || has('wasm')) {
-    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i)${has('wasm') ? ': it installs the wasm-bindgen CLI first and stops\nwhen that fails, then' : ':'} runs ${name('release-npm')}.`, '')}
+    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i): it runs ${name('release-binding-check')} first${has('wasm') ? ',\nthen installs the wasm-bindgen CLI and stops when that fails, then' : ', then'} runs ${name('release-npm')}.`, '')}
+${check}
 ${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(MAKE) --no-print-directory ${name('release-npm')}
 `);
   }

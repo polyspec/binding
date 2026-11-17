@@ -22,9 +22,16 @@ contract that passes the schema and the package names (CK-1, CK-18). A check tha
 that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
 another binding behind a finding of the contract.
 
-`binding check <interface.json> --release` also runs the check of a release, CK-70. The recipe of a release (generator GN-19g)
-passes the option; a check without it does not run CK-70, because a development checkout holds the development forms
-that a release may not hold.
+`binding check <interface.json> --release` also runs the check of a release, CK-70. The recipe `release-binding-check`
+(generator GN-19g) passes the option, and each build recipe of the assets runs that recipe as its first step, in CI as in
+a release (generator GN-19i). The rule that it checks: a committed tree of a repository, on any branch, holds release
+forms only. A tracked file names another polyspec repository by a tag or by a version of a release, never by a branch, a
+commit or a checkout beside the repository, and a checkout is developed against the checkout of another repository
+through links that are not tracked. So there is no declaration of a development tree and no mode in which CK-70 passes
+a development form. A check without the option does not run CK-70: the option remains for the trees that no release is
+cut from, such as the repositories of the end-to-end check of binding, and for a repository that has not yet moved its
+lines. Why: while the check ran in the release alone, a development form that a branch had committed was first found
+after the tag (generator GN-19i, B2.457).
 
 ## Checks
 
@@ -200,7 +207,30 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   of that library``. A development form (a path that leaves the repository, a branch, a
   commit, a version range) is a finding that names the manifest of the line, the crate and the form, because the manifests
   that `scaffold` writes from it name no version of a release (`go.mod` `v0.0.0`, a dependency of
-  `pyproject.toml` without a version). It is a check of its own and no
+  `pyproject.toml` without a version). Those are the lines from which `scaffold` writes the manifests. The check also
+  reads every other line that names a polyspec crate in the Cargo manifests of the contract, which are the manifest
+  of the core, the manifest of each tracked binding crate and the root manifest (B2.457). A line names a polyspec
+  crate when its crate, which is its `package` when it has one and its key otherwise, is `polyspec-<name>`; no contract
+  names the crates of `[dev-dependencies]`, so the name decides. The tables are those in which a manifest names a
+  crate with its source: `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]`, the same three of each
+  `[target.<target>]`, and `[patch.<source>]`, which replaces the source of a crate for every member. In them a line
+  that names a branch, a commit, a version range or a path that leaves the repository is a finding that names the
+  table (``the dependency line of polyspec-json in [dev-dependencies] names the branch main, a development form``); a
+  line of the crate on itself (CK-65) and a path that stays inside the repository are none, with or without a version,
+  because they name no other repository and no manifest of a binding package names a version from them. A line with
+  `workspace = true` is judged by the line of `[workspace.dependencies]` of the root manifest that it inherits, in
+  every table (generator GN-3e), and the finding says so (``names the branch main, by the line of
+  [workspace.dependencies] of the root manifest``); a line of `[workspace.dependencies]` that no read manifest inherits
+  is not read. The manifests of other crates of the repository and the manifests of the other ecosystems that
+  `scaffold` does not write are not read. Why: a consumer held a branch line in `[dev-dependencies]`, which the check
+  of the lines that the contract names passed. CK-70 does not ask whether the tag of a line exists, because the side
+  that fetches says so in its own words and before the tag of the repository: Cargo resolves every line of the
+  workspace for any build, so `cargo fetch --locked` of the install of the repository and the first `$(CARGO)` build
+  of a job end with ``failed to find tag `vX.Y.Z` `` under the name of the crate and the URL of its repository, and
+  `binding check` itself ends with the same error of Cargo and the instruction of generator GN-15f when it reads the
+  contract of that crate through `cargo metadata`; for a Go module `go mod download` names the unknown revision, which
+  is the finding of CK-19 on `go.sum` (generator GN-15l). Since CI runs the build recipes of the release (generator
+  GN-19i), these fail in CI. It is a check of its own and no
   part of CK-19: the tracked files of a development checkout are what `scaffold` writes, so CK-19 passes them, and the
   question of CK-70 is what a release may hold.
 - **CK-71** The licence of the core (generator GN-3f): the manifest of the core names `package.license`, by itself or

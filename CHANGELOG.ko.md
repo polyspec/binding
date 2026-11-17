@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 95762b454b59c9c083bcdcac19bc9db387a2f82cba3cb4490eef01d619e2c7cc -->
+<!-- source-sha256: d287b8497f5e98ef1d1fc52da87224768a9a06126c472b0dede04c03dd4eba6e -->
 <!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
 <!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
@@ -16,6 +16,11 @@
 
 ## Unreleased
 
+- 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담고, CI가 release의 검사를 실행한다(CK-70, GN-19i, B2.457): `packages/release.mk`의 생성된 `release-assets-<job>` recipe는 저마다 `release-binding-check`를 첫 단계로 실행한다. 그래서 CI의 실행과 release의 실행이 한 recipe이고, GN-19i의 입력 `release`는 없어졌다. 전에는 레포마다 자기 Makefile의 조건으로 release에서만 검사를 돌렸고, template, http-negotiation, session-store가 저마다 tag 뒤에 처음 돈 검사에 tag를 잃었다. `binding check --release`는 이제 코어, 추적하는 바인딩 crate 각각, root의 manifest에서 `[dev-dependencies]`, `[build-dependencies]`, `[target.<target>]`의 table, `[patch.<source>]`에 있는 crate `polyspec-<name>`의 줄도 모두 읽는다. `workspace = true`인 줄은 검사에서도 `scaffold`가 쓰는 manifest에서도 그것이 물려받는 `[workspace.dependencies]`의 줄의 꼴을 갖고, 바인딩 crate는 코어가 물려받는 `polyspec-binding-core` 줄을 물려받는다. 이 버전으로 옮기는 레포가 할 일:
+  - Makefile에서 조건 `$(if $(filter true,$(RELEASE)),…release-binding-check…)`를 지우고, `assets.yml`과 그것을 부르는 workflow에서 입력 `release`를 지우고, `make release-recipes`를 다시 실행한다. `release-assets-<job>` 앞에서 `release-binding-check`를 아직 실행하는 자기 recipe는 검사를 두 번 돌릴 뿐이다.
+  - `release-assets-<job>` recipe를 실행하는 모든 job(`platform`, `php`, `npm`)에 CI에서도 Go를 설치한다. 검사가 Go를 시작할 수 있기 때문이다(GN-15l). 자기 go가 `PATH`의 `go`가 아니면 `GO`를 정의한다.
+  - 추적하는 Cargo manifest의 개발 꼴 줄을 모두 tag나 release의 버전으로 바꾼다: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, target의 table, `[patch]`, 그리고 crate가 물려받는 `[workspace.dependencies]`의 줄에 있는 branch, commit, 버전 범위, 레포를 벗어나는 path. 다른 레포의 checkout에 맞댄 개발은 추적하지 않는 링크로 한다. crate가 자기 자신을 이름하는 줄과 레포 안의 path는 그대로 둔다.
+  - 코어가 `polyspec-binding-core`나 라이브러리를 workspace에서 물려받는 레포는 `binding scaffold`를 다시 실행해 manifest를 commit한다.
 - 코어의 의존 줄에서 `path`가 레포의 root 안에 머물고 그 옆에 그 라이브러리의 한 버전(`version = "=X.Y.Z"`, 또는 Cargo가 그 한 버전으로 읽는 `"0.0.Z"`)이 있으면 release 꼴이다(GN-3e, GN-15f, CK-70, B2.460). `binding check --release`는 crud-ui의 generator가 적은 `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`를 path라고 거부했고, 그래서 그 레포는 release 검사를 통과할 수 없었다. 이제 `scaffold`가 쓰는 manifest는 그런 라이브러리를 tag를 적을 때처럼 그 버전으로 적는다: `go.mod`는 `replace` 줄 없이 `require <module> vX.Y.Z`, `pyproject.toml`은 `polyspec-<library>==X.Y.Z`, `package.json`과 `composer.json`은 버전 `X.Y.Z`. 추적하는 `go.sum`은 같은 레포의 모듈의 줄을 담지 않고 Go에 그것을 묻지 않는다. 그 모듈의 commit은 release가 만들기 때문이다(GN-15l). 레포 안의 path에 버전이 없거나 여러 버전을 담는 범위가 있으면 버전이 빠졌다고 말하는 문장으로 거부하고, 레포를 벗어나는 path는 전과 같이 거부한다. 그런 줄이 있는 레포가 할 일: path 옆에 그 한 버전을 적고 `binding scaffold`를 다시 실행해 manifest를 commit한다. 자기 라이브러리의 Go module의 `replace` 줄과 `v0.0.0`이 `vX.Y.Z`로 바뀐다. 개발 checkout은 그 Go module을 `go.work`로 해석하므로 `go.work`가 두 모듈을 모두 담아야 한다. 자기 레포의 모듈을 require하는 라이브러리의 Go module release(`binding release-go-module`, GN-19f)는 이 항목이 바꾸지 않는다.
 
 

@@ -666,6 +666,39 @@ test('B2.279: release-assets-npm installs the wasm-bindgen CLI first, stops when
   assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0, 'release-assets-npm builds after a failed install');
 });
 
+// B2.457: the build recipe of each job runs the check of a release as its first step, so the run of CI and the run of a
+// release are one recipe, and no Makefile and no workflow holds a condition that runs the check in a release alone.
+test('B2.457: each release-assets-<job> runs release-binding-check first, with --cargo and --go, and builds nothing when it fails (GN-19g, GN-19i)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  standIn(box.bin, 'mise', '');
+  const jobs: [string, string[]][] = [['release-assets-platform', []], ['release-assets-php', ['EXPECTED_PHP_MINOR=8.4', `LLVM_ROOT=${box.llvm}`]], ['release-assets-npm', [`MISE=${join(box.bin, 'mise')}`]]];
+  for (const [job, args] of jobs) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make(job, ...args, 'GO=/opt/go/bin/go');
+    assert.equal(run.status, 0, run.output);
+    const calls = box.calls();
+    const check = callIndex(calls, 'binding', 'check', join(box.root, 'packages/rust/interface.json'), '--release');
+    assert.equal(check, 0, `${job} starts ${calls[0]?.tool ?? ''} ${(calls[0]?.args ?? []).join(' ')} before the check`);
+    assert.deepEqual(calls[check]?.args.slice(3), ['--cargo', join(box.bin, 'cargo'), '--go', '/opt/go/bin/go'], job);
+  }
+  // A failed check stops the job before a build, an install or a generation.
+  standIn(box.bin, 'binding', `if (args[0] === 'check') { console.error('CK-70 the dependency line of polyspec-points names the branch main'); process.exit(1); }`);
+  for (const [job, args] of jobs) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make(job, ...args);
+    assert.notEqual(run.status, 0, job);
+    assert.match(run.output, /CK-70 the dependency line of polyspec-points names the branch main/, job);
+    assert.deepEqual(box.calls().map((call) => `${call.tool} ${call.args[0] ?? ''}`), ['binding check'], job);
+  }
+  // The file holds no condition on an input of a release: the check is a line of each build recipe.
+  const text = releaseRecipes(fixtureContract()).text;
+  assert.doesNotMatch(text, /\$\(RELEASE\)|filter true/);
+  for (const job of ASSET_JOBS) {
+    const recipe = text.slice(text.indexOf(`\n${job}:`));
+    assert.match(recipe.split('\n').find((line) => line.startsWith('\t')) ?? '', /^\t\$\(MAKE\) --no-print-directory release-binding-check$/, job);
+  }
+});
+
 // B2.407: the generated entry loads <name>.<platform>.node beside itself when the platform package is not installed
 // (GN-3c); the recipe of the file of recipes puts it there, so no consumer writes the build, the name or the copy.
 test('B2.407: checkout-node-addon builds the addon of the checkout and puts <name>.<platform>.node beside the generated entry (GN-3c, GN-1d)', (t) => {

@@ -32,7 +32,7 @@ import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes } from './release/recipes.ts';
@@ -441,7 +441,16 @@ function scaffolded(): Map<string, unknown> {
   }
   return found;
 }
-const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
+// B2.457: the root manifest, for [workspace.dependencies], whose line a dependency line with workspace = true has
+// (GN-3e), and for [patch], which CK-70 reads. A root without a manifest, or with one that is no TOML, gives none.
+let rootManifest: { workspace?: { dependencies?: Record<string, unknown> } } = {};
+try {
+  rootManifest = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as typeof rootManifest;
+} catch {
+  // Cargo names the file
+}
+const workspaceDependencies = rootManifest.workspace?.dependencies;
+const coreDependencies = inheritedLines(manifest.dependencies ?? {}, workspaceDependencies);
 // GN-3e: the running generator, whose own line on polyspec-binding-core the binding crates of a core without that line
 // get: the version of its package and the commit that it knows of itself (CK-20).
 const packageDir = resolve(dirname(new URL(import.meta.url).pathname), '..');
@@ -588,19 +597,28 @@ if (command === 'check') {
   }
   // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
   if (options.has('--release')) {
-    for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles), foreign as ReadonlyMap<string, Contract>)) {
+    const armedPoints = casePointLibraries(checked, caseFiles);
+    // B2.457: beside the lines from which scaffold writes the manifests, every other polyspec line of the manifest of
+    // the core, in each table that names a crate ([dev-dependencies] and the tables of a target among them).
+    for (const message of [
+      ...releaseFindings(checked, coreDependencies, armedPoints, foreign as ReadonlyMap<string, Contract>),
+      ...manifestReleaseFindings(manifest, checked.core.path, new Set(releaseJudged(checked, coreDependencies, armedPoints, foreign as ReadonlyMap<string, Contract>)), workspaceDependencies),
+    ]) {
       differs = true;
       process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-70 ${message}\n`);
     }
-    // The line on polyspec-binding-core of each tracked binding crate, as the repository holds it.
-    for (const path of [...tracked.files.keys()].filter((file) => file.endsWith('/Cargo.toml'))) {
-      let message: string | undefined;
+    // The line on polyspec-binding-core of each tracked binding crate, as the repository holds it, and its other
+    // polyspec lines; then those of the root manifest, [patch] among them.
+    for (const path of [...[...tracked.files.keys()].filter((file) => file.endsWith('/Cargo.toml')), 'Cargo.toml']) {
+      let messages: string[] = [];
       try {
-        message = existsSync(join(root, path)) ? bindingCoreFinding(parse(readFileSync(join(root, path), 'utf8'))) : undefined;
+        const read: unknown = existsSync(join(root, path)) ? parse(readFileSync(join(root, path), 'utf8')) : undefined;
+        const own = path === 'Cargo.toml' ? undefined : bindingCoreFinding(read, workspaceDependencies);
+        messages = read === undefined ? [] : [...(own === undefined ? [] : [own]), ...manifestReleaseFindings(read, path === 'Cargo.toml' ? '.' : path.slice(0, -'/Cargo.toml'.length), new Set(path === 'Cargo.toml' ? [] : ['polyspec-binding-core']), workspaceDependencies)];
       } catch {
         // not TOML: CK-19 reports the file
       }
-      if (message !== undefined) {
+      for (const message of messages) {
         differs = true;
         process.stderr.write(`${join(root, path)}: CK-70 ${message}\n`);
       }
