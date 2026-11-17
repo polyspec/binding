@@ -10730,6 +10730,29 @@ test('a callback unit of another library that returns an alias of that library h
   assert.doesNotMatch(node, /test\('K-2: read refuses a callback result of another type'/);
 });
 
+// E-2, GN-7a, B2.514: the declaration of each error class gives the constructor of the runtime, (message, kind, status,
+// errno), whose status and errno may be left out or null. tsc type-checks both calls against the generated .d.ts of
+// Node and WASM.
+test('the .d.ts of Node and WASM declares the constructor of each error class as the runtime has it (E-2, GN-7a, B2.514)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'wasm'] });
+  const tsc = fileURLToPath(new URL('../node_modules/typescript/bin/tsc', import.meta.url));
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    const declared = text(out, path);
+    const names = [...declared.matchAll(/\/\*\* The errors of [^*]+\*\/\nexport declare class (\w+)/g)].map((m) => m[1]);
+    assert.ok(names.length > 1, path);
+    const dir = mkdtempSync(join(tmpdir(), 'binding-b2514-'));
+    try {
+      writeFileSync(join(dir, 'index.d.ts'), declared);
+      writeFileSync(join(dir, 'check.ts'), `import { ${names.join(', ')} } from './index';\n${names.map((n) => `new ${n}('m', 'k');\nnew ${n}('m', 'k', 1, 2);\nnew ${n}('m', 'k', null, null);\n`).join('')}`);
+      const run = spawnSync(process.execPath, [tsc, '--noEmit', '--strict', '--skipLibCheck', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', 'check.ts'], { cwd: dir, encoding: 'utf8' });
+      assert.equal(run.status, 0, `${path}: ${run.stdout}${run.stderr}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
