@@ -126,7 +126,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row
   that matches no property is refused.
-- **CK-104** The conversion of an error of another library's package (generator GN-7c; B2.489, not yet run): for a
+- **CK-105** The conversion of an error of another library's package (generator GN-7c; B2.489, not yet run): for a
   member that takes a callback unit of a library L at any depth of its parameters (GN-6s), the rows with `library:
   L` that it names in `raises` are its conversion table for L, and the generated code converts an exception of L's
   package by identity of the inner kind. A member that names rows of L and takes no callback unit of L has no table.
@@ -136,7 +136,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   conversion from a unit of this contract: a row without `library` has no table, and a callback unit of this
   contract raises its own kinds through recognition (U-3), so an exception of this contract's own classes is thrown
   again unchanged. The message names the member, the rows, the library and the kind: `the member <id> names
-  <variant> and <variant> of <library>, whose inner kind <kind> converts to two classes (CK-104)`. Why: the
+  <variant> and <variant> of <library>, whose inner kind <kind> converts to two classes (CK-105)`. Why: the
   conversion is derived from `raises`, so a kind that arrives as an exception of L and as a kind of the core
   (session-store `Random` of hyper, through `store.renew` and through `random_hex`) takes one class by one rule, and
   the contract writes nothing new. A rename has no form: the kind does not change, and so the category does not.
@@ -144,7 +144,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   the member's `raises` states; nothing checks it at run time, and the check cannot see it, because the kinds that a
   callback object throws are not stated by the member.
 - **CK-106** A case proves each converted row with values (generator GN-7c, GN-13; B2.489, not yet run): each row of
-  a conversion table of CK-104 has one case of its member, one case for each row, whose callback fixture of the unit
+  a conversion table of CK-105 has one case of its member, one case for each row, whose callback fixture of the unit
   of L raises the row's inner kind with values, `{"library": L, "kind": <kind>, "message": <text>, "status": <int>,
   "errno": <int>, "properties": {<property>: <value>}}` (CK-22), and whose `raises` names the kind. The fixture gives
   `status`, `errno` and each property of CK-107 that the row's class holds, non-null and with a value other than

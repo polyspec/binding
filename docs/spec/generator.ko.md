@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8aa872a29fce7463e7ba90555551325f4ea2de137f18216569135f45ed311159 -->
+<!-- source-sha256: 93a47ef3c3f223a1d473cc50339c01ef3f46d43c6f173abc4eb70d58a66fc220 -->
 # 생성기
 
 [English](generator.md)
@@ -1414,7 +1414,7 @@
   시험이다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
   (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
   컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
-  L package 예외의 변환(B2.489, CK-104): L의 callback unit을 받는 member(GN-6s)는 예외 O를 다음일 때 변환한다. 그 코어가
+  L package 예외의 변환(B2.489, CK-105): L의 callback unit을 받는 member(GN-6s)는 예외 O를 다음일 때 변환한다. 그 코어가
   O를 쥔 `Failure::Raised`를 돌려주었고, O가 L의 category 클래스 여섯 중 하나나 L의 오류 unit의 인스턴스이며(GN-6s처럼 L의
   package에서 이름으로 찾는다), O의 `kind`가 member가 `raises`에 적은 L 행의 안쪽 kind일 때다. 변환된 오류는 같은 kind를
   가진 그 행 클래스의 인스턴스다. message, status, errno는 O의 것이고, 행의 unit의 각 property는 `wrapped` 행이 그것으로

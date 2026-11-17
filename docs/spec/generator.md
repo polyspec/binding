@@ -1715,7 +1715,7 @@ the design ids are those of the binding design.
   variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
   the core error holds the error of the library inside one of its own variants, so only the path down to the inner
   variant gives a pattern that the compiler checks against the core error (E-1b (a)).
-  The conversion of an exception of L's package (B2.489, CK-104): a member that takes a callback unit of L (GN-6s)
+  The conversion of an exception of L's package (B2.489, CK-105): a member that takes a callback unit of L (GN-6s)
   converts an exception O when its core returned `Failure::Raised` holding O, O is an instance of one of L's six
   category classes or of an error unit of L, found by name in L's package as GN-6s finds them, and O's `kind` is the
   inner kind of a row of L that the member names in `raises`. The converted error is an instance of that row's class

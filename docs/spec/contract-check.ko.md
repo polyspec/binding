@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 46bf91ca1330cf3aff2bd750c3d32f637bbfafd32ccc3b428043ee3ed05c3317 -->
+<!-- source-sha256: 1528173999ce1272eb9a304971425867df483d18d50513877749175a87c81202 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -111,7 +111,7 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
-- **CK-104** 다른 라이브러리 package의 오류 변환(생성기 GN-7c; B2.489, 아직 돌지 않음): parameter의 어느 깊이에서든
+- **CK-105** 다른 라이브러리 package의 오류 변환(생성기 GN-7c; B2.489, 아직 돌지 않음): parameter의 어느 깊이에서든
   라이브러리 L의 callback unit을 받는 member(GN-6s)에서, 그 member가 `raises`에 적은 `library: L` 행들이 L에 대한 그
   member의 변환표이고, 생성 코드는 L package의 예외를 안쪽 kind의 동일성으로 변환한다. L의 행을 적지만 L의 callback unit을
   받지 않는 member는 표가 없다. 거부: (a) 한 member의 두 행이 같은 `library`와 같은 안쪽 variant를 서로 다른 바깥 variant
@@ -119,12 +119,12 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   category의 오류 unit을 적은 행. CK-10이 모든 행에 대해 거부하는 것과 같다. (c) 이 계약의 unit에서의 변환. `library`가 없는
   행은 표가 없고, 이 계약의 callback unit은 자기 kind를 recognition으로 내므로(U-3), 이 계약 자신의 클래스의 예외는 바꾸지
   않고 다시 던진다. 메시지는 member, 행, 라이브러리, kind를 적는다: `the member <id> names <variant> and <variant> of
-  <library>, whose inner kind <kind> converts to two classes (CK-104)`. 이유: 변환을 `raises`에서 끌어내므로, L의 예외로도
+  <library>, whose inner kind <kind> converts to two classes (CK-105)`. 이유: 변환을 `raises`에서 끌어내므로, L의 예외로도
   코어의 kind로도 오는 kind(hyper의 session-store `Random`, `store.renew`와 `random_hex`를 거쳐)가 규칙 하나로 클래스
   하나를 받고, 계약은 새로 적는 것이 없다. 이름 바꾸기는 형식이 없다. kind가 바뀌지 않으므로 category도 바뀌지 않는다.
   한계: member가 적지 않은 L의 kind는 바꾸지 않고 L의 클래스로 다시 던지므로, member의 `raises`가 밝힌 클래스 밖에 있다.
   실행 중에 이를 검사하는 것은 없고, callback 객체가 던지는 kind를 member가 밝히지 않으므로 검사도 볼 수 없다.
-- **CK-106** case가 변환된 행마다 값으로 증명한다(생성기 GN-7c, GN-13; B2.489, 아직 돌지 않음): CK-104 변환표의 각 행은
+- **CK-106** case가 변환된 행마다 값으로 증명한다(생성기 GN-7c, GN-13; B2.489, 아직 돌지 않음): CK-105 변환표의 각 행은
   그 member의 case를 행마다 하나 가진다. 그 case에서 L의 unit의 callback fixture는 행의 안쪽 kind를 값과 함께 던진다:
   `{"library": L, "kind": <kind>, "message": <text>, "status": <int>, "errno": <int>, "properties": {<property>:
   <value>}}`(CK-22). 그 case의 `raises`는 그 kind를 적는다. fixture는 `status`, `errno`, 행의 클래스가 가진 CK-107의 각
