@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 6792bb5ae5335c4d26004ad5d83d6601760312d34bd7dc8b8383aa15f9f74252 -->
+<!-- source-sha256: bc4c2763d12e5dbe44cc58a8008f528d8924303db2187dae3f76fac28eb290ba -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -386,3 +386,4 @@
 | B2.537 | GN-14i의 consumer compile check(scripts/consumers.mts, job e2e (consumer))가 path patch 뒤의 `cargo update -p polyspec-binding-core --offline`을 왜 통과하는지 확인한다. consumer gate는 그것을 통과하지 못했다(B2.494, polyspec/kit#63): locked fetch는 tag의 ref를 남기지 않고, offline update는 unlock된 git entry의 tag=를 그 ref로 푼다. patch한 core가 lock된 release와 semver 호환이어서 어느 entry도 unlock되지 않기 때문에만 통과한다면, binding이 major나 minor를 올릴 때 같은 실패가 난다. release의 네트워크 없이 만들 수 있다면 그 경우를 Red로 만든다. 등록만 한다. 0.0.23. | 이유와 그 근거를 행에 적는다. unlock되는 경우의 Red, 또는 그것을 만들 수 없는 이유. | 이유를 빈 CARGO_HOME에서 보인다. Red는 지금의 consumers.mts 단계에서 실패한다. | [ ] |
 | B2.538 | make test-ts의 run이 tracked 밖 build output인 packages/ts/dist/cli.js를 checkout 안에서 mode 없이 다시 쓴다. 그 뒤 파일은 mode 644였다. make dist는 그것을 0755로 만든다. 그래서 그 위에서 돈 consumer gate는 generate마다 Error 126(Permission denied)로 실패했다. 이것은 HR-85(시험은 checkout 안에 build output을 쓰지 않는다)와 HR-82(bin은 그 mode를 지닌다)에 어긋난다. 그것을 쓰는 시험이나 target을 찾아, 자기 임시 디렉터리에 쓰게 하거나 mode를 지키게 한다. 0.0.23. | 쓰는 것을 행에 이름한다. 그 고침. make test-ts 전후의 packages/ts/dist/cli.js mode와 mtime을 비교하는 Red. | make dist 뒤 make test-ts는 packages/ts/dist/cli.js를 mode 0755, 같은 mtime으로 둔다. Red는 고침 전에 실패한다. | [ ] |
 | B2.540 | make consumer-gate는 job의 consumer를 모두 돌리며, 그 가운데 일부만 돌릴 길이 없다. 그래서 local run은 session-store를 뺄 수 없다. session-store의 setup-bay(bay install)는 machine setup이며, macOS에서 관리자 암호를 dialog로 묻는다. run이 할 일이 아니다. gate는 job의 consumer를 레포로 고르는 선택을 받고, local run이 그것을 이름한다. CI는 전처럼 job 전체를 돈다. 0.0.23. | make consumer-gate와 make ci-consumers의 consumer 선택. job 밖의 레포를 이름하면 거부한다. GN-14m이 그것을 이름한다. 그 시험. | session-store 없이 돈 job small의 local run은 다른 consumer 여섯을 돌고 setup-bay를 시작하지 않는다. job 밖의 레포를 고르면 그것을 이름하며 실패한다. | [ ] |
+| B2.541 | runner의 자원에서 온 job check (ts)의 실패가 아무 측정도 이름하지 않는다. B2.507과 B2.510은 spawnSync의 ENOMEM으로 실패했고, run의 어떤 기록도 그때 시험 파일이나 runner의 메모리를 주지 않았다. make unit-ts는 시험 파일마다 그 최대 resident 크기와 가상 크기, 그리고 기계의 free memory를 var/report에 적는다. 그래서 자원의 실패가 무엇이 그것을 썼는지 이름한다. 0.0.23. | var/report의 make unit-ts 기록. 그 시험. | make unit-ts의 run은 시험 파일마다 그 최대 크기들과 free memory를 한 줄씩 쓴다. 시험이 기록의 꼴을 확인한다. | [ ] |
