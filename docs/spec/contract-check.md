@@ -30,7 +30,10 @@ that a release may not hold.
 
 The schema is part of the npm package `@polyspec/binding` and is exported as `./schema/interface.schema.json` (S15).
 
-- **CK-1** Schema: the contract passes `packages/ts/schema/interface.schema.json` (JSON Schema 2020-12, Ajv). Every reason is a rule
+- **CK-1** Schema: the contract passes `packages/ts/schema/interface.schema.json` (JSON Schema 2020-12, Ajv). The schema compiles in
+  Ajv strict mode with no strict option turned off, so a consumer can validate a contract with it: a subschema that
+  requires a property also names it under `properties` (`true` when the outer schema states its form), and a value of
+  more than one type is an `anyOf` of single types. Every reason is a rule
   id (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`), so a reason in prose, such as "the current name", is refused (N-3,
   P-10). A `native` entry without its `reason` is refused (I-3). A callback member's `errors` is only
   `{recognize, reason}` (U-3).

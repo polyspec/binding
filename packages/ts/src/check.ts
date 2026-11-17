@@ -47,7 +47,7 @@ export interface CheckOptions {
 const schema: unknown = JSON.parse(
   readFileSync(new URL('../schema/interface.schema.json', import.meta.url), 'utf8'),
 );
-const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
+const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validate = ajv.compile(schema as object);
 
 // E-1a: the kinds of binding_core::BindingError and their fixed categories.
