@@ -322,7 +322,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   source to tell them apart.
 - **CK-69** The receiver of a method with a state machine (generator GN-6ae): a method whose `core` names `"machine":
   true` names the receiver `&self`, because the generated code gives the core a clone of the value of the instance,
-  which neither writes back into the instance as `&mut self` would nor consumes it as `self` would.
+  which neither writes back into the instance as `&mut self` would nor consumes it as `self` would. The check reads
+  the receiver that the contract names, not the Rust source of the core, so the generated call lends the receiver by
+  `lent_receiver`, whose trait names this rule: a core path that takes `self` or `&mut self` fails to compile with the
+  sentence of CK-69. Why: orm's machine took `self` under a contract that named `&self`, the check passed it, and the
+  generated crate stopped on E0308, which named no rule (B2.501).
 - **CK-72** The tag of a variant (T-9, generator GN-6v): no field of a case of a variant has the name of the `tag` of
   the variant, compared by their words, because the value of a case in Node, WASM and a case file is an object whose
   tag member holds the case value, so a field of that name would take the place of the tag. The finding names the

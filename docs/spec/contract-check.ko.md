@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 439193bdf0ba0597622c82429540895590810676c6223b84aff01507c4091d86 -->
+<!-- source-sha256: 581d22a0f3c020fedf32afa12a18736dc2b4c7cdd00f3edb8c952db125999029 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -268,7 +268,10 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
 - **CK-69** state machine이 있는 method의 receiver(generator GN-6ae): `core`에 `"machine": true`를 적은 method는
   receiver `&self`를 적는다. 생성 코드는 코어에 인스턴스 값의 clone을 주는데, 그것은 `&mut self`처럼 인스턴스에 다시
-  쓰지도, `self`처럼 인스턴스를 소비하지도 않기 때문이다.
+  쓰지도, `self`처럼 인스턴스를 소비하지도 않기 때문이다. 검사는 코어의 Rust 소스가 아니라 계약이 적은 receiver를 읽으므로,
+  생성된 호출은 receiver를 `lent_receiver`로 빌려 주고, 그 trait가 이 규칙을 이름한다: `self`나 `&mut self`를 받는 코어
+  경로는 CK-69의 문장으로 compile에 실패한다. 이유: orm의 machine은 `&self`를 적은 계약 아래에서 `self`를 받았고, 검사는
+  그것을 통과시켰으며, 생성 crate는 아무 규칙도 이름하지 않는 E0308로 멈췄다(B2.501).
 - **CK-72** variant의 tag(T-9, generator GN-6v): variant case의 어떤 field도 그 variant의 `tag`와 이름이 같지 않다. 이름은
   단어로 비교한다. Node, WASM, case 파일에서 case의 값은 tag member가 case 값을 담는 객체이므로, 그 이름의 field는 tag의
   자리를 차지하기 때문이다. finding은 그 field와 해결 방법을 적는다: field나 tag의 이름을 바꾼다.
