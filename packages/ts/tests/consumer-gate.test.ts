@@ -38,7 +38,7 @@ test('B2.494: the list refuses a tag that is no release tag, a repository named 
   assert.throws(() => parseConsumers(list([{ ...json, branch: 'main' }])), /the key branch is not one of repo, tag, job, install, path/);
   assert.throws(() => parseConsumers(list([json], [{ repo: 'polyspec/orm', job: 'orm', reason: ' ' }])), /polyspec\/orm has no reason/);
   assert.throws(() => parseConsumers(list([{ ...json, repo: 'json' }])), /repo "json" is not <owner>\/<name>/);
-  assert.throws(() => parseConsumers(list([{ ...json, install: [] }])), /install of polyspec\/json is not a list of goals/);
+  assert.throws(() => parseConsumers(list([{ ...json, install: [] }])), /install of polyspec\/json is not a list of make goals with their variables/);
   assert.throws(() => parseConsumers(list([{ ...json, job: 'Small' }])), /job "Small" is not a name/);
   // A consumer without install installs with its goal install.
   assert.deepEqual(parseConsumers(list([{ repo: json.repo, tag: json.tag, job: json.job }])).consumers, [json]);

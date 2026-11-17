@@ -11,7 +11,7 @@
       "repo": "polyspec/session-store",
       "tag": "v0.0.5",
       "job": "small",
-      "install": ["install-rust", "install-tools", "install-php-tools", "install-python-packages", "install-deps", "install-bay", "setup-bay", "redis-image"],
+      "install": ["install-tools TOOLS=npm", "install-rust", "install-tools", "install-php-tools", "install-python-packages", "install-deps", "install-bay", "setup-bay", "redis-image"],
       "path": ["var/tools/bay"]
     }
   ],

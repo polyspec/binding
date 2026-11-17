@@ -51,7 +51,8 @@ export function lockChanges(tagLock: string, lock: string): string[] {
 }
 
 // A consumer of the list: a GitHub repository at a release tag, the job of the matrix that runs it, and the goals of
-// its Makefile that install what its steps need. `path` names the directories of the clone that its own CI puts on
+// its Makefile that install what its steps need: each item of `install` is one bundle of make arguments, a goal and the
+// variables that the consumer gives it (install-tools TOOLS=npm), run as one make of its own. `path` names the directories of the clone that its own CI puts on
 // the PATH of the steps after its install, such as var/tools/bay of session-store (its goal bay-path).
 export interface GateConsumer {
   repo: string;
@@ -76,7 +77,8 @@ export interface ConsumerList {
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const TAG = /^v\d+\.\d+\.\d+$/;
 const JOB = /^[a-z][a-z0-9-]*$/;
-const GOAL = /^[A-Za-z0-9_.-]+$/;
+// An item of install: a goal and variables NAME=value of plain words, with no $ or quote that make or a shell reads.
+const INSTALL_ITEM = /^[A-Za-z0-9_.-]+( [A-Z][A-Z0-9_]*=[A-Za-z0-9_.,/-]*)*$/;
 const RELATIVE = /^(?!\/)(?!.*(^|\/)\.\.(\/|$))[A-Za-z0-9_./-]+$/;
 
 // The list of config/consumers.json. A repository is named once, in consumers or in pending; a tag is a release tag
@@ -109,7 +111,7 @@ export function parseConsumers(text: string): ConsumerList {
     const tag = entry['tag'];
     if (typeof tag !== 'string' || !TAG.test(tag)) problems.push(`${where}: tag ${JSON.stringify(tag)} of ${repo} is not a release tag vX.Y.Z`);
     const install = entry['install'] ?? ['install'];
-    if (!Array.isArray(install) || install.length === 0 || !install.every((goal) => typeof goal === 'string' && GOAL.test(goal))) problems.push(`${where}: install of ${repo} is not a list of goals of make`);
+    if (!Array.isArray(install) || install.length === 0 || !install.every((item) => typeof item === 'string' && INSTALL_ITEM.test(item))) problems.push(`${where}: install of ${repo} is not a list of make goals with their variables`);
     const path = entry['path'];
     if (path !== undefined && (!Array.isArray(path) || !path.every((dir) => typeof dir === 'string' && RELATIVE.test(dir)))) problems.push(`${where}: path of ${repo} is not a list of directories inside its clone`);
     const parsed: GateConsumer = { repo, tag: typeof tag === 'string' ? tag : '', job: job(entry['job'], where), install: Array.isArray(install) ? (install as string[]) : [] };
@@ -185,10 +187,12 @@ export function rehearsalGoals(targets: readonly string[]): string[] {
 
 export const consumerDir = (g: Gate, c: GateConsumer): string => join(g.work, nameOf(c.repo));
 
-// The first step of a consumer: the clone of its tag alone, with the network. The other steps read the clone.
+// The first step of a consumer: the clone of its tag with the history that the tag points to, which is fixed, with the
+// network; the Go rehearsal makes a commit on the tag commit, and git prune follows its parents. The other steps read
+// the clone.
 export const cloneStep = (g: Gate, c: GateConsumer): GateStep => ({
   phase: 'prepare',
-  step: { what: `git clone ${c.repo} at ${c.tag}`, command: 'git', argv: ['clone', '--quiet', '--depth', '1', '--branch', c.tag, `https://github.com/${c.repo}.git`, consumerDir(g, c)], env: { GIT_TERMINAL_PROMPT: '0' } },
+  step: { what: `git clone ${c.repo} at ${c.tag}`, command: 'git', argv: ['clone', '--quiet', '--branch', c.tag, `https://github.com/${c.repo}.git`, consumerDir(g, c)], env: { GIT_TERMINAL_PROMPT: '0' } },
 });
 
 // The steps of a consumer after its clone, in their order. `locked` is the versions of polyspec-binding-core of its
@@ -225,7 +229,7 @@ export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], t
     // GN-14m: the consumer's own bootstrap installs its package-lock.json, the locked kit among it, as the first step
     // of its CI does; its install finds the tools of kit only after it. make names a goal that the Makefile lacks.
     { phase: 'prepare', step: { what: 'make bootstrap of the consumer', command: g.make, argv: make(['bootstrap']), env: own } },
-    { phase: 'prepare', step: { what: `make ${c.install.join(' ')} of the consumer`, command: g.make, argv: make(c.install), env: own } },
+    ...c.install.map((item) => ({ phase: 'prepare' as const, step: { what: `make ${item} of the consumer`, command: g.make, argv: make(item.split(' ')), env: own } })),
     { phase: 'generate', step: { what: 'make bindings of the consumer', command: g.make, argv: make(['bindings']), env: { ...own, ...OFFLINE } } },
     { phase: 'test', step: { what: 'make test-bindings of the consumer', command: g.make, argv: make(['test-bindings']), env: { ...own, ...OFFLINE } } },
     { phase: 'rehearsal', step: { what: 'make release-recipes of the consumer', command: g.make, argv: make(['release-recipes']), env: rehearsal } },
