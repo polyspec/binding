@@ -1057,9 +1057,12 @@ function afterLines(v: Values, b: Body, fn: Fn, id: string, after: After[] | und
     // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
     const on = call.on === undefined ? receiver : `bound_${call.on}`;
     if (call.raises !== undefined) {
-      const failed = b.fresh('failure');
-      const made = invoke(v, call.fn, callArgs(v, b, call.fn, (arg) => caseValue(v, b, arg, call.args)), on);
-      return ['{', `\t${[...Array.from({ length: goResultCount(call.fn) }, () => '_'), failed].join(', ')} := ${made}`, `\tif kinded, ok := ${failed}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(call.raises)} {`, `\t\tt.Fatalf("GN-13o: after ${i}: %#v is not of kind ${call.raises}", ${failed})`, '\t}', '}'];
+      // B2.506: an instance value of the args is made by its static, with its failure check, inside the block and
+      // before the call, as comparedCall makes it for a call of after without raises.
+      const inner = b.child();
+      const failed = inner.fresh('failure');
+      const made = invoke(v, call.fn, callArgs(v, inner, call.fn, (arg) => caseValue(v, inner, arg, call.args)), on);
+      return ['{', ...inner.lines.map((line) => `\t${line}`), `\t${[...Array.from({ length: goResultCount(call.fn) }, () => '_'), failed].join(', ')} := ${made}`, `\tif kinded, ok := ${failed}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(call.raises)} {`, `\t\tt.Fatalf("GN-13o: after ${i}: %#v is not of kind ${call.raises}", ${failed})`, '\t}', '}'];
     }
     try {
       const lines = comparedCall(v, b.child(), call.fn, on, call.args, call.result === undefined ? undefined : { value: call.result }, 't.Fatalf("GN-6ae: after: %v", err)', (i) => `t.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`);
