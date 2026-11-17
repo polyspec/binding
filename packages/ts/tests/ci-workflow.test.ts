@@ -122,7 +122,7 @@ test('every upload of a job runs after a failed step (AGENTS, HR-86)', () => {
     }
   }
   const withMatrix = [...jobs()].filter(([, job]) => job.includes('      matrix:'));
-  assert.deepEqual(withMatrix.map(([name]) => name), ['check', 'e2e']);
+  assert.deepEqual(withMatrix.map(([name]) => name), ['check', 'e2e', 'consumers']);
   for (const [name, job] of withMatrix) assert.ok(job.includes('      fail-fast: false'), `the matrix of ${name} cancels its other entries after a failure`);
 });
 
@@ -267,6 +267,29 @@ test('B2.278: make ci-e2e-amd64 is make ci-e2e of tests/e2e/sample (GN-14g)', (t
   const ran = run('ci-e2e-amd64', []);
   assert.equal(ran.status, 0, ran.output);
   assert.deepEqual(ran.calls.map((c) => [c.goal, c.vars]), [['ci-e2e', { REPO: 'tests/e2e/sample', DEPS: '' }]]);
+});
+
+test('B2.494: make ci-consumers builds dist, stops at a failed build, runs consumer-gate of JOB in a work directory of its own and removes it in every case (GN-14m, HR-87)', (t) => {
+  const { run, temp } = recipes(t);
+  const passed = run('ci-consumers', ['JOB=small']);
+  assert.equal(passed.status, 0, passed.output);
+  assert.deepEqual(passed.calls.map((c) => c.goal), ['dist', 'consumer-gate'], passed.output);
+  const gate = passed.calls[1];
+  assert.equal(gate?.vars['JOB'], 'small');
+  assert.ok(gate?.workIsDirectory === true && (gate.vars['WORK'] ?? '').startsWith(`${temp}/`), 'make consumer-gate gets no work directory under the temporary directory');
+  assert.deepEqual(readdirSync(temp), [], 'make ci-consumers leaves its work directory');
+
+  const gateFailed = run('ci-consumers', ['JOB=small'], ['consumer-gate']);
+  assert.notEqual(gateFailed.status, 0, 'make ci-consumers passes after a failed consumer-gate');
+  assert.deepEqual(readdirSync(temp), [], 'make ci-consumers leaves its work directory after a failure');
+
+  const distFailed = run('ci-consumers', ['JOB=small'], ['dist']);
+  assert.notEqual(distFailed.status, 0, 'make ci-consumers passes after a failed build of dist');
+  assert.deepEqual(distFailed.calls.map((c) => c.goal), ['dist'], 'make ci-consumers runs the consumers without the CLI of the run');
+
+  const usage = run('ci-consumers', []);
+  assert.equal(usage.status, 2, usage.output);
+  assert.deepEqual(usage.calls, []);
 });
 
 test('the job e2e runs the end-to-end check of every repository of tests/e2e that waits for no other repository and uploads its record (GN-14, GN-14f, GN-14g)', () => {

@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6ec76fac74b834cb560c3e78bea776dfc1e62023c4ab6f3b9ef3fed1ab8197e3 -->
+<!-- source-sha256: 7d86d1ab64c687e165289668798fcf78f5946044191680e2e602c2e968a9512d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- binding의 CI는 release 전에 소비자를 그 release tag에서 실행하고, 실패하면 release를 막는다(GN-14m, B2.494). `config/consumers.json`은 각 소비자를 job과 함께 `{repo, tag}`로 적는다. `ci.yml`의 job `consumers`는 각 tag를 clone하고, `polyspec-binding-core`를 실행의 commit으로 path patch하며(GN-14d), 실행의 CLI로 소비자 자신의 goal을 실행한다: 그 install, `bindings`, offline의 `test-bindings`, 그리고 cache 없는 release 리허설(`release-recipes`, 호스트의 release build, `GOFLAGS=-mod=readonly`의 `rehearse-go-module`). `ci-passed`가 이 job을 요구하므로 소비자가 실패하면 `release.yml`은 시작하지 않는다. 작은 소비자 여덟은 job `small`을 함께 쓰고 template, crud-ui, hyper, orm은 각자 job을 가진다. 지금 목록은 json, http-cookie, http-form, http-media-type, http-negotiation, php-serialization, session-store를 담고, fsm, template, crud-ui, hyper, orm은 binding 배치의 release tag를 `pending`에서 기다린다. 소비자의 사본은 두지 않는다: 소비자의 release가 목록의 tag를 올린다. 소비자는 release의 시험이며 생성기의 입력이 아니다(GN-2). 소비자는 할 일이 없다. `make consumer-gate JOB=<job>`은 한 job을 기계에서 실행한다. 검증: `packages/ts`에서 `node --test tests/consumer-gate.test.ts tests/ci-workflow.test.ts`. 소비자의 실행은 branch의 CI 실행이다.
 
 ## 0.0.21
 
