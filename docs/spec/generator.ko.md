@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 31887e6a49120a3e9785d6a7b1dcc4c841c36f0e67f1c6897b6c638d6933fd7b -->
+<!-- source-sha256: 14c414bdab36cb875c7a2be71d035599e62a8cf450a22fc75bb5a6294279bc85 -->
 # 생성기
 
 [English](generator.md)
@@ -3318,6 +3318,15 @@
   실패하는 검사는 그 target을 실패시킨다(`scripts/e2e-refusal.mts`). `tests/e2e/lent`가 그런 레포다. 그 코어는 빌린
   record를 호출 뒤까지 가지며(GN-6d), 모든 target이 E0597로, Node는 E0521로 거부된다. 이유: 한 번의 검사는 호출의
   lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
+- **GN-14n** `expected-failures.json`을 가진 `tests/e2e`의 레포는 그 계약이 생성 시험을 실패하게 하는 곳에서 생성 시험이
+  실패하는지의 검사다(B2.509). 그 파일은 다섯 target마다 실패해야 하는 생성 시험을, 각각 그 실패가 담는 text와 함께
+  적는다. 그 target의 시험 실행은 개발 형식에서도 release 형식에서도, 정확히 그 시험들이 실패하고 각 실패가 그 text를
+  담을 때만 통과하며, 그때 그 시험들은 통과한 시험으로 센다. 적힌 시험이 통과하거나 돌지 않는 것, text 없는 실패,
+  다른 시험의 실패, 실패한 시험 없이 실패한 실행은 그 target을 실패시킨다(`scripts/e2e-expected.mts`). 그 파일은
+  거부의 목록이 아니다. 생성기나 계약 검사가 거부하는 target은 이름 붙은 실패로 남고, 그 파일이 적는 시험은 fixture의
+  설계로 실패한다. `tests/e2e/falsepass`가 그런 레포다. `after` 호출의 인자를 그 호출이 기대하는 kind로 실패하는
+  static이 만들므로, 그 호출의 시험은 모든 target에서 static에서 실패한다(GN-13f, GN-13o). 이유: 아무것도 확인하지 않고
+  통과하는 시험은 확인하는 시험처럼 보이며, 그 실패를 요구하는 실행만이 그것을 드러낸다.
 - **GN-14l** 실행의 release 형식(B2.458; GN-3e, GN-3h). 레포의 코어가 `[dependencies]`의 한 줄에서 `DEPS`의 레포를
   `path`로 적는 실행은, 의존이 있는 `tests/e2e`의 모든 레포가 그런데, development 형식의 모든 단계 뒤에 release 형식의
   단계들로 끝난다. 이 단계들은 실행에 더해지며 어떤 단계도 대신하지 않는다. development 형식은 의존이 release를 가질

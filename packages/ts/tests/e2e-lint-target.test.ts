@@ -53,6 +53,7 @@ test('B2.432: make e2e-lint lints the repositories of the matrix of the job e2e 
   assert.deepEqual(entries, [
     { repo: 'tests/e2e/classes', deps: [] },
     { repo: 'tests/e2e/consumer', deps: ['tests/e2e/sample'] },
+    { repo: 'tests/e2e/falsepass', deps: [] },
     { repo: 'tests/e2e/functions', deps: [] },
     { repo: 'tests/e2e/kept', deps: [] },
     { repo: 'tests/e2e/plot', deps: ['tests/e2e/points'] },
