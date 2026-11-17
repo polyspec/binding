@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b12f8614faa3c5b6d8e1bb1bf319d568095daa62923a952542ded6cdb5c81e7c -->
+<!-- source-sha256: 80462e2ffd52a67d4463d714b3154323bfe5973facb0964da3eb191220a3e4d5 -->
 # 생성기
 
 [English](generator.md)
@@ -3502,7 +3502,8 @@
   php-serialization, session-store)은 job `small`을 함께 쓰고, template, crud-ui(그 validator와 generator), hyper,
   orm은 각자 job을 가진다. 각 항목은 `make ci-consumers JOB=<job>`을 실행하며, 이것은 `dist`를 빌드하고(GN-14j)
   `make consumer-gate`를 실행한다(`scripts/consumer-gate-run.mts`, 그 목록·단계·표는 `scripts/consumer-gate.mts`).
-  job의 소비자마다 하나씩 차례로, 실행은 tag만 clone하고(`git clone --depth 1 --branch <tag>`), clone 안에서
+  job의 소비자마다 하나씩 차례로, 실행은 tag를 그 역사와 함께 clone하고(`git clone --branch <tag>`, depth 없이: tag가 가리키는 역사는 고정되어
+  있고, 소비자의 Go rehearsal은 tag의 commit을 부모로 하는 commit을 만들며 `git prune`이 그 부모를 따라간다), clone 안에서
   `rustup toolchain install`로 clone의 `rust-toolchain.toml`이 이름하는 toolchain을 설치하고(clone의 모든 cargo가 그
   toolchain으로 돌며, runner는 이 단계 뒤에야 그것을 가진다), tag의 lock으로
   `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
@@ -3519,7 +3520,8 @@
   `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 goal `bootstrap`(소비자 CI의 첫 단계처럼 `devEngines`의 npm으로
   `package-lock.json`을, 그 안의 locked kit까지 설치하므로 install이 kit의 도구를 찾는다. Makefile에 goal `bootstrap`이
   없는 소비자는 그것을 이름하며 prepare에서 실패하고, 그 goal이 있는 tag로 옮긴다); 네트워크와 함께 그 install(`install`, 또는 Makefile에
-  goal `install`이 없을 때 항목의 `install`이 이름하는 goal들). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
+  goal `install`이 없을 때 항목의 `install`이 이름하는 항목들. 항목 하나는 make 인자 하나의 묶음, 곧 goal과 소비자가
+  그것에 주는 변수이며(`install-tools TOOLS=npm`처럼), 그 순서대로 각각 make 하나로 실행한다). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
   소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와
   `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
   그 runner로 offline 실행하는 `test-bindings`(`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,

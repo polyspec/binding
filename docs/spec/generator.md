@@ -4263,7 +4263,9 @@ the design ids are those of the binding design.
   crud-ui (its validator and its generator), hyper and orm each have a job of their own. Each entry runs `make
   ci-consumers JOB=<job>`, which builds `dist` (GN-14j) and runs `make consumer-gate` (`scripts/consumer-gate-run.mts`,
   its list, steps and table in `scripts/consumer-gate.mts`). For each consumer of the job, one after the other, the
-  run clones the tag alone (`git clone --depth 1 --branch <tag>`), installs the toolchain of the clone's
+  run clones the tag with its history (`git clone --branch <tag>`, with no depth: the history that the tag points to
+  is fixed, and the Go rehearsal of the consumer makes a commit whose parent is the commit of the tag, which `git
+  prune` follows to its parents), installs the toolchain of the clone's
   `rust-toolchain.toml` with `rustup toolchain install` in the clone, because every cargo of the clone runs under
   that toolchain and the runner has it only after this step, runs `cargo fetch --locked` of the lock of the tag,
   writes the path patch of `polyspec-binding-core` to `packages/core/rust` of the run in the root `Cargo.toml`, as in
@@ -4283,8 +4285,9 @@ the design ids are those of the binding design.
   with it) and `NODE` of the run: its goal `bootstrap`, with the network, which installs its `package-lock.json`, the
   locked kit among it, with the npm of its `devEngines`, as the first step of its own CI does, so that its install
   finds the tools of kit (a consumer whose Makefile has no goal `bootstrap` fails in prepare, naming it, and is moved
-  to a tag that has it); its install (`install`, or the goals that `install` of its entry names when its
-  Makefile has no goal `install`), with the network, and with the directories of the clone that `path` of its entry
+  to a tag that has it); its install (`install`, or the items that `install` of its entry names when its
+  Makefile has no goal `install`: each item is one bundle of make arguments, a goal with the variables that the
+  consumer gives it, such as `install-tools TOOLS=npm`, and runs as one make of its own, in its order), with the network, and with the directories of the clone that `path` of its entry
   names first on the `PATH` of every goal, as its own CI puts them there (`var/tools/bay` of session-store, whose
   goals `install-bay` and `setup-bay` install bay and its machine setup on the runner for the Redis servers of its
   generated tests); `bindings`, which generates; `test-bindings`, the generated tests
