@@ -77,6 +77,7 @@ test('a value that the owner of the alias refuses is its kind in the class of th
   for (const value of [new Map([[5, 'x']]), '\ud800']) {
     assert.throws(() => consumer.measure(value), refused);
     assert.throws(() => consumer.pair([value]), refused);
-    assert.throws(() => consumer.fetch({ get: () => value, set: () => {} }, 'a'), refused);
+    // The holder takes the arguments that the binding calls it with (GN-6bu), so its value is refused, not the holder.
+    assert.throws(() => consumer.fetch({ get: (key) => value, set: (key, item) => {} }, 'a'), refused);
   }
 });
