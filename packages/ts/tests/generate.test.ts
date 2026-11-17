@@ -12177,6 +12177,41 @@ test('B2.448: a case with raises, with and after names the class of its category
   }
 });
 
+test('B2.506: an instance value among the args of a call of after that raises is made by its static, with its failure check, before the call, in the five targets (GN-13o, GN-13f)', () => {
+  // orm schema: `"after": [{"call": ..., "args": {"<class param>": {"new": "<static>", ...}}, "raises": ...}]` wrote
+  // `_, failure13 := made6.AddTablesAndColumns(made14)` in Go and never declared made14.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  const kase = cases.counter_settle.find((c: any) => c.id === 'a_counter_settles_at_its_total');
+  kase.after = [{ call: 'counter.absorb', args: { other: { new: 'counter.new', args: { start: 1 } } }, raises: { kind: 'ended' } }];
+  const all: Lang[] = ['go', 'php', 'python', 'node', 'wasm'];
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: all });
+  const FILES: Record<Lang, [string, RegExp, RegExp]> = {
+    go: ['packages/go/zz_generated_test.go', /ACounterSettlesAtItsTotal\(/, /\.Absorb\(([^)]*)\)/],
+    php: ['packages/php-ext/generated/tests/GeneratedTest.php', /ACounterSettlesAtItsTotal\(/, /->absorb\((.*?)\)\)/],
+    python: ['packages/python/generated/tests/test_generated.py', /a_counter_settles_at_its_total\(/, /\.absorb\((.*?)\)\)/],
+    node: ['packages/ts/generated/tests/generated.test.mjs', /a_counter_settles_at_its_total'/, /\.absorb\((.*?)\)\)/],
+    wasm: ['packages/ts/wasm/generated/tests/generated.test.mjs', /a_counter_settles_at_its_total'/, /\.absorb\((.*?)\)\)/],
+  };
+  for (const target of all) {
+    const [path, id, call] = FILES[target];
+    const body = text(out, path);
+    const at = body.search(id);
+    assert.ok(at >= 0, `${path} ${id}`);
+    const near = body.slice(at, at + 1500);
+    const used = call.exec(near);
+    assert.ok(used !== null, `${target}: the call of after`);
+    const before = near.slice(0, used.index);
+    // Each local of the test that the call passes is declared before it; a value made in place declares none.
+    for (const local of used[1]?.match(/\bmade\d+\b/g) ?? []) {
+      const declared = new RegExp(`\\b${local}, (failure\\d+) := NewCounter\\(1\\)\\n\\t+if \\1 != nil \\{`).exec(before);
+      assert.ok(declared !== null, `${target}: ${local} is used by the call of after and not declared with its check before it`);
+    }
+    if (target === 'go') assert.match(used[1] ?? '', /^made\d+$/, 'go: the instance is a local of the test');
+    else assert.match(used[1] ?? '', /Counter\(1\)/, `${target}: the instance is made by its static`);
+  }
+});
+
 test('B2.448: the one function that names the class of a category refuses a text that is no category, for the class table and for Go (GN-13bh)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');
