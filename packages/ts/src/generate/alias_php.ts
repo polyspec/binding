@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
+import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, builtinScalar, addItemsFill, foreignClassOut, foreignFailureRust, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { convertIn, foreignPhpClass, phpLayout, phpNamespace } from './php.ts';
@@ -54,6 +54,8 @@ const PHP_MAKING = { name: 'making', type: '&mut PhpMaking' };
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
+  const scalar = builtinScalar(form, kind, 'php_literal_float', 'php_utf8');
+  if (scalar !== undefined) return leaf(scalar);
   switch (form) {
     case 'null':
       return put('Zval::new()');
@@ -62,15 +64,6 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
     case 'int':
       if (kind === 'number') return leaf('php_literal_int(&value)');
       return leaf(kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())');
-    case 'float':
-      if (kind === 'number') return leaf('php_literal_float(&value)');
-      if (kind === 'float') return leaf('float_out(value.value())');
-      // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return leaf(`php_literal_float(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
-    case 'text':
-      return leaf(kind === 'bytes' ? 'php_utf8(value.value())' : 'text_out(value)');
-    case 'bytes':
-      return leaf(kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
       // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.

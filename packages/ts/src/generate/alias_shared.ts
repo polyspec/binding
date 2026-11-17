@@ -787,6 +787,55 @@ export function hostWithoutReads(host: string, marks: Record<string, string>, pa
   return text.replace('/*DESCRIBE*/', parts.describe).replace('/*READ*/', parts.foreign ? 'value: Handle' : '_value: Handle').replace('/*READS*/', parts.foreign ? parts.read : refused);
 }
 
+// The made value of the built-in form float, text or bytes of WASM and PHP from the content of the matched OutValue of
+// kind, or undefined for any other form; literal is the function that makes a float of the language from a decimal
+// text, and utf8 the one that makes a text from bytes.
+export function builtinScalar(form: string, kind: string, literal: string, utf8: string): string | undefined {
+  switch (form) {
+    case 'float':
+      if (kind === 'number') return `${literal}(&value)`;
+      if (kind === 'float') return 'float_out(value.value())';
+      // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
+      return `${literal}(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
+    case 'text':
+      return kind === 'bytes' ? `${utf8}(value.value())` : 'text_out(value)';
+    case 'bytes':
+      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
+    default:
+      return undefined;
+  }
+}
+
+// GN-6af: the HostValue of an argument of the constructor of a value class without core_type in JavaScript (Node and
+// WASM): a keyed map or a list is read by its items, each described, and any other value is described whole. take is
+// the closure that keeps an item of the language, and item the argument of describe that an item gives.
+export function keptDescribeJs(lang: 'node' | 'wasm', f: KeptField, value: string, take: string, item: string): string {
+  const subject = rustString(langName(lang, f.name, 'variable'));
+  const type = f.type;
+  if (typeof type === 'object' && 'keyed_map' in type) {
+    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+    return `{
+                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, ${take})?;
+                let mut described = binding_core::KeyedMap::new();
+                for (key, item) in given {
+                    described.insert(key, host.describe(${item}).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+  }
+  if (typeof type === 'object' && 'list' in type) {
+    return `{
+                let given = list_in(${value}, ${subject}, ${take})?;
+                let mut described = Vec::new();
+                for item in given {
+                    described.push(host.describe(${item}).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+  }
+  return `host.describe(${value}).map_err(js_fail)`;
+}
+
 // GN-6as: the last arm of the match of a make function, for a variant that no out row of the value makes (U-7, GN-6x).
 export const noOutRow = (shape: WalkShape, rule: string): string =>
   `other => ${shape.internal(`format!("${rule}: no out row of the kind {}", other.kind().as_str())`)},`;

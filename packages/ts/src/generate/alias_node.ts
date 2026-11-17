@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, keptDescribeJs, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -913,32 +913,7 @@ export function keptCheckNode(kept: KeptClass): string {
   const js = langName('node', kept.unit.name, 'class');
   const variable = (f: KeptField): string => rustIdent(langName('node', f.name, 'variable'));
   const params = kept.fields.map((f) => `, ${variable(f)}: Unknown<'env>`).join('');
-  const describe = (f: KeptField, value: string): string => {
-    const subject = rustString(langName('node', f.name, 'variable'));
-    const type = f.type;
-    if (typeof type === 'object' && 'keyed_map' in type) {
-      const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-      return `{
-                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, Ok)?;
-                let mut described = binding_core::KeyedMap::new();
-                for (key, item) in given {
-                    described.insert(key, host.describe(item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-    }
-    if (typeof type === 'object' && 'list' in type) {
-      return `{
-                let given = list_in(${value}, ${subject}, Ok)?;
-                let mut described = Vec::new();
-                for item in given {
-                    described.push(host.describe(item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-    }
-    return `host.describe(${value}).map_err(js_fail)`;
-  };
+  const describe = (f: KeptField, value: string): string => keptDescribeJs('node', f, value, 'Ok', 'item');
   const lines = kept.fields.map((f) => {
     const v = variable(f);
     return f.default === undefined

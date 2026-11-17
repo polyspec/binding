@@ -109,14 +109,15 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
 
 // GN-6x: the module of the owner's package that holds a class of the owner, and the class's name there.
 function ownerClass(alias: ValueAlias, unit: Unit): string {
-  const python = alias.owner?.packages['python'] as { module: string } | undefined;
-  const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
-  return `foreign_types(py_, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
+  return rowClassIn(alias.owner?.packages['python'] as { module: string } | undefined, unit);
 }
 
 // GN-6ar: a class of the owner of a value alias of another repository, by the module of the owner's package.
 function rowClass(owner: Contract, unit: Unit): string {
-  const python = owner.packages['python'] as { module: string } | undefined;
+  return rowClassIn(owner.packages['python'] as { module: string } | undefined, unit);
+}
+
+function rowClassIn(python: { module: string } | undefined, unit: Unit): string {
   const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
   return `foreign_types(py_, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
 }

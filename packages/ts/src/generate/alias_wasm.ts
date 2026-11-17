@@ -6,7 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, convertedLibraries, ownerRecognizedUnits, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, builtinScalar, keptDescribeJs, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -32,6 +32,8 @@ const WASM_MADE = { name: 'made', type: '&mut BTreeMap<u64, JsValue>' };
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
+  const scalar = builtinScalar(form, kind, 'js_literal_number', 'js_utf8');
+  if (scalar !== undefined) return leaf(scalar);
   switch (form) {
     case 'null':
       return put('JsValue::NULL');
@@ -43,15 +45,6 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
     case 'bigint':
       if (kind === 'number') return leaf('js_literal_bigint(&value)');
       return leaf(kind === 'int64' ? 'js_bigint(value)' : 'js_bigint(value.value())');
-    case 'float':
-      if (kind === 'number') return leaf('js_literal_number(&value)');
-      if (kind === 'float') return leaf('float_out(value.value())');
-      // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return leaf(`js_literal_number(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
-    case 'text':
-      return leaf(kind === 'bytes' ? 'js_utf8(value.value())' : 'text_out(value)');
-    case 'bytes':
-      return leaf(kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
       // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
@@ -885,32 +878,7 @@ export function keptExportsWasm(model: Model): string {
   const checks = model.kept.map((kept) => {
     const js = langName('wasm', kept.unit.name, 'class');
     const variable = (f: KeptField): string => rustIdent(langName('wasm', f.name, 'variable'));
-    const describe = (f: KeptField, value: string): string => {
-      const subject = rustString(langName('wasm', f.name, 'variable'));
-      const type = f.type;
-      if (typeof type === 'object' && 'keyed_map' in type) {
-        const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-        return `{
-                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, |item| Ok(item.clone()))?;
-                let mut described = binding_core::KeyedMap::new();
-                for (key, item) in given {
-                    described.insert(key, host.describe(&item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-      }
-      if (typeof type === 'object' && 'list' in type) {
-        return `{
-                let given = list_in(${value}, ${subject}, |item| Ok(item.clone()))?;
-                let mut described = Vec::new();
-                for item in given {
-                    described.push(host.describe(&item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-      }
-      return `host.describe(${value}).map_err(js_fail)`;
-    };
+    const describe = (f: KeptField, value: string): string => keptDescribeJs('wasm', f, value, '|item| Ok(item.clone())', '&item');
     const lines = kept.fields.map((f) => {
       const v = variable(f);
       return f.default === undefined ? `        let ${v} = ${describe(f, `&${v}`)}?;` : `        let ${v} = default_in(&${v}, |value| ${describe(f, 'value')})?;`;
