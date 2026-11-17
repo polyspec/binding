@@ -2846,7 +2846,15 @@ the design ids are those of the binding design.
   The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
-  call alone and fails when it raises. The result `null` of an optional has a case form whatever the optional holds,
+  call alone and fails when it raises. The result of a member that returns none is `null` wherever a case writes it:
+  under the result key of the case, in a call of `after`, in a step of a function fixture and in a row of a callback
+  fixture (B2.466). It is tested as no value: the test requires Python `None`, PHP `null` and `undefined` in Node and
+  WASM, and Go runs the call alone, whose function gives its error and no value. A case of such a member may leave the
+  key out, and a call of `after` writes `result` or `raises`. Another value there is refused by `binding check`
+  (CK-22), and the test of the case fails with that reason. Why: a result that does not exist had two rules, a test
+  that failed for `"result": null` at the top of a case and a check that required it in `after` (B2.374), so the 36
+  cases of orm that state `"result": null` of a member that returns none passed the check and failed their tests.
+  The result `null` of an optional has a case form whatever the optional holds,
   a class too: each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, and Go `nil`
   of the type of the result). A result that is a value alias of the contract (not inside another type, and
   not a property of a value class, which gives the value that its constructor took) is compared as the texts of its
@@ -2876,7 +2884,7 @@ the design ids are those of the binding design.
   makes `list` is a `[]any` of its values, and a map or a list whose row makes `keyed_map` is a `*KeyedMap[any]`. A
   key of that keyed map, or of the keyed map of the field of a value class, is a text only where the keyed map takes
   texts and the bytes of the key are UTF-8, and else bytes. A case whose result
-  has no case form (a class, a result of `none`), whose value alias has no out row that makes the built-in form of
+  has no case form (a class, another value than `null` for a result of `none`), whose value alias has no out row that makes the built-in form of
   its kind in the language or a form of the texts, or that gives no argument of a parameter or of the factory of its
   receiver fails its test with that reason, so the case is never left out.
   The name of the test of a case in a language whose tests are functions or methods (Python, PHP, Go) holds the id of

@@ -1456,6 +1456,16 @@ describe('CK-22 every member names its cases (K-1)', () => {
     test('callback: a key that is no parameter is refused', () => {
       assert.match(parse(store, 'store', { callback: { 'store.flush': [{ args: { key: 'a' }, result: null }] } }), /the args of row 0 of store\.flush have no parameter key of store\.flush/);
     });
+    test('B2.466: a step of a function fixture and a row of a callback fixture give a member without a result the result null alone (CK-22)', () => {
+      const step = (result: object): string => parse(convert, 'convert', { function: { calls: [{ on: '0', call: 'session.reset', ...result }], result: 'b' } });
+      assert.equal(step({}), '');
+      assert.equal(step({ result: null }), '');
+      assert.equal(step({ result: 1 }), 'the case too_large of forms.parse: step 0 of convert calls session.reset, which has no result, so its result is null, not 1 (GN-13e) (G-5)');
+      const row = (result: object): string => parse(store, 'store', { callback: { 'store.flush': [{ ...result }] } });
+      assert.equal(row({}), '');
+      assert.equal(row({ result: null }), '');
+      assert.equal(row({ result: 'a' }), 'the case too_large of forms.parse: row 0 of store.flush is of store.flush, which has no result, so its result is null, not "a" (GN-13e) (G-5)');
+    });
   });
   test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
     const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
@@ -2150,6 +2160,20 @@ describe('CK-96 a key that the tests of the repository read is declared in reads
   test('without reads both keys are reported', () => {
     assert.equal(run(undefined).length, 2);
   });
+});
+
+test('B2.466: CK-22 refuses another result than null of a case of a member without a result, and takes the null and the key left out', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const messages = (result: object): string[] => {
+    const cases = read('contracts/cases.json');
+    cases.ledger_note = [{ id: 'a_key_is_noted', receiver: { new: 'ledger.new', args: { key: 'a' } }, key: 'b', ...result }];
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => /a_key_is_noted/.test(f.message)).map((f) => `${f.check} ${f.message}`);
+  };
+  assert.deepEqual(messages({}), []);
+  assert.deepEqual(messages({ result: null }), []);
+  assert.deepEqual(messages({ result: 1 }), ['CK-22 the case a_key_is_noted of ledger.note: the result is 1, and ledger.note has no result, so its result is null (G-5, GN-13e)']);
+  assert.deepEqual(messages({ result: false }), ['CK-22 the case a_key_is_noted of ledger.note: the result is false, and ledger.note has no result, so its result is null (G-5, GN-13e)']);
 });
 
 test('B2.374: CK-22 requires the result null of a call of after of a member without a result', () => {

@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- none을 돌려주는 member의 결과는 규칙이 하나다(GN-13e, CK-22, B2.466). case가 그것을 적는 어느 자리에서나, 곧 case의 결과 키, `after`의 호출, function fixture의 step, callback fixture의 row에서 그것은 `null`이고, 생성된 시험은 거기서 값 없음을 요구한다(Node와 WASM에서는 `undefined`, Go는 호출만 실행한다). 그런 member의 `"result": null`을 적은 case는 `binding check`가 받아들이는데도 실패하는 시험을 받았고, 이제 통과하는 시험을 받는다. `binding check`는 이 자리들에서 `null`이 아닌 값을 거부한다. 전에는 `after`의 호출만 판정했다. 저장소가 할 일: none을 돌려주는 member의 결과에 `null`이 아닌 값을 적은 case는 `null`을 적거나 키를 생략한다.
 - 생성된 PHP 시험은 case의 가장 작은 int64인 -9223372036854775808을 contract 타입의 인자, 기대 결과, keyed map의 정수 key에서도 `\PHP_INT_MIN`으로 적는다. 전에는 값 alias의 값에서만 그렇게 적었다(B2.464). PHP는 그 literal을 float로 읽고, binding은 그것을 int64가 아니라고 거부했다.
 - 생성된 member의 G-7 시험과 Python의 GN-11a 시험은 class의 인자에 그 member의 case의 case 값을 주고, B-5c 시험은 그 class의 instance 각각을 raise하지 않는 그 class의 첫 case로 만든다. 전에는 core가 거부할 수 있는 첫 constructor의 placeholder를 주었다(GN-13t, B2.463). method의 G-7 시험은 receiver를 한 번 만들고 모든 호출을 그 receiver에 하므로, 상태를 가진 receiver를 같은 case 폴더에서 다시 만들지 않는다.
 

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: aa7cbde707f8a5e7bc7a7a3fb5625f0a687a38ab46232c75ccd7d2b685598860 -->
+<!-- source-sha256: 573bc12d04a9c0681bf2521a51c20f62d693ee9f171e6b2b27c66a8fccb40cf8 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -342,6 +342,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   B2.361) `args`는 그 호출의 인자이며(CK-101), 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
   시험하며(Node와 WASM에서는 `undefined`, B2.374), 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
+  결과가 없는 member의 결과는 case가 그것을 적는 어느 자리에서나 그 한 규칙을 따른다(생성기 GN-13e, B2.466). 곧 case의
+  결과 키(그런 case는 생략할 수 있다), `result`나 `raises`를 적는 `after`의 호출, function fixture의 step, callback
+  fixture의 row에서 그것은 `null`이고, 거기의 다른 값은 보고된다. 이유: 생성기는 이 자리마다 그것을 값 없음으로
+  시험하므로, 거기에 값을 적은 case는 실패하는 시험을 받는데, check가 그것을 먼저 말한다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
   만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
