@@ -6,7 +6,7 @@
     { "repo": "polyspec/http-form", "tag": "v0.0.2", "job": "small" },
     { "repo": "polyspec/http-media-type", "tag": "v0.0.8", "job": "small" },
     { "repo": "polyspec/http-negotiation", "tag": "v0.0.5", "job": "small" },
-    { "repo": "polyspec/php-serialization", "tag": "v0.0.15", "job": "small" },
+    { "repo": "polyspec/php-serialization", "tag": "v0.0.16", "job": "small" },
     {
       "repo": "polyspec/session-store",
       "tag": "v0.0.5",
