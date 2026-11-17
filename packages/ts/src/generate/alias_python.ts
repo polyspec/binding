@@ -518,12 +518,11 @@ fn handle_position(value: u64) -> usize {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailurePython(model: Model): string {
-  return foreignFailureRust(model, {
+  return foreignFailureRust(model, 'library_error(py_, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))', {
     env: { params: "py_: Python<'_>, ", args: 'py_, ' },
     fail: 'PyErr',
     classType: '',
     classOf: (category) => rustString(categoryClass(model, category)),
-    made: 'library_error(py_, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))',
   });
 }
 

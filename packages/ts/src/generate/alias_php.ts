@@ -854,13 +854,7 @@ fn raised(error: Thrown) -> binding_core::Raised {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailurePhp(model: Model): string {
-  return foreignFailureRust(model, {
-    env: { params: '', args: '' },
-    fail: 'Fail',
-    classType: ': usize',
-    classOf: (category) => String(model.classes.findIndex((c) => c.category === category)),
-    made: 'library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))',
-  });
+  return foreignFailureRust(model, 'library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))');
 }
 
 // GN-13: the case-test entry points of the cases whose value has no PHP form. Each makes the value of its case as the

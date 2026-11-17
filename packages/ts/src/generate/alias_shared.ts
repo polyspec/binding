@@ -3,9 +3,10 @@
 
 import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, errorMatched, foreignAliasLibraries, resolveNamedTypes, rustField, unitFn } from './model.ts';
+import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, errorMatched, foreignAliasLibraries, langName, resolveNamedTypes, rustField, unitFn } from './model.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
+import { classIn, classMakes } from './value_class.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -739,6 +740,29 @@ export interface WalkShape {
   language: string;
 }
 
+// GN-6x: the classes of other repositories that the generated JavaScript code of Node and WASM calls: each value class
+// of another repository and the classes of its owner that its read members give, in this order, which the JavaScript
+// entry hands over; classIndex is the position of a class among them.
+export function foreignClasses(model: Model): { alias: ValueAlias; unit: Unit }[] {
+  return model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => [
+    { alias, unit: alias.unit },
+    ...classIn(alias, 'node').maps.map((map) => ({ alias, unit: map.unit })),
+  ]);
+}
+export const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
+
+// GN-6x: what the JavaScript conversions of a value class of another repository start from: the name of its class, its
+// position among the classes of other repositories, the makes of its out rows, and the fills of its walk and the
+// members that close them, which the arms add. GN-6as: the list and the map class of the owner take their made
+// children, and the member of the out row makes the instance from them when the last child is made.
+export const foreignClassParts = (model: Model, alias: ValueAlias, lang: 'node' | 'wasm'): { label: string; own: number; makes: ReturnType<typeof classMakes>; fills: Fill[]; closes: Map<string, string> } =>
+  ({ label: langName(lang, alias.unit.name, 'class'), own: classIndex(model, alias.unit), makes: classMakes(alias, lang), fills: [], closes: new Map() });
+
+// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
+// classes of GN-6x in the list that the JavaScript entry hands over.
+export const foreignRowIndex = (model: Model, lang: 'node' | 'wasm', library: string, unit: Unit): number =>
+  foreignClasses(model).length + foreignRowClasses(model, lang).findIndex((c) => c.library === library && c.unit.id === unit.id);
+
 // GN-6as: the last arm of the match of a make function, for a variant that no out row of the value makes (U-7, GN-6x).
 export const noOutRow = (shape: WalkShape, rule: string): string =>
   `other => ${shape.internal(`format!("${rule}: no out row of the kind {}", other.kind().as_str())`)},`;
@@ -777,16 +801,23 @@ export function readAsOf(kase: { kind: string; units?: Member | undefined }, mem
 // U-7 (a'): the failure of the `in` of a value alias of another repository, in the Rust of a binding crate. Its kind,
 // status and errno are the owner's; its class is this repository's class of the category that the owner's E-1 gives
 // the variant, by a match without a wildcard (I-2 (3)). An exception that language code raised while the owner's core
-// walked the value is thrown again. The form gives the first parameter and argument of the language, the type of the
-// failure and of the class, the class of a category, and the expression that makes the failure from class and error.
+// walked the value is thrown again. made is the expression that makes the failure from class and error; the form gives
+// what Python changes: the first parameter and argument of the language, the type of the failure and of the class, and
+// the class of a category, which is otherwise its index among the classes of the model.
 export interface ForeignFailureForm {
   env: { params: string; args: string };
   fail: string;
   classType: string;
   classOf: (category: string) => string;
-  made: string;
 }
-export function foreignFailureRust(model: Model, form: ForeignFailureForm): string {
+export function foreignFailureRust(model: Model, made: string, given: Partial<ForeignFailureForm> = {}): string {
+  const form: ForeignFailureForm = {
+    env: { params: '', args: '' },
+    fail: 'Fail',
+    classType: ': usize',
+    classOf: (category) => String(model.classes.findIndex((c) => c.category === category)),
+    ...given,
+  };
   return foreignAliasLibraries(model).map((alias) => {
     const library = (alias.library ?? '').replaceAll('-', '_');
     const error = alias.error ?? { path: '', kinds: [] };
@@ -798,7 +829,7 @@ fn error_of_${library}(${form.env.params}error: ${error.path}) -> ${form.fail} {
     let class${form.classType} = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
-    ${form.made}
+    ${made}
 }
 
 fn failure_of_${library}(${form.env.params}failure: binding_core::Failure<${error.path}>) -> ${form.fail} {

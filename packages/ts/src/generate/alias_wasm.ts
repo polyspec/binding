@@ -6,8 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, convertedLibraries, ownerRecognizedUnits, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
-import { foreignClasses } from './alias_node.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -85,13 +84,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
   }
 }
 
-// GN-6x: the classes of other repositories that the module calls, in the order of foreignClasses.
-const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
-
-// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
-// classes of GN-6x in the list that the JavaScript entry hands over.
-const rowIndex = (model: Model, library: string, unit: Unit): number =>
-  foreignClasses(model).length + foreignRowClasses(model, 'wasm').findIndex((c) => c.library === library && c.unit.id === unit.id);
+const rowIndex = (model: Model, library: string, unit: Unit): number => foreignRowIndex(model, 'wasm', library, unit);
 
 // GN-6x: the JavaScript call of a member of the owner on an object: a property read or a method call.
 function jsCall(member: Member, object: string, args: string[]): string {
@@ -109,13 +102,8 @@ function jsCall(member: Member, object: string, args: string[]): string {
 // HostValue::Value, which the owner's in function reads through the read members of its in row; a core value leaves as
 // the instance that the owner's members of its out rows make.
 function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
-  const label = langName('wasm', alias.unit.name, 'class');
-  const own = classIndex(model, alias.unit);
-  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
-  // instance from them when the last child is made.
-  const fills: Fill[] = [];
-  const closes = new Map<string, string>();
-  const arms = (walk: Walk): string => classMakes(alias, 'wasm').map((make) => {
+  const { label, own, makes, fills, closes } = foreignClassParts(model, alias, 'wasm');
+  const arms = (walk: Walk): string => makes.map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => ${walk.put(jsCall(make.member, '&class', []))},`;
       if (make.kind === 'text16') {
@@ -696,13 +684,7 @@ fn js_fail(error: JsValue) -> Fail {
 // status and errno are the owner's; its class is this repository's class of the category that the owner's E-1 gives
 // the variant. An exception that JavaScript code raised while the owner's core walked the value is thrown again.
 export function foreignFailureWasm(model: Model, rest: string): string {
-  return foreignFailureRust(model, {
-    env: { params: '', args: '' },
-    fail: 'Fail',
-    classType: ': usize',
-    classOf: (category) => String(model.classes.findIndex((c) => c.category === category)),
-    made: `Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${rest} }`,
-  });
+  return foreignFailureRust(model, `Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${rest} }`);
 }
 
 // B-1, GN-6af: the JsHost of a model, as for Node (nodeHost): an instance of a class without core_type, whose prototype

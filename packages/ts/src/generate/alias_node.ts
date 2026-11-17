@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -83,21 +83,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }:
   }
 }
 
-// GN-6x: the classes of other repositories that the generated code calls: each value class of another repository and
-// the classes of its owner that its read members give, in this order, which the JavaScript entry hands over.
-export function foreignClasses(model: Model): { alias: ValueAlias; unit: Unit }[] {
-  return model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => [
-    { alias, unit: alias.unit },
-    ...classIn(alias, 'node').maps.map((map) => ({ alias, unit: map.unit })),
-  ]);
-}
-
-const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
-
-// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
-// classes of GN-6x in the list that the JavaScript entry hands over.
-const rowIndex = (model: Model, library: string, unit: Unit): number =>
-  foreignClasses(model).length + foreignRowClasses(model, 'node').findIndex((c) => c.library === library && c.unit.id === unit.id);
+const rowIndex = (model: Model, library: string, unit: Unit): number => foreignRowIndex(model, 'node', library, unit);
 
 // GN-6ar: an instance of a class of the owner made from the content of an out row, through the constructor that the
 // JavaScript entry handed over: the content of the kind; the Map of the entries, which the instance keeps (GN-6af) and
@@ -151,13 +137,8 @@ function jsCall(member: Member, object: string, args: string, types: string): st
 // the owner's in function reads through the read members of its in row; a core value leaves as the instance that the
 // owner's members of its out rows make.
 function valueClassNode(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
-  const label = langName('node', alias.unit.name, 'class');
-  const own = classIndex(model, alias.unit);
-  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
-  // instance from them when the last child is made.
-  const fills: Fill[] = [];
-  const closes = new Map<string, string>();
-  const arms = (walk: Walk): string => classMakes(alias, 'node').map((make) => {
+  const { label, own, makes, fills, closes } = foreignClassParts(model, alias, 'node');
+  const arms = (walk: Walk): string => makes.map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => ${walk.put(jsCall(make.member, 'class', '', ''))},`;
       if (make.kind === 'text16') {
@@ -752,13 +733,7 @@ fn js_fail(error: napi::Error) -> Fail {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailureNode(model: Model): string {
-  return foreignFailureRust(model, {
-    env: { params: '', args: '' },
-    fail: 'Fail',
-    classType: ': usize',
-    classOf: (category) => String(model.classes.findIndex((c) => c.category === category)),
-    made: 'library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))',
-  });
+  return foreignFailureRust(model, 'library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))');
 }
 
 // B-1, GN-6af: the JsHost of a model. An instance of a class that an in row of a value alias names is HostValue::Value
