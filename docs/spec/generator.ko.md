@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5f9779e3f4caa142bd40d090f87e35fe449c3053914eadd7cdf21f789dc63972 -->
+<!-- source-sha256: 045bf2946172a9b26aae598e200d476f4495f43229eefc014dcfbc0ebed5538e -->
 # 생성기
 
 [English](generator.md)
@@ -2878,11 +2878,15 @@
   lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
 - **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
   의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
-  적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적을
-  때에만 job이 실행한다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고, job에는 그
+  적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적고
+  run이 그 release의 package를 그 asset에서 가져올 때에만 job이 실행한다. run에는 아직 그런 단계가 없다. run은 의존의
+  package를 `DEPS`의 사본에서만 가져오고(GN-14d) `https://github.com/polyspec/`를 checkout 옆의 디렉터리로 읽으므로,
+  tag를 적은 코어는 job에서 빌드되지 않고, release tag만으로는 아무것도 끝나지 않는다(B2.451). 그 단계는 B2.458의
+  것이다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고, job에는 그
   항목이 없다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
   `tests/e2e`에 없는 레포를 경로로 더는 적지 않는데 목록에 남은 계약을 실패로 한다. 코어가 json 레포에 의존하는
-  `tests/e2e/relay`는 json의 첫 release tag까지 목록에 있다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
+  `tests/e2e/relay`는 run이 json의 release를 그 asset에서 설치할 때까지 목록에 있다. json은 v0.0.35부터 release tag를
+  가진다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
   job `e2e`의 각 항목은 `make ci-e2e REPO=<레포> DEPS="<레포들>"`를 실행한다. 이 recipe는 모든 도구를 설치하고, 자기 work
