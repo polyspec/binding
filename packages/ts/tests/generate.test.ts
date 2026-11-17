@@ -3150,7 +3150,7 @@ test('an error unit is the class of the kinds that name it, with the properties 
   assert.match(cjs, /addon\.__register\(\[[^\]]*ConsumerInternalError, AbsentError, recognized_sample\.RefusedError\]\);/);
   assert.match(cjs, /module\.exports = \{[^}]*\bAbsentError\b/);
   assert.match(text(out, 'packages/ts/generated/index.mjs'), /export const \{[^}]*\bAbsentError\b/);
-  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class AbsentError extends ConsumerValueError \{\n  readonly key: string;\n  readonly length: number \| null;\n\}/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class AbsentError extends ConsumerValueError \{\n  readonly key: string;\n  readonly length: number \| null;\n  readonly parts: readonly \(string\)\[\];\n\}/);
   // PHP: a final class that extends the class of the category; a property is a method that reads a private property.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /ClassBuilder::new\("Polyspec\\\\Consumer\\\\AbsentError"\)\n        \.extends\(\(registered_class_0, "\\\\Polyspec\\\\Consumer\\\\ConsumerValueError"\)\)\n        \.flags\(ClassFlags::Final\)/);
@@ -3473,7 +3473,8 @@ test('a property of an error unit that raises raises in place of the error, and 
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /fn absent_error_properties\(error: &polyspec_consumer::Error\) -> Result<Properties, Fail> \{/);
   assert.match(node, /let value0 = String::from\(match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(failure\)\) \}\);/);
-  assert.match(node, /let value2 = polyspec_consumer::Error::trace\(error\)\.into_iter\(\)\.map\(\|item\| String::from\(AsRef::<str>::as_ref\(&item\)\)\)\.collect::<Vec<String>>\(\);/);
+  assert.match(node, /let value2 = polyspec_consumer::Error::parts\(error\)\.iter\(\)\.map\(\|item\| String::from\(AsRef::<str>::as_ref\(item\)\)\)\.collect::<Vec<String>>\(\);/);
+  assert.match(node, /let value3 = polyspec_consumer::Error::trace\(error\)\.iter\(\)\.map\(\|item\| String::from\(AsRef::<str>::as_ref\(item\)\)\)\.collect::<Vec<String>>\(\);/);
   assert.match(node, /polyspec_consumer::Error::Absent \{ \.\. \} => match absent_error_properties\(&error\) \{\n            Ok\(properties\) => Some\(Box::new\(properties\)\),\n            Err\(fail\) => return fail,\n        \},/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /  readonly trace: readonly \(string\)\[\];\n\}/);
   const php = text(out, 'packages/php-ext/generated/lib.rs');
@@ -9656,12 +9657,12 @@ test('the result of an alias with the entry points of codec-test goes back throu
   const phpOut = text(out, phpTests);
   assert.ok(phpOut.includes(`        $result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(JSON.stringify(['string 78']))}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\Polyspec\\Sample\\Internal\\aliasRoundData($result)));`), phpOut);
   // Each entry point takes the value by the in function of the alias and gives it back by its out function.
-  assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[cfg\(feature = "codec-test"\)\]\n#\[pyfunction\]\nfn _alias_round_data<'py>\(py_: Python<'py>, value: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n    guard\(py_, \|\| \{\n        let value: polyspec_sample::Data = in_data\(py_, value, "value"\)\?;\n        out_data\(py_, &value\)/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[cfg\(feature = "codec-test"\)\]\n#\[pyfunction\]\nfn _alias_round_data<'py>\(py_: Python<'py>, value: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n    guard\(py_, \|\| \{\n        let value: polyspec_sample::Data = in_data\(py_, value, "value"\)\?;\n        out_data\(py_, value\)/);
   assert.match(text(out, 'packages/python/generated/lib.rs'), /module\.add_function\(wrap_pyfunction!\(_alias_round_data, module\)\?\)\?;/);
-  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[napi\(js_name = "__aliasRoundData"\)\]\npub fn alias_round_data<'env>\(env_: &'env Env, value: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(env_, value, "value"\)\?;\n        out_data\(env_, &value\)/);
-  assert.match(text(wasm, 'packages/ts/wasm/generated/lib.rs'), /#\[wasm_bindgen\(js_name = "__aliasRoundData"\)\]\n {4}pub fn alias_round_data\(value: JsValue\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let value: polyspec_sample::Data = in_data\(&value, "value"\)\?;\n {12}out_data\(&value\)/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[napi\(js_name = "__aliasRoundData"\)\]\npub fn alias_round_data<'env>\(env_: &'env Env, value: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(env_, value, "value"\)\?;\n        out_data\(env_, value\)/);
+  assert.match(text(wasm, 'packages/ts/wasm/generated/lib.rs'), /#\[wasm_bindgen\(js_name = "__aliasRoundData"\)\]\n {4}pub fn alias_round_data\(value: JsValue\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let value: polyspec_sample::Data = in_data\(&value, "value"\)\?;\n {12}out_data\(value\)/);
   const php = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(php, /#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\aliasRoundData"\)\]\npub fn alias_round_data\(value: &Zval\) -> Result<Zval, PhpException> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(value, "value"\)\?;\n        out_data\(&value\)/);
+  assert.match(php, /#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\aliasRoundData"\)\]\npub fn alias_round_data\(value: &Zval\) -> Result<Zval, PhpException> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(value, "value"\)\?;\n        out_data\(value\)/);
   assert.match(php, /let module = module\.function\(wrap_function!\(alias_round_data\)\);/);
 });
 
