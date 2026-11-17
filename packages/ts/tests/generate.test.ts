@@ -2509,16 +2509,48 @@ test('package.json names the package of a callback unit of another library, whic
   assert.deepEqual(JSON.parse(String(packages.get('packages/ts/package.json'))).dependencies, { [npmName]: '*' });
 });
 
-test('B2.441: composer.json of the extension requires the extension of the owner of a callback unit that it takes, and an extension that takes none requires no other (GN-3e, GN-6s)', () => {
-  // Two components: consumer takes the callback units of sample, as the generator of crud-ui takes the callback unit
-  // file_loader of its validator, whose error classes the extension of the generator finds in the validator's.
-  const { contract, foreign } = consumerSample();
-  const sample = foreign.get('sample');
-  const composer = (of: any, libraries: Map<string, any>): any => JSON.parse(String(trackedPackages(of, '0.0.0', new Map<string, unknown>([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries).get('packages/php-ext/composer.json')));
-  const required = composer(contract, foreign).require;
-  assert.equal(required['ext-polyspec_sample'], '*', JSON.stringify(required));
+// B2.441: the requirements of the composer.json that scaffold writes for the extension of a contract, and the libraries
+// whose PHP namespace a string of the generated extension names, which are the libraries whose extension it looks into.
+const extensionLookups = ({ contract, caseFiles, foreign }: { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> }): { require: Record<string, string>; named: string[] } => {
+  const lines = new Map<string, unknown>([...foreign.keys()].map((library): [string, unknown] => [`polyspec-${library}`, { path: `../../../${library}/packages/rust` }]));
+  const require = JSON.parse(String(trackedPackages(contract, '0.0.0', lines, [], foreign).get('packages/php-ext/composer.json'))).require;
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library.replaceAll('-', '_')}`, caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.ok(lib.length > 0, `${contract.library}: no generated extension`);
+  // A PHP name in a Rust string has each backslash twice.
+  const named = [...foreign].filter(([, owner]) => lib.includes(`"${String(owner.packages.php.namespace).replaceAll('\\', '\\\\')}\\\\`)).map(([library]) => library).sort();
+  return { require, named };
+};
+
+test('B2.441: composer.json of the extension requires the extension of every other library whose extension the generated extension looks into, and of no other (GN-3e)', () => {
+  // The error classes that a member of a callback unit recognizes (GN-6s): consumer takes the callback unit lookup of
+  // sample, whose member find recognizes refused_error, as the generator of crud-ui takes the callback unit
+  // file_loader of its validator. The extension makes no instance of a class of sample, so the Composer package of
+  // sample is not required.
+  const recognized = extensionLookups(consumerSample());
+  assert.deepEqual(recognized.named, ['sample']);
+  assert.deepEqual(recognized.require, { php: '>=8.4', 'ext-polyspec_sample': '*' });
+  // The class of a value class with its members (GN-6x): the value class value of owner, beside the units of sample.
+  const valueClass = extensionLookups(valueClassSample());
+  assert.deepEqual(valueClass.named, ['owner', 'sample']);
+  assert.deepEqual(valueClass.require, { php: '>=8.4', 'ext-polyspec_owner': '*', 'polyspec/owner': '*', 'ext-polyspec_sample': '*' });
+  // The class of a record (T-3): plot takes and gives the record point of points.
+  const record = extensionLookups(plotSample());
+  assert.deepEqual(record.named, ['points']);
+  assert.deepEqual(record.require, { php: '>=8.4', 'ext-polyspec_points': '*', 'polyspec/points': '*' });
+  // No lookup: a value alias of another library is converted by the core of its owner without a class of its
+  // extension, and a callback unit whose members recognize no error is called on the object that the caller gave. The
+  // consumer whose owner recognizes nothing names the value alias data and the callback units of sample and requires
+  // PHP alone.
+  const plain = consumerSample();
+  for (const unit of plain.foreign.get('sample').units) {
+    if (unit.origin === 'callback') for (const member of unit.members ?? []) delete member.errors;
+  }
+  assert.ok(JSON.stringify(plain.contract).includes('{"unit":"data","library":"sample"}') && JSON.stringify(plain.contract).includes('{"unit":"lookup","library":"sample"}'), 'the consumer names the value alias data and the callback unit lookup of sample');
+  const none = extensionLookups(plain);
+  assert.deepEqual(none.named, []);
+  assert.deepEqual(none.require, { php: '>=8.4' });
   // The extension of sample names no unit of another library, so it requires PHP alone.
-  assert.deepEqual(composer(sample, new Map()).require, { php: '>=8.4' });
+  assert.deepEqual(JSON.parse(String(trackedPackages(consumerSample().foreign.get('sample'), '0.0.0').get('packages/php-ext/composer.json'))).require, { php: '>=8.4' });
 });
 
 test('CK-19 reads in the package.json of a host package each npm package that the generated code imports (GN-3b, GN-3e)', () => {

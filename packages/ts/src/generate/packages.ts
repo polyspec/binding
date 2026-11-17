@@ -7,7 +7,7 @@
 import { posix } from 'node:path';
 import type { Contract, Type, Unit } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported, machineFunction, countsThrown } from './model.ts';
+import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported, machineFunction, countsThrown, ownerClasses, type OwnerClasses } from './model.ts';
 
 // GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
 // (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
@@ -555,29 +555,24 @@ function npmDependencies(contract: Contract, dependencies: CoreDependencies, for
   return Object.fromEntries(npmPackages(contract, foreign).map(({ library, name }): [string, string] => [name, packageVersion(library, dependencies)]));
 }
 
-// GN-3e: the extension and the Composer package of each library whose record or value class the extension makes and
-// reads as an instance of the class of that extension, and the extension of the owner of each callback unit among the
-// types (B2.441), whose classes, such as the error classes that a member of the unit recognizes, the extension finds
-// in the owner's extension (GN-6s).
+// GN-3e, B2.441: the extension `ext-<extension name>` of every other library whose extension the generated extension
+// looks into: the owner of each unit among the types whose classes it finds there by name (ownerClasses, which the
+// model of the emitters reads too). The owner of a record or of a value class, whose instances the extension makes
+// and reads, has its Composer package beside its extension.
 function composerRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
-  const owning = (test: (u: Unit) => boolean): string[] => [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && test(u)) === true).map((named) => named.library))].sort();
-  const instances = owning((u) => u.kind === 'record' || (u.kind === 'class' && u.origin === 'value'));
-  const callbacks = owning((u) => u.origin === 'callback').filter((library) => !instances.includes(library));
-  const extension = (library: string): string | undefined => {
+  const found = new Map<string, Set<OwnerClasses>>();
+  for (const { library, unit } of namedUnits(contract, foreign)) {
+    const owned = foreign.get(library)?.units.find((u) => u.id === unit);
+    const classes = owned === undefined ? undefined : ownerClasses(owned);
+    if (classes !== undefined) found.set(library, (found.get(library) ?? new Set<OwnerClasses>()).add(classes));
+  }
+  return Object.fromEntries([...found].sort(([a], [b]) => (a < b ? -1 : 1)).flatMap(([library, kinds]): [string, string][] => {
     const owner = foreign.get(library);
-    return owner === undefined || (owner.packages['php'] as { package?: string } | undefined)?.package === undefined ? undefined : `ext-${extensionName(owner)}`;
-  };
-  return Object.fromEntries([
-    ...instances.flatMap((library): [string, string][] => {
-      const ext = extension(library);
-      const name = (foreign.get(library)?.packages['php'] as { package?: string } | undefined)?.package;
-      return ext === undefined || name === undefined ? [] : [[ext, '*'], [name, packageVersion(library, dependencies)]];
-    }),
-    ...callbacks.flatMap((library): [string, string][] => {
-      const ext = extension(library);
-      return ext === undefined ? [] : [[ext, '*']];
-    }),
-  ]);
+    const name = (owner?.packages['php'] as { package?: string } | undefined)?.package;
+    if (owner === undefined || name === undefined) return [];
+    const instances = kinds.has('record') || kinds.has('value class');
+    return [[`ext-${extensionName(owner)}`, '*'], ...(instances ? [[name, packageVersion(library, dependencies)] as [string, string]] : [])];
+  }));
 }
 
 function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDependencies = new Map(), foreign: ReadonlyMap<string, Contract> = new Map()): string {

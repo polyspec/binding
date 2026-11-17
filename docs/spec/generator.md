@@ -231,14 +231,19 @@ the design ids are those of the binding design.
   its owner (GN-6s), and the Node entry requires that package for the error classes that a member of the unit
   recognizes (GN-6d). The `package.json` of a host package declares each of them in its `dependencies`, which `check`
   reads (GN-3b, CK-19), because the host package is the package that installs and loads the generated entry; and `composer.json` has in `require` the extension
-  `ext-<extension name>` and the Composer package of each library that owns a record or a value class among those
-  types, because the extension makes and reads instances of the classes of that extension, which PHP loads first, and
-  the extension `ext-<extension name>` alone of each other library that owns a callback unit among those types,
-  because the extension finds the classes of that unit in the extension of its owner by name, such as the error
-  classes that a member of the unit recognizes (GN-6s). Why: in crud-ui the generator takes the callback unit
-  `file_loader` of its validator, and its tests failed with `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError"
-  not found` until the generator loaded the validator extension (`BINDING_PHP_REQUIRES_generator = validator` of its
-  Makefile), while the composer.json of the generator required no extension but its own (B2.441). A
+  `ext-<extension name>` of every other library whose extension the generated extension looks into, because PHP
+  must load that extension first. The generated extension finds a class of another extension by its name, and it
+  does so for three kinds of unit among those types: a record, whose class it makes and reads (T-3); a value class,
+  whose class, static members and map classes it reads and calls (GN-6x); and a callback unit with a member that
+  recognizes error units, whose error classes and category classes it reads (GN-6s). The owner of a record or of a
+  value class has its Composer package in `require` beside its extension. A value alias of another library, which
+  the core of its owner converts without a class of its extension, and a callback unit whose members recognize no
+  error, which is called on the object that the caller gave, add no requirement. One function of the generator names
+  these kinds, and both the model that the PHP emitter reads and `scaffold` take them from it. Why: in crud-ui the
+  generator takes the callback unit `file_loader` of its validator, and its tests failed with
+  `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found` until the generator loaded the validator
+  extension (`BINDING_PHP_REQUIRES_generator = validator` of its Makefile), while the composer.json of the generator
+  required no extension but its own (B2.441). A
   library that only the contract of another library names in another place, such as the type of a member of a class
   that this contract does not take, is in no manifest. `scaffold` reads the contract of a library by the `path` of its
   dependency line, from the core of the library that names it, and the others through `cargo metadata`; when Cargo
