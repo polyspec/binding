@@ -10695,6 +10695,23 @@ test('a parameter with only is a parameter of the targets that it lists alone, a
   assert.throws(() => generate({ contract: required, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles, targets: ['go'] }), /classes\.halted: the parameter cancel has only, which needs a default or an optional type, because the targets without it give the core the parameter as left out \(Q-4, U-2\)/);
 });
 
+// Q-4, GN-6s, B2.512: the model of another library that a test calls keeps for each language only the parameters of
+// that language, as the model of the contract does. The constructor of held_source of the sample takes a cancellation
+// that only Python and Node give; the Go test of the consumer calls it with the Go parameters alone.
+test('a member of another library that a test calls takes the parameters of the language alone (Q-4, GN-6s, B2.512)', () => {
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const made = foreign.get('sample').units.find((u: any) => u.id === 'held_source').members.find((m: any) => m.id === 'held_source.new');
+  made.parameters.push({ name: ['cancel'], type: { optional: 'cancel' }, required: true, only: { targets: ['python', 'node'], reason: 'B-5' } });
+  const cases = caseFiles.get('contracts/cases.json') as { read: { source?: { new?: string; args: Record<string, unknown> } }[] };
+  for (const kase of cases.read) if (kase.source?.new === 'held_source.new') kase.source.args['cancel'] = null;
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(go, /sample\.NewHeldSource\("a", "1"\)/);
+  assert.doesNotMatch(go, /sample\.NewHeldSource\(nil/);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python', 'node'] });
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /foreign_sample\.HeldSource\("a", "1", None\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /new foreign_sample\.HeldSource\('a', '1', null\)/);
+});
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
