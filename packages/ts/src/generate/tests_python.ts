@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
@@ -814,7 +814,7 @@ export function pythonTests(model: Model, module: string): string {
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
       append(`
-    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
+    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${raisedLines('python', kase.args)}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? caseCall(fn, callArgs(model, ctx, fn, caseArg), receiver, kase.args) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
@@ -838,9 +838,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       const call = caseCall(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr === '' ? '' : 'receiver', kase.args);
       usesRaised = true;
       append(`
-    def test_gn6ae_${name}_${id}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}
-        raised = LookupError(${pyString(FIXTURE_RAISED)})
-        _raised[:] = [raised]
+    def test_gn6ae_${name}_${id}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}${raisedLines('python', kase.args, true)}
         with self.assertRaises(LookupError) as caught:
             ${call}
         self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);

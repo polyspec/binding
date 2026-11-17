@@ -13016,6 +13016,27 @@ test('B2.466: a case of a member without a result that states the result null is
   }
 });
 
+test('B2.476: the B-4 test of a case whose function fixture raises an exception sets the value that the function throws, in Python, Node, WASM and PHP (GN-6ae)', () => {
+  // orm db.transaction, a_rollback_that_fails_after_the_callback_raised: the case raises the kind rollback_failed, so
+  // its test is the B-4 test, whose callback threw a value that only the test of GN-6ae set: IndexError at
+  // `raise _raised[0]` in Python, `ReferenceError: raised is not defined` in Node.
+  const out = scopedSample(['python', 'node', 'wasm', 'php'], (contract, cases) => {
+    const group = contract.cases.find((row: any) => row.member === 'store.transaction').group;
+    cases[group].push({ id: 'a_kind_after_the_function_raised', work: { function: { calls: [], raise: 'exception' } }, raises: { kind: 'missing', status: null, category: 'value' } });
+  });
+  const body = (target: keyof typeof STATEFUL_TESTS, start: RegExp): string => bodiesOf(text(out, STATEFUL_TESTS[target]), start, STATEFUL_END[target])[0] ?? '';
+  const python = body('python', /def test_b4_store_transaction_a_kind_after_the_function_raised\(/);
+  assert.match(python, /\n {8}raised = LookupError\("raised by the function of the case"\)\n {8}_raised\[:\] = \[raised\]\n[\s\S]*\.transaction\(/, python);
+  for (const target of ['node', 'wasm'] as const) {
+    const js = body(target, /test\('B-4: Store\.transaction a_kind_after_the_function_raised'/);
+    assert.match(js, /\n {2}const raised = new Error\('raised by the function of the case'\);\n[\s\S]*\.transaction\([\s\S]*throw raised;/, `${target}: ${js}`);
+  }
+  const php = body('php', /function testB4StoreTransactionAKindAfterTheFunctionRaised\(/);
+  assert.match(php, /\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n[\s\S]*throw self::\$raised;/, php);
+  // A B-4 test whose fixtures raise nothing sets no value.
+  assert.doesNotMatch(body('python', /def test_b4_counter_add_a_text_amount_is_another_type\(/), /_raised/);
+});
+
 // B2.465: the sample whose alias data has the rows of orm_value: a row of the kind int64 that makes the integer of the
 // language, and the kinds int and bytes made as instances of the value classes whole and octets in PHP and Python.
 const kindRows = (echo: object[]): { contract: any; caseFiles: Map<string, unknown> } => {

@@ -1050,6 +1050,18 @@ export const awaitsFunction = (args: Map<Arg, unknown>): boolean =>
   [...args.values()].some((value) => (value as { function?: { awaits?: unknown } } | null)?.function?.awaits === true);
 
 // GN-6ae: whether a value of a case holds a function fixture that raises the exception of the language.
+// GN-6ae, B2.476: the lines of a test of Python, Node, WASM or PHP that set the value that a function fixture of the
+// arguments throws by "raise": "exception", before the call; none when no fixture throws it. The test of a case that
+// raises "callback" (GN-6ae) and the test of a case that raises a kind after its callback raised (B-4) write them, as
+// the Go tests do (raisedLine).
+export function raisedLines(lang: Lang3, args: ReadonlyMap<Arg, unknown>, always = false): string {
+  // always: the test of GN-6ae requires the value itself, so it sets it whatever its fixtures are.
+  if (!always && ![...args.values()].some(raisesException)) return '';
+  if (lang === 'python') return `\n        raised = LookupError(${pyString(FIXTURE_RAISED)})\n        _raised[:] = [raised]`;
+  if (lang === 'node') return `\n  const raised = new Error(${jsString(FIXTURE_RAISED)});`;
+  return `\n        self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});`;
+}
+
 export const raisesException = (value: unknown): boolean => {
   if (typeof value !== 'object' || value === null) return false;
   if (Array.isArray(value)) return value.some(raisesException);

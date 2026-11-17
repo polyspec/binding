@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
 import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
@@ -705,7 +705,7 @@ test('B-4: ${name} ${kase.id}', () => {
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       emit(`
-test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${arming}
+test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${raisedLines('node', kase.args)}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -727,8 +727,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
       const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
       emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}
-  const raised = new Error(${jsString(FIXTURE_RAISED)});
+test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${raisedLines('node', kase.args, true)}
   assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }

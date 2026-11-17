@@ -2234,6 +2234,12 @@ the design ids are those of the binding design.
     that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
     function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
+    That exception is one value that the test makes before the call, with the message `raised by the function of the
+    case`, in every test that calls the member with such a fixture: the test of a case that raises `"callback"`,
+    which requires that very value, and the B-4 test of a case that raises a kind after its function raised, such as
+    a rollback that fails (B2.476). Why: the function throws the value that the test holds, and the B-4 test of
+    Python, Node, WASM and PHP did not set it, so the callback failed with `IndexError` or `ReferenceError` in
+    place of its exception (orm `db.transaction`), where the Go test set it.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
     def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose

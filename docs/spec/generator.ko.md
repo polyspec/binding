@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b35e29611b15bd7585e7a50e35770a3ece9c390f91f735cf90bb56053d4e87dd -->
+<!-- source-sha256: 44059f0c2b2c992167effdee1d9bfdb0d8ff3be53c359a51328f0f5dc45d3707 -->
 # 생성기
 
 [English](generator.md)
@@ -1837,6 +1837,11 @@
     {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다). `result`를 적은 단계는 그 호출이 그 값을 돌려줄 것을 시험의 단언으로
     요구하고(CK-22), 그 단언의 실패는 함수의 예외다. 함수는 그 뒤 `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
+    그 예외는 시험이 호출 전에 만드는 값 하나이고 메시지는 `raised by the function of the case`다. 그런 fixture로
+    member를 부르는 모든 시험이 그것을 만든다. 곧 `"callback"`을 raise하는 case의 시험(바로 그 값을 요구한다)과, 함수가
+    raise한 뒤 kind를 raise하는 case(실패하는 rollback 같은)의 B-4 시험이다(B2.476). 이유: 함수는 시험이 든 값을
+    던지는데, Python, Node, WASM, PHP의 B-4 시험은 그것을 정하지 않아서 callback이 자기 예외 대신 `IndexError`나
+    `ReferenceError`로 실패했다(orm `db.transaction`). Go 시험은 그것을 정했다.
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
     `"awaits": true`(CK-22)가 있는 fixture는 awaitable을 돌려주는 함수다. Python은 `async def`, Node와 WASM은 `async`
     함수이고, 그 step은 binding이 awaitable을 기다릴 때 돌며 `result`나 `raise`는 그 awaitable의 결과다. 그런 함수의
