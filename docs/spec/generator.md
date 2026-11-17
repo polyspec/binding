@@ -3040,6 +3040,9 @@ the design ids are those of the binding design.
   kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
   from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
   `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  An `int` outside the range of i64 is the built-in value: an out row makes an `OutValue` int, an i64, so no out
+  row makes it, and a Node `bigint` outside i64 enters as a large integer, which the in function judges (U-7 (f),
+  B2.493; orm: `IntegerValue(9223372036854775808n)` was refused by its `int64` parameter before the in function ran).
   Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
   alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
   sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value
@@ -3623,6 +3626,10 @@ the design ids are those of the binding design.
   Existing plain text, `ill_formed` and typed `path` keep their meanings. Private helpers that defer a new text
   conversion carry the same case owner through a hidden argument or a private closure; they resolve no global
   root and add no lifetime beyond the existing case. Helpers that do not use this form remain unchanged.
+  Each test sets the root in its own body when an expression of that test takes it, and only then: a target makes the
+  expressions of a test as it writes that test, so no test takes a root that another test set (B2.493). Why: the B-5c
+  tests of orm were all made before the first was written, so the instance of `StepRunner` took a root that only the
+  test of `Query` set (PHP: `caseTextPath()` with a null root; Node: `_caseTextRoot is not defined`).
 
   A JSON string token escapes quote, backslash and U+0000–001F, using `\b`, `\t`, `\n`, `\f`, `\r` for their named
   controls and lower-case `\u00xx` for the others. Slash, non-ASCII Unicode, `<`, `>`, `&`, U+2028 and U+2029 remain
@@ -3702,7 +3709,12 @@ the design ids are those of the binding design.
   `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so the B-3 test failed in its argument before the
   call that it checks. A case value that the generator does not write in a target supplies no value there, and the
   placeholder stands: that case fails its own test by name (G-4, GN-13e), and the tests of the other rules are written.
-  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463). A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
+  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463).
+  An argument of a generated interface (GN-6ap) takes the case value by the same rule, because its placeholder is an
+  instance that the first factory of a class that implements it makes of placeholders (B2.493). Why: the connection of
+  orm `Query.connect` and `StepRunner.new` is an interface, whose placeholder was `Db::connect("a", 0, …)` with a
+  cache size 0, which the core refuses with `config: cache sizes must be positive` before the argument count that
+  the G-7 test checks. A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
   at two places, the receiver of the call that takes that instance as an argument, and the other instance of GN-8a)
   as the tests that need any receiver do: from the factory arguments of the first case of the class that does not
   raise, arms no faults, writes no files and runs against no service (GN-13f); the placeholder of GN-13 stands there

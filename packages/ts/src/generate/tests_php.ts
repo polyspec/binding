@@ -1092,14 +1092,19 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertSame(${cls(category)}::class, $error::class);
             self::assertSame('${kind}', $error->kind());
         }`;
-  for (const test of held.poison) {
+  // GN-13l: each test marks the root of the case texts that its own expressions take.
+  for (const make of held.poison) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     public function testB5c${langName('php', test.object.unit.name, 'class')}RefusesAPoisonedObject(): void
     {
         $held = ${test.instance};${[`\\${layout.namespace}\\Internal\\${POISON_ENTRY.php}($held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}
     }`);
   }
-  for (const test of held.busy) {
+  for (const make of held.busy) {
+    methodMark = caseTextUses;
+    const test = make();
     append(`
     public function testB5c${langName('php', test.fn.unit.name, 'class')}${langName('php', test.fn.member.name, 'class')}RefusesTheInstanceAtTwoPlaces(): void
     {
