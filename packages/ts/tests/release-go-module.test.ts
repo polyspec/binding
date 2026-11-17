@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
-import { carriedLibraries, goModFindings, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
+import { generate } from '../src/generate/index.ts';
+import { carriedLibraries, goModFindings, goReleaseFiles, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
 
@@ -258,10 +259,10 @@ test('the command makes the commit through an index of the run, proves it by a c
     'git rev-parse --verify --quiet refs/tags/v0.0.1^{commit}',
     'git rev-parse --verify HEAD^{commit}',
     `git show ${TAG_COMMIT}:packages/go/go.mod`,
+    `git ls-tree -r -z --name-only ${TAG_COMMIT} -- packages/go`,
     'rustc --print sysroot',
     'rustc --print host-tuple',
     ...PLATFORMS.flatMap((platform) => [`llvm-nm --defined-only ${libraryOf(platform)}`, `llvm-size -A ${libraryOf(platform)}`]),
-    `git ls-tree -r -z --name-only ${TAG_COMMIT} -- packages/go`,
     `git read-tree ${TAG_COMMIT}`,
     ...added.flatMap(([path, file]) => [`git hash-object -w --no-filters -- ${file}`, `git update-index --add --cacheinfo 100644,object-of:${file},${path}`]),
     'git write-tree',
@@ -420,6 +421,136 @@ test('a run after an earlier run removes the module cache, the repository and th
   assert.ok(lines.indexOf('go clean -modcache') < lines.indexOf(`git init --quiet --bare ${join(s.release.work, 'remote.git')}`));
   assert.equal(existsSync(join(s.release.work, 'remote.git/objects')), false);
   assert.doesNotMatch(readFileSync(join(s.release.work, 'consumer/go.mod'), 'utf8'), /replace/);
+});
+
+// ---- The generated files of the released form -----------------------------------------------------------------------
+
+// The Go files that `binding generate --target go` writes for tests/e2e/sample, by their paths in the Go module.
+const sampleGo = (): Map<string, string> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+  return new Map([...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([path, text]) => [path.slice('packages/go/'.length), String(text)]));
+};
+const CARRIED_OF_SAMPLE = [
+  'errors/zz_generated_errors.go',
+  'internal/binding/zz_generated_binding.go',
+  'internal/binding/zz_generated_link_darwin_arm64.go',
+  'internal/binding/zz_generated_link_linux_amd64.go',
+  'internal/binding/zz_generated_link_linux_arm64.go',
+  'internal/binding/zz_generated_link_musl_linux_amd64.go',
+  'internal/binding/zz_generated_link_musl_linux_arm64.go',
+  'internal/binding/zz_generated_map_test.go',
+  'internal/binding/zz_generated_passed_test.go',
+  'internal/ffi/lib/darwin_arm64/zz_generated_lib.go',
+  'internal/ffi/lib/linux_amd64/zz_generated_lib.go',
+  'internal/ffi/lib/linux_amd64_musl/zz_generated_lib.go',
+  'internal/ffi/lib/linux_arm64/zz_generated_lib.go',
+  'internal/ffi/lib/linux_arm64_musl/zz_generated_lib.go',
+  'zz_generated_case_json_string_test.go',
+  'zz_generated_sample.go',
+  'zz_generated_test.go',
+  'zz_generated_value_comparison_test.go',
+];
+const TAGGED = 'is behind the build tag';
+const GUARD = 'is the guard of the build tags of the generated tests (GN-13bf)';
+
+test('B2.446: the commit of a release carries no generated file behind a build tag of a test feature and no guard of the tags, and every other generated file (GN-15g)', () => {
+  const go = sampleGo();
+  const { carried, leftOut } = goReleaseFiles(go);
+  assert.deepEqual([...leftOut].sort(([a], [b]) => (a < b ? -1 : 1)), [
+    ['internal/binding/zz_generated_codec.go', `${TAGGED} polyspec_sample_codec_test of a test feature`],
+    ['internal/binding/zz_generated_codec_test.go', `${TAGGED} polyspec_sample_codec_test of a test feature`],
+    ['internal/binding/zz_generated_fault.go', `${TAGGED} polyspec_sample_fault_test of a test feature`],
+    ['internal/binding/zz_generated_native_count.go', `${TAGGED} polyspec_sample_native_count_test of a test feature`],
+    ['internal/binding/zz_generated_panic.go', `${TAGGED} polyspec_sample_panic_test of a test feature`],
+    ['internal/binding/zz_generated_panic_test.go', `${TAGGED} polyspec_sample_panic_test of a test feature`],
+    ['internal/binding/zz_generated_tags_test.go', GUARD],
+    ['internal/binding/zz_generated_thrown_count.go', `${TAGGED} polyspec_sample_thrown_count_test of a test feature`],
+    ['zz_generated_fault_test.go', `${TAGGED} polyspec_sample_fault_test of a test feature`],
+    ['zz_generated_held_test.go', `${TAGGED} polyspec_sample_panic_test of a test feature`],
+    ['zz_generated_native_count_test.go', `${TAGGED} polyspec_sample_native_count_test of a test feature`],
+    ['zz_generated_tags_test.go', GUARD],
+    ['zz_generated_thrown_count_test.go', `${TAGGED} polyspec_sample_thrown_count_test of a test feature`],
+  ]);
+  assert.deepEqual(carried, CARRIED_OF_SAMPLE);
+  // The two parts are every generated file of the module, and no carried file names a tag of the generation on its
+  // build line: the link files of Linux keep their constraint of the C library (GN-15g).
+  assert.deepEqual([...carried, ...leftOut.keys()].sort(), [...go.keys()].sort());
+  for (const path of carried) assert.doesNotMatch(/^\/\/go:build .*$/m.exec(go.get(path) ?? '')?.[0] ?? '', /polyspec_/, path);
+  assert.deepEqual(carried.filter((path) => /^\/\/go:build /m.test(go.get(path) ?? '')).map((path) => [path, /^\/\/go:build (.+)$/m.exec(go.get(path) ?? '')?.[1]]), [
+    ['internal/binding/zz_generated_link_linux_amd64.go', '!musl'],
+    ['internal/binding/zz_generated_link_linux_arm64.go', '!musl'],
+    ['internal/binding/zz_generated_link_musl_linux_amd64.go', 'musl'],
+    ['internal/binding/zz_generated_link_musl_linux_arm64.go', 'musl'],
+  ]);
+});
+
+test('B2.446: a file is left out by its build line and the name of the guard alone, under any form of the constraint, and a file that the generator did not write is in neither part (GN-15g)', () => {
+  const { carried, leftOut } = goReleaseFiles(new Map([
+    ['zz_generated_a.go', '// header\n\n//go:build polyspec_sample_fault_test || polyspec_sample_panic_test\n\npackage a\n'],
+    ['zz_generated_b_test.go', '//go:build polyspec_my_lib_thrown_count_test && polyspec_my_lib_fault_test\n\npackage a\n'],
+    ['zz_generated_c.go', '//go:build linux && !musl && (amd64 || arm64) && go1.24\n\npackage a\n'],
+    ['zz_generated_d.go', 'package a\n\n// A comment that names //go:build polyspec_sample_panic_test is no build line.\n'],
+    ['zz_generated_e_test.go', 'package a\n'],
+    ['deep/zz_generated_tags_test.go', 'package deep\n'],
+    ['host/host.go', '//go:build polyspec_sample_panic_test\n\npackage host\n'],
+    ['go.mod', 'module m\n'],
+  ]));
+  assert.deepEqual(carried, ['zz_generated_c.go', 'zz_generated_d.go', 'zz_generated_e_test.go']);
+  assert.deepEqual([...leftOut], [
+    ['zz_generated_a.go', `${TAGGED}s polyspec_sample_fault_test, polyspec_sample_panic_test of a test feature`],
+    ['zz_generated_b_test.go', `${TAGGED}s polyspec_my_lib_thrown_count_test, polyspec_my_lib_fault_test of a test feature`],
+    ['deep/zz_generated_tags_test.go', GUARD],
+  ]);
+});
+
+// The generated files of the work tree of a scene that the commit of a release leaves out.
+const DEAD: [string, string][] = [
+  ['internal/binding/zz_generated_panic.go', '//go:build polyspec_sample_panic_test\n\npackage binding\n'],
+  ['internal/binding/zz_generated_panic_test.go', '//go:build polyspec_sample_panic_test\n\npackage binding\n'],
+  ['internal/binding/zz_generated_tags_test.go', 'package binding\n'],
+  ['zz_generated_fault_test.go', '//go:build polyspec_sample_fault_test\n\npackage sample\n'],
+  ['zz_generated_tags_test.go', 'package sample\n'],
+];
+
+test('B2.446: the commit of release-go-module adds no file of the work tree behind a build tag of a test feature and no guard (GN-19f)', (t) => {
+  const plain = scene(t);
+  releaseGoModule(plain.release);
+  const s = scene(t);
+  for (const [path, text] of DEAD) writeFileSync(join(s.release.root, 'packages/go', path), text);
+  writeFileSync(join(s.release.root, 'packages/go/zz_generated_sample_test.go'), 'package sample\n');
+  releaseGoModule(s.release);
+  const addedOf = (lines: string[]): string[] => lines.filter((line) => line.startsWith('git update-index ')).map((line) => line.slice(line.lastIndexOf(',') + 1));
+  // The untagged generated test is the one file that the commit of this tree adds to the commit of the other.
+  assert.deepEqual(addedOf(s.lines()), [...addedOf(plain.lines()), 'packages/go/zz_generated_sample_test.go'].sort());
+  for (const [path] of DEAD) assert.equal(s.lines().some((line) => line.includes(join(s.release.root, 'packages/go', path))), false, path);
+});
+
+test('B2.446: a commit of the tag that tracks a generated file behind a build tag of a test feature or the guard is refused with each such file, and no commit and no tag is made (GN-19f)', (t) => {
+  const tracks = (files: [string, string][]): Answer[] => [
+    { tool: 'git', match: ' ls-tree ', stdout: ['go.mod', 'host/host.go', ...files.map(([path]) => path)].map((path) => `packages/go/${path}\0`).join('') },
+    ...files.map(([path, stdout]) => ({ tool: 'git', match: ` show 1+:packages/go/${path.replaceAll('.', '\\.')}$`, stdout })),
+  ];
+  // The tracked files that a release may carry: an untagged generated file and one with the constraint of a C library.
+  const sound: [string, string][] = [['errors/zz_generated_errors.go', 'package errors\n'], ['internal/binding/zz_generated_other.go', '//go:build !musl\n\npackage binding\n']];
+  const s = scene(t, tracks([...DEAD, ...sound]));
+  assert.deepEqual(refusal(() => releaseGoModule(s.release)), [
+    'packages/go/internal/binding/zz_generated_panic.go: the commit of the tag v0.0.1 tracks it, and it is behind the build tag polyspec_sample_panic_test of a test feature; the released form holds no such file, which cannot be built in it (GN-15g)',
+    'packages/go/internal/binding/zz_generated_panic_test.go: the commit of the tag v0.0.1 tracks it, and it is behind the build tag polyspec_sample_panic_test of a test feature; the released form holds no such file, which cannot be built in it (GN-15g)',
+    'packages/go/internal/binding/zz_generated_tags_test.go: the commit of the tag v0.0.1 tracks it, and it is the guard of the build tags of the generated tests (GN-13bf); the released form holds no such file, which cannot be built in it (GN-15g)',
+    'packages/go/zz_generated_fault_test.go: the commit of the tag v0.0.1 tracks it, and it is behind the build tag polyspec_sample_fault_test of a test feature; the released form holds no such file, which cannot be built in it (GN-15g)',
+    'packages/go/zz_generated_tags_test.go: the commit of the tag v0.0.1 tracks it, and it is the guard of the build tags of the generated tests (GN-13bf); the released form holds no such file, which cannot be built in it (GN-15g)',
+  ]);
+  assert.deepEqual(s.lines().filter((line) => WRITES.test(line)), []);
+  // The tracked files that the form can hold are no finding, and the consumer imports the package of the tracked one.
+  const fine = scene(t, tracks(sound));
+  assert.deepEqual(releaseGoModule(fine.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
+  assert.match(readFileSync(join(fine.release.work, 'consumer/consumer_test.go'), 'utf8'), /_ "github\.com\/polyspec\/sample\/packages\/go\/errors"/);
+  // A tracked generated file that the work tree writes over is in the tree as the release wrote it: the command reads
+  // the file of the work tree, not the one of the commit.
+  const over = scene(t, tracks([['zz_generated_sample.go', '//go:build polyspec_sample_panic_test\n\npackage sample\n']]));
+  assert.deepEqual(releaseGoModule(over.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
+  assert.equal(over.lines().some((line) => line.includes(' show ') && line.endsWith('zz_generated_sample.go')), false);
 });
 
 // ---- The command line -----------------------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 5d62655273ead52e4f11fa4cd09efbc38b95bae9234fa8303a84ffc97c7fafdc -->
+<!-- source-sha256: ab8b432bb0ab3942d1645edc85b2c0fb9c9f991c030fe0cce8c870a3113daa13 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -22,6 +22,7 @@
 
 ## Unreleased
 
+- Go 모듈의 release commit은 release 형태가 빌드할 수 있는 생성 파일만 싣는다(GN-15g, B2.446). build constraint가 test feature의 build tag(`polyspec_<library>_<feature>`)를 적은 생성 파일은 시험이든 아니든 빼고(`internal/binding/zz_generated_panic.go` 같은 것), 그 tag들의 guard인 `zz_generated_tags_test.go`도 뺀다(GN-13bf). 그런 파일은 release의 라이브러리가 가질 수 없는 시험 진입점을 부르고(GN-19f), guard는 그 형태가 싣지 않은 tag를 run에 요구한다. 이전 release들은 test feature의 tag 뒤의 파일을 실었고, 그 파일들은 release 형태에서 빌드될 수 없었다. 0.0.19의 guard가 더해지자 받은 모듈의 태그 없는 `go test`, 곧 그 형태의 올바른 실행이 end-to-end 검사의 release 형태 단계(GN-14f)에서 `packages/go`와 `internal/binding`에서 실패했고, 그래서 0.0.19 version commit의 CI run이 실패했으며 0.0.19에는 tag가 없다. `packages/ts/src/release/go-module.ts`의 함수 `goReleaseFiles` 하나가 각 생성 파일의 `//go:build` 줄에서 싣는 파일을 주며, 파일 이름의 목록은 없다. link 파일의 `//go:build musl`처럼 다른 tag만 적은 파일은 싣는다. `binding release-go-module`과 end-to-end 검사의 release 형태 source가 둘 다 그 함수를 읽고, `binding release-go-module`은 tag의 commit이 그런 파일을 추적하면 파일마다 이름을 밝히고 commit도 tag도 만들지 않는다. 생성된 tree에서 guard는 그대로다. 틀린 태그나 태그 없이 돌린 run은 여전히 실패한다. `packages/ts`에서 `node --test --test-name-pattern=B2.446 tests/release-go-module.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다. release 형태 단계의 증거는 e2e의 CI run이다.
 - `packages/ts/schema/interface.schema.json`이 strict 옵션을 하나도 끄지 않은 Ajv strict 모드에서 컴파일되므로, 소비자가 그것으로 interface.json을 검증할 수 있다(CK-1, B2.443). Ajv는 naming exception의 `not` 아래 `required: ["parameter", "field"]`에서부터 strictRequired로, `value`와 literal default의 union type에서 strictTypes로 그것을 거부했고, orm은 대신 guard로 계약을 읽었다. 속성을 요구하는 하위 스키마는 이제 그 속성을 `properties`에 `true`로도 이름하여 같은 규칙을 말하고, 둘 이상의 타입인 값은 단일 타입의 `anyOf`다(두 literal default에는 새 `$defs/literal`). `binding check`는 `strictRequired: false`와 `allowUnionTypes: true` 없이 `strict: true`만으로 스키마를 컴파일한다. `packages/ts`에서 `node --test tests/schema-strict.test.ts`로 검증했고, 변경 전에는 실패했다.
 
 ## 0.0.19
