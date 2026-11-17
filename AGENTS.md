@@ -63,7 +63,7 @@ rules of this repository.
   Enforced by: none, the end-to-end check needs every target with its runner, which no unit test owns; the record names
   the commit of each run.
 - Own: `.github/workflows/ci.yml` runs on the push of `main` and on a manual run, one job per matrix entry: `ts` runs
-  `typecheck-ts`, `unit-ts` and `release-coverage`, and `rust` runs `test-rust-features`, `test-rust-plain`,
+  `typecheck-ts`, `unit-ts`, `release-coverage` and `release-candidate-assets`, and `rust` runs `test-rust-features`, `test-rust-plain`,
   `clippy-rust-features`, `clippy-rust`, `fmt-rust` and `fmt-e2e`, so the jobs run every target of `make check` once. Each job runs
   them with `make ci-check`, whose `make ci-targets` runs every target to its end and writes the report `var/ci/<name>/`, and the last
   job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, except `e2e-amd64` on
@@ -94,7 +94,7 @@ rules of this repository.
   a setup action, `.github/actions/bootstrap`, `actions/upload-artifact`), and only a `uses:` step has an `if:`. What
   a step would compute from `steps` or from the outcome of another step, such as the outcome of a setup step in the
   summary or whether `make go-musl-check` runs, the recipe computes itself. A local run of a job is the same call, such
-  as `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage"` or `make ci-e2e
+  as `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage release-candidate-assets"` or `make ci-e2e
   REPO=tests/e2e/sample`; a release is `make ci-release RUN=<id>`. A recipe runs no `sudo` and changes no setting of
   the machine. Why: an expression or a
   condition of a step is evaluated by the runner of GitHub, so a job whose content is in its YAML cannot run the same
@@ -120,8 +120,23 @@ rules of this repository.
   them; it builds no package and runs no test, and Cargo reads the index of the registry. It reads the tree of HEAD, as
   `make e2e` does, so a change that is not committed is not linted. Why: without it the CI run of that push is the first lint
   of the generated crates, and 0.0.18 so failed in CI on a helper that four generated crates held unused (B2.430).
+  The version-bump commit also passes `make release-candidate-assets` before its push, and the job `check` of CI runs
+  it on every commit: it builds the archive of the release from the committed HEAD with no tag, by the steps of `make
+  release-assets` (`release.mjs candidate-assets` of kit), which are the build of `tsconfig.build.json` that `npm pack`
+  runs as the prepack script, the name of the archive from the version of `packages/ts/package.json` against the
+  version that it is asked for, the check that the checkout holds no changed and no untracked path, and the comparison
+  of the packed manifest. Without `VERSION` it asks for the top `## X.Y.Z` of `CHANGELOG.md`, the version that `make
+  release-tag` takes, read by the functions of kit that read it there (`scripts/release-candidate-version.mts`); on a
+  commit that is not a version commit that section and the manifests hold the last released version, so it passes there
+  too. It packs the commit, so it runs after the version-bump commit is made, and it downloads nothing. Why: the
+  release creates and pushes the tag in its first step and builds the archive after it, and CI otherwise runs none of
+  the archive steps (it type-checks with `tsc --noEmit`), so a failure of them would first show after the tag. It does
+  not cover the steps of the release that need the tag and GitHub: the checks of `make release-tag` of the ancestry and
+  the order of the tag, `make release-publish` and `make release-undraft`.
   Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
-  release-tag`, which tags only the commit of a successful run.
+  release-tag`, which tags only the commit of a successful run; `make release-candidate-assets` in the job `check` of
+  CI, whose failure fails the run that a release needs; `npm test` in `packages/ts`, whose `tests/ci-workflow.test.ts`
+  runs the recipe with a stand-in of node and reads the entry `ts` of the matrix (B2.455).
 - Own: `make docs-check` reads each document that `config/documents.json` selects on its own with the document check of
   the installed `@polyspec/kit`: its links, anchors and fences, the changelogs, and the checklists of `docs/plans/<plan>/`
   that `config/checklist.json` declares. Every English document has a Korean twin `.ko.md` with the same `doc-id`, and the

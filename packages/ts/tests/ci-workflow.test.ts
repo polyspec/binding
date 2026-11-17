@@ -14,6 +14,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { candidateVersion } from '../../../scripts/release-candidate-version.mts';
 
 const top = new URL('../../../', import.meta.url).pathname;
 const workflow = readFileSync(`${top}.github/workflows/ci.yml`, 'utf8');
@@ -393,4 +394,74 @@ fs.writeFileSync(path.join(prefix, 'dist', 'cli.js'), '#!/usr/bin/env node\\n', 
   assert.equal(ran.status, 0, `${ran.stdout}${ran.stderr}`);
   assert.deepEqual(readFileSync(calls, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as string[]), [['run', '--prefix', 'packages/ts', 'build']]);
   assert.equal(statSync(join(root, 'packages', 'ts', 'dist', 'cli.js')).mode & 0o777, 0o755);
+});
+
+// B2.455: the release creates the tag before it builds the archive, so make release-candidate-assets runs the archive
+// steps of kit on the committed HEAD with no tag, and the entry ts of the job check runs it. The recipe runs on a copy
+// of the Makefile with a stand-in of node, which records its arguments and RELEASE_ASSETS and prints 9.8.7 as
+// scripts/release-candidate-version.mts.
+test('B2.455: make release-candidate-assets calls candidate-assets of kit with an asset folder of its own, for VERSION of the command line or else the version of the change log', (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'binding-candidate-')));
+  t.after(() => { rmSync(root, { recursive: true, force: true }); });
+  copyFileSync(`${top}Makefile`, join(root, 'Makefile'));
+  const calls = join(root, '.calls');
+  const node = join(root, 'node-stand-in.cjs');
+  writeFileSync(node, `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.CALLS, JSON.stringify({ args, assets: process.env.RELEASE_ASSETS ?? '' }) + '\\n');
+if (args[0] === 'scripts/release-candidate-version.mts') {
+  if (process.env.NO_VERSION) { process.stderr.write('no section\\n'); process.exit(1); }
+  process.stdout.write('9.8.7\\n');
+}
+`);
+  chmodSync(node, 0o755);
+  const run = (vars: string[], env: Record<string, string> = {}): { status: number | null; output: string; calls: { args: string[]; assets: string }[] } => {
+    writeFileSync(calls, '');
+    const ran = spawnSync('make', ['--no-print-directory', '-C', root, 'release-candidate-assets', `NODE=${node}`, ...vars], { env: { PATH: '/usr/bin:/bin', CALLS: calls, ...env }, encoding: 'utf8' });
+    return { status: ran.status, output: `${ran.stdout}${ran.stderr}`, calls: readFileSync(calls, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { args: string[]; assets: string }) };
+  };
+  const kit = join(root, 'node_modules', '@polyspec', 'kit', 'dist', 'release.mjs');
+  const folder = 'var/release-candidate/assets';
+
+  // Without VERSION the version is the one that the script reads from the change log, and the script gets no asset folder.
+  const top0 = run([]);
+  assert.equal(top0.status, 0, top0.output);
+  assert.deepEqual(top0.calls, [{ args: ['scripts/release-candidate-version.mts'], assets: '' }, { args: [kit, 'candidate-assets', '9.8.7'], assets: folder }]);
+  // A VERSION of the command line wins, and the change log is not read.
+  const given = run(['VERSION=1.2.3']);
+  assert.equal(given.status, 0, given.output);
+  assert.deepEqual(given.calls, [{ args: [kit, 'candidate-assets', '1.2.3'], assets: folder }]);
+  // A VERSION of the environment alone is not the version.
+  const fromEnvironment = run([], { VERSION: '4.5.6' });
+  assert.equal(fromEnvironment.status, 0, fromEnvironment.output);
+  assert.deepEqual(fromEnvironment.calls.at(-1), { args: [kit, 'candidate-assets', '9.8.7'], assets: folder });
+  // A change log without a version stops the recipe before kit packs.
+  const none = run([], { NO_VERSION: '1' });
+  assert.notEqual(none.status, 0, 'make release-candidate-assets passes without a version');
+  assert.deepEqual(none.calls.map((c) => c.args), [['scripts/release-candidate-version.mts']]);
+  // The asset folder is not that of release-assets, whose archives release-publish uploads.
+  const makefile = readFileSync(`${top}Makefile`, 'utf8');
+  assert.ok(makefile.includes('RELEASE_ASSETS=var/release/assets '), 'release-assets no longer names var/release/assets');
+});
+
+test('B2.455: the entry ts of the job check runs release-candidate-assets after its other targets, and no entry gives it a VERSION', () => {
+  const check = jobs().get('check') ?? [];
+  const entries = matrix(check);
+  const ts = entries.find((entry) => entry.name === 'ts');
+  // It refuses a checkout with an untracked path, so it is the last target: a file that an earlier target left fails it.
+  assert.deepEqual(ts?.targets?.split(' '), ['typecheck-ts', 'unit-ts', 'release-coverage', 'release-candidate-assets']);
+  assert.deepEqual(entries.filter((entry) => (entry.targets ?? '').split(' ').includes('release-candidate-assets')).map((entry) => entry.name), ['ts']);
+  assert.ok(!check.some((line) => /VERSION=/.test(line)), 'the job check gives a VERSION; the target reads the version of the change log');
+});
+
+// B2.455: the version of the candidate is the top section ## X.Y.Z of the change log of this checkout, which the
+// functions of kit read as release-tag reads it, also under ## Unreleased with entries; it is the version of the
+// manifest that the archive is named by, on a version commit and on every other commit.
+test('B2.455: the version of the candidate is the top version of CHANGELOG.md and the version of packages/ts/package.json', () => {
+  const version = candidateVersion(top);
+  const headings = readFileSync(`${top}CHANGELOG.md`, 'utf8').split('\n').filter((line) => line.startsWith('## '));
+  assert.equal(headings[0], '## Unreleased');
+  assert.equal(headings[1], `## ${version}`);
+  assert.equal((JSON.parse(readFileSync(`${top}packages/ts/package.json`, 'utf8')) as { version: string }).version, version);
 });

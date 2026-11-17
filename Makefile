@@ -246,7 +246,8 @@ ci-e2e-amd64: ## Run the e2e-amd64 job of ci.yml: the e2e job of tests/e2e/sampl
 # installs the tools that config/release.json needs and release-tools-path puts var/tools/bin and the shims of mise on the
 # PATH of the later steps; release-assets builds the archive of every package into var/release/assets; release-publish
 # creates the draft GitHub Release and release-undraft makes it public. release-coverage requires every package file of
-# the checkout to be classified in config/release.json.
+# the checkout to be classified in config/release.json. release-candidate-assets is no step of release.yml: the check
+# job of ci.yml and the gates before a version-bump commit run it.
 .PHONY: release-tag release-checkout release-prepare release-tools release-tools-path release-assets release-publish release-undraft release-coverage
 release-tag: ## Tag the commit of the successful CI run RUN of ci.yml on main with vX.Y.Z of the change log; AUTO=1 releases only a version commit; reads the run with gh
 	@test -n "$$RUN" || { echo "release-tag: RUN is required, for example make release-tag RUN=123"; exit 1; }
@@ -271,6 +272,21 @@ release-tools-path: ## Append var/tools/bin and the shims of mise to GITHUB_PATH
 release-assets: ## Build the archive of every package of TAG into var/release/assets; ONLINE
 	@test -n "$$TAG" || { echo "release-assets: TAG is required, for example make release-assets TAG=v0.0.1"; exit 1; }
 	RELEASE_ASSETS=var/release/assets $(ONLINE) $(NODE) $(KIT)/release.mjs assets "$$TAG"
+
+# release-candidate-assets runs the archive steps of release-assets on the committed HEAD with no tag (B2.455): the
+# release creates and pushes the tag before it builds the archive, so without this target a failure of those steps first
+# shows after the tag. kit refuses a checkout with a changed or an untracked path and a version that is not the one of
+# the manifest of packages/ts. Without VERSION it packs the version that the release would take, the top `## X.Y.Z` of
+# the change log, which scripts/release-candidate-version.mts reads with the functions of kit. npm pack runs the prepack
+# build with the packages that are installed and downloads nothing. The steps that need the tag and GitHub
+# (release-tag, release-publish, release-undraft) are not run. Only a VERSION of the command line counts, so a VERSION
+# that the environment of a machine happens to hold does not replace the version of the change log.
+.PHONY: release-candidate-assets
+release-candidate-assets: ## Build the archive of every package from the committed HEAD into var/release-candidate/assets, with no tag: [VERSION=X.Y.Z], else the top version of the change log; offline
+	@version="$(if $(filter command line,$(origin VERSION)),$(VERSION))"; \
+	if [ -z "$$version" ]; then version="$$($(NODE) scripts/release-candidate-version.mts)" || exit 1; fi; \
+	echo "release-candidate-assets: VERSION $$version"; \
+	RELEASE_ASSETS=var/release-candidate/assets $(NODE) $(KIT)/release.mjs candidate-assets "$$version"
 
 release-publish: ## Create the GitHub Release of TAG as a draft with the archives of release-assets
 	@test -n "$$TAG" || { echo "release-publish: TAG is required, for example make release-publish TAG=v0.0.1"; exit 1; }
