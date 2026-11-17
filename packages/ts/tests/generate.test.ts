@@ -14151,6 +14151,59 @@ test('B2.498: every helper fn of a generated binding crate has a caller in that 
   }
 });
 
+// GN-6ae, CK-69: a method with machine gives the core a clone of the value of its instance, and its receiver is &self,
+// so the call lends the clone. The call gave the clone by value, Clone::clone(receiver), and the assertion of GN-6h
+// names the receiver &Type: a core with &self met the assertion and the call refused it (orm install_machine). For
+// each machine method, the receiver of each core call is a borrow exactly when the contract names a borrow, and the
+// receiver of each assertion that names the core path agrees with the call; in each target that writes either.
+const machineReceiverFindings = (contract: any, out: ReadonlyMap<string, string | Buffer>): string[] => {
+  const found: string[] = [];
+  const methods = (contract.units as any[]).flatMap((u) => (u.members ?? []).filter((m: any) => typeof m.core === 'object' && m.core.machine === true && m.core.receiver !== undefined));
+  for (const [path, content] of out) {
+    if (!path.endsWith('.rs')) continue;
+    const source = String(content);
+    for (const m of methods) {
+      const tail = (m.core.path as string).split('::').slice(-2).join('::');
+      const borrowed = m.core.receiver.startsWith('&');
+      // The first argument of each call, to the comma or the parenthesis that closes it at its depth.
+      const callForms = [...source.matchAll(new RegExp(`(?<![A-Za-z0-9_])(?:[A-Za-z0-9_]+::)*${tail}\\(`, 'g'))].map((c) => {
+        let depth = 0;
+        let end = (c.index ?? 0) + c[0].length;
+        for (; end < source.length; end += 1) {
+          const ch = source[end];
+          if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+          else if ((ch === ')' || ch === ']' || ch === '}') && depth-- === 0) break;
+          else if (ch === ',' && depth === 0) break;
+        }
+        return source.slice((c.index ?? 0) + c[0].length, end).trim();
+      // A name with no argument is the text of a message, `Store::transaction()`, not a call of the core.
+      }).filter((arg) => arg !== '');
+      for (const arg of callForms) if (arg.trim().startsWith('&') !== borrowed) found.push(`${path}: ${tail} is called with the receiver ${arg.trim()} for ${m.core.receiver}`);
+      for (const [, first] of source.matchAll(new RegExp(`let _: fn\\(([^,)]*)[^=]*= (?:[A-Za-z0-9_]+::)*${tail};`, 'g'))) {
+        if ((first ?? '').trim().startsWith('&') !== borrowed) found.push(`${path}: the assertion of ${tail} names the receiver ${first} for ${m.core.receiver}`);
+        for (const arg of callForms) if (arg.trim().startsWith('&') !== (first ?? '').trim().startsWith('&')) found.push(`${path}: ${tail} is called with ${arg.trim()} where its assertion names ${first}`);
+      }
+    }
+  }
+  return found;
+};
+test('GN-6ae: the receiver of the core call of a machine method is the borrow that its assertion and its contract name, in each target of the sample and of the consumer copies (CK-69)', () => {
+  const targets: Lang[] = ['php', 'python', 'node', 'go', 'wasm'];
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  let calls = 0;
+  for (const target of targets) {
+    const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: [target] });
+    calls += [...out.values()].filter((c) => /Store::transaction\(/.test(String(c))).length;
+    assert.deepEqual(machineReceiverFindings(contract, out), [], `sample ${target}`);
+  }
+  assert.ok(calls > 0, 'the sample writes the core call of Store.transaction');
+  for (const consumer of WHOLE_CONSUMERS) {
+    const inputs = wholeConsumer(consumer);
+    for (const target of targets) assert.deepEqual(machineReceiverFindings(inputs.contract, wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
+  }
+});
+
 // B2.492 (GN-6af, GN-6x): clippy -D warnings refused the PHP crate of the sample. php_value_class took owned, the
 // entries of the maps of a value class of another repository, for every contract that reads values, also where no in
 // row has a map, so the parameter had no use (unused_variables) and, as a &mut Vec that the body did not push to,
