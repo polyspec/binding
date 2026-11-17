@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b53c765caff246e7d3f13cd06bddf7980e0481816eaa8ce9b7652731c584eaa7 -->
+<!-- source-sha256: 0d759fa329ba720f61c3c960522ac3307c8c1d0871faa0ee01bca9c026c58c80 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 binding crate는 생성된 줄이 부르는 helper만 정의한다(GN-1, B2.498). `armed_future`는 fault가 있고 machine이 없는 wait `async_driver` member가 있는 contract에만 쓰인다. 전에는 그 wait의 모든 member에 쓰여서, 그런 member 하나가 machine을 가지고 `armed_waits`를 쓰는 `tests/e2e/sample`의 php, python, node crate가 쓰이지 않는 함수를 정의했고 `clippy -D warnings`가 그것을 거부했다. 이제 생성 테스트가 sample과 consumer 사본의 모든 target에서, 생성된 각 Rust 파일의 맨 위 private fn마다 그 파일 안에 호출이 있기를 요구한다. 저장소가 할 일: binding을 다시 생성한다. 그런 member가 있는 crate에서 `armed_future`가 빠지고, 그 밖에는 바뀌지 않는다. `packages/ts`에서 `node --test --test-name-pattern=B2.498 tests/generate.test.ts`로 검증했고, 변경 전에는 실패했다.
 - 들어오거나 나가는 행을 술어 `sequence_keys`로 고르는 value alias는 그 술어가 뜻하는 키 형태를 `"sequence_keys": {"keys": "text"}`(차례로 text `"0"`부터 `"n-1"`)나 `{"keys": "int"}`(차례로 int `0`부터 `n-1`)로 밝히고, `binding check`는 그것이 없는 alias를 alias와 그 행과 함께 거부한다(CK-104, GN-13e, B2.490). 기본값은 없다. 생성기는 case map의 `sequence_keys`를 밝힌 형태로 판단하며, 전에는 int 키만 sequence로 보았다. 빈 map은 두 형태에서 모두 sequence 키를 가지고, 형태를 밝히지 않은 alias의 비어 있지 않은 case map은 판단을 거부한다. 전에는 코어가 text를 뜻하는 orm에 코어와 맞지 않는 생성 시험이 셋 있었다: `codec.decode` / `sequence_map_kind`의 PHP 시험은 코어가 행의 `map_value`를 주는 곳에서 bare map을 기대했고, `map_value.constructor` / `kinds`와 `map_value.entries` / `kinds`는 값 `sequence_map`을 bare array `["0" => true]`로 주었는데, PHP는 키 `"0"`을 int `0`으로 바꾸므로 그것을 list `[true]`로 읽는다. 이제 PHP는 그것을 `new MapValue(["0" => true])`로 주고 키 `int 0`과 함께 `map_value #0`을 기대한다. Python, Node, WASM, Go는 text 키를 유지한다. 그 술어를 쓰는 각 소비자가 할 일은 `packages/rust/interface.json`의 alias에 한 줄이다:
   - php-serialization: `php_value`에 `"sequence_keys": {"keys": "int"}`. 코어는 `Key::Int`를 위치와 비교하며, 이는 생성기가 전에 읽던 형태이므로 생성 시험은 바뀌지 않는다. 이 계약을 읽는 session-store와 hyper는 스스로 할 일이 없다.
   - template: `template_value`에 `"sequence_keys": {"keys": "text"}`. 코어는 키를 그 위치의 text와 비교한다. 키를 가진 case map 중 sequence 키를 가진 것이 없으므로 생성 시험은 바뀌지 않는다.
