@@ -465,6 +465,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   language reads as it reads a property, B2.361), `args` are the arguments of a call of it (CK-101), the `result` of a member without
   a result is `null`, which each language tests as no value (`undefined` in Node and WASM, B2.374), and the generated
   test calls it on the receiver after the call of the case, also after a call that raised, and requires `result`.
+  The result of a member without a result has that one rule wherever a case writes it (generator GN-13e, B2.466):
+  under the result key of the case, which such a case may leave out, in a call of `after`, which writes `result` or
+  `raises`, in a step of a function fixture and in a row of a callback fixture it is `null`, and another value there
+  is reported. Why: the generator tests it as no value at each of these places, so a case that states a value for it
+  would have a test that fails, which the check says first.
   A case of a method may name `with`, `{"<name>": <instance value>}` (generator GN-13pa): each value is `{"new":
   <member id>, ...}` of a member that makes a class of this contract and is judged as an instance value of that class,
   each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a

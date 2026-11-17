@@ -12946,6 +12946,67 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
 });
 
+test('B2.464: PHP gives the least int64 of a case of a contract type int64 as PHP_INT_MIN, as an argument, as an expected result and as a key of a keyed map (G-5, T-1)', () => {
+  // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the argument was a float,
+  // which the binding refuses as no int. A case file gives the integer as its token, which cli reads as a bigint.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const least = -(2n ** 63n);
+  const cases = read('contracts/cases.json');
+  cases.negate = [{ id: 'the_least_int64', value: least, result: least }, { id: 'the_largest_int64', value: 2n ** 63n - 1n, result: least + 1n }];
+  cases.present = [{ id: 'a_key_of_the_least_int64', maps: [[[{ int: least }, 'v']]], result: [[[{ int: least }, 'v']]] }];
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node'] });
+  const php = text(out, phpTests);
+  assert.doesNotMatch(php, /-9223372036854775808/);
+  const body = (name: string): string => bodiesOf(php, new RegExp(`function ${name}\\(`), '\n    }\n')[0] ?? '';
+  assert.match(body('testGn13enegateTheLeastInt64'), /self::assertSame\(self::same\(\\PHP_INT_MIN\), self::same\(\\Polyspec\\Shapes\\negate\(\\PHP_INT_MIN\)\)\);/);
+  assert.match(body('testGn13enegateTheLargestInt64'), /self::same\(-9223372036854775807\), self::same\(\\Polyspec\\Shapes\\negate\(9223372036854775807\)\)/);
+  assert.match(body('testGn13epresentAKeyOfTheLeastInt64'), /present\(\[\[\\PHP_INT_MIN => "v"\]\]\)/);
+  // The other languages read the token as an integer.
+  assert.match(text(out, pythonTests), /pkg\.negate\(-9223372036854775808\)/);
+  assert.match(text(out, nodeTests), /pkg\.negate\(-9223372036854775808n\)/);
+});
+
+test('B2.466: a case of a member without a result that states the result null is tested as no value, and another value fails its test with the reason, in the five targets (GN-13e)', () => {
+  // orm: 36 cases state "result": null of a member that returns none; each had a test that failed with "a member
+  // that returns nothing has no result to compare", while binding check accepted them.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const cases = read('contracts/cases.json');
+  const receiver = { new: 'ledger.new', args: { key: 'a' } };
+  cases.ledger_note = [{ id: 'a_key_is_noted', receiver, key: 'b', result: null }, { id: 'a_key_is_noted_alone', receiver, key: 'b' }, { id: 'a_value_is_stated', receiver, key: 'b', result: 1 }];
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const paths = { ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' };
+  const ends = { ...STATEFUL_END, go: '\n}\n' };
+  const starts = (id: string, pascal: string): Record<keyof typeof paths, RegExp> => ({
+    python: new RegExp(`def test_gn13e_ledger_note_${id}\\(`), node: new RegExp(`test\\('GN-13e: Ledger\\.note ${id}'`), wasm: new RegExp(`test\\('GN-13e: Ledger\\.note ${id}'`),
+    php: new RegExp(`function testGn13eLedgerNote${pascal}\\(`), go: new RegExp(`func TestGN13eLedgerNote${pascal}\\(`),
+  });
+  const body = (target: keyof typeof paths, id: string, pascal: string): string => {
+    const [found] = bodiesOf(text(out, paths[target]), starts(id, pascal)[target], ends[target]);
+    assert.ok(found !== undefined, `${target}: no test of ${id}`);
+    return found;
+  };
+  const stated: Record<keyof typeof paths, RegExp> = {
+    python: /\n {8}result = pkg\.Ledger\("a"\)\.note\("b"\)\n {8}expected = None\n {8}self\.assertTrue\(_same\(result, expected\), /,
+    node: /\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Ledger\('a'\)\.note\('b'\)\), ordered\(undefined\)\);/,
+    wasm: /\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Ledger\('a'\)\.note\('b'\)\), ordered\(undefined\)\);/,
+    php: /\n {8}self::assertSame\(self::same\(null\), self::same\(new \\Polyspec\\Sample\\Ledger\("a"\)->note\("b"\)\)\);/,
+    // Go: the function gives its error and no value, so the call alone is the test.
+    go: /\n\terr := made0\.Note\("b"\)\n\tif err != nil \{\n/,
+  };
+  const alone: Record<keyof typeof paths, RegExp> = { python: /\n {8}pkg\.Ledger\("a"\)\.note\("b"\)$/, node: /\n {2}new pkg\.Ledger\('a'\)\.note\('b'\);$/, wasm: /\n {2}new pkg\.Ledger\('a'\)\.note\('b'\);$/, php: /\n {8}new \\Polyspec\\Sample\\Ledger\("a"\)->note\("b"\);\n/, go: stated.go };
+  for (const target of ['python', 'node', 'wasm', 'php', 'go'] as const) {
+    const noted = body(target, 'a_key_is_noted', 'AKeyIsNoted');
+    assert.match(noted, stated[target], `${target}: ${noted}`);
+    assert.doesNotMatch(noted, /has no result|returns none/, `${target}: ${noted}`);
+    // A case that leaves the key out runs the call alone, as it did.
+    const left = body(target, 'a_key_is_noted_alone', 'AKeyIsNotedAlone');
+    assert.match(left, alone[target], `${target}: ${left}`);
+    // Another value than null has no form: the test of the case fails with the reason.
+    const refused = body(target, 'a_value_is_stated', 'AValueIsStated');
+    assert.ok(refused.includes('the case a_value_is_stated of ledger.note gives result 1, but ledger.note returns none, whose result is null alone (GN-13e)'), `${target}: ${refused}`);
+  }
+});
+
 // B2.463: the sample whose counter is a receiver that holds state and whose placeholder the core would refuse: no
 // case of the constructor or of total exists, the first case of the class makes its receiver by new and then add(1),
 // absorb has a case whose other counter starts at 4, and seek takes a counter before its record.

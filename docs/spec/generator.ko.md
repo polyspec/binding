@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: db6ed9d827849b99cf63c562cdf93de6e068c87b1fc51a3bda551377c229a31d -->
+<!-- source-sha256: 8927578834f49503faad8667fec609c3bfe80e19ab02c085eb59251f474667fb -->
 # 생성기
 
 [English](generator.md)
@@ -2194,7 +2194,10 @@
   `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 각 시험은 그 형태의 말을 기대한다. case의 인자는 snake_case 키이고, record
   parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. 기본값이 없는 parameter의 키가 없는 case는 id로
   거부한다. 타입 `float`의 수는 Python과 PHP에서 float literal이다. 두 언어는 그 자리에서 정수를 거부하기 때문이다(B-2). JSON이
-  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
+  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). PHP는 가장 작은 `int64`인
+  -9223372036854775808을 case가 정수를 주는 모든 자리, 곧 인자, 기대 결과, keyed map의 정수 key, 값 alias의 값에서
+  `\PHP_INT_MIN`으로 적는다(B2.464). 이유: PHP는 그 literal을 float 9223372036854775808의 부정으로 읽어서, binding이
+  `int64`가 아닌 float를 받았다. JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
   아닌 바이트일 때 같은 `{"hex": ...}`, 올바른 꼴이 아닌 텍스트는 `{"ill_formed": "<텍스트>"}`로 그 텍스트 뒤에 올바른
   텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
   텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
@@ -2355,7 +2358,15 @@
   NaN payload는 계속 검사하지 않는다.
   결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
-  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
+  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다.
+  none을 돌려주는 member의 결과는 case가 그것을 적는 어느 자리에서나 `null`이다. 곧 case의 결과 키, `after`의 호출,
+  function fixture의 step, callback fixture의 row에서 그렇다(B2.466). 그것은 값 없음으로 시험한다. 시험은 Python의
+  `None`, PHP의 `null`, Node와 WASM의 `undefined`를 요구하고, Go는 호출만 실행하며 그 함수는 error만 주고 값을 주지
+  않는다. 그런 member의 case는 키를 생략할 수 있고, `after`의 호출은 `result`나 `raises`를 적는다. 거기의 다른 값은
+  `binding check`가 거부하고(CK-22), 그 case의 시험은 그 이유로 실패한다. 이유: 없는 결과에 규칙이 둘이었다. case 맨
+  위의 `"result": null`에는 시험이 실패했고 `after`에서는 check가 그것을 요구해서(B2.374), none을 돌려주는 member의
+  `"result": null`을 적은 orm의 36 case가 check를 통과하고 시험에서 실패했다.
+  optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의
   `nil`). 계약의 값 alias인
   결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
@@ -2378,7 +2389,7 @@
   생성기는 기대값을 같은 out 행의 Go 형태로 쓴다. 결과가 case의 kind가 아니라 그 형태를 가지기 때문이다. 행이 `text`를
   만드는 byte string은 `string`이고(행이 `bytes`를 만드는 text는 `[]byte`), 행이 `list`를 만드는 map은 그 값들의
   `[]any`이며, 행이 `keyed_map`을 만드는 map이나 list는 `*KeyedMap[any]`다. 그 keyed map의 key와 값 class field의
-  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`에 `null`이 아닌 값), 값 alias에 그 언어에서 그 kind의
   내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
   시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
   PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고

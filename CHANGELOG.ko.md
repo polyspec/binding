@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b4d3e694ed3aac2b6ba015d683729404e712ad16623c04d917fb4b5137accb80 -->
-<!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
+<!-- source-sha256: a4d1b424a48348516847beb0b5b986b95efd9f20300b24cc957ff7faa982dea6 -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
@@ -13,6 +12,8 @@
 
 ## Unreleased
 
+- none을 돌려주는 member의 결과는 규칙이 하나다(GN-13e, CK-22, B2.466). case가 그것을 적는 어느 자리에서나, 곧 case의 결과 키, `after`의 호출, function fixture의 step, callback fixture의 row에서 그것은 `null`이고, 생성된 시험은 거기서 값 없음을 요구한다(Node와 WASM에서는 `undefined`, Go는 호출만 실행한다). 그런 member의 `"result": null`을 적은 case는 `binding check`가 받아들이는데도 실패하는 시험을 받았고, 이제 통과하는 시험을 받는다. `binding check`는 이 자리들에서 `null`이 아닌 값을 거부한다. 전에는 `after`의 호출만 판정했다. 저장소가 할 일: none을 돌려주는 member의 결과에 `null`이 아닌 값을 적은 case는 `null`을 적거나 키를 생략한다.
+- 생성된 PHP 시험은 case의 가장 작은 int64인 -9223372036854775808을 contract 타입의 인자, 기대 결과, keyed map의 정수 key에서도 `\PHP_INT_MIN`으로 적는다. 전에는 값 alias의 값에서만 그렇게 적었다(B2.464). PHP는 그 literal을 float로 읽고, binding은 그것을 int64가 아니라고 거부했다.
 - `binding check --release`는 계약의 release recipe가 읽는 레포의 설정을 recipe의 reader 그대로 읽고 빠진 것을 하나씩 이름한다(CK-102, B2.471): target `php`는 `config/toolchain.json`의 `phpExtension.minors`와 `llvm.version`, target `go`는 Go module의 디렉터리를 이름하는 `packages.go`의 module path. 그리고 recipe `release-binding-check`는 계약의 release recipe가 읽는 Makefile의 변수(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`)를 모두 먼저 요구한다. session-store의 release는 검사를 통과한 뒤 tag 뒤의 `release-platform-assets`에서 `names no PHP minor of the extension in phpExtension.minors (GN-19a)`로 멈췄을 것이다. 이 버전으로 옮기는 레포가 할 일: target `php`가 있는 레포는 `config/toolchain.json`에 `phpExtension.minors`(예: `["8.4", "8.5"]`)와 `llvm.version`을 적는다. 뒤의 것은 recipe가 읽는 대로 `"llvm": {` 줄 아래 `"version": "<major>"` 줄에 적는다. Makefile이 recipe의 변수를 일부 goal에서만 정의하는 레포는 `release-binding-check`에서도 include 앞에 그것을 정의한다.
 - 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담고, CI가 release의 검사를 실행한다(CK-70, GN-19i, B2.457): `packages/release.mk`의 생성된 `release-assets-<job>` recipe는 저마다 `release-binding-check`를 첫 단계로 실행한다. 그래서 CI의 실행과 release의 실행이 한 recipe이고, GN-19i의 입력 `release`는 없어졌다. 전에는 레포마다 자기 Makefile의 조건으로 release에서만 검사를 돌렸고, template, http-negotiation, session-store가 저마다 tag 뒤에 처음 돈 검사에 tag를 잃었다. `binding check --release`는 이제 코어, 추적하는 바인딩 crate 각각, root의 manifest에서 `[dev-dependencies]`, `[build-dependencies]`, `[target.<target>]`의 table, `[patch.<source>]`에 있는 crate `polyspec-<name>`의 줄도 모두 읽는다. `workspace = true`인 줄은 검사에서도 `scaffold`가 쓰는 manifest에서도 그것이 물려받는 `[workspace.dependencies]`의 줄의 꼴을 갖고, 바인딩 crate는 코어가 물려받는 `polyspec-binding-core` 줄을 물려받는다. 이 버전으로 옮기는 레포가 할 일:
   - Makefile에서 조건 `$(if $(filter true,$(RELEASE)),…release-binding-check…)`를 지우고, `assets.yml`과 그것을 부르는 workflow에서 입력 `release`를 지우고, `make release-recipes`를 다시 실행한다. `release-assets-<job>` 앞에서 `release-binding-check`를 아직 실행하는 자기 recipe는 검사를 두 번 돌릴 뿐이다.

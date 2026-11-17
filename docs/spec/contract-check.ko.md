@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 77d3122f2ec1d5471e17821b3fe15d3e3f9866b03f60d5968792eefdaa925523 -->
+<!-- source-sha256: 87b91143d4ba9e46efccac76392128a38335d2a802abf9823d0e60ebff9f8648 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -388,6 +388,10 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   B2.361) `args`는 그 호출의 인자이며(CK-101), 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
   시험하며(Node와 WASM에서는 `undefined`, B2.374), 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
+  결과가 없는 member의 결과는 case가 그것을 적는 어느 자리에서나 그 한 규칙을 따른다(생성기 GN-13e, B2.466). 곧 case의
+  결과 키(그런 case는 생략할 수 있다), `result`나 `raises`를 적는 `after`의 호출, function fixture의 step, callback
+  fixture의 row에서 그것은 `null`이고, 거기의 다른 값은 보고된다. 이유: 생성기는 이 자리마다 그것을 값 없음으로
+  시험하므로, 거기에 값을 적은 case는 실패하는 시험을 받는데, check가 그것을 먼저 말한다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
   만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과

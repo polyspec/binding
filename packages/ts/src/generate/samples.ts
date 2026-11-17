@@ -637,7 +637,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       if (ctx.lang === 'node' || !Number.isInteger(value)) return String(value);
       return Math.abs(value) >= 1e16 ? value.toExponential() : `${String(value)}.0`;
     }
-    if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
+    // T-1, B2.464: PHP gives the least int64 as \PHP_INT_MIN.
+    if (type === 'uint' || type === 'int' || type === 'int64') return ctx.lang === 'php' ? phpInt(String(value)) : String(value);
+    if (type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
       if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
@@ -683,7 +685,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const entries = (value as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (kind, raw) => (kind === 'int' ? String(raw) : fromJson(model, ctx, kind, raw)));
+      const k = caseKey(key, (kind, raw) => (kind === 'int' ? (ctx.lang === 'php' ? phpInt(String(raw)) : String(raw)) : fromJson(model, ctx, kind, raw)));
       const v = fromJson(model, ctx, type.keyed_map, item, out);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
@@ -974,15 +976,16 @@ export class CaseRefused extends Unsupported {}
 // GN-6ae: the result that a step of a function fixture or a call of after requires, compared as a value of its type; a
 // result of a value alias, which a case compares by its tokens (GN-13e), is refused by name there.
 export function stepExpected(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
-  // B2.374 (CK-22): a call of a member without a result states the result null, which is no value: Node and WASM give
-  // undefined for it, which the test requires, and Python and PHP give None and null.
-  if (fn.member.returns === 'none' && value === null && ctx.lang === 'node') return { text: 'undefined' };
   const expected = expectedText(model, ctx, fn, value);
   if ('tokens' in expected) throw new Unsupported(`the result of ${fn.member.id} in a step of a function fixture or in after is a value alias, which is not compared there yet (GN-6ae, GN-13e)`);
   return expected;
 }
 
 export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string; round?: Name } | { refused: string } {
+  // GN-13e, B2.466 (B2.374, CK-22): the result of a member without a result is the null of its case wherever the case
+  // writes it, which is no value: Node and WASM give undefined for it, which the test requires, and Python and PHP
+  // give None and null.
+  if (fn.member.returns === 'none' && value === null && ctx.lang === 'node') return { text: 'undefined' };
   // GN-6af: a property of a value class without core_type gives the value that the language gave its constructor, so
   // the value is written as an argument is, not by the out rows of its alias.
   const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
@@ -1410,8 +1413,7 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);
     if (wide < -(2n ** 63n) || wide >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int ${token} is outside the int of PHP (G-5)`);
-    // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the least int is PHP_INT_MIN.
-    return lang === 'php' && wide === -(2n ** 63n) ? '\\PHP_INT_MIN' : token;
+    return phpInt(token);
   }
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it, the
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
@@ -1508,7 +1510,13 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
 // JavaScript and as the integer of Python and PHP.
 function intKey(lang: Lang3, raw: unknown): string {
   if (typeof raw === 'number') return String(raw);
-  return lang === 'node' ? `${String(raw)}n` : String(raw);
+  return lang === 'node' ? `${String(raw)}n` : lang === 'php' ? phpInt(String(raw)) : String(raw);
+}
+
+// T-1, B2.464: an integer of a case as PHP writes it. PHP reads -9223372036854775808 as the negation of the float
+// 9223372036854775808, so the least int64 is \PHP_INT_MIN, at every place where the emitter writes an integer.
+export function phpInt(token: string): string {
+  return token === '-9223372036854775808' ? '\\PHP_INT_MIN' : token;
 }
 
 // GN-6af: the value class without core_type that keeps the content of a case value: a keyed map (an object) or one value
@@ -2380,6 +2388,12 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
     const base = { id, args, ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record), ...filesOf(record) };
     if (!(key in record)) {
       out.push(base);
+      continue;
+    }
+    // GN-13e, B2.466: the result of a member that returns none is null wherever a case writes it, which each language
+    // tests as no value (expectedText); another value has no form.
+    if (fn.returns === 'none') {
+      out.push(record[key] === null ? { ...base, expected: { value: null } } : { ...base, refused: `the case ${id} of ${fn.member.id} gives ${key} ${shown(record[key])}, but ${fn.member.id} returns none, whose result is null alone (GN-13e)` });
       continue;
     }
     // GN-13e: the result null of an optional has a case form whatever the optional holds.
