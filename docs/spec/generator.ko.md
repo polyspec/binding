@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0d4c1c63373343e26f7f8e6c89bb49d212806c0872405f7993107a700ac1d18b -->
+<!-- source-sha256: 2cd28f0feedeb76cb1f4c99a2e8c1e8d09d31f610b2a666ec7b749b22540b7df -->
 # 생성기
 
 [English](generator.md)
@@ -3506,8 +3506,12 @@
   `rustup toolchain install`로 clone의 `rust-toolchain.toml`이 이름하는 toolchain을 설치하고(clone의 모든 cargo가 그
   toolchain으로 돌며, runner는 이 단계 뒤에야 그것을 가진다), tag의 lock으로
   `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
-  path patch를 GN-14i처럼 쓰고, `cargo update -p polyspec-binding-core --offline`과 실행의 `binding scaffold`를
-  실행한다(GN-14d). 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
+  path patch를 GN-14i처럼 쓰고, 네트워크와 함께 `cargo update -p polyspec-binding-core`와 실행의 `binding scaffold`를
+  실행한다(GN-14d). 그다음 lock을 tag의 lock과 비교한다: `polyspec-binding-core` 말고 다른 entry가 하나라도 더해지거나
+  빠지거나 바뀌면, 그 소비자는 그 entry들을 각각 이름하며 prepare에서 실패한다. update가 네트워크를 쓰는 까닭: 다른
+  0.0.x minor의 release로 patch하면 git entry가 unlock되고, cargo는 그 `tag=`를 ref로 푸는데 `cargo fetch --locked`는
+  그 ref를 남기지 않는다. update가 받는 것은 lock이 commit으로 고정한 그 tag이며 최신 release나 범위가 아니므로, 고정된
+  것의 설치다(HR-89). lock이 그 entry만 바뀐다는 GN-14d의 목적은 네트워크가 없어서가 아니라 이 비교로 지킨다. 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
   `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 install(`install`, 또는 Makefile에
   goal `install`이 없을 때 항목의 `install`이 이름하는 goal들). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
   소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와

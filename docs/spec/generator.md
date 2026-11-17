@@ -4267,7 +4267,14 @@ the design ids are those of the binding design.
   `rust-toolchain.toml` with `rustup toolchain install` in the clone, because every cargo of the clone runs under
   that toolchain and the runner has it only after this step, runs `cargo fetch --locked` of the lock of the tag,
   writes the path patch of `polyspec-binding-core` to `packages/core/rust` of the run in the root `Cargo.toml`, as in
-  GN-14i, runs `cargo update -p polyspec-binding-core --offline` and `binding scaffold` of the run (GN-14d), and then
+  GN-14i, runs `cargo update -p polyspec-binding-core` with the network and `binding scaffold` of the run (GN-14d),
+  and then
+  compares the lock with the lock of the tag: when an entry other than `polyspec-binding-core` was added, removed or
+  changed, the consumer fails in prepare, naming each such entry. The update takes the network because the patch of a
+  release of another 0.0.x minor unlocks the git entry, and cargo resolves its `tag=` by a ref that `cargo fetch
+  --locked` does not keep; what it fetches is the tag that the lock pins by its commit, not a latest release or a
+  range, so it is an install of what is pinned (HR-89). The purpose of GN-14d, that the lock changes in that entry
+  alone, is kept by the comparison, not by the absence of the network. After it the run runs
   only goals of the consumer's own Makefile, each with `BINDING` (the executable `dist/cli.js`), `BINDING_RUN` (node
   with it) and `NODE` of the run: its install (`install`, or the goals that `install` of its entry names when its
   Makefile has no goal `install`), with the network, and with the directories of the clone that `path` of its entry
