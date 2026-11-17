@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 84524b44517c34bb4c46394d8e41c585590713326f90b8e93e4468b051962dd0 -->
+<!-- source-sha256: 8ff74915cecafb714bb28b05bde565efa116caccf87f95fbfec87ce18362e734 -->
 # 생성기
 
 [English](generator.md)
@@ -2489,7 +2489,10 @@
   생성자와 property의 case를 실행한다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
-  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 던진
+  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 다른 레포의
+  callback unit(GN-6s) member의 반환 타입은 소유 레포의 타입이므로 생성기는 그것을 소유 계약에서 읽고, 소유 레포의 값
+  alias도 그런 alias다. 이유: hyper에서 Node가 store.get의 `php_value`를 아무 unit도 가리키지 않는 consumer의 계약에서
+  읽어 이 시험을 생성했고, 호출은 php-serialization의 `unsupported_value`를 던졌다(B2.513). 던진
   예외와 다른 타입의 결과 시험은 코어 경로가 callback의 실패를 돌려주는 member(GN-7, `core.failure`)에만 생성한다. 그런 member만 호출
   중에 callback을 부르기 때문이다. `keeps`가 있는 parameter로 callback을 받고 다른 방식으로 실패하지 않는 member는
   그것을 나중 member를 위해 보관하므로, callback이 실행되기 전에 호출이 돌아온다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.

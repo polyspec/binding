@@ -1011,7 +1011,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         raised = LookupError("raised by the callback")
         with self.assertRaises(LookupError) as caught:
             ${with_({ raise: 'raised' })}
-        self.assertIs(caught.exception, raised)`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
+        self.assertIs(caught.exception, raised)`}${fn.failure && judgesCallbackResult(model, callback.type) ? `
 
     def test_k2_${name}_refuses_a_callback_result_of_another_type(self) -> None:
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:

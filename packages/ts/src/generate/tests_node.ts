@@ -852,7 +852,7 @@ test('K-2: ${name} refuses a callback without its members', () => {
 test('K-2: ${name} lets the exception of a callback through', () => {
   const raised = new Error('raised by the callback');
   assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
-});`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
+});`}${fn.failure && judgesCallbackResult(model, callback.type) ? `
 
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));

@@ -2917,7 +2917,13 @@ export function callbackArg(model: Model, fn: Fn): Arg | undefined {
 
 // K-2: whether a result of another type is a failure of the binding. A member that returns a value alias gives every
 // value to the alias's core, which judges it (B-1), so the kind of a refused result is the alias's, not the binding's.
-export function judgesCallbackResult(model: Model, callback: Unit): boolean {
+// GN-6s, B2.513: the return types of a callback unit of another library are types of that library, so they are read
+// in the model of its owner.
+export function judgesCallbackResult(model: Model, type: Type): boolean {
+  const library = libraryOf(type);
+  const owner = library === undefined ? model : ownerModel(model, library);
+  const id = typeof type === 'object' && 'unit' in type ? type.unit : undefined;
+  const callback = owner.contract.units.find((u) => u.id === id);
   const namesAlias = (type: Type): boolean => {
     if (typeof type === 'string') return false;
     if ('list' in type) return namesAlias(type.list);
@@ -2925,9 +2931,9 @@ export function judgesCallbackResult(model: Model, callback: Unit): boolean {
     if ('keyed_map' in type) return namesAlias(type.keyed_map);
     if ('optional' in type) return namesAlias(type.optional);
     if ('tuple' in type) return type.tuple.some(namesAlias);
-    return unitOf(model, type)?.kind === 'alias';
+    return unitOf(owner, type)?.kind === 'alias';
   };
-  return !(callback.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
+  return !(callback?.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
 }
 
 // G-5: the key of a keyed map in a case: a text, {"int": n} or {"hex": "<lower-case hex>"} for a byte string.
