@@ -2,8 +2,43 @@
 // takes what differs between the languages as its arguments (GN-14o).
 
 import type { Type } from '../contract.ts';
-import { boxed, type Model, tupleIn } from './model.ts';
+import { functionGiven, givenRust } from './callback_arguments.ts';
+import { boxed, keptFunctionType, type Model, rustType, traitParam, tupleIn, Unsupported } from './model.ts';
 import { closure, rustString } from './text.ts';
+
+// T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
+// language that differ, and undefined for a scalar that the language does not take.
+export function scalarIn(type: string, value: string, subject: string, lang: string, lead = '', overrides: Readonly<Record<string, string | undefined>> = {}): string {
+  const fn: Record<string, string | undefined> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', path: 'path_in', cancel: 'cancel_in', ...overrides };
+  const name = fn[type];
+  if (name === undefined) throw new Unsupported(`no ${lang} input conversion for ${type}`);
+  return `${name}(${lead}${value}, ${subject})`;
+}
+
+// GN-6z: what the body of the Rust closure of a function reads: its result type, the names of its arguments, and the
+// subject of the conversion of its result.
+export interface FunctionParts {
+  readonly result: string;
+  readonly names: string[];
+  readonly returns: string;
+}
+
+// GN-6z: a function holds the function of the language that entered as holder; the Rust closure takes the arguments
+// of the core and runs body, which each language writes. lead is the argument of kept_function_in before the value.
+export function keptFunctionIn(model: Model, type: FunctionType, value: string, subject: string, lead: string, holder: string, body: (parts: FunctionParts) => string): string {
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const returns = subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"';
+  return `kept_function_in(${lead}${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|${holder}| -> ${rustType(model, keptFunctionType(type))} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+${body({ result, names, returns })}
+            })
+        })`;
+}
+
+// T-1: the type of a function of a contract.
+export type FunctionType = { parameters: Type[]; returns: Type; async_allowed?: boolean };
 
 // T-1: what the input conversion of a container differs by between the languages.
 export interface ContainersIn {
@@ -18,7 +53,7 @@ export interface ContainersIn {
   readonly part: (name: string) => string;
   // The input conversion of the language, and that of a function.
   readonly convert: (model: Model, type: Type, value: string, subject: string) => string;
-  readonly functionIn: (model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean }, value: string, subject: string) => string;
+  readonly functionIn: (model: Model, type: FunctionType, value: string, subject: string) => string;
 }
 
 // T-1: the containers of node and wasm, which differ by the place of a part of a tuple alone.

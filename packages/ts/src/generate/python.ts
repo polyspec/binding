@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { containerIn } from './bindings_shared.ts';
+import { type FunctionType, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -393,10 +393,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 `;
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', bytes: 'bytes_in', source: 'source_in', float: 'float_in', path: 'path_in', cancel: 'cancel_in' };
-    return `${fn[type]}(py_, ${value}, ${subject})`;
-  }
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'Python', 'py_, ');
   const keyNames = { int: 'int', bytes: 'bytes', text: 'str' };
   const container = containerIn(model, type, value, subject, { lead: 'py_, ', item: ['py_', 'item'], keyed: 'a dict whose keys are', keyNames, part: (name) => `&${name}`, convert: convertIn, functionIn });
   if (container !== undefined) return container;
@@ -412,23 +409,18 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 
 // GN-6z: a function holds the callable that entered; a call converts the arguments out and the result in, and an
 // exception of the Python code, or a failure of the binding in the call, goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
-  const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"');
-  return `kept_function_in(py_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|object| -> ${rustType(model, keptFunctionType(type))} {
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                Python::attach(|py_| {
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
+  return keptFunctionIn(model, type, value, subject, 'py_, ', 'object', ({ result, names, returns }) => {
+    const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
+    const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', returns);
+    return `                Python::attach(|py_| {
                     let call = || -> PyResult<${result}> {
                         let returned = object.bind(py_).call1((${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                         ${type.returns === 'none' ? "let _returned: Bound<'_, PyAny> = returned;\n                        " : ''}${returned}
                     };
                     call().map_err(|error| thrown(py_, error))
-                })
-            })
-        })`;
+                })`;
+  });
 }
 
 const FUNCTION_IN = `

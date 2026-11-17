@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { JS_CONTAINERS, containerIn } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -28,12 +28,7 @@ export const wasmGlue = (model: Model): string => `${model.contract.library.repl
 // ---- Rust ----
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', cancel: 'cancel_in' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no WASM input conversion for ${type}`);
-    return `${name}(${value}, ${subject})`;
-  }
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'WASM', '', { path: undefined });
   const container = containerIn(model, type, value, subject, { ...JS_CONTAINERS, part: (name) => `&${name}`, convert: convertIn, functionIn });
   if (container !== undefined) return container;
   const unit = unitOf(model, type);
@@ -59,24 +54,19 @@ const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'ui
 // GN-6z, GN-6u: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
 // call converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call, goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
-  const returned = type.returns === 'none'
-    ? 'function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    Ok(())'
-    : `let returned = function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    ${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                let call = || -> Result<${result}, Thrown> {
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
+  return keptFunctionIn(model, type, value, subject, '', 'native', ({ result, names, returns }) => {
+    const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+    const returned = type.returns === 'none'
+      ? 'function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    Ok(())'
+      : `let returned = function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    ${convertIn(model, type.returns, '&returned', returns)}.map_err(Thrown::Binding)`;
+    return `                let call = || -> Result<${result}, Thrown> {
                     let function: Function = native_object(&native).map_err(Thrown::Binding)?.dyn_into::<Function>().map_err(|error| Thrown::Binding(internal(&error)))?;
                     let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};
                     ${returned}
                 };
-                call().map_err(thrown)
-            })
-        })`;
+                call().map_err(thrown)`;
+  });
 }
 
 function convertOut(model: Model, type: Type, value: string): string {

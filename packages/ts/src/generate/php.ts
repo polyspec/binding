@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { containerIn } from './bindings_shared.ts';
+import { type FunctionType, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -73,12 +73,7 @@ const phpCase = (name: Name): string => {
 const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'rust', 'variable')}`;
 
 export function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in', path: 'path_in', cancel: 'cancel_in' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
-    return `${name}(${value}, ${subject})`;
-  }
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'PHP', '', { bytes: 'latin1_in', source: 'latin1_in' });
   const keyNames = { int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' };
   const container = containerIn(model, type, value, subject, { lead: '', item: ['item'], keyed: 'an array whose keys are', keyNames, part: (name) => name, convert: convertIn, functionIn });
   if (container !== undefined) return container;
@@ -96,15 +91,11 @@ export function convertIn(model: Model, type: Type, value: string, subject: stri
 // GN-6z, GN-6u: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
 // out and the result in, and an exception of the PHP code, or a failure of the binding in the call (kind wrong_thread
 // on another thread), goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
-  const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"').replace(/\?$/, '')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                if let Err(error) = native_thread(&native, ${subject}) {
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
+  return keptFunctionIn(model, type, value, subject, '', 'native', ({ result, names, returns }) => {
+    const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
+    const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', returns).replace(/\?$/, '')}.map_err(Thrown::Binding)`;
+    return `                if let Err(error) = native_thread(&native, ${subject}) {
                     return Err(thrown_elsewhere(error));
                 }
                 let call = || -> Result<${result}, Thrown> {
@@ -119,9 +110,8 @@ ${outs.join('\n')}
                     let returned = returned.map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
                     ${returned}
                 };
-                call().map_err(thrown)
-            })
-        })`;
+                call().map_err(thrown)`;
+  });
 }
 
 function convertOut(model: Model, type: Type, value: string): string {

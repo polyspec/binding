@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { JS_CONTAINERS, containerIn } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -23,12 +23,7 @@ export const addonBase = (model: Model): string => addonName(model.contract);
 // ---- Rust ----
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', path: 'path_in', cancel: 'cancel_in' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
-    return `${name}(${value}, ${subject})`;
-  }
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'Node');
   const container = containerIn(model, type, value, subject, { ...JS_CONTAINERS, part: (name) => name, convert: convertIn, functionIn });
   if (container !== undefined) return container;
   const unit = unitOf(model, type);
@@ -48,17 +43,13 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env_ of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
   // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
   const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
-  const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                let env_ = match native_env(&native, ${subject}) {
+  return keptFunctionIn(model, type, value, subject, 'env_, ', 'native', ({ result, names, returns }) => {
+    const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+    const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', returns)}.map_err(Thrown::Binding)`;
+    return `                let env_ = match native_env(&native, ${subject}) {
                     Ok(env_) => env_,
                     Err(error) => return Err(thrown_elsewhere(error)),
                 };
@@ -69,9 +60,8 @@ ${type.parameters.length === 0 ? '' : `                    let args: ${argsType}
 `}                    let returned = function.call(${type.parameters.length === 0 ? '()' : 'args'}).map_err(Thrown::Js)?;
                     ${returned}
                 };
-                call().map_err(thrown)
-            })
-        })`;
+                call().map_err(thrown)`;
+  });
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
