@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
 import { generate } from '../src/generate/index.ts';
-import { NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
+import { MATURIN, NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
 import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, REHEARSAL_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
@@ -119,16 +119,19 @@ if (args[0] === 'rustc' && args.includes('native-static-libs')) process.stderr.w
   fs.writeFileSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated/index.cjs'), 'generated');
 }`);
   standIn(bin, 'git', `console.log('1767323045');`);
-  // uv build runs the PEP 517 backend of maturin 1.16, which passes --compatibility off unless MATURIN_PEP517_ARGS names
-  // a compatibility, so a Linux wheel has the tag linux_<arch> (cp314-abi3-linux_x86_64 of a release run); a named
-  // manylinux policy gives manylinux_<policy>_<arch>, and macOS ignores the option (cp314-abi3-macosx_11_0_arm64).
-  standIn(bin, 'uv', `const pep517 = (process.env.MATURIN_PEP517_ARGS ?? '').split(' ');
-const named = pep517.includes('--compatibility') ? pep517[pep517.indexOf('--compatibility') + 1] : 'off';
+  // uv, which builds no wheel of a release (B2.491): a case sees that no recipe starts it.
+  standIn(bin, 'uv', '');
+  // maturin build tags a Linux wheel with the policy of --compatibility (manylinux_<policy>_<arch>), and macOS ignores
+  // the option (cp314-abi3-macosx_11_0_arm64); maturin --version prints maturin <release>, MATURIN_VERSION of a case or
+  // the release of mise.toml.
+  standIn(bin, 'maturin', `if (args[0] === '--version') { console.log('maturin ' + (process.env.MATURIN_VERSION ?? ${JSON.stringify(/^"github:PyO3\/maturin" = "([^"]+)"$/m.exec(readFileSync(new URL('../../../mise.toml', import.meta.url), 'utf8'))?.[1] ?? '')})); process.exit(0); }
+const named = args.includes('--compatibility') ? option('--compatibility') : 'linux';
 const host = ${JSON.stringify(host)};
 const arch = host.split('-')[0];
-const tag = host.endsWith('-apple-darwin') ? 'macosx_11_0_' + (arch === 'aarch64' ? 'arm64' : arch) : named === 'off' || named === 'linux' ? 'linux_' + arch : named + '_' + arch;
-fs.mkdirSync(option('--out-dir'), { recursive: true });
-fs.writeFileSync(path.join(option('--out-dir'), 'polyspec_sample-0.0.3-cp314-abi3-' + tag + '.whl'), 'wheel');`);
+const tag = host.endsWith('-apple-darwin') ? 'macosx_11_0_' + (arch === 'aarch64' ? 'arm64' : arch) : named === 'linux' ? 'linux_' + arch : named + '_' + arch;
+fs.mkdirSync(option('--out'), { recursive: true });
+fs.writeFileSync(path.join(option('--out'), 'polyspec_sample-0.0.3-cp314-abi3-' + tag + '.whl'), 'wheel');`);
+  standIn(bin, 'mise', '');
   standIn(bin, 'php', `const code = option('-r');
 if (code.includes('PHP_MAJOR_VERSION')) process.stdout.write(process.env.PHP_MINOR ?? '8.4');
 else if (code === 'echo PHP_VERSION;') process.stdout.write(process.env.PHP_VERSION ?? (process.env.PHP_MINOR ?? '8.4') + '.27');
@@ -162,7 +165,7 @@ fs.writeFileSync(path.join(option('--pack-destination'), manifest.name.replace('
   standIn(bin, 'wasm-bindgen', `if (args[0] === '--version') { console.log('wasm-bindgen ${WASM_BINDGEN}'); process.exit(0); }
 fs.mkdirSync(option('--out-dir'), { recursive: true });
 fs.writeFileSync(path.join(option('--out-dir'), option('--out-name') + '_bg.wasm'), 'bound');`);
-  writeFileSync(join(root, 'Makefile'), `NODE := ${process.execPath}\nNPM := ${join(bin, 'npm')}\nUV := ${join(bin, 'uv')}\nBINDING_RUN := ${join(bin, 'binding')}\nCARGO := ${join(bin, 'cargo')}\nNAPI := ${join(bin, 'napi')}\nWASM_BINDGEN := ${join(bin, 'wasm-bindgen')}\ninclude packages/release.mk\n`);
+  writeFileSync(join(root, 'Makefile'), `NODE := ${process.execPath}\nNPM := ${join(bin, 'npm')}\nUV := ${join(bin, 'uv')}\nBINDING_RUN := ${join(bin, 'binding')}\nCARGO := ${join(bin, 'cargo')}\nNAPI := ${join(bin, 'napi')}\nWASM_BINDGEN := ${join(bin, 'wasm-bindgen')}\nMATURIN := ${join(bin, 'maturin')}\nMISE := ${join(bin, 'mise')}\ninclude packages/release.mk\n`);
   const callsFile = join(root, '.calls');
   writeFileSync(callsFile, '');
   const env: NodeJS.ProcessEnv = { PATH: `${bin}:/usr/bin:/bin`, CALLS: callsFile, HOME: root };
@@ -188,7 +191,7 @@ test('each recipe of a build generates the binding of its target before it build
   const box = sandbox(t, 'x86_64-unknown-linux-gnu');
   const steps: [string, string, string, ...string[]][] = [
     ['release-go-static', 'go', 'cargo', 'rustc'],
-    ['release-wheel', 'python', 'uv', 'build'],
+    ['release-wheel', 'python', 'maturin', 'build'],
     ['release-php-ext', 'php', 'cargo', 'build'],
     ['release-npm-platform', 'node', 'napi', 'build'],
   ];
@@ -450,9 +453,9 @@ test('the npm package packs the tracked manifest, which names no platform packag
 
 test('a recipe names a variable that the Makefile of the repository does not define (GN-19h)', (t) => {
   const box = sandbox(t, 'aarch64-unknown-linux-gnu');
-  const run = box.make('release-wheel', 'UV=');
+  const run = box.make('release-wheel', 'CARGO=');
   assert.equal(run.status, 2);
-  assert.match(run.output, /release-wheel needs UV: the uv of the checkout; define it before the include of packages\/release\.mk \(GN-19h\)/);
+  assert.match(run.output, /release-wheel needs CARGO: the cargo command of the repository; define it before the include of packages\/release\.mk \(GN-19h\)/);
 });
 
 test('the release check and the Go module run the commands of binding on the contract (GN-19f, GN-19g)', (t) => {
@@ -563,6 +566,35 @@ test('the wheel that release-wheel builds on each platform is a wheel of that pl
     'polyspec_sample-0.0.3-cp314-abi3-manylinux_2_34_aarch64.whl#polyspec-sample-python-0.0.3-linux-arm64-gnu',
     'polyspec_sample-0.0.3-cp314-abi3-manylinux_2_34_x86_64.whl#polyspec-sample-python-0.0.3-linux-x64-gnu',
   ]);
+});
+
+// B2.491: uv build builds a wheel with the PEP 517 backend that it resolves from requires of the build-system table of
+// pyproject.toml, a range of maturin with no hash, so the maturin of a release would be the one that the registry gives
+// that day. release-wheel builds with the maturin of mise.toml, which mise.lock pins by its digest, and which the tests
+// of the bindings run too (HR-70, HR-81, HR-89).
+test('B2.491: release-wheel builds the wheel with the maturin of mise.toml, not with the backend that uv build resolves from pyproject.toml (GN-19c)', (t) => {
+  const pinned = /^"github:PyO3\/maturin" = "([^"]+)"$/m.exec(readFileSync(new URL('../../../mise.toml', import.meta.url), 'utf8'))?.[1];
+  assert.equal(MATURIN, pinned, 'the release of maturin of binding is not the one of mise.toml');
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  const quoted = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const dry = box.make('-n', 'release-wheel');
+  assert.equal(dry.status, 0, dry.output);
+  assert.doesNotMatch(dry.output, /\buv build\b|\/uv build/, 'the dry run of release-wheel resolves the build backend from the range of pyproject.toml');
+  assert.match(dry.output, /mise install --locked github:PyO3\/maturin$/m);
+  assert.match(dry.output, new RegExp(`${quoted(join(box.bin, 'maturin'))} build --release --locked --compatibility manylinux_2_34 --interpreter python3 --manifest-path packages/python/Cargo\\.toml --out var/release/assets/wheel`));
+  // The build runs the maturin of the release that binding pins, and builds nothing with another.
+  const run = box.make('release-wheel');
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  assert.ok(callIndex(calls, 'mise', 'install', '--locked', 'github:PyO3/maturin') < callIndex(calls, 'maturin', 'build'));
+  assert.deepEqual(calls.filter((call) => call.tool === 'uv'), []);
+  assert.equal(calls.find((call) => call.tool === 'maturin' && call.args[0] === 'build')?.env['SOURCE_DATE_EPOCH'], '1767323045');
+  writeFileSync(box.env['CALLS'] as string, '');
+  box.env['MATURIN_VERSION'] = '1.15.0';
+  const other = box.make('release-wheel');
+  assert.equal(other.status, 2, other.output);
+  assert.match(other.output, new RegExp(`release-wheel: ${quoted(join(box.bin, 'maturin'))} is maturin 1\\.15\\.0, not the release ${quoted(MATURIN)} of mise\\.toml \\(GN-19c\\)`));
+  assert.deepEqual(box.calls().filter((call) => call.tool === 'maturin' && call.args[0] === 'build'), []);
 });
 
 test('the assets of each platform are required and labelled before an upload (GN-19g)', (t) => {
@@ -764,10 +796,10 @@ test('B2.279: release-assets-platform runs the builds of the platform of the hos
   assert.equal(run.status, 0, run.output);
   const calls = box.calls();
   callIndex(calls, 'cargo', 'rustc');
-  callIndex(calls, 'uv', 'build');
+  callIndex(calls, 'maturin', 'build');
   callIndex(calls, 'napi', 'build');
   // A failed wheel stops neither the Go library nor the npm platform package, and the job fails.
-  standIn(box.bin, 'uv', 'process.exit(1);');
+  standIn(box.bin, 'maturin', 'process.exit(1);');
   writeFileSync(box.env['CALLS'] as string, '');
   const failed = box.make('release-assets-platform');
   assert.notEqual(failed.status, 0, 'release-assets-platform passes after a failed wheel');
@@ -922,17 +954,19 @@ test('B2.471: a repository without the target is not asked for the setting of th
 
 test('B2.471: release-binding-check requires every variable of the Makefile that a release recipe of the contract reads (GN-19h)', (t) => {
   const box = sandbox(t, 'aarch64-unknown-linux-gnu');
-  for (const [variable, what] of [['UV', 'the uv of the checkout'], ['NPM', 'the npm of the checkout'], ['NODE', 'the Node.js of the checkout'], ['CARGO', 'the cargo command of the repository']] as const) {
+  for (const [variable, what] of [['NPM', 'the npm of the checkout'], ['NODE', 'the Node.js of the checkout'], ['CARGO', 'the cargo command of the repository']] as const) {
     writeFileSync(box.env['CALLS'] as string, '');
     const run = box.make('release-binding-check', `${variable}=`);
     assert.equal(run.status, 2, `${variable}: ${run.output}`);
     assert.match(run.output, new RegExp(`release-binding-check needs ${variable}: ${what}; define it before the include of packages/release\\.mk \\(GN-19h\\)`));
     assert.equal(box.calls().length, 0, variable);
   }
-  // A contract with the PHP target alone reads NODE in release-platform-assets, after the tag, and no UV and no NPM.
+  // B2.491: no recipe reads UV, since release-wheel builds with the maturin of mise.toml.
+  assert.doesNotMatch(releaseRecipes(fixtureContract()).text, /\$\(UV\)/);
+  // A contract with the PHP target alone reads NODE in release-platform-assets, after the tag, and no NPM.
   const php = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { contract.targets = ['php']; });
   assert.equal(php.make('release-binding-check', 'NODE=').status, 2);
-  assert.equal(php.make('release-binding-check', 'UV=', 'NPM=').status, 0);
+  assert.equal(php.make('release-binding-check', 'NPM=').status, 0);
 });
 
 // B2.407: the generated entry loads <name>.<platform>.node beside itself when the platform package is not installed

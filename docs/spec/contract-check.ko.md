@@ -221,7 +221,7 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   없다. 검사는 그 형태가 빼는 파일만 import하는 require를 그 파일들과 함께, 어떤 Go 파일도 import하지 않는 require를
   `go.mod`의 경로와 `release-go-module`과 함께 보고한다. `// indirect` 줄은 출력에 쓰되 그것으로 실패하지 않고, Go
   바인딩이 생성되지 않으면 생성기의 거부와 함께 실패한다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
-  모두(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
+  모두(`BINDING_RUN`, `CARGO`, target에 따라 `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
   이유: session-store의 release는 `binding check --release`를 통과한 뒤 tag 뒤의 `release-platform-assets`에서
   `phpExtension.minors`가 없는 `config/toolchain.json` 때문에 멈췄을 것이고, 예행연습이 그것을 찾았다. 검사가 CI의 빌드 recipe의
   첫 단계이므로(generator GN-19i) 그런 설정은 tag 전에 실패한다. recipe와 검사의 reader가 하나인 것은, 두 번째 reader는 recipe가

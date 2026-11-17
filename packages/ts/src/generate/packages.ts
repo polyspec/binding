@@ -500,7 +500,7 @@ export function trackedResult(contract: Contract, version: string, coreDependenc
     files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
     languageManifest('python', 'packages/python/pyproject.toml', `${header('#')}
 [build-system]
-requires = ["maturin>=1.16,<2"]
+requires = ["maturin==${MATURIN}"]
 build-backend = "maturin"
 
 [project]
@@ -689,6 +689,10 @@ fn main() -> Result<(), String> {
 
 // The release of wasm-bindgen: the crate and the wasm-bindgen CLI that writes the glue are the same release.
 export const WASM_BINDGEN = '0.2.130';
+
+// The release of maturin that builds a wheel: the one of mise.toml, which mise.lock pins by its digest, with which
+// release-wheel builds the wheel of a release and the tests of the bindings build theirs (GN-19c, B2.491).
+export const MATURIN = '1.16.0';
 
 // The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
 // at each entry whose conditions choose it in the browser.

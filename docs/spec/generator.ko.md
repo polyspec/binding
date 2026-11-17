@@ -45,7 +45,7 @@
   `--cargo`는 명령줄 오류다. release recipe(GN-19h)는 Cargo를 `$(CARGO) <subcommand>`로 실행하고, build의 subcommand(`rustc`,
   `build`) 바로 뒤에 `$(CARGOFLAGS)`를 두며, 자기가 실행하는 binding 명령 중 Cargo를 실행하는 것마다 `--cargo "$(CARGO)"`를
   넘긴다. `binding check`는 Cargo를 다른 방식으로 실행하는 recipe 파일을 보고한다(CK-94). `binding go-link`를 실행하는 저장소의
-  recipe는 `--cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)"`를 넘긴다. `uv build`가 실행하는 maturin과 `napi build`는 Cargo를
+  recipe는 `--cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)"`를 넘긴다. `maturin build`와 `napi build`는 Cargo를
   스스로 시작하며 binding의 호출이 아니다. go 명령도 같은 방식으로 주지만 명령의 요구는 아니다. `binding check`, `binding
   scaffold`, `binding release-go-module`은 `$(GO)`의 값인 `--go <command>`를 받아 `--cargo`처럼 단어로 나누고, 그것이 없으면
   `PATH`의 `go`를 실행한다(GN-15l, GN-19f). 이유: php-serialization과 session-store가 `binding go-link`와 release recipe가 `PATH`의
@@ -3377,7 +3377,7 @@
 ## 바인딩을 가진 레포의 release
 
 - **GN-19** 바인딩을 가진 레포는 make의 recipe로 그것을 release하며, 일은 한 규칙으로 나눈다. 생태계의 표준 도구(Cargo,
-  `uv build`를 통한 maturin, napi CLI, npm, `zip`, `llvm-strip`)가 하는 단계는 그 도구를 GN-19b~GN-19e의 인자로 시작하는
+  maturin, napi CLI, npm, `zip`, `llvm-strip`)가 하는 단계는 그 도구를 GN-19b~GN-19e의 인자로 시작하는
   recipe의 한 줄이다. binding은 그런 호출을 감싸는 명령을 주지 않는다. 그 recipe는 계약이 주는 이름 말고는 모든 레포에서
   같으므로, binding은 계약에 대해 그것을 레포의 Makefile이 include하는 make 파일로 쓴다(`binding release-recipes`,
   GN-19h). `binding scaffold`는 recipe를 쓰지 않는다. 같은 파일에 checkout의 Node addon을 생성된 진입점 옆에 두는
@@ -3442,12 +3442,20 @@
   유효하고, job의 환경에 있는 그 이름의 변수는 make의 변수이기도 하다. `binding check --release`가 아니라 recipe가 묻는 이유:
   이 변수는 Makefile의 것이고 명령은 Makefile을 읽지 않는다(docs/spec/contract-check.md CK-102). 그리고
   `release-go-static`은 job `platform`의 빌드로 CI에서 실행되므로(GN-19i), 빠진 선언은 어느 쪽에서든 tag 전에 실패한다.
-- **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
-  SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이
-  wheel의 이름에 platform tag(`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`)를 붙이고, wheel은
-  abi3이므로(GN-1) 플랫폼의 wheel 하나가 지원하는 모든 Python에 쓰인다. compatibility를 적는 이유: maturin의 PEP 517
-  backend는 compatibility를 받지 않으면 `--compatibility off`를 넘기고, 그러면 Linux wheel에 `linux_<arch>`를 붙인다.
-  PyPI는 그 wheel을 거부하고 pip는 다른 시스템에 설치하지 않는다. `manylinux_2_34`인 이유: Rust std는 `ubuntu-26.04`
+- **GN-19c** Python wheel, 플랫폼마다: `$(MISE) install --locked github:PyO3/maturin`, 그다음
+  `SOURCE_DATE_EPOCH=<tag의 commit 시각> $(MATURIN) build --release --locked --compatibility manylinux_2_34
+  --interpreter python3 --manifest-path <패키지 디렉터리>/Cargo.toml --out <assets>`. `MATURIN`은 레포의 `mise.toml`의
+  maturin이며, Makefile이 같은 도구의 다른 경로(kit의 `link.mjs maturin` 등)를 주지 않으면 checkout의 mise의 shim이다.
+  recipe는 `$(MATURIN) --version`이 binding이 pin한 maturin release(`packages/ts/src/generate/packages.ts`의 `MATURIN`,
+  binding의 `mise.toml`의 release)를 출력하기를 요구하고, 아니면 빌드 전에 status 2로 끝난다. `uv build`를 쓰지 않는
+  이유: PEP 517 frontend는 `pyproject.toml`의 `[build-system]` 표의 `requires`에서 빌드할 때 hash 없이 해석한 backend로
+  빌드하므로, release wheel의 maturin은 `mise.lock`이 digest를 pin하고 바인딩 시험이 빌드에 쓰는 것이 아니라 그날
+  registry가 준 것이었다(B2.491). 생성되는 `pyproject.toml`의 `requires`는 소스에서 패키지를 빌드하는 frontend를 위해 같은
+  release를 정확히 `maturin==<release>`로 적는다. maturin이 wheel의 이름에 platform tag(`manylinux_2_34_x86_64`,
+  `manylinux_2_34_aarch64`, `macosx_11_0_arm64`)를 붙이고, wheel은 abi3이므로(GN-1) 플랫폼의 wheel 하나가 지원하는 모든
+  Python에 쓰인다. compatibility를 적는 이유: 그것이 없으면 Linux wheel에 maturin의 PEP 517 backend가 `--compatibility
+  off`로 하듯 `linux_<arch>`가 붙을 수 있다. PyPI는 그 wheel을 거부하고 pip는 다른 시스템에 설치하지 않는다.
+  `manylinux_2_34`인 이유: Rust std는 `ubuntu-26.04`
   runner(GN-19a)의 glibc에 대해 `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`을 `GLIBC_2.34`로
   link하므로, 거기서 빌드한 라이브러리는 적어도 그 policy가 필요하다. maturin은 라이브러리를 policy에 대해 검사하고, 더
   나중 symbol이나 policy 밖의 라이브러리가 필요한 것은 거부한다. release 실행의 라이브러리는 `libc.so.6`,
@@ -3626,8 +3634,8 @@
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
-  인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
-  도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
+  인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`은 절대 경로로 적은 checkout의
+  도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다(`MATURIN`은 기본값이 있다, GN-19c). 빈 변수를 읽는 recipe는 실패하고 그 변수를
   적는다. `release-binding-check`는 계약의 release recipe가 읽는 변수를 모두 요구하므로, tag 뒤의 recipe만 읽는 변수가 빠진 것도
   tag 전에 실패한다(docs/spec/contract-check.md CK-102, B2.471). `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
   명령, 곧 `release-binding-check`의 `binding check --release`(GN-15l)와 `release-go-module`의 `binding

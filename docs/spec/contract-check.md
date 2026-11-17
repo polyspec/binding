@@ -264,7 +264,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   reports a requirement that only files that the form leaves out import, with those files, and one that no Go file
   imports, with the path of the `go.mod` and `release-go-module`; it writes a line `// indirect` to its output and
   does not fail on it, and it fails when the Go binding is not generated, with the refusal of the generator. The recipe `release-binding-check` itself first requires
-  every variable of the Makefile that a release recipe of the contract reads (`BINDING_RUN`, `CARGO`, and `UV`, `NPM`
+  every variable of the Makefile that a release recipe of the contract reads (`BINDING_RUN`, `CARGO`, and `NPM`
   and `NODE` by its targets), which the check, a command, cannot read. Why: the release of session-store passed
   `binding check --release` and would then have stopped in `release-platform-assets`, after the tag, on a
   `config/toolchain.json` without `phpExtension.minors`, which a rehearsal found; with the check as the first step of
