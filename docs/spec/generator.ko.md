@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 69df7b8234f1f706382e8c64f846e6351418b86ceffad45116b6a17c0f66506a -->
+<!-- source-sha256: 484e64e00d1e31d1f317db49a392273cad8f64155aa7d6d9ac4338e713201679 -->
 # 생성기
 
 [English](generator.md)
@@ -207,7 +207,17 @@
   실패한다. 그때는 callback unit만이 이름하는 라이브러리와 라이브러리의 Go module을 알 수 없고, 그것 없이 쓴
   manifest(라이브러리의 require가 빠진 `go.mod`)는 완전한 것처럼 읽히기 때문이다.
   버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
-  `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`; `package.json`과 `composer.json`은 package의 버전 `X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
+  `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`; `package.json`과 `composer.json`은 package의 버전 `X.Y.Z`).
+  `path`가 레포의 root 안에 머무는 줄, 곧 코어의 자리(`core.path`)에 그 경로를 이은 결과가 root를 벗어나지 않는 줄은 다른
+  레포가 아니라 같은 레포의 라이브러리를 이름하며, 경로 옆에 그 라이브러리의 한 버전이 있으면 이것도 release 꼴이다:
+  `version = "=X.Y.Z"`, 또는 `version = "0.0.Z"`. 뒤의 것은 Cargo가 그 한 버전으로 읽는다. `0.0.Z`의 caret 요구는 다른 버전을
+  담지 않기 때문이다. manifest는 tag의 버전을 적듯이 그 버전을 적고, 바인딩 crate는 그 줄을 경로와 버전 그대로 갖는다. 그런
+  경로에 버전이 없거나 여러 버전을 담는 범위(`0.1.2`, `^0.0.20`)가 있으면 개발 꼴이다. 어떤 manifest도 그 줄에서 라이브러리의
+  버전을 적을 수 없기 때문이며, CK-70의 finding은 버전이 빠졌다고 말한다. 레포를 벗어나는 경로와 절대 경로는 버전이 있어도 개발
+  꼴이다. 다른 레포의 checkout을 이름하기 때문이다. 이유: crud-ui의 generator는 같은 레포의 라이브러리인 validator를
+  `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`로 이름한다. 이것은 Cargo가 한 tree의 두
+  crate를 빌드하는 유일한 꼴인데, release 검사는 그 줄을 path라고 거부했고, 그래서 그 레포는 release 검사를 통과할 수
+  없었다(B2.460). 그 밖의 줄(레포를 벗어나는 path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
   레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만; `package.json`과 `composer.json`은 package와 `*`), 개발
   checkout은 그것을 개발 링크와 개발 설치로 해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
   보고한다(CK-70). 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
@@ -1902,7 +1912,8 @@
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
   다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
-  버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
+  버전은 `vX.Y.Z`다. 이 레포 안의 `path` 옆에 그 라이브러리의 한 버전 `X.Y.Z`가 있을 때에도 그렇고(GN-3e, B2.460), 이때
+  `replace` 줄은 없다. Go module의 tag를 쓰는 소비자는 `replace`를 해석할 수 없기 때문이다(GN-19f). 그 밖의 `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. 그 경로를 코어에 이은 결과는 다른 레포나 이 레포에 있는 그 라이브러리의 코어이다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이
   `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
   `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
@@ -1996,7 +2007,11 @@
 - **GN-15l** Go 모듈의 `go.sum`: binding scaffold는 자기가 쓰는 `go.mod`가 release(`<module> vX.Y.Z`, GN-15f)를 require하면 그
   옆에 `packages/go/go.sum`을 쓰고(L-2), CK-19는 그것을 `go.mod`처럼 비교한다. 그것은 `go.mod`가 require하는 각 모듈의 hash와
   build list의 각 모듈의 `go.mod`의 hash를 Go가 쓰는 순서로 정렬해 담는다. 개발 형태인 `v0.0.0` requirement는 sum도 줄도 없고,
-  release requirement가 없는 `go.mod`에는 `go.sum`이 없다. hash는 그 requirement의 모듈에 대해 `GOWORK=off`와 환경의
+  release requirement가 없는 `go.mod`에는 `go.sum`이 없다. 같은 레포의 모듈(모듈 경로의 앞 세 요소가 같은 모듈, GN-14f)의
+  requirement, 곧 레포 안의 `path`와 버전이 주는 것(GN-15f, B2.460)도 줄이 없고, binding은 Go에 그것을 묻지 않는다. 그 버전의
+  그 모듈을 담는 commit은 release가 빌드한 정적 라이브러리와 함께 release가 만들므로(GN-19f) 추적하는 어떤 파일도 그 hash를 담을
+  수 없고, 개발 checkout은 그 모듈을 `go.work`로 해석한다. release requirement가 자기 레포의 것뿐인 `go.mod`에는 `go.sum`이 없고
+  Go를 시작하지 않는다. hash는 그 requirement의 모듈에 대해 `GOWORK=off`와 환경의
   `GOPROXY`, `GOFLAGS`, 모듈 cache로 실행한 `go mod download -json all`이 주는 `Sum`과 `GoModSum`이다: Go가 내려받을 때 checksum
   database와 대조하는 hash이므로 binding은 스스로 계산하지 않고, offline(`GOPROXY=off`)이면 Go는 모듈 cache만 읽는다. Go가 줄 수
   없는 모듈은 offline이든 없든 Go의 오류와 함께 `go.sum`을 거부한다: scaffold는 `go.sum`을 쓰지 않고 쓰지 않았다고 이름하며,

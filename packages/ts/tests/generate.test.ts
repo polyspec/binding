@@ -16,7 +16,7 @@ import { carriers, categoryClass } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
-import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, dependencyForm, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -10987,6 +10987,93 @@ test('go.mod replaces the Go module of a library of the same repository by its p
   const packages = trackedPackages(own, '0.0.0', new Map<string, unknown>([['polyspec-plot-points', { path: '../../points/rust' }], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], new Map([...foreign, ['plot-points', points]]));
   const goMod = String([...packages].find(([path]) => path.endsWith('go.mod'))?.[1]);
   assert.match(goMod, /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/points\/go\n$/);
+});
+
+// B2.460: the library plot-figures at packages/figures/rust, which names the record of its sibling plot-points at
+// packages/points/rust of the same repository, as the generator of crud-ui names its validator.
+const siblingSample = (): { own: any; foreign: Map<string, any>; packages: (spec: unknown) => Map<string, string> } => {
+  const { contract, foreign } = plotSample();
+  const points = JSON.parse(JSON.stringify(foreign.get('points')).replaceAll('"library":"points"', '"library":"plot-points"'));
+  points.library = 'plot-points';
+  points.core.path = 'packages/points/rust';
+  const own = JSON.parse(JSON.stringify(contract).replaceAll('"library":"points"', '"library":"plot-points"'));
+  own.library = 'plot-figures';
+  own.core.path = 'packages/figures/rust';
+  const libraries = new Map([...foreign, ['plot-points', points]]);
+  return { own, foreign: libraries, packages: (spec) => trackedPackages(own, '0.0.0', new Map<string, unknown>([['polyspec-plot-points', spec], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries) };
+};
+
+test('B2.460: a path that stays inside the repository with the version of the library beside it is a release form, which CK-70 passes (GN-3e, CK-70)', () => {
+  // The line of the generator of crud-ui on its validator.
+  const line = { path: '../../validator/rust', version: '0.0.20' };
+  assert.equal(dependencyForm(line, 'packages/generator/rust').version, '0.0.20');
+  assert.equal(dependencyForm({ path: '../../validator/rust', version: '=1.2.3' }, 'packages/generator/rust').version, '1.2.3');
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  assert.deepEqual(findings({ path: '../../points/rust', version: '0.0.20' }), []);
+  assert.deepEqual(findings({ path: '../../points/rust', version: '=0.1.2' }), []);
+});
+
+test('B2.460: a path that leaves the repository is a development form, with a version beside it too (GN-3e, CK-70)', () => {
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  // The core is three directories below the root, so a path of four `..` leaves the repository.
+  for (const path of ['../../../../points/packages/rust', '../../../../../work/points/rust', '/work/points/packages/rust']) {
+    assert.equal(dependencyForm({ path, version: '0.0.20' }, 'packages/figures/rust').version, undefined, path);
+    assert.deepEqual(findings({ path, version: '0.0.20' }), [`the dependency line of polyspec-plot-points names the path ${path}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`], path);
+  }
+  // Without the place of the core in the repository no path is known to stay inside it.
+  assert.equal(dependencyForm({ path: '../../points/rust', version: '0.0.20' }).version, undefined);
+});
+
+test('B2.460: a path inside the repository without the one version of the library is refused with a sentence that says so (GN-3e, CK-70)', () => {
+  const { own, foreign } = siblingSample();
+  const findings = (spec: unknown): string[] => releaseFindings(own, new Map<string, unknown>([['polyspec-plot-points', spec]]), [], foreign);
+  assert.deepEqual(findings({ path: '../../points/rust' }), ['the dependency line of polyspec-plot-points names the path ../../points/rust, which stays inside the repository, with no version beside it, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)']);
+  // A range that holds more than one version names no version of a release.
+  for (const version of ['0.1.2', '^0.0.20', '1', '>=0.0.20']) {
+    assert.deepEqual(findings({ path: '../../points/rust', version }), [`the dependency line of polyspec-plot-points names the path ../../points/rust, which stays inside the repository, with the version range ${version} beside it, and a release names beside such a path the one version of that library, version = "=X.Y.Z" (or "0.0.Z", which Cargo reads as that one version), which the manifests of the binding packages name (GN-3e)`], version);
+  }
+});
+
+test('B2.460: the manifests name a library of the same repository at the version beside its path, as they name a release (GN-3e, GN-15f)', () => {
+  const { packages } = siblingSample();
+  const released = packages({ path: '../../points/rust', version: '0.0.20' });
+  const file = (files: Map<string, string>, end: string): string => String([...files].find(([path]) => path.endsWith(end))?.[1]);
+  // go.mod requires the Go module at the version, with no replace line: a consumer of the tag cannot resolve one (GN-19f).
+  assert.match(file(released, 'go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.20\n$/);
+  assert.doesNotMatch(file(released, 'go/go.mod'), /replace/);
+  assert.match(file(released, 'python/pyproject.toml'), /\ndependencies = \["polyspec-plot-points==0\.0\.20"\]\n/);
+  const composer = JSON.parse(file(released, 'php-ext/composer.json')) as { require: Record<string, string> };
+  assert.deepEqual(Object.entries(composer.require).filter(([name]) => name.includes('/')).map(([, version]) => version), ['0.0.20']);
+  // Each binding crate keeps the line of the core, with the path from its own place.
+  assert.match(file(released, 'python/Cargo.toml'), /\npolyspec-plot-points = \{ path = "\.\.\/\.\.\/points\/rust", version = "0\.0\.20" \}\n/);
+  // Without the version the line is the development form of today: v0.0.0 with a replace line, and the name alone.
+  const development = packages({ path: '../../points/rust' });
+  assert.match(file(development, 'go/go.mod'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/points\/go\n$/);
+  assert.match(file(development, 'python/pyproject.toml'), /\ndependencies = \["polyspec-plot-points"\]\n/);
+});
+
+test('B2.460: package.json names the npm package of a library of the same repository at the version beside its path (GN-3e)', () => {
+  // The consumer takes the callback units of sample, whose npm package its entries import.
+  const { contract, foreign } = consumerSample();
+  contract.core.path = 'packages/consumer/rust';
+  foreign.get('sample').core.path = 'packages/sample/rust';
+  const npm = (spec: unknown): Record<string, string> => (JSON.parse(String(trackedPackages(contract, '0.0.0', new Map<string, unknown>([['polyspec-sample', spec], ['polyspec-points', '=0.1.2']]), [], foreign).get('packages/consumer/ts/package.json'))) as { dependencies: Record<string, string> }).dependencies;
+  const name = (foreign.get('sample').packages.node as { package: string }).package;
+  assert.equal(npm({ path: '../../sample/rust', version: '0.0.20' })[name], '0.0.20');
+  assert.equal(npm({ path: '../../../../sample/packages/sample/rust', version: '0.0.20' })[name], '*');
+  assert.equal(npm({ path: '../../sample/rust' })[name], '*');
+});
+
+test('B2.460: the go.sum that scaffold tracks holds no line of a module of the same repository, whose commit the release makes (GN-15l)', () => {
+  const goMod = 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/validator/go v0.0.20\n\tgithub.com/polyspec/json/packages/go v0.0.34\n)\n';
+  assert.deepEqual(releaseRequires(goMod), ['github.com/polyspec/crud-ui/packages/validator/go v0.0.20', 'github.com/polyspec/json/packages/go v0.0.34']);
+  assert.deepEqual(sumRequires(goMod), ['github.com/polyspec/json/packages/go v0.0.34']);
+  assert.equal(goSumModule(goMod), 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.34\n');
+  assert.equal(goSumOf(goMod, [{ Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.34', Sum: 'h1:zip=', GoModSum: 'h1:mod=' }]), 'github.com/polyspec/json/packages/go v0.0.34 h1:zip=\ngithub.com/polyspec/json/packages/go v0.0.34/go.mod h1:mod=\n');
+  // A go.mod that requires a module of its own repository alone has no go.sum, and starts no Go.
+  assert.equal(goSumOf('module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/validator/go v0.0.20\n', []), undefined);
 });
 
 test('the cases of an alias row with only are tests of the targets that it lists alone (GN-13h, B2.317)', () => {

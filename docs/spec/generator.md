@@ -255,7 +255,19 @@ the design ids are those of the binding design.
   libraries that only a callback unit names and the Go modules of the libraries are then not known, and a manifest
   written without them (a `go.mod` without the requirement of a library) would read as complete. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
   is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
-  dependency `polyspec-<library>==X.Y.Z`; `package.json` and `composer.json` the version `X.Y.Z` of the package). Every other line (a path, a
+  dependency `polyspec-<library>==X.Y.Z`; `package.json` and `composer.json` the version `X.Y.Z` of the package). A
+  line with a `path` that stays inside the root of the repository, which is the place of the core (`core.path`) joined
+  to the path, names a library of the same repository and no other repository, and it is a release form too when the
+  one version of that library stands beside the path: `version = "=X.Y.Z"`, or `version = "0.0.Z"`, which Cargo reads
+  as that one version, because a caret requirement of `0.0.Z` holds no other; the manifests name that version as they
+  name the version of a tag, and each binding crate keeps the line with its path and its version. Such a path with no
+  version or with a range that holds several versions (`0.1.2`, `^0.0.20`) is a development form, because no manifest
+  can name the version of the library from it, and the finding of CK-70 says that the version is missing; a path that
+  leaves the repository and an absolute path are development forms with a version too, because they name a checkout
+  of another repository. Why: the generator of crud-ui names its validator, a library of the same repository, by
+  `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`, the only form by which Cargo
+  builds two crates of one tree, and the check of a release refused the line as a path, so that repository could
+  pass no check of a release (B2.460). Every other line (a path that leaves the repository, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
   the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
   `polyspec-<library>` alone; `package.json` and `composer.json` the package with `*`), and the development checkout
@@ -2321,7 +2333,9 @@ the design ids are those of the binding design.
   the contract takes name (GN-3e), it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
-  `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
+  `vX.Y.Z`, or a `path` inside this repository with the one version `X.Y.Z` of that library beside it (GN-3e,
+  B2.460), which gives no `replace` line, because a consumer of the tag of the Go module cannot resolve one (GN-19f);
+  any other `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
   repository to the Go module of that one, where the path joined to the core is the core of that library, in another
   repository or in this one; every other dependency line (a branch, a commit, a version
   range) is a development form too (GN-3e) and gives `v0.0.0` without a `replace` line, which the development
@@ -2432,7 +2446,12 @@ the design ids are those of the binding design.
   writes (L-2) when that `go.mod` requires a release (`<module> vX.Y.Z`, GN-15f), and CK-19 compares it as it compares
   the `go.mod`. It holds the hash of each module that `go.mod` requires and the hash of the `go.mod` of each module of
   its build list, sorted as Go writes them; a requirement at `v0.0.0`, the development form, has no sum and no line,
-  and a `go.mod` without a release requirement has no `go.sum`. The hashes are the `Sum` and `GoModSum` that
+  and a `go.mod` without a release requirement has no `go.sum`. A requirement of a module of the same repository
+  (a module path with the same first three elements, GN-14f), which a `path` inside the repository with a version
+  gives (GN-15f, B2.460), has no line either, and binding does not ask Go for it: the commit that carries that module
+  at this version is made by the release (GN-19f), with the static libraries that the release builds, so no tracked
+  file can hold its hash, and a development checkout resolves the module through its `go.work`. A `go.mod` whose only
+  release requirements are of its own repository has no `go.sum` and starts no Go. The hashes are the `Sum` and `GoModSum` that
   `go mod download -json all` gives for a module of those requirements, run with `GOWORK=off` and the `GOPROXY`,
   `GOFLAGS` and module cache of the environment: they are the hashes that Go verifies against the checksum database
   when it downloads, so binding computes none of its own, and offline (`GOPROXY=off`) Go reads the module cache alone.
