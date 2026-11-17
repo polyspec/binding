@@ -10712,6 +10712,24 @@ test('a member of another library that a test calls takes the parameters of the 
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /new foreign_sample\.HeldSource\('a', '1', null\)/);
 });
 
+// K-2, GN-6s, B2.513: the return type of a callback unit of another library is a type of that library, so whether a
+// result of another type is a failure of the binding is judged in the model of the owner. The callback source of the
+// sample returns a value alias of the sample by a named type; its core judges the result, so the consumer generates
+// no K-2 test of a result of another type for consumer.read, as for an alias of its own.
+test('a callback unit of another library that returns an alias of that library has no K-2 test of a result of another type (K-2, GN-6s, B2.513)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  const sample = foreign.get('sample');
+  sample.types = { ...(sample.types ?? {}), sample_data: { library: 'sample', unit: 'data' } };
+  sample.units.find((u: any) => u.id === 'source').members.find((m: any) => m.id === 'source.read').returns = { optional: 'sample_data' };
+  // The case whose callback answers a text is left out: an answer of the alias is a value of its kinds.
+  const cases = caseFiles.get('contracts/cases.json') as { read: { id: string }[] };
+  cases.read = cases.read.filter((kase) => kase.id !== 'a_source_of_another_repository_that_holds_the_key_gives_its_value');
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /test\('K-2: read refuses a callback without its members'/);
+  assert.doesNotMatch(node, /test\('K-2: read refuses a callback result of another type'/);
+});
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
