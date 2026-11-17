@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1086,9 +1086,8 @@ ${outs.join('\n')}
     });
     return `kind_of_owner_recognized(exception, &[${pairs.join(', ')}])`;
   };
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} goes back to the caller as it is.
 fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Php(exception) = &error else {
         return thrown(error);
@@ -1099,7 +1098,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
         None => thrown(error),
     }
 }
-`).join('');
+`);
   // GN-6d: a member with a default may be left out, which the call answers with the default.
   const checks = cb.members.filter((m) => m.absent === undefined).map((m) => {
     const method = langName('php', m.member.name, 'callable');
@@ -1147,14 +1146,10 @@ ${checks}
     Ok(${struct} { object: ${cb.owner ? 'std::mem::ManuallyDrop::new(value.shallow_clone())' : 'value.shallow_clone()'}${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
-${lentCallbacks(model).includes(cb) ? `impl ${cb.unit.core ?? ''} for ${struct} {` : `impl ${struct} {`}${methods}
-}
-${recognizing}`;
+${callbackImpl(model, cb, struct, '', methods)}
+${recognized}`;
 }
 
-// GN-6u, GN-6aa: whether the extension holds Natives: for a value alias, a function type or a callback that the core
-// keeps.
-const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
 // after the call that gave it. A call on the owner thread borrows the object and calls it as the callback of a call

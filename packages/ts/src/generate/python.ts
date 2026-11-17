@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1000,9 +1000,8 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   }).join('\n');
   // GN-6s: the error units of a callback unit of another repository are classes of <owner root>._errors.
   const errorsModule = cb.library === undefined ? 'None' : `Some(${rustString(`${(model.foreign.get(cb.library)?.packages['python'] as { module: string }).module}._errors`)})`;
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} goes back to the caller as it is.
 fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
     let core = kind_of_recognized(py_, &error, ${errorsModule}, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
@@ -1010,7 +1009,7 @@ fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
         None => thrown(py_, error),
     }
 }
-`).join('');
+`);
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
@@ -1042,7 +1041,7 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-${recognizing}`;
+${recognized}`;
 }
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the

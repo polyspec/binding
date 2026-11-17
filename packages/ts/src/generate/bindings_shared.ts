@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, lentCallbacks, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -242,6 +242,23 @@ ${reach(m, mutable)}
     }`;
   }).join('\n');
 }
+
+// U-3: the impl block of the methods of a callback struct: of the trait of the core for a lent callback (GN-6w), of
+// the struct otherwise; lifetime is the lifetime parameter of the struct, or ''.
+export const callbackImpl = (model: Model, cb: CallbackUnit, struct: string, lifetime: string, methods: string): string =>
+  `${lentCallbacks(model).includes(cb) ? `impl${lifetime} ${cb.unit.core ?? ''} for ${struct}${lifetime} {` : `impl${lifetime} ${struct}${lifetime} {`}${methods}
+}`;
+
+// U-3: the members of a callback unit that recognize error units, each with the function that reads an exception of it
+// into the core error; doc is the first lines of the comment of that function, after which the language says what
+// becomes of any other exception.
+export const recognizing = (cb: CallbackUnit, body: (m: CallbackUnit['members'][number], doc: string) => string): string =>
+  cb.members.filter((m) => m.recognized !== undefined).map((m) => body(m, `/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception`)).join('');
+
+// GN-6u, GN-6aa: whether the binding holds Natives: for a value alias, a function type or a callback that the core
+// keeps.
+export const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
 
 // GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
 export const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);

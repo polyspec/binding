@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1066,9 +1066,8 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
     }`;
   }).join('\n');
   const classIndex = recognizedClassIndex(model, cb);
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} goes back to the caller as it is.
 fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Js(value) = &error else {
         return thrown(error);
@@ -1079,7 +1078,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
         None => thrown(error),
     }
 }
-`).join('');
+`);
   const checks = cb.members.map((m) => {
     const method = langName('wasm', m.member.name, 'callable');
     return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
@@ -1107,9 +1106,8 @@ ${checks}
     Ok(${struct} { object: value.clone() })
 }
 
-${lentCallbacks(model).includes(cb) ? `impl ${cb.unit.core ?? ''} for ${struct} {` : `impl ${struct} {`}${methods}
-}
-${recognizing}`;
+${callbackImpl(model, cb, struct, '', methods)}
+${recognized}`;
 }
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of the one thread of the module, so that the core may

@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackSignature, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -968,9 +968,8 @@ ${m.params.length === 0 ? '' : `            let args: ${argsType} = FnArgs::from
     }`;
   }).join('\n');
   const classIndex = recognizedClassIndex(model, cb);
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} is pending again and goes back to the caller as it
 /// is.
 fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     let Thrown::Js(js) = &error else {
@@ -994,7 +993,7 @@ fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     }
     thrown(error)
 }
-`).join('');
+`);
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
@@ -1032,13 +1031,10 @@ ${checks}
     Ok(${struct} { object, env_${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
-${lentCallbacks(model).includes(cb) ? `impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {` : `impl<'env> ${struct}<'env> {`}${methods}
-}
-${recognizing}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
+${callbackImpl(model, cb, struct, "<'env>", methods)}
+${recognized}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 }
 
-// GN-6u, GN-6aa: whether the addon holds Natives: for a value alias, a function type or a callback that the core keeps.
-const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
 // after the call that gave it. A call on the owner thread borrows the object in the env_ of the owner and calls it as
