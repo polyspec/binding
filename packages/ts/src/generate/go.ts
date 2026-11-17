@@ -16,7 +16,7 @@ import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
 import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
-import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
+import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles, guardGoTestTags } from './tests_go.ts';
 import { extensionName } from './packages.ts';
 import type { Files } from './text.ts';
 
@@ -3594,6 +3594,7 @@ export function go(model: Model, files: Files): void {
     files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
   }
   keepGoHelpers(files, `${BINDING}/zz_generated_binding.go`);
+  guardGoTestTags(files, GO);
 }
 
 // GN-15g: the platforms of a Go module: <GOOS>_<GOARCH> of the platforms of a release (GN-3c), whose Linux library is

@@ -2899,6 +2899,16 @@ the design ids are those of the binding design.
   template imports, which call the test entry points of a json library that its release does not have, and the Go
   tests of template did not link. A repository that runs its Go tests gives the tags of its own library:
   `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
+- **GN-13bf** Go: a package of the module with build-tagged generated tests also has the untagged generated test
+  `zz_generated_tags_test.go`, which declares `var builtTags = map[string]bool{}` and the test
+  `TestGN13bfEveryBuildTagOfThePackageIsBuilt`. The generator writes into it the tags of the tagged generated test
+  files of that package, and each such file registers its tags in an `init` (`builtTags["<tag>"] = true`). The test
+  fails unless every tag of the list was registered, and its message names the missing tags and gives the line
+  `go test -tags=<every tag of the module> ./...`. So a run with a wrong tag (such as `polyspec_panic_test`, the form before
+  GN-13ba) or with no tag fails and names the tags, a run with the tags passes, and a build that only compiles
+  (`go test -c`, `go vet`, deadcode) is unchanged. Why: a run without the tags compiles none of the tagged files, so
+  `go test` passed with those generated tests left out, which a consumer cannot see (HR-84): two consumers released
+  that way with the tags of before GN-13ba.
 - **GN-13bb** A callback or function fixture of a generated test (G-5) finds the row of a call by comparing the
   arguments of the call with those of the row by the rule by which the test compares a result: PHP by `same` of the
   test class (an object by its class and its properties, an instance of a value class of another repository by its in

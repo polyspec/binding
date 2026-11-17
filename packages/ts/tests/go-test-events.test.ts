@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { goPackageFailure, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
+import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
 
 const lines = (...events: object[]): string => `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
 
@@ -55,4 +55,24 @@ test('go test of the run reads the tests that the generator writes and the contr
   assert.deepEqual(goTestScope('/w/m', files, true).dropped, ['media_type/parse_test.go', 'tests/helpers_test.go']);
   // A module with no test of the repository needs no overlay.
   assert.deepEqual(goTestScope('/w/m', ['a/zz_generated_test.go'], false), { dropped: [], overlay: undefined });
+});
+
+test('B2.438: the run of go test with the build tag of before GN-13ba must fail on the guard of the tags and name a missing tag (GN-13bf)', () => {
+  const guard = (pkg: string): object[] => [
+    { Action: 'run', Package: pkg, Test: GO_TAG_GUARD },
+    { Action: 'output', Package: pkg, Test: GO_TAG_GUARD, Output: '    zz_generated_tags_test.go:23: GN-13bf: the generated tests of the build tags [polyspec_sample_codec_test polyspec_sample_panic_test] were not built; run go test -tags=polyspec_sample_codec_test,polyspec_sample_panic_test ./...\n' },
+    { Action: 'fail', Package: pkg, Test: GO_TAG_GUARD },
+    { Action: 'fail', Package: pkg },
+  ];
+  const passed = { Action: 'pass', Package: 'm', Test: 'TestB3SplitText' };
+  // The guard failed and named the missing tags: the step passes.
+  assert.equal(goTagGuardFailure(readGoTestEvents(lines(passed, ...guard('m'), ...guard('m/internal/binding'))), 1), undefined);
+  // The run passed: the step fails.
+  assert.match(goTagGuardFailure(readGoTestEvents(lines(passed, { Action: 'pass', Package: 'm' })), 0) ?? '', /wrong build tag passed/);
+  // Another test failed: the step fails, and names it.
+  assert.match(goTagGuardFailure(readGoTestEvents(lines(...guard('m'), { Action: 'fail', Package: 'm', Test: 'TestB3SplitText' })), 1) ?? '', /other tests than the guard of the tags: m\.TestB3SplitText/);
+  // A package failed without a failed test (it did not build): the step fails.
+  assert.match(goTagGuardFailure(readGoTestEvents(lines({ ImportPath: 'm [m.test]', Action: 'build-output', Output: 'undefined: builtTags\n' }, { Action: 'fail', Package: 'm' })), 1) ?? '', /failed the packages m/);
+  // The guard failed without naming a tag: the step fails.
+  assert.match(goTagGuardFailure(readGoTestEvents(lines({ Action: 'fail', Package: 'm', Test: GO_TAG_GUARD })), 1) ?? '', /without naming a missing tag/);
 });

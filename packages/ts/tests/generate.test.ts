@@ -12471,3 +12471,56 @@ test('B2.434: the B-3 test of a member gives an argument of a class the case val
     assert.doesNotMatch(test, /Tag\(['"]a['"]\)/, path);
   }
 });
+
+// GN-13bf: the tags of the tagged generated test files of each Go package of a generation, by the directory of the package.
+const goTestTagsByPackage = (out: Map<string, string | Buffer>): Map<string, string[]> => {
+  const by = new Map<string, Set<string>>();
+  for (const [path, body] of out) {
+    if (!path.startsWith('packages/go/') || !path.endsWith('_test.go')) continue;
+    const constraint = /^\/\/go:build (.+)$/m.exec(String(body))?.[1];
+    if (constraint === undefined) continue;
+    const dir = path.slice(0, path.lastIndexOf('/'));
+    by.set(dir, new Set([...(by.get(dir) ?? []), ...constraint.split(' && ')]));
+  }
+  return new Map([...by].map(([dir, tags]) => [dir, [...tags].sort()]));
+};
+
+test('B2.438: each Go package of the sample with tagged generated tests has the untagged guard that expects the tags of its tagged test files (GN-13bf)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['go'] });
+  const packages = goTestTagsByPackage(out);
+  assert.deepEqual(packages, new Map([
+    ['packages/go', ['polyspec_sample_fault_test', 'polyspec_sample_native_count_test', 'polyspec_sample_panic_test', 'polyspec_sample_thrown_count_test']],
+    ['packages/go/internal/binding', ['polyspec_sample_codec_test', 'polyspec_sample_panic_test']],
+  ]));
+  const every = [...new Set([...packages.values()].flat())].sort().join(',');
+  for (const [dir, tags] of packages) {
+    const guard = text(out, `${dir}/zz_generated_tags_test.go`);
+    assert.doesNotMatch(guard, /^\/\/go:build/m, `${dir}: the guard has no build tag`);
+    assert.match(guard, /^var builtTags = map\[string\]bool\{\}$/m, dir);
+    assert.match(guard, /^func TestGN13bfEveryBuildTagOfThePackageIsBuilt\(t \*testing\.T\) \{$/m, dir);
+    const listed = /expected := \[\]string\{([^}]*)\}/.exec(guard)?.[1] ?? '';
+    assert.deepEqual(listed.split(', ').map((tag) => JSON.parse(tag)), tags, `${dir}: the tags that the guard expects`);
+    assert.ok(guard.includes(`go test -tags=${every}`), `${dir}: the guard gives the go test line of every tag of the module`);
+  }
+  // The packages without tagged tests have no guard.
+  for (const path of out.keys()) if (path.endsWith('/zz_generated_tags_test.go')) assert.ok(packages.has(path.slice(0, path.lastIndexOf('/'))), path);
+});
+
+test('B2.438: each tagged generated Go test file registers each tag of its build constraint in builtTags in an init (GN-13bf)', () => {
+  for (const repo of ['sample', 'classes']) {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+    const contract = read('packages/rust/interface.json');
+    const out = generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] });
+    let tagged = 0;
+    for (const [path, body] of out) {
+      if (!path.startsWith('packages/go/') || !path.endsWith('_test.go')) continue;
+      const constraint = /^\/\/go:build (.+)$/m.exec(String(body))?.[1];
+      if (constraint === undefined) continue;
+      tagged += 1;
+      const init = /^func init\(\) \{\n([\s\S]*?)\n\}$/m.exec(String(body))?.[1] ?? '';
+      assert.deepEqual(init.split('\n').map((line) => line.trim()), constraint.split(' && ').map((tag) => `builtTags[${JSON.stringify(tag)}] = true`), `${repo} ${path}`);
+    }
+    assert.ok(tagged > 0, repo);
+  }
+});

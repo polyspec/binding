@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 04d097f6769ad6ff0ab18e46ee3f0c1c5e38d61d67b69ebe9c780cc49989e28b -->
+<!-- source-sha256: bf6b77ad5988dd1c910341132fbc5fa7a9e9ccd5754dc1fb937150a46e536440 -->
 # 생성기
 
 [English](generator.md)
@@ -2359,6 +2359,14 @@
   template이 import하는 json module의 `internal/binding` 태그 파일까지 켰다. 그 파일은 release에 없는 json 라이브러리의 test
   진입점을 불러서 template의 Go 시험이 링크되지 않았다. Go 시험을 돌리는 저장소는 자기 library의 태그를 준다:
   `GOFLAGS=-tags=polyspec_<library>_<feature>,...`.
+- **GN-13bf** Go: build tag가 붙은 생성 시험을 가진 module의 package는 태그 없는 생성 시험 `zz_generated_tags_test.go`도
+  가진다. 그 파일은 `var builtTags = map[string]bool{}`와 시험 `TestGN13bfEveryBuildTagOfThePackageIsBuilt`를 선언한다.
+  generator는 그 package의 태그 붙은 생성 시험 파일의 태그들을 그 파일에 쓰고, 그런 파일은 저마다 `init`에서 자기 태그를
+  등록한다(`builtTags["<tag>"] = true`). 시험은 목록의 태그가 모두 등록되지 않으면 실패하고, 그 메시지는 빠진 태그를
+  밝히고 `go test -tags=<module의 모든 태그> ./...` 줄을 준다. 그래서 틀린 태그(GN-13ba 이전 형태인 `polyspec_panic_test` 같은)나
+  태그 없이 돌린 run은 실패하며 태그를 밝히고, 태그를 준 run은 통과하며, 컴파일만 하는 build(`go test -c`, `go vet`,
+  deadcode)는 그대로다. 이유: 태그 없는 run은 태그 붙은 파일을 하나도 컴파일하지 않아서, `go test`가 그 생성 시험이 빠진
+  채로 통과했고 소비자는 그것을 볼 수 없다(HR-84): 두 소비자가 GN-13ba 이전의 태그로 그렇게 release했다.
 - **GN-13bb** 생성 시험의 callback이나 function fixture(G-5)는 호출의 인자를 row의 인자와, 시험이 결과를 비교하는 규칙으로
   비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
   row로, B2.121)으로 비교하고 fixture는 그것을 `self::same(...)`로 받는다. Python은 `_same`으로 비교한다. Node와 WASM은

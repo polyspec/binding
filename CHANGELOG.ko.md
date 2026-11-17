@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 41efd734cba9abd5267e8ae7f9e5d05d2021f85b3b8075633c5a5138f126b655 -->
+<!-- source-sha256: c3df68cedddc9d78039eb40cea6f9adff3a1be4f6af300825ca558fec25e06ac -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -22,6 +22,7 @@
 
 ## Unreleased
 
+- build tag가 붙은 생성 시험을 가진 Go module의 각 package는 태그 없는 생성 시험 `zz_generated_tags_test.go`도 가진다. 그 `TestGN13bfEveryBuildTagOfThePackageIsBuilt`는 그 package의 태그 붙은 생성 시험 파일의 태그가 모두 build되지 않으면 실패하고, 그런 파일은 저마다 `init`에서 자기 태그를 `builtTags`에 등록한다(GN-13bf). 메시지는 빠진 태그를 밝히고 `go test -tags=<module의 모든 태그> ./...` 줄을 준다. GN-13ba(0.0.17) 이전 형태인 `go test -tags=polyspec_panic_test`나 태그 없이 돌린 소비자는 태그 붙은 생성 시험을 하나도 컴파일하지 않고 그것 없이 통과했고, 두 소비자가 그렇게 release했다(HR-84). 이제 그런 run은 실패한다. 컴파일만 하는 build(`go test -c`, `go vet`, deadcode)는 그대로다. `tests/e2e/sample`의 end-to-end check는 그 Go module의 `go test`를 `-tags=polyspec_panic_test`로 한 번 더 돌리고, 그 run이 guard 하나로만 실패하고 빠진 태그를 밝히지 않으면 실패한다(B2.438). `packages/ts`에서 `node --test --test-name-pattern=B2.438 tests/generate.test.ts tests/go-test-events.test.ts`로 검증했고, 생성 결과의 시험은 변경 전에 실패했다. 그 step의 증거는 CI의 e2e run이다.
 - checkout이 kit pin을 0.0.118 대신 0.0.119로 둔다(B2.439).
 - `make e2e-lint`가 commit 전에 `tests/e2e` 레포들의 생성된 crate를 lint하고, AGENTS.md가 그것을 version-bump commit 전의 gate로 적는다(B2.432): CI의 job `e2e` matrix의 각 레포를 그 DEPS와 함께(classes, sample과 함께 consumer, functions, kept, points와 함께 plot, sample, shapes, variants; 컴파일러가 crate를 거부하는 `lent`와 CI에 없는 `relay`는 빠진다) HEAD의 end-to-end check를 `--until lint`로 돌린다. 그것은 그 commit의 CLI로 생성하고, core를 `cargo test` 대신 `cargo check`로 확인하고, core와 각 binding crate를 test feature와 함께, 그리고 feature 없이 `cargo clippy -D warnings`로 lint하고 거기서 멈추므로, package를 만들지 않고 test를 돌리지 않는다. npm은 offline으로 돈다. Cargo는 offline이 아니다: 그 offline mode는 이 checkout에서 Git으로 HEAD의 binding_core를 가져오는 것을 막고, Cargo는 registry의 index를 읽는다. `REPOS`가 그중 일부를 고른다. 실행의 Node.js 확인은 그것을 링크일 수 있는 `var/tools`의 실제 경로와 비교한다. 검증: `packages/ts`에서 `tests/e2e-lint-target.test.ts`의 `node --test --test-name-pattern=B2.432`(그 stand-in cargo는 feature 없는 lint를 `function in_blob is never used`로 실패시킨다), 그리고 `make e2e-lint REPOS=tests/e2e/sample`.
 - member의 한 인자에 자기 값을 주고 나머지에 placeholder를 주는 생성 시험(B-2, B-3, B-8, T-1, T-2, U-2, GN-6z, 그리고 GN-13y의 case가 없는 K-2)은 다섯 target에서 class의 인자에 그 member의 첫 case의 그 인자 case 값을 준다. raise하지 않는 case가 raise하는 case보다 먼저다(GN-13t). member에 그런 case가 없을 때만 GN-13의 placeholder가 그 자리에 선다. 전에는 placeholder 인자의 첫 constructor로 인자를 만들었고, crud-ui는 JSON null의 `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, 그 Python 생성기의 B-3 시험 22개가 검사하는 호출 전에 인자에서 실패했다(B2.434). `packages/ts`에서 `node --test --test-name-pattern=B2.434 tests/generate.test.ts`로 확인했고, 변경 전에는 실패했다.

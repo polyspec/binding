@@ -41,7 +41,7 @@ import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags, lintBind
 import { llvmOf } from './e2e-llvm.mts';
 import { npmPacked, type ConsumerPackage, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
-import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
+import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 import { phpMinorProblem } from './php-minor.mts';
 import { refusalProblem } from './e2e-refusal.mts';
 
@@ -966,6 +966,21 @@ if (targets.includes('go')) {
       if (failure !== undefined) throw new Error(failure);
       const { counts, packageFailures } = read;
       counted('go', what, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+    });
+    // GN-13bf: a run with the build tag of before GN-13ba compiles none of the tagged generated tests, so it must fail
+    // on the guard of the tags and name a missing tag. One run of the first module of tests/e2e/sample stands for the
+    // rule, which the generator writes the same for every module.
+    if (i === 0 && library === 'sample') stepOf(['go'], `go test${of} with the build tag polyspec_panic_test of before GN-13ba fails on the guard of the tags (GN-13bf)`, () => {
+      const overlay = scoped();
+      const wrong = { ...goEnv, GOFLAGS: '-tags=polyspec_panic_test' };
+      process.stdout.write(`$ GOFLAGS=${wrong.GOFLAGS} ${goTool} test -json -count=1 ${[...overlay, './...'].join(' ')}\n`);
+      const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...overlay, './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...wrong } });
+      const read = readGoTestEvents(goTest.stdout);
+      process.stdout.write(read.printed);
+      process.stdout.write(goTest.stderr);
+      const failure = goTagGuardFailure(read, goTest.status);
+      if (failure !== undefined) throw new Error(failure);
+      process.stdout.write(`go test with -tags=polyspec_panic_test failed on ${GO_TAG_GUARD} and named the missing tags, as GN-13bf requires\n`);
     });
   }
   // GN-14f: the released form. A release carries the Go module with the static library of each platform in the commit

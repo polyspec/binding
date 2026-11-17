@@ -2620,6 +2620,53 @@ ${testImports(model, module, body, scope, extraStd)}${body}`;
   return files;
 }
 
+// GN-13bf: each tagged generated test file of the Go module under `module` registers the tags of its build constraint
+// in an init, and each package with such files has the untagged test zz_generated_tags_test.go, which fails unless
+// every tag of those files was built, so a run with a wrong tag or none does not pass with the tagged tests left out.
+export function guardGoTestTags(files: Map<string, string>, module: string): void {
+  const packages = new Map<string, { name: string; tags: Set<string> }>();
+  for (const [path, text] of [...files]) {
+    if (!path.startsWith(`${module}/`) || !path.endsWith('_test.go')) continue;
+    const constraint = /^\/\/go:build (.+)$/m.exec(text)?.[1];
+    if (constraint === undefined) continue;
+    const tags = constraint.split(' && ');
+    if (!tags.every((tag) => /^polyspec_\w+$/.test(tag))) throw new Error(`${path}: the build constraint ${constraint} is not a conjunction of the tags of the generation (GN-13bf)`);
+    const name = /^package (\w+)$/m.exec(text)?.[1] ?? '';
+    const dir = path.slice(0, path.lastIndexOf('/'));
+    const known = packages.get(dir) ?? { name, tags: new Set<string>() };
+    for (const tag of tags) known.tags.add(tag);
+    packages.set(dir, known);
+    files.set(path, `${text.trimEnd()}\n\n// GN-13bf: this file was built with its tags.\nfunc init() {\n${tags.map((tag) => `\tbuiltTags[${goString(tag)}] = true\n`).join('')}}\n`);
+  }
+  const every = [...new Set([...packages.values()].flatMap((p) => [...p.tags]))].sort().join(',');
+  for (const [dir, { name, tags }] of packages) {
+    files.set(`${dir}/zz_generated_tags_test.go`, `${goHeader()}
+
+package ${name}
+
+import "testing"
+
+// builtTags holds each build tag of the generated tests of the package that the build compiled; the init of each
+// tagged generated test file sets its tags (GN-13bf).
+var builtTags = map[string]bool{}
+
+// A run without the tags of the tagged generated tests would compile none of them and pass without them (GN-13bf).
+func TestGN13bfEveryBuildTagOfThePackageIsBuilt(t *testing.T) {
+	expected := []string{${[...tags].sort().map(goString).join(', ')}}
+	var missing []string
+	for _, tag := range expected {
+		if !builtTags[tag] {
+			missing = append(missing, tag)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("GN-13bf: the generated tests of the build tags %v were not built; run go test -tags=${every} ./...", missing)
+	}
+}
+`);
+  }
+}
+
 // B-7: the panic of the core reaches Go as the internal error type of kind internal.
 export function goPanicTest(internal: string, tag: string): string {
   return `${goHeader()}
