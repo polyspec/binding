@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -472,7 +472,8 @@ test('B2.488: a commit whose module does not build alone in its tree leaves the 
   assert.deepEqual(lines.filter((line) => line.startsWith('git tag ')), []);
   assert.equal(lines.at(-1), 'go clean -modcache');
   const [build] = s.calls().filter((c) => c.tool === 'go' && c.argv[0] === 'build');
-  assert.equal(build?.cwd, join(s.release.work, 'alone/packages/go'));
+  // The stand-in records process.cwd(), which the system gives with its links resolved (/var is /private/var on macOS).
+  assert.equal(build?.cwd, join(realpathSync(s.release.work), 'alone/packages/go'));
   assert.equal(build?.env['GOWORK'], 'off');
   const [checkout] = s.calls().filter((c) => c.argv.includes('checkout'));
   assert.equal(checkout?.env['GIT_INDEX_FILE'], join(s.release.work, 'alone-index'));
