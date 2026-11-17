@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d875413c0a124c0a9d1a07938918a0840a8f7019d474bf4ca41780716b2c1f5c -->
+<!-- source-sha256: 61ea0744357701d580b2442ffaf5a9d885ea133962f137e5bdac9fccda0b575b -->
 # 생성기
 
 [English](generator.md)
@@ -2616,6 +2616,10 @@
   독립적으로 만들고 부호가 바뀐 결과가 다름을 요구한다. 기존 sample Go 시험도 전송한 float의 bit를 비교한다.
   `reflect.DeepEqual`이 NaN을 자기 자신과 다르게 보고 영의 두 부호는 같게 보므로 결과 검증을 시험하기 위해서다.
   NaN payload는 계속 검사하지 않는다.
+  Python에서 contract의 value class(origin `value`, `core_type`이 있든 없든)의 instance는 둘 다 그 class이고 그
+  property의 값들이 이 규칙으로 같을 때 다른 instance와 같다. 그래서 그 안의 list, map, value class도 끝까지 비교한다.
+  이유: 그런 class에는 `__eq__`가 없어 `==`가 두 instance를 identity로 비교했고, `list<map<orm_value>>`인 orm의 결과
+  `[{"qty": {"kind": "int", "value": 1}}]`이 Python에서 실패했다(B2.507).
   결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다.

@@ -3195,6 +3195,11 @@ the design ids are those of the binding design.
   comparison test independently constructs both zero signs and requires a sign-changing result to be unequal;
   the existing sample Go tests also compare transported float bits. This checks the result assertion, because
   `reflect.DeepEqual` finds a NaN unequal to itself and the two zero signs equal. NaN payloads remain unexamined.
+  In Python an instance of a value class of the contract (origin `value`, with or without `core_type`) is the same
+  as another when both are of its class and the values of its properties are the same by this rule, so a list, a
+  map or a value class inside it is compared as far as it goes. Why: such a class has no `__eq__`, so `==` compared
+  two instances by identity, and orm's result `[{"qty": {"kind": "int", "value": 1}}]` of `list<map<orm_value>>`
+  failed in Python (B2.507).
   The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
