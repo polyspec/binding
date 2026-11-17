@@ -127,7 +127,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   inside a record; each other form is refused with the row, or with the member and the variant. A variant
   of `kinds`, `raises` and `in_raises` is a Rust path or the nested path `<outer>/<inner>` of GN-7c, and `errors.code`
   names the core error type and its projection to the code enum of the kinds (`{error, path}`, generator GN-7b); whether
-  they name a variant, a type and a function of the core is judged by the compiler on the generated crate (I-2).
+  they name a variant, a type and a function of the core is judged by the compiler on the generated crate (I-2), while
+  the kind list of another library, which is contract data, is checked first by CK-110.
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row
@@ -734,7 +735,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `library` L name the outer variant `<outer>` (`<outer>/<inner>`), a row names `<outer>/<inner>` for every kind that
   L's contract declares, because the core error is matched without a wildcard (GN-7), so the variant `<outer>(L's
   error)` of the core holds each of them. The finding names the outer variant, the library and each kind that no row
-  names. An outer variant with a row of a kind that L does not declare is the finding of CK-10 alone. Why: the
+  names. It reads L's contract, which is contract data; whether the names exist in the core is left to the compiler,
+  as CK-10 states. An outer variant with a row of a kind that L does not declare is the finding of CK-10 alone. Why: the
   consumer of the end-to-end check named only `Sample/Unreadable`, the check passed it, and every generated crate
   stopped on a non-exhaustive match (E0004) that named no rule (B2.489).
 

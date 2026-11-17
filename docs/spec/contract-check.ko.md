@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 9a8eae5de6ad61470efc6e5ac43df85970f39f2b1b13ba2229700ae16ea344e1 -->
+<!-- source-sha256: dafcb730c89be2255f7311113ee6b154bcd0b7598ce47b9bb2ab52449afaa177 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -112,7 +112,7 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   또는 member와 variant를 대고 거부한다. `kinds`·`raises`·`in_raises`의
   variant는 Rust 경로이거나 GN-7c의 중첩 경로 `<바깥>/<안쪽>`이고, `errors.code`는 코어 오류 타입과 kinds의 code enum으로 가는
   투영을 적는다(`{error, path}`, generator GN-7b). 그것이 코어의 variant, 타입, 함수를 가리키는지는 생성된 crate를 컴파일러가
-  판정한다(I-2).
+  판정한다(I-2). 반면 다른 라이브러리의 kind 목록은 계약 데이터이므로 CK-110이 먼저 검사한다.
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
@@ -617,7 +617,8 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
 - **CK-110** outer variant 아래의 라이브러리의 모든 kind(생성기 GN-7, GN-7c): `library` L을 가진 `errors.kinds`의 행이 outer
   variant `<outer>`를 이름하면(`<outer>/<inner>`), L의 계약이 선언하는 모든 kind마다 `<outer>/<inner>`를 이름하는 행이
   있다. 코어 오류는 wildcard 없이 match되므로(GN-7), 코어의 variant `<outer>(L의 오류)`는 그 각각을 가지기 때문이다.
-  finding은 outer variant, 라이브러리, 어떤 행도 이름하지 않는 각 kind를 이름한다. L이 선언하지 않는 kind의 행을 가진
+  finding은 outer variant, 라이브러리, 어떤 행도 이름하지 않는 각 kind를 이름한다. 이 검사는 계약 데이터인 L의 계약을
+  읽고, 그 이름이 코어에 있는지는 CK-10이 말하는 대로 컴파일러에 맡긴다. L이 선언하지 않는 kind의 행을 가진
   outer variant는 CK-10의 finding일 뿐이다. 이유: end-to-end 검사의 consumer는 `Sample/Unreadable`만 이름했고, 검사는
   그것을 통과시켰으며, 모든 생성 crate는 아무 규칙도 이름하지 않는 non-exhaustive match(E0004)로 멈췄다(B2.489).
 
