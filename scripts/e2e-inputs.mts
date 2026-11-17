@@ -58,4 +58,5 @@ export const NOT_READ: readonly Input[] = [
   { path: 'scripts/e2e-lint-repos.mts', why: 'make e2e-lint runs it, which reads the matrix of ci.yml and starts a run of scripts/e2e.mts with --until lint for each repository of it (B2.432); the run does not read it' },
   { path: 'scripts/release-candidate-version.mts', why: 'make release-candidate-assets runs it, which prints the top version of the changelog for the candidate archive (B2.455); a run of make e2e does not read it' },
   { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
+  { path: 'scripts/go-musl-judge.mts', why: 'go-musl.sh runs it after its container, on the events that the container kept in the work directory; a run of make e2e does not read it' },
 ];
