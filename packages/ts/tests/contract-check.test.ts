@@ -2429,6 +2429,41 @@ test('B2.376: CK-22 takes a case of a kind on the path of its library, its own o
   assert.deepEqual(reported(other, own), finding);
 });
 
+// CK-108 (K-1, G-5): a case id is unique within its member, across all the groups of its member. orm named
+// the_rows_of_a_page_of_an_order in rows.keys.page and in rows.keys.lookahead_page, both groups of rows.keys, so
+// the Go test of GN-13e was defined twice.
+describe('CK-108: a case id is unique within its member across its groups (K-1, G-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any, contract: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    const contract = read('packages/rust/interface.json');
+    change(cases, contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-108');
+  };
+  const again = (cases: any, contract: any, ids: (id: string) => string): void => {
+    cases.frame_again = structuredClone(cases.frame).map((kase: any) => ({ ...kase, id: ids(kase.id) }));
+    const at = contract.cases.findIndex((row: any) => row.member === 'shapes.frame');
+    contract.cases.splice(at + 1, 0, { ...contract.cases[at], group: 'frame_again' });
+  };
+  test('the fixture holds each case id of a member once', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('two groups of one member with other ids are no finding', () => {
+    assert.deepEqual(run((cases, contract) => again(cases, contract, (id) => `${id}_again`)), []);
+  });
+  test('two groups of one member that hold the same id are refused with the member, both groups and the id', () => {
+    const contract = read('packages/rust/interface.json');
+    const at = contract.cases.findIndex((row: any) => row.member === 'shapes.frame');
+    const first = read('contracts/cases.json').frame[0].id;
+    const found = run((cases, c) => { again(cases, c, (id) => (id === first ? id : `${id}_again`)); });
+    assert.deepEqual(found, [{
+      check: 'CK-108',
+      path: `/cases/${at + 1}`,
+      message: `the case id ${first} of shapes.frame is in the group frame of contracts/cases.json and in the group frame_again of contracts/cases.json: a case id is unique within its member, across all its groups (K-1, G-5)`,
+    }]);
+  });
+});
+
 describe('B2.436: CK-103 a {computed} default has a case that leaves it to the core (U-2, GN-13d)', () => {
   // tests/e2e/shapes: shapes.frame takes frame_options, whose width is {computed: SH-1}, and shapes.pad takes
   // pad_options, whose width is an optional with {computed: SH-2}.
