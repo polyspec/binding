@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d875413c0a124c0a9d1a07938918a0840a8f7019d474bf4ca41780716b2c1f5c -->
+<!-- source-sha256: 22109b687401e851b4e79026b0b5b42675bb098ac557217c9fbf65ec87ee684a -->
 # 생성기
 
 [English](generator.md)
@@ -3707,7 +3707,14 @@
   마지막 줄은 `no upload`다. `WORK` 없는 `REHEARSAL=1`은 거부된다. 이유: upload가 label 검사 바로 뒤에 이어져
   rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다. 크기 검사는 실제 upload에서도 돌고,
   거기서는 tag 뒤에 돈다. release job은 먼저 kit의 `release-tag`로 tag를 만들어 push하고, upload는 그 tag의 draft
-  GitHub Release로 가므로, upload에서 실패한 검사는 tag를 구하지 못한다. tag 전의 rehearsal만이 구한다.
+  GitHub Release로 가므로, upload에서 실패한 검사는 tag를 구하지 못한다. 크기 검사는 명령 `binding asset-sizes
+  [--step <recipe>] <path>...`이다. 이것은 path 아래의 빈 파일과 2 GiB 이상인 파일을 recipe 이름 뒤에 저마다 밝히고
+  실패한다. 이 검사는 CI가 어떤 tag보다 먼저 같은 tree에서 돌리는 빌드 recipe의 끝에서도 돈다. `release-assets-<job>`은
+  저마다 자신이 빌드한 asset을 검사하고(GN-19i), binding의 `release-candidate-assets`는 자신의 archive를 검사한다.
+  `release-platform-assets`는 upload 전의 검사를 유지한다. 이유: release의 asset은 모두 tag 뒤에 빌드되므로(binding의
+  release는 `release-tag`, `release-checkout`, 그다음 `release-assets`를 돌고, 레포의 release workflow는 tag의 ref에서
+  asset을 빌드한다) release의 어떤 순서도 그런 asset을 tag 전에 잡지 못한다. CI는 그 전에 같은 tree에서 같은 recipe를
+  빌드하고, release는 그 CI run을 요구한다(B2.505).
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]`는 계약의
   release recipe를 `<계약의 packages>/release.mk`에 쓴다. core가 `packages/rust`이면 `packages/release.mk`이고, core가
   `packages/<component>/rust`이면 `packages/<component>/release.mk`이며, 그 target은 `-<component>`로 끝나서 한 레포의 두
@@ -3793,7 +3800,9 @@
   전에는 없기 때문이다. 이 recipe는 레포의 도구를 설치하고 설치가 실패하면 멈추며, `make release-recipes`를 실행한 뒤 그
   파일의 빌드 recipe `release-assets-<job>`을 별도 make로 실행하므로 방금 쓴 파일을 읽는다. 빌드 recipe가 job의 순서와
   조건을 가진다. 어떤 recipe도 `sudo`를 실행하거나 기계에 설치하지 않는다.
-  - `release-assets-<job>`은 저마다 그 계약의 `make release-binding-check`로 시작한다. 이것은 별도의 make다.
+  - `release-assets-<job>`은 저마다 그 계약의 `make release-binding-check`로 시작한다. 이것은 별도의 make다. 그리고
+    자신이 빌드한 asset, 곧 `release-platform-assets`가 upload하는 파일에 대한 `binding asset-sizes`로 끝난다.
+    `platform`은 wheel과 npm 플랫폼 package, `php`는 PHP extension, `npm`은 npm package다(GN-19g, B2.505).
   - `ci-assets-platform`은 `make release-assets-platform`으로 끝난다. 이 recipe는 그 다음에 계약의 target에 따라 `release-go-static`,
     `release-wheel`, `release-npm-platform`을 하나씩 끝까지 실행하고 실패한 빌드를 모두 적으며 실패한다. job은
     `var/release/assets`를 artifact `assets-<platform>`으로 upload한다.

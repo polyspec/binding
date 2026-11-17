@@ -4505,7 +4505,15 @@ the design ids are those of the binding design.
   so a rehearsal could not reach the step, and template 0.0.28 was lost in its asset job. The check of the sizes runs
   in the real upload too, and there it runs after the tag: the release job runs `release-tag` of kit first, which
   creates the tag and pushes it, and the upload goes to the draft GitHub Release of that tag, so a check that fails
-  in the upload cannot save the tag. Only the rehearsal before the tag can.
+  in the upload cannot save the tag. The check of the sizes is the command `binding asset-sizes [--step <recipe>]
+  <path>...`, which names each empty file and each file of 2 GiB or more under the paths after the name of the recipe
+  and then fails. It also runs at the end of the build recipes that CI runs on the same tree before any tag: each
+  `release-assets-<job>` checks the assets that it built (GN-19i), and `release-candidate-assets` of binding checks
+  its archives. `release-platform-assets` keeps the check before its upload. Why: every asset of a release is built
+  after the tag (binding's release runs `release-tag`, `release-checkout`, then `release-assets`, and the release
+  workflow of a repository builds its assets from the ref of the tag), so no order of the release can catch such an
+  asset before the tag; CI builds the same recipe on the same tree before it, and a release requires that CI run
+  (B2.505).
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]` writes
   the release recipes of the contract into `<packages of the contract>/release.mk`: `packages/release.mk` for a core
   at `packages/rust`, and `packages/<component>/release.mk` for a core at `packages/<component>/rust`, whose targets
@@ -4606,7 +4614,10 @@ the design ids are those of the binding design.
   stops when an install fails, runs `make release-recipes`, and then the build recipe `release-assets-<job>` of that
   file, a make of its own that reads the file just written. The build recipe holds the order and the conditions of the
   job; no recipe runs `sudo` or installs into the machine.
-  - Each `release-assets-<job>` starts with `make release-binding-check` of its contract, a make of its own.
+  - Each `release-assets-<job>` starts with `make release-binding-check` of its contract, a make of its own, and ends
+    with `binding asset-sizes` on the assets that it built, the files that `release-platform-assets` uploads: the
+    wheels and the npm platform packages for `platform`, the PHP extensions for `php`, and the npm packages for `npm`
+    (GN-19g, B2.505).
   - `ci-assets-platform` ends with `make release-assets-platform`, which then runs `release-go-static`, `release-wheel` and
     `release-npm-platform` of the targets of the contract, each to its end, and fails naming each failed build; the job
     uploads `var/release/assets` as the artifact `assets-<platform>`.
