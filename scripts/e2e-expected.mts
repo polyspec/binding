@@ -4,7 +4,30 @@
 // text: a named test that passes or does not run, a failure without its text, and a failure of another test fail the
 // step, so the fixture checks that a defect of the generator fails a test, and never that a test is left out.
 
+import { readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import type { GoTestEvents } from './go-test-events.mts';
+
+// The one repository that holds expected-failures.json, a fixture built to fail (AGENTS.md).
+export const EXPECTED_FAILURES_HOME = 'tests/e2e/falsepass/expected-failures.json';
+// The directories that hold no repository of a run: the installed tools and packages, builds and Git.
+const NOT_SCANNED = new Set(['.git', 'node_modules', 'var', 'target', 'dist']);
+
+// Each expected-failures.json under a checkout outside tests/e2e/falsepass, by its path from the checkout. A run reads
+// the file from the root of the repository that it checks, which may be any directory, so the whole checkout is read.
+export function strayExpectedFailures(root: string): string[] {
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!NOT_SCANNED.has(entry.name)) walk(path);
+      } else if (entry.name === 'expected-failures.json' && relative(root, path) !== EXPECTED_FAILURES_HOME) found.push(relative(root, path));
+    }
+  };
+  walk(root);
+  return found.sort();
+}
 
 export interface ExpectedFailure {
   // The name of the test as its runner reports it.

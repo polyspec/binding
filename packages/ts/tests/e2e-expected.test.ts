@@ -1,9 +1,12 @@
 // GN-14n (B2.509): the judgement of the generated tests that tests/e2e/falsepass requires to fail, and the reading of
 // the failed tests of each runner.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { expectedFailureProblem, goFailures, junitFailures, RUN_FAILED, unittestFailures } from '../../../scripts/e2e-expected.mts';
+import { fileURLToPath } from 'node:url';
+import { EXPECTED_FAILURES_HOME, expectedFailureProblem, goFailures, junitFailures, RUN_FAILED, strayExpectedFailures, unittestFailures } from '../../../scripts/e2e-expected.mts';
 import { readGoTestEvents } from '../../../scripts/go-test-events.mts';
 
 const EXPECTED = [{ test: 'the_after_test', reason: 'no value for text' }];
@@ -65,6 +68,23 @@ test('GN-14n: the failed tests of unittest, node --test, PHPUnit and go test are
     { Action: 'fail', Package: 'github.com/polyspec/falsepass/packages/go' },
   ].map((e) => JSON.stringify(e)).join('\n');
   assert.deepEqual(goFailures(readGoTestEvents(events)), [{ name: 'TestA', text: '    zz_generated_test.go:9: GN-13f: no value for text\n' }]);
+});
+
+test('GN-14n: no repository but tests/e2e/falsepass holds expected-failures.json, so no failure of a target is hidden by it (AGENTS.md)', () => {
+  const top = fileURLToPath(new URL('../../../', import.meta.url));
+  assert.deepEqual(strayExpectedFailures(top), []);
+  assert.ok(existsSync(join(top, EXPECTED_FAILURES_HOME)));
+  // The scan finds a stray file in another repository, in a copy of tests/e2e outside the checkout.
+  const temp = mkdtempSync(join(tmpdir(), 'gn14n-'));
+  try {
+    cpSync(join(top, 'tests/e2e'), join(temp, 'tests/e2e'), { recursive: true });
+    writeFileSync(join(temp, 'tests/e2e/kept/expected-failures.json'), '{"failures": {}}\n');
+    mkdirSync(join(temp, 'elsewhere/repo'), { recursive: true });
+    writeFileSync(join(temp, 'elsewhere/repo/expected-failures.json'), '{"failures": {}}\n');
+    assert.deepEqual(strayExpectedFailures(temp), ['elsewhere/repo/expected-failures.json', 'tests/e2e/kept/expected-failures.json']);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test('GN-14n: tests/e2e/falsepass names its one after test in each of the five targets', () => {

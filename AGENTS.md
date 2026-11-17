@@ -51,9 +51,13 @@ rules of this repository.
   (`packages/ts/tests/fixtures/repo`) name the five targets (BD-27). A target that the generator or the contract check
   refuses stays a named failure of the end-to-end check, and a refusal of the fixture is asserted by its unit test,
   until the generator takes it; no target is left out of a
-  contract, skipped or listed as an expected failure. Why: a target left out of a contract hides that the generator
-  does not take its form, and a run that passes then verifies less than the rule asks.
-  Enforced by: none, which targets a contract names is read in review; the end-to-end check names each refused target.
+  contract, skipped or listed as an expected failure. The list of expected failures exists only in the fixture REPO
+  built to fail (tests/e2e/falsepass), and that REPO passes only when each listed test fails with its listed reason.
+  No failure of any target is hidden by that list (GN-14n). Why: a target left out of a contract hides that the
+  generator does not take its form, and a run that passes then verifies less than the rule asks.
+  Enforced by: none, which targets a contract names is read in review; the end-to-end check names each refused target;
+  `node --test tests/e2e-expected.test.ts` in `packages/ts` fails when a repository other than tests/e2e/falsepass
+  holds `expected-failures.json`, and judges that a listed test that passes, or fails without its reason, fails the run.
 - Own: A commit that changes the generator, `binding_core` or the end-to-end check passes the end-to-end check of that
   commit (`make e2e BINDING=<commit>`, GN-14 and GN-14b) before it is pushed or merged, and a failure is fixed by a new
   commit, which is checked the same way. Only a run whose record (`var/report/e2e/`) names it evidence of the commit
