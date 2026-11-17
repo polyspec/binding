@@ -7,7 +7,7 @@ import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
 import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
-import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
+import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
 // B-2: the numbers that break the rule of each number type (kind invalid_number), and the values of another type than
@@ -303,9 +303,14 @@ test('GN-6ae: ${name} refuses a ${langName('wasm', arg.name, 'variable')} that i
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('wasm', pair.arg.name, 'variable');
+      // GN-13bg: two results that hold an instance of a value class of another repository are compared through
+      // ordered, which reads the instance by its in row; assert.deepStrictEqual compares two instances by no property.
+      const read = holdsForeign(model, fn.returns);
+      usesOrdered ||= read;
+      const outcomeOf = (expr: string): string => (read ? `ordered(${nodeOutcome(expr)})` : nodeOutcome(expr));
       emit(`
 test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
-  assert.deepStrictEqual(${nodeOutcome(target(callArgs(model, ctx, fn, pair.left)))}, ${nodeOutcome(target(callArgs(model, ctx, fn, pair.right)))});
+  assert.deepStrictEqual(${outcomeOf(target(callArgs(model, ctx, fn, pair.left)))}, ${outcomeOf(target(callArgs(model, ctx, fn, pair.right)))});
 });`);
     }
     for (const kase of raisingCases(model, fn)) {

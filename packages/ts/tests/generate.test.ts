@@ -12569,3 +12569,125 @@ test('B2.438: each tagged generated Go test file registers each tag of its build
     assert.ok(tagged > 0, repo);
   }
 });
+
+// B2.445: the relay with the function shown, the shape of crud-ui build_list: a JSON value with a default, a list of
+// JSON values with a default and a record parameter whose fields have defaults, two of them of JSON values; the
+// result is a JSON value, an instance of the class value of json.
+const shownSample = (): ReturnType<typeof relaySample> => {
+  const parts = relaySample();
+  parts.contract.units.push({
+    id: 'shown_options', name: ['shown', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_relay::ShownOptions',
+    fields: [
+      { name: ['files'], type: { map: 'json_value' }, default: { empty: 'map' } },
+      { name: ['data'], type: { optional: 'json_value' }, default: { literal: null }, reason: 'RQ-036' },
+      { name: ['depth'], type: 'int64', default: { literal: 1 }, default_core: 'polyspec_relay::DEPTH' },
+    ],
+  });
+  parts.contract.units.find((u: any) => u.id === 'relay').members.push({
+    id: 'relay.shown', name: ['shown'], kind: 'function', visibility: 'public',
+    parameters: [
+      { name: ['value'], type: 'json_value', default: { empty: 'object' } },
+      { name: ['rows'], type: { list: 'json_value' }, default: { empty: 'list' } },
+      { name: ['options'], type: { unit: 'shown_options' }, default: { empty: 'object' } },
+    ],
+    returns: 'json_value', raises: [], wait: 'none', core: 'polyspec_relay::shown',
+  });
+  return parts;
+};
+
+test('B2.445: the U-2 test of a result that holds a JSON value compares the two results by what the instances hold, in the five targets (GN-13bg)', () => {
+  // crud-ui: 29 Go tests of U-2 failed with `&json.Value{ref:(*binding.Ref)(0x…)} is not &json.Value{…}`, because
+  // reflect.DeepEqual compared the handles of the two results of build_list, build_detail, bind_buttons and bind_form.
+  const { contract, caseFiles, foreign } = shownSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  const tests = Object.fromEntries(Object.entries(RELAY_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof RELAY_TESTS, string>;
+  const args = ['value', 'rows', 'files', 'data', 'depth'];
+  const pascal = (name: string): string => `${name[0]?.toUpperCase() ?? ''}${name.slice(1)}`;
+  // Go: every U-2 test of shown reads both results by foreignRead, and none compares the two pointers.
+  for (const arg of args) {
+    const at = tests.go.indexOf(`func TestU2ShownWithout${pascal(arg)}IsTheCallWithItsDefault(t *testing.T) {`);
+    assert.ok(at >= 0, `go: no U-2 test of ${arg}`);
+    const body = tests.go.slice(at, tests.go.indexOf('\n}\n', at));
+    assert.ok(body.includes('\tif !reflect.DeepEqual(foreignRead(reflect.ValueOf(value0)), foreignRead(reflect.ValueOf(value1))) || !sameFailure(err0, err1) {\n'), `go ${arg}: ${body}`);
+    assert.ok(body.includes('\t\tt.Fatalf("U-2: %#v, %v is not %#v, %v", foreignRead(reflect.ValueOf(value0)), err0, foreignRead(reflect.ValueOf(value1)), err1)\n'), `go ${arg}: ${body}`);
+    assert.ok(!body.includes('reflect.DeepEqual(value0, value1)'), `go ${arg}: the two handles are compared`);
+  }
+  assert.match(tests.go, /\nfunc foreignRead\(value reflect\.Value\) any \{\n/);
+  assert.match(tests.go, /\n\t\tcase \*json\.Value:\n/);
+  // A result that holds no such instance is compared as it was: width gives a uint.
+  const width = tests.go.slice(tests.go.indexOf('func TestU2WidthWithoutValueIsTheCallWithItsDefault('));
+  assert.ok(width.slice(0, width.indexOf('\n}\n')).includes('\tif !reflect.DeepEqual(value0, value1) || !sameFailure(err0, err1) {\n'));
+  // Node and WASM: both outcomes go through ordered, which reads an instance of value by readForeign.
+  for (const target of ['node', 'wasm'] as const) {
+    for (const arg of args) {
+      const at = tests[target].indexOf(`test('U-2: shown without ${arg} is the call with its default', () => {`);
+      assert.ok(at >= 0, `${target}: no U-2 test of ${arg}`);
+      const body = tests[target].slice(at, tests[target].indexOf('\n});', at));
+      assert.match(body, /\n {2}assert\.deepStrictEqual\(ordered\(outcome\(\(\) => pkg\.shown\([^\n]*\)\)\), ordered\(outcome\(\(\) => pkg\.shown\([^\n]*\)\)\)\);$/, `${target} ${arg}`);
+      assert.doesNotMatch(body, /deepStrictEqual\(outcome\(/, `${target} ${arg}: the two instances are compared by no property`);
+    }
+    assert.match(tests[target], /\nfunction ordered\(value\) \{\n {2}if \(value instanceof foreign_json\.Value \|\| value instanceof foreign_json\.OrderedMap\) return \{ foreign: readForeign\(value\) \};\n/, target);
+    assert.match(tests[target], /test\('U-2: width without value is the call with its default', \(\) => \{\n {2}assert\.deepStrictEqual\(outcome\(/, target);
+  }
+  // PHP: the result of each call goes through same, which reads an instance of value by readForeign, before outcome
+  // writes it as a text.
+  for (const arg of args) {
+    const at = tests.php.indexOf(`public function testU2shown${pascal(arg)}LeftOutIsItsDefault(): void`);
+    assert.ok(at >= 0, `php: no U-2 test of ${arg}`);
+    const body = tests.php.slice(at, tests.php.indexOf('\n    }\n', at));
+    assert.equal(body.match(/\n {12}self::outcome\(static fn \(\): mixed => self::same\(\\Polyspec\\Relay\\shown\([^\n]*\)\)\),/g)?.length, 2, `php ${arg}: ${body}`);
+  }
+  assert.match(tests.php, /        if \(\$value instanceof \\Polyspec\\Json\\Value \|\| \$value instanceof \\Polyspec\\Json\\OrderedMap\) \{\n            return \[\$value::class, self::readForeign\(\$value\)\];\n        \}/);
+  assert.match(tests.php, /public function testU2widthValueLeftOutIsItsDefault\(\): void\n {4}\{\n {8}self::assertSame\(\n {12}self::outcome\(static fn \(\): mixed => \\Polyspec\\Relay\\width\(/);
+  // Python compares by _same already (GN-13z, B2.358), which reads an instance of value by _read_foreign.
+  for (const arg of args) {
+    const at = tests.python.indexOf(`def test_u2_shown_${arg}_left_out_is_its_default(self) -> None:`);
+    assert.ok(at >= 0, `python: no U-2 test of ${arg}`);
+    assert.match(tests.python.slice(at, tests.python.indexOf('\n\n', at)), /\n {8}self\.assertTrue\(_same\(left, right\), f"\{left!r\} is not \{right!r\}"\)$/, `python ${arg}`);
+  }
+  assert.match(tests.python, /    if isinstance\(expected, \(foreign_json\.Value, foreign_json\.OrderedMap,\)\):\n        return _read_foreign\(actual\) == _read_foreign\(expected\)\n/);
+});
+
+test('B2.445: a Go result of a call of after that holds a JSON value is compared by what the instance holds (GN-13bg)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.units.find((u: any) => u.id === 'counter').members.push({ id: 'counter.held', name: ['held'], kind: 'property', visibility: 'public', parameters: [], returns: { library: 'json', unit: 'value' }, raises: [], wait: 'none', core: { path: 'polyspec_sample::Counter::held', receiver: '&self' } });
+  const cases = sampleCases();
+  (cases.get('contracts/cases.json') as Record<string, any[]>)['counter_add']![0].after = [{ call: 'counter.held', args: {}, result: { kind: 'text', value: 'y' } }];
+  const go = text(generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, foreign: relaySample().foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  const at = go.indexOf('AnAmountIsAdded(t *testing.T)');
+  assert.ok(at >= 0);
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  assert.ok(body.includes('\t\tif want := (*json.Value)(made2); !reflect.DeepEqual(foreignRead(reflect.ValueOf(value0)), foreignRead(reflect.ValueOf(want))) {\n'), body);
+  assert.match(go, /\nfunc foreignRead\(value reflect\.Value\) any \{\n/);
+});
+
+test('B2.445: a Go callback fixture finds its row and compares its calls by what a JSON value of an argument holds (GN-13bg, GN-13bb)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units.push({
+    id: 'sink', name: ['sink'], module: '', kind: 'interface', visibility: 'public', origin: 'callback', core: 'polyspec_relay::Sink', thread: 'owner',
+    members: [{ id: 'sink.put', name: ['put'], kind: 'method', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', required: true }], returns: 'none', async_allowed: false, core: { path: 'polyspec_relay::Sink::put', receiver: '&mut self' } }],
+  });
+  contract.units.find((u: any) => u.id === 'relay').members.push({
+    id: 'relay.hand', name: ['hand'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['sink'], type: { unit: 'sink' }, required: true }, { name: ['value'], type: 'json_value', required: true }],
+    returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::hand',
+  });
+  contract.cases.push({ member: 'relay.hand', file: 'contracts/cases.json', group: 'hand' });
+  const a = { kind: 'text', value: 'a' };
+  (caseFiles.get('contracts/cases.json') as Record<string, any[]>)['hand'] = [{ id: 'a_value_is_handed', rule: 'RQ-036', sink: { callback: { 'sink.put': [{ args: { value: a }, result: null }] }, calls: [{ member: 'sink.put', args: { value: a } }] }, value: a, result: true }];
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  // The row of a call is found by what the arguments hold: the argument of the call is another instance than that of
+  // the row.
+  assert.ok(go.includes('\t\tif row.member == member && (reflect.DeepEqual(foreignRead(reflect.ValueOf(row.args)), foreignRead(reflect.ValueOf(args))) || len(row.args)+len(args) == 0) {\n'));
+  const at = go.indexOf('func TestGN13eHandAValueIsHanded(t *testing.T) {');
+  assert.ok(at >= 0);
+  const body = go.slice(at, go.indexOf('\n}\n', at));
+  // The expected call is compared so too, and the statement that makes its argument is in the test, before the check.
+  const made = /\n\t(made\d+), failure\d+ := json\.ValueString\("a"\)\n[^]*?\n\tif want := \[\]\[\]any\{\{"Put", (made\d+)\}\}; !reflect\.DeepEqual\(foreignRead\(reflect\.ValueOf\(fixture0\.calls\)\), foreignRead\(reflect\.ValueOf\(want\)\)\) \{\n/.exec(body.slice(body.indexOf('fixture0.unexpected')));
+  assert.ok(made !== null, body);
+  assert.equal(made[1], made[2], body);
+  // A fixture whose arguments hold no such instance finds its row as it did.
+  const plain = consumerSample();
+  const own = text(generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
+});

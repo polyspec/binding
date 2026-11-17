@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8b72079e01aa9aaabcc94d5363001efd640cdecb3bde3b123f54b085635e25e7 -->
+<!-- source-sha256: 0079c5335517e31308b28b58232646737b5ad6caa8a6e9ce114c5cc05626eede -->
 # 생성기
 
 [English](generator.md)
@@ -2378,7 +2378,8 @@
 - **GN-13bb** 생성 시험의 callback이나 function fixture(G-5)는 호출의 인자를 row의 인자와, 시험이 결과를 비교하는 규칙으로
   비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
   row로, B2.121)으로 비교하고 fixture는 그것을 `self::same(...)`로 받는다. Python은 `_same`으로 비교한다. Node와 WASM은
-  `isDeepStrictEqual`로, Go는 `reflect.DeepEqual`로 비교하는데, 이것들은 이미 값을 비교한다. 이유: PHP에서 두 객체의
+  `isDeepStrictEqual`로, Go는 `reflect.DeepEqual`로 비교하는데, 이것들은 이미 값을 비교한다. Go는 다른 저장소의 값 class
+  instance를 담은 인자를 먼저 `foreignRead`로 읽는다(GN-13bg). 이유: PHP에서 두 객체의
   `===`는 같은 instance일 때만 참이고, Python에서 `__eq__`가 없는 class의 `==`는 identity다. 그래서 binding이 만든, row의
   값과 같은 인자가 어느 row와도 맞지 않았다: 둘째 인자가 `Environment`인 template의 host function 셋이 매 호출마다
   `UnexpectedCall`을 냈다. 결과의 같은 비교는 B2.358이었다.
@@ -2413,6 +2414,20 @@
   모든 target에서 같은 방식으로 out row를 따른다: callback fixture나 function value의 row의 인자, 그리고 fixture가 기대하는
   호출의 인자다. 이유: 이들은 호출의 인자처럼 쓰였다. 그래서 row가 UTF-8 bytes를 text로 만드는 alias의 인자는 bytes로
   기대되었고, binding이 그 text로 한 호출은 어떤 row에도 맞지 않았다(B2.422).
+- **GN-13bg** 생성 시험은 다음 비교에서, 한쪽이 다른 저장소의 값 class(GN-6x) instance를 담으면 양쪽을 소유자의 in row로
+  읽는다. case의 결과와 그 값을 읽을 때처럼 GN-13e의 helper(Go의 `foreignRead`, Node와 WASM의 `ordered`, PHP의 `same`,
+  Python의 `_same`)를 쓴다: 다섯 target에서 U-2나 T-1 시험의 두 결과(Python은 GN-13z), 그리고 Go에서는 `after`의 호출이나
+  function fixture의 step의 결과(GN-6ae), callback fixture가 자기 row를 찾는 인자, fixture가 기대하는 호출(GN-13bb)도
+  그렇다. helper는 결과의 type이나 callback의 parameter의 type이 list, optional, map, tuple, record, variant의 어느 자리에든
+  그런 instance를 담을 때 쓰이고, 다른 type의 비교는 전과 같이 쓰인다. PHP에서는 `outcome`이 결과를 text로 쓰기 전에 결과가
+  `same`을 거친다. Go fixture가 기대하는 호출의 인자를 만드는 문장은 시험 안에서 그 호출의 검사 앞에 선다. 이유: instance는
+  자기 core의 handle을 담는다. 그래서 `reflect.DeepEqual`은 두 결과의 handle을 비교했고, `json.Value`를 주는 모든 member의 Go
+  U-2 시험이 `&json.Value{ref:(*binding.Ref)(0x…)} is not &json.Value{…}`로 실패했다: crud-ui의 시험 29개다(`build_list` 8,
+  `build_detail` 8, `bind_buttons` 6, `bind_form` 5, form의 add와 copy 각 1). 이 member들의 parameter에는 기본값이 있고, 그
+  가운데에는 field의 기본값이 JSON 값인 record가 있다. Node와 WASM의 `assert.deepStrictEqual`과 PHP의 `var_export`는 같은 두
+  instance를 property 없이 비교했다. 그래서 그 U-2 시험은 어떤 두 JSON 값에도 통과했고 결과를 아무것도 검사하지 않았다. Go
+  시험은 `after`의 호출 결과와 fixture의 인자도 handle로 비교했다. 또 기대하는 호출의 instance를 만드는 문장을, 시험의 줄을
+  이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

@@ -5,7 +5,7 @@ import { type Model, callsCode, POISON_ENTRY, Unsupported, cleanupWarning, error
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
-import { foreignReaders, foreignClassNames, nodeForeignRead } from './value_class.ts';
+import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -656,9 +656,14 @@ test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that i
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('node', pair.arg.name, 'variable');
+      // GN-13bg: two results that hold an instance of a value class of another repository are compared through
+      // ordered, which reads the instance by its in row; assert.deepStrictEqual compares two instances by no property.
+      const read = holdsForeign(model, fn.returns);
+      usesOrdered ||= read;
+      const outcomeOf = (expr: string): string => (read ? `ordered(${nodeOutcome(expr)})` : nodeOutcome(expr));
       emit(`
 test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
-  assert.deepStrictEqual(${nodeOutcome(target(callArgs(model, ctx, fn, pair.left)))}, ${nodeOutcome(target(callArgs(model, ctx, fn, pair.right)))});
+  assert.deepStrictEqual(${outcomeOf(target(callArgs(model, ctx, fn, pair.left)))}, ${outcomeOf(target(callArgs(model, ctx, fn, pair.right)))});
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
