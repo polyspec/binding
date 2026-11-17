@@ -3,7 +3,7 @@
 // glue of wasm-bindgen), in the errno of a failure and in the services of a case, which only Node runs. Each part here
 // is written once and both generators call it.
 
-import { type Fn, type Model, type Arg, Unsupported, awaits, callsCode, categoryClass, cleanupWarning, errorUnitOfKind, hookCall, langName, machineFunction, memberName, takesNull, unitOf } from './model.ts';
+import { type Fn, type Model, type Arg, type ObjectClass, Unsupported, awaits, callsCode, categoryClass, cleanupWarning, errorUnitOfKind, heldParam, hookCall, kindText, langName, machineFunction, memberName, places, pointName, takesNull, unitOf } from './model.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, BYTE_NAME_LINUX, CASE_JSON_STRING_GOLDENS, aliasCases, aliasRepresentative, bytesKind, callArgs, callables, callbackArg, callbackCases, callbackReachingArgs, caseFilesOf, caseListenerOf, caseRefusal, caseValue, classCaseArgs, convertedCause, expectedErrno, expectedText, fixtureValues, fixturesOf, fromJson, functionFixturesOf, isNumber, isPath, isPlain, jsCause, jsMade, judgesCallbackResult, madeBeforeArgs, madeLines, numberRefusesNull, onceArgs, onceRows, otherValue, placeholder, primitiveCases, raisedLines, raisingCases, refusedKeyMap, refusesNull, resultCases, samePairs, sampleReceiver, stepExpected, stringCases, textKind, tokenForms, unsafeKeyMap, wrapText } from './samples.ts';
 import { jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
@@ -340,6 +340,38 @@ export function callbackOf(model: Model, ctx: Context, fn: Fn, classGiven: Retur
     args: (how) => callArgs(model, ctx, fn, (arg) => (arg === callback && unit !== undefined ? ctx.callbackNew(unit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))),
     placed: (place, value) => callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))),
   };
+}
+
+// B-5c (GN-6h): the members of the tests of a class with a write place, which every language writes in its own form.
+// receiver: a member whose only place is its receiver, a call that fails for the receiver alone. param: a callable that
+// takes an instance of the class as a parameter, on no receiver or on one of a class that the language makes (made).
+// busy: each member that takes the instance at a write receiver and as a parameter, with the arming of GN-8a where its
+// core function holds a point that fills one kind of its category, by an injection that needs no value.
+export interface HeldMembers {
+  receiver: Fn | undefined;
+  param: { fn: Fn; arg: Arg | undefined; owner: ObjectClass | undefined } | undefined;
+  busy: { fn: Fn; arg: Arg; armed: { faults: string; kind: string; category: string } | undefined }[];
+}
+export function heldMembers(model: Model, object: ObjectClass, callables: Fn[], made: (owner: ObjectClass) => boolean): HeldMembers {
+  const objectOf = (fn: Fn): ObjectClass | undefined => model.objects.find((o) => o.unit === fn.unit);
+  const takes = (fn: Fn): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
+  const receiver = object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
+    object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
+  const paramFn = callables.find((fn) => {
+    if (takes(fn) === undefined) return false;
+    const owner = objectOf(fn);
+    return fn.receiver === undefined || (owner !== undefined && made(owner));
+  });
+  const busy = object.members.flatMap((fn) => {
+    const arg = takes(fn);
+    if (arg === undefined || !places(model, fn).some((p) => p.param === undefined && p.write)) return [];
+    const point = model.faults.find((p) => p.place === fn.corePath && p.fills.length === 1 && p.inject.some((i) => i !== 'short'));
+    const filled = point === undefined ? undefined : model.kinds.find((k) => k.unit === undefined && kindText(k.variant) === point.fills[0]);
+    const inject = point?.inject.find((i) => i !== 'short');
+    const armed = point === undefined || filled === undefined || inject === undefined ? undefined : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), kind: kindText(filled.variant), category: filled.category };
+    return [{ fn, arg, armed }];
+  });
+  return { receiver, param: paramFn === undefined ? undefined : { fn: paramFn, arg: takes(paramFn), owner: objectOf(paramFn) }, busy };
 }
 
 // G-7: the parts of the test that a callable counts and names its arguments. The receiver is made once, as a local, and

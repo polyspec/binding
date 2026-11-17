@@ -4,8 +4,9 @@
 // instance at both places and must fail with kind busy. Where the core function of such a member holds a fault
 // injection point, the test arms it before the refused call: the next call takes the arming (GN-8a).
 
-import { type Arg, type Fn, type Model, type ObjectClass, heldParam, kindText, places, pointName, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, unitOf } from './model.ts';
 import { type Context, callArgs, classCaseArgs, otherValue, placeholder, sampleInstance } from './samples.ts';
+import { heldMembers } from './tests_shared.ts';
 
 export interface PoisonTest {
   object: ObjectClass;
@@ -49,47 +50,30 @@ export function heldTests(
     const sample = sampleInstance(model, object);
     return sample === undefined || ctx.instanceNew === undefined ? placeholder(model, ctx, { unit: object.unit.id }) : ctx.instanceNew(sample);
   };
-  const objectOf = (fn: Fn): ObjectClass | undefined => model.objects.find((o) => o.unit === fn.unit);
-  const takes = (fn: Fn, object: ObjectClass): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
   // The call that gives the argument `arg` the value `value`, and every other argument its value of GN-13t.
   const callWith = (fn: Fn, receiver: string, arg?: Arg, value: string = held): string => {
     const classGiven = classCaseArgs(model, fn);
     return invoke(fn, callArgs(model, ctx, fn, (a) => (a === arg ? value : otherValue(model, ctx, a, classGiven))), receiver);
   };
-  // A member whose only place is its receiver: a call that fails for the receiver alone.
-  const onReceiver = (object: ObjectClass): Fn | undefined =>
-    object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
-    object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
   const callables = [...model.functions, ...model.objects.flatMap((o) => o.members.filter((m) => m.kind !== 'iterate' && m.special === undefined))];
   const poison: (() => PoisonTest)[] = [];
   const busy: (() => BusyTest)[] = [];
   for (const object of model.objects) {
     if (object.lock?.writes !== true || !hasFactory(model, object)) continue;
-    const receiverFn = onReceiver(object);
-    const paramFn = callables.find((fn) => {
-      if (takes(fn, object) === undefined) return false;
-      const owner = objectOf(fn);
-      return fn.receiver === undefined || (owner !== undefined && hasFactory(model, owner));
-    });
-    const paramOwner = paramFn === undefined ? undefined : objectOf(paramFn);
+    const members = heldMembers(model, object, callables, (owner) => hasFactory(model, owner));
+    const receiverFn = members.receiver;
+    const param = members.param;
     poison.push(() => ({
       object,
       instance: instanceOf(object),
       receiver: receiverFn === undefined ? undefined : callWith(receiverFn, held),
-      parameter: paramFn === undefined ? undefined : callWith(paramFn, paramFn.receiver === undefined || paramOwner === undefined ? '' : instanceOf(paramOwner), takes(paramFn, object)),
+      parameter: param === undefined ? undefined : callWith(param.fn, param.fn.receiver === undefined || param.owner === undefined ? '' : instanceOf(param.owner), param.arg),
     }));
-    for (const fn of object.members) {
-      const arg = takes(fn, object);
-      if (arg === undefined || !places(model, fn).some((p) => p.param === undefined && p.write)) continue;
-      // A point that fills one kind, whose class is the class of its category, by an injection that needs no value.
-      const point = model.faults.find((p) => p.place === fn.corePath && p.fills.length === 1 && p.inject.some((i) => i !== 'short'));
-      const filled = point === undefined ? undefined : model.kinds.find((k) => k.unit === undefined && kindText(k.variant) === point.fills[0]);
-      const inject = point?.inject.find((i) => i !== 'short');
+    for (const { fn, arg, armed } of members.busy) {
       busy.push(() => {
-        const armed = point === undefined || filled === undefined || inject === undefined
-          ? undefined
-          : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held, arg, instanceOf(object)), kind: kindText(filled.variant), category: filled.category };
-        return { fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed };
+        // The call of the arming is made first, as the test reads it last: its expressions come before the others.
+        const armedTest = armed === undefined ? undefined : { ...armed, again: callWith(fn, held, arg, instanceOf(object)) };
+        return { fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed: armedTest };
       });
     }
   }
