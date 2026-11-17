@@ -125,7 +125,9 @@ test('B2.494: the update of the gate changes the lock of the tag in polyspec-bin
 
 test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then runs its own goals: install, bindings and test-bindings offline, and the rehearsal with no cache (GN-14m)', () => {
   const clone = cloneStep(gate, json);
-  assert.deepEqual('argv' in clone.step ? clone.step.argv : [], ['clone', '--quiet', '--depth', '1', '--branch', 'v0.0.36', 'https://github.com/polyspec/json.git', '/work/json']);
+  // The clone keeps the history of the tag: the Go rehearsal makes a commit whose parent is the tag commit, and git
+  // prune follows it to its parents, which a clone of depth 1 lacks.
+  assert.deepEqual('argv' in clone.step ? clone.step.argv : [], ['clone', '--quiet', '--branch', 'v0.0.36', 'https://github.com/polyspec/json.git', '/work/json']);
   let patched = 0;
   const steps = gateSteps(gate, json, ['0.0.20'], ['php', 'python', 'node', 'go', 'wasm'], () => { patched += 1; });
   assert.deepEqual(steps.map((s) => [s.phase, s.step.what]), [
@@ -169,8 +171,13 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   const update = commands.find((c) => c.what.startsWith('cargo update'));
   assert.ok(update !== undefined && !update.argv.includes('--offline') && update.env === undefined, 'cargo update of the gate runs offline');
   // A consumer whose goal install is missing names its install goals; a contract without go has no Go rehearsal.
-  const own = gateSteps(gate, { ...json, install: ['install-rust', 'install-tools'] }, [], ['php', 'node'], () => {});
-  assert.ok(own.some((s) => s.step.what === 'make install-rust install-tools of the consumer'));
+  // Each item of install is one bundle of make arguments, a goal with its variables, run as one make in its order.
+  const own = gateSteps(gate, { ...json, install: ['install-tools TOOLS=npm', 'install-rust'] }, [], ['php', 'node'], () => {});
+  const installs = own.filter((s) => s.step.what.startsWith('make install-'));
+  assert.deepEqual(installs.map((s) => s.step.what), ['make install-tools TOOLS=npm of the consumer', 'make install-rust of the consumer']);
+  assert.deepEqual(installs.map((s) => ('argv' in s.step ? s.step.argv.slice(0, 4) : [])), [['-C', '/work/json', 'install-tools', 'TOOLS=npm'], ['-C', '/work/json', 'install-rust', ...bindingVariables(gate).slice(0, 1)]]);
+  assert.equal(parseConsumers(list([{ ...json, install: ['install-tools TOOLS=npm', 'install-rust'] }])).consumers[0]?.install.length, 2);
+  assert.throws(() => parseConsumers(list([{ ...json, install: ['install-tools TOOLS=$(shell id)'] }])), /install of polyspec\/json is not a list of make goals with their variables/);
   assert.ok(!own.some((s) => s.step.what.includes('rehearse-go-module')));
   assert.deepEqual(rehearsalGoals(['node', 'wasm']), []);
   // The directories of path come first on the PATH of every goal of the consumer, as its own CI puts them there.
