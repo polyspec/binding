@@ -479,6 +479,19 @@ ${PLATFORMS.map((p) => `	php_${extension}-v"$$version"_php*-${p.pie}-*) platform
 	done; \\
 	for minor in $$minors; do wanted="$$wanted ${PLATFORMS.map((p) => `${label}-php-ext-$$version-php$$minor-${p.platform}`).join(' ')}"; done; \\`);
   }
+  // GN-19g, B2.505: the files that release-platform-assets uploads, as patterns of the shell under a directory of
+  // assets, for the check of their sizes; a pattern that matches no file holds no asset.
+  const uploaded = (dir: string, of: readonly string[]): string => [
+    ...(of.includes('python') && has('python') ? [`"${dir}"/wheel/*.whl`] : []),
+    ...(of.includes('npm') && (has('node') || has('wasm')) ? [`"${dir}"/npm/*.tgz`] : []),
+    ...(of.includes('php') && has('php') ? [`"${dir}"/php-ext/*.zip`] : []),
+  ].join(' ');
+  // B2.505: every asset of a release is built after its tag, so the build recipe of each job of assets.yml, which CI
+  // runs on the same tree before any tag, ends with the check of the sizes of the files that it built.
+  const sizes = (job: string, of: readonly string[]): string => {
+    const files = uploaded('$(RELEASE_ASSETS)', of);
+    return files === '' ? '' : `\t$(BINDING_RUN) asset-sizes --step ${job} ${files}\n`;
+  };
   const step = name('release-platform-assets');
   add('release-platform-assets', `${head('release-platform-assets', `release-platform-assets uploads the assets of each platform to the draft GitHub Release of TAG with gh (GN-19g), each
 under the label ${label}-<runtime>-<version>-<platform>, or -php<X.Y>-<platform> for the PHP extension, and the npm package
@@ -491,13 +504,14 @@ checks before the tag, writes the list of the upload with the size of each asset
 nothing else, calls neither gh nor git, and ends with the line "no upload" (B2.496).`, '')}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
 	@test -z "$(REHEARSAL)" || test -n "$(WORK)" || { echo '${step}: REHEARSAL=1 requires WORK, the directory of the rehearsal, for example make ${step} TAG=v0.0.1 REHEARSAL=1 WORK=var/rehearsal' >&2; exit 2; }
+${require('BINDING_RUN', 'the command that starts binding')}
 ${has('php') ? `${require('NODE', 'the Node.js of the checkout')}\n` : ''}	@set -e; version=$$(echo "$$TAG" | sed 's/^v//'); dir=$(RELEASE_ASSETS); fail() { echo "${step}: $$1" >&2; exit 1; }; \\
 	set --; seen=' '; wanted=; \\
 	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; }; \\
 ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loops.join('\n')}
 	missing=; for want in ${wanted.join(' ')} $$wanted; do case "$$seen" in *" $$want "*) ;; *) missing="$$missing $$want" ;; esac; done; \\
 	test -z "$$missing" || fail "$$dir lacks$$missing"; \\
-	$(BINDING_RUN) asset-sizes --step ${step} "$$dir" || exit 1; \\
+	$(BINDING_RUN) asset-sizes --step ${step} ${uploaded('$$dir', ['python', 'npm', 'php'])} || exit 1; \\
 $(if $(REHEARSAL),	mkdir -p "$(WORK)"; for asset in "$$@"; do file=$$(echo "$$asset" | sed 's/#[^#]*$$//'); echo "$$(($$(wc -c < "$$file"))) $$asset"; done > "$(WORK)/platform-assets.txt"; \\
 	echo "${step}: the rehearsal of $$TAG checked $$# assets and wrote the upload to $(WORK)/platform-assets.txt"; echo 'no upload',	set -x; \\
 	gh release upload "$$TAG" "$$@")
@@ -517,26 +531,28 @@ $(if $(REHEARSAL),	mkdir -p "$(WORK)"; for asset in "$$@"; do file=$$(echo "$$as
     const job = name('release-assets-platform');
     add('release-assets-platform', `${head('release-assets-platform', `release-assets-platform is the build of the job platform of assets.yml (GN-19i): ${platformSteps.join(', ')} on the
 platform of the host, each to its end; it fails naming each build that failed. Its first step is
-${name('release-binding-check')}, which stops it.`, '')}
+${name('release-binding-check')}, which stops it. It ends with binding asset-sizes on the assets that it built (GN-19g).`, '')}
 ${check}
 ${runAll(job, platformSteps)}
-`);
+${sizes(job, has('node') ? ['python', 'npm'] : ['python'])}`);
   }
   if (has('php')) {
     const job = name('release-assets-php');
     add('release-assets-php', `${head('release-assets-php', `release-assets-php is the build of an entry of the job php of assets.yml (GN-19i): release-php-ext for the PHP of
 PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry. Its first
-step is ${name('release-binding-check')}.`, '')}
+step is ${name('release-binding-check')}, and it ends with binding asset-sizes on the assets that it built (GN-19g).`, '')}
 ${check}
 	@test -n "$(EXPECTED_PHP_MINOR)" || { echo '${job} needs EXPECTED_PHP_MINOR: the PHP minor of the entry, for example make ${job} EXPECTED_PHP_MINOR=8.4' >&2; exit 2; }
 	$(MAKE) --no-print-directory ${name('release-php-ext')} PHP=php EXPECTED_PHP_MINOR=$(EXPECTED_PHP_MINOR)
-`);
+${sizes(job, ['php'])}`);
   }
   if (has('node') || has('wasm')) {
-    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i): it runs ${name('release-binding-check')} first${has('wasm') ? ',\nthen installs the wasm-bindgen CLI and stops when that fails, then' : ', then'} runs ${name('release-npm')}.`, '')}
+    const job = name('release-assets-npm');
+    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i): it runs ${name('release-binding-check')} first${has('wasm') ? ',\nthen installs the wasm-bindgen CLI and stops when that fails, then' : ', then'} runs ${name('release-npm')},
+and ends with binding asset-sizes on the assets that it built (GN-19g).`, '')}
 ${check}
 ${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(MAKE) --no-print-directory ${name('release-npm')}
-`);
+${sizes(job, ['npm'])}`);
   }
 
   // The release recipes are written: release-binding-check requires the variables that they read, and not those of

@@ -695,9 +695,10 @@ test('B2.496: release-platform-assets REHEARSAL=1 runs the checks of the labels 
 });
 
 // B2.505: every asset of a release is built after the tag, so the check of the sizes of GN-19g runs at the end of the
-// build recipes that CI runs on the same tree before any tag, and an empty asset fails there and burns no tag.
+// build recipes that CI runs on the same tree before any tag, and an empty asset fails there and burns no tag. Each empty
+// file has a name that no build of the stand-ins writes, so the build does not replace it.
 test('B2.505: release-assets-platform and release-assets-npm fail on an empty asset at their end, naming it, before any tag (GN-19g, GN-19i)', (t) => {
-  for (const [job, path, vars] of [['release-assets-platform', 'wheel/polyspec_sample-0.0.3-cp314-abi3-empty.whl', []], ['release-assets-npm', 'npm/polyspec-sample-0.0.3.tgz', ['MISE=']]] as const) {
+  for (const [job, path, vars] of [['release-assets-platform', 'wheel/polyspec_sample-0.0.3-cp314-abi3-empty.whl', []], ['release-assets-npm', 'npm/polyspec-sample-empty-0.0.3.tgz', ['MISE=']]] as const) {
     const box = sandbox(t, 'x86_64-unknown-linux-gnu');
     const extra = vars.map((v) => (v === 'MISE=' ? `MISE=${join(box.bin, 'mise')}` : v));
     const passed = box.make(job, ...extra);

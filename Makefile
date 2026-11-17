@@ -304,7 +304,9 @@ release-assets: ## Build the archive of every package of TAG into var/release/as
 # the manifest of packages/ts. Without VERSION it packs the version that the release would take, the top `## X.Y.Z` of
 # the change log, which scripts/release-candidate-version.mts reads with the functions of kit. npm pack runs the prepack
 # build with the packages that are installed and downloads nothing. The steps that need the tag and GitHub
-# (release-tag, release-publish, release-undraft) are not run. Only a VERSION of the command line counts, so a VERSION
+# (release-tag, release-publish, release-undraft) are not run. It ends with the check of the sizes of GN-19g on the
+# archives that it built (B2.505): every archive of a release is built after the tag, so CI, which runs this target on the
+# same tree before any tag, is where an empty archive or one of 2 GiB or more fails without burning a tag. Only a VERSION of the command line counts, so a VERSION
 # that the environment of a machine happens to hold does not replace the version of the change log.
 .PHONY: release-candidate-assets
 release-candidate-assets: ## Build the archive of every package from the committed HEAD into var/release-candidate/assets, with no tag: [VERSION=X.Y.Z], else the top version of the change log; offline
@@ -312,6 +314,7 @@ release-candidate-assets: ## Build the archive of every package from the committ
 	if [ -z "$$version" ]; then version="$$($(NODE) scripts/release-candidate-version.mts)" || exit 1; fi; \
 	echo "release-candidate-assets: VERSION $$version"; \
 	RELEASE_ASSETS=var/release-candidate/assets $(NODE) $(KIT)/release.mjs candidate-assets "$$version"
+	$(NODE) packages/ts/src/cli.ts asset-sizes --step release-candidate-assets var/release-candidate/assets
 
 release-publish: ## Create the GitHub Release of TAG as a draft with the archives of release-assets
 	@test -n "$$TAG" || { echo "release-publish: TAG is required, for example make release-publish TAG=v0.0.1"; exit 1; }

@@ -490,19 +490,21 @@ if (args[0] === 'scripts/release-candidate-version.mts') {
   };
   const kit = join(root, 'node_modules', '@polyspec', 'kit', 'dist', 'release.mjs');
   const folder = 'var/release-candidate/assets';
+  // B2.505: after kit packs, the CLI of the tree checks the sizes of the archives of the folder (GN-19g).
+  const sizes = { args: ['packages/ts/src/cli.ts', 'asset-sizes', '--step', 'release-candidate-assets', folder], assets: '' };
 
   // Without VERSION the version is the one that the script reads from the change log, and the script gets no asset folder.
   const top0 = run([]);
   assert.equal(top0.status, 0, top0.output);
-  assert.deepEqual(top0.calls, [{ args: ['scripts/release-candidate-version.mts'], assets: '' }, { args: [kit, 'candidate-assets', '9.8.7'], assets: folder }]);
+  assert.deepEqual(top0.calls, [{ args: ['scripts/release-candidate-version.mts'], assets: '' }, { args: [kit, 'candidate-assets', '9.8.7'], assets: folder }, sizes]);
   // A VERSION of the command line wins, and the change log is not read.
   const given = run(['VERSION=1.2.3']);
   assert.equal(given.status, 0, given.output);
-  assert.deepEqual(given.calls, [{ args: [kit, 'candidate-assets', '1.2.3'], assets: folder }]);
+  assert.deepEqual(given.calls, [{ args: [kit, 'candidate-assets', '1.2.3'], assets: folder }, sizes]);
   // A VERSION of the environment alone is not the version.
   const fromEnvironment = run([], { VERSION: '4.5.6' });
   assert.equal(fromEnvironment.status, 0, fromEnvironment.output);
-  assert.deepEqual(fromEnvironment.calls.at(-1), { args: [kit, 'candidate-assets', '9.8.7'], assets: folder });
+  assert.deepEqual(fromEnvironment.calls.at(-2), { args: [kit, 'candidate-assets', '9.8.7'], assets: folder });
   // A change log without a version stops the recipe before kit packs.
   const none = run([], { NO_VERSION: '1' });
   assert.notEqual(none.status, 0, 'make release-candidate-assets passes without a version');
