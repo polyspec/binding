@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackNames, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1035,9 +1035,7 @@ ${implementorsOf(model, iface).map((o) => `    if <&entry::Php${langName('php', 
 // U-3: a callback is a struct that holds the PHP object and implements the core trait; an exception of the PHP code, or
 // a failure of the binding in the callback, goes to the core as a Raised that the generated caller throws again.
 function callbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const label = langName('php', cb.unit.name, 'class');
+  const { name, struct, label } = callbackNames(model, cb, 'php');
   const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('php', m.member.name, 'callable');
@@ -1156,9 +1154,7 @@ ${recognized}`;
 // does; a call on another thread is kind wrong_thread, and one after the end of the request kind internal, each a Raised
 // of its BindingError.
 function keptCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const label = langName('php', cb.unit.name, 'class');
+  const { name, struct, label } = callbackNames(model, cb, 'php');
   const methods = keptMethods(model, cb, (m, mutable) => `        if let Err(error) = native_thread(&self.native, ${rustString(`${label}::${langName('php', m.member.name, 'callable')}()`)}) {
             return Err(thrown_elsewhere(error));
         }

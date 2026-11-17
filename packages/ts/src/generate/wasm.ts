@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1030,11 +1030,7 @@ const failRest = (model: Model): string => `${carriesThrown(model) ? ', thrown: 
 // generated caller throws again unchanged. A WebAssembly instance runs on the thread that loaded it, so a callback is
 // always called on that thread, and thread owner needs no check.
 function callbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  // GN-6s: a callback unit of another repository is the trait of its core, whose methods return the failure of the core
-  // error of that repository.
-  const struct = callStruct(model, cb);
-  const jsName = langName('wasm', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'wasm');
   const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('wasm', m.member.name, 'callable');
@@ -1114,9 +1110,7 @@ ${recognized}`;
 // keep it after the call that gave it and a trait that requires Send and Sync takes it. A call borrows the object and
 // calls it as the callback of a call does.
 function keptCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('wasm', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'wasm');
   const methods = keptMethods(model, cb, (_m, mutable) => `        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let ${mutable}borrowed = ${struct} { object };`);
   return `

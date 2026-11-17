@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -935,9 +935,7 @@ impl Unarmed {
 // trait; an exception of the JavaScript code, or a failure of the binding in the callback, goes to the core as a Raised
 // that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
   const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
@@ -1041,9 +1039,7 @@ ${recognized}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 // the callback of a call does; a call on another thread is kind wrong_thread, and one after the cleanup of the env_ kind
 // internal, each a Raised of its BindingError.
 function keptCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
   const methods = keptMethods(model, cb, (m, mutable) => `        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
         let object = native_object(&env_, &self.native).and_then(|value| unsafe { value.cast::<Object<'_>>() }.map_err(internal)).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let ${mutable}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };`);
@@ -1199,9 +1195,7 @@ function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
 // GN-6ab: a callback that a machine owns outlives the call that made it, so it holds a reference of napi to its object
 // and makes the borrowed callback struct from it at each call.
 function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
   const methods = cb.members.map((m) => {
     const passed = m.params.map((p) => rustField(p.name)).join(', ');
     return `

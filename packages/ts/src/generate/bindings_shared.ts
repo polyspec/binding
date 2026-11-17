@@ -1,7 +1,7 @@
 // The parts of the binding generators node, wasm, php and python that they write alike: each is written here once and
 // takes what differs between the languages as its arguments (GN-14o).
 
-import type { Type, Unit } from '../contract.ts';
+import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
 import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
@@ -242,6 +242,12 @@ ${reach(m, mutable)}
     }`;
   }).join('\n');
 }
+
+// U-3: the names of a callback unit in the crate: its Rust name, its struct and its class in the language. GN-6s: a
+// callback unit of another repository is the trait of its core, whose methods return the failure of the core error of
+// that repository.
+export const callbackNames = (model: Model, cb: CallbackUnit, lang: Lang): { name: string; struct: string; label: string } =>
+  ({ name: rustField(cb.unit.name), struct: callStruct(model, cb), label: langName(lang, cb.unit.name, 'class') });
 
 // U-3: the impl block of the methods of a callback struct: of the trait of the core for a lent callback (GN-6w), of
 // the struct otherwise; lifetime is the lifetime parameter of the struct, or ''.
