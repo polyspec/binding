@@ -2155,14 +2155,7 @@ ${wraps.join('\n')}`;
   const kept = model.kept.map((k) => keptClassJs(k)).join('\n') + (model.kept.length === 0 || model.aliases.length === 0 ? '' : `
 addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name, 'class')}.prototype`).join(', ')}]);`);
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
-  const exports = [
-    ...model.classes.map((c) => c.name),
-    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
-    ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
-    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
-    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
-    ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
-  ];
+  const exports = exportsOf(model);
   return `${header('//')}
 'use strict';
 
@@ -2267,19 +2260,21 @@ ${defined.join('\n')}
 
 const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
+// The names that the package exports: the error classes, the functions, the classes and the constants.
+const exportsOf = (model: Model): string[] => [
+  ...model.classes.map((c) => c.name),
+  ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
+  ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
+  ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+  ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
+  ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
+];
+
 function indexMjs(model: Model): string {
-  const exports = [
-    ...model.classes.map((c) => c.name),
-    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
-    ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
-    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
-    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
-    ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
-  ];
   return `${header('//')}
 import entry from './index.cjs';
 
-export const { ${exports.join(', ')} } = entry;
+export const { ${exportsOf(model).join(', ')} } = entry;
 `;
 }
 
