@@ -1645,7 +1645,10 @@ the design ids are those of the binding design.
   constructor of a category class and of an error unit, by which language code makes an error with the message, the
   kind, the status and the errno (GN-10), judges its arguments before it makes the error: the message is a text
   (B-3), the kind is a text and one of the kinds of the class, and the status and the errno are each absent, null
-  (`None`, `undefined`) or an integer, not a bool. The kinds of a class are those that the binding raises as an
+  (`None`, `undefined`) or an integer, not a bool. The `.d.ts` of Node and WASM declares that constructor on each
+  category class as `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`, and an
+  error unit inherits it. Why: hyper found that the `.d.ts` declared no constructor, so TypeScript took the one of
+  `Error` or `RangeError` and refused `new XValueError(message, kind)`, which runs (B2.514). The kinds of a class are those that the binding raises as an
   instance of that class itself: for an error unit, the kinds of the rows of `errors.kinds` whose `class` names it,
   without those of the units that extend it, which the binding raises as instances of those units; for a category
   class, the kinds of the rows of its category without `class` (own rows and rows with `library`), the kinds of E-1a

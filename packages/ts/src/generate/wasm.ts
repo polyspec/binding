@@ -11,7 +11,7 @@ import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
-import { jsErrorClasses, typeParameters } from './node.ts';
+import { ERROR_CONSTRUCTOR_DTS, jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -2004,6 +2004,7 @@ function indexDts(model: Model): string {
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${jsBase(c.category)} {
+  ${ERROR_CONSTRUCTOR_DTS}
   readonly kind: string;
   readonly status: number | null;
   readonly errno: number | null;

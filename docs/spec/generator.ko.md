@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8ff74915cecafb714bb28b05bde565efa116caccf87f95fbfec87ce18362e734 -->
+<!-- source-sha256: c34e70bdb315b7214dba7ae3531d7eb52e8814574c0ad812d7f285d00b7fd62d -->
 # 생성기
 
 [English](generator.md)
@@ -1359,7 +1359,10 @@
   인스턴스의 읽기 전용 own property, PHP에서 선언한 클래스의 private property 위의 메서드다. 언어 코드가 직접 만든
   인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. 언어 코드가 message, kind, status, errno로 오류를 만드는
   category 클래스와 오류 unit의 생성자(GN-10)는 오류를 만들기 전에 인자를 판정한다: message는 text이고(B-3), kind는 text이며
-  그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. 클래스의
+  그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. Node와
+  WASM의 `.d.ts`는 각 category 클래스에 그 생성자를 `constructor(message: string, kind: string, status?: number | null,
+  errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다. 이유: hyper에서 `.d.ts`가 생성자를 선언하지 않아
+  TypeScript가 `Error`나 `RangeError`의 생성자를 써서, 실행되는 `new XValueError(message, kind)`를 거부했다(B2.514). 클래스의
   kind는 binding이 바로 그 클래스의 인스턴스로 일으키는 kind다: 오류 unit은 `class`가 그 unit을 가리키는 `errors.kinds` 행의
   kind이며, 그 unit을 상속하는 unit의 행은 binding이 그 unit의 인스턴스로 일으키므로 들지 않는다. category 클래스는 그
   category의 `class` 없는 행(자기 행과 `library`가 있는 행)의 kind, 그 category의 E-1a kind, 그리고 category가 그것인 다른

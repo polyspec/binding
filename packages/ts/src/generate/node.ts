@@ -2212,6 +2212,10 @@ for (const made of [${[...model.classes.map((c) => c.name), ...model.errorUnits.
 `;
 }
 
+// E-2, GN-7a, B2.514: the declaration of the constructor of a category class of jsErrorClasses, for Node and WASM. The
+// status and the errno may be left out, as checkError takes them absent, null or an integer.
+export const ERROR_CONSTRUCTOR_DTS = 'constructor(message: string, kind: string, status?: number | null, errno?: number | null);';
+
 export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
   const typeClass = categoryClass(model, 'type');
   const valueClass = categoryClass(model, 'value');
@@ -2511,6 +2515,7 @@ function indexDts(model: Model): string {
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${nodeBase(c.category)} {
+  ${ERROR_CONSTRUCTOR_DTS}
   readonly kind: string;
   readonly status: number | null;
   readonly errno: number | null;

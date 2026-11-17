@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e10533d4278006b140d5c0e1d442ad09e4c00e8dcada58dd5df8b0b71029aa45 -->
+<!-- source-sha256: f67b632f6ecf5cb653db947ad452ee5ad641149fcabd56b07fbe487c4c975e3b -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node와 WASM의 생성된 `.d.ts`는 각 오류 클래스의 생성자를 runtime 그대로 `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다(E-2, GN-7a, B2.514). 전에는 `.d.ts`가 생성자를 선언하지 않아 TypeScript가 그 클래스에 `Error`나 `RangeError`의 생성자를 주었고, hyper의 `new XValueError(message, kind)`는 실행되는데도 type check에 실패했다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.514" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 두 호출을 생성된 `.d.ts`에 대고 tsc로 검사한다.
 - 다른 라이브러리의 callback unit을 받고 그 member가 그 라이브러리의 값 alias를 돌려주는 member에는, 자기 alias처럼 다른 타입의 callback 결과 K-2 시험을 생성하지 않는다: 반환 타입을 소유 레포의 계약에서 읽는다(K-2, GN-6s, B2.513). 전에는 그것을 아무 unit도 가리키지 않는 consumer의 계약에서 읽어서, `php_value`를 돌려주는 store.get의 hyper Node 시험이 consumer의 kind를 기대했고 호출은 php-serialization의 `unsupported_value`를 던졌다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.513" tests/generate.test.ts`(변경 전 실패)로 확인했다.
 - instance 값으로 다른 라이브러리의 member를 부르는 생성 시험은 그 target의 parameter만 넘긴다: 소유 레포가 `only`로 그 target에서 뺀 parameter는 계약의 member처럼 호출에서 빠진다(Q-4, GN-13f, B2.512). 전에는 소유 레포의 모델이 모든 parameter를 지녀서, hyper의 Go 시험이 session-store의 `Open(nil, cookie)`를 `Open(cookie)`에 대고 불러 compile되지 않았다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.512" tests/generate.test.ts`(변경 전 실패)로 확인했다.
 - end-to-end 검사는 `expected-failures.json`을 자신이 검사하는 tree의 `tests/e2e/falsepass`에서만, real path로 읽으며, binding 밖의 consumer처럼 그 파일을 가진 다른 레포의 실행은 그 파일을 이름하며 실패한다(GN-14n, B2.509). unittest의 실패한 시험은 `<class>.<method>`로 이름하므로 두 class의 같은 이름의 method는 두 시험이며, `tests/e2e/falsepass`는 그 Python 시험을 그렇게 적는다. 이름에 `.Test`가 없는 go test의 실패한 시험은 그것을 이름하며 읽기를 실패시킨다. 전에는 어떤 레포든 그 파일로 자기 실패를 숨길 수 있었고, reader는 unittest 시험을 method 이름만으로 맞췄다. 레포가 할 일: 가진 `expected-failures.json`을 지운다. `packages/ts`의 `node --test tests/e2e-expected.test.ts`로 확인했으며, 이 시험은 변경 전에 세 경우 각각에서 실패했다.
