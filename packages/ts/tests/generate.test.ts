@@ -13100,6 +13100,27 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
   }
 });
 
+test('B2.480: the generator of every target refuses, with the sentence of binding check, a function type that the core calls as a value or keeps and that states async_allowed: true (GN-6z, CK-17)', () => {
+  // orm: binding check accepted async_allowed: true of a kept function while every generator wrote the function as
+  // one that is never awaited. Both read asyncFunctionRefusal now.
+  const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  for (const id of ['functions.apply', 'registry.register']) {
+    const { contract, cases } = e2eContract('functions');
+    const parameter = member(contract, id).parameters.find((p: any) => typeof p.type === 'object' && 'function' in p.type);
+    assert.equal(parameter.keeps === true, id === 'registry.register');
+    parameter.type.function.async_allowed = true;
+    const sentence = 'a function type that returns "text" states async_allowed: true, and the binding awaits only a function that returns passthrough, the function of a member with machine (GN-6ae); a function that the core calls as a value or keeps (GN-6z) is not awaited, so it states async_allowed: false';
+    assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17').map((f) => f.message), [sentence], id);
+    for (const target of ['python', 'node', 'wasm', 'php', 'go'] as const) {
+      assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: [target] }), (error: Error) => error.message.includes(sentence), `${id} ${target}`);
+    }
+  }
+  // The contract as it is states async_allowed: false, which the check and the five targets take.
+  const { contract, cases } = e2eContract('functions');
+  assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17'), []);
+  assert.ok(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] }).size > 0);
+});
+
 // B2.482: the paths of the generated tests of the five targets, and the end of a test in each.
 const ONCE_TESTS = { ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' } as const;
 const ONCE_END = { ...STATEFUL_END, go: '\n}\n' } as const;

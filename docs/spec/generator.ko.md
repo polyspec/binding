@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d6bda85ee01bb6a433c6f001c1d7a577a006fcb53a3be24cb5fbec73f859d7f4 -->
+<!-- source-sha256: bd1746550d4df52817be5c12866200c4d624cbbbc379dee460b21636d30ba036 -->
 # 생성기
 
 [English](generator.md)
@@ -660,7 +660,14 @@
   생성된 crate는 이 타입을 type alias로 이름한다. alias의 이름은 `Function`과 그 타입의 SHA-256의 16진 여덟 자리이고,
   타입은 crate 끝의 alias 정의에 한 번만 쓴다. lint가 `let`과 closure의 결과에 쓴 boxed 타입을
   거부하기 때문이다(`clippy::type_complexity`).
-  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
+  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 이 꼴은
+  호출이 돌아올 때 결과를 돌려주므로, 바인딩은 그런 함수가 돌려준 것을 기다리지 않는다: 그 타입은 `keeps`가 있든 없든
+  `async_allowed: false`를 적고, 이 꼴의 타입이 `async_allowed: true`를 적으면 `binding check`(CK-17)와 모든 target의
+  생성기가 한 문장으로 거부하며, 둘은 그 문장을 함수 하나(`asyncFunctionRefusal`)에서 읽는다. 반환이 `passthrough`인
+  machine의 함수(GN-6ae)만 기다린다. promise를 돌려주는 이 꼴의 Node나 WASM 함수는 기다려지지 않는다: 그 promise는
+  바인딩이 선언된 반환으로 변환하는 값이고, promise가 그 타입의 값이 아닌 반환에서는 변환의 kind
+  `invalid_argument_type`, 곧 코어에게 `Raised`다. 반환이 `none`이면 promise는 버려지고 그 거부는 어느 호출자에게도
+  닿지 않는다. 보관된 함수를 기다리는 일은 아직 설계되지 않았다(B2.483). 값이
   들어올 때 호출 가능해야 하고(kind `invalid_argument_type`), 함수가 인자를 하나 이상 받는 곳에서는 그 인자를 받아야
   한다(kind `invalid_callback`, GN-6bu). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는

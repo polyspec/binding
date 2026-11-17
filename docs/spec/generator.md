@@ -813,7 +813,15 @@ the design ids are those of the binding design.
   digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
   crate, because the lints deny the boxed type at a `let` and as the result of a closure
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
-  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`) and, where
+  is `'static`, `Send` and `Sync`. The form returns its result when the call returns, so the binding awaits nothing
+  that such a function returns: its type states `async_allowed: false`, with `keeps` and without, and a type of this
+  form that states `async_allowed: true` is refused by `binding check` (CK-17) and by the generator of every target
+  with one sentence, which both read from one function (`asyncFunctionRefusal`). Only the function of a machine
+  (GN-6ae), whose return is `passthrough`, is awaited. A Node or WASM function of this form that returns a promise
+  is not awaited: the promise is the value that the binding converts as the declared return, which is kind
+  `invalid_argument_type` of the conversion for a return that a promise is no value of, a `Raised` for the core;
+  where the return is `none` the promise is dropped, and its rejection reaches no caller. Awaiting a kept function is
+  not designed yet (B2.483). When the value enters it must be callable (kind `invalid_argument_type`) and, where
   the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
