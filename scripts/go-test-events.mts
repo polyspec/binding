@@ -10,6 +10,8 @@ export interface GoTestEvents {
   builds: Map<string, string>;
   // The output that the run prints: the lines that are no event, the output of the builds and of the tests.
   printed: string;
+  // GN-14n: the output of each test, by its name <package>.<test> as in counts, which the judgement of an expected failure reads.
+  outputs: Map<string, string>;
 }
 
 interface Event {
@@ -21,7 +23,7 @@ interface Event {
 }
 
 export function readGoTestEvents(stdout: string): GoTestEvents {
-  const read: GoTestEvents = { counts: { pass: [], fail: [], skip: [] }, packageFailures: [], builds: new Map(), printed: '' };
+  const read: GoTestEvents = { counts: { pass: [], fail: [], skip: [] }, packageFailures: [], builds: new Map(), printed: '', outputs: new Map() };
   for (const line of stdout.split('\n')) {
     if (!line.startsWith('{')) {
       if (line !== '') read.printed += `${line}\n`;
@@ -35,6 +37,10 @@ export function readGoTestEvents(stdout: string): GoTestEvents {
       continue;
     }
     if (event.Action === 'output' && event.Output !== undefined) read.printed += event.Output;
+    if (event.Action === 'output' && event.Output !== undefined && event.Test !== undefined) {
+      const test = `${event.Package ?? ''}.${event.Test}`;
+      read.outputs.set(test, `${read.outputs.get(test) ?? ''}${event.Output}`);
+    }
     const name = `${event.Package ?? ''}.${event.Test ?? ''}`;
     if (event.Test !== undefined && (event.Action === 'pass' || event.Action === 'fail' || event.Action === 'skip')) read.counts[event.Action].push(name);
     if (event.Test === undefined && event.Action === 'fail') read.packageFailures.push(event.Package ?? '');

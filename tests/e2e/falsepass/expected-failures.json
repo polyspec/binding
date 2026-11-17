@@ -1,0 +1,20 @@
+{
+  "comment": "GN-14n (B2.509): the generated tests of this repository that must fail, each with a text of its failure. The argument of the call of after of the_argument_of_a_check_after_it_fails_to_parse is made by seal.parse(\"\"), which fails with missing, the kind that the call of after expects: a test that makes the argument before the call fails on the static, and one that makes it inside the outcome of the call passes having checked nothing. The run of each target passes only when exactly these tests fail with these texts.",
+  "failures": {
+    "python": [
+      { "test": "test_gn13e_seal_check_the_argument_of_a_check_after_it_fails_to_parse", "reason": "no value for text" }
+    ],
+    "php": [
+      { "test": "testGn13eSealCheckTheArgumentOfACheckAfterItFailsToParse", "reason": "no value for text" }
+    ],
+    "node": [
+      { "test": "GN-13e: Seal.check the_argument_of_a_check_after_it_fails_to_parse", "reason": "no value for text" }
+    ],
+    "wasm": [
+      { "test": "GN-13e: Seal.check the_argument_of_a_check_after_it_fails_to_parse", "reason": "no value for text" }
+    ],
+    "go": [
+      { "test": "TestGN13eSealCheckTheArgumentOfACheckAfterItFailsToParse", "reason": "GN-13f: no value for text" }
+    ]
+  }
+}

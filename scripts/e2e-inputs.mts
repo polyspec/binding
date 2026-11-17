@@ -18,6 +18,7 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'scripts/e2e-llvm.mts', why: 'the script of the checkout imports it, which names the libclang and the clang of the PHP target' },
   { path: 'scripts/e2e-npm.mts', why: 'the script of the checkout imports it, which names the npm packages that a run packs' },
   { path: 'scripts/e2e-refusal.mts', why: 'the script of the checkout imports it, which judges the refusal of a fixture that the compiler must refuse (GN-14k)' },
+  { path: 'scripts/e2e-expected.mts', why: 'the script of the checkout imports it, which judges the generated tests that a fixture requires to fail (GN-14n)' },
   { path: 'scripts/e2e-release-form.mts', why: 'the script of the checkout imports it, which names the steps, the changes and the settings of the release form of a run (GN-14l)' },
   { path: 'scripts/e2e-work.mts', why: 'the script of the checkout makes the work directory of the run with it and runs the commands of the run in it' },
   { path: 'scripts/php-minor.mts', why: 'the script of the checkout imports it, which compares the minor of var/tools/bin/php with .php-version' },

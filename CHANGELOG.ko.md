@@ -1,11 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 57eab2c3f5cd4024e460901c2013df9444d14e075e98ee246d020a944a16d689 -->
+<!-- source-sha256: 5d346b683dc6514e13bb14f1bc01c540a91e36431b1b96a14817ac0b75209b5b -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python, PHP, Node, WASM의 생성 시험은 `raises`를 이름하는 `after` 호출의 args에 있는 instance 값 `{"new": "<static>", ...}`을 호출 전에, 호출의 outcome 밖에서 시험의 지역 변수로 만든다(GN-13f, GN-13o, B2.509). 전에는 그 값을 outcome 안에서 만들어서 static의 실패가 호출의 실패로 잡혔고, 그 kind가 기대 kind이면 시험은 아무것도 확인하지 않고 통과했다. end-to-end 검사에 `expected-failures.json`이 생긴다(GN-14n): 그 파일을 가진 `tests/e2e`의 레포는 그 파일이 적는 생성 시험이 정확히 각자의 text로 실패할 때만 통과하므로, 그런 시험의 통과는 실행을 실패시킨다. CI matrix에 든 `tests/e2e/falsepass`는 다섯 target에서 그 after 호출의 시험이 static에서 실패하기를 요구한다. 저장소가 할 일: `make bindings`를 다시 실행한다. static이 실패하는 after 시험은 이제 실패하므로, 그 case를 계약에서 고친다. 확인: `packages/ts`에서 `node --test --test-name-pattern "B2.509" tests/generate.test.ts`와 `node --test tests/e2e-expected.test.ts`, 그리고 `make e2e REPO=tests/e2e/falsepass`, 변경 전에는 거짓 통과로 실패했다.
+- 생성된 Go 시험은 `raises`를 이름하는 `after` 호출의 args에 있는 instance 값 `{"new": "<static>", ...}`을 호출 전에 그 static으로, 실패 검사와 함께 만든다(GN-13o, GN-13f, B2.506). 전에는 호출이 시험이 선언하지 않은 `made<N>`을 가리켜 시험이 compile되지 않았고(orm의 `_, failure13 := made6.AddTablesAndColumns(made14)`), 계약은 CK-22를 통과했다. Python, PHP, Node, WASM은 그 값을 호출 안에서 바로 만들어 이 결함이 없었다. 저장소가 할 일: `make bindings`를 다시 실행한다. 확인: `packages/ts`에서 `node --test --test-name-pattern "B2.506" tests/generate.test.ts`, 변경 전에는 실패했다.
 - 생성된 Python 시험의 `_same`은 contract의 value class instance를 그 타입과 property의 값으로 비교하며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.507). 전에는 그런 instance가 `actual == expected`로 떨어졌고, `__eq__`가 없는 class는 identity로 비교되어, orm의 `list<map<orm_value>>` 결과 `[{"qty": {"kind": "int", "value": 1}}]`의 case가 Python에서 실패했다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.507" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 생성된 helper를 `__eq__` 없는 대역 class로 `python3 -I`에서 실행한다.
 - 생성된 Node와 WASM 시험의 `ordered`는 contract의 value class instance를 그 class 이름과 property의 값으로 읽으며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.510). 전에는 getter가 prototype에 있고 own property가 없는 napi나 wasm-bindgen class가 그대로 `assert.deepStrictEqual`에 가서, 다른 값을 담은 두 instance가 같게 비교되었고 그런 class의 틀린 결과가 통과했다. 레포가 할 일: `make bindings`를 다시 돌린다. 적은 값이 결과와 다른 case는 이제 실패한다. `packages/ts`에서 `node --test --test-name-pattern "B2.510" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 두 target의 생성된 `ordered`를 prototype getter를 가진 대역 class로 실행한다.
 - 생성된 G-7 시험은 class나 생성된 interface의 인자 각각을 시험의 지역 변수로 한 번 만들고, 모든 호출에 그 지역 변수를 준다(PHP, Python, Node, WASM; G-7, GN-13t, B2.508). 전에는 호출마다 하나뿐인 case 폴더 위에서 인자를 다시 만들어서, 상태를 가진 인자의 둘째 생성이 실패했다(orm `StepRunner.new`: `table owner already exists`). Go에는 G-7 시험이 없다. 저장소가 할 일: `make bindings`를 다시 실행한다. `packages/ts`에서 `node --test --test-name-pattern "B2.508" tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.

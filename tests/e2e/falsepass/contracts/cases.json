@@ -1,0 +1,78 @@
+{
+  "seal_new": [
+    {
+      "id": "a_seal_holds_its_name",
+      "name": "a"
+    }
+  ],
+  "seal_parse": [
+    {
+      "id": "the_empty_text_is_no_seal",
+      "text": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for text"
+      }
+    },
+    {
+      "id": "a_text_is_a_seal",
+      "text": "a"
+    }
+  ],
+  "seal_check": [
+    {
+      "id": "a_seal_without_a_name_fails_the_check",
+      "receiver": {
+        "new": "seal.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "other": {
+        "new": "seal.new",
+        "args": {
+          "name": ""
+        }
+      },
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for other"
+      }
+    },
+    {
+      "id": "the_argument_of_a_check_after_it_fails_to_parse",
+      "receiver": {
+        "new": "seal.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "other": {
+        "new": "seal.new",
+        "args": {
+          "name": "b"
+        }
+      },
+      "after": [
+        {
+          "call": "seal.check",
+          "args": {
+            "other": {
+              "new": "seal.parse",
+              "args": {
+                "text": ""
+              }
+            }
+          },
+          "raises": {
+            "kind": "missing"
+          }
+        }
+      ]
+    }
+  ]
+}

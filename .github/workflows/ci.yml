@@ -81,6 +81,9 @@ jobs:
           - name: consumer
             repo: tests/e2e/consumer
             deps: tests/e2e/sample
+          - name: falsepass
+            repo: tests/e2e/falsepass
+            deps: ""
           - name: functions
             repo: tests/e2e/functions
             deps: ""

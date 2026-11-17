@@ -46,6 +46,7 @@ import { runIn, workOf } from './e2e-work.mts';
 import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 import { phpMinorProblem } from './php-minor.mts';
 import { refusalProblem } from './e2e-refusal.mts';
+import { expectedFailureProblem, goFailures, junitFailures, RUN_FAILED, unittestFailures, type ExpectedFailure, type FailedTest } from './e2e-expected.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -568,6 +569,24 @@ const generateOf = (t: Lang, p: Prepared): void => {
 };
 for (const t of targets) for (const p of copiesOf(t)) generateOf(t, p);
 
+// GN-14n (B2.509): a repository with expected-failures.json names, for each target, the generated tests that must
+// fail, each with a text of its failure. Each run of tests of the target then passes only when exactly those tests
+// fail with their texts, and they count as its passed tests; a repository without the file counts as before.
+const expectedPath = mains[0] === undefined ? '' : join(mains[0].copy, 'expected-failures.json');
+const expectedFailures = expectedPath !== '' && existsSync(expectedPath) ? (JSON.parse(readFileSync(expectedPath, 'utf8')) as { failures: Partial<Record<Lang, ExpectedFailure[]>> }).failures : undefined;
+const judgedCount = (t: Lang, what: string, passed: number, failedTests: FailedTest[], failures: number, skipped: number, skippedNames: string[] = []): void => {
+  if (expectedFailures === undefined) {
+    counted(t, what, passed, failures, skipped, skippedNames);
+    return;
+  }
+  const problem = expectedFailureProblem(failedTests, expectedFailures[t]);
+  if (problem !== undefined) throw new Error(`${what}: ${problem}`);
+  process.stdout.write(`${what}: the expected failures of expected-failures.json: ${failedTests.map((f) => f.name).join(', ')}\n`);
+  counted(t, what, passed + failedTests.length, 0, skipped, skippedNames);
+};
+// The failed tests of a run, and the run itself as a failure where it failed without a failed test.
+const withRun = (failedTests: FailedTest[], status: number | null, output: string): FailedTest[] => (status !== 0 && failedTests.length === 0 ? [{ name: RUN_FAILED, text: output }] : failedTests);
+
 // GN-14 (B2.402): a repository with refused.json is the check that the compiler refuses its binding: cargo check of
 // the crate of each target must fail with the rustc code that it names, which counts as the test of the target, and
 // the run ends there, since no later step can build that crate.
@@ -626,7 +645,7 @@ const unittest = (t: Lang, what: string, argv: string[], env: Record<string, str
   const field = (name: string): number => Number(new RegExp(`\\b${name}=(\\d+)`).exec(summary?.[2] ?? '')?.[1] ?? '0');
   const failures = field('failures') + field('errors') + field('unexpected successes') + (ran.status !== 0 && summary?.[1] !== 'FAILED' ? 1 : 0);
   const skipped = field('skipped') + field('expected failures');
-  counted(t, what, total - failures - skipped, failures, skipped);
+  judgedCount(t, what, total - failures - skipped, withRun(unittestFailures(ran.stderr), ran.status, ran.stderr), failures, skipped);
 };
 // node --test writes a JUnit log beside its spec output; a testcase with <skipped> or <failure> is counted so.
 const nodeTest = (t: Lang, what: string, flags: string[], testFiles: string[], cwd: string, env: Record<string, string>): void => {
@@ -639,7 +658,7 @@ const nodeTest = (t: Lang, what: string, flags: string[], testFiles: string[], c
   const testcases = xml.split('<testcase ').slice(1);
   const skippedNames = testcases.filter((c) => /<skipped/.test(c.split('</testcase>')[0] ?? c)).map((c) => /name="([^"]*)"/.exec(c)?.[1] ?? '');
   const failures = testcases.filter((c) => /<failure/.test(c.split('</testcase>')[0] ?? c)).length + (ran.status !== 0 && testcases.length === 0 ? 1 : 0);
-  counted(t, what, testcases.length - failures - skippedNames.length, failures, skippedNames.length, skippedNames);
+  judgedCount(t, what, testcases.length - failures - skippedNames.length, withRun(junitFailures(xml), ran.status, `status ${String(ran.status)}`), failures, skippedNames.length, skippedNames);
 };
 // The name of the generated tests of a contract in a directory of several contracts.
 const generatedName = (p: Prepared, base: string, extension: string): string => (mains.length === 1 ? `${base}${extension}` : `${base}.${p.contract.library}${extension}`);
@@ -862,10 +881,11 @@ if (targets.includes('php')) {
     rmSync(log, { force: true });
     process.stdout.write(`$ ${phpTool} ${[...extensions, phpunit, '--log-junit', log, path].join(' ')}\n`);
     const ran = spawnSync(phpTool, [...extensions, phpunit, '--log-junit', log, path], { stdio: 'inherit', env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...env } });
-    const suite = /<testsuite [^>]*>/.exec(existsSync(log) ? readFileSync(log, 'utf8') : '')?.[0] ?? '';
+    const xml = existsSync(log) ? readFileSync(log, 'utf8') : '';
+    const suite = /<testsuite [^>]*>/.exec(xml)?.[0] ?? '';
     const attribute = (key: string): number => Number(new RegExp(`\\b${key}="(\\d+)"`).exec(suite)?.[1] ?? '0');
     const failures = attribute('failures') + attribute('errors') + (ran.status !== 0 && suite === '' ? 1 : 0);
-    counted('php', `${name} on PHPUnit`, attribute('tests') - failures - attribute('skipped'), failures, attribute('skipped'));
+    judgedCount('php', `${name} on PHPUnit`, attribute('tests') - failures - attribute('skipped'), withRun(junitFailures(xml), ran.status, `status ${String(ran.status)}`), failures, attribute('skipped'));
   };
   for (const p of mainsOf('php')) {
     const name = `generated tests${mains.length === 1 ? '' : ` of ${p.contract.library}`}`;
@@ -988,7 +1008,7 @@ if (targets.includes('go')) {
       const failure = goPackageFailure(read, goTest.status);
       if (failure !== undefined) throw new Error(failure);
       const { counts, packageFailures } = read;
-      counted('go', what, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+      judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
     });
     // GN-13bf: a run with the build tag of before GN-13ba compiles none of the tagged generated tests, so it must fail
     // on the guard of the tags and name a missing tag. One run of the first module of tests/e2e/sample stands for the
@@ -1209,7 +1229,7 @@ function goConsumer(required: readonly Required[], carried: readonly CarriedCopy
   const failure = goPackageFailure(read, goTest.status);
   if (failure !== undefined) throw new Error(failure);
   const { counts, packageFailures } = read;
-  counted('go', what, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+  judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
   // GN-14f: the downloads of the module cache are the layout of a module proxy, so make go-musl-check reads the
   // same modules, which go.sum of the consumer pins, from <work>/go-release/proxy without Git.
   if (muslTriple !== undefined) execFileSync('cp', ['-R', join(goModcache, 'cache/download'), join(goRoot, 'proxy')]);

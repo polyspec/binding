@@ -6,7 +6,7 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, phpTokens, type PhpTokenForm, tokenForms, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, madeBeforeArgs, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, phpTokens, type PhpTokenForm, tokenForms, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
@@ -612,7 +612,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     (after ?? []).map((call, i) => {
       // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
       const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
-      if (call.raises !== undefined) return `\n        ${form.fails(invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on), call.raises, `after ${i} fails with ${call.raises}`)}`;
+      if (call.raises !== undefined) {
+        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
+        const made = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `$after${i}_${n}`, (name, value) => `${name} = ${value};`);
+        return [...made.lines, form.fails(invoke(call.fn, made.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n        ${line}`).join('');
+      }
       const receiver = on;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n        self::fail(${phpText(expected.refused)});`;

@@ -3657,7 +3657,10 @@ the design ids are those of the binding design.
   of a nested scope writes into, and a position names only an argument of the innermost function.
 - **GN-13o** A step of a function fixture and a call of `after` may name `"raises": {"kind": <kind>}` in place of
   `result`, a kind of the raises of the member of the call: the call must fail with that kind, which the test or the
-  function requires before its next call. A call of `after` may name `"on": "<name>"`, a name that a function fixture
+  function requires before its next call. An instance value `{"new": "<static>", ...}` among the args of such a call
+  is made by its static, with the failure check of GN-13f, before the call, in every target, as for a call that
+  names `result` (B2.506): outside the outcome of the call, which holds the call alone, so a failure of the static
+  fails the test even with the kind that the call expects, and is never taken as the failure of the call (B2.509). A call of `after` may name `"on": "<name>"`, a name that a function fixture
   of the case gives (GN-13n), and is then a call on the argument that the function kept, after the function returned,
   in place of the receiver of the case; a member without a receiver takes such a call too. Python and PHP keep the
   argument in the store of the test, Node and WASM in the store of the module, and Go in a variable of the test. A
@@ -4053,6 +4056,17 @@ the design ids are those of the binding design.
   `tests/e2e/lent` is such a repository: its core keeps a lent record beyond the call (GN-6d), and every target is
   refused, with E0597 and in Node with E0521. Why: a one-time check proves the lifetime of the call once, and a run in
   CI keeps a change of the generator from giving a lent record `'static` again.
+- **GN-14n** A repository of `tests/e2e` with `expected-failures.json` is a check that its generated tests fail where
+  its contract makes them fail (B2.509): the file names, for each of the five targets, the generated tests that must
+  fail, each with a text that its failure holds. Each run of tests of the target, in the development form and in the
+  release form, passes only when exactly those tests fail and each failure holds its text; those tests then count
+  as its passed tests. A named test that passes or does not run, a failure without its text, a failure of another
+  test and a run that fails without a failed test fail the target (`scripts/e2e-expected.mts`). The file is no list
+  of refusals: a target that the generator or the contract check refuses stays a named failure, and a test that the
+  file names fails by the design of its fixture. `tests/e2e/falsepass` is such a repository: the argument of a call
+  of `after` is made by a static that fails with the kind that the call expects, so the test of that call fails on
+  the static in every target (GN-13f, GN-13o). Why: a test that passes having checked nothing looks like one that
+  checks, and only a run that requires its failure shows it.
 - **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
   by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
   does, ends with the steps of the release form, after every step of the development form. The steps are added to

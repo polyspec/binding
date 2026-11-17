@@ -1,0 +1,141 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "falsepass",
+  "core": {
+    "crate": "polyspec-falsepass",
+    "path": "packages/rust"
+  },
+  "targets": ["php", "python", "node", "go", "wasm"],
+  "packages": {
+    "php": {
+      "package": "polyspec/falsepass",
+      "namespace": "Polyspec\\Falsepass"
+    },
+    "python": {
+      "package": "polyspec-falsepass",
+      "module": "polyspec.falsepass"
+    },
+    "node": {
+      "package": "@polyspec/falsepass",
+      "entries": {
+        ".": {
+          "formats": ["import", "require"],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/falsepass/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Falsepass\\FalsepassValueError",
+        "python": "FalsepassValueError",
+        "node": "FalsepassValueError",
+        "wasm": "FalsepassValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Falsepass\\FalsepassTypeError",
+        "python": "FalsepassTypeError",
+        "node": "FalsepassTypeError",
+        "wasm": "FalsepassTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Falsepass\\FalsepassIoError",
+        "python": "FalsepassIoError",
+        "node": "FalsepassIoError",
+        "wasm": "FalsepassIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Falsepass\\FalsepassStoreError",
+        "python": "FalsepassStoreError",
+        "node": "FalsepassStoreError",
+        "wasm": "FalsepassStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Falsepass\\FalsepassBusyError",
+        "python": "FalsepassBusyError",
+        "node": "FalsepassBusyError",
+        "wasm": "FalsepassBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Falsepass\\FalsepassInternalError",
+        "python": "FalsepassInternalError",
+        "node": "FalsepassInternalError",
+        "wasm": "FalsepassInternalError"
+      }
+    },
+    "fixed": [
+      { "lang": "php", "class": "ArgumentCountError" },
+      { "lang": "php", "class": "Error" },
+      { "lang": "python", "class": "TypeError" },
+      { "lang": "node", "class": "TypeError" }
+    ],
+    "kinds": [
+      { "variant": "polyspec_falsepass::Error::Missing", "category": "value" }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "seal",
+      "name": ["seal"],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_falsepass::Seal",
+      "final": true,
+      "members": [
+        {
+          "id": "seal.new",
+          "name": ["new"],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [{ "name": ["name"], "type": "text", "required": true }],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_falsepass::Seal::new"
+        },
+        {
+          "id": "seal.parse",
+          "name": ["parse"],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [{ "name": ["text"], "type": "text", "required": true }],
+          "returns": { "unit": "seal" },
+          "raises": ["polyspec_falsepass::Error::Missing"],
+          "wait": "none",
+          "core": "polyspec_falsepass::Seal::parse"
+        },
+        {
+          "id": "seal.check",
+          "name": ["check"],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [{ "name": ["other"], "type": { "unit": "seal" }, "required": true, "core": "&" }],
+          "returns": "none",
+          "raises": ["polyspec_falsepass::Error::Missing"],
+          "wait": "none",
+          "core": { "path": "polyspec_falsepass::Seal::check", "receiver": "&self" }
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    { "member": "seal.new", "file": "contracts/cases.json", "group": "seal_new" },
+    { "member": "seal.parse", "file": "contracts/cases.json", "group": "seal_parse" },
+    { "member": "seal.check", "file": "contracts/cases.json", "group": "seal_check" }
+  ]
+}

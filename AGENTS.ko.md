@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: c2637559577acd8e2a4c85c1e62fdcb56a0eba1e8c5b21074969f0b085d1ff0e -->
+<!-- source-sha256: 22fa36a9fb19f08a486f0861fc81d7070e80e48346aefe5275c29d466181e67e -->
 # 개발
 
 [English](AGENTS.md)
@@ -44,9 +44,13 @@
 - Own: `tests/e2e`의 모든 계약과 단위 시험의 fixture 레포(`packages/ts/tests/fixtures/repo`)의 계약은 다섯 target을 적는다(BD-27).
   생성기나 계약 검사가 거부하는 target은 생성기가 그것을 받을 때까지 끝에서 끝까지 확인의 이름 있는 실패로 남고, fixture의 거부는
   그 단위 시험이 단언한다. 어떤 target도 계약에서 빼거나, 건너뛰거나, 기대 실패로 적지 않는다.
+  기대 실패의 목록은 실패하도록 만든 fixture 레포(tests/e2e/falsepass)에만 있고, 그 레포는 적힌 각 시험이 적힌 이유로 실패할 때만
+  통과한다. 그 목록은 어떤 target의 실패도 감추지 않는다(GN-14n).
   이유: 계약에서 뺀 target은 생성기가 그 형태를 받지 못한다는 사실을 감추고, 그러면 통과한 실행은 규칙이 요구하는 것보다 적게
   검증한다.
   Enforced by: none, 계약이 적는 target은 검토에서 읽는다. 끝에서 끝까지 확인이 거부된 target을 하나씩 이름한다.
+  `packages/ts`의 `node --test tests/e2e-expected.test.ts`는 tests/e2e/falsepass 밖의 레포가 `expected-failures.json`을 가지면
+  실패하고, 적힌 시험이 통과하거나 그 이유 없이 실패하면 실행이 실패한다고 판정한다.
 - Own: 생성기, `binding_core`, 끝에서 끝까지 확인을 바꾸는 commit은 push나 merge 전에 그 commit의 끝에서 끝까지
   확인(`make e2e BINDING=<commit>`, GN-14와 GN-14b)을 통과하고, 실패는 새 commit으로 고치며 그 commit도 같은 방법으로
   확인한다. 기록(`var/report/e2e/`)이 그 commit의 증거라고 적은 실행만 센다: `scripts/e2e-inputs.mts`의 닫힌 목록
