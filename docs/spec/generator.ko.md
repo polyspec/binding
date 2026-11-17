@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0079c5335517e31308b28b58232646737b5ad6caa8a6e9ce114c5cc05626eede -->
+<!-- source-sha256: 5f9779e3f4caa142bd40d090f87e35fe449c3053914eadd7cdf21f789dc63972 -->
 # 생성기
 
 [English](generator.md)
@@ -1906,8 +1906,16 @@
   컴파일러는 쓰지 않는다),
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
-  `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
-  라이브러리를 더한다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
+  `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 release 형태가 빌드할 수 있는 생성 파일과 각 플랫폼의
+  라이브러리를 더한다. commit은 두 종류를 뺀 모든 생성 파일을 싣는다. 하나는 build constraint가 test feature의 build
+  tag(`polyspec_<library>_<feature>`, GN-13ba)를 적은 파일이고, 시험이든 아니든 뺀다(`internal/binding/zz_generated_panic.go`
+  같은 것). 다른 하나는 그 tag들의 guard인 `zz_generated_tags_test.go`다(GN-13bf). link 파일의 `//go:build musl`처럼 다른
+  tag만 적은 constraint의 파일은 싣는다. 함수 하나가 각 생성 파일의 build constraint를 읽어 싣는 파일을 주고,
+  `binding release-go-module`과 end-to-end 검사의 release 형태(GN-14f)가 둘 다 그것을 읽는다. 그 함수는 파일 이름의 목록을
+  갖지 않는다. 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
+  부르는데 release의 라이브러리는 그것을 가질 수 없으므로(GN-19f), release 형태의 어떤 빌드도 그 파일을 그 tag로 컴파일할 수
+  없다. 그리고 guard는 그 형태가 싣지 않은 tag를 run에 요구하므로, 받은 모듈의 태그 없는 `go test`, 곧 그 형태의 올바른
+  실행이 guard에서 실패한다. B2.446 이전의 release들은 그 파일들을 실었다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
   레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담거나 GN-19f의 다른 검사가 실패하면 명령은
   commit도 tag도 만들지 않는다. 어느 branch도 그 commit을 담지 않으며, 그 commit과 tag를 손으로 만들지 않는다. 소비자는
   `require <module> vX.Y.Z` 한 줄만 필요하다. `CGO_LDFLAGS`도 `replace`도 없고, 소비자의 `go.sum`이 모듈을 라이브러리와
@@ -2373,7 +2381,10 @@
   등록한다(`builtTags["<tag>"] = true`). 시험은 목록의 태그가 모두 등록되지 않으면 실패하고, 그 메시지는 빠진 태그를
   밝히고 `go test -tags=<module의 모든 태그> ./...` 줄을 준다. 그래서 틀린 태그(GN-13ba 이전 형태인 `polyspec_panic_test` 같은)나
   태그 없이 돌린 run은 실패하며 태그를 밝히고, 태그를 준 run은 통과하며, 컴파일만 하는 build(`go test -c`, `go vet`,
-  deadcode)는 그대로다. 이유: 태그 없는 run은 태그 붙은 파일을 하나도 컴파일하지 않아서, `go test`가 그 생성 시험이 빠진
+  deadcode)는 그대로다. 이것은 생성된 tree, 곧 `binding generate`가 쓰는 파일들에서 성립하며 거기서 이 규칙에는 예외가
+  없다. 모듈의 release 형태(GN-15g)는 그 라이브러리에 시험 진입점이 없으므로 태그 붙은 생성 시험을 갖지 않고, 그래서
+  guard도 갖지 않는다. tag로 받은 모듈의 태그 없는 `go test`는 그 형태의 올바른 실행이며, 그 형태가 가진 시험을 하나도
+  빼지 않는다. 이유: 태그 없는 run은 태그 붙은 파일을 하나도 컴파일하지 않아서, `go test`가 그 생성 시험이 빠진
   채로 통과했고 소비자는 그것을 볼 수 없다(HR-84): 두 소비자가 GN-13ba 이전의 태그로 그렇게 release했다.
 - **GN-13bb** 생성 시험의 callback이나 function fixture(G-5)는 호출의 인자를 row의 인자와, 시험이 결과를 비교하는 규칙으로
   비교해 그 호출의 row를 찾는다: PHP는 시험 class의 `same`(객체는 class와 property로, 다른 저장소 값 class의 instance는 in
@@ -2832,7 +2843,10 @@
   모듈들의 모든 패키지를 import한다. 실행은 `go mod tidy`로 `go.sum`을 쓴 다음, 소비자와 받은 모듈의 모든 패키지의
   `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`, 빈
   `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
-  단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
+  단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. commit의 tree는 생성 파일 가운데 release의 commit이 싣는
+  것을 담으며, 실행은 그것을 `binding release-go-module`이 읽는 GN-15g의 함수에서 읽는다. test feature의 build tag 뒤의
+  파일도, 그 tag들의 guard(GN-13bf)도 없다. 그래서 태그 없는 `go test`가 release 형태의 올바른 실행이다. 그것은 그 형태가
+  가진 생성 시험을 모두 돌리고, 그 가운데 `TestGN13bfEveryBuildTagOfThePackageIsBuilt`는 없다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
   링크하므로, tag로 받은 모듈이 자기가 실은 라이브러리를 링크한다는 것은 이 단계만 보인다.
   Linux에서는 commit이 실행 arch의 musl 라이브러리도 `internal/ffi/lib/linux_<arch>_musl`에 싣는다. 그 라이브러리는
   `--target <arch>-unknown-linux-musl`로 빌드하고 다른 것처럼 debug section을 뗀다. 실행은 이 단계의 소비자와, module
@@ -3026,9 +3040,14 @@
     소비자의 링크에서야 실패한다.
   - 고정한 toolchain의 `llvm-nm --defined-only`(GN-19b)가 라이브러리에서 시험 진입점을 찾지 않고(GN-13b), `llvm-size -A`가
     크기가 0이 아닌 debug section을 찾지 않는다.
+  - commit의 tree가 release 형태가 빼는 생성 파일(GN-15g)을 담지 않는다. test feature의 build tag 뒤의 파일도
+    `zz_generated_tags_test.go`도 없다. 명령은 work tree에서 그런 파일을 더하지 않으므로, 이 검사는 tag의 commit이
+    추적하는 `zz_generated_*.go` 파일을 읽고(`git ls-tree`, 그리고 명령이 덮어쓰지 않는 파일 각각의 `git show`) 그런
+    파일을 하나씩 밝힌다. 그 파일들은 `git read-tree`로 tree에 들어온다. 이유: 추적된 그런 파일은 명령이 자기 것을
+    뺐어도 release 형태에 들어간다.
 
   commit은 checkout을 바꾸지 않고 만든다. `--work`의 index 파일(`GIT_INDEX_FILE`)로 tag의 commit을 `git read-tree`하고,
-  생성 파일 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
+  release가 싣는 생성 파일(GN-15g) 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
   `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `git write-tree`와
   `git commit-tree -p <tag의 commit>`을 message `chore(release): Carry the Go module of vX.Y.Z`로 실행한다. author와
   committer의 날짜는 tag의 commit의 committer 날짜이고 identity는 실행의 Git의 것이므로, 같은 identity의 같은 입력은 같은

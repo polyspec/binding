@@ -22,7 +22,7 @@ import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   foreignPackage, goDefault, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
-  goOrder, goTestTag,
+  goOrder, goTestTag, goBuildConstraint, GO_TAG_GUARD_FILE,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
@@ -2644,7 +2644,7 @@ export function guardGoTestTags(files: Map<string, string>, module: string): voi
   const packages = new Map<string, { name: string; tags: Set<string> }>();
   for (const [path, text] of [...files]) {
     if (!path.startsWith(`${module}/`) || !path.endsWith('_test.go')) continue;
-    const constraint = /^\/\/go:build (.+)$/m.exec(text)?.[1];
+    const constraint = goBuildConstraint(text);
     if (constraint === undefined) continue;
     const tags = constraint.split(' && ');
     if (!tags.every((tag) => /^polyspec_\w+$/.test(tag))) throw new Error(`${path}: the build constraint ${constraint} is not a conjunction of the tags of the generation (GN-13bf)`);
@@ -2657,7 +2657,7 @@ export function guardGoTestTags(files: Map<string, string>, module: string): voi
   }
   const every = [...new Set([...packages.values()].flatMap((p) => [...p.tags]))].sort().join(',');
   for (const [dir, { name, tags }] of packages) {
-    files.set(`${dir}/zz_generated_tags_test.go`, `${goHeader()}
+    files.set(`${dir}/${GO_TAG_GUARD_FILE}`, `${goHeader()}
 
 package ${name}
 

@@ -1551,7 +1551,10 @@ export function goCode(source: string): string {
 function keepGoHelpers(files: Files, path: string): void {
   const binding = String(files.get(path) ?? '');
   // The build tag of a file that a build compiles only with one tag of the generation (polyspec_<name>_test).
-  const tagOf = (text: string): string | undefined => /^\/\/go:build (polyspec_\w+)$/m.exec(text)?.[1];
+  const tagOf = (text: string): string | undefined => {
+    const constraint = goBuildConstraint(text);
+    return constraint !== undefined && /^polyspec_\w+$/.test(constraint) ? constraint : undefined;
+  };
   const others = [...files].filter(([p]) => p !== path && p.endsWith('.go')).map(([, text]) => String(text));
   // The helpers that `code` uses, with those that the helpers of `from` and the ones it adds use.
   const closure = (code: string, from: ReadonlySet<string>): Set<string> => {
@@ -3210,6 +3213,19 @@ func New${name}(${fields.map((x) => `${x.param} ${x.type}`).join(', ')}) (*${nam
 // in the whole build, so a tag without the library would turn on the tagged files of every polyspec module that the
 // build imports, which need the test entry points of a library that its release does not have.
 export const goTestTag = (model: Model, feature: string): string => `polyspec_${model.contract.library.replaceAll('-', '_')}_${feature}`;
+
+// The build constraint of a Go file, the text of its `//go:build` line; undefined for a file without one. Every reader
+// of the constraint of a generated file reads it here.
+export const goBuildConstraint = (text: string): string | undefined => /^\/\/go:build (.+)$/m.exec(text)?.[1];
+
+// GN-13ba: the build tags of test features (goTestTag) that the build constraint of a Go file names, in the order of
+// the line; none for a file without a constraint or with one of other tags alone, such as `musl` of a link file
+// (GN-15g).
+export const goTestTagsOf = (text: string): string[] => (goBuildConstraint(text) ?? '').split(/[^\w.]+/).filter((tag) => /^polyspec_\w+$/.test(tag));
+
+// GN-13bf: the name of the untagged generated test of a package that fails unless every build tag of the tagged
+// generated tests of that package was built.
+export const GO_TAG_GUARD_FILE = 'zz_generated_tags_test.go';
 
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;

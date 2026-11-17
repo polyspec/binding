@@ -114,7 +114,7 @@ const { componentBase, isHost, namedLibraries, place } = await import('../packag
 const { GO_PLATFORMS, goLinkFile } = await import('../packages/ts/src/generate/go.ts');
 // GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
 // module are those of `binding release-go-module`.
-const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
+const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goReleaseFiles, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -1059,6 +1059,13 @@ if (targets.includes('go')) {
         // fetched modules reads the generated tests alone.
         const carriedFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/'));
         for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
+        // GN-15g: of the generated files, the tree holds those that the commit of a release carries, which
+        // `binding release-go-module` reads from the same function: no file behind a build tag of a test feature and
+        // no guard of those tags (GN-13bf), so the untagged go test of the fetched modules is the whole run of the form.
+        const goTexts = new Map(carriedFiles.filter((path) => path.endsWith('.go') && existsSync(join(moduleDir, path))).map((path) => [path, readFileSync(join(moduleDir, path), 'utf8')]));
+        const { leftOut } = goReleaseFiles(goTexts);
+        for (const path of leftOut.keys()) rmSync(join(moduleDir, path));
+        process.stdout.write(`${moduleOf(r.p)}: the released form leaves out ${String(leftOut.size)} generated file${leftOut.size === 1 ? '' : 's'} (GN-15g)${[...leftOut].map(([path, why]) => `\n  ${path} ${why}`).join('')}\n`);
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
         // GN-15k: a library of native-static-libs that the Rust toolchain ships in the self-contained directory of the
