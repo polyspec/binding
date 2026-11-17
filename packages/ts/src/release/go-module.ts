@@ -411,6 +411,12 @@ export interface GoModUnused {
 // only files that the form leaves out import is named with those files, and one that no file imports is named; a
 // line `// indirect` is not judged, because no file of the module imports the module of such a line. No Go is started
 // and no go.mod is written. The files that the form leaves out are read only when a requirement is not used.
+// GN-15g: the paths that the released form leaves out leave the index of its commit, given with the git of the commit
+// (run takes its arguments and the text of its standard input).
+export function leaveIndex(run: (argv: string[], input?: string) => string, paths: readonly string[]): void {
+  for (const path of paths) run(['update-index', '--force-remove', '--', path]);
+}
+
 export function goModUnused(goMod: string, carried: readonly string[], leftOut: readonly string[], read: (path: string) => string): GoModUnused {
   const required = goModRequires(goMod);
   const judged = required.filter((r) => !r.indirect);
@@ -813,10 +819,8 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const objects = rehearsal ? bareGit : git;
   objects(['read-tree', parent], index);
   // GN-15g: the tests of the repository and the programs leave the index, and the checkout keeps them.
-  for (const path of removed) {
-    release.log(`${directory}/${path}: the released form leaves it out, since it ${form.leftOut.get(path) ?? ''} (GN-15g)`);
-    objects(['update-index', '--force-remove', '--', `${directory}/${path}`], index);
-  }
+  for (const path of removed) release.log(`${directory}/${path}: the released form leaves it out, since it ${form.leftOut.get(path) ?? ''} (GN-15g)`);
+  leaveIndex((args) => objects(args, index), removed.map((path) => `${directory}/${path}`));
   for (const path of [...added.keys()].sort()) {
     const object = objects(['hash-object', '-w', '--no-filters', '--', added.get(path) ?? '']);
     objects(['update-index', '--add', '--cacheinfo', `100644,${object},${path}`], index);
