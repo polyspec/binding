@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 95762b454b59c9c083bcdcac19bc9db387a2f82cba3cb4490eef01d619e2c7cc -->
-<!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
+<!-- source-sha256: a3055b9069be52e0b792e0018040ebc400b7aa2f450af08307c39c135ba4af20 -->
 <!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
 <!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
@@ -16,8 +15,11 @@
 
 ## Unreleased
 
+- 이 version으로 옮기는 레포가 Go 모듈에 할 일(B2.459): `zz_generated_*.go` 파일을 하나도 추적하지 않는다. `binding release-go-module`이 이제 그 파일을 하나라도 추적하는 tag의 commit을 거부하므로, 그 파일을 추적하는 레포(orm)는 tag를 만들기 전에 그 파일을 index에서 지우고(각각 `git rm --cached`) ignore한다(Go 모듈의 `.gitignore`에 `zz_generated_*.go` 한 줄). 소비자가 받는 모듈에 레포 자신의 시험과 program이 있다고 기대하지 않는다. 소비자가 `go install`로 설치하는 명령에는 자기 Go 모듈을 준다.
+- `binding release-go-module`은 tag의 commit이 추적하는 모든 생성 파일을 거부하고, 하나씩 밝히며, commit도 tag도 만들지 않는다(GN-3, GN-15g, GN-19f, B2.459). 전에는 test feature의 build tag 뒤의 추적 파일과 추적된 guard만 거부했다(B2.446). 나머지 추적 파일 위에는 work tree의 파일을 덮어썼고 생성이 더는 쓰지 않는 추적 파일은 그대로 두었으므로, release 형태가 release가 검사한 commit과 달랐고 아무것도 그것을 말하지 않았다. GN-3은 `zz_generated_*.go` 파일을 추적한다고 적고 G-6을 인용했는데, G-6은 binding의 어떤 문서도 정의하지 않는 규칙이다. 그 문장은 이제 GN-15g와 GN-19h처럼 추적하는 tree가 그 파일을 담지 않는다고 적고, 인용은 지웠다.
+- Go 모듈 tag는 레포의 시험도 program도 싣지 않는다(GN-15g, GN-14f, GN-14h, GN-19f, B2.459). `binding release-go-module`의 commit은 tag의 commit의 tree에서 생성기가 쓰지 않은 모든 `_test.go` 파일, 곧 end-to-end 검사가 없는 것으로 다루는 파일과, 어느 디렉터리에 있든 package 절이 `main`인 모든 Go 파일을 뺀다. 그 밖의 추적 파일은 host 같은 손으로 쓴 package까지 모두 싣고, 뺀 파일은 출력에 하나씩 밝힌다. 전에는 tag가 그것을 모두 가졌으므로, 받은 모듈에 소비자가 돌리는 `go test`가 레포의 runner가 주는 입력이 필요한 시험을 돌렸고, end-to-end 검사는 그 시험이 없는 형태를 증명했다. 함수 하나가 release 형태의 파일을 주고 명령과 end-to-end 검사가 둘 다 그것을 읽는다. tag의 `go.mod`와 `go.sum`은 tag의 commit의 것 그대로다. 빠진 시험이나 program만 쓰던 require는 남고, 명령은 그것을 밝히지 않는다.
+- `binding release-go-module`의 commit을 증명하는 소비자는 program의 디렉터리를 import하지 않는다(GN-19f, B2.459). 공개 package는 `internal` 밖에 있고, 시험이 아니며 package 절이 `main`이 아닌 Go 파일을 가진 디렉터리이고, 명령은 그 절을 파일에서 읽는다. 전에는 `main.go`가 있는 디렉터리를 import해서 증명이 실패했다. Go는 program을 import하지 않기 때문이다.
 - 코어의 의존 줄에서 `path`가 레포의 root 안에 머물고 그 옆에 그 라이브러리의 한 버전(`version = "=X.Y.Z"`, 또는 Cargo가 그 한 버전으로 읽는 `"0.0.Z"`)이 있으면 release 꼴이다(GN-3e, GN-15f, CK-70, B2.460). `binding check --release`는 crud-ui의 generator가 적은 `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`를 path라고 거부했고, 그래서 그 레포는 release 검사를 통과할 수 없었다. 이제 `scaffold`가 쓰는 manifest는 그런 라이브러리를 tag를 적을 때처럼 그 버전으로 적는다: `go.mod`는 `replace` 줄 없이 `require <module> vX.Y.Z`, `pyproject.toml`은 `polyspec-<library>==X.Y.Z`, `package.json`과 `composer.json`은 버전 `X.Y.Z`. 추적하는 `go.sum`은 같은 레포의 모듈의 줄을 담지 않고 Go에 그것을 묻지 않는다. 그 모듈의 commit은 release가 만들기 때문이다(GN-15l). 레포 안의 path에 버전이 없거나 여러 버전을 담는 범위가 있으면 버전이 빠졌다고 말하는 문장으로 거부하고, 레포를 벗어나는 path는 전과 같이 거부한다. 그런 줄이 있는 레포가 할 일: path 옆에 그 한 버전을 적고 `binding scaffold`를 다시 실행해 manifest를 commit한다. 자기 라이브러리의 Go module의 `replace` 줄과 `v0.0.0`이 `vX.Y.Z`로 바뀐다. 개발 checkout은 그 Go module을 `go.work`로 해석하므로 `go.work`가 두 모듈을 모두 담아야 한다. 자기 레포의 모듈을 require하는 라이브러리의 Go module release(`binding release-go-module`, GN-19f)는 이 항목이 바꾸지 않는다.
-
 
 ## 0.0.20
 
