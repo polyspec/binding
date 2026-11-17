@@ -11,6 +11,7 @@ import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
 import { CASE_JSON_STRING_GOLDENS, convertedCause, madeCategoryClass } from './samples.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots } from './tests_shared.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
@@ -446,35 +447,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `${cls}::polyspec_make(${phpText(made.kind)}, ${phpText(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, [${made.properties.map((p, i) => `${phpText(langName('php', p.name, 'variable'))} => ${properties[i] ?? 'null'}`).join(', ')}])`;
   };
   // GN-13l: dependency records come from real generation calls, never from literal marker text.
-  let caseTextUses = 0;
-  let methodMark = 0;
-  const expressionMarks: number[] = [];
-  const rootExpressions = new Set<string>();
-  const rootNeeded = (): boolean => {
-    const mark = expressionMarks.at(-1);
-    return mark !== undefined && caseTextUses > mark;
-  };
-  const withRoot = (expression: string, needed: boolean): string => {
-    if (needed) {
-      rootExpressions.add(expression);
-      caseTextUses += 1;
-    }
-    return expression;
-  };
-  const useExpression = (expression: string): string => withRoot(expression, rootExpressions.has(expression));
-  const caseTextExpression = (make: () => string): string => {
-    const mark = caseTextUses;
-    expressionMarks.push(mark);
-    try {
-      const expression = make();
-      if (caseTextUses > mark) rootExpressions.add(expression);
-      return expression;
-    } finally {
-      expressionMarks.pop();
-    }
-  };
-  const ctx: Context = { lang: 'php', caseTextExpression, caseTextPath: (relative, jsonString) => {
-    caseTextUses += 1;
+  const roots = new CaseTextRoots();
+  const { rootNeeded, withRoot, useExpression } = roots;
+  const ctx: Context = { lang: 'php', caseTextExpression: roots.expression, caseTextPath: (relative, jsonString) => {
+    roots.path();
     return `self::caseTextPath($_caseTextRoot, ${phpText(relative)}, ${jsonString ? 'true' : 'false'})`;
   }, enumRef, recordNew, callbackNew, errorNew, madeNew, foreignClass, casePath: (relative) => `$this->casePath(${phpText(relative)})`, listenerPort: 'GeneratedTest::$caseListenerPort', cancelNew: (fired) => `$this->cancellation(${fired ? 'true' : 'false'})`, serviceAddress: (service: CaseService) => `self::serviceAddress(${phpText(service.id)}, ${phpText(service.address)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${categoryClass(model, category)}`;
@@ -485,10 +461,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return unit === undefined ? cls(raises.category) : `\\${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
   };
   const methods: string[] = [];
-  const methodRoots: boolean[] = [];
   const append = (...blocks: string[]): number => {
-    methodRoots.push(...blocks.map(() => caseTextUses > methodMark));
-    methodMark = caseTextUses;
+    roots.take(blocks.length);
     return methods.push(...blocks);
   };
   let usesFixture = false;
@@ -546,14 +520,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // GN-13f: a receiver as one expression; an instance value is made in a closure that the expression calls.
   // GN-13u, B-10: open makes an instance that the test drops without its cleanup call, so it is not closed at the end.
   const made = (receiver: Receiver, open = false): string => {
-    const mark = caseTextUses;
-    if (isPlain(receiver)) {
-      const expression = invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
-      return withRoot(expression, caseTextUses > mark);
-    }
-    const built = madeLines(model, open ? { ...form, closing: undefined } : form, receiver);
-    const needed = caseTextUses > mark;
-    return withRoot(`(function ()${needed ? ' use ($_caseTextRoot)' : ''} { ${built.lines.join(' ')} return ${built.expr}; })()`, needed);
+    return roots.made(
+      isPlain(receiver) ? () => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '') : undefined,
+      () => madeLines(model, open ? { ...form, closing: undefined } : form, receiver),
+      (built, needed) => `(function ()${needed ? ' use ($_caseTextRoot)' : ''} { ${built.lines.join(' ')} return ${built.expr}; })()`,
+    );
   };
   ctx.instanceNew = made;
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
@@ -624,7 +595,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       return `\n        self::assertSame(self::same(${expected.text}), self::same(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}));`;
     }).join('');
   for (const fn of callables(model)) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample);
@@ -649,7 +620,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
     }
     for (const arg of reachable ? fn.args : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const argName = langName('php', arg.name, 'variable');
       const number = isNumber(arg.type);
       if (number !== undefined) {
@@ -776,7 +747,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }
     // GN-6ae: a parameter of a function type takes a callable, and any other value is kind invalid_callback.
     for (const arg of reachable ? fn.args.filter((a) => machineFunction(a.type)) : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       append(`
     public function testGn6ae${name}${langName('php', arg.name, 'class')}RefusesWhatIsNoCallable(): void
     {
@@ -789,7 +760,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
     }
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       usesOutcome = true;
       // GN-13bg: a result that holds an instance of a value class of another repository goes through same, which reads
       // the instance by its in row, before outcome writes it: var_export writes two instances by no property.
@@ -832,7 +803,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const caseTestOf = (caseId: string): number => caseTestList.findIndex((t) => t.fn === fn && t.id === caseId);
     for (const kase of raisingCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const id = casePascal(kase.id);
       const entry = caseTestOf(kase.id);
       if (entry >= 0) {
@@ -906,7 +877,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const id = casePascal(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
@@ -934,7 +905,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const id = casePascal(kase.id);
       if (kase.refused !== undefined) {
         append(`
@@ -1040,7 +1011,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     // is refused before the member runs: it is never called, and an arming of the member stays for the next call
     // (GN-8a).
     for (const place of reachable ? placeTests(model, 'php', fn) : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const given = (value: string): string =>
         qualified(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
       const refused = (declares: Declares): string => `
@@ -1072,7 +1043,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }`);
     }
     for (const kase of stringCases(model, fn)) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       // GN-6g: PHP gives Stringable to a class that has __toString.
       append(`
     public function testN4${name}${casePascal(kase.id)}(): void
@@ -1127,7 +1098,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
         }`;
   // GN-13l: each test marks the root of the case texts that its own expressions take.
   for (const make of held.poison) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const test = make();
     append(`
     public function testB5c${langName('php', test.object.unit.name, 'class')}RefusesAPoisonedObject(): void
@@ -1136,7 +1107,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }`);
   }
   for (const make of held.busy) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const test = make();
     append(`
     public function testB5c${langName('php', test.fn.unit.name, 'class')}${langName('php', test.fn.member.name, 'class')}RefusesTheInstanceAtTwoPlaces(): void
@@ -1174,7 +1145,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
   for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const sample = sampleReceiver(model, fn);
     if (sample === undefined) continue;
     const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
@@ -1243,7 +1214,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const errno = expectedErrno(kase);
     const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
     const alias = langName('php', kase.alias.unit.name, 'class');
@@ -1269,34 +1240,24 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
         }
     }`);
   }
-  if (caseTextUses > 0) {
-    methodMark = caseTextUses;
-    const relative = 'owned-text-witness/file';
-    const rootCallback = (): string => caseTextExpression(() => {
-      const value = ctx.caseTextPath?.(relative, false);
-      if (value === undefined) throw new Unsupported('GN-13l: the PHP case-root callback is missing');
-      const callback = ctx.machineFunctionNew?.({ names: [], parameters: 0, awaits: false, steps: [], end: { result: value } });
-      if (callback === undefined) throw new Unsupported('GN-13l: the PHP function-fixture callback is missing');
-      return callback;
-    });
-    const callback = rootCallback();
-    const cachedCallback = rootCallback();
+  if (roots.uses > 0) {
+    const [callback, cachedCallback] = roots.witness(ctx, 'PHP');
     append(`
     public function testGn13lComposedCallbackUsesOldFileRoot(): void
     {
-        $this->caseFile(${phpText(relative)}, '${'726F6F74207769746E657373'.toLowerCase()}');
+        $this->caseFile(${phpText(CASE_TEXT_WITNESS)}, '${CASE_TEXT_WITNESS_HEX}');
         $callback = ${callback};
         $cachedCallback = ${cachedCallback};
         foreach ([$callback(), $cachedCallback()] as $path) {
-            self::assertSame($this->casePath(${phpText(relative)}), $path);
+            self::assertSame($this->casePath(${phpText(CASE_TEXT_WITNESS)}), $path);
             $contents = file_get_contents($path);
             self::assertIsString($contents);
-            self::assertSame('${'726F6F74207769746E657373'.toLowerCase()}', bin2hex($contents));
+            self::assertSame('${CASE_TEXT_WITNESS_HEX}', bin2hex($contents));
         }
     }`);
   }
-  const usesCaseTextPath = caseTextUses > 0;
-  const renderedMethods = methods.map((method, i) => methodRoots[i] === true
+  const usesCaseTextPath = roots.uses > 0;
+  const renderedMethods = methods.map((method, i) => roots.methods[i] === true
     ? method.replace(/(\n    public function test[^\n]*\n    \{)/g, "$1\n        $_caseTextRoot = dirname($this->casePath('.'));")
     : method);
   // GN-13bb: a fixture compares the arguments of a call by same.

@@ -6,6 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, exactClassOf } from './tests_shared.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, madeBeforeArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
@@ -388,36 +389,11 @@ export function pythonTests(model: Model, module: string): string {
   };
   const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
   // GN-13l: only actual generation scopes and cached helper metadata carry the immutable case root.
-  let caseTextUses = 0;
-  let methodMark = 0;
+  const roots = new CaseTextRoots();
+  const { rootNeeded, withRoot, useExpression } = roots;
   let usesFunctools = false;
-  const expressionMarks: number[] = [];
-  const rootExpressions = new Set<string>();
-  const rootNeeded = (): boolean => {
-    const mark = expressionMarks.at(-1);
-    return mark !== undefined && caseTextUses > mark;
-  };
-  const withRoot = (expression: string, needed: boolean): string => {
-    if (needed) {
-      rootExpressions.add(expression);
-      caseTextUses += 1;
-    }
-    return expression;
-  };
-  const useExpression = (expression: string): string => withRoot(expression, rootExpressions.has(expression));
-  const caseTextExpression = (make: () => string): string => {
-    const mark = caseTextUses;
-    expressionMarks.push(mark);
-    try {
-      const expression = make();
-      if (caseTextUses > mark) rootExpressions.add(expression);
-      return expression;
-    } finally {
-      expressionMarks.pop();
-    }
-  };
-  const ctx: Context = { lang: 'python', caseTextExpression, caseTextPath: (relative, jsonString) => {
-    caseTextUses += 1;
+  const ctx: Context = { lang: 'python', caseTextExpression: roots.expression, caseTextPath: (relative, jsonString) => {
+    roots.path();
     return `_case_text_path(_case_text_root, ${pyString(relative)}, ${jsonString ? 'True' : 'False'})`;
   }, enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     casePath: (relative) => `self._case_path(${pyString(relative)})`,
@@ -459,15 +435,10 @@ export function pythonTests(model: Model, module: string): string {
   const cls = (category: string): string => categoryClass(model, category);
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
-  const exactClass = (raises: { kind: string; category: string }): string => {
-    const unit = errorUnitOfKind(model, raises.kind);
-    return unit === undefined ? cls(raises.category) : langName('python', unit.unit.name, 'class');
-  };
+  const exactClass = exactClassOf(model, 'python', cls);
   const out: string[] = [];
-  const methodRoots: boolean[] = [];
   const append = (...blocks: string[]): number => {
-    methodRoots.push(...blocks.map(() => caseTextUses > methodMark));
-    methodMark = caseTextUses;
+    roots.take(blocks.length);
     return out.push(...blocks);
   };
   let usesFixture = false;
@@ -490,19 +461,18 @@ export function pythonTests(model: Model, module: string): string {
   const helpers: string[] = [];
   // GN-13u, B-10: open makes an instance that the test drops without its cleanup call, so it is not closed at the end.
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined, open = false): string => {
-    const mark = caseTextUses;
-    if (isPlain(receiver)) {
-      const expression = invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
-      return withRoot(expression, caseTextUses > mark);
-    }
-    const built = steps.apart(() => madeLines(model, open ? { ...madeForm, closing: undefined } : madeForm, receiver));
-    const needed = caseTextUses > mark;
-    const helper = `_made_${helpers.length}`;
-    // GN-13s: a step that calls a helper of the test case (self._case_path, self._future) takes the test case as self.
-    const takesSelf = [...built.lines, built.expr].some((line) => /\bself\./.test(line));
-    const params = [...(takesSelf ? ['self'] : []), ...(needed ? ['_case_text_root'] : [])].join(', ');
-    helpers.push(`\n\ndef ${helper}(${params}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
-    return withRoot(`${helper}(${params})`, needed);
+    return roots.made(
+      isPlain(receiver) ? () => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '') : undefined,
+      () => steps.apart(() => madeLines(model, open ? { ...madeForm, closing: undefined } : madeForm, receiver)),
+      (built, needed) => {
+        const helper = `_made_${helpers.length}`;
+        // GN-13s: a step that calls a helper of the test case (self._case_path, self._future) takes the test case as self.
+        const takesSelf = [...built.lines, built.expr].some((line) => /\bself\./.test(line));
+        const params = [...(takesSelf ? ['self'] : []), ...(needed ? ['_case_text_root'] : [])].join(', ');
+        helpers.push(`\n\ndef ${helper}(${params}):  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
+        return `${helper}(${params})`;
+      },
+    );
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
   // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a
@@ -684,7 +654,7 @@ export function pythonTests(model: Model, module: string): string {
       return `\n        after_${i} = ${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}\n        expected_${i} = ${expected.text}\n        self.assertTrue(_same(after_${i}, expected_${i}), f"{after_${i}!r} is not {expected_${i}!r}")`;
     }).join('');
   for (const fn of callables(model)) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
     const recv = sample === undefined ? '' : made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
@@ -695,7 +665,7 @@ export function pythonTests(model: Model, module: string): string {
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? otherValue(model, ctx, arg, classGiven)));
     const reachable = fn.receiver === undefined || sample !== undefined;
     for (const arg of reachable ? fn.args : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const number = isNumber(arg.type);
       const argName = langName('python', arg.name, 'variable');
       if (number !== undefined) {
@@ -793,7 +763,7 @@ export function pythonTests(model: Model, module: string): string {
     // form of a member whose function may return an awaitable has no event loop to await it on, which is the same kind
     // with a message that names the awaited form.
     for (const arg of reachable ? fn.args : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       if (!machineFunction(arg.type)) continue;
       const argName = langName('python', arg.name, 'variable');
       append(`
@@ -816,7 +786,7 @@ export function pythonTests(model: Model, module: string): string {
     const keptNames = keptClass?.fields.flatMap((f) => (f.property === undefined ? [] : [pyString(langName('python', f.property.name, 'variable'))])) ?? [];
     const observed = (made: string): string => (keptClass === undefined ? made : `_kept(${made}, (${keptNames.map((n) => `${n},`).join(' ')}))`);
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       usesOutcome = true;
       const argName = langName('python', pair.arg.name, 'variable');
       // GN-13d: the two calls of a {computed} default give the value of each to no comparison, only their outcome.
@@ -840,7 +810,7 @@ export function pythonTests(model: Model, module: string): string {
     }
     for (const kase of raisingCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         append(`
@@ -889,7 +859,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const id = caseSnake(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
@@ -910,7 +880,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
       const since = onceMade;
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       if (kase.refused !== undefined) {
         append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:
@@ -1034,7 +1004,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // is refused with the kind and not with the TypeError of Python, before the member runs: it is never called, and
     // an arming of the member stays for the next call (GN-8a).
     for (const place of reachable ? placeTests(model, 'python', fn) : []) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       const given = (value: string): string =>
         target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
       const argName = langName('python', place.arg.name, 'variable');
@@ -1067,7 +1037,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
     }
     for (const kase of stringCases(model, fn)) {
-      methodMark = caseTextUses;
+      roots.methodMark = roots.uses;
       append(`
     def test_n4_${name}_${caseSnake(kase.id)}(self) -> None:${receiverOfCase(kase.receiver).lines}
         self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
@@ -1120,14 +1090,14 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         self.assertEqual(caught.exception.kind, ${pyString(kind)})`;
   // GN-13l: each test marks the root of the case texts that its own expressions take.
   for (const make of held.poison) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const test = make();
     append(`
     def test_b5c_${langName('python', test.object.unit.name, 'variable')}_refuses_a_poisoned_object(self) -> None:
         held = ${test.instance}${[`_native.${POISON_ENTRY.python}(held)`, test.receiver, test.parameter].filter((call) => call !== undefined).map((call) => refused('internal', 'internal', call)).join('')}`);
   }
   for (const make of held.busy) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const test = make();
     append(`
     def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
@@ -1137,7 +1107,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
   for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const sample = sampleReceiver(model, fn);
     if (sample === undefined) continue;
     usesOutcome = true;
@@ -1191,7 +1161,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
-    methodMark = caseTextUses;
+    roots.methodMark = roots.uses;
     const errno = expectedErrno(kase);
     usesErrno ||= errno !== null && 'symbol' in errno;
     append(`
@@ -1222,30 +1192,20 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         del subject
         self.assertIsNone(alive())`);
   }
-  if (caseTextUses > 0) {
-    methodMark = caseTextUses;
-    const relative = 'owned-text-witness/file';
-    const rootCallback = (): string => caseTextExpression(() => {
-      const value = ctx.caseTextPath?.(relative, false);
-      if (value === undefined) throw new Unsupported('GN-13l: the Python case-root callback is missing');
-      const callback = ctx.machineFunctionNew?.({ names: [], parameters: 0, awaits: false, steps: [], end: { result: value } });
-      if (callback === undefined) throw new Unsupported('GN-13l: the Python function-fixture callback is missing');
-      return callback;
-    });
-    const callback = rootCallback();
-    const cachedCallback = rootCallback();
+  if (roots.uses > 0) {
+    const [callback, cachedCallback] = roots.witness(ctx, 'Python');
     append(`
     def test_gn13l_composed_callback_uses_old_file_root(self) -> None:
-        self._case_file(${pyString(relative)}, "${'726F6F74207769746E657373'.toLowerCase()}")
+        self._case_file(${pyString(CASE_TEXT_WITNESS)}, "${CASE_TEXT_WITNESS_HEX}")
         callback = ${callback}
         cached_callback = ${cachedCallback}
         for path in (callback(), cached_callback()):
-            self.assertEqual(path, self._case_path(${pyString(relative)}))
+            self.assertEqual(path, self._case_path(${pyString(CASE_TEXT_WITNESS)}))
             with open(path, "rb") as file:
-                self.assertEqual(file.read().hex(), "${'726F6F74207769746E657373'.toLowerCase()}")`);
+                self.assertEqual(file.read().hex(), "${CASE_TEXT_WITNESS_HEX}")`);
   }
-  const usesCaseTextPath = caseTextUses > 0;
-  const renderedOut = out.map((block, i) => methodRoots[i] === true
+  const usesCaseTextPath = roots.uses > 0;
+  const renderedOut = out.map((block, i) => roots.methods[i] === true
     ? block.replace(/(\n    def test_[^\n]*:\n)/g, '$1        _case_text_root = os.path.dirname(self._case_path("."))\n')
     : block);
   const usesByteFile = out.some((block) => block.includes('self._case_byte_file('));
