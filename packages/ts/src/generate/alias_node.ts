@@ -1115,7 +1115,7 @@ fn native_object<'env>(env_: &'env Env, native: &Native) -> Result<Unknown<'env>
 /// binding calls it with (GN-6bu, kind invalid_callback), held as a Native.
 fn kept_function_in(env_: &Env, value: Unknown<'_>, subject: &str, given: &[&str]) -> Result<Native, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
-        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+        return Err(binding_error(BindingError::NotAFunction { subject: subject.to_owned() }));
     }
     takes_in(env_, value, subject, "", given)?;
     js_native(env_, value).map_err(internal)

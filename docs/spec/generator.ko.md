@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 62491f4793b2011dc5ddbf943e429e7209b959851d7983421a292e8c5f5eb05c -->
+<!-- source-sha256: 832aef8e1097dbb4ea13f9bd92934d1555ab3b426176896b3cd68a97f8534419 -->
 # 생성기
 
 [English](generator.md)
@@ -738,7 +738,12 @@
   `invalid_argument_type`, 곧 코어에게 `Raised`다. 반환이 `none`이면 promise는 버려지고 그 거부는 어느 호출자에게도
   닿지 않는다. 보관된 함수를 기다리는 일은 아직 설계되지 않았다(B2.483). 값이
   들어올 때 호출 가능해야 하고(kind `invalid_argument_type`), 함수가 인자를 하나 이상 받는 곳에서는 그 인자를 받아야
-  한다(kind `invalid_callback`, GN-6bu). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  한다(kind `invalid_callback`, GN-6bu). 호출할 수 없는 값은 모든 target에서 코어의 한 형식인
+  `<subject> is not a function`(`BindingError::NotAFunction`)이며, map entry의 subject는 map의 모든 자리에서
+  `<map subject>.<key>`(`binding_core::entry_subject`)다: parameter `functions`의 함수가 아닌 entry `shout`은
+  `functions.shout is not a function`이다. 이유: 메시지가 map만, 그리고 target마다의 언어 낱말을 이름해서 Python에서
+  `functions is not an instance of a callable`이었고, 소비자의 계약은 `functions.shout is not a function`을 기대했다
+  (B2.475). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는
   list, map, optional 안에 있어도 module `library_<library>`의 `out_<record>`와 `in_<record>`로 변환하고(GN-4c), crate는
   member의 parameter에서처럼 그 변환을 정의한다. crate는 자기가 정의한 변환만 부른다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를

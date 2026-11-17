@@ -1104,7 +1104,7 @@ fn kept_function_in(value: &Zval, subject: &str, given: &[&str]) -> Result<Nativ
         None => false,
     };
     if !closure {
-        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a Closure") }));
+        return Err(binding_error(BindingError::NotAFunction { subject: subject.to_owned() }));
     }
     takes_in(|| reflected("ReflectionFunction", vec![value]), subject, "", given)?;
     php_native(value)

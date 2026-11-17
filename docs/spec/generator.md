@@ -899,7 +899,12 @@ the design ids are those of the binding design.
   `invalid_argument_type` of the conversion for a return that a promise is no value of, a `Raised` for the core;
   where the return is `none` the promise is dropped, and its rejection reaches no caller. Awaiting a kept function is
   not designed yet (B2.483). When the value enters it must be callable (kind `invalid_argument_type`) and, where
-  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
+  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A value that is not
+  callable is the one form of the core, `<subject> is not a function` (`BindingError::NotAFunction`), in every target,
+  and the subject of an entry of a map is `<map subject>.<key>` (`binding_core::entry_subject`), at every place of a
+  map: an entry `shout` of a parameter `functions` that is not a function is `functions.shout is not a function`.
+  Why: the message named the map alone and the language word of each target, as `functions is not an instance of a
+  callable` in Python, while the contract of the consumer expected `functions.shout is not a function` (B2.475). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
   return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`

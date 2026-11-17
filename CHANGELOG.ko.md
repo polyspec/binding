@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bb432953d9cfd39b7dce922ed7cccfacd18dd14ab371b94dfe55484646e5eaa9 -->
+<!-- source-sha256: cc414fc245d411b557812a6acd44bd6494b4bff7afcbc336964cd264a362454b -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 함수가 아닌 function type 값은 모든 target에서 `<subject> is not a function`이다. 이는 kind `invalid_argument_type`, category `type`인 코어의 새 형식 `BindingError::NotAFunction`이며, map entry의 subject는 `<map subject>.<key>`(`binding_core::entry_subject`)이므로 `functions`의 함수가 아닌 entry `shout`은 `functions.shout is not a function`이다(GN-6z, E-1a, B2.475). 전에는 메시지가 map만과 target의 낱말을 이름했다: Python은 `functions is not an instance of a callable`, Node·WASM·Go는 `… a function`, PHP는 `… a Closure`. map entry의 다른 오류도 이제 entry를 이름한다(예: `limits.a is not a value of the type int`). 레포가 할 일: 이 release의 코어로 `make bindings`를 다시 돌린다. 옛 text `<map> is not an instance of a callable`(또는 `a function`, `a Closure`)에 맞추는 시험이나 소비자는 `<map>.<key> is not a function`에 맞추고, map entry의 다른 오류에 맞추는 곳은 entry를 이름한다. `packages/ts`에서 `node --test --test-name-pattern "B2.475" tests/generate.test.ts`(변경 전 다섯 target에서 실패)와 코어의 unit test로 확인했다.
 - Node와 WASM의 생성된 `.d.ts`는 각 오류 클래스의 생성자를 runtime 그대로 `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다(E-2, GN-7a, B2.514). 전에는 `.d.ts`가 생성자를 선언하지 않아 TypeScript가 그 클래스에 `Error`나 `RangeError`의 생성자를 주었고, 소비자의 `new XValueError(message, kind)`는 실행되는데도 type check에 실패했다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.514" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 두 호출을 생성된 `.d.ts`에 대고 tsc로 검사한다.
 - 다른 라이브러리의 callback unit을 받고 그 member가 그 라이브러리의 값 alias를 돌려주는 member에는, 자기 alias처럼 다른 타입의 callback 결과 K-2 시험을 생성하지 않는다: 반환 타입을 소유 레포의 계약에서 읽는다(K-2, GN-6s, B2.513). 전에는 그것을 아무 unit도 가리키지 않는 consumer의 계약에서 읽어서, `php_value`를 돌려주는 store.get의 소비자 Node 시험이 consumer의 kind를 기대했고 호출은 php-serialization의 `unsupported_value`를 던졌다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.513" tests/generate.test.ts`(변경 전 실패)로 확인했다.
 - instance 값으로 다른 라이브러리의 member를 부르는 생성 시험은 그 target의 parameter만 넘긴다: 소유 레포가 `only`로 그 target에서 뺀 parameter는 계약의 member처럼 호출에서 빠진다(Q-4, GN-13f, B2.512). 전에는 소유 레포의 모델이 모든 parameter를 지녀서, 소비자의 Go 시험이 session-store의 `Open(nil, cookie)`를 `Open(cookie)`에 대고 불러 compile되지 않았다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.512" tests/generate.test.ts`(변경 전 실패)로 확인했다.

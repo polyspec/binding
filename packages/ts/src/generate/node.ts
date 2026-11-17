@@ -29,7 +29,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['entry_', 'item'], convertIn(model, type.map, 'item', 'entry_'))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -405,13 +405,15 @@ fn entries_out<'env>(env_: &'env Env, entries: Vec<Unknown<'env>>) -> Result<Unk
 }
 
 /// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
-fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(&str, Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let mut map = binding_core::OrderedMap::new();
     for [key, value] in map_entries(value, subject, "a Map whose keys are strings")? {
         if key.get_type().map_err(internal)? != ValueType::String {
             return Err(type_error(subject, "a Map whose keys are strings"));
         }
-        if map.insert(text_in(key, subject)?, item(value)?).is_some() {
+        let key = text_in(key, subject)?;
+        let value = item(&binding_core::entry_subject(subject, &key), value)?;
+        if map.insert(key, value).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
