@@ -1647,8 +1647,8 @@ the design ids are those of the binding design.
   (B-3), the kind is a text and one of the kinds of the class, and the status and the errno are each absent, null
   (`None`, `undefined`) or an integer, not a bool. The `.d.ts` of Node and WASM declares that constructor on each
   category class as `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`, and an
-  error unit inherits it. Why: hyper found that the `.d.ts` declared no constructor, so TypeScript took the one of
-  `Error` or `RangeError` and refused `new XValueError(message, kind)`, which runs (B2.514). The kinds of a class are those that the binding raises as an
+  error unit inherits it. Why: the `.d.ts` declared no constructor, so TypeScript took the one of `Error` or
+  `RangeError` and refused a consumer's `new XValueError(message, kind)`, which runs (B2.514). The kinds of a class are those that the binding raises as an
   instance of that class itself: for an error unit, the kinds of the rows of `errors.kinds` whose `class` names it,
   without those of the units that extend it, which the binding raises as instances of those units; for a category
   class, the kinds of the rows of its category without `class` (own rows and rows with `library`), the kinds of E-1a
@@ -3043,8 +3043,8 @@ the design ids are those of the binding design.
   core judges every value (B-1), so a refused result has the alias's kind and this test is not generated; its other
   arguments are placeholders whose lists have one item. The return type of a member of a callback unit of another
   repository (GN-6s) is a type of the owner, so the generator reads it in the contract of the owner, and a value alias
-  of the owner is such an alias. Why: hyper found that Node read `php_value` of store.get in the contract of the
-  consumer, where it names no unit, and generated the test, while the call raised `unsupported_value` of
+  of the owner is such an alias. Why: Node read `php_value` of store.get in the contract of the consumer, where it
+  names no unit, and generated the test, while the call raised `unsupported_value` of
   php-serialization (B2.513). The tests of the raised exception and of the result of
   another type are generated only for a member whose core path gives back the failure of the callback (GN-7,
   `core.failure`), because only such a member calls the callback during the call: a member that takes the callback
@@ -3323,8 +3323,8 @@ the design ids are those of the binding design.
   that the generator refuses in the contract of the owner, gives a test of the case that fails with that reason
   (GN-13e). A parameter that the owner leaves out of the target by `only` (Q-4) is no argument of the call in that
   target, by the same rule as for a member of this contract, so a key of the case that gives it is not written there.
-  Why: hyper found that the Go test called `Open(nil, cookie)` of session-store, whose cancellation only Python and
-  Node take, against `Open(cookie)` (B2.512). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
+  Why: a consumer's Go test called `Open(nil, cookie)` of session-store, whose cancellation only Python and Node take,
+  against `Open(cookie)` (B2.512). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
   internal unit of the owner, an argument that is an enum, a record, a variant or a callback of the owner, and the
   faults of a call of `then`. Go and WASM refuse the parameter itself (GN-6s), so they write no such instance.
   `binding check` does not judge such a value, because CK-22 reads the members of this contract alone. Why: the class

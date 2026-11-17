@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: c34e70bdb315b7214dba7ae3531d7eb52e8814574c0ad812d7f285d00b7fd62d -->
+<!-- source-sha256: 62491f4793b2011dc5ddbf943e429e7209b959851d7983421a292e8c5f5eb05c -->
 # 생성기
 
 [English](generator.md)
@@ -1361,7 +1361,7 @@
   category 클래스와 오류 unit의 생성자(GN-10)는 오류를 만들기 전에 인자를 판정한다: message는 text이고(B-3), kind는 text이며
   그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. Node와
   WASM의 `.d.ts`는 각 category 클래스에 그 생성자를 `constructor(message: string, kind: string, status?: number | null,
-  errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다. 이유: hyper에서 `.d.ts`가 생성자를 선언하지 않아
+  errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다. 이유: `.d.ts`가 생성자를 선언하지 않아
   TypeScript가 `Error`나 `RangeError`의 생성자를 써서, 실행되는 `new XValueError(message, kind)`를 거부했다(B2.514). 클래스의
   kind는 binding이 바로 그 클래스의 인스턴스로 일으키는 kind다: 오류 unit은 `class`가 그 unit을 가리키는 `errors.kinds` 행의
   kind이며, 그 unit을 상속하는 unit의 행은 binding이 그 unit의 인스턴스로 일으키므로 들지 않는다. category 클래스는 그
@@ -2494,7 +2494,7 @@
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
   거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 다른 레포의
   callback unit(GN-6s) member의 반환 타입은 소유 레포의 타입이므로 생성기는 그것을 소유 계약에서 읽고, 소유 레포의 값
-  alias도 그런 alias다. 이유: hyper에서 Node가 store.get의 `php_value`를 아무 unit도 가리키지 않는 consumer의 계약에서
+  alias도 그런 alias다. 이유: Node가 store.get의 `php_value`를 아무 unit도 가리키지 않는 consumer의 계약에서
   읽어 이 시험을 생성했고, 호출은 php-serialization의 `unsupported_value`를 던졌다(B2.513). 던진
   예외와 다른 타입의 결과 시험은 코어 경로가 callback의 실패를 돌려주는 member(GN-7, `core.failure`)에만 생성한다. 그런 member만 호출
   중에 callback을 부르기 때문이다. `keeps`가 있는 parameter로 callback을 받고 다른 방식으로 실패하지 않는 member는
@@ -2719,7 +2719,7 @@
   부르고, Node는 기다리는 소유 member를 await한다. member는 생성기가 그 target에 대해 소유 계약에서 받는 것이다: 소유 레포가
   `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서 거부하는 member는 그 이유로 실패하는 case 시험이 된다(GN-13e).
   소유 레포가 `only`로 그 target에서 뺀 parameter(Q-4)는 이 계약의 member와 같은 규칙으로 그 target의 호출 인자가 아니므로,
-  그것을 주는 case의 키는 거기에 쓰지 않는다. 이유: hyper에서 Go 시험이 Python과 Node만 취소를 받는 session-store의
+  그것을 주는 case의 키는 거기에 쓰지 않는다. 이유: 소비자의 Go 시험이 Python과 Node만 취소를 받는 session-store의
   `Open(nil, cookie)`를 `Open(cookie)`에 대고 불렀다(B2.512).
   아직 생성하지 않으며 각각 이름을 대고 실패하는 case 시험이 되는 것: 소유 레포의 function, 소유 레포 internal unit의
   member, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의 faults. Go와 WASM은 그 parameter 자체를
