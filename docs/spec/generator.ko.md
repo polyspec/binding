@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e6a8e7a2c36aaa91b3c3065342b7a9099207408f550cf91482d4cfb47cb657bc -->
+<!-- source-sha256: 5eeba7eab087cd57b8ee5a96909d5a9bdc78b9112323cf234d1b080dc62aa84a -->
 # 생성기
 
 [English](generator.md)
@@ -3619,9 +3619,12 @@
 - **GN-19d** PHP 확장, 플랫폼과 PHP minor마다: `PHP=<php> PHP_CONFIG=<php-config> $(CARGO) build $(CARGOFLAGS) --release
   --locked -p polyspec-<repository>-php-ext`(GN-1d), 그다음 cdylib을 `<extension-name>.so`로 복사한다. recipe는
   `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'`이 0으로 끝나는 것을 요구한
-  뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
-  <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
-  PHP에서 읽는다(`PHP_ZTS`, `PHP_DEBUG`).
+  뒤(GN-3g), 생성된 `packages/php-ext/generated/<extension-name>.stub.php`를 그 옆에 복사하고 `zip -q -9 -X
+  php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip <extension-name>.so
+  <extension-name>.stub.php`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). stub이 zip에 있는
+  것은 PIE가 그 zip만 설치하고 Composer는 php-ext package를 풀지 않으므로, consumer와 consumer의 정적 분석기가
+  extension의 class를 그 zip에서만 얻기 때문이다. recipe는 `zts`와 `debug`를 그 PHP에서 읽는다(`PHP_ZTS`,
+  `PHP_DEBUG`).
   `release-php-ext`는 선택적 `EXPECTED_PHP_MINOR`를 `major.minor`
   형식으로 받고, 실제 runtime minor가 다르면 Cargo 빌드 전에 거부한다. 선택한 `php-config --version`의 minor를
   runtime과 항상 비교하고 두 전체 버전을 기록한다. 이는 모든 ABI와 patch flag가 아닌 header minor를
