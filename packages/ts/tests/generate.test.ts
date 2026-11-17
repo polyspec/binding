@@ -2476,7 +2476,8 @@ test('package.json and composer.json name the package of another library that th
   // A development form of the dependency line of the core names the package without the version of a release.
   const development = manifests(classes.contract, classes.foreign, { path: `../../../${owner}/packages/rust` });
   assert.deepEqual(development.npm.dependencies, { [npmName]: '*', [sampleName]: '*' });
-  assert.deepEqual(development.composer.require, { php: '>=8.4', [`ext-polyspec_${owner.replaceAll('-', '_')}`]: '*', [phpName]: '*' });
+  // The extension of sample, the owner of those callback units, without its Composer package (B2.441).
+  assert.deepEqual(development.composer.require, { php: '>=8.4', [`ext-polyspec_${owner.replaceAll('-', '_')}`]: '*', [phpName]: '*', 'ext-polyspec_sample': '*' });
   // A release form, an exact version or a tag, names that version.
   const exact = manifests(classes.contract, classes.foreign, '=1.2.3');
   assert.deepEqual(exact.npm.dependencies, { [npmName]: '1.2.3', [sampleName]: '*' });
@@ -2506,6 +2507,18 @@ test('package.json names the package of a callback unit of another library, whic
   assert.match(declarations, new RegExp(`import\\(${JSON.stringify(npmName).replaceAll('/', '\\/')}\\)\\.`));
   const packages = trackedPackages(contract, '0.0.0', new Map<string, unknown>([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign);
   assert.deepEqual(JSON.parse(String(packages.get('packages/ts/package.json'))).dependencies, { [npmName]: '*' });
+});
+
+test('B2.441: composer.json of the extension requires the extension of the owner of a callback unit that it takes, and an extension that takes none requires no other (GN-3e, GN-6s)', () => {
+  // Two components: consumer takes the callback units of sample, as the generator of crud-ui takes the callback unit
+  // file_loader of its validator, whose error classes the extension of the generator finds in the validator's.
+  const { contract, foreign } = consumerSample();
+  const sample = foreign.get('sample');
+  const composer = (of: any, libraries: Map<string, any>): any => JSON.parse(String(trackedPackages(of, '0.0.0', new Map<string, unknown>([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries).get('packages/php-ext/composer.json')));
+  const required = composer(contract, foreign).require;
+  assert.equal(required['ext-polyspec_sample'], '*', JSON.stringify(required));
+  // The extension of sample names no unit of another library, so it requires PHP alone.
+  assert.deepEqual(composer(sample, new Map()).require, { php: '>=8.4' });
 });
 
 test('CK-19 reads in the package.json of a host package each npm package that the generated code imports (GN-3b, GN-3e)', () => {

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0b51911e311df4ace8e69cfeb25f2708fe417a3fb6c1bf5f14e9d6aa1b61e741 -->
+<!-- source-sha256: 9de20009fc6051b3e301759fec052b2701e1f503b805511cd8ca62d64479deed -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -21,6 +21,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 다른 라이브러리의 callback unit을 받는 계약의 PHP 확장에 `scaffold`가 쓰는 `composer.json`은 그 unit 소유자의 확장 `ext-<extension name>`을 require한다. 확장이 그 unit의 class, 예를 들어 unit의 member가 recognize하는 오류 class를 이름으로 찾기 때문이다(GN-3e, GN-6s). 이전에는 record나 값 class 소유자의 확장만 require해서, crud-ui에서 validator의 callback unit `file_loader`를 받는 generator는 자기 확장 말고는 아무 확장도 require하지 않았고, crud-ui는 validator 확장을 손으로 로드했다(`BINDING_PHP_REQUIRES_generator = validator`). 다른 라이브러리의 unit을 받지 않는 확장은 전처럼 PHP만 require한다(B2.441). `packages/ts`에서 `node --test --test-name-pattern=B2.441 tests/generate.test.ts`로 검증했고, 그 시험은 변경 전에 실패했다.
 
 ## 0.0.19
 

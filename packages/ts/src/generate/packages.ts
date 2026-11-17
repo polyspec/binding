@@ -556,14 +556,28 @@ function npmDependencies(contract: Contract, dependencies: CoreDependencies, for
 }
 
 // GN-3e: the extension and the Composer package of each library whose record or value class the extension makes and
-// reads as an instance of the class of that extension.
+// reads as an instance of the class of that extension, and the extension of the owner of each callback unit among the
+// types (B2.441), whose classes, such as the error classes that a member of the unit recognizes, the extension finds
+// in the owner's extension (GN-6s).
 function composerRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
-  const libraries = [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value'))) === true).map((named) => named.library))].sort();
-  return Object.fromEntries(libraries.flatMap((library): [string, string][] => {
+  const owning = (test: (u: Unit) => boolean): string[] => [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && test(u)) === true).map((named) => named.library))].sort();
+  const instances = owning((u) => u.kind === 'record' || (u.kind === 'class' && u.origin === 'value'));
+  const callbacks = owning((u) => u.origin === 'callback').filter((library) => !instances.includes(library));
+  const extension = (library: string): string | undefined => {
     const owner = foreign.get(library);
-    const name = (owner?.packages['php'] as { package?: string } | undefined)?.package;
-    return owner === undefined || name === undefined ? [] : [[`ext-${extensionName(owner)}`, '*'], [name, packageVersion(library, dependencies)]];
-  }));
+    return owner === undefined || (owner.packages['php'] as { package?: string } | undefined)?.package === undefined ? undefined : `ext-${extensionName(owner)}`;
+  };
+  return Object.fromEntries([
+    ...instances.flatMap((library): [string, string][] => {
+      const ext = extension(library);
+      const name = (foreign.get(library)?.packages['php'] as { package?: string } | undefined)?.package;
+      return ext === undefined || name === undefined ? [] : [[ext, '*'], [name, packageVersion(library, dependencies)]];
+    }),
+    ...callbacks.flatMap((library): [string, string][] => {
+      const ext = extension(library);
+      return ext === undefined ? [] : [[ext, '*']];
+    }),
+  ]);
 }
 
 function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDependencies = new Map(), foreign: ReadonlyMap<string, Contract> = new Map()): string {

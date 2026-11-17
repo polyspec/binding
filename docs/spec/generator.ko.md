@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bf6b77ad5988dd1c910341132fbc5fa7a9e9ccd5754dc1fb937150a46e536440 -->
+<!-- source-sha256: d227c5309f89af536004434915392cc1ec9463b3bb12cba3a82f26b16d180e5f -->
 # 생성기
 
 [English](generator.md)
@@ -188,7 +188,12 @@
   각각을 `dependencies`에 적고 `check`가 그것을 읽는다(GN-3b, CK-19). 생성된 entry를 설치하고 로드하는 패키지가 host
   패키지이기 때문이다. `composer.json`은 그 타입들에 record나 값
   class가 있는 각 라이브러리의 확장 `ext-<extension name>`과 Composer package를 `require`에 적는다. 확장이 그 확장의
-  class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 다른 라이브러리의 계약이 다른
+  class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 또 그 타입들에 callback unit이 있는 다른
+  각 라이브러리의 확장 `ext-<extension name>`만을 `require`에 적는다. 확장이 그 unit의 class, 예를 들어 unit의 member가
+  recognize하는 오류 class를 소유자의 확장에서 이름으로 찾기 때문이다(GN-6s). 이유: crud-ui에서 generator는 validator의
+  callback unit `file_loader`를 받고, 그 시험은 generator가 validator 확장을 로드할 때까지(Makefile의
+  `BINDING_PHP_REQUIRES_generator = validator`) `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found`로
+  실패했는데, generator의 composer.json은 자기 확장 말고는 아무 확장도 require하지 않았다(B2.441). 다른 라이브러리의 계약이 다른
   자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도
   없다. `scaffold`는 라이브러리의 계약을 그것을 이름하는 라이브러리의 코어에서 의존 줄의 `path`로 읽고, 나머지는
   `cargo metadata`로 읽는다. Cargo가 실패하면 아무 파일도 쓰지 않고 상태 1, Cargo의 오류와 GN-15f의 안내로
