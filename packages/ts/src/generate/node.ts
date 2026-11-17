@@ -1983,7 +1983,7 @@ pub fn alias_in_${rustField(alias.unit.name)}<'env>(env_: &'env Env, value: Unkn
 pub fn alias_round_${rustField(alias.unit.name)}<'env>(env_: &'env Env, value: Unknown<'env>) -> napi::Result<Unknown<'env>> {
     guard(|| {
         let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env_, value, "value")?;
-        out_${rustField(alias.unit.name)}(env_, &value)
+        out_${rustField(alias.unit.name)}(env_, value)
     })
     .map_err(|fail| throw(env_, fail))
 }

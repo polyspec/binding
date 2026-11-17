@@ -257,6 +257,11 @@ export function phpOwnReads(model: Model): PhpOwnRead[] {
 // repository, or of a class of this contract that an in row names (B2.492).
 export const phpReadsValues = (model: Model): boolean => model.aliases.some((a) => a.owner !== undefined) || phpOwnReads(model).length > 0;
 
+// GN-6x, B2.492: php_value_class takes the owned entries only where a PHP in row of a value class of another repository
+// has a map, whose iterator it reads into them; elsewhere the parameter would have no use, which clippy refuses.
+const phpClassOwns = (model: Model): boolean => model.aliases.some((a) => a.owner !== undefined && classIn(a, 'php').maps.length > 0);
+const phpValueClassCall = (model: Model, value: string): string => `php_value_class(${value}, &mut self.values${phpClassOwns(model) ? ', &mut self.owned' : ''})`;
+
 function valueClassesPhpHostAll(model: Model): string {
   // GN-6af, B2.492: an instance of a class of this contract that an in row names is HostValue::Value with the kind of
   // the row, under one handle within the walk; read calls the PHP method of the property of the row, whose result is
@@ -377,7 +382,7 @@ fn php_thrown(error: Thrown) -> Fail {
 /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance of
 /// a class of its owner that a read member gives, as a map of the pairs of its iterator. GN-6af (B2.492): an instance
 /// of a class of this contract that an in row names, with the kind of the row.
-fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, ReadAs)>)>, owned: &mut Vec<Vec<(Zval, Zval)>>) -> Result<Option<HostValue>, Fail> {
+fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, ReadAs)>)>${phpClassOwns(model) ? ', owned: &mut Vec<Vec<(Zval, Zval)>>' : ''}) -> Result<Option<HostValue>, Fail> {
 ${checks.join('\n')}
     Ok(None)
 }
@@ -386,7 +391,7 @@ impl PhpHost<'_> {
     /// GN-6x: a value that the host owns, which a read member gave: an array as its entries, an instance as describe
     /// gives it, and a scalar or a string as its kind.
     fn describe_owned(&mut self, value: Zval) -> Result<HostValue, Fail> {
-        if let Some(described) = php_value_class(&value, &mut self.values, &mut self.owned)? {
+        if let Some(described) = ${phpValueClassCall(model, '&value')}? {
             return Ok(described);
         }
         if let Some(array) = value.array() {
@@ -519,7 +524,7 @@ export function phpHost(model: Model): string {
   if (!phpReadsValues(model)) return PHP_HOST;
   const host = PHP_HOST
     .replace("    marked: u64,\n}", "    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
-    .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
+    .replace("        if let Some(object) = value.object() {\n            let type_name", `        if let Some(described) = ${phpValueClassCall(model, 'value')}? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name`)
     .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
     .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
@@ -528,7 +533,7 @@ export function phpHost(model: Model): string {
 `);
   // Each change above replaces a text of PHP_HOST; a text that PHP_HOST no longer has would leave the host without that
   // part, which only the compiler of the generated crate would report.
-  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', 'php_value_class(value, &mut self.values, &mut self.owned)', 'self.owned_entry(list, index)', 'self.read_value(value)']) {
+  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', phpValueClassCall(model, 'value'),'self.owned_entry(list, index)', 'self.read_value(value)']) {
     if (!host.includes(part)) throw new Error(`GN-6x: the PHP host of a value class of another repository has no ${part.trim()}`);
   }
   return host + valueClassesPhpHost(model);
