@@ -119,6 +119,11 @@ if (args[0] === 'rustc' && args.includes('native-static-libs')) process.stderr.w
   const ran = require('child_process').spawnSync(process.execPath, [${JSON.stringify(cli)}, ...args], { stdio: 'inherit' });
   process.exit(ran.status ?? 1);
 }
+// binding generate --target php writes the stub of the extension beside its generated Rust (GN-3c).
+if (args[0] === 'generate' && option('--target') === 'php') {
+  fs.mkdirSync(path.join(${JSON.stringify(root)}, 'packages/php-ext/generated'), { recursive: true });
+  fs.writeFileSync(path.join(${JSON.stringify(root)}, 'packages/php-ext/generated/polyspec_sample.stub.php'), '<?php');
+}
 if (args[0] === 'generate' && option('--target') === 'node') {
   fs.mkdirSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated'), { recursive: true });
   fs.writeFileSync(path.join(${JSON.stringify(root)}, 'packages/ts/generated/index.cjs'), 'generated');
@@ -142,7 +147,11 @@ if (code.includes('PHP_MAJOR_VERSION')) process.stdout.write(process.env.PHP_MIN
 else if (code === 'echo PHP_VERSION;') process.stdout.write(process.env.PHP_VERSION ?? (process.env.PHP_MINOR ?? '8.4') + '.27');
 else if (code.includes('PHP_DEBUG')) process.stdout.write('-nts');`);
   standIn(bin, 'php-config', `if (args[0] === '--version') console.log(process.env.PHP_CONFIG_VERSION ?? (process.env.PHP_MINOR ?? '8.4') + '.27');`);
-  standIn(bin, 'zip', `fs.writeFileSync(args[3], 'zipped');`);
+  // zip -q -9 -X <archive> <member>... writes the names of its members to the archive, so that a case reads what the
+  // recipe packed; the stand-in refuses a member that is not in the working directory.
+  standIn(bin, 'zip', `const members = args.slice(4);
+for (const member of members) if (!fs.existsSync(member)) { console.error('zip: ' + member + ' not found'); process.exit(12); }
+fs.writeFileSync(args[3], members.join('\\n'));`);
   standIn(join(llvm, 'bin'), 'clang', `if (args[0] === '-dumpversion') console.log((process.env.CLANG_MAJOR ?? ${JSON.stringify(LLVM_MAJOR)}) + '.1.8');`);
   mkdirSync(join(llvm, 'lib'));
   writeFileSync(join(llvm, 'lib/libclang.so'), '');
@@ -382,6 +391,16 @@ test('the PHP extension is built with the libclang and the clang of the LLVM of 
   const noPhp = box.make('release-php-ext', 'PHP=', `LLVM_ROOT=${box.llvm}`);
   assert.equal(noPhp.status, 2);
   assert.match(noPhp.output, /release-php-ext needs PHP/);
+});
+
+// B2.530: PIE installs the platform zip alone and Composer unpacks no php-ext package, so the stub that binding generates
+// reaches a consumer only in that zip.
+test('B2.530: release-php-ext packs the generated <extension-name>.stub.php beside <extension-name>.so into the platform zip (GN-19d)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  const run = box.make('release-php-ext', `PHP=${join(box.bin, 'php')}`, `LLVM_ROOT=${box.llvm}`);
+  assert.equal(run.status, 0, run.output);
+  const zipped = readFileSync(join(box.root, 'var/release/assets/php-ext/php_polyspec_sample-v0.0.3_php8.4-x86_64-linux-glibc-nts.zip'), 'utf8');
+  assert.deepEqual(zipped.split('\n'), ['polyspec_sample.so', 'polyspec_sample.stub.php']);
 });
 
 test('B2.275: PHP release checks the expected runtime and header minor before cargo builds (GN-19d)', (t) => {
