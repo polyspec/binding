@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
 import { generate } from '../src/generate/index.ts';
-import { carriedLibraries, goModFindings, goPackageOf, goReleaseFiles, libraryFindings, publicPackages, Refused, releaseGoModule, type GoModuleRelease } from '../src/release/go-module.ts';
+import { carriedLibraries, goModFindings, goModRequires, goPackageOf, goReleaseFiles, goSumWith, libraryFindings, publicPackages, Refused, releaseGoModule, siblingRequires, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
 
@@ -468,6 +468,128 @@ test('a run after an earlier run removes the module cache, the repository and th
   assert.ok(lines.indexOf('go clean -modcache') < lines.indexOf(`git init --quiet --bare ${join(s.release.work, 'remote.git')}`));
   assert.equal(existsSync(join(s.release.work, 'remote.git/objects')), false);
   assert.doesNotMatch(readFileSync(join(s.release.work, 'consumer/go.mod'), 'utf8'), /replace/);
+});
+
+// ---- The modules of one repository ----------------------------------------------------------------------------------
+
+// B2.479: the Go module of the scene requires the module `validator` of its repository at a release version, which
+// requires the module `base` of the repository in turn; `points` is a module of another repository.
+const VALIDATOR = 'github.com/polyspec/sample/packages/validator/go';
+const BASE = 'github.com/polyspec/sample/packages/base/go';
+const VALIDATOR_COMMIT = '5'.repeat(40);
+const BASE_COMMIT = '6'.repeat(40);
+const GO_MOD_OF_PAIR = `${GO_MOD}\nrequire (\n\tgithub.com/polyspec/points/packages/go v0.0.3\n\t${VALIDATOR} v0.0.1\n)\n`;
+const POINTS_SUM = 'github.com/polyspec/points/packages/go v0.0.3 h1:points=\ngithub.com/polyspec/points/packages/go v0.0.3/go.mod h1:pointsmod=\n';
+const tagOf = (directory: string, commit?: string): Answer => ({ tool: 'git', match: `rev-parse --verify --quiet refs/tags/${directory}/v0\\.0\\.1\\^\\{commit\\}$`, ...(commit === undefined ? { status: 1 } : { stdout: `${commit}\n` }) });
+const downloadOf = (module: string, name: string): Answer => ({ tool: 'go', match: `^mod download -json ${module}@v0\\.0\\.1$`, stdout: JSON.stringify({ Path: module, Version: 'v0.0.1', Sum: `h1:${name}=`, GoModSum: `h1:${name}mod=` }) });
+// The answers of a repository whose commit of the tag requires the validator, with the tags of `tags`.
+const pair = (tags: Answer[]): Answer[] => [
+  { tool: 'git', match: ' show 1+:packages/go/go\\.mod$', stdout: GO_MOD_OF_PAIR },
+  { tool: 'git', match: ' show 1+:packages/go/go\\.sum$', stdout: POINTS_SUM },
+  { tool: 'git', match: ' ls-tree ', stdout: 'packages/go/go.mod\0packages/go/go.sum\0packages/go/host/host.go\0' },
+  { tool: 'git', match: ' show 5+:packages/validator/go/go\\.mod$', stdout: `module ${VALIDATOR}\n\ngo 1.27.3\n\nrequire ${BASE} v0.0.1\n` },
+  { tool: 'git', match: ' show 6+:packages/base/go/go\\.mod$', stdout: `module ${BASE}\n\ngo 1.27.3\n` },
+  downloadOf(VALIDATOR, 'validator'),
+  downloadOf(BASE, 'base'),
+  ...tags,
+];
+
+test('B2.479: the requirements of a go.mod are read in both forms, and those of a module of the same repository at a release version are its siblings (GN-19f)', () => {
+  assert.deepEqual(goModRequires(`module m\n\nrequire a.example/x v1.2.3 // indirect\n\nrequire (\n\tb.example/y v0.0.0\n\tc.example/z v0.1.0 // a note\n)\n`), [
+    { module: 'a.example/x', version: 'v1.2.3', indirect: true },
+    { module: 'b.example/y', version: 'v0.0.0', indirect: false },
+    { module: 'c.example/z', version: 'v0.1.0', indirect: false },
+  ]);
+  const own = 'github.com/polyspec/sample/packages/go';
+  assert.deepEqual(siblingRequires(GO_MOD_OF_PAIR, own), [{ module: VALIDATOR, version: 'v0.0.1', indirect: false }]);
+  // The development form of a sibling, a module of another owner with the same repository name and the module itself are none.
+  assert.deepEqual(siblingRequires(`${GO_MOD}\nrequire ${VALIDATOR} v0.0.0\nrequire github.com/other/sample/packages/go v0.0.1\nrequire ${own} v0.0.1\n`, own), []);
+});
+
+test('B2.479: the repository of the proof holds the tag of each sibling module and of those that they require, and the go.sum of the commit gains their lines (GN-19f, GN-15g)', (t) => {
+  const s = scene(t, pair([tagOf('packages/validator/go', VALIDATOR_COMMIT), tagOf('packages/base/go', BASE_COMMIT)]));
+  const { work } = s.release;
+  const bare = join(work, 'remote.git');
+  assert.deepEqual(releaseGoModule(s.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
+  // Before B2.479 the repository of the proof held the tag of this module alone, so Go did not find the sibling at
+  // its tag (`unknown revision`), and the commit held the go.sum of the commit of the tag.
+  assert.deepEqual(s.lines().filter((line) => /^(git (init|push|commit-tree|tag) |git rev-parse .*(validator|base)|git show .*(validator|base|go\.sum)|go )/.test(line)), [
+    'git rev-parse --verify --quiet refs/tags/packages/validator/go/v0.0.1^{commit}',
+    `git show ${VALIDATOR_COMMIT}:packages/validator/go/go.mod`,
+    'git rev-parse --verify --quiet refs/tags/packages/base/go/v0.0.1^{commit}',
+    `git show ${BASE_COMMIT}:packages/base/go/go.mod`,
+    `git init --quiet --bare ${bare}`,
+    `git push --quiet ${bare} ${VALIDATOR_COMMIT}:refs/tags/packages/validator/go/v0.0.1 ${BASE_COMMIT}:refs/tags/packages/base/go/v0.0.1`,
+    `go mod download -json ${VALIDATOR}@v0.0.1`,
+    `go mod download -json ${BASE}@v0.0.1`,
+    'go clean -modcache',
+    `git show ${TAG_COMMIT}:packages/go/go.sum`,
+    `git commit-tree the-tree -p ${TAG_COMMIT} -m chore(release): Carry the Go module of v0.0.1`,
+    `git push --quiet ${bare} ${RELEASE_COMMIT}:refs/tags/packages/go/v0.0.1`,
+    'go mod tidy',
+    'go test -count=1 .',
+    'go clean -modcache',
+    `git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`,
+  ]);
+  // The go.sum of the commit: the lines of the commit of the tag and the two lines of each sibling, sorted.
+  assert.equal(readFileSync(join(work, 'go.sum'), 'utf8'), [
+    'github.com/polyspec/points/packages/go v0.0.3 h1:points=',
+    'github.com/polyspec/points/packages/go v0.0.3/go.mod h1:pointsmod=',
+    `${BASE} v0.0.1 h1:base=`,
+    `${BASE} v0.0.1/go.mod h1:basemod=`,
+    `${VALIDATOR} v0.0.1 h1:validator=`,
+    `${VALIDATOR} v0.0.1/go.mod h1:validatormod=`,
+    '',
+  ].join('\n'));
+  assert.ok(s.lines().includes(`git update-index --add --cacheinfo 100644,object-of:${join(work, 'go.sum')},packages/go/go.sum`));
+  // Go gives the hashes from the repository of the proof, in a module of the run, with the settings of the consumer.
+  for (const c of s.calls().filter((call) => call.tool === 'go' && call.argv[1] === 'download')) {
+    assert.equal(c.cwd.endsWith('/work/sums'), true);
+    assert.equal(c.env['GOPROXY'], 'direct');
+    assert.equal(c.env['GIT_CONFIG_GLOBAL'], join(work, 'gitconfig'));
+  }
+  assert.equal(readFileSync(join(work, 'sums/go.mod'), 'utf8'), 'module example.invalid/sums\n\ngo 1.27.3\n');
+  // A module without a sibling keeps the go.sum of the commit of its tag: the command writes none.
+  const alone = scene(t);
+  releaseGoModule(alone.release);
+  assert.equal(existsSync(join(alone.release.work, 'go.sum')), false);
+  assert.deepEqual(alone.lines().filter((line) => line.includes('go.sum') || line.includes('download')), []);
+});
+
+test('B2.479: a sibling module without its tag is refused by name before any write, with the run that makes the tag (GN-19f)', (t) => {
+  const first = `the repository has no tag packages/validator/go/v0.0.1: run binding release-go-module of that module first (the recipe release-go-module of its contract), because the proof fetches that module at its tag and the go.sum of this commit holds the hashes of the commit of that tag (GN-19f)`;
+  const s = scene(t, pair([tagOf('packages/validator/go')]));
+  assert.deepEqual(refusal(() => releaseGoModule(s.release)), [`go.mod requires ${VALIDATOR} v0.0.1, a Go module of this repository, and ${first}`]);
+  assert.deepEqual(s.lines().filter((line) => WRITES.test(line) || line.startsWith('go ')), []);
+  // The tag of a module that a sibling requires is missed in the same way, with the go.mod that requires it.
+  const second = scene(t, pair([tagOf('packages/validator/go', VALIDATOR_COMMIT), tagOf('packages/base/go')]));
+  assert.deepEqual(refusal(() => releaseGoModule(second.release)), [`the go.mod of ${VALIDATOR} v0.0.1 requires ${BASE} v0.0.1, a Go module of this repository, and ${first.replace('packages/validator/go', 'packages/base/go')}`]);
+  assert.deepEqual(second.lines().filter((line) => WRITES.test(line) || line.startsWith('go ')), []);
+});
+
+test('B2.479: the go.sum of the commit takes the two lines of each sibling, and a tracked line that gives a sibling another hash is refused (GN-15g, GN-15l)', () => {
+  const download = { Path: VALIDATOR, Version: 'v0.0.1', Sum: 'h1:validator=', GoModSum: 'h1:validatormod=' };
+  assert.equal(goSumWith('', [download]), `${VALIDATOR} v0.0.1 h1:validator=\n${VALIDATOR} v0.0.1/go.mod h1:validatormod=\n`);
+  // A line that the go.sum holds already is written once.
+  assert.equal(goSumWith(`${VALIDATOR} v0.0.1 h1:validator=\n`, [download]), `${VALIDATOR} v0.0.1 h1:validator=\n${VALIDATOR} v0.0.1/go.mod h1:validatormod=\n`);
+  assert.deepEqual(refusal(() => goSumWith(`${VALIDATOR} v0.0.1/go.mod h1:other=\n`, [download])), [
+    `go.sum holds the line \`${VALIDATOR} v0.0.1/go.mod h1:other=\` of a Go module of this repository, and the commit of its tag has the hash h1:validatormod=: remove the line, since no tracked go.sum holds the hash of a module that the release itself commits (GN-15l)`,
+  ]);
+  assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Version: 'v0.0.1', GoModSum: 'h1:validatormod=' }]), /go mod download gave no sum of github\.com\/polyspec\/sample\/packages\/validator\/go v0\.0\.1/);
+  assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Error: 'unknown revision' }]), /go mod download gave no sum: unknown revision/);
+});
+
+test('B2.479: a run after a release that stopped between two modules goes on: the tag that names the commit of the run stays, and the module that failed is released (GN-19f)', (t) => {
+  // The first module of the release: its tag is in the repository and on the remote at the commit of this run, so
+  // the run proves it again, makes no tag and gives no reference to push.
+  const tagObject = '4'.repeat(40);
+  const done = scene(t, [tagOf('packages/go', RELEASE_COMMIT), { tool: 'git', match: ' ls-remote ', stdout: `${tagObject}\trefs/tags/packages/go/v0.0.1\n${RELEASE_COMMIT}\trefs/tags/packages/go/v0.0.1^{}\n` }]);
+  assert.deepEqual(releaseGoModule(done.release), { commit: RELEASE_COMMIT, reference: undefined });
+  assert.deepEqual(done.lines().filter((line) => /^(git tag|go) /.test(line)), ['go mod tidy', 'go test -count=1 .', 'go clean -modcache']);
+  // The second module, whose run failed: it finds the tag of the first in the repository and makes its own.
+  const failed = scene(t, pair([tagOf('packages/validator/go', VALIDATOR_COMMIT), tagOf('packages/base/go', BASE_COMMIT)]));
+  assert.deepEqual(releaseGoModule(failed.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
+  assert.deepEqual(failed.lines().filter((line) => line.startsWith('git tag ')), [`git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`]);
 });
 
 // ---- The generated files of the released form -----------------------------------------------------------------------

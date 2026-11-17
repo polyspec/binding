@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 46cdc39e546d292d8882902d278b89906e15ae149f23c08029ffd52a1ea4fa50 -->
+<!-- source-sha256: 3dd7f42d5bcb438f1e5b58a2d448bde9080780bf0730e59bce7ee7fee1c1fcb0 -->
 # 생성기
 
 [English](generator.md)
@@ -2055,7 +2055,14 @@
   모듈의 program은 시험이 시작하는 probe처럼 그 시험에 쓰인다. 디렉터리 `tests`가 아니라 package 절로 정하는 이유: Go가
   program과 package를 가르는 데 읽는 것이 그 절이고, 디렉터리의 이름으로 정하면 소비자가 import할 수 있는 package를 빼고
   다른 곳에 둔 program을 싣게 된다. `go install`용 명령을 공개하는 레포는 그 명령에 자기 Go 모듈을 준다. release 형태의
-  `go.mod`와 `go.sum`은 tag의 commit의 것 그대로이며 한 byte도 다르지 않다. 빠진 시험이나 program만 쓰던 require는 그
+  `go.mod`는 tag의 commit의 것 그대로이며 한 byte도 다르지 않다. 그 `go.sum`은 tag의 commit의 `go.sum`의 줄들과, `go.mod`가
+  release version으로 require하는 같은 레포의 Go 모듈 각각과 그런 모듈이 다시 require하는 모듈 각각의 두 줄, 곧 그 모듈의
+  hash와 그 `go.mod`의 hash를 담으며, binding이 `go.sum`을 정렬하는 대로 정렬한다(GN-15l). `go.mod`가 자기 레포의 모듈을
+  require하지 않는 release 형태의 `go.sum`은 tag의 commit의 것 그대로이며 한 byte도 다르지 않고, 그 commit이 `go.sum`을
+  추적하지 않으면 없다(B2.479). 명령이 그 줄들을 쓰는 이유: 모듈은 자기 tag의 commit 안에서 혼자 빌드된다(GN-15l). crud-ui의
+  generator 모듈은 자기 tag에서 `go build`가 자기가 require하는 validator 모듈에 대한 `missing go.sum entry for module
+  providing package`로 실패했다. 추적 파일이 그 줄들을 갖지 못하는 이유: 그것은 require된 모듈의 release가 정적
+  라이브러리와 함께 만드는 commit의 hash이므로 그 실행 뒤에야 생긴다(GN-19f). 빠진 시험이나 program만 쓰던 require는 그
   `go.mod`에 남는다. 그 require는 소비자의 version 선택에 들어가고, 그 형태의 어떤 package도 그것을 import하지 않으므로
   소비자의 빌드는 그 소스를 컴파일하지 않는다. 명령은 그런 require를 밝히지 않는다. release 형태에 `go mod tidy`를 돌려야만
   찾을 수 있기 때문이다. 명령은 `go.mod`를 쓰지도 않는다. 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도
@@ -3311,6 +3318,11 @@
     `<directory>/vX.Y.Z`가 Go가 그 모듈에서 읽는 tag다.
   - 그 commit의 `go.mod`에 `replace` 줄이 없고 `v0.0.0`으로 require하는 모듈이 없다. 둘 다 개발 꼴이며(GN-15f) tag의
     소비자가 풀 수 없다.
+  - `go.mod`가 release version `vA.B.C`로 require하는 같은 레포의 Go 모듈(module path의 앞 세 요소가 같은 모듈,
+    GN-14f) 각각과, 그런 모듈의 tag에 있는 `go.mod`가 다시 require하는 모듈 각각의 tag `<그 모듈의 디렉터리>/vA.B.C`가
+    레포에 있다(B2.479). 명령은 tag가 없는 모듈과 그것을 require하는 `go.mod`를 각각 밝히고, 그 모듈의 `binding
+    release-go-module`을 먼저 실행하라고 말한다. 그래서 한 레포의 모듈들은 require의 순서로 release한다. require되는
+    모듈이 먼저다.
   - work tree가 플랫폼마다 `internal/binding/zz_generated_link_<platform>.go`와
     `internal/ffi/lib/<platform>/zz_generated_lib.go`를 갖는다. 없으면 생성이 실행되지 않은 것이고, 라이브러리의 디렉터리를
     적는 파일이 없다.
@@ -3330,7 +3342,8 @@
   release 형태가 빼는 추적 파일(GN-15g), 곧 레포의 시험과 program의 Go 파일 각각을 `git update-index --force-remove`하며(명령은
   그것을 파일의 이름과 tag의 commit에 있는 package 절(`git show`)로 가려내고 실행을 읽는 쪽에 밝힌다),
   release가 싣는 생성 파일(GN-15g) 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
-  `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `git write-tree`와
+  `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `go.mod`가 같은 레포의
+  모듈을 require하면 release 형태의 `go.sum`도 같은 방법으로 넣고(GN-15g, B2.479), `git write-tree`와
   `git commit-tree -p <tag의 commit>`을 message `chore(release): Carry the Go module of vX.Y.Z`로 실행한다. author와
   committer의 날짜는 tag의 commit의 committer 날짜이고 identity는 실행의 Git의 것이므로, 같은 identity의 같은 입력은 같은
   commit을 준다. 레포나 remote의 tag `<directory>/vX.Y.Z`가 다른 commit을 가리키면 명령은 실패한다. 이 commit을
@@ -3344,7 +3357,17 @@
   `go test -count=1 .`를 `GOPROXY=direct`, `GOSUMDB=off`, `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, 빈 `GOFLAGS`와
   `CGO_LDFLAGS`, `CGO_ENABLED=1`, `--work`의 module cache와 build cache로 실행하고, 그 뒤 소비자의 `go.mod`에 `replace`가
   있으면 명령은 실패한다. module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기
-  remote에서 받으므로, 레포는 Go require의 순서로 release한다. 증명은 실행의 플랫폼의 라이브러리만 링크한다. 다른
+  remote에서 받으므로, 레포는 Go require의 순서로 release한다. `go.mod`가 release version으로 require하는 같은 레포의 Go
+  모듈, 곧 형제 모듈은 `--work`의 bare 저장소에서 받는다. Git이 `https://github.com/<owner>/<repository>`의 모든 모듈에
+  그 저장소를 읽기 때문이다. 명령은 commit 전에 위 검사의 형제 모듈 각각의 tag의 commit을 그 tag로 그 저장소에 push하고,
+  `--work`의 모듈 안에서 소비자의 설정으로 형제마다 `go mod download -json <module>@<version>`을 실행한다. 그 `Sum`과
+  `GoModSum`이 commit의 `go.sum`의 줄이다(GN-15g). 명령은 그 뒤 module cache를 지우므로 소비자는 형제 모듈을 다시
+  받는다. 추적된 `go.sum`이 형제 모듈에 다른 hash를 주면 commit 전에 그 줄을 대며 거부한다. B2.479 전에는 그 저장소가
+  실행의 모듈의 tag만 가졌다. 같은 레포의 validator 모듈을 require하는 crud-ui의 generator 모듈의 release는 두 실행의
+  순서가 어느 쪽이든 소비자의 `go mod tidy`에서 `unknown revision packages/validator/go/v0.0.1`로 실패했고, 원인을
+  말하는 문장이 없었다. 한 레포의 두 모듈 사이에서 멈춘 release는 그대로 다시 실행한다. 명령은 이 실행의 commit을
+  가리키는 첫 모듈의 tag를 그대로 두고, remote가 그 tag를 가지면 reference를 주지 않으며, 둘째 모듈의 실행은 레포에서 그
+  tag를 찾는다. 증명은 실행의 플랫폼의 라이브러리만 링크한다. 다른
   플랫폼의 라이브러리는 그 object로 검사한다.
   그다음 명령은 commit에 annotated tag `<directory>/vX.Y.Z`를 만들고(`git tag -a`, 같은 날짜), 표준 출력에 한 줄
   `refs/tags/<directory>/vX.Y.Z`를 쓴다. recipe가 remote에 push하는 reference다. remote가 이미 그 tag를 가지면 아무것도
@@ -3381,6 +3404,11 @@
   | `release-assets-npm` | `node`나 `wasm` | GN-19i, job `npm`의 빌드 |
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
   | `checkout-node-addon` | `node` | GN-3c, checkout의 addon을 생성된 진입점 옆에 |
+
+  계약이 둘이고 한 계약의 Go 모듈이 다른 계약의 Go 모듈을 release version으로 require하는 레포(crud-ui: generator가
+  validator를 require한다)는 require되는 모듈의 `release-go-module-<component>`를 그것을 require하는 모듈의 것보다 먼저
+  실행한다(GN-19f, B2.479). 둘째 실행은 레포에서 첫 실행의 tag를 읽고, 순서가 반대인 실행은 tag가 없는 모듈의 이름을
+  대며 거부된다.
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
