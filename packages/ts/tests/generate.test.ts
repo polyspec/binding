@@ -12951,6 +12951,29 @@ const wholeConsumerTarget = (name: string, inputs: Inputs, target: Lang): Readon
   return made;
 };
 
+// B2.492 (GN-6af, GN-13e): orm's alias orm_value makes an int, UTF-8 bytes and a map of sequence keys as instances of
+// integer_value, bytes_value and map_value in PHP and names those classes in its PHP in rows. The PHP host describes
+// each instance with the kind of its row and reads it through the method of its property, so a case value that is such
+// an instance reaches the encode; and the tokens of a PHP result write each instance as `<unit> #k` and its content,
+// as aliasTokens writes the expected value, where they wrote `other <class>`.
+test('B2.492: orm reads its value class instances in the PHP host and in the tokens of a PHP result (GN-6af, GN-13e)', () => {
+  const orm = WHOLE_CONSUMERS.find((c) => c.name === 'orm');
+  assert.ok(orm !== undefined);
+  const out = wholeConsumerTarget(orm.name, wholeConsumer(orm), 'php');
+  const lib = text(out as Map<string, string | Buffer>, 'packages/php-ext/generated/lib.rs');
+  for (const [cls, kind, read] of [['IntegerValue', 'Int', 'value'], ['BytesValue', 'Bytes', 'value'], ['MapValue', 'Map', 'entries']]) {
+    const at = lib.indexOf(`php_instance(value, "Polyspec\\\\Orm\\\\${cls}") {`);
+    assert.ok(at >= 0, cls);
+    const arm = lib.slice(at, lib.indexOf('\n    }\n', at));
+    assert.ok(arm.includes(`Some(("${read}", ReadAs::Content))`), cls);
+    assert.ok(arm.includes(`HostValue::Value { kind: ValueKind::${kind}, `), cls);
+  }
+  const tests = text(out as Map<string, string | Buffer>, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /\} elseif \(\$value instanceof \\Polyspec\\Orm\\BytesValue\) \{[\s\S]*?\$out\[\] = "bytes_value" \. ' #' \. \$numbers\[\$id\];\n {16}\$stack\[\] = \[\$value->value\(\), null\];/);
+  assert.match(tests, /\} elseif \(\$value instanceof \\Polyspec\\Orm\\MapValue\) \{[\s\S]*?\$entries = \$value->entries\(\);\n {16}\$out\[\] = 'map ' \. count\(\$entries\);\n {16}self::places\(\$entries, false, \$stack\);/);
+  assert.match(tests, /"\[\\"bytes_value #0\\",\\"string 7f000001\\"\]"/);
+});
+
 test('B2.363: the check of this tree gives the whole copy of each consumer contract the findings that findings.json records and no other, and the generator writes each of its targets (G-4)', () => {
   // findings.json: the findings that a copy has under the check of this tree, each with its reason and the condition
   // that ends it, which is a task of that repository. A copy that is not listed has no finding.
