@@ -67,7 +67,9 @@ the design ids are those of the binding design.
   "$(CARGO)"` to each command of binding that they run that runs Cargo; `binding check` reports a file of recipes that
   runs Cargo in another way (CK-94). A recipe of the repository that runs `binding go-link` passes `--cargo "$(CARGO)"
   --cargo-flags "$(CARGOFLAGS)"`. maturin, which `uv build` runs, and `napi build` start Cargo themselves and are no
-  call of binding. Why: php-serialization and session-store found that `binding go-link` and the release recipes ran
+  call of binding. The go command is given in the same way, and is no requirement of a command: `binding check`,
+  `binding scaffold` and `binding release-go-module` take `--go <command>`, the value of `$(GO)`, split into words as
+  `--cargo` is, and without it they run the `go` of `PATH` (GN-15l, GN-19f). Why: php-serialization and session-store found that `binding go-link` and the release recipes ran
   the `cargo` of `PATH`, so they missed the `$(CARGO)` and the `CARGOFLAGS` of the repository and with them the Rust
   link of kit, and in a development link the core was built from the tag of the lock; hyper found the same of the read
   of the contracts of its providers, whose `cargo metadata` gave the crate of the tag of the lock, so its generator read
@@ -2400,6 +2402,24 @@ the design ids are those of the binding design.
   `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
   `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
   `go.mod`, and session-store, whose `go.mod` requires php-serialization, had none, so its module did not build alone.
+  The go command: `binding check` and `binding scaffold` take `--go <command>`, the value of `$(GO)` of the release
+  recipes (GN-19h), and without it the command is the `go` of `PATH`. The value is split into words at white space, as
+  the value of `--cargo` is (GN-1d), and the commands run `<command> mod download -json all`; a value that holds a quote
+  or a backslash and a `--go` without a word are errors of the command line. `binding generate` and `binding go-link`
+  start no Go and take no `--go`. The need is decided by the `go.mod` that the scaffold writes, at each run: only a
+  `go.mod` that requires a release starts Go, so a contract whose `go.mod` requires none, or that has no target `go`,
+  runs on a machine without Go, and binding does not look for the command then, even when `--go` names one that is
+  not there. When the `go.mod` requires a release, binding looks for the command before it starts it: a name without a
+  directory in a directory of `PATH`, and a path as that file, each a file that can be executed. When it is not found,
+  the command ends with status 1 before it writes or compares a file, with one sentence that says why Go is needed and
+  names the tool and how to give it: ``<path of the go.mod> requires the release <module> vX.Y.Z of another polyspec Go
+  module, so its go.sum is written from `go mod download` (GN-15l), and the go command `go` is not found on PATH:
+  install Go, or name the go command with --go <command>, the value of $(GO) of the release recipes (GN-19h)``. Why:
+  the first run that needed Go was a release run. While a library required other Go modules only in the development
+  form, no check started Go; the release of the modules that it requires turned its `go.mod` into one that requires a
+  release, and `release-binding-check` of the release workflow, in a job without Go, failed with ``go mod download did
+  not start: spawnSync go ENOENT``, which names neither the tool as a need nor a variable or an option that gives it.
+  template, http-negotiation and session-store each lost a release tag on it.
 - **GN-15h** The Go packages of a generation hold only the helpers that the contract uses. Package `binding` writes a
   method of `Writer` or `Reader` (`Bool`, `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`) only when the Go
   code of the generation calls it through a value of its type, and the type `Key` with `IntKey`, `BytesKey`, `TextKey`
@@ -3700,12 +3720,18 @@ the design ids are those of the binding design.
   that does not hold the package by name: the release of npm is fixed by the repository, so a second form would be a
   path that no run takes.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>]` makes the commit and the tag of GN-15g in the repository of the
-  contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target go` wrote the
-  files `zz_generated_*.go` of the Go module into the work tree; `--libraries` holds
+  <directory> --work <directory> [--remote <name>] [--go <command>]` makes the commit and the tag of GN-15g in the
+  repository of the contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target
+  go` wrote the files `zz_generated_*.go` of the Go module into the work tree; `--libraries` holds
   `<Go directory>/libpolyspec_<repository>_go.a` of each platform (GN-19b); `--work` is a directory of the run, in
   which the command keeps its index, the repository and the consumer of the proof and the caches of Go; `--remote`
-  is the Git remote of the repository, `origin` when it is not given. The command runs every check below to its end
+  is the Git remote of the repository, `origin` when it is not given; `--go` is the go command, the value of `$(GO)`
+  of the release recipes (GN-19h), read as `--go` of `binding check` is (GN-15l), and the `go` of `PATH` when it is not
+  given. The command always starts Go, for the consumer below, so it looks for the go command before it reads the
+  repository; when it is not found, it creates no commit and no tag and ends with status 1 and the sentence ``binding
+  release-go-module proves the commit of the Go module with a consumer that Go builds (`go mod tidy`, `go test`,
+  GN-19f), and the go command `go` is not found on PATH: install Go, or name the go command with --go <command>, the
+  value of $(GO) of the release recipes (GN-19h)``. The command runs every check below to its end
   and then names each failed one; with a failed check it creates no commit and no tag.
   - The tag is `vX.Y.Z`, and `HEAD` is the commit that it names: the parent of the commit is the commit that the
     release checked.
@@ -3790,7 +3816,12 @@ the design ids are those of the binding design.
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
   may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
-  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `NAPI`,
+  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `GO`, the
+  go command that binding starts, has the default `go`, the go of `PATH`: the recipes pass `--go "$(GO)"` to each
+  command of binding that may start Go, `binding check --release` of `release-binding-check` (GN-15l) and `binding
+  release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when
+  its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go; a command that needs Go and
+  does not find it names the tool, `--go` and `GO` (GN-15l). `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
   `llvm.version` of `config/toolchain.json` and the PHP minors of its extension in `phpExtension.minors` of that file

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// binding check <interface.json> --cargo <command> [--release]
+// binding check <interface.json> --cargo <command> [--go <command>] [--release]
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
 //   tracked binding packages with what `binding scaffold` writes (L-2). --release adds the check of a release (CK-70).
-// binding scaffold [--root <repository> | --contract <interface.json>] --cargo <command>
+// binding scaffold [--root <repository> | --contract <interface.json>] --cargo <command> [--go <command>]
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
+//   --go of check, scaffold and release-go-module is the go command, the value of $(GO), `go` of PATH when it is not
+//   given; check and scaffold start it only for the go.sum of a go.mod that requires a release (GN-15l).
 // binding generate [--root <repository> | --contract <interface.json>] [--out <directory>] --cargo <command>
 //   Writes the generated sources into the directories that binding owns (L-1). --out writes the same files under another
 //   directory, for the comparison of I-5. --cargo of check, scaffold, generate and go-link is the cargo command of the
 //   repository, the value of $(CARGO), which runs every call of Cargo (GN-1d).
 // binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
-//     --work <directory> [--remote <name>]
+//     --work <directory> [--remote <name>] [--go <command>]
 //   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
 // binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate>
 //     --target-dir <directory> [--features <features>]
@@ -31,6 +33,7 @@ import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } 
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
+import { goCommand } from './go-command.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes } from './release/recipes.ts';
 
@@ -129,12 +132,20 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-// GN-1d: the words of the value of --cargo or --cargo-flags, as the shell splits $(CARGO) of a recipe line at white
-// space; a value that the shell would read otherwise (a quote or a backslash) is refused, and so is a command of no word.
+// GN-1d: the words of the value of --cargo, --cargo-flags or --go, as the shell splits $(CARGO) of a recipe line at
+// white space; a value that the shell would read otherwise (a quote or a backslash) is refused, and so is a command of
+// no word.
+const VARIABLES: Record<string, string> = { '--cargo': 'CARGO', '--cargo-flags': 'CARGOFLAGS', '--go': 'GO' };
 function words(option: string, value: string, command: boolean): string[] {
   const split = value.split(/\s+/).filter((word) => word !== '');
-  if (/["'\\]/.test(value) || (command && split.length === 0)) usage(`${option} ${value} is no list of words: give the value of $(${option === '--cargo' ? 'CARGO' : 'CARGOFLAGS'}), which the shell splits at white space (GN-1d)`);
+  if (/["'\\]/.test(value) || (command && split.length === 0)) usage(`${option} ${value} is no list of words: give the value of $(${VARIABLES[option] ?? ''}), which the shell splits at white space (GN-1d)`);
   return split;
+}
+
+// GN-15l, GN-19f: the words of --go, the go command that a command which may start Go takes; without the option the
+// command is the go of PATH. Whether it is there is asked only where Go is about to start (goCommand).
+function goOf(value: string | undefined): string[] | undefined {
+  return value === undefined ? undefined : words('--go', value, true);
 }
 
 // GN-1d: the cargo command that a command which runs Cargo requires.
@@ -144,7 +155,7 @@ function cargoOf(command: string, value: string | undefined): string[] {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> --cargo <command> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] --cargo <command> | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] | binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> --cargo <command> [--go <command>] [--release] | binding scaffold [--root <repository> | --contract <interface.json>] [--out <directory>] --cargo <command> [--go <command>] | binding generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] --cargo <command> | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] [--go <command>] | binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -164,9 +175,10 @@ function releaseGoModuleCommand(argv: string[]): never {
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i];
     const value = argv[i + 1];
-    if (key === undefined || value === undefined || !['--root', '--contract', '--tag', '--libraries', '--work', '--remote'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--root', '--contract', '--tag', '--libraries', '--work', '--remote', '--go'].includes(key)) usage(`unknown argument ${key ?? ''}`);
     given.set(key, value);
   }
+  const go = goOf(given.get('--go'));
   const tag = given.get('--tag');
   const libraries = given.get('--libraries');
   const work = given.get('--work');
@@ -189,6 +201,7 @@ function releaseGoModuleCommand(argv: string[]): never {
       libraries: resolve(libraries),
       work: resolve(work),
       remote: given.get('--remote') ?? 'origin',
+      go,
       env: process.env,
       log: (line) => {
         if (line !== '') process.stderr.write(`${line}\n`);
@@ -305,17 +318,17 @@ if (command === 'check') {
   for (let i = 0; i < rest.length; i += 1) {
     const argument = rest[i] as string;
     if (argument === '--release') options.set('--release', 'true');
-    else if (argument === '--cargo' && rest[i + 1] !== undefined) options.set('--cargo', rest[(i += 1)] as string);
+    else if ((argument === '--cargo' || argument === '--go') && rest[i + 1] !== undefined) options.set(argument, rest[(i += 1)] as string);
     else positional.push(argument);
   }
   const [path, ...extra] = positional;
-  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the options --cargo and --release');
+  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the options --cargo, --go and --release');
   contractPath = resolve(path);
 } else {
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
     const value = rest[i + 1];
-    if (key === undefined || value === undefined || !['--root', '--contract', '--out', '--cargo', ...(command === 'generate' ? ['--target'] : [])].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--root', '--contract', '--out', '--cargo', ...(command === 'generate' ? ['--target'] : ['--go'])].includes(key)) usage(`unknown argument ${key ?? ''}`);
     options.set(key, value);
   }
   // L-1: a core at packages/<component>/rust names its contract with --contract; --root finds packages/rust.
@@ -324,6 +337,7 @@ if (command === 'check') {
   contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const cargo = cargoOf(command, options.get('--cargo'));
+const go = goOf(options.get('--go'));
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 // scaffold writes the thin packages from the package and name items alone (the schema, CK-1, and the names, CK-18), so
 // no other finding stops it, such as a unit that is still todo (CK-2); check and generate report those. It does not ask
@@ -446,15 +460,21 @@ function trackedOf(): Tracked {
 // GN-15l: the go.sum beside a go.mod that requires a release holds the sums that `go mod download -json all` gives for
 // a module of those requirements, with GOPROXY, GOFLAGS and the module cache of the environment: offline it reads the
 // cache alone. A module that Go cannot give refuses the go.sum with the cause; no empty or partial go.sum is written.
+// B2.456: only such a go.mod needs Go, so the go command is looked for here and not before; a run that does not find it
+// ends with the sentence of goCommand, before it writes or compares a file.
 function withGoSum(t: Tracked): Tracked {
   const goModPath = `${goModuleDir(checked)}/go.mod`;
   const goMod = t.files.get(goModPath);
-  if (goMod === undefined || releaseRequires(goMod).length === 0) return t;
+  const releases = goMod === undefined ? [] : releaseRequires(goMod);
+  if (goMod === undefined || releases.length === 0) return t;
+  const resolved = goCommand(go, process.env, `${join(root, goModPath)} requires the release ${releases.join(', ')} of another polyspec Go module, so its go.sum is written from \`go mod download\` (GN-15l)`);
+  if ('refusal' in resolved) fail(resolved.refusal);
+  const [program, ...prefix] = resolved.command;
   const goSumPath = `${goModuleDir(checked)}/go.sum`;
   const dir = mkdtempSync(join(tmpdir(), 'binding-go-sum-'));
   try {
     writeFileSync(join(dir, 'go.mod'), goSumModule(goMod));
-    const ran = spawnSync('go', ['mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
+    const ran = spawnSync(program, [...prefix, 'mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
     if (ran.error !== undefined) throw new Error(`go mod download did not start: ${ran.error.message}`);
     const text = ran.stdout.trim();
     const downloads = text === '' ? [] : (JSON.parse(`[${text.replace(/\}\s*\{/g, '},{')}]`) as GoDownload[]);
