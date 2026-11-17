@@ -4,8 +4,35 @@
 // matrix of the job, and the steps of a consumer in their order. Each step past the patch is a goal of the consumer's
 // own Makefile; binding gives it only the CLI and the binding_core of the run.
 
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Step } from './consumers.mts';
+
+const CORE = 'polyspec-binding-core';
+
+// The entries of a Cargo.lock other than those of polyspec-binding-core, each as one line: the name, the version and
+// the source, and the dependencies without those on polyspec-binding-core, whose name takes the version of the patch
+// when the lock holds more than one release of it.
+function entriesOutsideCore(lock: string): Set<string> {
+  const entries = new Set<string>();
+  for (const block of lock.split(/^\[\[/m).slice(1)) {
+    const name = /^name = "([^"]+)"$/m.exec(block)?.[1];
+    if (name === undefined || name === CORE) continue;
+    const version = /^version = "([^"]+)"$/m.exec(block)?.[1] ?? '';
+    const source = /^source = "([^"]+)"$/m.exec(block)?.[1] ?? 'the workspace';
+    const deps = [...block.matchAll(/^ "([^"]+)",$/gm)].map((m) => m[1] ?? '').filter((d) => d !== CORE && !d.startsWith(`${CORE} `));
+    entries.add(`${name} ${version} (${source})${deps.length === 0 ? '' : ` [${deps.join(', ')}]`}`);
+  }
+  return entries;
+}
+
+// GN-14m, GN-14d: the entries that an update changed outside polyspec-binding-core, from the lock of the tag to the
+// lock after it: each removed and each added entry, one line each; empty when the lock changed in that entry alone.
+export function lockChanges(tagLock: string, lock: string): string[] {
+  const before = entriesOutsideCore(tagLock);
+  const after = entriesOutsideCore(lock);
+  return [...[...before].filter((e) => !after.has(e)).map((e) => `removed ${e}`), ...[...after].filter((e) => !before.has(e)).map((e) => `added ${e}`)];
+}
 
 // A consumer of the list: a GitHub repository at a release tag, the job of the matrix that runs it, and the goals of
 // its Makefile that install what its steps need. `path` names the directories of the clone that its own CI puts on
@@ -151,11 +178,13 @@ export const cloneStep = (g: Gate, c: GateConsumer): GateStep => ({
 // The steps of a consumer after its clone, in their order. `locked` is the versions of polyspec-binding-core of its
 // Cargo.lock, `targets` the targets of its contract, and `patch` writes the path patch of the root Cargo.toml
 // (patchManifest of scripts/consumers.mts). The fetch runs before the patch, on the lock of the tag, as the consumer's
-// install fetches it; the update after the patch names only polyspec-binding-core and runs offline, so the lock
-// changes in that entry alone (GN-14d).
+// install fetches it; the update after the patch names only polyspec-binding-core, and the lock after it is compared
+// with the lock of the tag, so the consumer fails unless the lock changed in that entry alone (GN-14d).
 export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], targets: readonly string[], patch: () => void): GateStep[] {
   const dir = consumerDir(g, c);
   const manifest = join(dir, 'Cargo.toml');
+  const lockFile = join(dir, 'Cargo.lock');
+  let tagLock = '';
   const make = (goals: readonly string[], extra: readonly string[] = []): string[] => ['-C', dir, ...goals, ...bindingVariables(g), ...extra];
   const builds = rehearsalGoals(targets);
   // The directories of `path` come first on the PATH of every goal of the consumer, as its CI puts them there.
@@ -166,8 +195,16 @@ export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], t
     // before the consumer's install; rustup installs it in the clone, where it reads that file.
     { phase: 'prepare', step: { what: 'rustup toolchain install of the rust-toolchain.toml of the consumer', command: 'rustup', argv: ['toolchain', 'install'], cwd: dir } },
     { phase: 'prepare', step: { what: 'cargo fetch --locked', command: 'cargo', argv: ['fetch', '--locked', '--manifest-path', manifest] } },
+    { phase: 'prepare', step: { what: 'the lock of the tag, kept for the comparison', write: () => { tagLock = readFileSync(lockFile, 'utf8'); } } },
     { phase: 'prepare', step: { what: `the path patch of polyspec-binding-core to ${g.core}`, write: patch } },
-    { phase: 'prepare', step: { what: `cargo update ${updateSpecs(locked).join(' ')} --offline`, command: 'cargo', argv: ['update', '--manifest-path', manifest, ...updateSpecs(locked), '--offline'] } },
+    // GN-14m: the update takes the network, since the patch unlocks the git entry and cargo resolves its tag= by a ref
+    // that the locked fetch does not keep (polyspec/kit#63); it fetches the tag that the lock pins (HR-89), and the
+    // next step keeps GN-14d.
+    { phase: 'prepare', step: { what: `cargo update ${updateSpecs(locked).join(' ')}`, command: 'cargo', argv: ['update', '--manifest-path', manifest, ...updateSpecs(locked)] } },
+    { phase: 'prepare', step: { what: 'the lock changes in polyspec-binding-core alone', write: () => {
+      const changes = lockChanges(tagLock, readFileSync(lockFile, 'utf8'));
+      if (changes.length > 0) throw new Error(`the update changed the lock of the tag outside polyspec-binding-core (GN-14d): ${changes.join('; ')}`);
+    } } },
     { phase: 'prepare', step: { what: 'binding scaffold of the run', command: g.node, argv: [g.cli, 'scaffold', '--root', dir, '--cargo', 'cargo'] } },
     { phase: 'prepare', step: { what: `make ${c.install.join(' ')} of the consumer`, command: g.make, argv: make(c.install), env: own } },
     { phase: 'generate', step: { what: 'make bindings of the consumer', command: g.make, argv: make(['bindings']), env: { ...own, ...OFFLINE } } },
