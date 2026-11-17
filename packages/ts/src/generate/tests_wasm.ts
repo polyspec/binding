@@ -4,6 +4,7 @@
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
+import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
 import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, NODE_SETTLED, awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
@@ -49,8 +50,9 @@ export function wasmTests(model: Model): string {
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
-      const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
-      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('wasm', m.name, 'callable')}: ${body}`).join(', ')} }`;
+      // GN-6bu: each member declares the arguments that the binding calls it with.
+      const body = (count: number): string => `(${jsArguments(count)}) => ${'raise' in how ? `{ throw ${how.raise}; }` : how.returns === 'wrong' ? 'Symbol()' : 'null'}`;
+      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('wasm', m.name, 'callable')}: ${body((m.parameters ?? []).length)}`).join(', ')} }`;
     },
   };
   const cls = (category: string): string => categoryClass(model, category);
@@ -139,9 +141,9 @@ export function wasmTests(model: Model): string {
   };
   ctx.boundSet = (name, expr) => `${ctx.boundValue?.(name) ?? ''} = ${expr};`;
   ctx.machineFunctionNew = (fixture) => {
-    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = args[${i}]; `).join('');
+    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = arg${i}; `).join('');
     const steps = kept + fixture.steps.map((step, i) => {
-      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `args[${step.on}]` : (ctx.boundValue?.(step.on) ?? ''));
+      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `arg${step.on}` : (ctx.boundValue?.(step.on) ?? ''));
       // GN-13o: a step that names raises fails with that kind.
       if (step.raises !== undefined) return `${form.fails(call, step.raises, `step ${i} fails with ${step.raises}`)} `;
       // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
@@ -152,8 +154,8 @@ export function wasmTests(model: Model): string {
     }).join('');
     const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
     // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
-    // awaits the call of a member that waits.
-    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+    // awaits the call of a member that waits. GN-6bu: the function declares the arguments that the machine calls it with.
+    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(${jsArguments(fixture.parameters)}) => { ${steps}${end} }`;
   };
   // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
   // was thrown, which the entry point of thrown-count-test counts.
@@ -185,9 +187,9 @@ export function wasmTests(model: Model): string {
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
   ctx.functionMember = 'call';
-  ctx.functionNew = (rows) => {
+  ctx.functionNew = (rows, parameters) => {
     usesFixture = true;
-    return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+    return `fixture([${jsDeclaredMember("'call'", parameters)}], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
   };
   // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
   // of a fixture whose one member is the call; the test reads the record of each after the call.
@@ -443,6 +445,25 @@ test('K-2: ${name} lets the exception of a callback through', () => {
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });` : ''}`);
+    }
+    // GN-6bu: a callback that names none of the arguments that the binding calls it with is refused before the member
+    // runs: it is never called, and an arming of the member stays for the next call (GN-8a).
+    for (const place of reachable ? placeTests(model, 'wasm', fn) : []) {
+      const given = (value: string): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      if (place.armed !== undefined) {
+        usesGlue = true;
+        usesStepGlue = true;
+      }
+      emit(`
+test('GN-6bu: ${name} refuses a ${langName('wasm', place.arg.name, 'variable')} that takes no argument', () => {
+  const calls = [];${place.armed === undefined ? '' : `\n  const armed = stepGlue.__armFaults(${jsString(fn.member.id)}, ${jsString(withoutErrno(place.armed.faults))});`}
+  assert.throws(() => ${given(refusedJs(place, 'none'))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback' && error.message.includes(${jsString(place.given)}));
+  assert.deepEqual(calls, []);${place.armed === undefined ? '' : `
+  // GN-8a: the refused call did not reach the core, so the next call takes the arming.
+  assert.throws(() => ${given(placeholder(model, ctx, place.arg.type, true))}, (error) => error.constructor === pkg.${cls(place.armed.category)} && error.kind === ${jsString(place.armed.kind)});
+  assert.deepEqual(stepGlue.__faultLeft(armed), []);`}
+});`);
     }
     for (const kase of primitiveCases(model, ctx, fn)) {
       const instance = receiverOfCase(kase.receiver);

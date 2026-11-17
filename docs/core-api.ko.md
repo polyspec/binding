@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: 5b88bfa63440154aebc34fdcacf9e2f292ec5008cb6127b51af616d4af3c671d -->
+<!-- source-sha256: 66938cd13a56c2038ccca94a67e622b2b7dd4df07b3f75954ca16f8f6583af7d -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -52,7 +52,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. binding 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 그 벡터를 binding의 TypeScript 변환과 함께 쓴다. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
-| `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
+| `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member, arguments: Option<CallbackArguments> }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. `arguments`가 없는 `InvalidCallback`은 member가 없거나 호출할 수 없는 경우다(`<subject> does not provide a callable <member>`). `arguments`가 있으면 바인딩이 건네는 인자를 받지 않는 callback이다(GN-6bu). 그 메시지는 `<subject>`, callback unit의 member이면 `.<member>`, 그리고 인자의 `Display`이며, 예는 `Db.transaction(): callback takes 0 arguments, and the binding calls it with 1 (tx)`이다. |
+| `CallbackArguments`, `Declared` | GN-6bu | `CallbackArguments { declared: Declared, given: Vec<String>, named_only: bool }`: callback이 선언한 것, 바인딩이 건네는 인자의 이름을 순서대로(callback unit의 member는 계약의 이름, 함수 타입은 타입), 그리고 언어가 default나 rest 앞에 이름 붙인 parameter만 읽는지(JavaScript 함수의 `length`)이며, 마지막이 참이면 메시지가 각 인자에 이름을 붙이라고 알린다. `Declared`는 `Takes(u32)`(받는 수가 건네는 수보다 적다), `Requires(u32)`(요구하는 수가 더 많다), `Other(String)`(언어가 수를 주지 않았다: 그 이유)다. `CallbackArguments`의 `Display`: `takes <k> arguments, and the binding calls it with <n> (<names>)`, `requires <k> arguments, and the binding calls it with <n> (<names>)`, 또는 `does not take the <n> arguments (<names>) that the binding calls it with: <reason>`. |
 | `path_from_bytes(bytes: Vec<u8>, subject: &str) -> Result<PathBuf, BindingError>` | T-1 `path`, B-3 | OS 바이트의 경로. NUL 바이트와, OS 경로가 바이트가 아닌 곳(Windows)에서 UTF-8이 아닌 바이트는 `InvalidPath`다. |
 | `path_bytes(path: &Path) -> &[u8]` | T-1 `path`, B-3 | 언어로 나가는 경로의 바이트. OS 바이트이고, OS 경로가 바이트가 아닌 곳에서는 `OsStr`의 encoded 바이트다. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |

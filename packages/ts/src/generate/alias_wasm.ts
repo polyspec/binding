@@ -1034,11 +1034,13 @@ fn native_object(native: &Native) -> Result<JsValue, Fail> {
     found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: a native value that no JavaScript value entered as") }))
 }
 
-/// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
-fn kept_function_in(value: &JsValue, subject: &str) -> Result<Native, Fail> {
+/// GN-6z: a value of a function type is a function (kind invalid_argument_type) that names the arguments that the
+/// binding calls it with (GN-6bu, kind invalid_callback), held as a Native.
+fn kept_function_in(value: &JsValue, subject: &str, given: &[&str]) -> Result<Native, Fail> {
     if !value.is_function() {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
     }
+    takes_in(value, subject, "", given)?;
     Ok(wasm_native(value))
 }
 `).replace(/\n\n(?=[ }])/g, '\n');

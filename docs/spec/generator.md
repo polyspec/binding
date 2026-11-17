@@ -335,18 +335,31 @@ the design ids are those of the binding design.
   for the other three:
   - npm: the consumer names, in its own root `package.json`, the npm package of every polyspec library of its graph
     by the URL of its release asset (GN-3c), also a package that only another package requires, and each platform
-    package of each; it writes no `overrides`. The release that each URL names is the one whose version the packed
-    manifests require. Why: npm satisfies a requirement `X.Y.Z` of a packed manifest with the root dependency of that
-    name when the package at its URL has that version, and installs one copy of it; otherwise it asks the registry
-    for that version, which holds none. A URL in the packed manifest is refused under `allow-remote=root` (GN-3c),
-    and an `overrides` entry would state a second time the version that the manifest of the package already states.
+    package of each; it writes no `overrides`, and it installs with its lock (`package-lock.json`). The release that
+    each URL names is the one whose version the packed manifests require. Why: npm satisfies a requirement `X.Y.Z` of
+    a packed manifest with the root dependency of that name when the package at its URL has that version, and
+    installs one copy of it; otherwise it asks the registry for that version, which holds none. A URL in the packed
+    manifest is refused under `allow-remote=root` (GN-3c), and an `overrides` entry would state a second time the
+    version that the manifest of the package already states. Why the lock, as measured with npm 12 in hyper: an
+    install with no lock at all resolves the graph from scratch and stops under `allow-remote=root` with
+    `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`, because a package of the registry that is not
+    a dependency of the root cannot be fetched; with a lock, a workspace package that requires a sibling by its name
+    and the exact version is resolved by the URL entry of the root with no `overrides`, the lock is byte for byte
+    the one that an install with `overrides` writes, and no registry is asked.
   - Python: the consumer gives the installer the wheel of every polyspec library of its graph, the one of its
     platform, by the URL of its release asset, all in one install (a requirement `polyspec-<library> @ <URL>` of its
     project, or the URL as an argument of `pip install`). The release that each URL names is the one whose version
     the metadata of the wheels require. Why: pip and uv satisfy `polyspec-<library>==X.Y.Z` of the metadata of a wheel
     with a wheel of that name and version that the same install was given by a URL, and pip fails when none was given
     or its version differs; a release has no index page that an installer reads, so no `--find-links` names it; and
-    the file name of a wheel differs by platform (GN-19c), so the metadata of a wheel cannot name one URL.
+    the file name of a wheel differs by platform (GN-19c), so the metadata of a wheel cannot name one URL. The
+    tests of a library are a consumer too: a repository whose Python package requires the wheel of another library
+    declares the source of that wheel in its own root, a uv project with its lock or requirements with hashes, by
+    the URL of the release asset, and does not build that wheel from a clone of the other repository. Why: the
+    generator cannot write the source, since no contract names the owner and the repository of a library and the
+    file name of a wheel holds constants of the binding that released it, and the metadata of a wheel carries no
+    source to the one that installs it; session-store built the wheel of php-serialization from a clone and
+    installed it with `pip --no-index`, because nothing declared where it comes from.
   - PHP: the consumer adds `packages.json` of the release of each library of its graph, the Composer repository that
     the release utility writes beside the archives
     (`https://github.com/<owner>/<repository>/releases/download/v<version>/packages.json`), as a `composer`
@@ -363,8 +376,10 @@ the design ids are those of the binding design.
   npm starts it reads the manifest of each tarball: a requirement `X.Y.Z` on another package of the run whose tarball
   of that version the run does not hold fails with the two names (`scripts/e2e-npm-install.mts`), because npm would
   ask the registry for it and name neither. Every repository of `tests/e2e` names its dependency by a path, so the
-  requirements that the installs of a run satisfy are development forms (GN-3e); the install of the release form of
-  npm is a test of `packages/ts`, which packs two packages and runs that script on them.
+  requirements that these installs satisfy first are development forms (GN-3e); the run then writes the release form
+  of the copy and installs it in the same two forms (GN-14l), and a test of `packages/ts` packs two packages and
+  runs that script on them. The npm install of a run has no lock: the packages that the generator writes require no
+  package of a registry, so the resolution from scratch meets none.
 - **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
   `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
   names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
@@ -383,6 +398,18 @@ the design ids are those of the binding design.
   `extension-name` of each `composer.json` of the run, and the process fails with the name before a test runs when it
   is not. Why: PIE and a release tool load the binary and ask PHP for the extension by `extension-name`, so an
   extension under another name is installed and reported as not loaded.
+- **GN-3i** The library of the Python binding crate is named after its crate: `[lib] name` of its manifest is
+  `polyspec_<library>_python`, the library with `_` for each `-`, as the libraries of the other binding crates are
+  named after theirs. The name of the library is not the name of the module that Python imports. That module stays
+  `<module>._native` (`<module>._binding._native` of a host package, GN-3b), and two items name it: the generated
+  source declares it with `#[pymodule(name = "_native")]`, which gives the symbol `PyInit__native` that CPython asks
+  the extension file for, and `tool.maturin.module-name` of `pyproject.toml` names the file that maturin copies the
+  library to (`_native.abi3.so`) in a wheel and in a development install. No recipe and no step of the end-to-end
+  check reads the library of the Python crate by its file name: maturin takes it from the build that it runs. Why:
+  Cargo writes the library of every member of a workspace into one directory, `target/<profile>/deps/lib<name>`, so
+  two Python crates of one workspace that are both named `_native` (crud-ui: `packages/validator/python` and
+  `packages/generator/python`) wrote one file, a build of both warned of an output filename collision, which Cargo
+  states may become an error, and the library of one crate replaced that of the other (B2.352).
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3
@@ -793,7 +820,8 @@ the design ids are those of the binding design.
   When the object enters, each member must be callable (kind `invalid_callback`), except a member with a `default`
   (B2.379, CK-98): `"default": {"literal": <value>}` on a member of a callback interface, the U-2 form of a parameter
   default, states the value that the trait method returns when the object has no such member, and the object is
-  refused for that member only when it has the member and the member is not callable. Each call of the trait method
+  refused for that member only when it has the member and the member is not callable. A member that is given one
+  argument or more must also take them, with the same kind (GN-6bu). Each call of the trait method
   first looks for the member on the object (Node and WASM a property that is not `undefined`, Python `hasattr`, PHP a
   method of its class) and returns the literal without a call when it is missing; Go leaves the member out of the
   interface of the callback, and its dispatch calls the method when the object has it (a type assertion to an
@@ -840,7 +868,8 @@ the design ids are those of the binding design.
   digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
   crate, because the lints deny the boxed type at a `let` and as the result of a closure
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
-  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
+  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`) and, where
+  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
   return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`
@@ -1288,6 +1317,77 @@ the design ids are those of the binding design.
   trapped with "memory access out of bounds" in `out_expr`, which called itself at each level; the binding cannot
   enlarge the stack of a host, a larger stack only moves the depth at which the process ends, and the value alias
   conversions take the same approach (GN-6as).
+- **GN-6bu** A callback takes the arguments that the binding calls it with (U-3, T-2, B2.467). A callback place is a
+  member of a callback unit (GN-6d, GN-6s), the function of a member with `machine` (GN-6ae) or a value of a function
+  type (GN-6z), at a parameter and at any place of a record field, a list, a map, an optional or a tuple, because every
+  place enters through the same helper (`in_<unit>`, `callable_in`, `kept_function_in`). Every place that is given one
+  argument or more is checked, with no mark in the contract; a place that is given no argument has no check. The check
+  runs when the value enters, which is before the locks and the core call of the entry point (GN-8a), so a refused
+  callback is never called, the member does nothing, and an arming of the member stays for its next call. The refusal
+  is kind `invalid_callback` of the category `type` (E-1a), the kind of a callback that lacks a member; a value of a
+  function type that is no function stays kind `invalid_argument_type` (GN-6z). The message names the call that
+  received the callback, the parameter, the member of a callback unit, what the callback declares and the arguments
+  that the binding gives: `Db.transaction(): callback takes 0 arguments, and the binding calls it with 1 (tx)`
+  (`BindingError::InvalidCallback` with `arguments`, docs/core-api.md). The arguments of a member of a callback unit
+  have their names of the contract in the language, and those of a function type, which names none, their types of
+  the contract. The subject of a parameter, or of a field of the record parameter, whose type holds a callback place
+  is `<call>: <name>` in every message of that parameter, where `<call>` is the member as the caller writes it:
+  `name()`, `Class.name()` and `new Class()`, in PHP `Class::name()`, and in Python `Class()` for a constructor. A
+  callback in a field of a record that is converted as a value has the subject that the conversion of its record
+  gives it.
+  What each target reads:
+  - Go: nothing. A `func` type and an interface state the arguments, and the compiler refuses a value that does not
+    take them, so Go has no check and no test.
+  - Python: `inspect.signature(<callable>).bind(…)` with one positional value for each argument; for a member of a
+    callback unit the callable is the bound method. A `TypeError` of `bind` refuses the callable, in both directions:
+    one that takes fewer arguments, and one that requires more than it is given. When `inspect.signature` itself
+    raises `ValueError` or `TypeError` (a callable of C without a signature) the value passes and is left to its call.
+    The message holds the reason of `bind`. The signature is read as `inspect` gives it, with no path of its own for
+    a plain function.
+  - PHP: the engine is asked through Reflection: `new ReflectionMethod(<object>, <member>)` for a member of a callback
+    unit, `new ReflectionFunction(<Closure>)` for a value of a function type, and
+    `new ReflectionFunction(Closure::fromCallable(<callable>))` for the callable of a member with `machine`. The
+    extension makes the instance and calls `getNumberOfParameters`, `getNumberOfRequiredParameters` and `isVariadic`
+    through ext-php-rs, as it calls any method of PHP, so it reads no field of `zend_function` and depends on no
+    layout of it. The callable passes when it declares at least as many parameters as the arguments or is variadic,
+    and requires no more than the arguments; it is refused when it declares fewer and is not variadic, and when it
+    requires more. A callable that Reflection does not describe, whose exception the extension takes, is left to its
+    call.
+  - Node and WASM: the `length` of the function, the only fact that JavaScript tells of what a function takes: the
+    count of the parameters before the first one with a default or a rest. A function whose `length` is below the
+    count of the arguments is refused, and so is one whose `length` cannot be read or is no non-negative integer.
+    Node reads the property through napi; WASM reads it in Rust (`Reflect::get` of `length`), not in the ES module.
+    The generated JavaScript entry of a function and of a method of a class declares its parameters
+    (`function name(arg0, arg1) { const args = arguments; … }`), so its `length` is their count, and counts the
+    arguments that it was given in `arguments` (G-7): an entry that took them as a rest alone had the length 0, and an
+    instance of a class that implements a callback unit (GN-6w) would be refused at the place of that callback.
+  The targets differ in two ways, each for a reason. JavaScript is stricter than PHP and Python about a rest and a
+  default: `(...args) => …` and `(tx = null) => …` are refused where `fn (...$args)`, `fn ($tx = null)`,
+  `lambda *args: …` and `lambda tx=None: …` pass, because `length` is all that can be read, and a function that names
+  no argument cannot be told from one that ignores them; the message tells the remedy, to name each argument before a
+  default or a rest, as in `(tx, ...rest)`. JavaScript is looser about the opposite mistake: a function that names
+  more parameters than the arguments passes, because a parameter after the arguments may be optional by the code of
+  the function, which `length` does not tell, so such a function would be refused wrongly; PHP and Python know which
+  parameters are required and refuse a callback that requires more.
+  Generated tests (G-5): for the first parameter of a callback unit with a member that every object has and that is
+  given an argument, for each function parameter of a member with `machine` and for the first parameter of a function
+  type, each with one argument or more, the tests of Node, WASM, PHP and Python refuse a callback that takes no
+  argument: kind `invalid_callback`, the class of the category `type` (in Python the exact class is not
+  `TypeError`), a message that holds the names of the arguments, and an empty record of the calls of the callback.
+  PHP and Python also refuse a callback that requires one argument more than it is given. Where the core call of the
+  member holds a fault injection point that fills one kind, the first test arms it before the refused call and
+  requires the next call, with a callback that takes the arguments, to fail with that kind and to leave no fault
+  (GN-8a); `tests/e2e/sample` has the point `resolve` of `sample.resolve` for it, a member that takes a callback
+  unit, because the sample has no member of a function type that the core calls. A member with `machine` arms each
+  wait and not its entry (GN-8a), so its test has no such part. The fixtures of the generated tests of Node and WASM
+  declare their arguments, since a fixture that named none would be refused: a member of a callback fixture is
+  `[<name>, (call) => (arg0, …) => call(arg0, …)]`, a function fixture is `(arg0, …) => { … }`, and a placeholder
+  callback is `(arg0, …) => null`; those of PHP (`mixed ...$args`) and Python (`*args`) are variadic and pass.
+  Why: orm `db.transaction(callback)` gives the callback the `Tx` of the transaction. A callback written without it,
+  `() => db.execute(…)`, ran in Node and PHP with the argument dropped, so every statement ran outside the
+  transaction, on the connection of `db`, and nothing said so; Python raised its own `TypeError` from inside the
+  member, after the transaction began. A check of marked places would leave every unmarked place with the same
+  silent loss, so every place with an argument is checked.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, never calls itself or a
@@ -1661,7 +1761,9 @@ the design ids are those of the binding design.
   `TypeError` of Python, which has no kind; a kind of the contract judges only the values of a call of the right shape.
   So `parse("1", "options")` with `options` keyword-only is the `TypeError` of Python, as a call of TypeScript with
   the wrong number of arguments is no kind (G-7). The generated test passes the keyword-only arguments by position
-  and expects that `TypeError`.
+  and expects that `TypeError`. This rule is of the call of a generated function. What a callback value takes is no
+  shape of that call: it is the shape of a value that the binding calls, which is judged when the value enters and is
+  kind `invalid_callback` (GN-6bu), not the `TypeError` that Python would raise where the binding calls it.
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
@@ -1956,7 +2058,8 @@ the design ids are those of the binding design.
   public one, while a user of a package reads it as no API (U-1, P-3).
 - **GN-6s** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
   an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
-  members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
+  members are checked when the object enters, and the arguments that each takes (kind `invalid_callback`, GN-6bu),
+  `thread: owner` holds, and each trait method
   calls the method of the language object through the API of its language, so the binding never takes the native
   object of another binding out. A trait method returns the failure of the core error of the owning repository
   (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the
@@ -2413,8 +2516,8 @@ the design ids are those of the binding design.
   `vX.Y.Z` the release of the repository (GN-3c) writes the files of `binding generate` for the target go, builds the crate
   `polyspec-<repository>-go` for each platform with the release profile and without a feature (the library of
   `linux_<arch>_musl` with `--target <arch>-unknown-linux-musl` on the Linux machine of that arch, whose Rust
-  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so no C compiler of musl
-  takes part), removes the debug
+  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so the crate itself needs no C
+  compiler of musl; a dependency whose build script compiles C needs one, which the repository declares, GN-19b), removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
   sections of the Rust standard library), and runs `binding release-go-module` (GN-19f), which creates one
@@ -2440,8 +2543,17 @@ the design ids are those of the binding design.
   serve its tests, such as a probe that a test starts. Why the package clause and not a directory `tests`: the
   clause is what Go reads to tell a program from a package, while the name of a directory would leave out a
   package that a consumer can import and carry a program placed elsewhere. A repository that publishes a command
-  for `go install` gives it a Go module of its own. The `go.mod` and the `go.sum` of the released form are those
-  of the commit of the tag, byte for byte. A requirement that only a left-out test or program used stays in that
+  for `go install` gives it a Go module of its own. The `go.mod` of the released form is the one
+  of the commit of the tag, byte for byte. Its `go.sum` holds the lines of the `go.sum` of the commit of the tag
+  and, for each Go module of the same repository that the `go.mod` requires at a release version and each one that
+  such a module requires in turn, the two lines of that module, its hash and the hash of its `go.mod`, sorted in as
+  binding sorts a `go.sum` (GN-15l); a released form whose `go.mod` requires no module of its own repository has
+  the `go.sum` of the commit of the tag, byte for byte, or none when that commit tracks none (B2.479). Why the
+  command writes those lines: a module builds alone inside the commit of its tag (GN-15l), and `go build` in the
+  generator module of crud-ui at its tag failed with `missing go.sum entry for module providing package` of the
+  validator module that it requires. Why no tracked file holds them: they are the hashes of the commit that the
+  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). A
+  requirement that only a left-out test or program used stays in that
   `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
   build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
   over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
@@ -3656,14 +3768,26 @@ the design ids are those of the binding design.
   directory that stands for the
   remote: one commit whose tree is the Go module at its place with the library of the platform of the run in
   `internal/ffi/lib/<platform>`, and the tag `<directory of the Go module>/<version>`, where the version is `v` and
-  the version of the core, and for a dependency the version that the `go.mod` requires. Git reads
-  `https://github.com/<owner>/` as the directory of these repositories (`url.<base>.insteadOf` of a configuration
-  file of the run, the one configuration that the Git of these commands reads), so `go` fetches each module by its
-  module path and its tag without a network. A consumer module, whose `go.mod` holds the line `require` of the Go
+  the version of the core of that module, of the repository or of a dependency. A run that writes the release form
+  (GN-14l) makes these repositories in two parts, among the steps of that form: the one of each dependency before
+  `binding scaffold` of the release form, which writes `go.sum` from its tag (GN-15l), and the one of the repository
+  after it, so its commit holds the `go.mod` and the `go.sum` of a release; the consumer below is then the last step
+  of the run. A run that writes no release form, the one of a repository without a dependency among them, makes them
+  all in one step after the Go tests, and tags a dependency that its `go.mod` requires at `v0.0.0`, a development
+  form that the run does not rewrite, at `v0.0.0`. What B2.458 changed: before it a dependency always had the tag of
+  the version that the `go.mod` required, `v0.0.0` for a path, so the consumer of a repository of `tests/e2e` with a
+  dependency fetched a module whose `go.mod` required `v0.0.0`, which no release holds (GN-19f refuses it); the
+  released form of such a repository is now proven in the release form alone, and no longer with the `go.mod` of the
+  development form. Git reads `https://github.com/` as the directory of these repositories (`url.<base>.insteadOf`
+  of a configuration file of the run, the one configuration that the Git of these commands reads: `GIT_CONFIG_GLOBAL`
+  names it, with no system file and none of the variables of the Git dependency of Cargo) and opens no transport but
+  a file (`GIT_ALLOW_PROTOCOL=file`), so `go` fetches each module by its module path and its tag without a network: a
+  repository or a tag that the run did not make fails by the directory of the run, and a URL that the configuration
+  does not turn into that directory is refused before a connection. A consumer module, whose `go.mod` holds the line `require` of the Go
   module of each contract and nothing else of them, imports every package of those modules in a test; the run writes
   its `go.sum` with `go mod tidy`, then runs `go test` of the consumer and of every package of the fetched modules
-  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOFLAGS` empty and
-  no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
+  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOSUMDB=off`,
+  `GOENV=off`, `GOFLAGS` empty and no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. The tree of the commit
   holds the files that the commit of a release carries, which the run reads from the function of GN-15g that
   `binding release-go-module` reads, and the run removes a file of the module by no other rule: no generated file
@@ -3708,6 +3832,65 @@ the design ids are those of the binding design.
   `tests/e2e/lent` is such a repository: its core keeps a lent record beyond the call (GN-6d), and every target is
   refused, with E0597 and in Node with E0521. Why: a one-time check proves the lifetime of the call once, and a run in
   CI keeps a change of the generator from giving a lent record `'static` again.
+- **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
+  by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
+  does, ends with the steps of the release form, after every step of the development form. The steps are added to
+  the run and stand in place of none: the development form is what a repository holds until its dependency has a
+  release, and no other run of CI checks it. No option turns the steps on or off; a run of a repository without
+  such a line, and one with `--until lint`, has none, and a repository with a host package (L-2a) is left out and
+  named, because the manifest of a host package is written by hand and no scaffold of the run writes its release
+  form. The four ecosystems are in the release form together, in one order, which one function of
+  `scripts/e2e-release-form.mts` gives:
+  - The Go module of each dependency that a `go.mod` of the repository requires stands at the tag of its own
+    version in a remote of the run (GN-14f). Before the run makes that repository it asks Go for the module at that
+    tag, and the step fails unless Go fails and names the directory of the remotes of the run, which shows in each
+    run that these commands read that directory and no network.
+  - In the copy, each such line of a core becomes `version = "=X.Y.Z"` with the version of the core of that
+    dependency, every other field kept, and the root workspace gets a `[patch.crates-io]` with the path of the copy
+    of each; the run prints each change (GN-14d). A line that is not one inline table and a root manifest that
+    already patches crates.io are named failures.
+  - `binding scaffold` of each contract writes the manifests of a release, the `go.sum` from the tag of the first
+    step among them (GN-15l), and `binding check` passes on them; both get `--go` and the settings of Git and Go of
+    GN-14f. The step fails unless both end with status 0, `Cargo.lock` is byte for byte what it was, and each
+    manifest that named a dependency in the development form names it at its version: `package.json` and
+    `composer.json` `X.Y.Z`, `pyproject.toml` `polyspec-<library>==X.Y.Z`, `go.mod` `require <module> vX.Y.Z` with no
+    `replace` line, and `go.sum` the two hashes of that module.
+  - Python: the wheel of the repository is built again, because its metadata hold the requirements of
+    `pyproject.toml`, and installed with the wheels of the dependencies of the run in one `pip install --no-index`,
+    each by its URL on the loopback, into a venv of its own (GN-3h); the step fails unless the installed
+    distribution requires `polyspec-<library>==X.Y.Z`. The generated tests then run on unittest in that venv.
+  - npm: the package of the repository is packed again and installed with the tarballs of the run, those of the
+    dependencies and of the platforms, through one root manifest that names each by its URL (GN-3c, GN-3h), after
+    the check that the tarball of each requirement `X.Y.Z` of a packed manifest is among them. The generated tests
+    of Node and of WASM then run in that directory. When no packed manifest requires the package of a dependency,
+    which a manifest names only for a value class or a callback unit (GN-3e), the run says so and installs nothing.
+  - Go: the Go module of the repository, with the `go.mod` and the `go.sum` that the scaffold wrote, is carried at
+    its tag in a remote of the run, and the consumer of GN-14f fetches it with the module of each dependency at the
+    version that its `go.mod` requires, and runs its test and the tests of every fetched module.
+  - PHP has no install here: its evidence is the PIE step of a real release (GN-3h). Its `composer.json` is
+    written and checked with the other manifests.
+  Cargo has no release form of its own in the run: a release names a dependency by its tag, whose requirement is
+  `*`, so Cargo would take a crate of any version at that tag, and it needs the remote of the dependency; the run
+  uses the form `=X.Y.Z` with the patch, which Cargo refuses when the version of the crate at the path differs and
+  which resolves to the crates that the lock already names.
+  What runs in the release form is what the form changes: the manifests, the install of each package manager and
+  the load of the package of a dependency by the installed package, which the generated tests exercise on each
+  target. The run does not repeat what the form leaves as it was: the contract cases, the measurements, the lints
+  (`cargo clippy`, `tsc`, `gofmt`, `go vet`, `deadcode`), the checks of `llvm-nm`, the test of the core and the test
+  of the tag guard (GN-13bf); the generation, since `binding check` reads the contract of each dependency through
+  Cargo as `binding generate` does (GN-15f), so the generated files are those of the development form; the builds
+  of the Node addon, the WASM module and the PHP extension, whose crates resolve to the same crates under the same
+  lock, so the tarballs of the platforms and the module inside the package are those of the development form; and
+  the tests of PHP, whose extension the run loads by its path and not by `composer.json`. The wheel and the static
+  library of Go are built in the release form, because the wheel carries the requirement and the tag carries the
+  library.
+  No command of these steps opens a network: Cargo runs offline (`CARGO_NET_OFFLINE=true`), Git and Go read the
+  remotes of the run alone (GN-14f), pip reads no index, and npm takes each package from the loopback after the
+  check of the tarballs. Why: every repository of `tests/e2e` names its dependency by a path, so before these steps
+  no run installed a manifest of the release form, and the first install of one was the release of a consumer. The
+  first attempt at the scaffold of the release form ended with status 1 and reached out to github.com: the `go.mod`
+  required a release, `go mod download` ran (GN-15l), and no tag of the dependency stood anywhere, so the remote of
+  the dependency comes first.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on
@@ -3715,9 +3898,12 @@ the design ids are those of the binding design.
   tag of that repository and the run takes the packages of that release from its assets. The run has no such step
   yet: it takes the packages of a dependency from the copies of `DEPS` alone (GN-14d) and reads
   `https://github.com/polyspec/` as the directory beside the checkout, so a core that names the tag does not build in
-  the job, and the release tag alone ends nothing (B2.451). The step is the one of B2.458. Until then
-  `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
-  that ends it, and the job has no entry of it. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
+  the job, and the release tag alone ends nothing (B2.451). The steps of the release form (GN-14l, B2.458) install
+  the release form of the copies of `DEPS`, not the assets of a release: the step that downloads those assets is
+  not written. Until then `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
+  that ends it, and the job has no entry of it. At least one entry of the job runs the steps of the release form,
+  by a core that names a repository of its `DEPS` by a path, and `packages/ts/tests/ci-workflow.test.ts` fails when
+  none does. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
   neither in the job nor in the list, one that is in both, and a listed contract whose core no longer names by a
   path a repository that `tests/e2e` does not hold. `tests/e2e/relay`, whose core depends on the repository json, is
   listed until the run installs the release of json from its assets; json has a release tag since v0.0.35. A listed contract is still checked by `make e2e` with a checkout of
@@ -3844,6 +4030,37 @@ the design ids are those of the binding design.
   machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
   A Linux entry also builds the library of `linux_<arch>_musl` of its arch with `--target <arch>-unknown-linux-musl`
   (GN-15g) and hands it as `linux_<arch>_musl/libpolyspec_<repository>_go.a`, so the release carries five libraries.
+  The build of the musl target, and no other command of the recipe, takes the C compiler and the archiver of that
+  target, which the Makefile of the repository declares before the include (GN-19h) in `CC_<target>` and
+  `AR_<target>`, where `<target>` is the target with its dashes as underscores: `CC_x86_64_unknown_linux_musl`,
+  `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl` and `AR_aarch64_unknown_linux_musl`. The recipe
+  exports each of the two of the arch of the run that is not empty, under its own name, to the `$(CARGO) rustc` of
+  the musl target alone. These are names that the crate `cc` reads, with which the build script of a dependency
+  compiles C: for the compiler it takes the first that is set of `CC_<target>` with the dashes of the target,
+  `CC_<target>` with underscores, `TARGET_CC` (the build is a cross compilation, because the host is the target of
+  the GNU C library) and `CC`, and for the archiver the same four of `AR`; with none of them it starts
+  `aarch64-linux-musl-gcc` for the arm64 target and, for the x86_64 target, the first that `PATH` holds of
+  `x86_64-linux-musl-gcc` and `musl-gcc`. A repository whose Go crate has no dependency that builds C declares
+  nothing. When one of the two variables of the arch of the run is empty, the recipe runs `$(CARGO) tree --locked -p
+  polyspec-<repository>-go --target <arch>-unknown-linux-musl -e normal,build --prefix none --format '{p}'` before it
+  builds a library, and when a line of its output names the crate `cc`, a dependency builds C for that target: the
+  recipe ends with status 2 and names each empty variable (``release-go-static needs
+  CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the
+  archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a
+  dependency of polyspec-<repository>-go builds C with that crate; define them before the include of
+  packages/release.mk (GN-19b)``). When both are declared it does not ask Cargo. The recipe does not start a declared
+  compiler before the build, so a wrong path fails in the build script, with the message of the crate `cc`. Two cases
+  are outside this rule: a build script that compiles C without the crate `cc` is not seen, and fails in Cargo as
+  before; and a crate `cc` in the build whose build script compiles nothing for the musl target asks for a
+  declaration that no build reads. Why: session-store depends on rustls, whose cryptography, ring 0.17.14, compiles C
+  in its build script, and `release-go-static` failed in its Linux CI because the crate `cc` looked for
+  `x86_64-linux-musl-gcc`, which no runner holds; it went around the recipe by exporting the four variables from its
+  own Makefile to every command, and each next repository with such a dependency would have failed at the same place
+  with a message of Cargo that names no variable. Why the names of the crate `cc` and no names of binding: the
+  declaration that session-store wrote stays valid, and a variable of the environment of a job with that name is a
+  variable of make as well. Why the recipe asks and not `binding check --release`: the variables are of the Makefile,
+  which a command does not read (docs/spec/contract-check.md CK-102), and `release-go-static` runs in CI, as a build
+  of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
 - **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
   SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
   directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
@@ -3900,6 +4117,12 @@ the design ids are those of the binding design.
     the tag `<directory>/vX.Y.Z` is the one that Go reads for it.
   - The `go.mod` of that commit holds no `replace` line and requires no module at `v0.0.0`: both are development
     forms (GN-15f), which a consumer of a tag cannot resolve.
+  - The repository holds the tag `<directory of that module>/vA.B.C` of each Go module of the same repository (a
+    module path with the same first three elements, GN-14f) that the `go.mod` requires at a release version
+    `vA.B.C`, and of each one that the `go.mod` of such a module at its tag requires in turn (B2.479). The command
+    names each module whose tag is missing and the `go.mod` that requires it, and says to run `binding
+    release-go-module` of that module first. So the modules of one repository are released in the order of their
+    requirements: the required module first.
   - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
     `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
     the directory of a library.
@@ -3923,7 +4146,8 @@ the design ids are those of the binding design.
   of the file and by its package clause in the commit of the tag (`git show`) and names to the reader of the run,
   `git update-index --add --cacheinfo` with mode 100644 for each generated file
   that a release carries (GN-15g) and for `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a` of each platform, whose objects `git
-  hash-object -w --no-filters` writes, `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
+  hash-object -w --no-filters` writes, in the same way for the `go.sum` of the released form when the `go.mod`
+  requires a module of the same repository (GN-15g, B2.479), `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
   message `chore(release): Carry the Go module of vX.Y.Z`. Its author and committer dates are the committer date of
   the commit of the tag and its identity is the one of the Git of the run, so the same inputs under the same
   identity give the same commit. A tag `<directory>/vX.Y.Z` of the repository or of the remote that names another
@@ -3939,7 +4163,20 @@ the design ids are those of the binding design.
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
   and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
-  fetched from its own remote, so the repositories are released in the order of their Go requirements. The proof
+  fetched from its own remote, so the repositories are released in the order of their Go requirements. A Go module
+  of the same repository that the `go.mod` requires at a release version, a sibling, is fetched from the bare
+  repository of `--work`, because Git reads that repository for every module of
+  `https://github.com/<owner>/<repository>`: before the commit, the command pushes the commit of the tag of each
+  sibling of the check above into it under that tag, and runs `go mod download -json <module>@<version>` for each
+  in a module of `--work` with the settings of the consumer, whose `Sum` and `GoModSum` are the lines of the
+  `go.sum` of the commit (GN-15g); it removes the module cache after it, so the consumer fetches each sibling
+  again. A tracked `go.sum` that gives a sibling another hash is refused with its line, before the commit. Before
+  B2.479 that repository held the tag of the module of the run alone: the release of the generator module of
+  crud-ui, which requires the validator module of the same repository, failed in `go mod tidy` of the consumer
+  with `unknown revision packages/validator/go/v0.0.1` in either order of the two runs, with no word of the cause.
+  A release that stopped between two modules of a repository is run again as it is: the command leaves the tag of
+  the first module, which names the commit of this run, as it is and gives no reference when the remote holds it,
+  and the run of the second module finds that tag in the repository. The proof
   links the library of the platform of the run alone; the libraries of the other platforms are checked by their
   objects.
   Then the command creates the annotated tag `<directory>/vX.Y.Z` at the commit (`git tag -a`, with the same date)
@@ -3983,6 +4220,11 @@ the design ids are those of the binding design.
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
   | `checkout-node-addon` | `node` | GN-3c, the addon of the checkout beside the generated entry |
 
+  A repository with two contracts of which the Go module of one requires the Go module of the other at a release
+  version (crud-ui: the generator requires the validator) runs `release-go-module-<component>` of the required
+  module before that of the module that requires it (GN-19f, B2.479): the second run reads the tag of the first in
+  the repository, and a run in the other order is refused with the name of the module whose tag is missing.
+
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
@@ -3995,7 +4237,11 @@ the design ids are those of the binding design.
   release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when
   its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go, which is every job that runs
   a `release-assets-<job>`, whose first step is `release-binding-check` (GN-19i); a command that needs Go and
-  does not find it names the tool, `--go` and `GO` (GN-15l). `NAPI`,
+  does not find it names the tool, `--go` and `GO` (GN-15l). A repository whose Go crate has a dependency that
+  builds C also defines `CC_<target>` and `AR_<target>` of each musl target, the C compiler and the archiver that
+  `release-go-static` passes to the build of that target and requires on a Linux host when the crate `cc` is in that
+  build (GN-19b); `release-binding-check` does not require them, because the need follows from the host and from the
+  dependencies of the build, which `release-go-static` reads. `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
   `llvm.version` of `config/toolchain.json` and the PHP minors of its extension in `phpExtension.minors` of that file

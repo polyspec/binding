@@ -491,7 +491,9 @@ export function trackedResult(contract: Contract, version: string, coreDependenc
   };
   if (contract.targets.includes('python')) packageOf('packages/python', () => {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, core, tested, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
+    // GN-3i: the library has the name of its crate, so two Python crates of one workspace write two files; the module
+    // that Python imports is named by module-name and by #[pymodule(name)], not by the library.
+    files.set('packages/python/Cargo.toml', manifest(contract, core, tested, 'python', `${extensionName(contract)}_python`, [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
     files.set('packages/python/build.rs', PYTHON_BUILD);
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;

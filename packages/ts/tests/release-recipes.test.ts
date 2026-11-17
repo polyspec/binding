@@ -71,7 +71,7 @@ function standIn(dir: string, name: string, body: string): void {
 const fs = require('fs');
 const path = require('path');
 const args = process.argv.slice(2);
-const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS', 'CARGO_VIA'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
+const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS', 'CARGO_VIA', 'CC_x86_64_unknown_linux_musl', 'AR_x86_64_unknown_linux_musl', 'CC_aarch64_unknown_linux_musl', 'AR_aarch64_unknown_linux_musl'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 fs.appendFileSync(process.env.CALLS, JSON.stringify({ tool: ${JSON.stringify(name)}, args, env: kept }) + '\\n');
 const option = (name) => args[args.indexOf(name) + 1];
 ${body}
@@ -101,6 +101,9 @@ if (args[0] === 'pkgid') { console.log('path+file:///repository#' + crate + '@0.
 // cargo metadata names the target directory, CARGO_TARGET_DIR or the target of the workspace.
 const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(process.cwd(), 'target');
 if (args[0] === 'metadata') { console.log(JSON.stringify({ packages: [], target_directory: targetDir })); process.exit(0); }
+// cargo tree --prefix none --format {p} prints a line <name> v<version> for each package of the build of the crate; a
+// case names the packages of its dependencies in CARGO_TREE (B2.442).
+if (args[0] === 'tree') { console.log([crate + ' v0.0.3', ...(process.env.CARGO_TREE ?? '').split(',').filter((line) => line !== '')].join('\\n')); process.exit(0); }
 const lib = crate.replaceAll('-', '_');
 const cdylib = process.platform === 'darwin' ? 'dylib' : 'so';
 const name = crate.endsWith('-go') ? 'lib' + lib + '.a' : crate.endsWith('-wasm') ? lib + '.wasm' : crate.endsWith('-php-ext') ? 'libpolyspec_sample.' + cdylib : crate.endsWith('-node') ? 'lib' + lib + '.' + cdylib : 'lib' + lib;
@@ -259,6 +262,80 @@ test('B2.367: release-go-static fails when cargo prints no native-static-libs, a
   assert.notEqual(run.status, 0);
   assert.match(run.output, /release-go-static: cargo printed no native-static-libs of polyspec-sample-go for darwin_arm64 \(GN-15k\)/);
   assert.equal(existsSync(join(mac.root, 'var/release/assets/go/darwin_arm64/native-static-libs')), false);
+});
+
+// B2.442: a dependency of the Go crate that builds C (ring of rustls, in session-store) needs the C compiler and the
+// archiver of the musl target, which the crate cc reads as CC_<target> and AR_<target>. The Makefile of the repository
+// declares them before the include, as a consumer does; a variable of the command line of make would reach every
+// command of the recipe, so a case writes the declarations into the Makefile.
+const MUSL_TREE = 'rustls v0.23.46,ring v0.17.14,cc v1.11.1,shlex v1.3.0';
+function declare(box: Sandbox, ...lines: string[]): void {
+  const makefile = join(box.root, 'Makefile');
+  writeFileSync(makefile, readFileSync(makefile, 'utf8').replace('include packages/release.mk\n', `${lines.join('\n')}\ninclude packages/release.mk\n`));
+}
+const cargoCalls = (box: Sandbox, subcommand: string): ReturnType<Sandbox['calls']> => box.calls().filter((call) => call.tool === 'cargo' && call.args[0] === subcommand);
+
+test('B2.442: release-go-static passes the C compiler and the archiver of the musl target that the Makefile declares to the build of that target, and to no other command (GN-19b)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  box.env['CARGO_TREE'] = MUSL_TREE;
+  declare(box, 'CC_aarch64_unknown_linux_musl := /llvm/bin/clang', 'AR_aarch64_unknown_linux_musl := /llvm/bin/llvm-ar', 'CC_x86_64_unknown_linux_musl := /other/clang', 'AR_x86_64_unknown_linux_musl := /other/llvm-ar');
+  const run = box.make('release-go-static');
+  assert.equal(run.status, 0, run.output);
+  const target = join('var/release/target');
+  assert.deepEqual(cargoCalls(box, 'rustc').map((call) => call.env), [
+    { CARGO_TARGET_DIR: target },
+    { CARGO_TARGET_DIR: target, CC_aarch64_unknown_linux_musl: '/llvm/bin/clang', AR_aarch64_unknown_linux_musl: '/llvm/bin/llvm-ar' },
+  ]);
+  // Every other command of the recipe runs without them, and so does a recipe of another target.
+  assert.equal(box.make('release-wheel').status, 0);
+  for (const call of box.calls().filter((c) => !(c.tool === 'cargo' && c.args.includes('--target')))) {
+    assert.deepEqual(Object.keys(call.env).filter((key) => /^(CC|AR)_/.test(key)), [], `${call.tool} ${call.args.join(' ')}`);
+  }
+  // Both are declared, so the recipe does not ask cargo whether a dependency builds C.
+  assert.deepEqual(cargoCalls(box, 'tree'), []);
+  assert.equal(readFileSync(join(box.root, 'var/release/assets/go/linux_arm64_musl/native-static-libs'), 'utf8'), '-lnative_aarch64_unknown_linux_musl -lc\n');
+});
+
+test('B2.442: release-go-static names the C compiler and the archiver of the musl target that the Makefile does not declare when the crate cc is in the build of the Go crate, before a build (GN-19b)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  box.env['CARGO_TREE'] = MUSL_TREE;
+  const none = box.make('release-go-static');
+  assert.equal(none.status, 2, none.output);
+  assert.match(none.output, /release-go-static needs CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a dependency of polyspec-sample-go builds C with that crate; define them before the include of packages\/release\.mk \(GN-19b\)/);
+  assert.deepEqual(cargoCalls(box, 'tree').map((call) => call.args), [['tree', '--locked', '-p', 'polyspec-sample-go', '--target', 'x86_64-unknown-linux-musl', '-e', 'normal,build', '--prefix', 'none', '--format', '{p}']]);
+  assert.deepEqual(cargoCalls(box, 'rustc'), [], 'no library is built before the refusal');
+  assert.equal(existsSync(join(box.root, 'var/release/assets')), false);
+  // The pair of the other arch does not stand for the one of the arch of the run, and one of a pair names the other.
+  declare(box, 'CC_aarch64_unknown_linux_musl := /llvm/bin/clang', 'AR_aarch64_unknown_linux_musl := /llvm/bin/llvm-ar', 'CC_x86_64_unknown_linux_musl := /llvm/bin/clang');
+  const one = box.make('release-go-static');
+  assert.equal(one.status, 2, one.output);
+  assert.match(one.output, /release-go-static needs AR_x86_64_unknown_linux_musl: /);
+  assert.deepEqual(cargoCalls(box, 'rustc'), []);
+});
+
+test('B2.442: a build of the Go crate without the crate cc, a macOS host and a contract without the target go are not asked for a C compiler (GN-19b)', (t) => {
+  // No dependency builds C: the recipe asks cargo, builds both libraries and passes nothing.
+  const plain = sandbox(t, 'x86_64-unknown-linux-gnu');
+  plain.env['CARGO_TREE'] = 'libc v0.2.186,cc-traits v2.0.0';
+  const built = plain.make('release-go-static');
+  assert.equal(built.status, 0, built.output);
+  assert.equal(cargoCalls(plain, 'tree').length, 1);
+  assert.deepEqual(cargoCalls(plain, 'rustc').map((call) => Object.keys(call.env)), [['CARGO_TARGET_DIR'], ['CARGO_TARGET_DIR']]);
+  // A macOS host builds no library of musl.
+  const mac = sandbox(t, 'aarch64-apple-darwin');
+  mac.env['CARGO_TREE'] = MUSL_TREE;
+  const macRun = mac.make('release-go-static');
+  assert.equal(macRun.status, 0, macRun.output);
+  assert.deepEqual(cargoCalls(mac, 'tree'), []);
+  // A contract without the target go has no recipe that reads the variables.
+  const other = sandbox(t, 'x86_64-unknown-linux-gnu', (contract) => { contract.targets = contract.targets.filter((target) => target !== 'go'); });
+  other.env['CARGO_TREE'] = MUSL_TREE;
+  const text = readFileSync(join(other.root, 'packages/release.mk'), 'utf8');
+  assert.doesNotMatch(text, /unknown_linux_musl|\$\(CARGO\) tree/);
+  const assets = other.make('release-assets-platform');
+  assert.equal(assets.status, 0, assets.output);
+  assert.deepEqual(cargoCalls(other, 'tree'), []);
+  assert.match(readFileSync(join(plain.root, 'packages/release.mk'), 'utf8'), /CC_x86_64_unknown_linux_musl, AR_x86_64_unknown_linux_musl, CC_aarch64_unknown_linux_musl, AR_aarch64_unknown_linux_musl/);
 });
 
 // Defect 2: the bindgen of ext-php-rs takes the libclang and the clang of the pinned LLVM, which the recipe checks first.

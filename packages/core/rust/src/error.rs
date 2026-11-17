@@ -114,6 +114,74 @@ impl TextCause {
     }
 }
 
+/// What a callback declares of the arguments that it takes, as the binding of a language read it (GN-6bu).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Declared {
+    /// It takes this many arguments, which are fewer than the binding gives.
+    Takes(u32),
+    /// It requires this many arguments, which are more than the binding gives.
+    Requires(u32),
+    /// The language gave no count: the reason in the words of the language.
+    Other(String),
+}
+
+/// The arguments of a callback that does not take what the binding calls it with (GN-6bu).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallbackArguments {
+    /// What the callback declares.
+    pub declared: Declared,
+    /// The names of the arguments that the binding gives, in their order: the names of the contract for a member
+    /// of a callback unit, the types for a function type.
+    pub given: Vec<String>,
+    /// Whether the language reads only the parameters that the callback names before a default or a rest (the
+    /// `length` of a JavaScript function), so that the message tells to name each argument.
+    pub named_only: bool,
+}
+
+impl CallbackArguments {
+    fn count(count: impl fmt::Display, one: bool) -> String {
+        format!("{count} argument{}", if one { "" } else { "s" })
+    }
+}
+
+impl fmt::Display for CallbackArguments {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let given = Self::count(self.given.len(), self.given.len() == 1);
+        let names = self.given.join(", ");
+        match &self.declared {
+            Declared::Takes(count) => {
+                let count = Self::count(count, *count == 1);
+                write!(
+                    f,
+                    "takes {count}, and the binding calls it with {} ({names})",
+                    self.given.len()
+                )?;
+            }
+            Declared::Requires(count) => {
+                let count = Self::count(count, *count == 1);
+                write!(
+                    f,
+                    "requires {count}, and the binding calls it with {} ({names})",
+                    self.given.len()
+                )?;
+            }
+            Declared::Other(reason) => {
+                write!(
+                    f,
+                    "does not take the {given} ({names}) that the binding calls it with: {reason}"
+                )?;
+            }
+        }
+        if self.named_only {
+            write!(
+                f,
+                "; name each argument before a default or a rest, as in ({names}, ...rest)"
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// An error that generated code raises itself, never a core (design E-1a).
 ///
 /// Its kind and category are fixed by binding; its message is its `Display`, to which a binding adds nothing (E-4).
@@ -146,13 +214,18 @@ pub enum BindingError {
         /// The class.
         class: String,
     },
-    /// A callback object or function does not provide a declared member, or it is not callable (U-3). Kind
-    /// `invalid_callback`, category `type`.
+    /// A callback object or function does not provide a declared member, or it is not callable (U-3), or it does not
+    /// take the arguments that the binding calls it with (GN-6bu). Kind `invalid_callback`, category `type`.
     InvalidCallback {
-        /// The parameter that received the callback.
+        /// The parameter that received the callback; with `arguments`, after the member that was called, such as
+        /// `Db.transaction(): callback`.
         subject: String,
-        /// The missing or uncallable member, or the function itself.
+        /// The missing or uncallable member, or the member that does not take its arguments; empty for the function
+        /// itself.
         member: String,
+        /// What the callback declares and what the binding gives (GN-6bu); `None` for a missing or uncallable
+        /// member.
+        arguments: Option<CallbackArguments>,
     },
     /// An argument of a unit-typed parameter is not an object of that unit (E-1a). Kind `invalid_argument_type`,
     /// category `type`.
@@ -254,8 +327,23 @@ impl fmt::Display for BindingError {
             Self::InvalidText { subject, cause } => write!(f, "{subject} {}", cause.describe()),
             Self::InvalidPath { subject } => write!(f, "{subject} has no byte form of an OS path"),
             Self::DirectConstruction { class } => write!(f, "{class} has no public constructor"),
-            Self::InvalidCallback { subject, member } => {
+            Self::InvalidCallback {
+                subject,
+                member,
+                arguments: None,
+            } => {
                 write!(f, "{subject} does not provide a callable {member}")
+            }
+            Self::InvalidCallback {
+                subject,
+                member,
+                arguments: Some(arguments),
+            } => {
+                if member.is_empty() {
+                    write!(f, "{subject} {arguments}")
+                } else {
+                    write!(f, "{subject}.{member} {arguments}")
+                }
             }
             Self::Consumed { class } => write!(f, "{class} was consumed by an earlier call"),
             Self::InvalidArgumentType { subject, expected } => write!(f, "{subject} is not an instance of {expected}"),
@@ -270,7 +358,7 @@ impl std::error::Error for BindingError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{BindingError, Category, Kinds, NumberType, TextCause};
+    use super::{BindingError, CallbackArguments, Category, Declared, Kinds, NumberType, TextCause};
 
     fn every_variant() -> Vec<BindingError> {
         let s = || String::from("limit");
@@ -288,6 +376,7 @@ mod tests {
             BindingError::InvalidCallback {
                 subject: s(),
                 member: s(),
+                arguments: None,
             },
             BindingError::Consumed { class: s() },
             BindingError::InvalidArgumentType {
@@ -343,6 +432,64 @@ mod tests {
             class: String::from("Session"),
         };
         assert_eq!(error.to_string(), "Session has a call in progress");
+    }
+
+    fn refused(subject: &str, member: &str, declared: Declared, given: &[&str], named_only: bool) -> BindingError {
+        BindingError::InvalidCallback {
+            subject: String::from(subject),
+            member: String::from(member),
+            arguments: Some(CallbackArguments {
+                declared,
+                given: given.iter().map(|name| String::from(*name)).collect(),
+                named_only,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_callback_that_does_not_take_its_arguments_is_invalid_callback_and_names_them() {
+        // GN-6bu, B2.467: the fields of the one variant; the kind and the category do not change.
+        let error = refused("Db.transaction(): callback", "", Declared::Takes(0), &["tx"], false);
+        assert_eq!(error.kind(), "invalid_callback");
+        assert_eq!(error.category(), Category::Type);
+        assert_eq!(
+            error.to_string(),
+            "Db.transaction(): callback takes 0 arguments, and the binding calls it with 1 (tx)"
+        );
+        let error = refused("resolve(): lookup", "find", Declared::Takes(1), &["key", "limit"], true);
+        assert_eq!(
+            error.to_string(),
+            "resolve(): lookup.find takes 1 argument, and the binding calls it with 2 (key, limit); name each argument \
+             before a default or a rest, as in (key, limit, ...rest)"
+        );
+        let error = refused(
+            "apply(): convert",
+            "",
+            Declared::Requires(3),
+            &["text", "list<int>"],
+            false,
+        );
+        assert_eq!(
+            error.to_string(),
+            "apply(): convert requires 3 arguments, and the binding calls it with 2 (text, list<int>)"
+        );
+        let reason = Declared::Other(String::from("too many positional arguments"));
+        let error = refused("Db.transaction(): callback", "", reason, &["tx"], false);
+        assert_eq!(
+            error.to_string(),
+            "Db.transaction(): callback does not take the 1 argument (tx) that the binding calls it with: too many \
+             positional arguments"
+        );
+    }
+
+    #[test]
+    fn a_callback_without_a_member_keeps_its_message() {
+        let error = BindingError::InvalidCallback {
+            subject: String::from("lookup"),
+            member: String::from("find"),
+            arguments: None,
+        };
+        assert_eq!(error.to_string(), "lookup does not provide a callable find");
     }
 
     #[test]
