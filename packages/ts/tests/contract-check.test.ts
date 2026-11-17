@@ -2,7 +2,10 @@
 // check that owns the rule, at the path of the changed item, and with no finding of another check.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { checkContract, type Finding } from '../src/index.ts';
 import { GO_BINDING_NAMES } from '../src/check.ts';
@@ -2652,5 +2655,42 @@ describe('B2.490: CK-104', () => {
   });
   test('an alias without a sequence_keys row needs no statement', () => {
     assert.deepEqual(checkContract(contract(), { dependencies: deps() }), []);
+  });
+});
+
+// CK-109: the line of the core on polyspec-binding-core names the tag of the version of the running generator. The
+// fixture repository is scaffolded and its Cargo.lock pins the version of this binding, so CK-19 and CK-20 pass and a
+// finding is the line alone.
+describe('CK-109 the core line on polyspec-binding-core', () => {
+  const cli = new URL('../src/cli.ts', import.meta.url).pathname;
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+  const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
+  const checked = (line: string | undefined): ReturnType<typeof spawnSync> => {
+    const root = mkdtempSync(join(tmpdir(), 'binding-ck109-'));
+    try {
+      cpSync(fixture, root, { recursive: true });
+      if (line !== undefined) appendFileSync(join(root, 'packages/rust/Cargo.toml'), `\n[dependencies]\n${line}\n`);
+      execFileSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root]);
+      writeFileSync(join(root, 'Cargo.lock'), `version = 4\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "${version}"\n`);
+      return spawnSync(process.execPath, [cli, 'check', '--cargo', 'cargo', join(root, 'packages/rust/interface.json')], { encoding: 'utf8' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const tagged = (tag: string): string => `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", tag = "${tag}" }`;
+  test(`CK-109 a core whose line has the tag v0.0.17 fails under the generator ${version} with the line and both versions`, () => {
+    const run = checked(tagged('v0.0.17'));
+    assert.equal(run.status, 1, String(run.stderr));
+    assert.match(String(run.stderr), new RegExp(`packages/rust/Cargo\\.toml: CK-109 the line polyspec-binding-core = \\{ git = "https://github\\.com/polyspec/binding\\.git", tag = "v0\\.0\\.17" \\} names the tag of the version 0\\.0\\.17, not ${version.replaceAll('.', '\\.')}, the version of this binding`));
+  });
+  test('CK-109 a core whose line has the tag of the version of the generator passes', () => {
+    const run = checked(tagged(`v${version}`));
+    assert.doesNotMatch(String(run.stderr), /CK-109/);
+    assert.equal(run.status, 0, String(run.stderr));
+  });
+  test('CK-109 a core with no line passes, since scaffold writes the line of the generator', () => {
+    const run = checked(undefined);
+    assert.doesNotMatch(String(run.stderr), /CK-109/);
+    assert.equal(run.status, 0, String(run.stderr));
   });
 });
