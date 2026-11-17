@@ -1261,7 +1261,7 @@ function passingRust(model: Model): string {
 /// invalid_callback.
 fn go_function(input: &mut &[u8], subject: &str) -> Result<(u64, u64), Fail> {
     if !read_tag(input)? {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     let call = uint_in(input)?;
     let callback = uint_in(input)?;
@@ -1431,7 +1431,7 @@ struct ${struct} {
 /// U-3: a callback enters as the call and the index of the Go object in it; a nil interface is kind invalid_callback.
 fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${struct}, Fail> {
     if !read_tag(input)? {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     let call = uint_in(input)?;
     let callback = uint_in(input)?;
@@ -1510,7 +1510,7 @@ struct Kept${struct} {
 /// binding gives the cgo.Handle under which it holds the func from then on. A nil interface is kind invalid_callback.
 fn kept_${plain}(input: &mut &[u8], subject: &str) -> Result<Kept${struct}, Fail> {
     if !read_tag(input)? {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     let call = uint_in(input)?;
     let function = uint_in(input)?;

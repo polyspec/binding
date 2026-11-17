@@ -1037,10 +1037,10 @@ fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
     const method = langName('python', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
     if (m.absent !== undefined) return `    if value.hasattr(${rustString(method)})? && !value.getattr(${rustString(method)})?.is_callable() {
-        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
     }`;
     return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
-        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
     }`;
   }).join('\n');
   return `
@@ -1150,7 +1150,7 @@ fn release_passed(handle: binding_core::Handle) {
 /// reference.
 fn callable_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
     if !value.is_callable() {
-        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     Ok(value.clone().unbind())
 }
@@ -1209,7 +1209,7 @@ fn settled<'py>(py_: Python<'py>, value: binding_core::Passthrough, event_loop: 
         if let Err(error) = closed {
             error.write_unraisable(py_, None);
         }
-        return Err(BindingError::InvalidCallback { subject: subject.to_owned(), member: format!("that returns no awaitable; {awaited} awaits one") });
+        return Err(BindingError::InvalidCallback { subject: subject.to_owned(), member: format!("that returns no awaitable; {awaited} awaits one"), arguments: None });
     };
     let outcome = || -> PyResult<Bound<'py, PyAny>> {
         let coroutine = awaiting(py_, "settle")?.call1((&object,))?;

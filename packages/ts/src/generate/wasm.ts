@@ -1004,7 +1004,7 @@ fn callable_in(value: &JsValue, subject: &str) -> Result<Function, Fail> {
     value
         .dyn_ref::<Function>()
         .cloned()
-        .ok_or_else(|| binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }))
+        .ok_or_else(|| binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }))
 }
 
 /// GN-6ae: the outcome of the value that a machine awaited, which the ES module gives to the next advance: undefined
@@ -1089,7 +1089,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     const method = langName('wasm', m.member.name, 'callable');
     return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
     if ${m.absent === undefined ? '' : '!found.is_undefined() && '}!found.is_function() {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
     }`;
   }).join('\n');
   return `
@@ -1101,7 +1101,7 @@ struct ${struct} {
 /// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${struct}, Fail> {
     if !value.is_object() {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
 ${checks}
     Ok(${struct} { object: value.clone() })

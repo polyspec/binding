@@ -7769,7 +7769,7 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   // and a class that only a function takes has no conversion in (T-5).
   assert.match(lib, /\nfn with_scope<R>\(class: &ClassEntry, body: impl FnOnce\(\) -> R\) -> R \{/);
   assert.doesNotMatch(lib, /\bfn in_scope\b/);
-  assert.match(lib, /fn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure makes a new instance of the class of each class argument, calls the callable and stores what it
   // returned in the table; an exception of the callable is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0: Zval = out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+Ok\(pass\(called\(&work, vec!\[&arg0\]\)\?\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -7811,7 +7811,7 @@ test('Go takes a func as a callback of the call, holds its value in the table of
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   // The func enters as the call and its index in it, and a nil func is kind invalid_callback.
   assert.match(lib, /let work = go_function\(&mut input, "work"\)\?;/);
-  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure writes each argument, a class argument as the handle of a new instance, and calls the func through
   // the trampoline of the callbacks; what the func returned is the Passthrough of its handle in the table of Go, and
   // an error of the func is a Raised.
@@ -7884,7 +7884,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   const lib = text(out, 'packages/ts/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns a reference of napi to it.
   assert.match(lib, /let work = callable_in\(env_, work, "work"\)\?;/);
-  assert.match(lib, /fn callable_in\(env_: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env_, value\)\n\}/);
+  assert.match(lib, /fn callable_in\(env_: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);\n {4}\}\n {4}Owned::new\(env_, value\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function on the JavaScript thread
   // of its reference and stores what it returned in the table; an exception of the function is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let env_ = &Env::from_raw\(work\.env_\);\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0 = out_scope\(env_, arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+let returned = called\(env_, &work, &\[arg0\]\)\?;\n\s+pass\(env_, returned\)\.map_err\(Thrown::Binding\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -8031,7 +8031,7 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns it as a value of the module.
   assert.match(lib, /let work = callable_in\(&work, "work"\)\?;/);
-  assert.match(lib, /fn callable_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
+  assert.match(lib, /fn callable_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function with the receiver
   // undefined and stores what it returned in the table; the value that the function threw is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let args: Array = \[out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?\]\.iter\(\)\.collect\(\);\n\s+let returned = work\.apply\(&JsValue::UNDEFINED, &args\)\.map_err\(Thrown::Js\)\?;\n\s+Ok\(pass\(returned\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -8228,7 +8228,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   const out = scopedSample(['python']);
   const lib = text(out, 'packages/python/generated/lib.rs');
   // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
-  assert.match(lib, /fn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(py_, BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn callable_in\(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(py_, BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\), arguments: None \}\)\);/);
   // The closure takes the GIL on the thread of its call, makes a new instance of the class of each class argument,
   // calls the callable and stores what it returned in the table; an exception of the callable is a Raised.
   assert.match(lib, /let work = callable_in\(py_, work, "work"\)\?;\n\s+let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+Python::attach\(\|py_\| \{\n\s+let call = \|\| -> PyResult<binding_core::Passthrough> \{\n\s+let returned = work\.bind\(py_\)\.call1\(\(out_scope\(py_, arg0\)\?,\)\)\?;\n\s+Ok\(pass\(returned\.unbind\(\)\)\)\n\s+\};\n\s+call\(\)\.map_err\(\|error\| thrown\(py_, error\)\)\n\s+\}\)\n\s+\};/);
@@ -8245,7 +8245,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   // invalid_callback with the name of the awaited member; a value that is no awaitable is settled at once.
   assert.match(lib, /fn settled<'py>\(py_: Python<'py>, value: binding_core::Passthrough, event_loop: Option<&Bound<'py, PyAny>>, subject: &str, awaited: &str\) -> Result<Result<binding_core::Passthrough, binding_core::Raised>, BindingError> \{/);
   assert.match(lib, /Ok\(false\) => return Ok\(Ok\(pass\(object\.unbind\(\)\)\)\),/);
-  assert.match(lib, /return Err\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: format!\("that returns no awaitable; \{awaited\} awaits one"\) \}\);/);
+  assert.match(lib, /return Err\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: format!\("that returns no awaitable; \{awaited\} awaits one"\), arguments: None \}\);/);
   assert.match(lib, /let coroutine = awaiting\(py_, "settle"\)\?\.call1\(\(&object,\)\)\?;\n\s+let future = py_\.import\("asyncio"\)\?\.getattr\("run_coroutine_threadsafe"\)\?\.call1\(\(coroutine, event_loop\)\)\?;\n\s+future\.call_method0\("result"\)/);
   // B-3: the table of the values of a thread, its release function, and the result that leaves the table unchanged.
   assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Py<PyAny>>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);

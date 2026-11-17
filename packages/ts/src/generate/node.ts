@@ -1120,7 +1120,7 @@ fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     // GN-6d: a member with a default may be left out, which the call answers with the default.
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
     if ${m.absent === undefined ? '' : 'found.get_type().map_err(internal)? != ValueType::Undefined && '}found.get_type().map_err(internal)? != ValueType::Function {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
     }`;
   }).join('\n');
   return `
@@ -1140,7 +1140,7 @@ unsafe impl Sync for ${struct}<'_> {}
 /// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
 fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Object {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     let object: Object<'env> = unsafe { value.cast() }.map_err(internal)?;
 ${checks}
@@ -1259,7 +1259,7 @@ fn passed_out(env_: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_
 /// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
 fn callable_in(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     Owned::new(env_, value)
 }

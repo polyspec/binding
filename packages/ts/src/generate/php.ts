@@ -1130,7 +1130,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
   const checks = cb.members.filter((m) => m.absent === undefined).map((m) => {
     const method = langName('php', m.member.name, 'callable');
     return `    if !has_method(object, ${rustString(method)}) {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
     }`;
   }).join('\n');
   return `
@@ -1158,7 +1158,7 @@ impl Drop for ${struct} {
 /// U-3: a callback object is checked when it enters: each member is a method of its class (kind invalid_callback).
 fn in_${name}(value: &Zval, subject: &str) -> Result<${struct}, Fail> {
     let Some(object) = value.object() else {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     };
 ${checks}
     Ok(${struct} { object: ${cb.owner ? 'std::mem::ManuallyDrop::new(value.shallow_clone())' : 'value.shallow_clone()'}${cb.owner ? ', owner: std::thread::current().id()' : ''} })
@@ -1331,7 +1331,7 @@ fn passed_out(value: binding_core::Passthrough) -> Result<Zval, Fail> {
 /// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback), to which the closure keeps a reference.
 fn callable_in(value: &Zval, subject: &str) -> Result<Zval, Fail> {
     if !value.is_callable() {
-        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
     Ok(value.shallow_clone())
 }
