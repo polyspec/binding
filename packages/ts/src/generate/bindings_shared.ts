@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, type ErrorUnit, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, lentCallbacks, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -220,6 +220,41 @@ export function recognizedClassIndex(model: Model, cb: CallbackUnit): (u: ErrorU
   return (u) => cb.library === undefined
     ? model.classes.length + model.errorUnits.indexOf(u)
     : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
+}
+
+// U-3: the signature of the Rust method of a member of a callback unit, which returns the failure of the core.
+export function callbackSignature(model: Model, m: CallbackUnit['members'][number]): string {
+  const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+  return `fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, binding_core::Failure<${model.coreError ?? '()'}>>`;
+}
+
+// GN-6aa: the methods of a kept callback: reach gives the lines that make the borrowed callback struct of the call,
+// with its mutability, and the method calls the member on it as the callback of a call does.
+export function keptMethods(model: Model, cb: CallbackUnit, reach: (m: CallbackUnit['members'][number], mutable: string) => string): string {
+  const struct = callStruct(model, cb);
+  return cb.members.map((m) => {
+    const passed = m.params.map((p) => rustField(p.name)).join(', ');
+    const mutable = m.receiver === '&mut self' ? 'mut ' : '';
+    return `
+    ${callbackSignature(model, m)} {
+${reach(m, mutable)}
+        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable}borrowed${passed === '' ? '' : `, ${passed}`})
+    }`;
+  }).join('\n');
+}
+
+// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
+export const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+export const passesAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes);
+
+// GN-6ae: the first lines of the closure of a function parameter: the function of the language that callable checks,
+// and the closure that takes the arguments of the core.
+export function functionClosureHead(model: Model, type: Type & { function: unknown }, name: string, callable: string, subject: string): { parts: Type[]; head: string[] } {
+  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
+  return { parts, head: [
+    `        let ${name} = callable_in(${callable}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, binding_core::Failure<${model.coreError ?? '()'}>> {`,
+  ] };
 }
 
 // The initializer of a field of a Rust struct from a variable, shortened when they have one name.

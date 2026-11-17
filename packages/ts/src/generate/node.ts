@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, callbackSignature, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1048,20 +1048,9 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = callStruct(model, cb);
   const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
-    const mutable = m.receiver === '&mut self';
-    return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
+  const methods = keptMethods(model, cb, (m, mutable) => `        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
         let object = native_object(&env_, &self.native).and_then(|value| unsafe { value.cast::<Object<'_>>() }.map_err(internal)).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };
-        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
-    }`;
-  }).join('\n');
+        let ${mutable}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };`);
   return `
 /// GN-6aa: ${jsName}, held as a Native of its owner thread, which the core keeps after the call that gave it.
 pub struct Kept${struct} {
@@ -1079,20 +1068,15 @@ impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
 `;
 }
 
-// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
-const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
-const passesAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes);
 
 // GN-6ae: the lines that make the closure of a function parameter from a JavaScript function. The machine owns the
 // function (Owned), and its closure runs in Machine::call, on the JavaScript thread: each call makes the JavaScript
 // value of each argument, a class argument as a new instance of its class, and gives what the function returned as a
 // Passthrough, or its exception as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, `env_, ${name}`, subject);
   return [
-    `        let ${name} = callable_in(env_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     `            let env_ = &Env::from_raw(${name}.env_);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i} = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
@@ -1222,13 +1206,10 @@ function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = callStruct(model, cb);
   const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
     const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
     return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+    ${callbackSignature(model, m)} {
         let env_ = Env::from_raw(self.object.env_);
         let object = self.object.object(&env_).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let mut borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: self.owner' : ''} };

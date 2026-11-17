@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1082,11 +1082,9 @@ fn read_kind_of_recognized(py_: Python<'_>, error: &PyErr, module: Option<&str>,
 // argument, a class argument as a new instance of its class, and gives what the callable returned as a Passthrough, or
 // its exception as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, `py_, ${name}`, subject);
   return [
-    `        let ${name} = callable_in(py_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     '            Python::attach(|py_| {',
     '                let call = || -> PyResult<binding_core::Passthrough> {',
     `                    let returned = ${name}.bind(py_).call1((${parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}?,`).join(' ')}))?;`,

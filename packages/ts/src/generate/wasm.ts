@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, argIn, recordParamLines, recognizedClassIndex, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -941,21 +941,16 @@ fn read_converted(value: &JsValue, classes: std::ops::Range<usize>, row: fn(&str
 // type or of a machine, or of a value that the core walks), which the call throws again unchanged.
 const carriesThrown = (model: Model): boolean => keepsThrown(model) || model.aliases.length > 0 || passesAny(model);
 
-// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
-const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
-const passesAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes);
 
 // GN-6ae: the lines that make the closure of a function parameter from a JavaScript function. The machine owns the
 // function, a value of the module, and its closure runs in Machine::call, on the thread of the module: each call makes
 // the JavaScript value of each argument, a class argument as a new instance of its class, and gives what the function
 // returned as a Passthrough, or the value that it threw as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, `&${name}`, subject);
   const outs = parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?`);
   return [
-    `        let ${name} = callable_in(&${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     `                let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};`,
     `                let returned = ${name}.apply(&JsValue::UNDEFINED, &args).map_err(Thrown::Js)?;`,
@@ -1124,19 +1119,8 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = callStruct(model, cb);
   const jsName = langName('wasm', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
-    const mutable = m.receiver === '&mut self';
-    return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object };
-        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
-    }`;
-  }).join('\n');
+  const methods = keptMethods(model, cb, (_m, mutable) => `        let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let ${mutable}borrowed = ${struct} { object };`);
   return `
 /// GN-6aa: ${jsName}, held as a Native, which the core keeps after the call that gave it.
 struct Kept${struct} {

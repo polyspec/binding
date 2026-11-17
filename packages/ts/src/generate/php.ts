@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1164,22 +1164,11 @@ function keptCallbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = callStruct(model, cb);
   const label = langName('php', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
-    const mutable = m.receiver === '&mut self';
-    return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        if let Err(error) = native_thread(&self.native, ${rustString(`${label}::${langName('php', m.member.name, 'callable')}()`)}) {
+  const methods = keptMethods(model, cb, (m, mutable) => `        if let Err(error) = native_thread(&self.native, ${rustString(`${label}::${langName('php', m.member.name, 'callable')}()`)}) {
             return Err(thrown_elsewhere(error));
         }
         let object = native_object(&self.native).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object${cb.owner ? ': std::mem::ManuallyDrop::new(object), owner: std::thread::current().id()' : ''} };
-        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
-    }`;
-  }).join('\n');
+        let ${mutable}borrowed = ${struct} { object${cb.owner ? ': std::mem::ManuallyDrop::new(object), owner: std::thread::current().id()' : ''} };`);
   return `
 /// GN-6aa: ${label}, held as a Native of its owner thread, which the core keeps after the call that gave it.
 pub struct Kept${struct} {
@@ -1260,11 +1249,9 @@ fn read_kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Result<
 // the callable; each call makes the PHP value of each argument, a class argument as a new instance of its class, and
 // gives what the callable returned as a Passthrough, or its exception as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, value: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, value, subject);
   return [
-    `        let ${name} = callable_in(${value}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i}: Zval = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
     `                Ok(pass(called(&${name}, vec![${parts.map((_part, i) => `&arg${i}`).join(', ')}])?))`,
@@ -1274,8 +1261,6 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   ];
 }
 
-// GN-6ae: whether a member takes a function parameter or returns passthrough.
-const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
 
 // GN-6ae, B-3: the table of the values that the functions of PHP code returned, each under the handle of its
 // Passthrough; the call of a PHP callable; and the check of a callable that enters.
