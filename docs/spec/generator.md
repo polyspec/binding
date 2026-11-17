@@ -1742,7 +1742,8 @@ the design ids are those of the binding design.
   inner kind of a row of L that the member names in `raises`. The converted error is an instance of that row's class
   with the same kind; its message, status and errno are those of O, each property of the row's unit is the value of
   the property of O that the `wrapped` row forwards to it (CK-107), and its cause is O: `previous` in PHP, set by
-  `zend_exception_set_previous`, `__cause__` in Python, the own property `cause` in Node and WASM, and `Cause()` in
+  writing the private property `previous` of the root class (`Exception` or `Error`) in its scope, since ext-php-rs
+  binds no function of the engine that sets it, `__cause__` in Python, the own property `cause` in Node and WASM, and `Cause()` in
   Go (GN-15d). An exception of L of a kind that the member does not name, any other exception and a `Failure::Kind`
   are as before: the first two are thrown again unchanged, and a kind of L that recognition gave (GN-6s) is already
   a variant of the core error and so of this contract's class. PHP, Python, Node and WASM convert in the crate: the

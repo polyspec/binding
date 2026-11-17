@@ -114,6 +114,54 @@
           "unit": "source",
           "library": "sample"
         }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Missing",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Unsupported",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Refused",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Ended",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Busy",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
+      },
+      {
+        "variant": "polyspec_consumer::Error::Sample/polyspec_sample::Error::Internal",
+        "library": "sample",
+        "through": {
+          "unit": "source",
+          "library": "sample"
+        }
       }
     ],
     "binding": [],

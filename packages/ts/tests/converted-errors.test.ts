@@ -84,7 +84,10 @@ test('B2.489: the PHP extension converts an exception of session-store of a kind
   // Every other failure is the failure of failure_error, and every other exception is thrown again.
   assert.match(open, /other => return failure_error\(other\),/);
   assert.match(open, /Some\(Thrown::Php\(exception\)\) => converted_exception\(exception,/);
-  assert.match(crate, /zend_exception_set_previous\(&raw mut \*object, exception\.into_raw\(\)\)/);
+  // ext-php-rs 0.16.4 binds no zend_exception_set_previous: previous is the private property of the root class.
+  assert.doesNotMatch(crate, /zend_exception_set_previous/);
+  assert.match(crate, /while let Some\(parent\) = root\.parent\(\) \{\n {8}root = parent;\n {4}\}/);
+  assert.match(crate, /with_scope\(root, \|\| object\.set_property\("previous", previous\)\)/);
   // The entry of the member takes its conversion; answer_keep_request has its own table.
   assert.match(crate, /Err\(error\) => return Err\(converted_opening_functions_open_page\(error\)\),/);
   assert.match(crate, /fn converted_opening_functions_answer_keep_request\(/);

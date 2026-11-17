@@ -1534,8 +1534,19 @@ fn converted_exception(exception: ZBox<ZendObject>, classes: &[(&str, &str)], ro
             Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
         };
     };
-    // SAFETY: both are live exception objects; zend_exception_set_previous takes over the reference to the previous.
-    unsafe { ext_php_rs::ffi::zend_exception_set_previous(&raw mut *object, exception.into_raw()) };
+    // ext-php-rs 0.16.4 binds no function of the engine that sets the previous exception, so previous is written as
+    // the private property of the root class of the converted object (Exception or Error), whose scope with_scope gives.
+    let mut root = object.get_class_entry();
+    while let Some(parent) = root.parent() {
+        root = parent;
+    }
+    let previous = match exception.into_zval(false) {
+        Ok(previous) => previous,
+        Err(error) => return binding_error(BindingError::Internal { detail: error.to_string() }),
+    };
+    if let Err(error) = with_scope(root, || object.set_property("previous", previous)) {
+        return binding_error(BindingError::Internal { detail: format!("B2.489: the previous of the converted exception could not be set: {error}") });
+    }
     error_exception(object, kind)
 }
 

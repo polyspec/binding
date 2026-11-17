@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2ed3b1581e21a30e7acc9134a23ed3115e7d4b6b075fe95a762c75bd05df2a07 -->
+<!-- source-sha256: a7a678e0c98ac15049930aa0d10e99c520046c4884b241a3e4c41aadefdbccc2 -->
 # 생성기
 
 [English](generator.md)
@@ -1435,7 +1435,8 @@
   O를 쥔 `Failure::Raised`를 돌려주었고, O가 L의 category 클래스 여섯 중 하나나 L의 오류 unit의 인스턴스이며(GN-6s처럼 L의
   package에서 이름으로 찾는다), O의 `kind`가 member가 `raises`에 적은 L 행의 안쪽 kind일 때다. 변환된 오류는 같은 kind를
   가진 그 행 클래스의 인스턴스다. message, status, errno는 O의 것이고, 행의 unit의 각 property는 `wrapped` 행이 그것으로
-  넘기는 O의 property 값이며(CK-107), cause는 O다: PHP는 `zend_exception_set_previous`로 정한 `previous`, Python은
+  넘기는 O의 property 값이며(CK-107), cause는 O다: PHP는 root 클래스(`Exception`이나 `Error`)의 private property `previous`를 그 scope에서 써서 정한
+  `previous`(ext-php-rs가 그것을 정하는 엔진 함수를 묶지 않으므로), Python은
   `__cause__`, Node와 WASM은 own property `cause`, Go는 `Cause()`(GN-15d). member가 적지 않은 kind의 L 예외, 다른 모든
   예외, `Failure::Kind`는 전과 같다. 앞의 둘은 바꾸지 않고 다시 던지고, recognition이 준 L의 kind(GN-6s)는 이미 코어 오류의
   variant이므로 이 계약의 클래스다. PHP, Python, Node, WASM은 crate에서 변환한다. member의 오류 경로는 `converted_<member>`를
