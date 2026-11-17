@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0b51911e311df4ace8e69cfeb25f2708fe417a3fb6c1bf5f14e9d6aa1b61e741 -->
+<!-- source-sha256: 5d62655273ead52e4f11fa4cd09efbc38b95bae9234fa8303a84ffc97c7fafdc -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -21,6 +21,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `packages/ts/schema/interface.schema.json`이 strict 옵션을 하나도 끄지 않은 Ajv strict 모드에서 컴파일되므로, 소비자가 그것으로 interface.json을 검증할 수 있다(CK-1, B2.443). Ajv는 naming exception의 `not` 아래 `required: ["parameter", "field"]`에서부터 strictRequired로, `value`와 literal default의 union type에서 strictTypes로 그것을 거부했고, orm은 대신 guard로 계약을 읽었다. 속성을 요구하는 하위 스키마는 이제 그 속성을 `properties`에 `true`로도 이름하여 같은 규칙을 말하고, 둘 이상의 타입인 값은 단일 타입의 `anyOf`다(두 literal default에는 새 `$defs/literal`). `binding check`는 `strictRequired: false`와 `allowUnionTypes: true` 없이 `strict: true`만으로 스키마를 컴파일한다. `packages/ts`에서 `node --test tests/schema-strict.test.ts`로 검증했고, 변경 전에는 실패했다.
 
 ## 0.0.19
 

@@ -163,6 +163,23 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
     },
+    "literal": {
+      "description": "A literal default (U-2, U-3): a string, a number, a boolean or null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "relativePath": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$",
@@ -459,6 +476,10 @@
         }
       },
       "not": {
+        "properties": {
+          "parameter": true,
+          "field": true
+        },
         "required": [
           "parameter",
           "field"
@@ -769,27 +790,42 @@
             },
             "oneOf": [
               {
+                "properties": {
+                  "category": true
+                },
                 "required": [
                   "category"
                 ],
                 "not": {
+                  "properties": {
+                    "library": true
+                  },
                   "required": [
                     "library"
                   ]
                 }
               },
               {
+                "properties": {
+                  "library": true
+                },
                 "required": [
                   "library"
                 ],
                 "not": {
                   "anyOf": [
                     {
+                      "properties": {
+                        "category": true
+                      },
                       "required": [
                         "category"
                       ]
                     },
                     {
+                      "properties": {
+                        "source": true
+                      },
                       "required": [
                         "source"
                       ]
@@ -880,11 +916,17 @@
             },
             "oneOf": [
               {
+                "properties": {
+                  "forward": true
+                },
                 "required": [
                   "forward"
                 ]
               },
               {
+                "properties": {
+                  "drop": true
+                },
                 "required": [
                   "drop"
                 ]
@@ -1125,26 +1167,41 @@
       },
       "oneOf": [
         {
+          "properties": {
+            "php": true
+          },
           "required": [
             "php"
           ]
         },
         {
+          "properties": {
+            "python": true
+          },
           "required": [
             "python"
           ]
         },
         {
+          "properties": {
+            "node": true
+          },
           "required": [
             "node"
           ]
         },
         {
+          "properties": {
+            "go": true
+          },
           "required": [
             "go"
           ]
         },
         {
+          "properties": {
+            "wasm": true
+          },
           "required": [
             "wasm"
           ]
@@ -1162,12 +1219,7 @@
           ],
           "properties": {
             "literal": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "null"
-              ]
+              "$ref": "#/$defs/literal"
             }
           }
         },
@@ -1257,16 +1309,25 @@
       },
       "oneOf": [
         {
+          "properties": {
+            "required": true
+          },
           "required": [
             "required"
           ]
         },
         {
+          "properties": {
+            "default": true
+          },
           "required": [
             "default"
           ]
         },
         {
+          "properties": {
+            "rest": true
+          },
           "required": [
             "rest"
           ]
@@ -1306,11 +1367,17 @@
       },
       "oneOf": [
         {
+          "properties": {
+            "required": true
+          },
           "required": [
             "required"
           ]
         },
         {
+          "properties": {
+            "default": true
+          },
           "required": [
             "default"
           ]
@@ -1484,10 +1551,16 @@
           "$ref": "#/$defs/type"
         },
         "value": {
-          "type": [
-            "string",
-            "number",
-            "boolean"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
           ]
         },
         "writable": {
@@ -1518,12 +1591,7 @@
           ],
           "properties": {
             "literal": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "null"
-              ]
+              "$ref": "#/$defs/literal"
             }
           }
         }
@@ -1544,6 +1612,8 @@
               "core"
             ],
             "properties": {
+              "type": true,
+              "value": true,
               "core": {
                 "$ref": "#/$defs/rustPath"
               }
@@ -1551,16 +1621,25 @@
             "not": {
               "anyOf": [
                 {
+                  "properties": {
+                    "parameters": true
+                  },
                   "required": [
                     "parameters"
                   ]
                 },
                 {
+                  "properties": {
+                    "returns": true
+                  },
                   "required": [
                     "returns"
                   ]
                 },
                 {
+                  "properties": {
+                    "wait": true
+                  },
                   "required": [
                     "wait"
                   ]
@@ -1572,11 +1651,17 @@
             "not": {
               "anyOf": [
                 {
+                  "properties": {
+                    "type": true
+                  },
                   "required": [
                     "type"
                   ]
                 },
                 {
+                  "properties": {
+                    "value": true
+                  },
                   "required": [
                     "value"
                   ]
@@ -1594,12 +1679,18 @@
             }
           },
           "then": {
+            "properties": {
+              "yields": true
+            },
             "required": [
               "yields"
             ]
           },
           "else": {
             "not": {
+              "properties": {
+                "yields": true
+              },
               "required": [
                 "yields"
               ]
@@ -1812,12 +1903,18 @@
             }
           },
           "then": {
+            "properties": {
+              "variants": true
+            },
             "required": [
               "variants"
             ]
           },
           "else": {
             "not": {
+              "properties": {
+                "variants": true
+              },
               "required": [
                 "variants"
               ]
@@ -1833,12 +1930,18 @@
             }
           },
           "then": {
+            "properties": {
+              "fields": true
+            },
             "required": [
               "fields"
             ]
           },
           "else": {
             "not": {
+              "properties": {
+                "fields": true
+              },
               "required": [
                 "fields"
               ]
@@ -1854,6 +1957,10 @@
             }
           },
           "then": {
+            "properties": {
+              "tag": true,
+              "cases": true
+            },
             "required": [
               "tag",
               "cases"
@@ -1863,11 +1970,17 @@
             "not": {
               "anyOf": [
                 {
+                  "properties": {
+                    "tag": true
+                  },
                   "required": [
                     "tag"
                   ]
                 },
                 {
+                  "properties": {
+                    "cases": true
+                  },
                   "required": [
                     "cases"
                   ]
@@ -1885,6 +1998,10 @@
             }
           },
           "then": {
+            "properties": {
+              "core": true,
+              "thread": true
+            },
             "required": [
               "core",
               "thread"
@@ -1894,6 +2011,9 @@
             "allOf": [
               {
                 "not": {
+                  "properties": {
+                    "thread": true
+                  },
                   "required": [
                     "thread"
                   ]
@@ -1913,6 +2033,9 @@
                 "then": {},
                 "else": {
                   "not": {
+                    "properties": {
+                      "core": true
+                    },
                     "required": [
                       "core"
                     ]
@@ -1936,11 +2059,17 @@
             "not": {
               "anyOf": [
                 {
+                  "properties": {
+                    "out": true
+                  },
                   "required": [
                     "out"
                   ]
                 },
                 {
+                  "properties": {
+                    "in": true
+                  },
                   "required": [
                     "in"
                   ]
@@ -2022,15 +2151,24 @@
       ],
       "oneOf": [
         {
+          "properties": {
+            "member": true
+          },
           "required": [
             "member"
           ]
         },
         {
+          "properties": {
+            "alias": true
+          },
           "required": [
             "alias"
           ],
           "not": {
+            "properties": {
+              "result": true
+            },
             "required": [
               "result"
             ]

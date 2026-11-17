@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: bce0cc465f542b3d7d36c23855c8dbc239dcc07775d4be92c9d9f10d5beba407 -->
+<!-- source-sha256: 966f95b763cbe66321e99dd58cac482257ccae8893d8bfdb15250880188fb16d -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -26,7 +26,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 스키마는 npm 패키지 `@polyspec/binding`에 들어 있고 `./schema/interface.schema.json`으로 내보낸다(S15).
 
-- **CK-1** 스키마: 계약이 `packages/ts/schema/interface.schema.json`(JSON Schema 2020-12, Ajv)을 통과한다. 모든 reason은 규칙 id이므로
+- **CK-1** 스키마: 계약이 `packages/ts/schema/interface.schema.json`(JSON Schema 2020-12, Ajv)을 통과한다. 스키마는 strict
+  옵션을 하나도 끄지 않은 Ajv strict 모드에서 컴파일되므로 소비자가 그것으로 계약을 검증할 수 있다. 속성을 요구하는
+  하위 스키마는 그 속성을 `properties`에도 이름하고(바깥 스키마가 형태를 정하면 `true`), 둘 이상의 타입인 값은 단일 타입의
+  `anyOf`다. 모든 reason은 규칙 id이므로
   (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`) "지금 이름" 같은 산문 reason은 거부된다(N-3, P-10). `reason` 없는 `native`는
   거부된다(I-3). callback member의 `errors`는 `{recognize, reason}`뿐이다(U-3).
 - **CK-2** todo: `binding import`가 남긴 `"todo"` 문자열이나 `todo` 키를 가진 객체가 있으면 실패한다(M-2). todo 자리와 그
