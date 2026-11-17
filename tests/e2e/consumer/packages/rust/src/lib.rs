@@ -12,6 +12,8 @@ pub enum Error {
     Absent {
         /// The key.
         key: String,
+        /// The parts of the key between its dots.
+        parts: Vec<String>,
     },
 }
 
@@ -28,7 +30,15 @@ impl Error {
     #[must_use]
     pub fn key(&self) -> &str {
         match self {
-            Self::Absent { key } => key,
+            Self::Absent { key, .. } => key,
+        }
+    }
+
+    /// The parts of the key between its dots, which the error lends.
+    #[must_use]
+    pub fn parts(&self) -> &[String] {
+        match self {
+            Self::Absent { parts, .. } => parts,
         }
     }
 
@@ -36,7 +46,7 @@ impl Error {
     #[must_use]
     pub fn length(&self) -> Option<u64> {
         match self {
-            Self::Absent { key } => u64::try_from(key.len()).ok().filter(|length| *length > 0),
+            Self::Absent { key, .. } => u64::try_from(key.len()).ok().filter(|length| *length > 0),
         }
     }
 }
@@ -44,7 +54,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Absent { key } => write!(f, "the holder has no {key}"),
+            Self::Absent { key, .. } => write!(f, "the holder has no {key}"),
         }
     }
 }
@@ -104,6 +114,7 @@ pub fn fetch(holder: &mut dyn Holder, key: &str) -> Result<Data, Failure<Error>>
         Some(value) => Ok(value),
         None => Err(Failure::Kind(Error::Absent {
             key: key.to_owned(),
+            parts: key.split('.').map(str::to_owned).collect(),
         })),
     }
 }
