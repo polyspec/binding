@@ -3792,6 +3792,10 @@ the design ids are those of the binding design.
   local (PHP, Python, Node, WASM; B2.463). Why: a receiver that holds state cannot be made twice in one case folder,
   and the three calls of the G-7 test of orm `StepRunner.run` each made the receiver, so the second failed with
   `table owner already exists`; the calls of G-7 fail before the core runs, so they leave the one receiver as it was.
+  So does every argument of a class or of a generated interface of the G-7 test: the test makes it once, as a local
+  `argument<i>` after the receiver, and every call of the test takes that local (PHP, Python, Node, WASM; B2.508). Go
+  has no G-7 test, since its calls of the wrong shape do not compile. Why: the G-7 test of orm `StepRunner.new` made
+  its arguments in each call over the one case folder, so the second failed with `table owner already exists`.
 - **GN-13z** The Python U-2 and T-1 tests compare the two outcomes by `_same`, which compares an instance of a value
   class of another repository by what the members of its in row read (B2.121), and not by `assertEqual`. Why: the class
   of the owner need not declare `__eq__`, and `polyspec.json.Value` does not, so two equal results compared by identity
