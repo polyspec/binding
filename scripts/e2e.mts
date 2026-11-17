@@ -37,7 +37,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags } from './e2e-lint.mts';
+import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags, lintBindingCrates } from './e2e-lint.mts';
 import { llvmOf } from './e2e-llvm.mts';
 import { npmPacked, type ConsumerPackage, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
@@ -53,10 +53,14 @@ for (let i = 2; i < process.argv.length; i += 2) {
   if (key === '--dep') deps.push(value);
   else args.set(key, value);
 }
-const options = ['--binding', '--repo', '--work', '--checkout'];
+const options = ['--binding', '--repo', '--work', '--checkout', '--until'];
 for (const key of args.keys()) {
-  if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work and --dep`);
+  if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work, --dep and --until`);
 }
+// B2.432: --until lint (make e2e-lint) ends the run after the lint of the binding crates, so it builds no package and
+// runs no test; its record is var/report/e2e-lint/<library>.json, and a run to the end keeps var/report/e2e.
+const until = args.get('--until');
+if (until !== undefined && until !== 'lint') throw new Error(`--until takes lint, not ${until}`);
 const repoArg = args.get('--repo');
 if (repoArg === undefined || repoArg === '') {
   process.stderr.write('usage: make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]\n');
@@ -91,6 +95,7 @@ if (args.get('--checkout') === undefined) {
   const forwarded = [
     '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', run.path,
     ...deps.flatMap((dep) => ['--dep', inSource(dep)]),
+    ...(until === undefined ? [] : ['--until', until]),
   ];
   process.exit(await runIn(run, [
     { command: 'sh', argv: ['-c', 'rm -rf "$1" && mkdir -p "$1" && git -C "$2" archive --format=tar -o "$1.tar" "$3" && tar -x -C "$1" -f "$1.tar" && rm "$1.tar"', 'sh', source, checkout, commit] },
@@ -278,7 +283,8 @@ function prepare(checkout: string): Prepared[] {
       process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
     }
   }
-  for (const c of contracts) run('cargo', ['test', '--manifest-path', join(copy, 'Cargo.toml'), '-p', c.core.crate, '--quiet']);
+  // B2.432: a run with --until lint runs no test, so it checks the core with cargo check, which resolves and pins alike.
+  for (const c of contracts) run('cargo', [until === 'lint' ? 'check' : 'test', '--manifest-path', join(copy, 'Cargo.toml'), '-p', c.core.crate, '--quiet']);
   // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20). A git dependency moves to the
   // commit of this binding, as the repository does when it takes this binding.
   const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
@@ -499,7 +505,7 @@ const counted = (t: Lang, what: string, passed: number, failedCount: number, ski
 const repositoryCommit = (path: string): string | null => (existsSync(join(resolve(path), '.git')) ? git(resolve(path), ['rev-parse', 'HEAD']) : null);
 process.on('exit', (code) => {
   const library = repoContracts[0]?.library ?? '';
-  const dir = join(checkout, 'var/report/e2e');
+  const dir = join(checkout, until === 'lint' ? 'var/report/e2e-lint' : 'var/report/e2e');
   mkdirSync(dir, { recursive: true });
   const report = {
     binding: commit,
@@ -554,6 +560,10 @@ for (const t of targets) for (const p of copiesOf(t)) generateOf(t, p);
 // the crate of each target must fail with the rustc code that it names, which counts as the test of the target, and
 // the run ends there, since no later step can build that crate.
 const refusedPath = mains[0] === undefined ? '' : join(mains[0].copy, 'refused.json');
+if (refusedPath !== '' && existsSync(refusedPath) && until === 'lint') {
+  process.stderr.write(`${repo} holds refused.json: the compiler refuses its binding crates, so no lint reads them (B2.432)\n`);
+  process.exit(2);
+}
 if (refusedPath !== '' && existsSync(refusedPath)) {
   const codes = (JSON.parse(readFileSync(refusedPath, 'utf8')) as { codes: Partial<Record<Lang, string>> }).codes;
   for (const t of targets) {
@@ -580,9 +590,10 @@ for (const t of targets) if (!failed(t)) lintOf(t, `cargo clippy of the core${ma
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'}`, () => {
     // GN-5: with the test features, which the tests build, and without a feature, which a release builds.
-    for (const p of mainsOf(t)) for (const lint of bindingLints(join(p.copy, 'Cargo.toml'), `${p.contract.core.crate}-${crateSuffix[t]}`, testFeatures(p, t))) run('cargo', lint.argv);
+    lintBindingCrates(mainsOf(t).map((p) => ({ manifest: join(p.copy, 'Cargo.toml'), crate: `${p.contract.core.crate}-${crateSuffix[t]}`, features: testFeatures(p, t) })), (argv) => run('cargo', argv));
   })) for (const lint of bindingLints('', '', '')) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} ${lint.what}`);
 }
+if (until === 'lint') finishLint();
 
 const [cases] = mains[0]?.caseFiles ?? [];
 const e2e = join(binding, 'tests/e2e', library);
@@ -1143,5 +1154,19 @@ function finish(): never {
     process.exit(1);
   }
   process.stdout.write('\nevery target passed\n');
+  process.exit(0);
+}
+
+// B2.432: the end of a run with --until lint: each target with its lint and the causes of its failure; it verifies no
+// target, so it names no test, and it fails when a step of a target failed.
+function finishLint(): never {
+  step('each target, linted only (no package was built and no test ran)');
+  for (const [t, o] of results) process.stdout.write(`${t}: ${o.causes.length > 0 ? 'FAILED' : 'linted'}\n  lint: ${o.lint.join('; ') || 'none'}\n${o.causes.map((c) => `  cause: ${c}\n`).join('')}`);
+  const failedTargets = [...results].filter(([, o]) => o.causes.length > 0).map(([t]) => t);
+  if (failedTargets.length > 0) {
+    process.stdout.write(`\nthe lint of the target${failedTargets.length === 1 ? '' : 's'} ${failedTargets.join(', ')} failed, each with its causes above\n`);
+    process.exit(1);
+  }
+  process.stdout.write('\nevery target linted\n');
   process.exit(0);
 }

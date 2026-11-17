@@ -81,6 +81,17 @@ BINDING ?= HEAD
 e2e: ## Run the end-to-end check of the generator: REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]
 	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO)$(if $(WORK), --work $(WORK))$(foreach dep,$(DEPS), --dep $(dep))
 
+# B2.432: the lint of the generated crates of the repositories of tests/e2e before a commit, a gate of AGENTS.md: the
+# end-to-end check of HEAD of each repository of the matrix of the job e2e with its DEPS (scripts/e2e-lint-repos.mts),
+# stopped after cargo clippy -D warnings of each binding crate with its test features and without them; no package is
+# built and no test runs. npm runs offline. Cargo is not offline: it takes binding_core at HEAD from this checkout by
+# Git (url.<base>.insteadOf of scripts/e2e.mts), which the offline mode of Cargo forbids for a commit that its cache does
+# not hold, and it reads the index of the registry to resolve each copy; ONLINE. Records in var/report/e2e-lint. REPOS
+# names some of those repositories, every one by default.
+.PHONY: e2e-lint
+e2e-lint: ## Lint the generated crates of the repositories of tests/e2e with the CLI of HEAD, no test: [REPOS="tests/e2e/<name>..."]
+	$(ONLINE) npm_config_offline=true $(NODE) scripts/e2e-lint-repos.mts $(REPOS)
+
 # GN-14f, GN-15g: the consumer of the released form of a Go module on musl. WORK is the work directory of a run of make e2e
 # on Linux on the machine of DOCKER_HOST; scripts/go-musl.sh runs go test -tags musl of its consumer in an Alpine
 # container there. It downloads the Go of mise.lock and the packages of Alpine of config/toolchain.json; ONLINE.

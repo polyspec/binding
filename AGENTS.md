@@ -114,9 +114,12 @@ rules of this repository.
   release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. No
   tag is created by hand. Why: the release is the commit that a successful run checked, and its version is the version of
   every manifest that it releases. Before the version-bump commit the checkout passes `make docs-check`, `make
-  lint-rust`, `make typecheck-ts` and `make test-ts`. The generated crates of the repositories of `tests/e2e` are linted
-  only by the job `e2e` of CI, so the CI run of that push is their first lint; 0.0.18 so failed in CI on a helper that
-  four generated crates held unused (B2.430), and B2.432 adds a target that lints them offline before the commit.
+  lint-rust`, `make typecheck-ts`, `make test-ts` and `make e2e-lint`. `make e2e-lint` generates the repositories of
+  `tests/e2e` of the matrix of the job `e2e` of CI, with their DEPS and without `lent`, whose crates the compiler refuses,
+  with the CLI of HEAD and lints each binding crate with `cargo clippy -D warnings` with its test features and without
+  them; it builds no package and runs no test, and Cargo reads the index of the registry. It reads the tree of HEAD, as
+  `make e2e` does, so a change that is not committed is not linted. Why: without it the CI run of that push is the first lint
+  of the generated crates, and 0.0.18 so failed in CI on a helper that four generated crates held unused (B2.430).
   Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
   release-tag`, which tags only the commit of a successful run.
 - Own: `make docs-check` reads each document that `config/documents.json` selects on its own with the document check of

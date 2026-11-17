@@ -20,6 +20,54 @@ export function bindingLints(manifest: string, crate: string, features: string):
   ];
 }
 
+// One binding crate of the run: the manifest of its workspace, its package and the test features of its manifest.
+export interface BindingCrate {
+  manifest: string;
+  crate: string;
+  features: string;
+}
+
+// GN-14, GN-5: runs the lints of bindingLints on each crate in turn, with cargo by `run`, which throws on a failure; the
+// first failure ends the lint of the target.
+export function lintBindingCrates(crates: readonly BindingCrate[], run: (argv: string[]) => void): void {
+  for (const c of crates) for (const lint of bindingLints(c.manifest, c.crate, c.features)) run(lint.argv);
+}
+
+// B2.432: one repository of tests/e2e that make e2e-lint lints, with the repositories that its core depends on.
+export interface LintEntry {
+  repo: string;
+  deps: string[];
+}
+
+// B2.432: the repositories that make e2e-lint lints: those of the matrix of the job e2e of .github/workflows/ci.yml
+// (`ci` is its text), with the same DEPS, except a repository whose binding crates the compiler refuses by design
+// (refused.json, B2.402), which holds no crate to lint. A repository of tests/e2e outside the matrix is in
+// tests/e2e/not-in-ci.json with its reason, and its dependency is no checkout of this tree.
+export function lintEntries(ci: string, refused: (repo: string) => boolean): LintEntry[] {
+  const lines = ci.split('\n');
+  const job = lines.findIndex((l) => l === '  e2e:');
+  const start = job < 0 ? -1 : lines.findIndex((l, i) => i > job && l === '        include:');
+  const found: { repo?: string; deps?: string }[] = [];
+  for (const line of start < 0 ? [] : lines.slice(start + 1)) {
+    const item = /^ {10}(- | {2})([a-z]+): (.*)$/.exec(line);
+    if (item === null) break;
+    if (item[1] === '- ') found.push({});
+    const entry = found.at(-1);
+    const value = (item[3] ?? '').replace(/^"(.*)"$/, '$1');
+    if (entry !== undefined && item[2] === 'repo') entry.repo = value;
+    if (entry !== undefined && item[2] === 'deps') entry.deps = value;
+  }
+  if (found.length === 0) throw new Error('the job e2e of .github/workflows/ci.yml has no matrix of repositories');
+  return found
+    .map((e) => ({ repo: e.repo ?? '', deps: (e.deps ?? '').split(' ').filter((d) => d !== '') }))
+    .filter((e) => !refused(e.repo));
+}
+
+// B2.432: the arguments of scripts/e2e.mts that lint one repository and stop after the lint of its binding crates.
+export function lintArgv(entry: LintEntry): string[] {
+  return ['--repo', entry.repo, ...entry.deps.flatMap((d) => ['--dep', d]), '--until', 'lint'];
+}
+
 // GN-14, GN-6s: the arguments of tsc --strict of the declarations of a package, `declarations` relative to the package:
 // the declarations where npm installed the package in `nodeDir`, beside the packages that it depends on, which they
 // import (the interface of a callback unit of another repository), resolved by the exports of their manifests as Node
