@@ -9545,6 +9545,8 @@ test('a Go expected result takes the forms of the Go out rows of the alias: a UT
   const data = sample.units.find((u: any) => u.id === 'data');
   const all = (go: unknown): Record<string, unknown> => ({ php: 'map', python: 'map', node: 'map', wasm: 'map', go });
   data.out = data.out.filter((row: any) => row.kind !== 'map');
+  // CK-104: the case map below gives int keys, so the alias states the form int.
+  data.sequence_keys = { keys: 'int' };
   data.out.push(
     { kind: 'bytes', when: { predicate: 'utf8', is: true }, make: { php: 'bytes', python: 'text', node: 'text', go: 'text', wasm: 'text' } },
     { kind: 'bytes', when: { predicate: 'utf8', is: false }, make: { php: 'bytes', python: 'bytes', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
@@ -12921,10 +12923,13 @@ const wholeConsumerTarget = (name: string, inputs: Inputs, target: Lang): Readon
 test('B2.363: the check of this tree gives the whole copy of each consumer contract the findings that findings.json records and no other, and the generator writes each of its targets (G-4)', () => {
   // findings.json: the findings that a copy has under the check of this tree, each with its reason and the condition
   // that ends it, which is a task of that repository. A copy that is not listed has no finding.
-  const recorded = consumerFile('findings.json') as { consumers: { consumer: string; reason: string; until: string; keys: Record<string, string[]> }[] };
+  // keys holds the CK-96 findings of a copy, findings each other finding as `<path>: <check> <message>`.
+  const recorded = consumerFile('findings.json') as { consumers: { consumer: string; reason: string; until: string; keys?: Record<string, string[]>; findings?: string[] }[] };
   const names = WHOLE_CONSUMERS.map((copy) => copy.name);
   for (const entry of recorded.consumers) {
-    assert.deepEqual(Object.keys(entry).sort(), ['consumer', 'keys', 'reason', 'until'], 'an entry of findings.json names its consumer, its keys, its reason and its until');
+    const fields = Object.keys(entry).sort();
+    assert.ok(['keys', 'findings'].some((field) => fields.includes(field)), `${entry.consumer} of findings.json records keys or findings`);
+    assert.deepEqual(fields.filter((field) => !['keys', 'findings'].includes(field)), ['consumer', 'reason', 'until'], 'an entry of findings.json names its consumer, its keys or findings, its reason and its until');
     assert.ok(names.includes(entry.consumer), `findings.json names ${entry.consumer}, which is no whole copy`);
     assert.ok(entry.reason.trim() !== '' && entry.until.trim() !== '', `${entry.consumer} of findings.json states its reason and the condition that ends it`);
   }
@@ -12940,13 +12945,45 @@ test('B2.363: the check of this tree gives the whole copy of each consumer contr
       if (member === undefined || name === undefined) others.push(`${finding.path}: ${finding.check} ${finding.message}`);
       else if (!(keys[member] ??= []).includes(name)) keys[member].push(name);
     }
-    assert.deepEqual(others, [], `${copy.name}: the check of this tree has a finding that findings.json does not record`);
+    const entry = recorded.consumers.find((e) => e.consumer === copy.name);
+    assert.deepEqual(others.sort(), [...(entry?.findings ?? [])].sort(), `${copy.name}: the findings other than CK-96 are those that findings.json records`);
     const sorted = Object.fromEntries(Object.keys(keys).sort().map((member) => [member, [...(keys[member] ?? [])].sort()]));
     assert.deepEqual(sorted, recorded.consumers.find((entry) => entry.consumer === copy.name)?.keys ?? {}, `${copy.name}: the keys that CK-96 reports are those that findings.json records`);
     // G-4: no target of a real contract is refused, and each has its files.
     for (const target of inputs.contract.targets as Lang[]) assert.ok(wholeConsumerTarget(copy.name, inputs, target).size > 0, `${copy.name} ${target}`);
   }
 });
+
+// B2.490: the copy of orm with the key form that its core means, text (orm_value.rs compares a key with the text of
+// its position), stated on orm_value as its migration adds it.
+const ormStated = (target: Lang): string => {
+  const inputs = wholeConsumer(WHOLE_CONSUMERS.find((copy) => copy.name === 'orm') as WholeConsumer);
+  (inputs.contract.units.find((u) => u.id === 'orm_value') as { sequence_keys?: unknown }).sequence_keys = { keys: 'text' };
+  const out = generateOnStack({ ...inputs, targets: [target] });
+  const path = { php: 'packages/php-ext/generated/tests/GeneratedTest.php', python: 'packages/python/generated/tests/test_generated.py' } as Record<string, string>;
+  return text(out, path[target] as string);
+};
+
+test('B2.490: under the key form text, the map of orm codec.decode / sequence_map_kind with the keys "0", "1" has sequence keys, so PHP expects the map_value of its out row with int keys and Python the text keys (GN-13e)', () => {
+  const php = ormStated('php');
+  const start = php.indexOf('public function testGn13edecodeSequenceMapKind(');
+  assert.ok(start >= 0);
+  assert.ok(php.slice(start, php.indexOf('\n    }\n', start)).includes(String.raw`$expected = json_decode("[\"map_value #0\",\"map 2\",\"int 0\",\"bool true\",\"int 1\",\"bool false\"]"`), php.slice(start, start + 600));
+  assert.ok(ormStated('python').includes(String.raw`expected = json.loads("[\"map 2\",\"text 30\",\"bool true\",\"text 31\",\"bool false\"]")`));
+});
+
+// constructor / kinds gives the argument once; entries / kinds gives it in the receiver and in the result.
+for (const [member, name, count] of [['map_value.constructor', 'testGn13eMapValueConstructKinds', 1], ['map_value.entries', 'testGn13eMapValueEntriesKinds', 2]] as const) {
+  test(`B2.490: under the key form text, the value sequence_map of orm ${member} / kinds is the map_value of its out row in PHP, never a bare array that PHP reads as a list (GN-13e)`, () => {
+    const php = ormStated('php');
+    const made = /"sequence_map" => new \\Polyspec\\Orm\\MapValue\(\[(?:0|"0") => true\]\)/g;
+    const start = php.indexOf(`public function ${name}(`);
+    assert.ok(start >= 0, name);
+    const body = php.slice(start, php.indexOf('\n    }\n', start));
+    assert.equal(body.match(made)?.length ?? 0, count, `${name}\n${body}`);
+    assert.ok(!body.includes('"sequence_map" => ["0" => true]'), `${name}\n${body}`);
+  });
+}
 
 test('B2.418: every name that a generated Rust file imports is written bare in that file, in every target of every contract (GN-4e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));

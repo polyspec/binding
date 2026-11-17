@@ -590,6 +590,18 @@ class Checker {
       if (unit.kind === 'alias' && unit.origin !== 'value') {
         this.report('CK-8', `${path}/origin`, 'an alias names a union of value types; its origin is value (U-7 (a))');
       }
+      // CK-104 (B2.490): the predicate sequence_keys means the texts "0".."n-1" or the ints 0..n-1, which the keys'
+      // shape cannot tell apart on PHP, so an alias that selects a row by it states the form; there is no default.
+      if (unit.kind === 'alias' && unit.sequence_keys === undefined) {
+        const rows = [
+          ...(unit.out ?? []).map((r, i) => ({ when: r.when, at: `${path}/out/${i}` })),
+          ...(unit.in ?? []).flatMap((r, i) => (r.cases ?? []).map((c, j) => ({ when: c.when, at: `${path}/in/${i}/cases/${j}` }))),
+        ];
+        const row = rows.find((r) => typeof r.when === 'object' && r.when !== null && r.when.predicate === 'sequence_keys');
+        if (row !== undefined) {
+          this.report('CK-104', path, `the alias ${unit.id} selects the row ${row.at} by sequence_keys and states no sequence_keys.keys, text or int (B2.490)`);
+        }
+      }
       if (unit.origin !== 'value') continue;
       const by = gathered.get(unit.id);
       const holds = unit.out !== undefined || unit.in !== undefined;

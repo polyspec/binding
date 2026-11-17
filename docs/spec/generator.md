@@ -3104,8 +3104,9 @@ the design ids are those of the binding design.
   places in pre-order, depth first, which a loop writes on both sides, so a value nested deeper than a recursion
   takes is compared too. The generator writes the texts of the case value by the out rows of the alias: for each
   place, the row of its kind whose predicate the value has (`utf8`, `safe_integer`, `integral_float`,
-  `sequence_keys`; a case value of the kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no
-  row of its kind) and the form of the row in the language. The test writes the texts of the result by the type of
+  `sequence_keys`, whose keys are those of the form that the alias states, texts or ints, CK-104; a case value of the
+  kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no row of its kind) and the form of the
+  row in the language. The test writes the texts of the result by the type of
   each place. A text names the form: `null`; `bool true` or `bool false`; `int <decimal>` in Python and PHP; `number
   <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
   PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;

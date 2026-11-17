@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: d493c634ebfcfd60735ef3d66a5b99d4f42cd24cae9a7966d2189b87f5afe69b -->
+<!-- source-sha256: cffa7f7600619171d713df5f21b04ab8869020188dbbc52e8b8fc440696c2403 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -498,6 +498,16 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   지목한다. 이 허용이 인자 자체에서처럼 인자 안에서도 성립하는 것은 session-store가 `redis_sessions.new`의 record 인자
   `options`의 uint field `lifetime`과 `lock_expire`에 든 `-1`, `1.5`, `"60"`, `true`를 `invalid_number`로 거부하기
   때문이다. 최상위만 받는 검사는 binding의 그 거부의 유일한 test를 거부하게 된다.
+- **CK-104** 들어오거나 나가는 행 중 `when.predicate`가 `sequence_keys`인 행을 가진 value alias는 그 술어가 뜻하는 키
+  형태를 `"sequence_keys": {"keys": "text"}`나 `{"keys": "int"}`로 밝힌다: `text`는 키가 차례로 text `"0"`부터
+  `"n-1"`이고, `int`는 차례로 int `0`부터 `n-1`이다. 빈 map은 두 형태에서 모두 sequence 키를 가진다. 그런 행이 있고
+  밝힘이 없는 alias는 alias와 그 행과 함께 거부된다. 기본값은 없다. 생성기는 case map의 `sequence_keys`를 밝힌 형태로
+  판단한다(GN-13e). 이유: 코어는 자기 키로 술어를 계산하고, 생성기는 case 키의 모양으로 int라고 짐작했다. orm의 코어는
+  text를 뜻하므로(`orm_value.rs`는 키를 그 위치의 text와 비교한다) 키가 `"0"`, `"1"`인 map이 sequence 키가 없다고
+  판단되었다: `codec.decode` / `sequence_map_kind`의 PHP test는 코어가 행의 `map_value`를 주는 곳에서 bare map을
+  기대했고, `map_value.constructor` / `kinds`와 `map_value.entries` / `kinds`는 그 값을 bare array로 주었는데, PHP는
+  키 `"0"`을 int `0`으로 바꾸므로 그것을 list로 읽는다(B2.490). 기본값은 바로 그 짐작이고, orm과 template에서 틀리며
+  조용히 통과한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
