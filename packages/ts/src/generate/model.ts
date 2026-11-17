@@ -1379,9 +1379,9 @@ export function places(model: Model, fn: Fn): Place[] {
   return out;
 }
 
-// GN-6h: whether a conversion in of each form is written for a class: the handle of a parameter that is a place
-// (held_<class>), and the clone of a value inside another type (in_<class>).
-export function takesNested(model: Model, object: ObjectClass): boolean {
+// T-5: whether a type names a class, itself, by a generated interface it implements, or by a field of a record of this
+// repository; a function type names it by what it returns when returns holds, else not at all.
+function namesClass(model: Model, object: ObjectClass, returns: boolean): (value: unknown) => boolean {
   const seen = new Set<string>();
   const names = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(names);
@@ -1396,10 +1396,17 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
-    if (typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    if (returns && typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
+    return Object.entries(record).some(([key, item]) => key !== 'name' && (returns || key !== 'function') && names(item));
   };
+  return names;
+}
+
+// GN-6h: whether a conversion in of each form is written for a class: the handle of a parameter that is a place
+// (held_<class>), and the clone of a value inside another type (in_<class>).
+export function takesNested(model: Model, object: ObjectClass): boolean {
+  // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
+  const names = namesClass(model, object, true);
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   const place = (arg: Arg): boolean => !arg.field && heldParam(model, arg.type) !== undefined;
   return fns.some((fn) => fn.args.some((a) => !place(a) && names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
@@ -1965,24 +1972,9 @@ export const objectUnit = (model: Model, type: Type): ObjectClass | undefined =>
 // field of a record in them names it. Only then does an emitter write the conversion in, which copies the value the
 // class holds, so a class that never comes in needs neither the conversion nor Clone.
 export function takesObject(model: Model, object: ObjectClass): boolean {
-  const seen = new Set<string>();
-  const names = (value: unknown): boolean => {
-    if (Array.isArray(value)) return value.some(names);
-    if (typeof value !== 'object' || value === null) return false;
-    const record = value as Record<string, unknown>;
-    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
-      if (record['unit'] === object.unit.id) return true;
-      // GN-6ap: a value of a generated interface is an instance of a class that implements it.
-      if (model.interfaces.some((i) => i.id === record['unit']) && (object.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === record['unit'])) return true;
-      const unit = model.contract.units.find((u) => u.id === record['unit']);
-      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
-      seen.add(unit.id);
-      return names(unit.fields ?? []);
-    }
-    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
-    // class that a function type names does not come in by it.
-    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
-  };
+  // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+  // class that a function type names does not come in by it.
+  const names = namesClass(model, object, false);
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
 }

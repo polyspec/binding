@@ -1082,19 +1082,19 @@ ${cases.join('\n')}
 
 // A Go interpreted string literal of UTF-8 text, with only printable ASCII in the source.
 export function goString(text: string): string {
-  return goLiteral([...text].map((char) => char.codePointAt(0) ?? 0), (code) => (code <= 0xffff ? `\\u${goHex(code, 4)}` : `\\U${goHex(code, 8)}`));
+  return goQuoted([...text].map((char) => char.codePointAt(0) ?? 0), (code) => (code <= 0xffff ? `\\u${goHex(code, 4)}` : `\\U${goHex(code, 8)}`));
 }
 
 // A Go interpreted string literal whose bytes are the given bytes (T-1 latin1 in Go, B-8).
 export function goBytes(bytes: Iterable<number>): string {
-  return goLiteral([...bytes], (byte) => `\\x${goHex(byte, 2)}`);
+  return goQuoted([...bytes], (byte) => `\\x${goHex(byte, 2)}`);
 }
 
 const goHex = (code: number, width: number): string => code.toString(16).padStart(width, '0');
 
 // A Go interpreted string literal of code points: a quote and a backslash escaped, printable ASCII as is, and any other
 // by its escape.
-function goLiteral(codes: number[], escape: (code: number) => string): string {
+function goQuoted(codes: number[], escape: (code: number) => string): string {
   const one = (code: number): string => {
     if (code === 0x22 || code === 0x5c) return `\\${String.fromCodePoint(code)}`;
     return code >= 0x20 && code < 0x7f ? String.fromCodePoint(code) : escape(code);
