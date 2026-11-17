@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 49f51165c1692ac2aafe32b2402a8e79324b81a605d36246edf247be486d28df -->
+<!-- source-sha256: fa5578702e76b30c90bf33128393702e022ae8c3b965ab9f44770525318f66be -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -29,6 +29,7 @@
 - 계약이 `&self`를 이름하는 곳에서 machine method가 `self`나 `&mut self`를 받는 core는 E0308만이 아니라 CK-69의 문장으로 compile에 실패한다(CK-69, GN-6ae, B2.501). binding check는 core의 Rust 소스가 아니라 계약의 receiver를 읽으므로, `self`를 받던 orm의 machine은 check를 통과했고 lint-bindings가 생성 crate에서 E0308로 멈췄다. 이제 machine method의 core 호출은 receiver를 `lent_receiver`로 빌려 주며, 그 trait가 CK-69를 이름한다(`#[diagnostic::on_unimplemented]`). 다섯 target 모두 그렇다. `&self`를 받는 core는 전처럼 compile된다. 저장소가 할 일: 없다. core가 다른 receiver를 받으면 그것을 `&self`로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-69" tests/generate.test.ts`로, 그리고 sample의 `Store::transaction`을 `self`로 둔 `make e2e-lint REPOS=tests/e2e/sample`(변경 전 E0308, 변경 후 CK-69로 실패)로 확인했다.
 - `binding check`가 tag가 실행 중인 binding과 다른 version의 것인 core의 `polyspec-binding-core` 줄을 이름한다(CK-109, GN-3e, B2.503). finding은 그 줄, 그 tag의 version, binding의 version을 이름한다. scaffold는 그 줄을 binding crate마다 옮기므로, 더 오래된 release의 tag에 있는 core는 새 생성기 아래에서 그 core runtime을 그대로 두었고, 아무것도 그것을 이름하지 않았다. tag가 없는 줄과 줄이 없는 core는 finding이 아니다. 생성기는 바뀌지 않는다. 저장소가 할 일: core의 줄을 binding의 version의 tag로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-109" tests/contract-check.test.ts`(변경 전 실패)로 확인했다.
 - asset의 크기 검사, 곧 빈 asset과 2 GiB 이상인 asset의 검사가 CI가 어떤 tag보다 먼저 돌리는 빌드 recipe의 끝에서 돌아서, 그런 asset은 tag가 만들어지기 전에 실패한다(GN-19g, GN-19i, B2.505). `packages/release.mk`의 `release-assets-<job>`은 저마다 자신이 빌드한 asset에 대한 `binding asset-sizes --step <recipe>`로 끝나고, binding의 `make release-candidate-assets`는 자신의 archive에 대한 그것으로 끝난다. 전에는 검사가 tag 뒤의 `release-platform-assets`에서만 돌았다. release의 asset은 모두 tag 뒤에 빌드되므로 release의 어떤 순서도 그것을 잡지 못했다. `release-platform-assets`는 upload 전의 검사를 이제 같은 명령으로 유지한다. 레포가 할 일: `make release-recipes`를 다시 실행한다. 다른 것은 바뀌지 않는다. `packages/ts`에서 `node --test --test-name-pattern "B2.505" tests/release-recipes.test.ts tests/ci-workflow.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
+- released form이 파일을 빼는 레포(`packages/go/tests` 아래 레포의 시험 같은)의 Go 모듈 rehearsal(`make rehearse-go-module`)이 그 파일을 commit의 index에서 뺀다(GN-15g, B2.539). 전에는 rehearsal이 증명용 bare 레포에서 index를 쓰므로 `git update-index --force-remove`가 status 128("this operation must be run in a work tree")로 끝나 멈췄다. 이제 빼기는 work tree가 필요 없는 `git update-index --index-info` 하나이며, 레포에서의 release는 전과 같은 파일을 뺀다. 레포가 할 일: 없다. 그 rehearsal이 다시 통과한다. `packages/ts`에서 `node --test tests/release-go-index.test.ts`로 검증했고, 이 시험은 변경 전에 bare 레포에서 실패했다.
 
 ## 0.0.21
 

@@ -412,9 +412,12 @@ export interface GoModUnused {
 // line `// indirect` is not judged, because no file of the module imports the module of such a line. No Go is started
 // and no go.mod is written. The files that the form leaves out are read only when a requirement is not used.
 // GN-15g: the paths that the released form leaves out leave the index of its commit, given with the git of the commit
-// (run takes its arguments and the text of its standard input).
+// (run takes its arguments and the text of its standard input). B2.539: each leaves by a line of --index-info with
+// mode 0 and the zero object id, which needs no work tree, where --force-remove refuses the bare repository of the
+// rehearsal ("this operation must be run in a work tree").
 export function leaveIndex(run: (argv: string[], input?: string) => string, paths: readonly string[]): void {
-  for (const path of paths) run(['update-index', '--force-remove', '--', path]);
+  if (paths.length === 0) return;
+  run(['update-index', '--index-info'], paths.map((path) => `0 ${'0'.repeat(40)}\t${path}\n`).join(''));
 }
 
 export function goModUnused(goMod: string, carried: readonly string[], leftOut: readonly string[], read: (path: string) => string): GoModUnused {
@@ -547,19 +550,19 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
 
   interface Ran { status: number | null; stdout: string }
   // Every command reads the environment of the run alone; its error output goes to the reader of the run.
-  const start = (tool: string, argv: string[], env: Record<string, string> = {}, cwd?: string): Ran => {
+  const start = (tool: string, argv: string[], env: Record<string, string> = {}, cwd?: string, input?: string): Ran => {
     release.log(`$ ${tool} ${argv.join(' ')}`);
-    const ran = spawnSync(tool, argv, { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...release.env, ...env }, ...(cwd === undefined ? {} : { cwd }) });
+    const ran = spawnSync(tool, argv, { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...release.env, ...env }, ...(cwd === undefined ? {} : { cwd }), ...(input === undefined ? {} : { input }) });
     if (ran.error !== undefined) throw new Error(`${tool} did not start: ${ran.error.message}`);
     if (ran.stderr !== '') release.log(ran.stderr.trimEnd());
     return { status: ran.status, stdout: ran.stdout };
   };
-  const run = (tool: string, argv: string[], env: Record<string, string> = {}, cwd?: string): string => {
-    const ran = start(tool, argv, env, cwd);
+  const run = (tool: string, argv: string[], env: Record<string, string> = {}, cwd?: string, input?: string): string => {
+    const ran = start(tool, argv, env, cwd, input);
     if (ran.status !== 0) throw new Error(`${tool} ${argv.join(' ')} ended with status ${String(ran.status)}`);
     return ran.stdout;
   };
-  const git = (argv: string[], env: Record<string, string> = {}): string => run('git', ['-C', root, ...argv], env).trim();
+  const git = (argv: string[], env: Record<string, string> = {}, input?: string): string => run('git', ['-C', root, ...argv], env, undefined, input).trim();
   // A name that the repository may not hold: status 1 without output is the answer that it does not.
   const named = (name: string): string | undefined => {
     const ran = start('git', ['-C', root, 'rev-parse', '--verify', '--quiet', `${name}^{commit}`]);
@@ -591,7 +594,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   };
   // The Git of the repository of the proof. A rehearsal writes each object of its commit there and none into the
   // repository, whose objects that repository reads as its alternates.
-  const bareGit = (argv: string[], env: Record<string, string> = {}): string => run('git', ['--git-dir', bare, ...argv], env).trim();
+  const bareGit = (argv: string[], env: Record<string, string> = {}, input?: string): string => run('git', ['--git-dir', bare, ...argv], env, undefined, input).trim();
   // The bare repository that Git reads in place of the remote of the repository, made once in a run.
   let opened = false;
   const openBare = (): void => {
@@ -820,7 +823,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   objects(['read-tree', parent], index);
   // GN-15g: the tests of the repository and the programs leave the index, and the checkout keeps them.
   for (const path of removed) release.log(`${directory}/${path}: the released form leaves it out, since it ${form.leftOut.get(path) ?? ''} (GN-15g)`);
-  leaveIndex((args) => objects(args, index), removed.map((path) => `${directory}/${path}`));
+  leaveIndex((args, input) => objects(args, index, input), removed.map((path) => `${directory}/${path}`));
   for (const path of [...added.keys()].sort()) {
     const object = objects(['hash-object', '-w', '--no-filters', '--', added.get(path) ?? '']);
     objects(['update-index', '--add', '--cacheinfo', `100644,${object},${path}`], index);

@@ -122,6 +122,8 @@ interface Call {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  // The standard input of git update-index --index-info.
+  stdin?: string;
 }
 
 // The stand-in program: it appends its call to calls.jsonl of the directory STANDIN and gives the first answer of
@@ -134,7 +136,9 @@ const dir = process.env.STANDIN;
 const tool = basename(process.argv[1]);
 const argv = process.argv.slice(2);
 const kept = Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(GIT_|GO|CGO_)/.test(name)));
-appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ tool, argv, cwd: process.cwd(), env: kept }) + '\\n');
+// B2.539: git update-index --index-info reads the entries of the index from its standard input, which the call keeps.
+const stdin = argv.includes('--index-info') ? readFileSync(0, 'utf8') : undefined;
+appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ tool, argv, cwd: process.cwd(), env: kept, stdin }) + '\\n');
 const answer = JSON.parse(readFileSync(join(dir, 'answers.json'), 'utf8')).find((a) => a.tool === tool && new RegExp(a.match).test(argv.join(' ')));
 if (answer !== undefined && answer.stdout !== undefined) process.stdout.write(answer.stdout.replaceAll('{last}', argv[argv.length - 1] ?? ''));
 process.exit(answer === undefined || answer.status === undefined ? 0 : answer.status);
@@ -944,11 +948,16 @@ test('B2.459: the commit removes the tests of the repository and the Go files of
   // The index of the run takes the tree of the commit of the tag, loses the files that the form leaves out and then
   // takes the files of the release. Before B2.459 no file left the index, so the tag held the tests and the programs.
   const index = lines.filter((line) => /^git (read-tree|update-index|write-tree)( |$)/.test(line));
-  assert.deepEqual(index.slice(0, 1 + left.length), [`git read-tree ${TAG_COMMIT}`, ...left.map(([path]) => `git update-index --force-remove -- packages/go/${path}`)]);
-  assert.equal(index.slice(1 + left.length, -1).every((line) => line.startsWith('git update-index --add --cacheinfo ')), true);
+  // B2.539: the files leave by one update-index --index-info, a line of mode 0 and the zero object id each, which needs
+  // no work tree, so the rehearsal writes it in its bare repository as the release does in the repository.
+  assert.deepEqual(index.slice(0, 2), [`git read-tree ${TAG_COMMIT}`, 'git update-index --index-info']);
+  assert.equal(index.slice(2, -1).every((line) => line.startsWith('git update-index --add --cacheinfo ')), true);
   assert.equal(index.at(-1), 'git write-tree');
-  for (const c of s.calls().filter((call) => call.argv.includes('--force-remove'))) assert.equal(c.env['GIT_INDEX_FILE'], join(s.release.work, 'index'));
-  for (const path of [...kept.map(([file]) => file), ...other, 'go.mod']) assert.equal(lines.some((line) => line.includes('--force-remove') && line.endsWith(`packages/go/${path}`)), false, path);
+  const removal = s.calls().filter((call) => call.argv.includes('--index-info'));
+  assert.equal(removal.length, 1);
+  assert.equal(removal[0]?.env['GIT_INDEX_FILE'], join(s.release.work, 'index'));
+  assert.equal(removal[0]?.stdin, left.map(([path]) => `0 ${'0'.repeat(40)}\tpackages/go/${path}\n`).join(''));
+  for (const path of [...kept.map(([file]) => file), ...other, 'go.mod']) assert.equal(removal[0]?.stdin?.includes(`\tpackages/go/${path}\n`), false, path);
   // The checkout keeps every file: the command removes them from its index alone.
   assert.equal(existsSync(join(s.release.root, 'packages/go/go.mod')), true);
   assert.deepEqual(logged.filter((line) => line.includes('the released form leaves it out')), [
