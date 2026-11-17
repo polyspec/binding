@@ -2124,6 +2124,19 @@
       "result": { "float": "nan" }
     }
   ],
+  "weight_constructor": [
+    {
+      "id": "a_float_is_held",
+      "value": 2
+    }
+  ],
+  "weight_value": [
+    {
+      "id": "the_float_is_kept",
+      "value": 2,
+      "result": 2
+    }
+  ],
   "held_source_new": [
     {
       "id": "a_held_source_holds_one_key",

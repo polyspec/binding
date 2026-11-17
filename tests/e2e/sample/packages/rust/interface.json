@@ -1913,6 +1913,54 @@
       ]
     },
     {
+      "id": "weight",
+      "name": [
+        "weight"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Weight",
+      "members": [
+        {
+          "id": "weight.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Weight::new"
+        },
+        {
+          "id": "weight.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Weight::value",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "amount",
       "name": [
         "amount"
@@ -1937,7 +1985,7 @@
             "is": true
           },
           "make": {
-            "php": "ratio.constructor",
+            "php": "weight.constructor",
             "python": "float",
             "node": "float",
             "go": "float",
@@ -1970,11 +2018,11 @@
           ]
         },
         {
-          "php": "ratio",
+          "php": "weight",
           "cases": [
             {
               "kind": "float",
-              "read": "ratio.value"
+              "read": "weight.value"
             }
           ]
         },
@@ -3385,6 +3433,16 @@
       "member": "ratio.value",
       "file": "contracts/cases.json",
       "group": "ratio_value"
+    },
+    {
+      "member": "weight.constructor",
+      "file": "contracts/cases.json",
+      "group": "weight_constructor"
+    },
+    {
+      "member": "weight.value",
+      "file": "contracts/cases.json",
+      "group": "weight_value"
     },
     {
       "member": "held_source.new",

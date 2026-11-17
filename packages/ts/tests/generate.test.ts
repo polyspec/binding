@@ -30,23 +30,11 @@ import { parse } from 'smol-toml';
 // other rules read the sample without those classes and rows, which plainSample gives, so that each of them reads the
 // rule that it names alone; the test of GN-6ar reads the sample as it is.
 const CLASS_ROWS: ReadonlySet<string> = new Set(['box', 'cell', 'ratio']);
-// B2.492: the alias amount of the sample makes an integral float as an instance of ratio in PHP and reads it back; a
-// test that removes ratio or changes its constructor reads amount as a float alone.
-const amountWithoutRatio = (owner: any): void => {
-  const amount = owner.units.find((u: any) => u.id === 'amount');
-  amount.out = amount.out.filter((row: any) => row.when?.is !== false);
-  for (const row of amount.out) {
-    delete row.when;
-    row.make.php = 'float';
-  }
-  amount.in = amount.in.filter((row: any) => row.php !== 'ratio');
-};
 const plainSample = (owner: any): any => {
   owner.units = owner.units.filter((u: any) => !CLASS_ROWS.has(u.id));
   owner.cases = owner.cases.filter((row: any) => !CLASS_ROWS.has(String(row.member).split('.')[0] ?? ''));
   const data = owner.units.find((u: any) => u.id === 'data');
   data.out = data.out.filter((row: any) => row.kind !== 'reference');
-  amountWithoutRatio(owner);
   for (const row of data.out) for (const lang of Object.keys(row.make)) if (row.make[lang] === 'box.constructor') row.make[lang] = 'map';
   data.in = data.in.filter((row: any) => !Object.values(row).some((named) => typeof named === 'string' && (CLASS_ROWS.has(named) || named === 'reference')));
   return owner;
@@ -238,9 +226,9 @@ test('host containers keep their identity during one walk, with and without valu
   }
 });
 
-// B2.492 (GN-6af, GN-13): the alias amount of the sample makes an integral float as an instance of ratio in PHP, and its
-// PHP in row names ratio, so the case value of weigh is that instance, and the PHP host describes it as
-// HostValue::Value of the kind float, whose read gives the float of ratio.value. Before B2.492 the PHP host had no arm
+// B2.492 (GN-6af, GN-13): the alias amount of the sample makes an integral float as an instance of weight in PHP, and
+// its PHP in row names weight, a class that amount alone gathers (CK-8), so the case value of weigh is that instance,
+// and the PHP host describes it as HostValue::Value of the kind float, whose read gives the float of weight.value. Before B2.492 the PHP host had no arm
 // for a class of the contract, so the instance entered as HostValue::Object, which the core of the sample refuses as
 // kind unsupported, as orm's core refuses it with "an object of the language".
 test('an instance of a value class of the contract that a case value makes enters the PHP host as a value of its in row (B2.492, GN-6af, GN-13)', () => {
@@ -248,14 +236,14 @@ test('an instance of a value class of the contract that a case value makes enter
   const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'));
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php'] });
   const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(tests, /\\Polyspec\\Sample\\weigh\(new \\Polyspec\\Sample\\Ratio\(\(float\) 2\.0\)\)/);
+  assert.match(tests, /\\Polyspec\\Sample\\weigh\(new \\Polyspec\\Sample\\Weight\(\(float\) 2\.0\)\)/);
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   const describe = lib.slice(lib.indexOf('    fn describe(&mut self, value: &\'a Zval)'));
-  const ratio = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\)/);
-  assert.ok(ratio >= 0, 'the PHP host tells an instance of ratio');
-  assert.match(lib.slice(ratio), /^php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
+  const weight = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\)/);
+  assert.ok(weight >= 0, 'the PHP host tells an instance of weight');
+  assert.match(lib.slice(weight), /^php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
   const classes = describe.indexOf('php_value_class(value,');
-  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of ratio before any other object');
+  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of weight before any other object');
 });
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
@@ -5131,7 +5119,6 @@ test('B2.277: recursive alias projections refuse composed values and retain genu
 
 test('B2.277: own value-class projections refuse composition and restore the next ordinary case scope (GN-13l)', () => {
   const { contract, caseFiles } = b277TextFixture();
-  amountWithoutRatio(contract);
   const members = contract.units.flatMap((unit: any) => unit.members ?? []);
   members.find((member: any) => member.id === 'ratio.constructor').parameters[0].type = { optional: 'text' };
   contract.units.find((unit: any) => unit.id === 'ratio').out = [{ kind: 'float', make: Object.fromEntries(FIVE.map((target) => [target, 'ratio.constructor'])) }];
