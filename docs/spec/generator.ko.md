@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b406719a64d019149195f59b53a9cfe2e815a253bb16aa3acaea3830142492fe -->
+<!-- source-sha256: 6d04addbd75520a51544d30e0fb59e396be158d28abdbeaeb981433b3519aee1 -->
 # 생성기
 
 [English](generator.md)
@@ -1716,7 +1716,9 @@
   member는 `core`에 `"machine": true`를 적고(CK-68), 그 코어 경로는 future 대신 I/O 없는 state machine을 돌려준다(c6
   6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이므로 코어 경로는 각 인자를 값으로 받는다. callback은
   생성된 struct(`impl <Trait> + 'static`)로, text는 `String`으로 받고, class parameter는 빌림 `value`일 때만 받는다(GN-6h).
-  기본값이 있는 parameter는 이름을 대고 거부한다(G-4). `resume(io)`는 마지막 기다림의 출력(처음과
+  기본값이 있는 parameter나 field는 각 언어에서 GN-6i의 규칙대로 생략하며, 코어 경로는 그 `Option<T>`도 빌린 형태 없이
+  값으로 받는다. text는 `Option<String>`, list는 `Option<Vec<T>>`이고, record parameter는 record 자체이며 record를 통째로
+  생략하면(`{empty: "object"}`) 각 field가 `None`이다. `resume(io)`는 마지막 기다림의 출력(처음과
   call 뒤에는 `None`)으로 machine을 진행시키고 한 단계를 준다:
   - `Step::Io(future)`: 언어 코드에 닿지 않는 코어의 future. driver는 그것을 tokio runtime에서 poll하고 그 출력을 다음
     `resume`에 준다;

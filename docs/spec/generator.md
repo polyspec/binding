@@ -2080,8 +2080,10 @@ the design ids are those of the binding design.
   of its receiver carries language code) names `"machine": true` in its `core` (CK-68), and its core path returns a
   state machine without I/O in place of a future (c6 6.2): a value of `binding_core::machine::Machine`, which owns the
   arguments, so the core path takes each argument by value: a callback as the generated struct (`impl <Trait> +
-  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h); a parameter with a
-  default is refused by name (G-4). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
+  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h). A parameter or a field
+  with a default is left out by the rule of GN-6i in each language, and the core path takes its `Option<T>` by value
+  too, with no borrowed form: `Option<String>` for a text, `Option<Vec<T>>` for a list, and the record of a record
+  parameter, each field `None` when the record is left out as a whole (`{empty: "object"}`). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
   and gives one step:
   - `Step::Io(future)`: a future of the core that touches no language code, which the driver polls on a tokio runtime
     and whose output it gives to the next `resume`;
