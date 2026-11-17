@@ -1508,12 +1508,14 @@ function builtOf(model: Model, ctx: Context, value: unknown, where: string, maki
     return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => [$inner], ${inner})`;
   }
   if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueOf(model, ctx, item, where, making, true)).join(', ')}]`;
+  // The entries of a map or an object of [key, value] pairs, as the language writes them in its literal.
+  const pairs = (items: unknown[]): string[] => (items as [unknown, unknown][]).map(([key, item]) => {
+    const k = keyOf(key);
+    const v = valueOf(model, ctx, item, where, making, true);
+    return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+  });
   if (kind === 'map' && Array.isArray(held)) {
-    const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = keyOf(key);
-      const v = valueOf(model, ctx, item, where, making, true);
-      return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
-    });
+    const entries = pairs(held);
     // GN-13v: an empty PHP array has sequence keys, so a value alias whose in rows read such an array as a list takes
     // an empty map as the stdClass that a row reads as a map.
     if (lang === 'php' && entries.length === 0 && making.alias !== undefined && emptyArrayIsList(making.alias) && stdClassIsMap(making.alias)) return 'new \\stdClass()';
@@ -1555,11 +1557,7 @@ function builtOf(model: Model, ctx: Context, value: unknown, where: string, maki
       return name(id);
     }
     if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${shown(held)}`);
-    const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = keyOf(key);
-      const v = valueOf(model, ctx, item, where, making, true);
-      return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
-    });
+    const entries = pairs(held);
     if (cls === undefined) return `(object) [${entries.join(', ')}]`;
     return lang === 'python' ? `${classOf(cls)}({${entries.join(', ')}})` : `new ${classOf(cls)}(new Map([${entries.join(', ')}]))`;
   }
@@ -2248,16 +2246,23 @@ export function sampleInstance(model: Model, object: ObjectClass): Receiver | un
   return member === undefined ? undefined : sampleReceiver(model, member);
 }
 
+// N-4: each case of a hook that does not raise, which writes no files, with the instance of its factory arguments, one
+// at a time as the cases are read.
+function* hookCases(model: Model, fn: Fn): Generator<[Record<string, unknown>, Receiver | undefined]> {
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    hookWithoutFiles(fn, record);
+    yield [record, receiverOf(model, fn, record)];
+  }
+}
+
 // N-4: the cases of a stringify that do not raise, each with the instance of its factory arguments and the text that
 // the language's string form gives.
 export function stringCases(model: Model, fn: Fn): { id: string; receiver: Receiver; result: string }[] {
   if (fn.special !== 'stringify') return [];
   const out: { id: string; receiver: Receiver; result: string }[] = [];
-  for (const kase of model.cases.get(fn.member.id) ?? []) {
-    const record = kase as Record<string, unknown>;
-    if (record['raises'] !== undefined) continue;
-    hookWithoutFiles(fn, record);
-    const receiver = receiverOf(model, fn, record);
+  for (const [record, receiver] of hookCases(model, fn)) {
     const result = record['result'];
     if (receiver === undefined || typeof result !== 'string') {
       throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
@@ -2351,11 +2356,7 @@ export const refusesNull = (arg: Arg): boolean =>
 export function primitiveCases(model: Model, ctx: Context, fn: Fn): { id: string; receiver: Receiver; result: string | undefined }[] {
   if (fn.special !== 'primitive') return [];
   const out: { id: string; receiver: Receiver; result: string | undefined }[] = [];
-  for (const kase of model.cases.get(fn.member.id) ?? []) {
-    const record = kase as Record<string, unknown>;
-    if (record['raises'] !== undefined) continue;
-    hookWithoutFiles(fn, record);
-    const receiver = receiverOf(model, fn, record);
+  for (const [record, receiver] of hookCases(model, fn)) {
     if (receiver === undefined) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, N-4)`);
     out.push({ id: String(record['id']), receiver, result: 'result' in record ? fromJson(model, ctx, fn.returns, record['result'], true) : undefined });
   }
@@ -2834,21 +2835,30 @@ export function callbackReachingArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unk
   if (callback === undefined) return undefined;
   // B2.385: a case whose callback rows all give a result comes first: with it the core passes on what the callback
   // gives, while a core may answer a raise of the callback itself (sample tolerant swallows it for a key ?a).
-  let raising: ReadonlyMap<Arg, unknown> | undefined;
-  for (const kase of model.cases.get(fn.member.id) ?? []) {
-    const record = kase as Record<string, unknown>;
-    if (record['receiver'] !== undefined || record['faults'] !== undefined || record['files'] !== undefined || record['service'] !== undefined) continue;
+  return preferredArgs(model, fn, (record) => {
+    if (record['receiver'] !== undefined || record['faults'] !== undefined || record['files'] !== undefined || record['service'] !== undefined) return undefined;
     const args = argsOf(fn, record);
     const given = args?.get(callback);
     // A fixture whose calls are listed was called with these arguments, whatever the case then raises.
     const fixture = typeof given === 'object' && given !== null && 'callback' in given ? (given as { callback?: unknown; calls?: unknown[] }) : undefined;
     const calls = fixture?.calls;
-    if (args === undefined || calls === undefined || calls.length === 0) continue;
+    if (args === undefined || calls === undefined || calls.length === 0) return undefined;
     const rows = typeof fixture?.callback === 'object' && fixture.callback !== null ? Object.values(fixture.callback).flat() : [];
-    if (rows.every((row) => typeof row !== 'object' || row === null || !Object.hasOwn(row, 'raise'))) return args;
-    raising ??= args;
+    return [args, rows.every((row) => typeof row !== 'object' || row === null || !Object.hasOwn(row, 'raise'))];
+  });
+}
+
+// G-5: the arguments of the first case of a member that choose takes and calls preferred, else of the first case that
+// it takes, else undefined.
+function preferredArgs(model: Model, fn: Fn, choose: (record: Record<string, unknown>) => [ReadonlyMap<Arg, unknown>, boolean] | undefined): ReadonlyMap<Arg, unknown> | undefined {
+  let other: ReadonlyMap<Arg, unknown> | undefined;
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const chosen = choose(kase as Record<string, unknown>);
+    if (chosen === undefined) continue;
+    if (chosen[1]) return chosen[0];
+    other ??= chosen[0];
   }
-  return raising;
+  return other;
 }
 
 // GN-13t: whether an argument takes the case value of a case of its member: an argument of a class or of a generated
@@ -2863,16 +2873,11 @@ const takesCaseInstance = (model: Model, arg: Arg): boolean => objectUnit(model,
 // that implements it (orm: Db::connect with a cache size 0, B2.493).
 export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> | undefined {
   if (!fn.args.some((a) => takesCaseInstance(model, a))) return undefined;
-  let raising: ReadonlyMap<Arg, unknown> | undefined;
-  for (const kase of model.cases.get(fn.member.id) ?? []) {
-    const record = kase as Record<string, unknown>;
-    if (record['faults'] !== undefined || record[CASE_FILES] !== undefined || servesCase(record)) continue;
+  return preferredArgs(model, fn, (record) => {
+    if (record['faults'] !== undefined || record[CASE_FILES] !== undefined || servesCase(record)) return undefined;
     const args = argsOf(fn, record);
-    if (args === undefined) continue;
-    if (record['raises'] === undefined) return args;
-    raising ??= args;
-  }
-  return raising;
+    return args === undefined ? undefined : [args, record['raises'] === undefined];
+  });
 }
 
 // GN-13t: the value of another argument of a test that gives one argument a value of its own: the case value of an
