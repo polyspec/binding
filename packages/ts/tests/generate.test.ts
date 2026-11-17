@@ -34,7 +34,13 @@ const plainSample = (owner: any): any => {
   owner.units = owner.units.filter((u: any) => !CLASS_ROWS.has(u.id));
   owner.cases = owner.cases.filter((row: any) => !CLASS_ROWS.has(String(row.member).split('.')[0] ?? ''));
   const data = owner.units.find((u: any) => u.id === 'data');
-  data.out = data.out.filter((row: any) => row.kind !== 'reference');
+  data.out = data.out.filter((row: any) => row.kind !== 'reference' && !(row.kind === 'float' && row.when?.is === false));
+  // B2.492: the integral float that PHP makes as a ratio is the float of every other float.
+  for (const row of data.out) {
+    if (row.kind !== 'float') continue;
+    delete row.when;
+    row.make.php = 'float';
+  }
   for (const row of data.out) for (const lang of Object.keys(row.make)) if (row.make[lang] === 'box.constructor') row.make[lang] = 'map';
   data.in = data.in.filter((row: any) => !Object.values(row).some((named) => typeof named === 'string' && (CLASS_ROWS.has(named) || named === 'reference')));
   return owner;
@@ -224,6 +230,26 @@ test('host containers keep their identity during one walk, with and without valu
       assert.match(lib, /self\.container_values\.push\(described\.clone\(\)\)/, path);
     }
   }
+});
+
+// B2.492 (GN-6af, GN-13): the alias data of the sample makes an integral float as an instance of ratio in PHP, and its
+// PHP in row names ratio, so the case value of describe is that instance, and the PHP host describes it as
+// HostValue::Value of the kind float, whose read gives the float of ratio.value. Before B2.492 the PHP host had no arm
+// for a class of the contract, so the instance entered as HostValue::Object, which the core of the sample takes as
+// native, as orm's core refuses it with "an object of the language".
+test('an instance of a value class of the contract that a case value makes enters the PHP host as a value of its in row (B2.492, GN-6af, GN-13)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php'] });
+  const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /\\Polyspec\\Sample\\describe\(new \\Polyspec\\Sample\\Ratio\(\(float\) 2\.0\)\)/);
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  const describe = lib.slice(lib.indexOf('    fn describe(&mut self, value: &\'a Zval)'));
+  const ratio = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\)/);
+  assert.ok(ratio >= 0, 'the PHP host tells an instance of ratio');
+  assert.match(lib.slice(ratio), /^php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
+  const classes = describe.indexOf('php_value_class(value,');
+  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of ratio before any other object');
 });
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
