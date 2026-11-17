@@ -2582,6 +2582,10 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
   };
 }
 
+// GN-13bi: the count of the rows of a fixture that state `once`, as fixtureValues and functionRows write the flag of a
+// row. The test of a case that made such a row requires, at its end, that each of them answered a call.
+export const onceRows = (rows: string[][]): number => rows.filter((row) => row[3] === 'true' || row[3] === 'True').length;
+
 // GN-6z: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
 // with "result" (absent for a return of none) and "once". The contract check has judged the form (CK-22). The rows are
 // given as those of a fixture of one member, the call itself, whose name `call` each language gives.

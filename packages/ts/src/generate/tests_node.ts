@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
 import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson,judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
@@ -23,13 +23,25 @@ const OTHER_TYPES: Record<string, string[]> = { uint: ['true', "'7'", '7n'], int
 // G-5: the callback fixture. A call that no row answers is recorded and throws, so a core that swallows the exception
 // still fails the test, which reads the record. GN-6bu: a member is given as its name and the function that declares
 // its arguments and passes them on, so the member of the object names the arguments that the binding calls it with.
+// GN-13bi: the fixtures that the running test made, each with its rows and those that are left; unanswered gives the
+// rows once among them that answered no call, which the test of a case requires to be none at its end.
 export const NODE_FIXTURE = `
 class UnexpectedCall extends Error {}
+
+const fixturesMade = [];
+test.beforeEach(() => {
+  fixturesMade.length = 0;
+});
+
+function unanswered() {
+  return fixturesMade.flatMap(({ rows, left }, at) => left.filter((row) => row[3]).map((row) => \`the row \${rows.indexOf(row)} of the fixture \${at}: \${row[0]}(\${row[1].map(String).join(', ')})\`));
+}
 
 function fixture(members, rows) {
   const unexpected = [];
   const calls = [];
   const left = [...rows];
+  fixturesMade.push({ rows, left });
   const object = {};
   for (const [name, declare] of members) {
     object[name] = declare((...args) => {
@@ -415,6 +427,10 @@ export function nodeTests(model: Model): string {
   const textPaths = nodeCaseTextScope(ctx, out);
   const emit = textPaths.emit;
   let usesFixture = false;
+  // GN-13bi: the count of the rows once of the fixtures written so far; the test of a case in which the count grew
+  // requires at its end, after the calls of after, that each row once of its fixtures answered a call.
+  let onceMade = 0;
+  const answered = (since: number): string => (onceMade === since ? '' : '\n  assert.deepEqual(unanswered(), []);');
   let usesErrno = false;
   let usesAddon = false;
   // GN-6m: a call of a member that waits is awaited where it is made.
@@ -476,12 +492,14 @@ export function nodeTests(model: Model): string {
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
+    onceMade += onceRows(values.rows);
     return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
   ctx.functionMember = 'call';
   ctx.functionNew = (rows, parameters) => {
     usesFixture = true;
+    onceMade += onceRows(rows);
     return `fixture([${jsDeclaredMember("'call'", parameters)}], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
   };
   // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
@@ -670,6 +688,7 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const since = onceMade;
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         emit(`
@@ -681,7 +700,8 @@ test('B-4: ${name} ${kase.id}', () => {
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
-      const caseArg = (arg: Fn['args'][number]): string | undefined => {
+      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
+      const caseArg =(arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
@@ -711,11 +731,12 @@ test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.list
     error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
-${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
+${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
+      const since = onceMade;
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         emit(`
@@ -729,11 +750,12 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       emit(`
 test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
-  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
+  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${answered(since)}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
+      const since = onceMade;
       if (kase.refused !== undefined) {
         emit(`
 test('GN-13e: ${name} ${kase.id}', () => {
@@ -751,7 +773,8 @@ test('GN-13e: ${name} ${kase.id}', () => {
       }
       const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
-      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
+      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
+      const before =fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
@@ -775,7 +798,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       emit(`
-test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${nodeServiceEnd(kase.service)}${kept(fn)}
+test('GN-13e: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${nodeServiceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.

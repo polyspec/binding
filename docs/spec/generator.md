@@ -2841,8 +2841,8 @@ the design ids are those of the binding design.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
-  none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
-  <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
+  none) and `"once": true` for a row that answers one call, which the case expects (GN-13bi). A row with
+  `"raise": {"error": <error unit>, "kind": <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
   `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
   message and the kind (GN-10); Go by
   `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
@@ -3209,6 +3209,29 @@ the design ids are those of the binding design.
   parses, so no generated test of those two targets ran, and Python, Node and WASM wrote `pkg.` in the same place. A
   category that is one of the six but not that of the kind names the class of another category, which the test of
   the case then fails at run time for a reason that the contract already shows (B2.448).
+- **GN-13bi** The rows of a callback fixture and of a function value of a case (G-5, GN-6z, CK-22) are a table of
+  answers, and a row with `"once": true` is also a call that the case expects. A call takes the first row of its
+  member that is left and whose arguments equal the call's (GN-13bb). A row without `once` stays: it answers any
+  number of calls, none included, and requires no call. A row with `once` answers one call and is then taken out, so
+  it answers exactly one. At the end of the test of a case, after the call of the case and its calls of `after`, the
+  generated test of each of the five targets requires that every row with `once` of every fixture that the test made
+  answered a call: a row with `once` that is left fails the test, which names the fixture by its place among the
+  fixtures of the test, the row by its place among the rows of the fixture, the member and the arguments. The rule
+  holds when the member returns and when it raises, so a case whose member fails before it calls the callback gives
+  that callback no row with `once`. The fixtures of the test are those at every place of the case: a parameter of a
+  callback or of a function type, a field of a record, an item of a list, an `optional`, the receiver and its calls
+  of `then`, a call of `after` and a step of a function fixture. So a callback or a function that the core keeps
+  (GN-6aa) and a later member calls is judged at the end of the case, not after the member that stored it. A contract
+  that requires a call writes its row with `once`, one row for each call; a contract that requires the calls of a
+  callback in their order names `calls` too. A function fixture of GN-6ae has no rows and is not judged here: its
+  steps run when the function is called. Python, Node and WASM hold the fixtures of the running test in a list of
+  the test module, which is emptied before each test (`setUp`, `test.beforeEach`), and require `_unanswered()` or
+  `unanswered()` to be empty. PHP makes a fixture with such a row through `self::made` of the test class, which
+  `setUp` empties, and requires `self::unanswered()` to be empty. Go adds each fixture with such a row to the slice
+  `onceFixtures` of the test where the fixture is made, also inside a block, and requires `unanswered()` of each to
+  be empty. The test of a case whose fixtures have no row with `once` is written as it was. Why: a fixture failed
+  only on a call that no row answers, so the test of a case passed for a core that never calls the callback or the
+  function, and no case could state that a call must come (orm, B2.482).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

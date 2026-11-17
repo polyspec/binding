@@ -13099,3 +13099,115 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
     assert.doesNotMatch(body, /NewCounter\(0\)/, body);
   }
 });
+
+// B2.482: the paths of the generated tests of the five targets, and the end of a test in each.
+const ONCE_TESTS = { ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' } as const;
+const ONCE_END = { ...STATEFUL_END, go: '\n}\n' } as const;
+// The contract of tests/e2e of a name with its cases, which a test changes.
+const e2eContract = (repo: string): { contract: any; cases: any } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  return { contract: read('packages/rust/interface.json'), cases: read('contracts/cases.json') };
+};
+const onceOut = (repo: string, change: (cases: any) => void): Record<keyof typeof ONCE_TESTS, string> => {
+  const { contract, cases } = e2eContract(repo);
+  change(cases);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library}`, caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  return Object.fromEntries(Object.entries(ONCE_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof ONCE_TESTS, string>;
+};
+// The line of the end of the test of a case that requires each row once of its fixtures to have answered a call.
+const ONCE_CHECK = {
+  python: '\n        self.assertEqual(_unanswered(), [])',
+  node: '\n  assert.deepEqual(unanswered(), []);',
+  wasm: '\n  assert.deepEqual(unanswered(), []);',
+  php: '\n        self::assertSame([], self::unanswered());',
+  go: '\n\tfor at, made := range onceFixtures {\n\t\tif left := made.unanswered(); len(left) != 0 {\n\t\t\tt.Fatalf("G-5: the rows once of the fixture %d that answered no call: %v", at, left)\n\t\t}\n\t}',
+} as const;
+const onceBody = (tests: Record<keyof typeof ONCE_TESTS, string>, target: keyof typeof ONCE_TESTS, start: RegExp): string => {
+  const [body] = bodiesOf(tests[target], start, ONCE_END[target]);
+  assert.ok(body !== undefined, `${target}: no test ${String(start)}`);
+  return body;
+};
+
+test('B2.482: the test of a case requires at its end that each row once of a function fixture answered a call, in the five targets (GN-13bi)', () => {
+  // orm: a fixture failed only on a call that no row answers, so the test of a case passed for a core that never
+  // calls the function.
+  const tests = onceOut('functions', (cases) => {
+    // The member calls the function in the call.
+    cases.apply[0].convert.function[0].once = true;
+    // The member raises before it calls the function: the row once answered no call, which the test finds.
+    cases.apply[1].convert.function.push({ args: { 0: 'x', 1: [] }, result: 'X', once: true });
+    // The core keeps the function, which a call of then of the receiver gave, and the member of the case calls it.
+    cases.registry_call[0].receiver.then[0].args.convert.function[0].once = true;
+  });
+  const starts = (pascal: string, snake: string, name: string, rule: string): Record<keyof typeof ONCE_TESTS, RegExp> => ({
+    python: new RegExp(`def test_${rule.toLowerCase().replace('-', '')}_${snake}\\(`), node: new RegExp(`test\\('${rule}: ${name}'`), wasm: new RegExp(`test\\('${rule}: ${name}'`),
+    php: new RegExp(`function test${rule === 'B-4' ? 'B4' : 'Gn13e'}${pascal.replace(/^[A-Z]/, (c) => (pascal.startsWith('Registry') ? c : c.toLowerCase()))}\\(`), go: new RegExp(`func Test${rule.replace('-', '')}${pascal}\\(`),
+  });
+  const cases = [
+    starts('ApplyTheFunctionConvertsTheValue', 'apply_the_function_converts_the_value', 'apply the_function_converts_the_value', 'GN-13e'),
+    starts('ApplyAValueWithoutACharacterIsEmpty', 'apply_a_value_without_a_character_is_empty', 'apply a_value_without_a_character_is_empty', 'B-4'),
+    starts('RegistryCallTheKeptFunctionConvertsTheValue', 'registry_call_the_kept_function_converts_the_value', 'Registry\\.call the_kept_function_converts_the_value', 'GN-13e'),
+  ];
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of cases) {
+      const body = onceBody(tests, target, start[target]);
+      const at = body.indexOf(ONCE_CHECK[target]);
+      assert.ok(at >= 0, `${target}: ${body}`);
+      // The check stands after the call of the member and after the check of the calls that no row answers.
+      assert.ok(at > body.search(/unexpected|\.call\(|Call\(/), `${target}: ${body}`);
+    }
+    // A case whose fixtures have no row once has no such check: a row without once answers any count of calls.
+    assert.ok(!onceBody(tests, target, starts('RegistryRegisterANameWithoutACharacterIsEmpty', 'registry_register_a_name_without_a_character_is_empty', 'Registry\\.register a_name_without_a_character_is_empty', 'B-4')[target]).includes('nanswered'), target);
+  }
+  // The fixtures of a test are those made since it began, and a row once that is left is named by its place.
+  for (const target of ['node', 'wasm'] as const) {
+    assert.ok(tests[target].includes('\nconst fixturesMade = [];\ntest.beforeEach(() => {\n  fixturesMade.length = 0;\n});\n'), target);
+    assert.ok(tests[target].includes('\n  const left = [...rows];\n  fixturesMade.push({ rows, left });\n'), target);
+    assert.match(tests[target], /\nfunction unanswered\(\) \{\n {2}return fixturesMade\.flatMap\(\(\{ rows, left \}, at\) => left\.filter\(\(row\) => row\[3\]\)\.map\(/, target);
+  }
+  assert.ok(tests.python.includes('\n    def setUp(self) -> None:\n        _fixtures_made.clear()\n'));
+  assert.ok(tests.python.includes('\n    left = list(rows)\n    _fixtures_made.append((rows, left))\n'));
+  assert.match(tests.python, /\ndef _unanswered\(\):\n/);
+  assert.ok(tests.php.includes('\n    protected function setUp(): void\n    {\n        self::$fixturesMade = [];\n    }\n'));
+  assert.ok(tests.php.includes('$function0 = self::made(new class([["call", ["ab c", [2, 1]], "AB C", true, null]], self::same(...)) {'), tests.php);
+  assert.match(tests.php, /\n {12}public function unanswered\(\): array\n/);
+  assert.ok(tests.go.includes('\n\tvar onceFixtures []*fixture\n\tfunction0 := &fixture{rows: []fixtureRow{{member: "call", args: []any{"ab c", []int64{2, 1}}, result: "AB C", once: true}}}\n\tonceFixtures = append(onceFixtures, function0)\n'), tests.go);
+  assert.match(tests.go, /\nfunc \(f \*fixture\) unanswered\(\) \[\]string \{\n/);
+});
+
+test('B2.482: the check of the rows once covers a callback fixture at a parameter, in a list and in the receiver, and a contract without a row once has none (GN-13bi)', () => {
+  const change = (cases: any): void => {
+    // A callback parameter of a case that raises, a callback in a list, and one that the receiver keeps.
+    cases.resolve[0].lookup.callback['lookup.find'][0].once = true;
+    cases.first[0].lookups[1].callback['lookup.find'][0].once = true;
+    cases.index_get[3].receiver.args.source.callback['feed.get'][0].once = true;
+  };
+  const tests = onceOut('sample', change);
+  const plain = onceOut('sample', () => undefined);
+  const starts: Record<keyof typeof ONCE_TESTS, RegExp[]> = {
+    python: [/def test_b4_resolve_a_key_without_a_value_is_missing\(/, /def test_gn13e_first_the_first_lookup_that_holds_the_key_gives_its_value\(/, /def test_gn13e_index_get_a_source_kept_alone_gives_its_value_in_a_later_call\(/],
+    node: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    wasm: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    php: [/function testB4resolveAKeyWithoutAValueIsMissing\(/, /function testGn13efirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /function testGn13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+    go: [/func TestB4ResolveAKeyWithoutAValueIsMissing\(/, /func TestGN13eFirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /func TestGN13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+  };
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of starts[target]) {
+      const body = onceBody(tests, target, start);
+      assert.ok(body.includes(ONCE_CHECK[target]), `${target}: ${body}`);
+      // Before the row once, the same case had no check of a call that did not come.
+      assert.ok(!onceBody(plain, target, start).includes('nanswered'), `${target}: ${String(start)}`);
+    }
+    // The cases of the contract as it is name no row once, so no test of it has the check.
+    assert.ok(!plain[target].includes(ONCE_CHECK[target]), target);
+  }
+  // Go adds a fixture to the slice of the test where it is made: the fixture of the list and that of the receiver.
+  const first = onceBody(tests, 'go', starts.go[1] as RegExp);
+  assert.match(first, /\n\t(fixture\d+) := fixtureLookup\{&fixture\{rows: \[\]fixtureRow\{[^\n]*once: true\}\}\}\}\n\tonceFixtures = append\(onceFixtures, \1\.fixture\)\n/, first);
+  assert.equal(first.match(/onceFixtures = append/g)?.length, 1, first);
+  // PHP makes only a fixture with a row once through made.
+  const php = onceBody(tests, 'php', starts.php[1] as RegExp);
+  assert.equal(php.match(/self::made\(new class\(/g)?.length, 1, php);
+  assert.equal(php.match(/new class\(/g)?.length, 2, php);
+  assert.ok(!plain.php.includes('self::made(') && !plain.php.includes('$fixturesMade') && !plain.go.includes('f.places') &&!plain.go.includes('onceFixtures'));
+});

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8a8a0db4151ecbce2e3089662428058b1be73dfae520f32ec6f108aa4d6e8071 -->
+<!-- source-sha256: d6bda85ee01bb6a433c6f001c1d7a577a006fcb53a3be24cb5fbec73f859d7f4 -->
 # 생성기
 
 [English](generator.md)
@@ -2319,7 +2319,7 @@
   case는 callback parameter를 fixture로 준다:
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
-  답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
+  답하는 행, 곧 case가 기대하는 호출의 `"once": true`를 더한 것이다(GN-13bi). `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
   unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·PHP·WASM은
   메시지와 kind를 받는 그 클래스의 생성자로 만든다(GN-10). Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
   `Raised<Unit>(kind, message)`로 만들고, 그 오류는 시험을 실패시킨다(GN-7a). `"raise": "exception"`인 행은 결과 대신 라이브러리의 오류가 아닌 그 언어의 예외를 메시지
@@ -2616,6 +2616,25 @@
   파일은 compile도 parse도 되지 않아 그 두 target의 생성 시험이 하나도 돌지 않았고, Python, Node, WASM은 같은 자리에
   `pkg.`를 썼다. 여섯 가운데 하나이지만 그 kind의 것이 아닌 category는 다른 category의 class를 이름한다. 그러면 그 case의
   시험은 계약이 이미 보여 주는 이유로 실행 때 실패한다(B2.448).
+- **GN-13bi** callback fixture의 행과 case의 함수 값의 행(G-5, GN-6z, CK-22)은 답의 표이고, `"once": true`가 있는 행은
+  case가 기대하는 호출이기도 하다. 호출은 자기 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 가져간다(GN-13bb).
+  `once`가 없는 행은 남는다: 몇 번의 호출에든 답하고, 한 번도 답하지 않아도 되며, 호출을 요구하지 않는다. `once`가 있는
+  행은 호출 하나에 답한 뒤 빠지므로 정확히 한 번 답한다. case 시험의 끝에서, 곧 case의 호출과 그 `after` 호출 뒤에, 다섯
+  target 각각의 생성 시험은 그 시험이 만든 모든 fixture의 `once` 행이 모두 호출에 답했기를 요구한다: 남은 `once` 행은 시험을
+  실패시키고, 시험은 그 fixture를 시험의 fixture 가운데 자리로, 그 행을 fixture의 행 가운데 자리로, 그리고 member와 인자를
+  이름한다. 이 규칙은 member가 돌아올 때와 예외를 낼 때 모두 성립한다. 그래서 member가 callback을 부르기 전에 실패하는
+  case는 그 callback에 `once` 행을 주지 않는다. 시험의 fixture는 case의 모든 자리의 것이다: callback이나 함수 타입의
+  parameter, record의 field, list의 항목, `optional`, receiver와 그 `then` 호출, `after` 호출, 함수 fixture의 단계. 그래서
+  코어가 보관하고(GN-6aa) 나중 member가 부르는 callback이나 함수는 그것을 저장한 member 뒤가 아니라 case의 끝에서
+  판정된다. 호출을 요구하는 계약은 그 행을 `once`로 쓰되 호출마다 행 하나를 쓴다. callback의 호출을 순서대로 요구하는
+  계약은 `calls`도 적는다. GN-6ae의 함수 fixture는 행이 없어 여기서 판정하지 않는다: 그 단계는 함수가 불릴 때 실행된다.
+  Python, Node, WASM은 실행 중인 시험의 fixture를 시험 모듈의 목록에 두고, 그 목록은 시험마다 그 전에 비워지며(`setUp`,
+  `test.beforeEach`), `_unanswered()`나 `unanswered()`가 비어 있기를 요구한다. PHP는 그런 행이 있는 fixture를 시험 클래스의
+  `self::made`로 만들고, `setUp`이 그것을 비우며, `self::unanswered()`가 비어 있기를 요구한다. Go는 그런 행이 있는 fixture를
+  그것이 만들어지는 곳에서, 블록 안에서도, 시험의 slice `onceFixtures`에 더하고, 각각의 `unanswered()`가 비어 있기를
+  요구한다. fixture에 `once` 행이 없는 case의 시험은 전과 같이 쓰인다. 이유: fixture는 어느 행도 답하지 않는 호출에서만
+  실패했다. 그래서 callback이나 함수를 한 번도 부르지 않는 코어에서도 case의 시험이 통과했고, 어떤 case도 호출이 와야
+  한다고 적을 수 없었다(orm, B2.482).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

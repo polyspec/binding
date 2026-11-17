@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES,aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
@@ -54,10 +54,24 @@ class _UnexpectedCall(Exception):
     """A call that no row of a callback fixture answers (G-5)."""
 
 
+_fixtures_made = []
+
+
+def _unanswered():
+    """The rows once of the fixtures of the test that answered no call (GN-13bi)."""
+    return [
+        f"the row {next(i for i, given in enumerate(rows) if given is row)} of the fixture {at}: {row[0]}{row[1]!r}"
+        for at, (rows, left) in enumerate(_fixtures_made)
+        for row in left
+        if row[3]
+    ]
+
+
 def _fixture(members, rows):
     unexpected = []
     calls = []
     left = list(rows)
+    _fixtures_made.append((rows, left))
 
     def member(name):
         def call(self, *args):
@@ -75,6 +89,12 @@ def _fixture(members, rows):
         return call
 
     return type("Fixture", (), {name: member(name) for name in members})(), unexpected, calls
+`;
+
+// GN-13bi: the fixtures that the running test made are those made since it began.
+const PYTHON_FIXTURE_RESET = `
+    def setUp(self) -> None:
+        _fixtures_made.clear()
 `;
 
 // GN-13e: whether a result is the value of a case: the same type at every level, a dict with the same entries in the
@@ -429,6 +449,10 @@ export function pythonTests(model: Model, module: string): string {
     return out.push(...blocks);
   };
   let usesFixture = false;
+  // GN-13bi: the count of the rows once of the fixtures written so far; the test of a case in which the count grew
+  // requires at its end, after the calls of after, that each row once of its fixtures answered a call.
+  let onceMade = 0;
+  const answered = (since: number): string => (onceMade === since ? '' : '\n        self.assertEqual(_unanswered(), [])');
   // GN-6z: a function value of a case is a fixture whose one member is the call itself (__call__).
   type Made = { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined } };
   const withFunctions = (fixtures: Made[], fn: Fn, id: string, args: Map<Arg, unknown>): Made[] => [
@@ -500,11 +524,13 @@ export function pythonTests(model: Model, module: string): string {
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
+    onceMade += onceRows(values.rows);
     return `_fixture((${values.members.map((m) => `${m},`).join(' ')}), [${values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
   };
   // GN-6z: a function value inside another value is the callable of a fixture, whose unexpected call raises.
   ctx.functionNew = (rows) => {
     usesFixture = true;
+    onceMade += onceRows(rows);
     return `_fixture(("__call__",), [${rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
   };
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
@@ -778,6 +804,7 @@ export function pythonTests(model: Model, module: string): string {
         self.assertTrue(_same(left, right), f"{left!r} is not {right!r}")`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
@@ -797,7 +824,8 @@ export function pythonTests(model: Model, module: string): string {
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
-      const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
+      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
+      const tuple =(items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
       const after = fixtures
         .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
@@ -821,10 +849,11 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(error), pkg.${exactClass(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
-${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})\n`}        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
+${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})\n`}        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       const id = caseSnake(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
@@ -843,10 +872,11 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         _raised[:] = [raised]
         with self.assertRaises(LookupError) as caught:
             ${call}
-        self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
+        self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       if (kase.refused !== undefined) {
         append(`
@@ -863,7 +893,8 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       }
       const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
-      const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
+      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
+      const tuple =(items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
       const after = fixtures
         .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
@@ -925,7 +956,7 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
               : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
             : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       append(`
-    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     // GN-13t: an argument of a class of the G-7 and GN-11a tests is the case value of a case of the member, where one
     // gives it.
@@ -1204,7 +1235,7 @@ import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesClosed ? PYTHON_CLOSED : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
-class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesByteFile ? PYTHON_CASE_BYTE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
+class GeneratedTest(unittest.TestCase):${usesFixture ? PYTHON_FIXTURE_RESET : ''}${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesByteFile ? PYTHON_CASE_BYTE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:
         with self.assertRaises(pkg.${cls('internal')}) as caught:
             _native._panic_test()
