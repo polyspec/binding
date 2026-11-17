@@ -80,6 +80,7 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   let patched = 0;
   const steps = gateSteps(gate, json, ['0.0.20'], ['php', 'python', 'node', 'go', 'wasm'], () => { patched += 1; });
   assert.deepEqual(steps.map((s) => [s.phase, s.step.what]), [
+    ['prepare', 'rustup toolchain install of the rust-toolchain.toml of the consumer'],
     ['prepare', 'cargo fetch --locked'],
     ['prepare', 'the path patch of polyspec-binding-core to /binding/packages/core/rust'],
     ['prepare', 'cargo update -p polyspec-binding-core --offline'],
@@ -91,7 +92,11 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
     ['rehearsal', 'make release-go-static release-wheel release-php-ext of the consumer'],
     ['rehearsal', 'make rehearse-go-module TAG=v0.0.36 of the consumer'],
   ]);
-  const patch = steps[1]?.step;
+  // B2.494: the first cargo of a clone runs under the toolchain of its rust-toolchain.toml, which the runner does not
+  // have, so the toolchain of the clone is installed first, by rustup in the clone, where it reads that file.
+  const toolchain = steps[0]?.step;
+  assert.deepEqual(toolchain !== undefined && 'argv' in toolchain ? [toolchain.command, toolchain.argv, toolchain.cwd] : [], ['rustup', ['toolchain', 'install'], '/work/json']);
+  const patch = steps[2]?.step;
   if (patch !== undefined && 'write' in patch) patch.write();
   assert.equal(patched, 1);
   const commands = steps.flatMap((s) => ('argv' in s.step ? [{ phase: s.phase, ...s.step }] : []));
