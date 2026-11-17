@@ -1407,6 +1407,30 @@ describe('CK-22 every member names its cases (K-1)', () => {
     }
     return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
   };
+  test('B2.525: a value that is no function, {"not_a_function": "<text>"}, is admitted only in a raising case (CK-22, G-5, GN-6z)', () => {
+    const fn = { function: { parameters: ['text'], returns: 'text', async_allowed: false } };
+    const given = (type: object, value: unknown, outcome: object): Finding[] => {
+      const c = contract();
+      member(c, 'forms.parse').parameters.push({ name: ['functions'], type, required: true });
+      const files = new Map<string, Record<string, unknown[]>>();
+      for (const kase of c.cases) {
+        const document = files.get(kase.file) ?? {};
+        document[kase.group] = kase.member === 'forms.parse' ? [{ id: 'no_function', body: { hex: '00' }, functions: value, ...outcome }] : [];
+        files.set(kase.file, document);
+      }
+      return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files }).filter((f) => f.check === 'CK-22');
+    };
+    const raising = { raises: { kind: 'too_large' } };
+    const result = { result: null };
+    for (const [type, value] of [[fn, { not_a_function: 'a' }], [{ map: fn }, { shout: { not_a_function: 'a' } }]] as const) {
+      assert.deepEqual(given(type, value, raising), [], JSON.stringify(value));
+      const found = given(type, value, result);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], JSON.stringify(value));
+      assert.match(found[0]?.message ?? '', /the case no_function of forms\.parse: functions(\.shout)? is \{"not_a_function": <text>\}, which only a raising case gives/);
+    }
+    // The text of the form is a text.
+    assert.match(given(fn, { not_a_function: 1 }, raising).map((f) => f.message).join('\n'), /functions is not \{"not_a_function": <text>\}/);
+  });
   test('a case gives a generated interface an instance value of a class that implements it (CK-77, GN-6ap)', () => {
     const held = (c: any): void => {
       c.units.push({ id: 'holder', name: ['holder'], module: 'session', kind: 'interface', visibility: 'public', origin: 'generated', core_type: 'sample::Holder', members: [] });

@@ -10805,6 +10805,33 @@ for (const [target, path] of [
   });
 }
 
+// G-5, GN-6z, B2.525: a raising case gives a value that is no function at a function place as {"not_a_function":
+// "<text>"}, which each target writes as a value of its own that is no function: the text in Python, PHP, Node and
+// WASM, nil in Go, whose func type holds no text.
+for (const [target, path, given] of [
+  ['python', 'packages/python/generated/tests/test_generated.py', /pkg\.open\(\{"shout": "a"\}\)/],
+  ['node', 'packages/ts/generated/tests/generated.test.mjs', /\.open\(new Map\(\[\["shout", "a"\]\]\)\)/],
+  ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs', /\.open\(new Map\(\[\["shout", "a"\]\]\)\)/],
+  ['php', 'packages/php-ext/generated/tests/GeneratedTest.php', /open\(\['shout' => 'a'\]\)/],
+  ['go', 'packages/go/zz_generated_test.go', /"shout": nil/],
+] as const) {
+  test(`${target}: a raising case gives a value that is no function as {"not_a_function": "a"} (G-5, GN-6z, B2.525)`, () => {
+    const { contract, caseFiles } = shapes();
+    unitOf(contract, 'shapes').members.push({
+      id: 'shapes.open', name: ['open'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_shapes::open',
+      parameters: [{ name: ['functions'], type: { map: { function: { parameters: ['text'], returns: 'text', async_allowed: false } } }, required: true }],
+    });
+    contract.cases.push({ member: 'shapes.open', file: 'contracts/cases.json', group: 'open' });
+    (caseFiles.get('contracts/cases.json') as any).open = [
+      { id: 'an_entry_that_is_no_function_is_refused', functions: { shout: { not_a_function: 'a' } }, raises: { kind: 'invalid_argument_type', status: null, category: 'type', message: 'functions.shout is not a function' } },
+    ];
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] });
+    const tests = text(out, path);
+    assert.match(tests, given, path);
+    assert.match(tests, /functions\.shout is not a function/, path);
+  });
+}
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
