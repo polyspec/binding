@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, declarations, typeParameters, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1973,11 +1973,8 @@ pub fn fault_left(env_: &Env, id: i64) -> napi::Result<Vec<String>> {
 
 // ---- JavaScript and declarations ----
 
-// GN-6ae: the type parameters of a member, one per name of a passthrough of its parameters and of its result.
-export const typeParameters = (fn: Fn): string => {
-  const names = [...new Set([...JSON.stringify([fn.params.map((p) => p.type), fn.returns]).matchAll(/\{"passthrough":"([^"]+)"\}/g)].map((found) => found[1] ?? ''))];
-  return names.length === 0 ? '' : `<${names.join(', ')}>`;
-};
+// GN-6ae: the type parameters of a member, which bindings_shared.ts writes for node and wasm.
+export { typeParameters };
 
 const tsType = (model: Model, type: Type, input: boolean): string => jsTsType(model, type, input, 'node');
 
@@ -2254,97 +2251,17 @@ export const { ${exportsOf(model).join(', ')} } = entry;
 }
 
 function indexDts(model: Model): string {
-  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
-  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
-  // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
-  const shown = (a: Arg | undefined): string => {
-    if (a?.default === undefined) return '';
-    const value = a === undefined ? undefined : declaredValue(model, a)?.value;
-    return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
-  };
-  // GN-6m: a member that waits returns a Promise of its result.
-  // GN-6ae: the promise of the entry takes the state of a result passthrough that is a thenable.
-  const returned = (fn: Fn): string => {
-    const result = typeof fn.returns === 'object' && 'passthrough' in fn.returns ? `Awaited<${fn.returns.passthrough}>` : tsType(model, fn.returns, false);
-    return awaits(fn) ? `Promise<${result}>` : result;
-  };
-  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const { classes, errorUnits, enums, records, variants, objects, kept, callbacks, interfaces, constants, shown, param, returned } = declarations(model, 'node', nodeBase);
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
     if (isInternal(fn.unit)) lines.push(`${indent} * @internal`);
     if (lines.length === 1 && isInternal(fn.unit)) return `${indent}/** @internal */\n`;
     return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;
   };
-  const classes = model.classes.map((c) => `
-/** The errors of category ${c.category} (E-2). */
-export declare class ${c.name} extends ${nodeBase(c.category)} {
-  readonly kind: string;
-  readonly status: number | null;
-  readonly errno: number | null;
-}`).join('\n');
-  const errorUnits = model.errorUnits.map((u) => `
-/** The errors of the unit ${u.unit.id} (E-2). */
-export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? categoryClass(model, u.category) : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
-}`).join('\n');
-  const enums = model.enums.map((u) => `
-/** T-6.${tag(u)} */
-export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
-  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
-  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
-/** T-9: the case ${kase.value} of the variant ${langName('node', v.unit.name, 'class')}. */
-export interface ${langName('node', kase.unit.name, 'class')} {
-  readonly ${langName('node', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
-${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}${caseLeftOut(f) ? '?' : ''}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
-
-/** T-9. */
-export type ${langName('node', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('node', kase.unit.name, 'class')).join(' | ')};`).join('\n');
-  const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
-export interface ${langName('node', u.name, 'class')} {
-${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
-}`).join('\n');
   const fns = model.functions.map((fn) => {
     const params = fn.params.map((p) => param(fn, p));
     return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}${typeParameters(fn)}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
-  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
-  const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
-  const objects = model.objects.map((o) => {
-    const lines = o.members.map((fn) => {
-      const name = memberName('node', fn);
-      if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-      if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
-      if (fn.kind === 'iterate') {
-        const yields = fn.yields ?? { value: 'none' };
-        const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
-        return `  [Symbol.iterator](): IterableIterator<${item}>;`;
-      }
-      return `  ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-    });
-    if (!o.constructible) lines.unshift('  private constructor();');
-    return `
-/** T-5.${tag(o.unit)} */
-export declare class ${langName('node', o.unit.name, 'class')}${implementsClause(model, o)} {
-${lines.join('\n')}
-}`;
-  }).join('\n');
-  // GN-6af: the constructor keeps its arguments, each an own property, which a writable property also sets.
-  const kept = model.kept.map((k) => `
-/** GN-6af: keeps the values that its constructor takes. */
-export declare class ${langName('node', k.unit.name, 'class')} {
-  constructor(${k.fields.map((f) => `${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
-${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
-}`).join('\n');
-  const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
-export interface ${langName('node', cb.unit.name, 'class')} {
-${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}${m.absent === undefined ? '' : '?'}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
-}`).join('\n');
-  // GN-6ap: a generated interface, which the classes that implement it name.
-  const interfaces = model.interfaces.map((i) => `
-/** GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('node', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.${tag(i)} */
-export interface ${langName('node', i.name, 'class')} {}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}

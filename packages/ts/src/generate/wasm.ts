@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, declarations, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1778,87 +1778,8 @@ export function enter(Internal, call) {
 }
 
 function indexDts(model: Model): string {
-  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
-  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
-  const classes = model.classes.map((c) => `
-/** The errors of category ${c.category} (E-2). */
-export declare class ${c.name} extends ${jsBase(c.category)} {
-  readonly kind: string;
-  readonly status: number | null;
-  readonly errno: number | null;
-}`).join('\n');
-  const errorUnits = model.errorUnits.map((u) => `
-/** The errors of the unit ${u.unit.id} (E-2). */
-export declare class ${langName('wasm', u.unit.name, 'class')} extends ${u.parent === undefined ? categoryClass(model, u.category) : langName('wasm', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('wasm', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
-}`).join('\n');
-  // U-2: the declaration shows a {literal} or {const} default.
-  const shown = (a: Arg): string => {
-    const value = declaredValue(model, a)?.value;
-    return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
-  };
-  const enums = model.enums.map((u) => `
-/** T-6.${tag(u)} */
-export type ${langName('wasm', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
-  const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
-export interface ${langName('wasm', u.name, 'class')} {
-${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
-}`).join('\n');
-  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
-  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
-/** T-9: the case ${kase.value} of the variant ${langName('wasm', v.unit.name, 'class')}. */
-export interface ${langName('wasm', kase.unit.name, 'class')} {
-  readonly ${langName('wasm', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
-${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('wasm', f.name, 'variable')}${caseLeftOut(f) ? '?' : ''}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
-
-/** T-9. */
-export type ${langName('wasm', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('wasm', kase.unit.name, 'class')).join(' | ')};`).join('\n');
-  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
-  // GN-6n: a member that waits returns a promise of its result.
-  // GN-6ae: the promise of the entry takes the state of a result passthrough that is a thenable.
-  const returned = (fn: Fn): string => {
-    const result = typeof fn.returns === 'object' && 'passthrough' in fn.returns ? `Awaited<${fn.returns.passthrough}>` : tsType(model, fn.returns, false);
-    return awaits(fn) ? `Promise<${result}>` : result;
-  };
+  const { classes, errorUnits, enums, records, variants, objects, kept, callbacks, interfaces, constants, param, returned } = declarations(model, 'wasm', jsBase);
   const fns = model.functions.map((fn) => `${isInternal(fn.unit) ? '/** @internal */\n' : ''}export declare function ${langName('wasm', fn.member.name, 'callable')}${typeParameters(fn)}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${returned(fn)};`).join('\n');
-  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
-  const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
-  const objects = model.objects.map((o) => {
-    const lines = o.members.map((fn) => {
-      const name = memberName('wasm', fn);
-      if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-      if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
-      if (fn.kind === 'iterate') {
-        const yields = fn.yields ?? { value: 'none' };
-        const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
-        return `  [Symbol.iterator](): IterableIterator<${item}>;`;
-      }
-      return `  ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-    });
-    if (!o.constructible) lines.unshift('  private constructor();');
-    return `
-/** T-5.${tag(o.unit)} */
-export declare class ${langName('wasm', o.unit.name, 'class')}${implementsClause(model, o, 'wasm')} {
-${lines.join('\n')}
-}`;
-  }).join('\n');
-  // GN-6af: the constructor keeps its arguments, each an own property, which a writable property also sets.
-  const kept = model.kept.map((k) => `
-/** GN-6af: keeps the values that its constructor takes. */
-export declare class ${langName('wasm', k.unit.name, 'class')} {
-  constructor(${k.fields.map((f) => `${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
-${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
-}`).join('\n');
-  const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
-export interface ${langName('wasm', cb.unit.name, 'class')} {
-${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}${m.absent === undefined ? '' : '?'}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
-}`).join('\n');
-  // GN-6ap: a generated interface, which the classes that implement it name.
-  const interfaces = model.interfaces.map((i) => `
-/** GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('wasm', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.${tag(i)} */
-export interface ${langName('wasm', i.name, 'class')} {}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
