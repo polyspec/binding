@@ -12761,6 +12761,26 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
 });
 
+test('B2.464: PHP gives the least int64 of a case of a contract type int64 as PHP_INT_MIN, as an argument, as an expected result and as a key of a keyed map (G-5, T-1)', () => {
+  // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the argument was a float,
+  // which the binding refuses as no int. A case file gives the integer as its token, which cli reads as a bigint.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const least = -(2n ** 63n);
+  const cases = read('contracts/cases.json');
+  cases.negate = [{ id: 'the_least_int64', value: least, result: least }, { id: 'the_largest_int64', value: 2n ** 63n - 1n, result: least + 1n }];
+  cases.present = [{ id: 'a_key_of_the_least_int64', maps: [[[{ int: least }, 'v']]], result: [[[{ int: least }, 'v']]] }];
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node'] });
+  const php = text(out, phpTests);
+  assert.doesNotMatch(php, /-9223372036854775808/);
+  const body = (name: string): string => bodiesOf(php, new RegExp(`function ${name}\\(`), '\n    }\n')[0] ?? '';
+  assert.match(body('testGn13enegateTheLeastInt64'), /self::assertSame\(self::same\(\\PHP_INT_MIN\), self::same\(\\Polyspec\\Shapes\\negate\(\\PHP_INT_MIN\)\)\);/);
+  assert.match(body('testGn13enegateTheLargestInt64'), /self::same\(-9223372036854775807\), self::same\(\\Polyspec\\Shapes\\negate\(9223372036854775807\)\)/);
+  assert.match(body('testGn13epresentAKeyOfTheLeastInt64'), /present\(\[\[\\PHP_INT_MIN => "v"\]\]\)/);
+  // The other languages read the token as an integer.
+  assert.match(text(out, pythonTests), /pkg\.negate\(-9223372036854775808\)/);
+  assert.match(text(out, nodeTests), /pkg\.negate\(-9223372036854775808n\)/);
+});
+
 // B2.463: the sample whose counter is a receiver that holds state and whose placeholder the core would refuse: no
 // case of the constructor or of total exists, the first case of the class makes its receiver by new and then add(1),
 // absorb has a case whose other counter starts at 4, and seek takes a counter before its record.

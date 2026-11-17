@@ -637,7 +637,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       if (ctx.lang === 'node' || !Number.isInteger(value)) return String(value);
       return Math.abs(value) >= 1e16 ? value.toExponential() : `${String(value)}.0`;
     }
-    if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
+    // T-1, B2.464: PHP gives the least int64 as \PHP_INT_MIN.
+    if (type === 'uint' || type === 'int' || type === 'int64') return ctx.lang === 'php' ? phpInt(String(value)) : String(value);
+    if (type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
       if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
@@ -683,7 +685,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const entries = (value as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (kind, raw) => (kind === 'int' ? String(raw) : fromJson(model, ctx, kind, raw)));
+      const k = caseKey(key, (kind, raw) => (kind === 'int' ? (ctx.lang === 'php' ? phpInt(String(raw)) : String(raw)) : fromJson(model, ctx, kind, raw)));
       const v = fromJson(model, ctx, type.keyed_map, item, out);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
@@ -1410,8 +1412,7 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);
     if (wide < -(2n ** 63n) || wide >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int ${token} is outside the int of PHP (G-5)`);
-    // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the least int is PHP_INT_MIN.
-    return lang === 'php' && wide === -(2n ** 63n) ? '\\PHP_INT_MIN' : token;
+    return phpInt(token);
   }
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it, the
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
@@ -1508,7 +1509,13 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
 // JavaScript and as the integer of Python and PHP.
 function intKey(lang: Lang3, raw: unknown): string {
   if (typeof raw === 'number') return String(raw);
-  return lang === 'node' ? `${String(raw)}n` : String(raw);
+  return lang === 'node' ? `${String(raw)}n` : lang === 'php' ? phpInt(String(raw)) : String(raw);
+}
+
+// T-1, B2.464: an integer of a case as PHP writes it. PHP reads -9223372036854775808 as the negation of the float
+// 9223372036854775808, so the least int64 is \PHP_INT_MIN, at every place where the emitter writes an integer.
+export function phpInt(token: string): string {
+  return token === '-9223372036854775808' ? '\\PHP_INT_MIN' : token;
 }
 
 // GN-6af: the value class without core_type that keeps the content of a case value: a keyed map (an object) or one value

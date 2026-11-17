@@ -2634,7 +2634,11 @@ the design ids are those of the binding design.
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
   value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. A
   number of the type `float` is a float literal in Python and PHP, which refuse an integer there (B-2), also when JSON
-  writes it as an integer (`0` is `0.0`, `1e20` is `1e+20`), and a negative zero keeps its sign (`-0.0`). Values that JSON
+  writes it as an integer (`0` is `0.0`, `1e20` is `1e+20`), and a negative zero keeps its sign (`-0.0`). PHP
+  writes the least `int64`, -9223372036854775808, as `\PHP_INT_MIN` at every place where a case gives an integer: an
+  argument, an expected result, an integer key of a keyed map and a value of a value alias (B2.464). Why: PHP reads
+  the literal as the negation of the float 9223372036854775808, so the binding took a float, which is no `int64`.
+  Values that JSON
   cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
   `{"hex": ...}` for bytes that are no text; a text that is not well formed is `{"ill_formed": "<text>"}`, the text
   and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,

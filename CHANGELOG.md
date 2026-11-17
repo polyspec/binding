@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- The generated PHP test writes the least int64 of a case, -9223372036854775808, as `\PHP_INT_MIN` at an argument, an expected result and an integer key of a keyed map of a contract type too, where only a value of a value alias had it (B2.464). PHP reads the literal as a float, which the binding refused as no int64.
 - The generated G-7 test of a member and the Python test of GN-11a give an argument of a class the case value of a case of the member, and a B-5c test makes each instance of its class from the first case of the class that does not raise, where they gave the placeholder of the first constructor, which a core may refuse (GN-13t, B2.463). The G-7 test of a method makes its receiver once and runs every call on it, so a receiver that holds state is not made again in the same case folder.
 
 

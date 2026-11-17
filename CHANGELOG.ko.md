@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- 생성된 PHP 시험은 case의 가장 작은 int64인 -9223372036854775808을 contract 타입의 인자, 기대 결과, keyed map의 정수 key에서도 `\PHP_INT_MIN`으로 적는다. 전에는 값 alias의 값에서만 그렇게 적었다(B2.464). PHP는 그 literal을 float로 읽고, binding은 그것을 int64가 아니라고 거부했다.
 - 생성된 member의 G-7 시험과 Python의 GN-11a 시험은 class의 인자에 그 member의 case의 case 값을 주고, B-5c 시험은 그 class의 instance 각각을 raise하지 않는 그 class의 첫 case로 만든다. 전에는 core가 거부할 수 있는 첫 constructor의 placeholder를 주었다(GN-13t, B2.463). method의 G-7 시험은 receiver를 한 번 만들고 모든 호출을 그 receiver에 하므로, 상태를 가진 receiver를 같은 case 폴더에서 다시 만들지 않는다.
 
 

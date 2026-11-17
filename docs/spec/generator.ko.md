@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e1a292b5b0f5abeb746e2ae85106466eb912b1a8d83d97b724d4cba87f9b5ba0 -->
+<!-- source-sha256: bc504d4f78e56879f0ed676c914f9a7acceb763cc58f407b0ab378b513b2db24 -->
 # 생성기
 
 [English](generator.md)
@@ -2156,7 +2156,10 @@
   `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 각 시험은 그 형태의 말을 기대한다. case의 인자는 snake_case 키이고, record
   parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. 기본값이 없는 parameter의 키가 없는 case는 id로
   거부한다. 타입 `float`의 수는 Python과 PHP에서 float literal이다. 두 언어는 그 자리에서 정수를 거부하기 때문이다(B-2). JSON이
-  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
+  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). PHP는 가장 작은 `int64`인
+  -9223372036854775808을 case가 정수를 주는 모든 자리, 곧 인자, 기대 결과, keyed map의 정수 key, 값 alias의 값에서
+  `\PHP_INT_MIN`으로 적는다(B2.464). 이유: PHP는 그 literal을 float 9223372036854775808의 부정으로 읽어서, binding이
+  `int64`가 아닌 float를 받았다. JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
   아닌 바이트일 때 같은 `{"hex": ...}`, 올바른 꼴이 아닌 텍스트는 `{"ill_formed": "<텍스트>"}`로 그 텍스트 뒤에 올바른
   텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
   텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
