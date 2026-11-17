@@ -8,7 +8,7 @@ import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
 import { classMakes, holdsForeign } from './value_class.ts';
 import { computedRule, defaultCaseValue } from './defaults.ts';
-import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf, membersFor } from './model.ts';
+import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf, membersFor, resolveNamedTypes } from './model.ts';
 import { CATEGORIES, kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -2918,12 +2918,17 @@ export function callbackArg(model: Model, fn: Fn): Arg | undefined {
 // K-2: whether a result of another type is a failure of the binding. A member that returns a value alias gives every
 // value to the alias's core, which judges it (B-1), so the kind of a refused result is the alias's, not the binding's.
 // GN-6s, B2.513: the return types of a callback unit of another library are types of that library, so they are read
-// in the model of its owner.
+// in the contract of its owner, with its named types resolved as the model reads them; a unit of a third library that
+// such a type names is read in the contract of that library.
 export function judgesCallbackResult(model: Model, type: Type): boolean {
   const library = libraryOf(type);
-  const owner = library === undefined ? model : ownerModel(model, library);
-  const id = typeof type === 'object' && 'unit' in type ? type.unit : undefined;
-  const callback = owner.contract.units.find((u) => u.id === id);
+  const contractOf = (of: string | undefined): Contract | undefined => {
+    if (of === undefined) return model.contract;
+    const foreign = model.foreign.get(of);
+    return foreign === undefined ? undefined : resolveNamedTypes(foreign);
+  };
+  const unitIn = (of: string | undefined, id: string): Unit | undefined => contractOf(of)?.units.find((u) => u.id === id);
+  const callback = typeof type === 'object' && 'unit' in type ? unitIn(library, type.unit) : undefined;
   const namesAlias = (type: Type): boolean => {
     if (typeof type === 'string') return false;
     if ('list' in type) return namesAlias(type.list);
@@ -2931,7 +2936,7 @@ export function judgesCallbackResult(model: Model, type: Type): boolean {
     if ('keyed_map' in type) return namesAlias(type.keyed_map);
     if ('optional' in type) return namesAlias(type.optional);
     if ('tuple' in type) return type.tuple.some(namesAlias);
-    return unitOf(owner, type)?.kind === 'alias';
+    return 'unit' in type && unitIn(type.library ?? library, type.unit)?.kind === 'alias';
   };
   return !(callback?.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
 }
