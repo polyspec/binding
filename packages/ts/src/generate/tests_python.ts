@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf, exactClassOf } from './tests_shared.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf, consumingMethods, countParts, exactClassOf } from './tests_shared.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, madeBeforeArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
@@ -955,9 +955,6 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
     }
-    // GN-13t: an argument of a class of the G-7 and GN-11a tests is the case value of a case of the member, where one
-    // gives it.
-    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
     const callback = callbackOf(model, ctx, fn, classGiven);
     const cbUnit = callback.unit;
     if (cbUnit !== undefined && reachable) {
@@ -1040,14 +1037,13 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     const pyo3New = bare && fn.kind === 'constructor';
     const extra = pyo3New ? 'takes 0 positional arguments' : bare ? 'takes no arguments' : 'positional';
     const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
-    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
-    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const built = receiverOfCase(sample);
-    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
-    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        receiver = ${built.expr}`, expr: 'receiver' };
-    const onOnce = (args: string): string => invoke(fn, args, once.expr);
-    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
-    const given = onceArgs(model, fn, values, (local, expr) => `\n        ${local} = ${expr}`, (local) => local);
+    // GN-13t: values is used by the GN-11a test too.
+    const { once, onOnce, values, given } = countParts(model, ctx, fn, classGiven, receiverOfCase(sample), {
+      invoke,
+      local: (expr) => ({ lines: `\n        receiver = ${expr}`, expr: 'receiver' }),
+      line: (local, expr) => `\n        ${local} = ${expr}`,
+      named: (local) => local,
+    });
     append(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${once.lines}${given.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
@@ -1096,12 +1092,10 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
         self.assertEqual(_native._fault_left(armed), [])`}`);
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
-  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+  for (const { fn, sample, args: placed } of consumingMethods(model, ctx)) {
     roots.methodMark = roots.uses;
-    const sample = sampleReceiver(model, fn);
-    if (sample === undefined) continue;
     usesOutcome = true;
-    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    const args = placed();
     append(`
     def test_gn6o_${langName('python', fn.unit.name, 'variable')}_${langName('python', fn.member.name, 'callable')}_consumes_its_object(self) -> None:
         held = ${made(sample, (arg) => caseValue(model, ctx, arg, sample.args))}

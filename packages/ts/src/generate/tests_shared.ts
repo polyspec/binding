@@ -342,6 +342,31 @@ export function callbackOf(model: Model, ctx: Context, fn: Fn, classGiven: Retur
   };
 }
 
+// G-7: the parts of the test that a callable counts and names its arguments. The receiver is made once, as a local, and
+// every call of the test runs on it (onOnce): a receiver that holds state cannot be made twice in one case folder (orm:
+// StepRunner.run, "table owner already exists"); a receiver that one factory call makes is an expression, which the
+// test keeps as a local too (local). GN-13t: an argument of a class is the case value of a case of the member, where
+// one gives it, and B2.508: it is made once too, as a local (line), and every call takes it by its name (named).
+export interface CountForm {
+  invoke: (fn: Fn, args: string, receiver: string) => string;
+  local: (expr: string) => { lines: string; expr: string };
+  line: (local: string, expr: string) => string;
+  named: (local: string) => string;
+}
+export function countParts(model: Model, ctx: Context, fn: Fn, classGiven: ReturnType<typeof classCaseArgs>, built: { lines: string; expr: string }, form: CountForm): { once: { lines: string; expr: string }; onOnce: (args: string) => string; values: (arg: Arg) => string; given: ReturnType<typeof onceArgs> } {
+  const once = built.expr === '' || built.lines !== '' ? built : form.local(built.expr);
+  const values = (arg: Arg): string => otherValue(model, ctx, arg, classGiven);
+  return { once, onOnce: (args) => form.invoke(fn, args, once.expr), values, given: onceArgs(model, fn, values, form.line, form.named) };
+}
+
+// GN-6o: the methods with the receiver self that a case of their class reaches, each with the receiver that the case
+// gives and its placeholder arguments, which args makes where the test is written.
+export const consumingMethods = (model: Model, ctx: Context): { fn: Fn; sample: Receiver; args: () => string }[] =>
+  callables(model).filter((f) => f.receiver === 'self').flatMap((fn) => {
+    const sample = sampleReceiver(model, fn);
+    return sample === undefined ? [] : [{ fn, sample, args: () => callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type)) }];
+  });
+
 // GN-6ae: the calls of after of a case in PHP and Python, each on the receiver of the case (held) or on an argument
 // that a function fixture kept (GN-13o). B2.509: a call that fails with a kind makes an instance value of its args
 // before the outcome of the call, which holds the call alone; a call with a result is checked by check, and a result
@@ -946,16 +971,12 @@ test('GN-13e: ${name} ${kase.id}', ${waits ? 'async ' : ''}() => {${nodeCaseFile
 
   // G-7: the test that a callable counts and names its arguments.
   const countTest = (fn: Fn, name: string, sample: Receiver | undefined, classGiven: ReturnType<typeof classCaseArgs>): void => {
-    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
-    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const built = receiverOfCase(sample);
-    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
-    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n  const receiver = ${built.expr};`, expr: 'receiver' };
-    const onOnce = (args: string): string => invoke(fn, args, once.expr);
-    // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
-    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
-    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
-    const given = onceArgs(model, fn, values, (local, expr) => `\n  const ${local} = ${expr};`, (local) => local);
+    const { once, onOnce, given } = countParts(model, ctx, fn, classGiven, receiverOfCase(sample), {
+      invoke,
+      local: (expr) => ({ lines: `\n  const receiver = ${expr};`, expr: 'receiver' }),
+      line: (local, expr) => `\n  const ${local} = ${expr};`,
+      named: (local) => local,
+    });
     const record = fn.record;
     const recordTests = record === undefined ? '' : `
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName(lang, f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
@@ -975,10 +996,8 @@ test('G-7: ${name} counts and names its arguments', () => {${once.lines}${given.
   // GN-6o, GN-6b, GN-6p and B-10: the tests of the objects of the contract.
   const objectTests = (): void => {
     // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
-    for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
-      const sample = sampleReceiver(model, fn);
-      if (sample === undefined) continue;
-      const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    for (const { fn, sample, args: placed } of consumingMethods(model, ctx)) {
+      const args = placed();
       emit(`
 test('GN-6o: ${langName(lang, fn.unit.name, 'class')}.${langName(lang, fn.member.name, 'callable')} consumes its object', () => {
   const held = ${made(sample)};

@@ -11,7 +11,7 @@ import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
 import { CASE_JSON_STRING_GOLDENS, convertedCause, madeCategoryClass } from './samples.ts';
-import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf } from './tests_shared.ts';
+import { CASE_TEXT_WITNESS, CASE_TEXT_WITNESS_HEX, CaseTextRoots, afterCallChecks, callbackOf, consumingMethods, countParts } from './tests_shared.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
@@ -962,8 +962,6 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
-    // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
-    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
     const callback = callbackOf(model, ctx, fn, classGiven);
     const cbUnit = callback.unit;
     if (cbUnit !== undefined && reachable) {
@@ -1046,14 +1044,12 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
-    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
-    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const built = receiverOfCase(sample);
-    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
-    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        $receiver = ${built.expr};`, expr: '$receiver' };
-    const onOnce = (args: string): string => invoke(fn, args, once.expr);
-    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
-    const given = onceArgs(model, fn, values, (local, expr) => `\n        $${local} = ${expr};`, (local) => `$${local}`);
+    const { once, onOnce, given } = countParts(model, ctx, fn, classGiven, receiverOfCase(sample), {
+      invoke,
+      local: (expr) => ({ lines: `\n        $receiver = ${expr};`, expr: '$receiver' }),
+      line: (local, expr) => `\n        $${local} = ${expr};`,
+      named: (local) => `$${local}`,
+    });
     append(`
     public function testG7${name}CountsAndNamesItsArguments(): void
     {${once.lines}${given.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
@@ -1136,11 +1132,9 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }`);
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
-  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+  for (const { fn, sample, args: placed } of consumingMethods(model, ctx)) {
     roots.methodMark = roots.uses;
-    const sample = sampleReceiver(model, fn);
-    if (sample === undefined) continue;
-    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    const args = placed();
     append(`
     public function testGn6o${langName('php', fn.unit.name, 'class')}${langName('php', fn.member.name, 'class')}ConsumesItsObject(): void
     {
