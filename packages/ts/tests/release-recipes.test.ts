@@ -640,6 +640,55 @@ test('the assets of each platform are required and labelled before an upload (GN
   ]);
 });
 
+// B2.496: the gh upload followed the check of the labels at once, so a rehearsal before the tag could not see the step
+// (template 0.0.28 was lost in its asset job). REHEARSAL=1 runs the checks of the labels and of the sizes, writes the
+// list of the upload under WORK alone, calls neither gh nor git, and ends with the line "no upload".
+test('B2.496: release-platform-assets REHEARSAL=1 runs the checks of the labels and the sizes, writes only under WORK, calls no gh and no git, and ends with no upload (GN-19g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  standIn(box.bin, 'gh', '');
+  const assets = join(box.root, 'var/release/assets');
+  const put = (path: string, body = 'asset'): void => {
+    mkdirSync(join(assets, path, '..'), { recursive: true });
+    writeFileSync(join(assets, path), body);
+  };
+  for (const wheel of ['manylinux_2_34_x86_64', 'manylinux_2_34_aarch64', 'macosx_11_0_arm64']) put(`wheel/polyspec_sample-0.0.3-cp314-abi3-${wheel}.whl`);
+  put('npm/polyspec-sample-0.0.3.tgz');
+  for (const platform of ['linux-x64-gnu', 'linux-arm64-gnu', 'darwin-arm64']) put(`npm/polyspec-sample-${platform}-0.0.3.tgz`);
+  for (const minor of PHP_MINORS) {
+    for (const pie of ['x86_64-linux-glibc', 'arm64-linux-glibc', 'arm64-darwin-bsdlibc']) put(`php-ext/php_polyspec_sample-v0.0.3_php${minor}-${pie}-nts.zip`);
+  }
+  const work = join(box.root, 'var/rehearsal-work');
+  // make -n: the rehearsal names no gh upload.
+  const dry = box.make('-n', 'release-platform-assets', 'TAG=v0.0.3', 'REHEARSAL=1', `WORK=${work}`);
+  assert.equal(dry.status, 0, dry.output);
+  assert.doesNotMatch(dry.output, /gh release upload/);
+  assert.match(dry.output, /no upload/);
+  // A rehearsal without WORK is refused before any check.
+  const without = box.make('release-platform-assets', 'TAG=v0.0.3', 'REHEARSAL=1');
+  assert.equal(without.status, 2, without.output);
+  assert.match(without.output, /release-platform-assets: REHEARSAL=1 requires WORK, the directory of the rehearsal/);
+  const listing = (dir: string): string[] => readdirSync(dir, { recursive: true }).map(String).sort();
+  const before = listing(box.root).filter((path) => !path.startsWith('var/rehearsal-work'));
+  writeFileSync(box.env['CALLS'] as string, '');
+  const run = box.make('release-platform-assets', 'TAG=v0.0.3', 'REHEARSAL=1', `WORK=${work}`);
+  assert.equal(run.status, 0, run.output);
+  assert.equal(run.output.trimEnd().split('\n').at(-1), 'no upload');
+  assert.deepEqual(box.calls().filter((call) => call.tool === 'gh' || call.tool === 'git'), []);
+  assert.deepEqual(listing(box.root).filter((path) => !path.startsWith('var/rehearsal-work')), before);
+  const upload = readFileSync(join(work, 'platform-assets.txt'), 'utf8').trimEnd().split('\n');
+  assert.equal(upload.length, 13);
+  assert.ok(upload.includes(`5 ${join(assets, 'npm/polyspec-sample-0.0.3.tgz')}#polyspec-sample-ts-0.0.3`), upload.join('\n'));
+  // The rehearsal and the upload refuse an empty asset, which GitHub does not take, by its name.
+  put('npm/polyspec-sample-0.0.3.tgz', '');
+  for (const extra of [['REHEARSAL=1', `WORK=${work}`], []]) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const empty = box.make('release-platform-assets', 'TAG=v0.0.3', ...extra);
+    assert.equal(empty.status, 2, empty.output);
+    assert.match(empty.output, /release-platform-assets: .*npm\/polyspec-sample-0\.0\.3\.tgz is empty, and GitHub takes no empty asset/);
+    assert.deepEqual(box.calls().filter((call) => call.tool === 'gh'), []);
+  }
+});
+
 // B2.268: the assets of a release run (json 0.0.27) held the extension of PHP 8.4 alone on each platform, and the
 // recipe counted the extensions, so it uploaded no extension for PHP 8.5, which the requirement php >=8.4 admits.
 test('the upload requires the asset of each label: each platform, and each PHP minor of config/toolchain.json (GN-19a, GN-19g)', (t) => {
