@@ -4,7 +4,9 @@
 # conditions of the job, and every other step is a uses step that provisions the runner (checkout, the bootstrap, PHP)
 # or carries a result (upload-artifact), the only steps with a condition. The entries of check together run every
 # target that `make check` runs (the type check and the tests of packages/ts, the tests of binding_core with all
-# features and with none, its clippy with both and its format), each once, and `make release-coverage`. A failure
+# features and with none, its clippy with both and its format), each once, `make release-coverage`, and `make
+# release-candidate-assets`, which builds the archive of the release from the commit with no tag, after the other
+# targets of its entry, since it refuses a checkout with an untracked file (B2.455). A failure
 # never stops the run: the matrix does not cancel the other entries (fail-fast: false), the recipe runs every check to
 # its end, and the upload runs after a failed step (`if: ${{ !cancelled() }}`). make ci-check installs the tools of its
 # entry, runs its targets with make ci-targets, writes the job summary and the report var/ci/<name>/ (the status, the
@@ -48,7 +50,7 @@ jobs:
         include:
           - name: ts
             tools: rust
-            targets: typecheck-ts unit-ts release-coverage
+            targets: typecheck-ts unit-ts release-coverage release-candidate-assets
           - name: rust
             tools: rust
             targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust fmt-e2e

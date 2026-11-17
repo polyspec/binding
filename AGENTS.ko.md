@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: b956bfd166db31879ba7e9b17a1092df92eef683a008f2860a3c2d48f6b48c76 -->
+<!-- source-sha256: 3470196d13096bb254181028f93653295a2b9d9374e827a5d1c71a2ead08fa2e -->
 # 개발
 
 [English](AGENTS.md)
@@ -57,7 +57,7 @@
   Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다. 기록이 실행마다 그
   commit을 적는다.
 - Own: `.github/workflows/ci.yml`은 `main`의 push와 수동 실행에서 돈다. matrix 항목마다 job 하나다. `ts`는 `typecheck-ts`,
-  `unit-ts`, `release-coverage`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
+  `unit-ts`, `release-coverage`, `release-candidate-assets`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
   `clippy-rust`, `fmt-rust`, `fmt-e2e`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
   `make ci-check`로 실행하고, 그 `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
   `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고(`e2e-amd64`만
@@ -83,7 +83,7 @@
   다른 step은 모두 runner를 준비하거나 결과를 옮기는 `uses:` step이며(checkout, setup action, `.github/actions/bootstrap`,
   `actions/upload-artifact`), `if:`는 `uses:` step에만 있다. step이 `steps`나 다른 step의 결과에서 계산하던 것, 예를 들어
   summary에 적는 setup step의 결과나 `make go-musl-check`를 실행할지는 recipe가 직접 계산한다. job의 로컬 실행은 같은
-  호출이다. 예: `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage"`, `make ci-e2e
+  호출이다. 예: `make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts release-coverage release-candidate-assets"`, `make ci-e2e
   REPO=tests/e2e/sample`. release는 `make ci-release RUN=<id>`다. recipe는 `sudo`를 실행하지 않고 기계의 설정을 바꾸지 않는다. 이유: step의 식과 조건은 GitHub의
   runner가 평가하므로, 내용이 YAML에 있는 job은 다른 기계에서 같은 방식으로 실행할 수 없고, CI와 다른 실행은 진단일 뿐 CI의
   증거가 아니다. 도구를 바로 실행하는 step은 Makefile의 설정도 받지 못한다.
@@ -105,8 +105,21 @@
   test feature와 함께, 그리고 feature 없이 `cargo clippy -D warnings`로 lint하며, package를 만들거나 test를 돌리지 않고
   Cargo는 registry의 index를 읽는다. `make e2e`처럼 HEAD의 tree를 읽으므로 commit하지 않은 변경은 lint되지 않는다. 이유: 그것이 없으면 그 push의 CI run이 생성된 crate의 첫 lint이고, 0.0.18은 생성된 crate 넷이
   쓰이지 않는 helper를 가져 CI에서 실패했다(B2.430).
+  version-bump commit은 push 전에 `make release-candidate-assets`도 통과하고, CI의 job `check`가 모든 commit에서 그것을
+  실행한다. 그것은 tag 없이 commit된 HEAD에서 release의 archive를 `make release-assets`의 단계(kit의 `release.mjs
+  candidate-assets`)로 만든다. 그 단계는 `npm pack`이 prepack script로 실행하는 `tsconfig.build.json`의 빌드,
+  `packages/ts/package.json`의 version에서 나온 archive 이름과 요청받은 version의 대조, checkout에 바뀐 경로와 추적되지
+  않는 경로가 없다는 검사, pack된 manifest의 비교다. `VERSION`이 없으면 `CHANGELOG.md`의 맨 위 `## X.Y.Z`, 곧 `make
+  release-tag`가 쓰는 version을 요청하며, 그것을 거기서 읽는 kit의 함수로 읽는다(`scripts/release-candidate-version.mts`).
+  version commit이 아닌 commit에서는 그 section과 manifest가 마지막으로 release한 version을 가지므로 거기서도 통과한다.
+  그것은 commit을 pack하므로 version-bump commit을 만든 뒤에 실행하고, 아무것도 내려받지 않는다. 이유: release는 첫
+  단계에서 tag를 만들어 push하고 그 뒤에 archive를 만들며, CI는 그 밖에는 archive의 단계를 하나도 실행하지 않으므로(type
+  검사는 `tsc --noEmit`이다) 그 단계의 실패는 tag가 생긴 뒤에야 처음 드러난다. tag와 GitHub이 필요한 release의 단계는 다루지
+  않는다: `make release-tag`의 tag 조상 검사와 순서 검사, `make release-publish`, `make release-undraft`.
   Enforced by: `make release-coverage`는 `config/release.json`이 분류하지 않은 package 파일을 실패시킨다. `make
-  release-tag`는 성공한 실행의 commit에만 tag를 붙인다.
+  release-tag`는 성공한 실행의 commit에만 tag를 붙인다. CI의 job `check`의 `make release-candidate-assets`는 실패하면
+  release에 필요한 실행을 실패시킨다. `packages/ts`의 `npm test`에서 `tests/ci-workflow.test.ts`가 그 recipe를 node의
+  stand-in으로 실행하고 matrix의 항목 `ts`를 읽는다(B2.455).
 - Own: `make docs-check`는 `config/documents.json`이 고른 문서를 하나씩 설치된 `@polyspec/kit`의 문서 검사로 읽는다: 그
   link, anchor, fence, changelog, 그리고 `config/checklist.json`이 선언한 `docs/plans/<plan>/`의 체크리스트. 영어 문서마다
   같은 `doc-id`를 가진 한국어 짝 `.ko.md`가 있고, 짝은 영어 파일의 sha256인 `source-sha256`을 가진다. 이것은 번역을 검토한
