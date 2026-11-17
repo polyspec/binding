@@ -83,7 +83,7 @@ test('B2.494: the update of the gate changes the lock of the tag in polyspec-bin
   mkdirSync(dir);
   const pkg = (name: string, version: string, source?: string, deps: string[] = []): string =>
     `[[package]]\nname = "${name}"\nversion = "${version}"\n${source === undefined ? '' : `source = "${source}"\n`}${deps.length === 0 ? '' : `dependencies = [\n${deps.map((d) => ` "${d}",\n`).join('')}]\n`}`;
-  const git = 'git+https://github.com/polyspec/binding.git?tag=v0.0.20#06dfc6accfee6b272f96b32f12c8e7fb6182d59b';
+  const git = `git+https://github.com/polyspec/binding.git?tag=v0.0.20#${'a'.repeat(40)}`;
   const crate = 'registry+https://github.com/rust-lang/crates.io-index';
   const tagLock = ['version = 4\n', pkg('polyspec-binding-core', '0.0.20', git, ['serde']), pkg('polyspec-json', '0.0.36', undefined, ['polyspec-binding-core', 'serde']), pkg('serde', '1.0.200', crate)].join('\n');
   const lockOf = (text: string): string => lockOfFrom(tagLock, text);
