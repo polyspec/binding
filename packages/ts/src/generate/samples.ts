@@ -1855,6 +1855,21 @@ export const isPlain = (receiver: Receiver): boolean =>
 export const isInstanceValue = (value: unknown): boolean =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && (typeof (value as Record<string, unknown>)['new'] === 'string' || typeof (value as Record<string, unknown>)['from'] === 'string');
 
+// GN-13f, GN-13o (B2.509): the arguments of a call of after that names raises, where each instance value is made
+// before the call, in a local of the test that `line` declares, so a failure of its static fails the test and is never
+// taken as the failure of the call, which the outcome of the call holds alone.
+export function madeBeforeArgs(model: Model, ctx: Context, fn: Fn, args: ReadonlyMap<Arg, unknown>, local: (n: number) => string, line: (name: string, value: string) => string): { lines: string[]; args: string } {
+  const lines: string[] = [];
+  const text = callArgs(model, ctx, fn, (arg) => {
+    const value = caseValue(model, ctx, arg, args);
+    if (value === undefined || !isInstanceValue(args.get(arg))) return value;
+    const name = local(lines.length);
+    lines.push(line(name, value));
+    return name;
+  });
+  return { lines, args: text };
+}
+
 // Every member of the model by its id: the functions and the members of the class units.
 export const memberById = (model: Model, id: string): Fn | undefined =>
   [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.member.id === id);

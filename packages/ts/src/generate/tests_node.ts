@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
 import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, jsMade, jsCause, convertedCause, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, madeBeforeArgs,caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, jsMade, jsCause, convertedCause, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
@@ -572,8 +572,12 @@ export function nodeTests(model: Model): string {
     (after ?? []).map((call, i) => {
       // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
       const on = call.on === undefined ? receiver : (ctx.boundValue?.(call.on) ?? '');
+      if (call.raises !== undefined) {
+        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
+        const before = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `after${i}_${n}`, (name, value) => `const ${name} = ${value};`);
+        return [...before.lines, form.fails(invoke(call.fn, before.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n  ${line}`).join('');
+      }
       const made = invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on);
-      if (call.raises !== undefined) return `\n  ${form.fails(made, call.raises, `after ${i} fails with ${call.raises}`)}`;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
       usesOrdered = true;

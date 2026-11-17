@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, madeBeforeArgs, aliasCases,aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
@@ -178,8 +178,12 @@ export function wasmTests(model: Model): string {
     (after ?? []).map((call, i) => {
       // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
       const on = call.on === undefined ? receiver : (ctx.boundValue?.(call.on) ?? '');
+      if (call.raises !== undefined) {
+        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
+        const before = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `after${i}_${n}`, (name, value) => `const ${name} = ${value};`);
+        return [...before.lines, form.fails(invoke(call.fn, before.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n  ${line}`).join('');
+      }
       const made = invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on);
-      if (call.raises !== undefined) return `\n  ${form.fails(made, call.raises, `after ${i} fails with ${call.raises}`)}`;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
       usesOrdered = true;

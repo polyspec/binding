@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, madeBeforeArgs,caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
@@ -667,7 +667,11 @@ export function pythonTests(model: Model, module: string): string {
     (after ?? []).map((call, i) => {
       // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
       const on = call.on === undefined ? held : (ctx.boundValue?.(call.on) ?? '');
-      if (call.raises !== undefined) return `\n        ${madeForm.fails(invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on), call.raises, `after ${i} fails with ${call.raises}`)}`;
+      if (call.raises !== undefined) {
+        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
+        const made = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `after_${i}_${n}`, (name, value) => `${name} = ${value}`);
+        return [...made.lines, madeForm.fails(invoke(call.fn, made.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n        ${line}`).join('');
+      }
       const receiver = on;
       const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n        self.fail(${pyString(expected.refused)})`;

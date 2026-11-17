@@ -12208,7 +12208,11 @@ test('B2.506: an instance value among the args of a call of after that raises is
       assert.ok(declared !== null, `${target}: ${local} is used by the call of after and not declared with its check before it`);
     }
     if (target === 'go') assert.match(used[1] ?? '', /^made\d+$/, 'go: the instance is a local of the test');
-    else assert.match(used[1] ?? '', /Counter\(1$/, `${target}: the instance is made by its static`);
+    // B2.509: the other targets make it before the outcome of the call too, in a local of the test.
+    else {
+      assert.match(used[1] ?? '', /^\$?after_?0_0$/, `${target}: the instance is a local of the test`);
+      assert.ok(before.includes(`${used[1] ?? ''} = `) && /Counter\(1\);?\n/.test(before), `${target}: the local is made by its static before the call`);
+    }
   }
 });
 
