@@ -872,7 +872,8 @@ export function releaseRequires(goMod: string): string[] {
   for (const line of lines) {
     if (/^require \($/.test(line)) block = true;
     else if (block && line === ')') block = false;
-    const entry = block ? /^\t(\S+) (v\S+)$/.exec(line) : /^require (\S+) (v\S+)$/.exec(line);
+    // B2.488: a line `// indirect` of the module graph is a requirement too.
+    const entry = block ? /^\t(\S+) (v\S+)(?: \/\/ indirect)?$/.exec(line) : /^require (\S+) (v\S+)(?: \/\/ indirect)?$/.exec(line);
     if (entry !== null && entry[2] !== 'v0.0.0') found.push(`${entry[1] ?? ''} ${entry[2] ?? ''}`);
   }
   return found;
@@ -887,14 +888,6 @@ export function sumRequires(goMod: string): string[] {
   return releaseRequires(goMod).filter((r) => (r.split(' ')[0] ?? '').split('/').slice(0, 3).join('/') !== repository);
 }
 
-// GN-15l: the go.mod of the module that `go mod download -json all` reads for the sums: the module and go lines of the
-// go.mod that scaffold writes, with its release requirements alone.
-export function goSumModule(goMod: string): string {
-  const module = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
-  const go = /^go (\S+)$/m.exec(goMod)?.[1] ?? '';
-  return `module ${module}\n\ngo ${go}\n\n${sumRequires(goMod).map((r) => `require ${r}\n`).join('')}`;
-}
-
 // One object of `go mod download -json`.
 export interface GoDownload {
   Path: string;
@@ -907,6 +900,8 @@ export interface GoDownload {
 // GN-15l: the go.sum beside a go.mod that requires a release: the hash of each required module and the hash of the
 // go.mod of each module of its build list, as Go verifies them, sorted as Go writes them. undefined for a go.mod
 // without a release requirement. A module that Go could not give is a failure that names it, never a partial go.sum.
+// B2.488: the requirements are those of the go.mod with its lines `// indirect` (goModGraph), so every module of the
+// build list has its hash.
 export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string | undefined {
   const required = sumRequires(goMod);
   if (required.length === 0) return undefined;
@@ -924,6 +919,72 @@ export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string
     lines.push(`${requirement} ${d.Sum}`);
   }
   return `${lines.sort().join('\n')}\n`;
+}
+
+// The repository of a Go module, the first three elements of its module path (GN-14f).
+const goRepositoryOf = (module: string): string => module.split('/').slice(0, 3).join('/');
+
+export interface GoModGraph {
+  // The go.mod that scaffold tracks: the go.mod that it writes with a line `// indirect` of each module of the build
+  // list that it does not require, and of each module of the same repository that a sibling requires in turn.
+  goMod: string;
+  // The go.sum beside it, undefined when no module of another repository is in its graph.
+  goSum: string | undefined;
+}
+
+// GN-15l, B2.488: the go.mod and the go.sum of a Go module whose requirements require other modules. Go builds a module
+// with `-mod=readonly` only when its go.mod requires every module that provides a package of its build, `// indirect`
+// for one that it does not import itself, and its go.sum holds the hash of each (B2.488: the tag of a module that
+// required session-store, which requires php-serialization, failed with `missing go.sum entry` and then with `updates
+// to go.mod needed`). binding reads no import graph of another module, so it requires every module of the build list,
+// each at the version that the build list selects, which selects no other version and brings no module that is not in
+// the module graph already. `download` gives the objects of `go mod download -json all` of a module of the go.mod
+// that it takes; it is asked again with each module that it gave, because the graph of a module that the go.mod
+// requires includes the requirements of that module alone (graph pruning, Go 1.17), until it gives no new module.
+// `sibling` gives the tracked go.mod of a module of the same repository, which no download gives (B2.460): its
+// requirements enter the graph, and each module of the same repository that it requires in turn is required
+// `// indirect` at its version, whose hash the release writes (GN-19f, B2.479).
+export function goModGraph(goMod: string, download: (module: string) => GoDownload[], sibling: (module: string) => string | undefined): GoModGraph {
+  const own = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
+  const go = /^go (\S+)$/m.exec(goMod)?.[1] ?? '';
+  const direct = new Map(releaseRequires(goMod).map((r) => r.split(' ') as [string, string]));
+  // The modules of the same repository that the go.mod requires and that they require in turn, and the modules of
+  // other repositories that they require.
+  const siblings = new Map<string, string>();
+  const outside = new Map<string, string>();
+  const pending = [...direct];
+  for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
+    const [module, version] = next;
+    if (module === own) continue;
+    if (goRepositoryOf(module) !== goRepositoryOf(own)) {
+      if (!outside.has(module)) outside.set(module, version);
+      continue;
+    }
+    if (siblings.has(module)) continue;
+    siblings.set(module, version);
+    const text = sibling(module);
+    if (text === undefined) throw new Error(`${module} ${version}: the go.mod of that Go module of this repository is not there, whose requirements the go.mod of ${own} takes; run binding scaffold of its contract first (GN-15l)`);
+    pending.push(...releaseRequires(text).map((r) => r.split(' ') as [string, string]));
+  }
+  let selected = new Map<string, string>(outside);
+  let downloads: GoDownload[] = [];
+  for (let round = 0; selected.size > 0; round += 1) {
+    if (round === 20) throw new Error(`go mod download gave new modules of the graph of ${own} in 20 rounds (GN-15l)`);
+    downloads = download(`module ${own}\n\ngo ${go}\n\n${[...selected].map(([module, version]) => `require ${module} ${version}\n`).join('')}`);
+    const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
+    if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);
+    const found = new Map(downloads.filter((d) => d.Version !== undefined && d.Path !== own).map((d) => [d.Path, d.Version ?? '']));
+    const same = found.size === selected.size && [...found].every(([module, version]) => selected.get(module) === version);
+    selected = found;
+    if (same) break;
+  }
+  // A requirement of the go.mod below the version that the build list selects is one that Go updates, which
+  // `-mod=readonly` refuses: it is named with the version.
+  const raised = [...direct].filter(([module, version]) => selected.has(module) && selected.get(module) !== version);
+  if (raised.length > 0) throw new Error(`go.mod requires ${raised.map(([module, version]) => `${module} ${version}`).join(', ')}, and the build list selects ${raised.map(([module]) => `${module} ${selected.get(module) ?? ''}`).join(', ')}, which a module of the graph requires: the dependency line of the core names the lower version (GN-15f)`);
+  const indirect = [...selected, ...siblings].filter(([module]) => !direct.has(module)).sort(([a], [b]) => (a < b ? -1 : 1));
+  const tracked = indirect.length === 0 ? goMod : `${goMod}\nrequire (\n${indirect.map(([module, version]) => `\t${module} ${version} // indirect`).join('\n')}\n)\n`;
+  return { goMod: tracked, goSum: selected.size === 0 ? undefined : goSumOf(tracked, downloads) };
 }
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):

@@ -2566,7 +2566,11 @@ the design ids are those of the binding design.
   function gives, of the files of the module, generated and hand-written, those that the released form carries; it
   reads the name of each file, the build constraint of a generated file and the package clause of a Go file, and
   both `binding release-go-module` and the released form of the end-to-end check (GN-14f) read it and remove a file
-  by no other rule (B2.459); it holds no list of file names and no name of a directory. Why the tests and the
+  by no other rule (B2.459). The released form of the end-to-end check makes the tags as the release makes them
+  (B2.488): a module after the modules of its repository that it requires, with the two `go.sum` lines of each of
+  them from `go mod download -json` of their tags in a commit of its own (the function of `binding
+  release-go-module`), and then each module builds alone in the tree of its tag with `go build -mod=readonly` and no
+  workspace; it holds no list of file names and no name of a directory. Why the tests and the
   programs are left out: what the check proves and what the tag carries are one form. A test of the repository
   reads inputs that the runner of the repository gives (GN-14h), so the `go test` of a consumer over the fetched
   module would fail on it, and the end-to-end check runs a form without it. A program is imported by no consumer,
@@ -2671,6 +2675,21 @@ the design ids are those of the binding design.
   `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
   `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
   `go.mod`, and session-store, whose `go.mod` requires php-serialization, had none, so its module did not build alone.
+  The graph of the requirements (B2.488): Go builds a module with `-mod=readonly` only when its `go.mod` requires every
+  module that provides a package of its build, `// indirect` for one that it does not import itself, and its `go.sum`
+  holds the hash of each. So the `go.mod` that scaffold tracks is the generated one followed by a block `require ( …
+  // indirect )` of each module of the build list that it does not require, at the version that the build list
+  selects, and the `go.sum` holds the hash of each of them. binding reads no import graph of another module, so it
+  requires every module of the build list, which selects no other version and adds no module to the module graph.
+  Go is asked again with each module that it gave, until it gives no new one, because the graph of a required
+  module holds that module's requirements alone (graph pruning). A requirement of a module of the same repository
+  adds to that graph the requirements of its tracked `go.mod`, read from its directory in the checkout, and each
+  module of the same repository that it requires in turn is required `// indirect` too, with no line in the `go.sum`
+  (the release writes its hash, GN-19f). A module of the same repository whose `go.mod` is not there, and a
+  requirement below the version that the build list selects, refuse the files with the module named. Before B2.488
+  the tag of a module that required session-store v0.0.4 failed `go build -mod=readonly` with `GOWORK=off`, first with
+  `missing go.sum entry for module providing package github.com/polyspec/php-serialization/packages/go` and, with
+  that hash, with `updates to go.mod needed`. CK-102 does not judge the lines `// indirect` (B2.473).
   The go command: `binding check` and `binding scaffold` take `--go <command>`, the value of `$(GO)` of the release
   recipes (GN-19h), and without it the command is the `go` of `PATH`. The value is split into words at white space, as
   the value of `--cargo` is (GN-1d), and the commands run `<command> mod download -json all`; a value that holds a quote
@@ -4224,7 +4243,12 @@ the design ids are those of the binding design.
   from the commit of the tag for a tracked file (`git show`) and from the work tree for a generated one. A
   directory of tests alone holds no package to import and Go imports no program, so neither is one (B2.459). `go mod tidy` and `go test -count=1 .` run with `GOPROXY=direct`, `GOSUMDB=off`,
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
-  and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
+  and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. Then the module builds alone in
+  the tree of the commit (B2.488): the command checks the directory of the module out of the bare repository into
+  `--work/alone` with an index of `--work`, and runs `go build -mod=readonly ./...` there with the same settings; a
+  failure names the commit and says to run `binding scaffold` of this version (GN-15l). Why: `go mod tidy` of the
+  consumer writes what the `go.mod` of the module lacks, so a tag whose `go.mod` lacked a module of its graph passed the
+  consumer and failed every build inside the module. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
   fetched from its own remote, so the repositories are released in the order of their Go requirements. A Go module
   of the same repository that the `go.mod` requires at a release version, a sibling, is fetched from the bare
@@ -4246,7 +4270,10 @@ the design ids are those of the binding design.
   and writes to its standard output the one line `refs/tags/<directory>/vX.Y.Z`, the reference that the recipe
   pushes to the remote, or nothing when the remote holds the tag already. The command pushes nothing to the remote.
   Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
-  failed push gives the same reference.
+  failed push gives the same reference. The recipe `release-go-module` adds that reference to
+  `$(RELEASE_TARGET)/go-module-refs`, and `release-go-module-push` pushes every reference of that file with one `git
+  push --atomic` (GN-19h, B2.488), so the remote takes the tags of all the Go modules of a release or none: before
+  B2.488 each recipe pushed its own tag, and a release whose second module failed left the first tag on the remote.
   The rehearsal (B2.479): with `--rehearsal`, an option without a value, the command runs the checks and the proof
   before a release has a tag, and makes no commit and no tag: it writes no object and no reference into the
   repository, asks the remote nothing and pushes nothing. `--tag vX.Y.Z` is then the tag that the release will
@@ -4301,7 +4328,8 @@ the design ids are those of the binding design.
   | `release-php-ext` | `php` | GN-19d, for the PHP of `PHP` |
   | `release-npm-platform` | `node` | GN-19e, the platform package of the host |
   | `release-npm` | `node` or `wasm` | GN-19e, the package itself |
-  | `release-go-module` | `go` | GN-19f, for the tag of `TAG` |
+  | `release-go-module` | `go` | GN-19f, for the tag of `TAG`, whose reference waits in `$(RELEASE_TARGET)/go-module-refs` |
+  | `release-go-module-push` | `go` | GN-19f, one `git push --atomic` of the tags that wait, shared by the contracts of a repository (B2.488) |
   | `release-binding-check` | every contract | GN-19g |
   | `release-platform-assets` | every contract | GN-19g, the upload of the assets of `TAG` |
   | `release-assets-platform` | `go`, `python` or `node` | GN-19i, the builds of the job `platform` |
@@ -4400,7 +4428,8 @@ the design ids are those of the binding design.
   Each PHP matrix entry supplies `EXPECTED_PHP_MINOR`; the generated recipe checks and records its native
   selection as GN-19d specifies, so no repository copies this check into a wrapper target.
 
-  The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module`
+  The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module` of each
+  Go module, then `make release-go-module-push` (B2.488),
   and `make release-platform-assets` after the draft release exists; the latter validates the complete required asset
   set. binding writes no workflow and no recipe `ci-assets-<job>`: GitHub reads a workflow only from the tracked tree, and
   the installs of a job are those of the repository. Why: each PHP job owns one runtime selection and one artifact, so parallel minor

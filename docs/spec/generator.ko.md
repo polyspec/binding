@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
+<!-- source-sha256: f18a29033d6fc2e94168a9a859da3fffd614fa2f3d1b87c252f397da3c6e199e -->
 # 생성기
 
 [English](generator.md)
@@ -2112,7 +2112,10 @@
   대로 싣는다. host 같은 손으로 쓴 package도, Go 파일이 아닌 파일도 싣는다. 함수 하나가 모듈의 파일, 곧 생성 파일과 손으로
   쓴 파일 가운데 release 형태가 싣는 것을 준다. 그 함수는 각 파일의 이름, 생성 파일의 build constraint, Go 파일의 package
   절을 읽으며, `binding release-go-module`과 end-to-end 검사의 release 형태(GN-14f)가 둘 다 그것을 읽고 다른 규칙으로는
-  파일을 빼지 않는다(B2.459). 그 함수는 파일 이름의 목록도 디렉터리의 이름도 갖지 않는다. 시험과 program을 빼는 이유:
+  파일을 빼지 않는다(B2.459). end-to-end 검사의 release 형태는 release처럼 tag를 만든다(B2.488). 모듈은 자기가 require하는
+  같은 레포의 모듈 뒤에 오고, 그 각각의 tag의 `go mod download -json`에서 얻은 `go.sum` 두 줄을 자기 commit에
+  담으며(`binding release-go-module`의 함수), 그다음 각 모듈은 자기 tag의 tree에서 workspace 없이 `go build -mod=readonly`로
+  홀로 빌드된다. 그 함수는 파일 이름의 목록도 디렉터리의 이름도 갖지 않는다. 시험과 program을 빼는 이유:
   검사가 증명하는 것과 tag가 싣는 것은 한 형태다. 레포의 시험은 레포의 runner가 주는 입력을 읽으므로(GN-14h), 받은 모듈에
   소비자가 돌리는 `go test`가 그 시험에서 실패하고, end-to-end 검사는 그 시험이 없는 형태를 돌린다. program은 어떤 소비자도
   import하지 않는다. Go는 package `main`을 import하지 않기 때문이며, program은 라이브러리의 일부도 아니다. 바인딩의 Go
@@ -2199,6 +2202,19 @@
   빌드되고, 생성된 모듈은 레포의 `go.work` 밖에서 검사되고 release된다(GN-14i). template과 crud-ui는 생성된 `go.mod` 옆에
   `go.sum`을 손으로 commit해야 했고, `go.mod`가 php-serialization을 require하는 session-store에는 없어서 그 모듈이 홀로
   빌드되지 않았다.
+  require의 그래프(B2.488): Go는 `go.mod`가 빌드의 package를 주는 모든 모듈을 require하고(자기가 import하지 않는 모듈은
+  `// indirect`로) `go.sum`이 그 각각의 hash를 가질 때만 모듈을 `-mod=readonly`로 빌드한다. 그래서 scaffold가 추적하는
+  `go.mod`는 생성된 것 뒤에, 그것이 require하지 않는 build list의 각 모듈을 build list가 고른 version으로 담는 block
+  `require ( … // indirect )`를 붙인 것이고, `go.sum`은 그 각각의 hash를 담는다. binding은 다른 모듈의 import 그래프를
+  읽지 않으므로 build list의 모든 모듈을 require한다. 이것은 다른 version을 고르지 않고 module graph에 모듈을 더하지 않는다.
+  require한 모듈의 그래프는 그 모듈 자신의 require만 담으므로(graph pruning), Go가 준 각 모듈로 Go에 다시 물어 새 모듈이
+  없을 때까지 반복한다. 같은 레포의 모듈을 require하면 checkout의 그 디렉터리에서 읽은 그 모듈의 추적된 `go.mod`의 require가
+  그래프에 더해지고, 그것이 다시 require하는 같은 레포의 모듈도 `// indirect`로 require되며 `go.sum`에는 줄이 없다(그 hash는
+  release가 쓴다, GN-19f). `go.mod`가 없는 같은 레포의 모듈과, build list가 고른 version보다 낮은 require는 그 모듈을 이름
+  대며 파일을 거부한다. B2.488 전에는 session-store v0.0.4를 require하는 모듈의 tag가 `GOWORK=off`의 `go build
+  -mod=readonly`에서 먼저 `missing go.sum entry for module providing package
+  github.com/polyspec/php-serialization/packages/go`로, 그 hash를 더하면 `updates to go.mod needed`로 실패했다. CK-102는
+  `// indirect` 줄을 판단하지 않는다(B2.473).
   go 명령: `binding check`와 `binding scaffold`는 `--go <command>`를 받는다. 그 값은 release recipe의 `$(GO)`의 값이고(GN-19h),
   주지 않으면 명령은 `PATH`의 `go`다. 값은 `--cargo`의 값처럼(GN-1d) 공백에서 단어로 나뉘고, 명령은
   `<command> mod download -json all`을 실행한다. 따옴표나 backslash가 든 값과 단어가 없는 `--go`는 명령줄의 오류다.
@@ -3474,7 +3490,11 @@
   않으므로 둘 다 공개 package가 아니다(B2.459). `go mod tidy`와
   `go test -count=1 .`를 `GOPROXY=direct`, `GOSUMDB=off`, `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, 빈 `GOFLAGS`와
   `CGO_LDFLAGS`, `CGO_ENABLED=1`, `--work`의 module cache와 build cache로 실행하고, 그 뒤 소비자의 `go.mod`에 `replace`가
-  있으면 명령은 실패한다. module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기
+  있으면 명령은 실패한다. 그다음 모듈은 commit의 tree에서 홀로 빌드된다(B2.488). 명령은 `--work`의 index로 bare 저장소에서
+  모듈의 디렉터리를 `--work/alone`에 checkout하고 같은 설정으로 거기서 `go build -mod=readonly ./...`를 실행한다. 실패하면
+  commit을 이름 대고 이 version의 `binding scaffold`를 실행하라고 말한다(GN-15l). 이유: 소비자의 `go mod tidy`는 모듈의
+  `go.mod`에 없는 것을 써 넣으므로, `go.mod`에 그래프의 모듈이 없는 tag도 소비자를 통과하고 모듈 안의 모든 빌드에서 실패했다.
+  module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기
   remote에서 받으므로, 레포는 Go require의 순서로 release한다. `go.mod`가 release version으로 require하는 같은 레포의 Go
   모듈, 곧 형제 모듈은 `--work`의 bare 저장소에서 받는다. Git이 `https://github.com/<owner>/<repository>`의 모든 모듈에
   그 저장소를 읽기 때문이다. 명령은 commit 전에 위 검사의 형제 모듈 각각의 tag의 commit을 그 tag로 그 저장소에 push하고,
@@ -3490,7 +3510,10 @@
   그다음 명령은 commit에 annotated tag `<directory>/vX.Y.Z`를 만들고(`git tag -a`, 같은 날짜), 표준 출력에 한 줄
   `refs/tags/<directory>/vX.Y.Z`를 쓴다. recipe가 remote에 push하는 reference다. remote가 이미 그 tag를 가지면 아무것도
   쓰지 않는다. 명령은 remote에 아무것도 push하지 않는다. 이유: 실행이 무엇을 공개하는지는 그것을 시작한 recipe가 정하고,
-  push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다.
+  push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다. recipe `release-go-module`은 그 reference를
+  `$(RELEASE_TARGET)/go-module-refs`에 더하고, `release-go-module-push`가 그 파일의 모든 reference를 한 번의 `git push
+  --atomic`으로 push한다(GN-19h, B2.488). 그래서 remote는 한 release의 모든 Go 모듈의 tag를 받거나 하나도 받지 않는다. B2.488
+  전에는 각 recipe가 자기 tag를 push해서, 두 번째 모듈이 실패한 release는 첫 tag를 remote에 남겼다.
   rehearsal(B2.479): 값이 없는 option `--rehearsal`을 주면 명령은 release에 tag가 생기기 전에 검사와 증명을 실행하고
   commit도 tag도 만들지 않는다. 레포에 object도 reference도 쓰지 않고, remote에 아무것도 묻지 않으며 아무것도 push하지
   않는다. 이때 `--tag vX.Y.Z`는 release가 만들 tag이고 있을 필요가 없다. rehearsal은 tag의 commit 대신 `HEAD`를 읽고 work
@@ -3535,7 +3558,8 @@
   | `release-php-ext` | `php` | GN-19d, `PHP`의 PHP에 대해 |
   | `release-npm-platform` | `node` | GN-19e, host의 플랫폼 패키지 |
   | `release-npm` | `node`나 `wasm` | GN-19e, 패키지 자체 |
-  | `release-go-module` | `go` | GN-19f, `TAG`의 tag에 대해 |
+  | `release-go-module` | `go` | GN-19f, `TAG`의 tag에 대해, 그 reference는 `$(RELEASE_TARGET)/go-module-refs`에서 기다린다 |
+  | `release-go-module-push` | `go` | GN-19f, 기다리는 tag를 한 번의 `git push --atomic`으로, 레포의 계약들이 공유한다(B2.488) |
   | `release-binding-check` | 모든 계약 | GN-19g |
   | `release-platform-assets` | 모든 계약 | GN-19g, `TAG`의 asset upload |
   | `release-assets-platform` | `go`, `python`, `node` | GN-19i, job `platform`의 빌드 |
@@ -3621,7 +3645,8 @@
   검증하고 기록하므로 레포는 이 검사를 wrapper target에 복사하지 않는다.
 
   release workflow는 모든 asset artifact를 `var/release/assets`에 내려받고, draft release가 생긴 뒤
-  `make release-go-module`과 `make release-platform-assets`를 실행한다. 뒤의 target은 필요한 asset 전체를
+  각 Go 모듈의 `make release-go-module`, 그다음 `make release-go-module-push`(B2.488), 그리고 `make release-platform-assets`를
+  실행한다. 뒤의 target은 필요한 asset 전체를
   검증한다. binding은 workflow도 recipe `ci-assets-<job>`도 쓰지 않는다. GitHub는 추적된 tree에서만 workflow를 읽고, job의
   설치는 레포의 것이기 때문이다. 이유: 각 PHP job이 runtime 선택 하나와 artifact 하나를 소유하므로 병렬 minor
   빌드가 서로의 결과를 대체하지 않고, PHP 외 asset은 플랫폼마다 한 번만 빌드한다. 레포가 workflow 구성을

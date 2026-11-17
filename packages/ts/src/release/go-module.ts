@@ -858,6 +858,15 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     release.log(go(['mod', 'tidy'], consumer).trimEnd());
     release.log(go(['test', '-count=1', '.'], consumer).trimEnd());
     if (/^replace\b/m.test(readFileSync(join(consumer, 'go.mod'), 'utf8'))) throw new Error('the go.mod of the consumer holds a replace, so it does not fetch the module at its tag (GN-15g)');
+    // B2.488: the module builds alone inside its commit, with its go.mod and its go.sum and no workspace, as Go builds
+    // a module whose tree is the one of the tag: a go.mod that lacks a module of its graph or a go.sum that lacks a
+    // hash fails here, before the tag, and not in the build of a consumer that vendors or works inside it.
+    const alone = join(work, 'alone');
+    rmSync(alone, { recursive: true, force: true });
+    mkdirSync(join(alone, directory), { recursive: true });
+    run('git', ['--git-dir', bare, '--work-tree', alone, 'checkout', '--quiet', '--force', commit, '--', directory], { GIT_INDEX_FILE: join(work, 'alone-index') });
+    const built = start(goProgram, [...goPrefix, 'build', '-mod=readonly', './...'], goEnv, join(alone, directory));
+    if (built.status !== 0) throw new Error(`go build -mod=readonly ./... of the commit ${commit} in ${directory} ended with status ${String(built.status)}: the module does not build alone in the tree of its tag; run binding scaffold of this version, whose go.mod requires each module of its graph and whose go.sum holds its hash (GN-15l, B2.488)`);
   } finally {
     cleanCache();
   }
