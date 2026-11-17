@@ -2253,8 +2253,9 @@ ${exported}class ${c.name} extends globalThis.${base(c.category)} {
     Object.defineProperty(this, 'name', { value: ${jsString(c.name)}, configurable: true, writable: true });
     Object.defineProperties(this, {
       kind: { value: kind, enumerable: true },
-      status: { value: status, enumerable: true },
-      errno: { value: errno, enumerable: true },
+      // B2.522: a status or an errno that the caller leaves out is null, the type that the .d.ts declares.
+      status: { value: status === undefined ? null : status, enumerable: true },
+      errno: { value: errno === undefined ? null : errno, enumerable: true },
     });
   }
 }`).join('\n')}`;

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 832aef8e1097dbb4ea13f9bd92934d1555ab3b426176896b3cd68a97f8534419 -->
+<!-- source-sha256: fcffcd984e83940a5d5219bf0bd83aada0aa06ebc6980c9f0fe476988d7f7e99 -->
 # 생성기
 
 [English](generator.md)
@@ -1367,7 +1367,9 @@
   그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. Node와
   WASM의 `.d.ts`는 각 category 클래스에 그 생성자를 `constructor(message: string, kind: string, status?: number | null,
   errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다. 이유: `.d.ts`가 생성자를 선언하지 않아
-  TypeScript가 `Error`나 `RangeError`의 생성자를 써서, 실행되는 `new XValueError(message, kind)`를 거부했다(B2.514). 클래스의
+  TypeScript가 `Error`나 `RangeError`의 생성자를 써서, 실행되는 `new XValueError(message, kind)`를 거부했다(B2.514). Node와 WASM의
+  runtime은 호출자가 뺀 status나 errno에 null을 주므로 각각은 선언된 타입의 값이다. 이유: runtime이 `.d.ts`의 타입
+  `number | null`이 담지 않는 `undefined`를 저장했다(B2.522). 클래스의
   kind는 binding이 바로 그 클래스의 인스턴스로 일으키는 kind다: 오류 unit은 `class`가 그 unit을 가리키는 `errors.kinds` 행의
   kind이며, 그 unit을 상속하는 unit의 행은 binding이 그 unit의 인스턴스로 일으키므로 들지 않는다. category 클래스는 그
   category의 `class` 없는 행(자기 행과 `library`가 있는 행)의 kind, 그 category의 E-1a kind, 그리고 category가 그것인 다른

@@ -1653,7 +1653,9 @@ the design ids are those of the binding design.
   (`None`, `undefined`) or an integer, not a bool. The `.d.ts` of Node and WASM declares that constructor on each
   category class as `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`, and an
   error unit inherits it. Why: the `.d.ts` declared no constructor, so TypeScript took the one of `Error` or
-  `RangeError` and refused a consumer's `new XValueError(message, kind)`, which runs (B2.514). The kinds of a class are those that the binding raises as an
+  `RangeError` and refused a consumer's `new XValueError(message, kind)`, which runs (B2.514). The runtime of Node and
+  WASM gives null to a status or an errno that the caller leaves out, so each is of its declared type. Why: the
+  runtime stored `undefined`, which the `.d.ts` type `number | null` does not hold (B2.522). The kinds of a class are those that the binding raises as an
   instance of that class itself: for an error unit, the kinds of the rows of `errors.kinds` whose `class` names it,
   without those of the units that extend it, which the binding raises as instances of those units; for a category
   class, the kinds of the rows of its category without `class` (own rows and rows with `library`), the kinds of E-1a
