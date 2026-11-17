@@ -1,7 +1,7 @@
 //! A sample library for the end-to-end check of binding: functions of the language (T-2, GN-6z), which the core calls
 //! during the call that receives them, and which a class keeps after the call and calls later.
 
-use binding_core::{Failure, Kinds};
+use binding_core::{Failure, Kinds, OrderedMap};
 use std::fmt;
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
@@ -82,6 +82,23 @@ pub fn apply(convert: Convert, value: &str) -> Result<String, Failure<Error>> {
         return Err(Failure::Kind(Error::Empty));
     }
     convert(value, &lengths(value))
+}
+
+/// The value as each function of the map converts it in turn, in the order of the map, which the core calls during the
+/// call (B2.523: an entry of the map that is no function is refused by the binding as `<map>.<entry> is not a function`).
+///
+/// # Errors
+///
+/// Kind `empty` for a value without a character, and the failure of a function.
+pub fn chain(functions: OrderedMap<Convert>, value: &str) -> Result<String, Failure<Error>> {
+    if value.is_empty() {
+        return Err(Failure::Kind(Error::Empty));
+    }
+    let mut converted = value.to_owned();
+    for (_name, convert) in functions {
+        converted = convert(&converted, &lengths(&converted))?;
+    }
+    Ok(converted)
 }
 
 /// The functions that the registry keeps by name after the call that registers them.

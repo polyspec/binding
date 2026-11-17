@@ -33,6 +33,44 @@
       }
     }
   ],
+  "chain": [
+    {
+      "id": "each_function_converts_the_value_in_turn",
+      "functions": {
+        "shout": {
+          "function": [
+            {
+              "args": {
+                "0": "ab c",
+                "1": [
+                  2,
+                  1
+                ]
+              },
+              "result": "AB C"
+            }
+          ]
+        }
+      },
+      "value": "ab c",
+      "result": "AB C"
+    },
+    {
+      "id": "an_entry_that_is_no_function_is_refused",
+      "functions": {
+        "shout": {
+          "not_a_function": "a"
+        }
+      },
+      "value": "ab c",
+      "raises": {
+        "kind": "invalid_argument_type",
+        "status": null,
+        "category": "type",
+        "message": "functions.shout is not a function"
+      }
+    }
+  ],
   "registry_new": [
     {
       "id": "a_registry_starts_without_a_function"

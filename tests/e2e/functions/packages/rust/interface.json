@@ -122,6 +122,11 @@
       "group": "apply"
     },
     {
+      "member": "functions.chain",
+      "file": "contracts/cases.json",
+      "group": "chain"
+    },
+    {
       "member": "registry.new",
       "file": "contracts/cases.json",
       "group": "registry_new"
@@ -188,6 +193,49 @@
           ],
           "wait": "none",
           "core": "polyspec_functions::apply"
+        },
+        {
+          "id": "functions.chain",
+          "name": [
+            "chain"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "functions"
+              ],
+              "type": {
+                "map": {
+                  "function": {
+                    "parameters": [
+                      "text",
+                      {
+                        "list": "int"
+                      }
+                    ],
+                    "returns": "text",
+                    "async_allowed": false
+                  }
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_functions::Error::Empty"
+          ],
+          "wait": "none",
+          "core": "polyspec_functions::chain"
         }
       ]
     },
