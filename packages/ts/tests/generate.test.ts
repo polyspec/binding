@@ -790,8 +790,8 @@ test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM
     // In a list, an optional and a map, both ways.
     [{ list: keyed }, /list_in\(\w+, "text", \|item\| keyed_map_in\(item, "text", &\[0, 2\]/, /list_out\(env_, \w+, \|env_, item\| keyed_map_out\(env_, item,/, 'readonly (ReadonlyMap<number | string, string>)[]'],
     [{ list: { optional: { map: 'int' } } }, /list_in\(\w+, "text", \|item\| optional_in\(item, \|value\| map_in\(value, "text",/, /list_out\(env_, \w+, \|env_, item\| optional_out\(env_, item\.as_ref\(\), \|env_, \w+\| map_out\(env_,/, 'readonly (ReadonlyMap<string, number> | null)[]'],
-    [{ map: { map: 'text' } }, /map_in\(\w+, "text", \|item\| map_in\(item, "text",/, /map_out\(env_, \w+, \|env_, item\| map_out\(env_, item,/, 'ReadonlyMap<string, ReadonlyMap<string, string>>'],
-    [{ map: { optional: keyed } }, /map_in\(\w+, "text", \|item\| optional_in\(item, \|value\| keyed_map_in\(value,/, /map_out\(env_, \w+, \|env_, item\| optional_out\(env_, item\.as_ref\(\), \|env_, \w+\| keyed_map_out\(env_,/, 'ReadonlyMap<string, ReadonlyMap<number | string, string> | null>'],
+    [{ map: { map: 'text' } }, /map_in\(\w+, "text", \|entry_, item\| map_in\(item, entry_,/, /map_out\(env_, \w+, \|env_, item\| map_out\(env_, item,/, 'ReadonlyMap<string, ReadonlyMap<string, string>>'],
+    [{ map: { optional: keyed } }, /map_in\(\w+, "text", \|entry_, item\| optional_in\(item, \|value\| keyed_map_in\(value,/, /map_out\(env_, \w+, \|env_, item\| optional_out\(env_, item\.as_ref\(\), \|env_, \w+\| keyed_map_out\(env_,/, 'ReadonlyMap<string, ReadonlyMap<number | string, string> | null>'],
   ];
   for (const [type, rustIn, rustOut, declared] of places) {
     member.parameters[0].type = type;
@@ -7119,7 +7119,7 @@ test('Go takes a function type as a boxed Fn over a kept func, which is called b
   assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(&mut input, "convert"\)\.map\(\|native\| -> Function[0-9a-f]{8} \{/);
   assert.match(lib, /polyspec_functions::apply\(convert, /);
   // A nil func is no function; a func is kept from the moment the C ABI reads it, as a Native of its cgo.Handle.
-  assert.match(lib, /\nfn kept_function_in\(input: &mut &\[u8\], subject: &str\) -> Result<Native, Fail> \{\n    if !read_tag\(input\)\? \{\n        return Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("a function"\) \}\)\);\n    \}/);
+  assert.match(lib, /\nfn kept_function_in\(input: &mut &\[u8\], subject: &str\) -> Result<Native, Fail> \{\n    if !read_tag\(input\)\? \{\n        return Err\(binding_error\(BindingError::NotAFunction \{ subject: subject\.to_owned\(\) \}\)\);\n    \}/);
   assert.match(lib, /let handle = unsafe \{ polyspec_functions___go_keep\(call, function\) \};/);
   assert.match(lib, /\n    Ok\(go_native\(handle\)\)\n\}/);
   assert.match(lib, /\nimpl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n[^}]*polyspec_functions___go_release\(self\.handle\)/);
@@ -10516,13 +10516,13 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /let field_value: polyspec_sample::Data = library_sample::in_data\(py_, &value\.getattr\("value"\)\?, subject\)\?;/);
-  assert.match(python, /map_in\(py_, &value\.getattr\("data"\)\?, subject, \|py_, item\| library_sample::in_data\(py_, item, subject\)\)\?;/);
+  assert.match(python, /map_in\(py_, &value\.getattr\("data"\)\?, subject, \|py_, entry_, item\| library_sample::in_data\(py_, item, entry_\)\)\?;/);
   assert.match(python, /fields\.set_item\("data", map_out\(py_, field_data, \|py_, item\| library_sample::out_data\(py_, item\)\)\?\)\?;/);
   // Node: the in conversion of a variant takes the env_, which the conversion of the alias reads.
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /\nfn in_note\(env_: &Env, value: Unknown<'_>, subject: &str\) -> Result<polyspec_consumer::Note, Fail> \{/);
   assert.match(node, /let field_value: polyspec_sample::Data = library_sample::in_data\(env_, member\(value, "value", subject\)\?, "value"\)\?;/);
-  assert.match(node, /map_in\(member\(value, "data", subject\)\?, "data", \|item\| library_sample::in_data\(env_, item, "data"\)\)\?;/);
+  assert.match(node, /map_in\(member\(value, "data", subject\)\?, "data", \|entry_, item\| library_sample::in_data\(env_, item, entry_\)\)\?;/);
   assert.match(node, /let note: polyspec_consumer::Note = in_note\(env_, note, "note"\)\?;/);
   assert.match(node, /list_in\(notes, "notes", \|item\| in_note\(env_, item, "notes"\)\)\?;/);
   assert.match(node, /object\.set_named_property\("value", library_sample::out_data\(env_, field_value\)\?\)/);
@@ -10539,7 +10539,7 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.match(go, /func Turned\(note Note\) \(Note, error\) \{\n\tvar zero0 Note\n\tcall := binding\.NewCall\(\)\n\tdefer call\.Close\(\)\n\tenc := binding\.NewWriter\(\)\n\tencodeNote\(call, enc, note\)\n/);
   assert.match(go, /func Weight\(notes \[\]Note\)[^]*?\n\tcall := binding\.NewCall\(\)\n[^]*?\t\tencodeNote\(call, enc, item0\)\n/);
   assert.match(go, /\tcase 1:\n\t\tvar case0 NoteSingle\n\t\tcase0\.Value = dec\.Value\(\)\n/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /let field_data: binding_core::OrderedMap<polyspec_sample::Data> = map_in\(input, "Data", library_sample::in_data\)\?;/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /let field_data: binding_core::OrderedMap<polyspec_sample::Data> = map_in\(input, "Data", \|_, input\| library_sample::in_data\(input\)\)\?;/);
   // The result forms of the cases name the alias as any place does.
   assert.match(text(out, 'packages/python/generated/python/polyspec/consumer/_types.py'), /class NotePage:\n[^]*?\n    status: int\n    data: dict\[str, object\]\n/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export interface NotePage \{\n  readonly kind: 'page';\n  readonly status: number;\n  readonly data: ReadonlyMap<string, unknown>;\n\}/);

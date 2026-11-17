@@ -27,7 +27,7 @@ import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
-import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
+import { header, closure, entryClosure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 import { type Cycle, coreWalk, cycleOf, cycles, holdsCycle, walkModel, walkUnit } from './cycles.ts';
 
 // GN-17: the C symbol prefix of the static library, the PHP extension name of P-1 and one underscore,
@@ -124,7 +124,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
     return `tuple${type.tuple.length}_in(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
   }
-  if ('map' in type) return `map_in(${input}, ${subject}, ${closure(['entry_', 'input'], convertIn(model, type.map, 'input', 'entry_'))})`;
+  if ('map' in type) return `map_in(${input}, ${subject}, ${entryClosure([], 'input', (entry) => convertIn(model, type.map, 'input', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
