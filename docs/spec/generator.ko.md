@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5eeba7eab087cd57b8ee5a96909d5a9bdc78b9112323cf234d1b080dc62aa84a -->
+<!-- source-sha256: a34a246f5173465e9d7d78e425831680c5a5a9b8899660d316b86aa04a0dbb84 -->
 # 생성기
 
 [English](generator.md)
@@ -3499,7 +3499,9 @@
   php-serialization, session-store)은 job `small`을 함께 쓰고, template, crud-ui(그 validator와 generator), hyper,
   orm은 각자 job을 가진다. 각 항목은 `make ci-consumers JOB=<job>`을 실행하며, 이것은 `dist`를 빌드하고(GN-14j)
   `make consumer-gate`를 실행한다(`scripts/consumer-gate-run.mts`, 그 목록·단계·표는 `scripts/consumer-gate.mts`).
-  job의 소비자마다 하나씩 차례로, 실행은 tag만 clone하고(`git clone --depth 1 --branch <tag>`), tag의 lock으로
+  job의 소비자마다 하나씩 차례로, 실행은 tag만 clone하고(`git clone --depth 1 --branch <tag>`), clone 안에서
+  `rustup toolchain install`로 clone의 `rust-toolchain.toml`이 이름하는 toolchain을 설치하고(clone의 모든 cargo가 그
+  toolchain으로 돌며, runner는 이 단계 뒤에야 그것을 가진다), tag의 lock으로
   `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
   path patch를 GN-14i처럼 쓰고, `cargo update -p polyspec-binding-core --offline`과 실행의 `binding scaffold`를
   실행한다(GN-14d). 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),

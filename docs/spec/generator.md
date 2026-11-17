@@ -4260,7 +4260,9 @@ the design ids are those of the binding design.
   crud-ui (its validator and its generator), hyper and orm each have a job of their own. Each entry runs `make
   ci-consumers JOB=<job>`, which builds `dist` (GN-14j) and runs `make consumer-gate` (`scripts/consumer-gate-run.mts`,
   its list, steps and table in `scripts/consumer-gate.mts`). For each consumer of the job, one after the other, the
-  run clones the tag alone (`git clone --depth 1 --branch <tag>`), runs `cargo fetch --locked` of the lock of the tag,
+  run clones the tag alone (`git clone --depth 1 --branch <tag>`), installs the toolchain of the clone's
+  `rust-toolchain.toml` with `rustup toolchain install` in the clone, because every cargo of the clone runs under
+  that toolchain and the runner has it only after this step, runs `cargo fetch --locked` of the lock of the tag,
   writes the path patch of `polyspec-binding-core` to `packages/core/rust` of the run in the root `Cargo.toml`, as in
   GN-14i, runs `cargo update -p polyspec-binding-core --offline` and `binding scaffold` of the run (GN-14d), and then
   only goals of the consumer's own Makefile, each with `BINDING` (the executable `dist/cli.js`), `BINDING_RUN` (node

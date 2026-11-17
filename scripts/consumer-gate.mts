@@ -162,6 +162,9 @@ export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], t
   const own: Record<string, string> = c.path === undefined || c.path.length === 0 ? {} : { PATH: [...c.path.map((d) => join(dir, d)), g.path].join(':') };
   const rehearsal = { ...own, ...noCache(dir) };
   return [
+    // B2.494: cargo in the clone runs under the toolchain of its rust-toolchain.toml, which the runner does not have
+    // before the consumer's install; rustup installs it in the clone, where it reads that file.
+    { phase: 'prepare', step: { what: 'rustup toolchain install of the rust-toolchain.toml of the consumer', command: 'rustup', argv: ['toolchain', 'install'], cwd: dir } },
     { phase: 'prepare', step: { what: 'cargo fetch --locked', command: 'cargo', argv: ['fetch', '--locked', '--manifest-path', manifest] } },
     { phase: 'prepare', step: { what: `the path patch of polyspec-binding-core to ${g.core}`, write: patch } },
     { phase: 'prepare', step: { what: `cargo update ${updateSpecs(locked).join(' ')} --offline`, command: 'cargo', argv: ['update', '--manifest-path', manifest, ...updateSpecs(locked), '--offline'] } },
