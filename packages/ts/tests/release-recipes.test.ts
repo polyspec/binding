@@ -468,6 +468,45 @@ test('the release check and the Go module run the commands of binding on the con
   assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'go')) < callIndex(calls, 'binding', 'release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3'));
 });
 
+test('B2.488: release-go-module pushes no tag, and release-go-module-push pushes the tags of every Go module of the release at once, so a module that fails leaves no tag on the remote (GN-19f, GN-19h)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  // binding release-go-module prints the reference of the tag that it made, and fails as a module whose proof fails.
+  standIn(box.bin, 'binding', `if (args[0] === 'release-go-module') {
+  if (process.env.GO_MODULE_FAILS === '1') { console.error('binding: go test -count=1 . ended with status 1'); process.exit(1); }
+  console.log('refs/tags/packages/go/' + option('--tag'));
+}`);
+  const refs = join(box.root, 'var/release/target/go-module-refs');
+  const pushes = (): string[] => box.calls().filter((call) => call.tool === 'git' && call.args[0] === 'push').map((call) => call.args.join(' '));
+  // The first module of a release: its reference waits, and nothing is pushed.
+  const first = box.make('release-go-module', 'TAG=v0.0.3');
+  assert.equal(first.status, 0, first.output);
+  assert.match(first.output, /release-go-module: refs\/tags\/packages\/go\/v0\.0\.3 waits for make release-go-module-push/);
+  assert.equal(readFileSync(refs, 'utf8'), 'refs/tags/packages/go/v0.0.3\n');
+  // The second module fails: the release stops before the push, and the remote keeps no tag of the first. Before
+  // B2.488 the recipe of each module pushed its own tag, so the first tag stayed on the remote alone.
+  const failed = box.make('release-go-module', 'release-go-module-push', 'TAG=v0.0.3', 'GO_MODULE_FAILS=1');
+  assert.notEqual(failed.status, 0);
+  assert.deepEqual(pushes(), []);
+  // The same recipes run again, and one push takes every tag, each once.
+  const again = box.make('release-go-module', 'release-go-module-push', 'TAG=v0.0.3');
+  assert.equal(again.status, 0, again.output);
+  assert.deepEqual(pushes(), ['push --atomic origin refs/tags/packages/go/v0.0.3']);
+  assert.equal(existsSync(refs), false);
+  // With no reference waiting, the push pushes nothing; a reference of another tag stops it before the push.
+  assert.equal(box.make('release-go-module-push', 'TAG=v0.0.3').status, 0);
+  writeFileSync(refs, 'refs/tags/packages/go/v0.0.2\nrefs/tags/packages/go/v0.0.3\n');
+  const stale = box.make('release-go-module-push', 'TAG=v0.0.3');
+  assert.equal(stale.status, 2);
+  assert.match(stale.output, /release-go-module-push: .*go-module-refs names refs\/tags\/packages\/go\/v0\.0\.2, which is no tag of a Go module of v0\.0\.3/);
+  assert.deepEqual(pushes(), ['push --atomic origin refs/tags/packages/go/v0.0.3']);
+  assert.match(box.make('release-go-module-push').output, /release-go-module-push: TAG is required/);
+  // The recipe is shared by the files of recipes of the contracts of a repository, defined once.
+  const component = releaseRecipes({ ...fixtureContract(), core: { ...fixtureContract().core, path: 'packages/forms/rust' } });
+  assert.match(component.text, /^ifndef BINDING_RELEASE_GO_MODULE_PUSH$/m);
+  assert.match(component.text, /^release-go-module-push:$/m);
+  assert.doesNotMatch(releaseRecipes({ ...fixtureContract(), targets: ['php'] }).text, /release-go-module-push/);
+});
+
 test('B2.479: rehearse-go-module builds the library of the host and runs the rehearsal of binding release-go-module for TAG in the folder that the contracts of the repository share, and pushes nothing (GN-19f, GN-19h)', (t) => {
   const box = sandbox(t, 'aarch64-apple-darwin');
   const noTag = box.make('rehearse-go-module');

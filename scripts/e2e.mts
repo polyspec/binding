@@ -35,6 +35,7 @@ import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_pr
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
+import type { GoDownload } from '../packages/ts/src/generate/packages.ts';
 import type { Required } from '../packages/ts/src/release/go-module.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints, deadcodeFindings, declarationCheck, goBuildTags, lintBindingCrates } from './e2e-lint.mts';
@@ -115,7 +116,7 @@ const { componentBase, isHost, namedLibraries, place } = await import('../packag
 const { GO_PLATFORMS, goLinkFile } = await import('../packages/ts/src/generate/go.ts');
 // GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
 // module are those of `binding release-go-module`.
-const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goReleaseFiles, goRemote, goStaticBuildArgs, goWork, isGoRepositoryTest, nativeStaticLibs, publicPackages, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
+const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goReleaseFiles, goRemote, goStaticBuildArgs, goSumWith, goWork, siblingRequires, isGoRepositoryTest, nativeStaticLibs, publicPackages, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -1068,7 +1069,7 @@ function goCarry(carried: readonly CarriedCopy[], platform: string): Required[] 
   const root = goRoot;
   const gitEnv = goEnvOfRun;
   const remotes = carried.map((c) => ({ ...c, remote: goRemote(c.module, c.version) }));
-  const sources = new Map<string, { dir: string; tags: string[] }>();
+  const sources = new Map<string, { dir: string; modules: { module: string; directory: string; tag: string }[] }>();
   const required: Required[] = [];
   for (const r of remotes) {
     const goModule = at(r.p, 'packages/go');
@@ -1090,9 +1091,9 @@ function goCarry(carried: readonly CarriedCopy[], platform: string): Required[] 
     };
     const hostLibs = releaseBuild();
     const key = `${r.remote.owner}/${r.remote.repository}`;
-    const source = sources.get(key) ?? { dir: join(root, 'source', key), tags: [] };
+    const source = sources.get(key) ?? { dir: join(root, 'source', key), modules: [] };
     sources.set(key, source);
-    source.tags.push(r.remote.tag);
+    source.modules.push({ module: r.module, directory: r.remote.directory, tag: r.remote.tag });
     const moduleDir = join(source.dir, r.remote.directory);
     mkdirSync(dirname(moduleDir), { recursive: true });
     execFileSync('cp', ['-R', goModule, moduleDir]);
@@ -1136,14 +1137,49 @@ function goCarry(carried: readonly CarriedCopy[], platform: string): Required[] 
     // `binding release-go-module` reads them: no directory of internal, of tests alone or of a program.
     if (r.main) required.push({ module: r.module, version: r.version, packages: publicPackages(form.carried, readModuleFile) });
   }
+  // GN-19f, B2.488: the tags are made as the release makes them. A module comes after the modules of its repository that
+  // it requires, and its go.sum gains their two lines from `go mod download -json` of their tags in the remote of the
+  // run (goSumWith, the function of binding release-go-module), in a commit of its own; then each module builds alone
+  // in the tree of its tag with -mod=readonly and no workspace, so a go.mod that lacks a module of its graph or a
+  // go.sum that lacks a hash fails here, as it fails for a consumer that builds inside the module.
   for (const [key, source] of sources) {
     const bare = join(goRemotes, `${key}.git`);
+    mkdirSync(dirname(bare), { recursive: true });
+    run('git', ['init', '--quiet', '--bare', bare], { env: gitEnv });
     run('git', ['-C', source.dir, 'init', '--quiet'], { env: gitEnv });
     run('git', ['-C', source.dir, 'add', '--all', '--force', '.'], { env: gitEnv });
     run('git', ['-C', source.dir, 'commit', '--quiet', '--message', 'The Go module with the static library of the platform of the run (GN-14f)'], { env: gitEnv });
-    for (const tag of source.tags) run('git', ['-C', source.dir, 'tag', tag], { env: gitEnv });
-    mkdirSync(dirname(bare), { recursive: true });
-    run('git', ['clone', '--quiet', '--bare', source.dir, bare], { env: gitEnv });
+    const goModOf = (m: { directory: string }): string => readFileSync(join(source.dir, m.directory, 'go.mod'), 'utf8');
+    const carriedHere = new Set(source.modules.map((m) => m.module));
+    const tagged = new Set<string>();
+    const pending = [...source.modules];
+    while (pending.length > 0) {
+      const index = pending.findIndex((m) => siblingRequires(goModOf(m), m.module).every((s) => tagged.has(s.module) || !carriedHere.has(s.module)));
+      if (index < 0) throw new Error(`the Go modules ${pending.map((m) => m.module).join(', ')} of ${key} require one another, so none is released first (GN-19f)`);
+      const [m] = pending.splice(index, 1);
+      if (m === undefined) break;
+      const siblings = siblingRequires(goModOf(m), m.module);
+      if (siblings.length > 0) {
+        const downloads = siblings.map((s) => {
+          process.stdout.write(`$ ${goTool} mod download -json ${s.module}@${s.version}\n`);
+          return JSON.parse(execFileSync(goTool, ['mod', 'download', '-json', `${s.module}@${s.version}`], { cwd: goRoot, encoding: 'utf8', env: { ...process.env, ...gitEnv } })) as GoDownload;
+        });
+        const goSumPath = join(source.dir, m.directory, 'go.sum');
+        writeFileSync(goSumPath, goSumWith(existsSync(goSumPath) ? readFileSync(goSumPath, 'utf8') : '', downloads));
+        run('git', ['-C', source.dir, 'add', '--all', '--force', '.'], { env: gitEnv });
+        run('git', ['-C', source.dir, 'commit', '--quiet', '--message', `The go.sum of ${m.module} with the lines of the modules of its repository (GN-15g)`], { env: gitEnv });
+      }
+      run('git', ['-C', source.dir, 'tag', m.tag], { env: gitEnv });
+      run('git', ['-C', source.dir, 'push', '--quiet', bare, `HEAD:refs/heads/main`, `refs/tags/${m.tag}`], { env: gitEnv });
+      tagged.add(m.module);
+    }
+    run('git', ['--git-dir', bare, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { env: gitEnv });
+    for (const m of source.modules) {
+      const alone = join(goRoot, 'alone', key, m.tag);
+      mkdirSync(alone, { recursive: true });
+      run('git', ['--git-dir', bare, '--work-tree', alone, 'checkout', '--quiet', '--force', `refs/tags/${m.tag}`, '--', m.directory === '' ? '.' : m.directory], { env: { ...gitEnv, GIT_INDEX_FILE: join(goRoot, 'alone-index') } });
+      run(goTool, ['build', '-mod=readonly', './...'], { cwd: join(alone, m.directory), env: gitEnv });
+    }
   }
   return required;
 }

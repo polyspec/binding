@@ -114,6 +114,29 @@ binding_release_pack = (cd $(1) && $(NPM) pack --ignore-scripts --pack-destinati
 endif
 `;
 
+// GN-19f, B2.488: the one push of the tags of the Go modules of a repository, which the files of recipes of its
+// contracts share, as install-wasm-bindgen is shared.
+const GO_MODULE_PUSH = `ifndef BINDING_RELEASE_GO_MODULE_PUSH
+BINDING_RELEASE_GO_MODULE_PUSH := 1
+# release-go-module-push pushes the tags of the Go modules of the release TAG that each release-go-module of the repository
+# added to RELEASE_TARGET/go-module-refs, all of them with one git push --atomic, so the remote takes every tag or none:
+# a release whose second Go module fails keeps no tag of the first on the remote, and the same recipes run again. A
+# reference of another tag than TAG in the file stops it before the push (GN-19f, B2.488).
+.PHONY: release-go-module-push
+release-go-module-push:
+	@test -n "$$TAG" || { echo 'release-go-module-push: TAG is required, for example make release-go-module-push TAG=v0.0.1' >&2; exit 2; }
+	@refs=$(abspath $(RELEASE_TARGET))/go-module-refs; \\
+	set -e; \\
+	if [ ! -s "$$refs" ]; then echo "release-go-module-push: no tag of a Go module of $$TAG waits in $$refs"; exit 0; fi; \\
+	list=$$(sort -u "$$refs"); \\
+	for ref in $$list; do \\
+	case "$$ref" in refs/tags/*/"$$TAG") ;; *) echo "release-go-module-push: $$refs names $$ref, which is no tag of a Go module of $$TAG" >&2; exit 1 ;; esac; \\
+	done; \\
+	(set -x; git push --atomic origin $$list); \\
+	rm -f "$$refs"
+endif
+`;
+
 const INSTALL_WASM_BINDGEN = `ifndef BINDING_RELEASE_WASM_BINDGEN
 BINDING_RELEASE_WASM_BINDGEN := 1
 # install-wasm-bindgen installs the wasm-bindgen CLI alone with the mise of the checkout at the digest of mise.lock, for a
@@ -359,8 +382,10 @@ ${has('wasm') ? `	CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) build $(CARGOFLAGS
     add('release-go-module', `${head('release-go-module', `release-go-module carries the Go module of the release TAG (GN-19f): on the checkout of that tag, after the generation of
 the Go binding, binding release-go-module checks the library of each platform in RELEASE_ASSETS/go, proves a commit that adds
 the generated files and the libraries to the tree of the tag with a consumer, and creates the annotated tag of the Go module
-at it. The recipe pushes the reference that the command prints, and nothing when it prints none, because the remote holds
-that tag already. The folder of the run is made writable before it is removed, since Go writes its module cache read-only.`)}
+at it. The recipe pushes nothing: it adds the reference that the command prints to RELEASE_TARGET/go-module-refs, which
+release-go-module-push pushes with the references of the other Go modules of the repository at once, and adds nothing when
+the command prints none, because the remote holds that tag already (B2.488). The folder of the run is made writable before
+it is removed, since Go writes its module cache read-only.`)}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
@@ -373,7 +398,7 @@ ${generate('go')}
 	ref=$$($(BINDING_RUN) release-go-module --contract ${contractPath} --tag "$$TAG" --libraries $(abspath $(RELEASE_ASSETS))/go --work "$$work" --go "$(GO)"); \\
 	case "$$ref" in \\
 	'') echo "${step}: the remote holds the tag of the Go module of $$TAG already" ;; \\
-	refs/tags/*/"$$TAG") set -x; git push origin "$$ref" ;; \\
+	refs/tags/*/"$$TAG") echo "$$ref" >> $(abspath $(RELEASE_TARGET))/go-module-refs; echo "${step}: $$ref waits for make release-go-module-push" ;; \\
 	*) echo "${step}: binding printed $$ref, not the tag of the Go module of $$TAG" >&2; exit 1 ;; \\
 	esac
 `);
@@ -548,7 +573,7 @@ ${generate('node')}
 # ${MUSL_TARGETS.flatMap((musl) => [`CC_${muslEnv(musl)}`, `AR_${muslEnv(musl)}`]).join(', ')}
 # (binding GN-19b), which release-go-static passes to the build of that target alone.` : ''}
 `;
-  const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
+  const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}${has('go') ? `\n${GO_MODULE_PUSH}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };
 }
 

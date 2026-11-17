@@ -307,6 +307,9 @@ test('the command makes the commit through an index of the run, proves it by a c
     `git push --quiet ${bare} ${RELEASE_COMMIT}:refs/tags/packages/go/v0.0.1`,
     'go mod tidy',
     'go test -count=1 .',
+    // B2.488: the module builds alone in a tree of the commit, out of the repository of the proof.
+    `git --git-dir ${bare} --work-tree ${join(work, 'alone')} checkout --quiet --force ${RELEASE_COMMIT} -- packages/go`,
+    'go build -mod=readonly ./...',
     'go clean -modcache',
     `git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`,
   ]);
@@ -329,7 +332,7 @@ test('the command makes the commit through an index of the run, proves it by a c
   // The packages of the tree of the commit: the tracked host package and the generated root package, none of internal.
   assert.match(readFileSync(join(consumer, 'consumer_test.go'), 'utf8'), /import \(\n\t"testing"\n\n\t_ "github\.com\/polyspec\/sample\/packages\/go"\n\t_ "github\.com\/polyspec\/sample\/packages\/go\/host"\n\)/);
   for (const c of of(/^go /)) {
-    if (c.argv[0] !== 'clean') assert.equal(c.cwd.endsWith('/work/consumer'), true, c.argv.join(' '));
+    if (c.argv[0] !== 'clean') assert.equal(c.cwd.endsWith(c.argv[0] === 'build' ? '/work/alone/packages/go' : '/work/consumer'), true, c.argv.join(' '));
     assert.deepEqual(
       Object.fromEntries(['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GOENV', 'GOTOOLCHAIN', 'GOWORK', 'GOPROXY', 'GOSUMDB', 'GOMODCACHE', 'GOCACHE', 'GOFLAGS', 'CGO_ENABLED', 'CGO_LDFLAGS'].map((name) => [name, c.env[name]])),
       { GIT_CONFIG_GLOBAL: join(work, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off', GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '' },
@@ -428,7 +431,7 @@ test('B2.456: the commands of the consumer run the command of --go, with its wor
   renameSync(join(s.dir, 'bin/go'), join(s.dir, 'elsewhere/go-1.27'));
   const go = join(s.dir, 'elsewhere/go-1.27');
   releaseGoModule({ ...s.release, go: [go, 'via'] });
-  assert.deepEqual(s.lines().filter((line) => line.startsWith('go')), ['go-1.27 via mod tidy', 'go-1.27 via test -count=1 .', 'go-1.27 via clean -modcache']);
+  assert.deepEqual(s.lines().filter((line) => line.startsWith('go')), ['go-1.27 via mod tidy', 'go-1.27 via test -count=1 .', 'go-1.27 via build -mod=readonly ./...', 'go-1.27 via clean -modcache']);
 });
 
 test('a tag of the repository that names the commit of the run is left as it is, and one that names another commit fails the command (GN-19f)', (t) => {
@@ -458,6 +461,21 @@ test('a consumer whose test fails leaves the repository without the tag, and the
   const lines = s.lines();
   assert.deepEqual(lines.filter((line) => line.startsWith('git tag ')), []);
   assert.equal(lines.at(-1), 'go clean -modcache');
+});
+
+test('B2.488: a commit whose module does not build alone in its tree leaves the repository without the tag, with what to run (GN-19f, GN-15l)', (t) => {
+  // Before B2.488 the proof built a consumer alone, whose go mod tidy writes what its go.mod lacks, so a tag whose
+  // go.mod lacked a module of its graph passed (session-store v0.0.4 requires php-serialization).
+  const s = scene(t, [{ tool: 'go', match: '^build -mod=readonly \\./\\.\\.\\.$', status: 1 }]);
+  assert.throws(() => releaseGoModule(s.release), new RegExp(`go build -mod=readonly \\./\\.\\.\\. of the commit ${RELEASE_COMMIT} in packages/go ended with status 1: the module does not build alone in the tree of its tag; run binding scaffold of this version, whose go\\.mod requires each module of its graph and whose go\\.sum holds its hash \\(GN-15l, B2\\.488\\)`));
+  const lines = s.lines();
+  assert.deepEqual(lines.filter((line) => line.startsWith('git tag ')), []);
+  assert.equal(lines.at(-1), 'go clean -modcache');
+  const [build] = s.calls().filter((c) => c.tool === 'go' && c.argv[0] === 'build');
+  assert.equal(build?.cwd, join(s.release.work, 'alone/packages/go'));
+  assert.equal(build?.env['GOWORK'], 'off');
+  const [checkout] = s.calls().filter((c) => c.argv.includes('checkout'));
+  assert.equal(checkout?.env['GIT_INDEX_FILE'], join(s.release.work, 'alone-index'));
 });
 
 test('a run after an earlier run removes the module cache, the repository and the consumer of that run first (GN-19f)', (t) => {
@@ -529,6 +547,7 @@ test('B2.479: the repository of the proof holds the tag of each sibling module a
     `git push --quiet ${bare} ${RELEASE_COMMIT}:refs/tags/packages/go/v0.0.1`,
     'go mod tidy',
     'go test -count=1 .',
+    'go build -mod=readonly ./...',
     'go clean -modcache',
     `git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`,
   ]);
@@ -586,7 +605,7 @@ test('B2.479: a run after a release that stopped between two modules goes on: th
   const tagObject = '4'.repeat(40);
   const done = scene(t, [tagOf('packages/go', RELEASE_COMMIT), { tool: 'git', match: ' ls-remote ', stdout: `${tagObject}\trefs/tags/packages/go/v0.0.1\n${RELEASE_COMMIT}\trefs/tags/packages/go/v0.0.1^{}\n` }]);
   assert.deepEqual(releaseGoModule(done.release), { commit: RELEASE_COMMIT, reference: undefined });
-  assert.deepEqual(done.lines().filter((line) => /^(git tag|go) /.test(line)), ['go mod tidy', 'go test -count=1 .', 'go clean -modcache']);
+  assert.deepEqual(done.lines().filter((line) => /^(git tag|go) /.test(line)), ['go mod tidy', 'go test -count=1 .', 'go build -mod=readonly ./...', 'go clean -modcache']);
   // The second module, whose run failed: it finds the tag of the first in the repository and makes its own.
   const failed = scene(t, pair([tagOf('packages/validator/go', VALIDATOR_COMMIT), tagOf('packages/base/go', BASE_COMMIT)]));
   assert.deepEqual(releaseGoModule(failed.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
@@ -709,9 +728,11 @@ test('B2.479: a rehearsal makes no commit and no tag in the repository, checks t
     'write-tree',
     `commit-tree the-tree -p ${TAG_COMMIT} -m chore(release): Rehearse the Go module of v0.0.1`,
     `update-ref refs/tags/packages/go/v0.0.1 ${RELEASE_COMMIT}`,
+    // B2.488: the build alone reads the commit of the rehearsal from the repository of the proof.
+    `--work-tree ${join(s.release.work, 'alone')} checkout --quiet --force ${RELEASE_COMMIT} -- packages/go`,
     'prune --expire=now',
   ]);
-  assert.deepEqual(lines.filter((line) => line.startsWith('go ')), ['go env GOOS GOARCH', 'go mod tidy', 'go test -count=1 .', 'go clean -modcache']);
+  assert.deepEqual(lines.filter((line) => line.startsWith('go ')), ['go env GOOS GOARCH', 'go mod tidy', 'go test -count=1 .', 'go build -mod=readonly ./...', 'go clean -modcache']);
   const [commitTree] = s.calls().filter((c) => c.argv.includes('commit-tree'));
   assert.equal(commitTree?.env['GIT_COMMITTER_NAME'], 'binding rehearsal');
   assert.equal(commitTree?.env['GIT_AUTHOR_EMAIL'], 'rehearsal@example.invalid');
