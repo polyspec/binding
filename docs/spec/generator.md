@@ -4269,7 +4269,7 @@ the design ids are those of the binding design.
   `rust-toolchain.toml` with `rustup toolchain install` in the clone, because every cargo of the clone runs under
   that toolchain and the runner has it only after this step, runs `cargo fetch --locked` of the lock of the tag,
   writes the path patch of `polyspec-binding-core` to `packages/core/rust` of the run in the root `Cargo.toml`, as in
-  GN-14i, runs `cargo update -p polyspec-binding-core` with the network and `binding scaffold` of the run (GN-14d),
+  GN-14i, runs `cargo update -p polyspec-binding-core` with the network,
   and then
   compares the lock with the lock of the tag: when an entry other than `polyspec-binding-core` was added, removed or
   changed, the consumer fails in prepare, naming each such entry. One change is allowed: the list of dependencies of
@@ -4290,7 +4290,9 @@ the design ids are those of the binding design.
   consumer gives it, such as `install-tools TOOLS=npm`, and runs as one make of its own, in its order), with the network, and with the directories of the clone that `path` of its entry
   names first on the `PATH` of every goal, as its own CI puts them there (`var/tools/bay` of session-store, whose
   goals `install-bay` and `setup-bay` install bay and its machine setup on the runner for the Redis servers of its
-  generated tests); `bindings`, which generates; `test-bindings`, the generated tests
+  generated tests); then `binding scaffold` of the run (GN-14d) with `--go` the `GO` of the consumer's Makefile,
+  which its install has installed (`var/tools/mise/shims/go`, the Go of its `mise.toml`), since scaffold runs `go mod
+  download` and the `go.mod` of the consumer requires that Go and not the Go of the runner; `bindings`, which generates; `test-bindings`, the generated tests
   of the targets of its contract on their runners, offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
   `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); and the release rehearsal, `release-recipes`, the release
   builds of the host (`release-go-static`, `release-wheel`, `release-php-ext`, by the targets of the contract) and

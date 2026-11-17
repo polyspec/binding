@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 80462e2ffd52a67d4463d714b3154323bfe5973facb0964da3eb191220a3e4d5 -->
+<!-- source-sha256: 0bdf0ff13a84245a5e92877bae054bd4c584c16ea8208fb29aebf2b4f0b5274c -->
 # 생성기
 
 [English](generator.md)
@@ -3507,7 +3507,7 @@
   `rustup toolchain install`로 clone의 `rust-toolchain.toml`이 이름하는 toolchain을 설치하고(clone의 모든 cargo가 그
   toolchain으로 돌며, runner는 이 단계 뒤에야 그것을 가진다), tag의 lock으로
   `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
-  path patch를 GN-14i처럼 쓰고, 네트워크와 함께 `cargo update -p polyspec-binding-core`와 실행의 `binding scaffold`를
+  path patch를 GN-14i처럼 쓰고, 네트워크와 함께 `cargo update -p polyspec-binding-core`를
   실행한다(GN-14d). 그다음 lock을 tag의 lock과 비교한다: `polyspec-binding-core` 말고 다른 entry가 하나라도 더해지거나
   빠지거나 바뀌면, 그 소비자는 그 entry들을 각각 이름하며 prepare에서 실패한다. 허용하는 바뀜은 하나다: name,
   version, source가 그대로인 entry의 dependencies 목록이 바뀌고, 새 목록이 이름하는 crate와 version이 모두 lock에 이미
@@ -3523,7 +3523,10 @@
   goal `install`이 없을 때 항목의 `install`이 이름하는 항목들. 항목 하나는 make 인자 하나의 묶음, 곧 goal과 소비자가
   그것에 주는 변수이며(`install-tools TOOLS=npm`처럼), 그 순서대로 각각 make 하나로 실행한다). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
   소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와
-  `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
+  `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 그다음 실행의 `binding scaffold`(GN-14d)를
+  `--go`에 소비자 Makefile의 `GO`를 주어 실행한다. 그 Go는 소비자의 install이 설치한 것이다(`var/tools/mise/shims/go`,
+  그 `mise.toml`의 Go). scaffold는 `go mod download`를 돌리고, 소비자의 `go.mod`는 runner의 Go가 아니라 그 Go를 요구하기
+  때문이다; 생성하는 `bindings`; 계약의 target마다 생성된 시험을
   그 runner로 offline 실행하는 `test-bindings`(`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
   `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); 그리고 cache 없는 release 리허설, 곧 `release-recipes`, 호스트의
   release build(계약의 target에 따라 `release-go-static`, `release-wheel`, `release-php-ext`), `rehearse-go-module
