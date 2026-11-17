@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { goReleaseFiles, isGoRepositoryTest } from '../src/release/go-module.ts';
-import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
+import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestName, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
 
 const lines = (...events: object[]): string => `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
 
@@ -85,4 +85,18 @@ test('B2.438: the run of go test with the build tag of before GN-13ba must fail 
   assert.match(goTagGuardFailure(readGoTestEvents(lines({ ImportPath: 'm [m.test]', Action: 'build-output', Output: 'undefined: builtTags\n' }, { Action: 'fail', Package: 'm' })), 1) ?? '', /failed the packages m/);
   // The guard failed without naming a tag: the step fails.
   assert.match(goTagGuardFailure(readGoTestEvents(lines({ Action: 'fail', Package: 'm', Test: GO_TAG_GUARD })), 1) ?? '', /without naming a missing tag/);
+});
+
+test('GN-14n: the guard of the tags reads the name of a Go test as the reader of expected failures does (GN-13bf)', () => {
+  const guard = lines({ Action: 'output', Package: 'm', Test: GO_TAG_GUARD, Output: 'GN-13bf: the generated tests of the build tags [polyspec_x_test] were not built\n' }, { Action: 'fail', Package: 'm', Test: GO_TAG_GUARD });
+  // A subtest of another test whose name ends with .<guard> is not the guard: the step fails, and names it.
+  assert.match(goTagGuardFailure(readGoTestEvents(`${guard}\n${lines({ Action: 'fail', Package: 'm', Test: `TestB3/case.${GO_TAG_GUARD}` })}`), 1) ?? '', /other tests than the guard of the tags: m\.TestB3\/case\.TestGN13bf/);
+});
+
+test('GN-14n: the guard of the tags fails on a Go failure whose name holds no .Test as the reader of expected failures does (GN-13bf)', () => {
+  const guard = lines({ Action: 'output', Package: 'm', Test: GO_TAG_GUARD, Output: 'GN-13bf: the generated tests of the build tags [polyspec_x_test] were not built\n' }, { Action: 'fail', Package: 'm', Test: GO_TAG_GUARD });
+  // A failure whose name holds no .Test is no test: the step fails with the failure of the reader of names, naming it.
+  assert.match(goTagGuardFailure(readGoTestEvents(`${guard}\n${lines({ Action: 'fail', Package: 'm', Test: 'ExampleSeal' })}`), 1) ?? '', /^go test reported the failure m\.ExampleSeal, whose name holds no \.Test/);
+  assert.equal(goTestName('example.com/m.v2/go.TestA/b.TestC'), 'TestA/b.TestC');
+  assert.equal(goTestName('example.com/m/go.ExampleSeal'), undefined);
 });

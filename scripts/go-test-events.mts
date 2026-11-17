@@ -56,6 +56,11 @@ export function goPackageFailure(read: GoTestEvents, status: number | null): str
   return `go test failed the packages ${read.packageFailures.join(', ')} (status ${String(status)})${builds}`;
 }
 
+// GN-14n: the name of a Go test without its package, from its name <package>.<test> of counts.
+export function goTestName(name: string): string | undefined {
+  return name.slice(name.search(/\.Test/) + 1);
+}
+
 // GN-13bf: the judgement of the run of go test with a wrong build tag (the form before GN-13ba), which must fail on
 // the guard of the tags and name a missing tag: the cause when it does not, or undefined when it does. A run that
 // passed, a failed test other than the guard, or a package that failed without a failed test is a cause.
