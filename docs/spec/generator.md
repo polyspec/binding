@@ -2944,7 +2944,15 @@ the design ids are those of the binding design.
   field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
-  compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
+  compares by value (no class, no result of `none`) and that takes no callback and is no hook. A `{computed}` default
+  has no declared value, because the core makes the value at each call, so two calls may give two results. For a
+  `{computed}` default of an `optional` type the test, of the same members and in Go too, runs the call without the
+  parameter or field and the call with null, drops the result of each and requires the same outcome: both without a
+  failure, or the same class and kind of failure. It compares no value, and its name states the rule id of the
+  default (`U-2: Form.addRow without key leaves its value to the core (CURT-004)` in Node and WASM, the same words in
+  the naming style of each other target). Go gives nil for both, so its two calls are the same call. A `{computed}`
+  default of another type has no second call and no test of U-2. The value of a `{computed}` default is proven by the
+  case of its rule, which `binding check` requires (contract-check CK-103). In Python and Node an
   explicit `None` or `null` for such a parameter is tested as a value that is refused, except where the default is
   `{literal: null}`, whose declared value is that null, and except for an `optional` or a value type, which takes it
   as a value (GN-6i). T-1: a `source` parameter gives

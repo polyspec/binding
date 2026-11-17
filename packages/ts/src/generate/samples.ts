@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
 import { classMakes } from './value_class.ts';
-import { defaultCaseValue } from './defaults.ts';
+import { computedRule, defaultCaseValue } from './defaults.ts';
 import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { CATEGORIES, kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
@@ -1639,6 +1639,9 @@ export interface SamePair {
   arg: Arg;
   left: (arg: Arg) => string | undefined;
   right: (arg: Arg) => string | undefined;
+  // GN-13d: the rule id of a {computed} default, whose two calls, without the argument and with null, are compared by
+  // their outcome alone (both without a failure, or the same class and kind of failure) and by no value.
+  computed?: string;
 }
 
 export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
@@ -1658,6 +1661,11 @@ export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
     if (declared !== undefined) {
       const explicit = fromJson(model, ctx, arg.type, declared.value);
       pairs.push({ rule: 'U-2', arg, left: (a) => (a === arg ? undefined : other(a)), right: (a) => (a === arg ? explicit : other(a)) });
+    }
+    const computed = computedRule(arg);
+    if (computed !== undefined) {
+      const absent = fromJson(model, ctx, arg.type, null);
+      pairs.push({ rule: 'U-2', arg, left: (a) => (a === arg ? undefined : other(a)), right: (a) => (a === arg ? absent : other(a)), computed });
     }
     const base = typeof arg.type === 'object' && 'optional' in arg.type ? arg.type.optional : arg.type;
     if (base === 'source' && ctx.lang !== 'php') {

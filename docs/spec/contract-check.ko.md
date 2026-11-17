@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 87b91143d4ba9e46efccac76392128a38335d2a802abf9823d0e60ebff9f8648 -->
+<!-- source-sha256: 9f2e6694222baad370656925099c1d637211fecf8141a2246198751eda67ad8b -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -483,6 +483,17 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   지목한다. 이 허용이 인자 자체에서처럼 인자 안에서도 성립하는 것은 session-store가 `redis_sessions.new`의 record 인자
   `options`의 uint field `lifetime`과 `lock_expire`에 든 `-1`, `1.5`, `"60"`, `true`를 `invalid_number`로 거부하기
   때문이다. 최상위만 받는 검사는 binding의 그 거부의 유일한 test를 거부하게 된다.
+- **CK-103** `{computed}` 기본값에는 그것을 코어에 맡기는 case가 있다(U-2, generator GN-13d): public unit의 public member가
+  `{computed}` 기본값이 있는 parameter를 받거나, 그런 field가 있는 이 계약의 record를(`optional`로도) 받으면, 계약에는 그
+  member의 case 가운데 `raises`를 적지 않고, fault를 걸지 않으며(`faults`가 없고, instance 값의 `then` 호출에도 fault가
+  없다), 그 parameter나 field를 코어에 맡기는 것이 있다. 맡긴다는 것은 그 키가 없거나 null이라는 뜻이고, field라면 record가
+  없거나 null이거나, record에 그 키가 없거나 그 값이 null이라는 뜻이다. `binding check`는 그런 case가 없는 parameter와
+  field를 member, 자리, 기본값의 규칙 id와 함께 보고한다. callback unit, host unit, error unit의 member와 상수에는
+  CK-22에서처럼 묻지 않는다. case가 함수 fixture의 step이나 `after`의 호출뿐인 member는 보고한다. 그 case는 member 자신의
+  case여야 한다. 이유: `{computed}` 기본값은 코어가 호출 때 만드는 값이다. crud-ui의 새 row의 임의 키(`Form.addRow`)가
+  그렇다. 그래서 U-2 시험은 그 값을 비교하지 않고 두 호출의 outcome만 비교한다(GN-13d). 코어가 만드는 값의 증명은 그
+  기본값이 적은 규칙의 case가 맡는다. 이 검사가 없으면 `{computed}` 선언은 기본값의 시험을 끄기만 하고 그 자리에 아무것도
+  두지 않는다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

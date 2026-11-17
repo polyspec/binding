@@ -76,8 +76,16 @@ ${[...lines].join('\n')}
 ${same}`;
 }
 
+// G-5, GN-13d: the rule id of a {computed} default of an optional type, whose two calls, without the argument and with
+// null, are compared by their outcome alone, because the core makes the value at each call; undefined for another
+// default, and for a {computed} default of another type, which has no second call.
+export function computedRule(arg: Arg): string | undefined {
+  const declared = arg.default;
+  return declared !== undefined && 'computed' in declared && typeof arg.type === 'object' && 'optional' in arg.type ? declared.computed : undefined;
+}
+
 // G-5: the case value of the declared default of an argument, for the test that a call without the argument and a call
-// with its default give the same; undefined for {computed}, which the contract case of its rule checks.
+// with its default give the same; undefined for {computed}, which the contract case of its rule checks (CK-103).
 export function defaultCaseValue(model: Model, arg: Arg): { value: unknown } | undefined {
   const declared = arg.default;
   if (declared === undefined || 'computed' in declared) return undefined;

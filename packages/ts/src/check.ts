@@ -1489,6 +1489,8 @@ class Checker {
     // X-1: the libraries whose point internal a case arms as broken and that raises a kind of the category internal.
     const mapped = new Set<string>();
     const groups = new Map<string, 'member' | 'alias'>();
+    // CK-103: the {computed} defaults that a case leaves to the core, as "<member id> <place>".
+    const leftToCore = new Set<string>();
     for (const [i, row] of this.contract.cases.entries()) {
       const document = files.get(row.file);
       const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
@@ -1537,6 +1539,10 @@ class Checker {
           this.report('CK-22', `/cases/${i}`, `${where}: the errno ${expected['errno']} of raises is not the symbol of an errno, such as ENOSPC (G-5)`);
         }
         if (typeof kind === 'string') this.caseRaises(row.member, record, kind, expected['category'], record['faults'] !== undefined || armedThen.any, `/cases/${i}`);
+        // CK-103: a case that does not raise and arms no fault shows each {computed} default that it leaves to the core.
+        if (raises === undefined && record['faults'] === undefined && !armedThen.any) {
+          for (const place of this.computedPlaces(row.member)) if (place.left(record)) leftToCore.add(`${row.member} ${place.name}`);
+        }
         if (record['faults'] === undefined && !armedThen.any) {
           if (typeof kind === 'string') kinds.add(kind);
           continue;
@@ -1607,6 +1613,16 @@ class Checker {
       reported.add(library);
       this.report('CK-22', `/errors/kinds/${i}`, `no case arms the point ${pointLibrary(library)}.internal as broken and raises a kind of the category internal, the one case that checks the class, kind and status of the error enum of ${library} (X-1, G-5)`);
     }
+    // CK-103: a {computed} default has no value that a test of U-2 compares (GN-13d), so the proof of the default is
+    // the case of its rule: a case of the member that leaves the place to the core and names the result.
+    for (const { member, unit, path } of this.members.values()) {
+      if (member.kind === 'constant' || unit.kind === 'error' || unit.origin === 'callback' || unit.origin === 'host') continue;
+      if (member.visibility !== 'public' || unit.visibility !== 'public') continue;
+      for (const place of this.computedPlaces(member.id)) {
+        if (leftToCore.has(`${member.id} ${place.name}`)) continue;
+        this.report('CK-103', `${path}/parameters/${place.parameter}`, `no case of ${member.id} leaves ${place.name} out or gives it null, without raises and without faults: the default {computed: ${place.rule}} of ${place.name} is a value that the core makes, which no test of U-2 compares, so a case of ${place.rule} that leaves it to the core is its proof (U-2, GN-13d)`);
+      }
+    }
     // U-7: every kind of an alias's in function has a case of the alias.
     for (const { value: unit, path } of this.units.values()) {
       for (const [r, variant] of (unit.in_raises ?? []).entries()) {
@@ -1617,6 +1633,36 @@ class Checker {
         }
       }
     }
+  }
+
+  // CK-103: the places of a member with a {computed} default: a parameter, and a field of the record of this contract
+  // that a parameter takes, also as an optional. `left` is whether a case leaves the place to the core: the key of the
+  // parameter is missing or null, or, for a field, the record of the case is missing or null or has no such key or
+  // null under it.
+  computedPlaces(memberId: string): { name: string; rule: string; parameter: number; left: (record: Record<string, unknown>) => boolean }[] {
+    const snake = (name: Name): string => convert(name, 'python', 'variable');
+    const absent = (holder: Record<string, unknown>, key: string): boolean => holder[key] === undefined || holder[key] === null;
+    const places: ReturnType<Checker['computedPlaces']> = [];
+    for (const [i, parameter] of (this.members.get(memberId)?.member.parameters ?? []).entries()) {
+      const key = snake(parameter.name);
+      if (parameter.default !== undefined && 'computed' in parameter.default) places.push({ name: key, rule: parameter.default.computed, parameter: i, left: (record) => absent(record, key) });
+      const inner = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+      const record = typeof inner === 'object' && 'unit' in inner && inner.library === undefined ? this.unit(inner.unit) : undefined;
+      for (const field of record?.kind === 'record' ? (record.fields ?? []) : []) {
+        if (field.default === undefined || !('computed' in field.default)) continue;
+        const fieldKey = snake(field.name);
+        places.push({
+          name: `${key}.${fieldKey}`,
+          rule: field.default.computed,
+          parameter: i,
+          left: (kase) => {
+            const holder = kase[key];
+            return absent(kase, key) || (typeof holder === 'object' && !Array.isArray(holder) && absent(holder as Record<string, unknown>, fieldKey));
+          },
+        });
+      }
+    }
+    return places;
   }
 
   // CK-96: every key of a member case is a parameter of the member in snake_case, a parameter of a factory of its class

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8081b784662aab8ffd3022dad9eab713db9e0f5318701da425f334a55187d5de -->
+<!-- source-sha256: ea0f1b096f5cfb6466ed314db5ad3a60b6e73b3c62c2be73ca164f139a0bbdda -->
 # 생성기
 
 [English](generator.md)
@@ -2401,7 +2401,14 @@
 - **GN-13d** Python, Node, PHP, WASM은 GN-6i, GN-6j, GN-7a의 형태에 대해 다음도 확인한다. U-2: `{literal}`·`{const}`·`{empty}`
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
-  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. Python과 Node에서 그런
+  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. `{computed}` 기본값에는
+  선언된 값이 없다. 코어가 호출마다 값을 만들므로 두 호출의 결과가 다를 수 있다. `optional` 타입의 `{computed}` 기본값에
+  대해서는 같은 member에, Go에서도, 그 parameter나 field를 뺀 호출과 null을 준 호출을 실행하고 각 결과를 버린 뒤 같은
+  outcome을 요구한다: 둘 다 실패가 없거나, 같은 클래스와 kind의 실패다. 이 시험은 값을 비교하지 않으며 이름에 그 기본값의
+  규칙 id를 적는다(Node와 WASM에서 `U-2: Form.addRow without key leaves its value to the core (CURT-004)`, 다른 target은
+  같은 말을 각자의 이름 형식으로). Go는 둘 다 nil을 주므로 두 호출이 같은 호출이다. 다른 타입의 `{computed}` 기본값에는 두
+  번째 호출이 없어 U-2 시험이 없다. `{computed}` 기본값의 값은 그 규칙의 case가 증명하며, `binding check`가 그 case를
+  요구한다(contract-check CK-103). Python과 Node에서 그런
   parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. 단, 기본값이 `{literal: null}`이면 그 null이 선언된 값이므로 제외하고,
   `optional`과 값 타입도 그것을 값으로 받으므로 제외한다(GN-6i). T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
   내고(Python, Node), 짝 없는 surrogate가 든 text는 kind `invalid_text`, 둘 다 아닌 값은 kind `invalid_argument_type`이다.

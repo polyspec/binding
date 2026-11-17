@@ -575,6 +575,19 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   because session-store refuses `-1`, `1.5`, `"60"` and `true` in the uint fields `lifetime` and `lock_expire` of the
   record argument `options` of `redis_sessions.new` with `invalid_number`; a check that took the top level alone
   would refuse the one test of that refusal of the binding.
+- **CK-103** A `{computed}` default has a case that leaves it to the core (U-2, generator GN-13d): for each public
+  member of a public unit that takes a parameter with a `{computed}` default, or a record of this contract (also as
+  an `optional`) with a field that has one, the contract has a case of that member that names no `raises`, arms no
+  fault (no `faults`, and no fault in a call of `then` of its instance values) and leaves that parameter or field to
+  the core: the key is missing or null, or, for a field, the record is missing or null or has no such key or null
+  under it. `binding check` reports each parameter and field without such a case, with the member, the place and the
+  rule id of the default. A member of a callback unit, of a host unit and of an error unit, and a constant, are not
+  asked, as in CK-22. A member whose only cases are steps of a function fixture or calls of `after` is reported: the
+  case is a case of the member itself. Why: a `{computed}` default is a value that the core makes at the call, such
+  as the random key of a new row of crud-ui (`Form.addRow`), so the test of U-2 compares no value of it and only the
+  outcome of the two calls (GN-13d). The proof of what the core makes is then the case of the rule that the default
+  names; without this check a declaration of `{computed}` would switch the test of the default off and put nothing
+  in its place.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

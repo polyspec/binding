@@ -2305,6 +2305,56 @@ test('B2.376: CK-22 takes a case of a kind on the path of its library, its own o
   assert.deepEqual(reported(other, own), finding);
 });
 
+describe('B2.436: CK-103 a {computed} default has a case that leaves it to the core (U-2, GN-13d)', () => {
+  // tests/e2e/shapes: shapes.frame takes frame_options, whose width is {computed: SH-1}, and shapes.pad takes
+  // pad_options, whose width is an optional with {computed: SH-2}.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any, contract: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    const contract = read('packages/rust/interface.json');
+    change(cases, contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-103');
+  };
+  const at = (id: string, name: string): string => {
+    const contract = read('packages/rust/interface.json');
+    const unit = contract.units.findIndex((u: any) => (u.members ?? []).some((m: any) => m.id === id));
+    const members = contract.units[unit].members;
+    const index = members.findIndex((m: any) => m.id === id);
+    return `/units/${unit}/members/${index}/parameters/${members[index].parameters.findIndex((p: any) => p.name.join('_') === name)}`;
+  };
+  const frame = (rest: string) => ({
+    check: 'CK-103',
+    path: at('shapes.frame', 'options'),
+    message: `no case of shapes.frame leaves options.width out or gives it null, without raises and without faults: the default {computed: SH-1} of options.width is a value that the core makes, which no test of U-2 compares, so a case of SH-1 that leaves it to the core is its proof (U-2, GN-13d)${rest}`,
+  });
+  test('the fixture has a case that leaves each {computed} field out', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('a {computed} field that every case gives is reported with its member, its place and its rule', () => {
+    assert.deepEqual(run((cases) => { for (const kase of cases.frame) kase.options.width = 3; }), [frame('')]);
+  });
+  test('a case that gives null leaves the field to the core', () => {
+    assert.deepEqual(run((cases) => { for (const kase of cases.frame) kase.options.width = kase.id === 'only_the_prefix' ? null : 3; }), []);
+  });
+  test('a case that raises, and a case that arms a fault, are no proof of the default', () => {
+    assert.deepEqual(run((cases) => { for (const kase of cases.frame) if (kase.options.width === undefined) kase.raises = { kind: 'invalid_argument', category: 'value' }; }), [frame('')]);
+    assert.deepEqual(run((cases) => { for (const kase of cases.frame) if (kase.options.width === undefined) kase.faults = [{ point: 'shapes.internal', kind: 'broken' }]; }), [frame('')]);
+  });
+  test('a member without a case is reported', () => {
+    assert.deepEqual(run((cases, contract) => { contract.cases = contract.cases.filter((row: any) => row.member !== 'shapes.frame'); delete cases.frame; }), [frame('')]);
+  });
+  test('a {computed} parameter, and a field of a record that a case leaves out as a whole', () => {
+    const fill = (c: any): void => { c.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'shapes.pad').parameters.find((p: any) => p.name.join('_') === 'fill').default = { computed: 'SH-8' }; };
+    // The case everything_left_out gives neither fill nor options.
+    assert.deepEqual(run((_cases, contract) => fill(contract)), []);
+    const given = run((cases, contract) => { fill(contract); for (const kase of cases.pad) { kase.fill = '.'; kase.options = { ...(kase.options ?? {}), width: 4 }; } });
+    assert.deepEqual(given.map((f) => [f.path, f.message.split(':')[0]]), [
+      [at('shapes.pad', 'fill'), 'no case of shapes.pad leaves fill out or gives it null, without raises and without faults'],
+      [at('shapes.pad', 'options'), 'no case of shapes.pad leaves options.width out or gives it null, without raises and without faults'],
+    ]);
+  });
+});
+
 describe('B2.379: CK-98 a default of a member is a literal of its return type on a member of a callback interface (U-3, GN-6d)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const blockingIo = (literal: unknown, returns: unknown = 'bool'): any => ({

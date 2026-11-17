@@ -4655,6 +4655,35 @@ test('a default of an optional type is one Option, None when it is left out or n
   assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None = None\n/);
 });
 
+// B2.436 (crud-ui, Form.addRow): the core makes the value of a {computed} default at each call, so the call without it
+// and the call with null are compared by their outcome alone, in a test whose name states the rule id.
+test('B2.436: the U-2 test of a {computed} default of an optional type compares the outcomes of the two calls and no value (GN-13d)', () => {
+  // The field end of pad_options, an optional text, takes its value from the core by the rule SH-9.
+  const computed = (c: any): void => { unitOf(c, 'pad_options').fields.find((f: any) => f.name.join('_') === 'end').default = { computed: 'SH-9' }; };
+  const out = shaped(computed);
+  const { contract, caseFiles } = shapes();
+  computed(contract);
+  const wasmOut = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  // Each target runs the call without the field and the call with null, drops the value of each and compares what is
+  // left: no failure, or the class and kind of the failure.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_pad_end_left_out_leaves_its_value_to_the_core_sh_9\(self\) -> None:\n {8}left = _outcome\(lambda: \(pkg\.pad\("ab"\), None\)\[1\]\)\n {8}right = _outcome\(lambda: \(pkg\.pad\("ab", end=None\), None\)\[1\]\)\n {8}self\.assertEqual\(left, right\)\n/);
+  for (const tests of [text(out, 'packages/ts/generated/tests/generated.test.mjs'), text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
+    assert.match(tests, /\ntest\('U-2: pad without end leaves its value to the core \(SH-9\)', \(\) => \{\n {2}assert\.deepStrictEqual\(outcome\(\(\) => void pkg\.pad\('ab'\)\), outcome\(\(\) => void pkg\.pad\('ab', undefined, \{ end: null \}\)\)\);\n\}\);\n/);
+    assert.doesNotMatch(tests, /U-2: pad without end is the call with its default/);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2padEndLeftOutLeavesItsValueToTheCoreSh9\(\): void\n {4}\{\n {8}self::assertSame\(\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab"\), null\]\[1\]\),\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab", end: null\), null\]\[1\]\),\n {8}\);\n {4}\}\n/);
+  // Go leaves a field out as nil, which is its null too, so its two calls are one call written twice.
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2PadWithoutEndLeavesItsValueToTheCoreSH9\(t \*testing\.T\) \{\n\t_, err0 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\t_, err1 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\tif !sameFailure\(err0, err1\) \{\n\t\tt\.Fatalf\("U-2: %v is not %v", err0, err1\)\n\t\}\n\}\n/);
+  // No target names the old test of the field, and the field width of the fixture, {computed: SH-2}, has its own.
+  for (const body of [python, php, go]) assert.doesNotMatch(body, /pad_end_left_out_is_its_default|padEndLeftOutIsItsDefault|PadWithoutEndIsTheCallWithItsDefault/);
+  assert.match(python, /def test_u2_pad_width_left_out_leaves_its_value_to_the_core_sh_2\(self\)/);
+  // A {computed} default of a type that is not optional has no second call, so it keeps no test of U-2.
+  for (const body of [python, php, go, text(out, 'packages/ts/generated/tests/generated.test.mjs')]) assert.doesNotMatch(body, /u2_frame_width_left_out|U2frameWidthLeftOut|U2FrameWithoutWidth|U-2: frame without width/);
+});
+
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
   const out = shaped();
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
