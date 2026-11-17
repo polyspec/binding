@@ -264,6 +264,22 @@ test('B2.467: the generated tests of PHP refuse a callback that takes no argumen
   assert.match(testOf(functions, '    public function testGn6buapplyConvertRefusesWhatRequiresMoreArguments()'), /apply\(function \(mixed \$arg0, mixed \$arg1, mixed \$arg2\) use \(\$calls\): mixed \{/);
 });
 
+test('B2.467: the generated JavaScript entry of a function and of a method declares its parameters, so an instance of a class that implements a callback unit enters a callback place (GN-6bu, GN-6w)', () => {
+  const variants = (target: 'node' | 'wasm'): Map<string, string | Buffer> =>
+    generate({ contract: read('variants/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', read('variants/contracts/cases.json')]]), targets: [target] as Inputs['targets'] & string[] });
+  // Ribbon implements the callback unit tail, whose member last is given one argument: the length of Ribbon.last is 1.
+  const cjs = text(variants('node'), 'packages/ts/generated/index.cjs');
+  assert.match(cjs, /value: \{ \['last'\]\(arg0\) \{\n {6}const args = arguments;\n {6}if \(args\.length !== 1\) \{\n {8}throw new TypeError\(`Ribbon\.last\(\) takes 1 argument, \$\{args\.length\} given`\);/);
+  assert.match(cjs, /\nfunction tailOf\(arg0, arg1\) \{\n {2}const args = arguments;\n {2}if \(args\.length !== 2\) \{/);
+  const mjs = text(variants('wasm'), 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /\n {2}last\(arg0\) \{\n {4}const args = arguments;\n {4}if \(args\.length !== 1\) \{/);
+  assert.match(mjs, /\nexport function tailOf\(arg0, arg1\) \{\n[^\n]*\n {2}const args = arguments;\n {2}if \(args\.length !== 2\) \{/);
+  // No entry of a function or a method takes its arguments as a rest alone, whose length is 0.
+  for (const entry of [cjs, mjs]) assert.doesNotMatch(entry, /(?<!constructor)\(\.\.\.args\) \{/);
+  // The case that gives an instance at the place of the callback is generated as before.
+  assert.ok(text(variants('node'), TESTS.node).includes("pkg.tailOf(new pkg.Ribbon('abc'), 2)"));
+});
+
 test('B2.467: the fixtures of the generated tests of Node and WASM declare the arguments that the binding gives them (GN-6bu)', () => {
   for (const target of ['node', 'wasm'] as const) {
     const sample = text(generated('sample', target), TESTS[target]);

@@ -1279,6 +1279,10 @@ the design ids are those of the binding design.
     count of the parameters before the first one with a default or a rest. A function whose `length` is below the
     count of the arguments is refused, and so is one whose `length` cannot be read or is no non-negative integer.
     Node reads the property through napi; WASM reads it in Rust (`Reflect::get` of `length`), not in the ES module.
+    The generated JavaScript entry of a function and of a method of a class declares its parameters
+    (`function name(arg0, arg1) { const args = arguments; … }`), so its `length` is their count, and counts the
+    arguments that it was given in `arguments` (G-7): an entry that took them as a rest alone had the length 0, and an
+    instance of a class that implements a callback unit (GN-6w) would be refused at the place of that callback.
   The targets differ in two ways, each for a reason. JavaScript is stricter than PHP and Python about a rest and a
   default: `(...args) => …` and `(tx = null) => …` are refused where `fn (...$args)`, `fn ($tx = null)`,
   `lambda *args: …` and `lambda tx=None: …` pass, because `length` is all that can be read, and a function that names

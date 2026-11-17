@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
-import { TAKES_NODE, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
+import { TAKES_NODE, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
@@ -2117,6 +2117,9 @@ const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in
 function indexCjs(model: Model): string {
   const base = addonBase(model);
   const { classes, units } = jsErrorClasses(model, 'node', '', nodeBase);
+  // GN-6bu: the entry of a function and of a method declares its parameters, so its length is their count and an
+  // instance of a class that implements a callback unit (GN-6w) enters a callback place; it counts the arguments that
+  // it was given in `arguments`.
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
   // GN-6m: the entry of a member that waits is an async function, so that every failure of the call, also one of its
   // arguments, rejects the promise.
@@ -2144,7 +2147,8 @@ function indexCjs(model: Model): string {
   const fns = model.functions.map((fn) => {
     const name = langName('node', fn.member.name, 'callable');
     return `
-${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+${awaits(fn) ? 'async ' : ''}function ${name}(${jsArguments(fn.params.length)}) {
+  const args = arguments;
 ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
 }`;
   }).join('\n');
@@ -2158,7 +2162,8 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](...args) {
+    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](${jsArguments(fn.params.length)}) {
+      const args = arguments;
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
     } }[${jsString(name)}],
     writable: true,

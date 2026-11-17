@@ -12,7 +12,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { TAKES_WASM, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
+import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
@@ -1673,7 +1673,9 @@ function indexMjs(model: Model): string {
     const name = langName('wasm', fn.member.name, 'callable');
     // GN-6n: the entry of a member that waits is an async function, so a failure is a rejection.
     return `
-export ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+export ${awaits(fn) ? 'async ' : ''}function ${name}(${jsArguments(fn.params.length)}) {
+  // GN-6bu: the entry declares its parameters, so its length is their count, and counts what it was given.
+  const args = arguments;
 ${checked(fn, `${name}()`, name, (call) => `return ${call}`)}
 }`;
   }).join('\n');
@@ -1710,7 +1712,8 @@ ${indent(checked(constructor, `new ${cls}()`, exportName(constructor), (call) =>
     return ${direct};
   }`;
       return `
-  ${fn.kind === 'static' ? 'static ' : ''}${awaits(fn) ? 'async ' : ''}${name}(...args) {
+  ${fn.kind === 'static' ? 'static ' : ''}${awaits(fn) ? 'async ' : ''}${name}(${jsArguments(fn.params.length)}) {
+    const args = arguments;
 ${indent(checked(fn, `${cls}.${name}()`, exported, (call) => `return ${call}`), '  ')}
   }`;
     });

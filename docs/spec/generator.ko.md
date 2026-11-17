@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bb95a740c076433925de288899dc7d126493c613c34a58d841540bdc6bd04c4e -->
+<!-- source-sha256: 2b57736974c759c285ff7c26c21650a95c490fe2cfa7f4f60969b3e504c8046c -->
 # 생성기
 
 [English](generator.md)
@@ -1043,7 +1043,10 @@
   - Node와 WASM: 함수의 `length`. JavaScript가 함수가 받는 것에 대해 알려 주는 유일한 사실이며, default나 rest를 가진 첫
     parameter 앞의 parameter 수다. `length`가 인자의 수보다 작은 함수는 거부되고, `length`를 읽을 수 없거나 그것이 음이
     아닌 정수가 아닌 함수도 거부된다. Node는 그 property를 napi로 읽고, WASM은 ES module이 아니라 Rust에서
-    읽는다(`length`의 `Reflect::get`).
+    읽는다(`length`의 `Reflect::get`). 함수와 class의 method의 생성된 JavaScript 진입점은 자기 parameter를
+    선언하므로(`function name(arg0, arg1) { const args = arguments; … }`) 그 `length`는 parameter의 수이고, 받은 인자는
+    `arguments`에서 센다(G-7). 인자를 rest 하나로만 받던 진입점은 length가 0이어서, callback unit을 구현하는 class의
+    instance(GN-6w)가 그 callback의 자리에서 거부될 것이기 때문이다.
   target은 두 가지에서 다르며 각각 이유가 있다. JavaScript는 rest와 default에 대해 PHP와 Python보다 엄격하다:
   `fn (...$args)`, `fn ($tx = null)`, `lambda *args: …`, `lambda tx=None: …`가 통과하는 곳에서 `(...args) => …`와
   `(tx = null) => …`는 거부된다. 읽을 수 있는 것이 `length`뿐이고, 인자에 이름을 붙이지 않은 함수와 인자를 무시하는

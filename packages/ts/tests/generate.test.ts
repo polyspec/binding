@@ -3413,7 +3413,7 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /#\[napi\(js_name = "toString", enumerable = false\)\]/);
   assert.match(node, /#\[napi\(js_name = "toJSON", enumerable = false\)\]/);
-  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|toString\(\.\.\.args\)/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|\['toString'\]\(/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /toString\(\): string;\n {2}toJSON\(\): never;/);
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
@@ -6062,7 +6062,7 @@ test('a member named by a word that JavaScript reserves is defined by its key, a
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node', 'wasm'] });
   const node = text(out, 'packages/ts/generated/index.cjs');
   for (const word of RESERVED) assert.ok(!new RegExp(`function ${word}\\(`).test(node), `no function expression is named ${word}`);
-  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\(\.\.\.args\) \{/);
+  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\((?:arg\d+(?:, )?)*\) \{\n\s+const args = arguments;/);
   const dir = mkdtempSync(join(tmpdir(), 'binding-reserved-'));
   try {
     writeFileSync(join(dir, 'index.cjs'), node);
@@ -7300,7 +7300,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, text_out\)/);
   assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\((?:arg\d+(?:, )?)*\) \{/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-13e: settle a_name_is_settled', async \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(\(await pkg\.settle\('a'\)\)\)/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
@@ -7321,7 +7321,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Gate\) EnterLater\(\) \(string, error\) \{/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, text_out\)/);
-  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\((?:arg\d+(?:, )?)*\) \{/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
 });
@@ -7530,7 +7530,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(wasm, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{/);
   const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
   assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}let settled;\n {4}for \(;;\) \{\n {6}const \[step, value\] = enter\(Internal, \(\) => driven\.advance\(settled\)\);\n {6}settled = undefined;\n {6}if \(step === 2\) return value;\n {6}if \(step === 0\) \{\n {8}await value;\n {8}continue;\n {6}\}\n {6}try \{\n {8}settled = \[true, await value\];\n {6}\} catch \(reason\) \{\n {8}settled = \[false, reason\];\n {6}\}\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
-  assert.match(mjs, /export async function resolveDriven\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
+  assert.match(mjs, /export async function resolveDriven\(arg0, arg1\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveDriven lets the exception of a callback through', async \(\) => \{/);
   // A method with machine is refused by name.
