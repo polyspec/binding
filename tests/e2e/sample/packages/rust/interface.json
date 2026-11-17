@@ -1707,6 +1707,15 @@
           ]
         },
         {
+          "go": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
           "wasm": "box",
           "cases": [
             {

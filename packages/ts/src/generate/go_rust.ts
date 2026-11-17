@@ -2384,9 +2384,10 @@ export const valueClasses = (model: Model): ValueAlias[] => model.aliases.filter
 // GN-6x, GN-15c: the binding_core::ValueKind of each number of node 11 of a description.
 export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object', 'Text16', 'Reference'];
 
-// GN-6af, GN-15c: the in rows of Go that name a value class without core_type, whose instances package binding
-// describes as node 11.
-export const keptReads = (model: Model): ValueRead[] => (model.kept.length === 0 ? [] : valueReads(model, 'go').filter((r) => r.kept !== undefined));
+// GN-6af, GN-15c: the in rows of Go that name a class of this contract, whose instances package binding describes as
+// node 11: a value class without core_type, and a class with core_type (B2.497: before, such a row was passed over, so
+// its instance entered as a native or was refused as unsupported).
+export const keptReads = (model: Model): ValueRead[] => valueReads(model, 'go');
 
 // GN-6x, GN-6af: whether package binding describes an instance of a value class, of another repository or without
 // core_type, which the question read (op 2) opens.
@@ -2396,7 +2397,9 @@ export const readsValues = (model: Model): boolean => valueClasses(model).length
 // value class without core_type of the package of the owner; any other class is refused by name.
 export function rowReads(model: Model): ForeignRead[] {
   const reads = foreignReads(model, 'go');
-  for (const row of [...reads, ...foreignRowClasses(model, 'go')]) {
+  // B2.497, GN-6af: an in row may name a class with core_type of the owner too, whose property Go reads by its method,
+  // as Node and WASM read it; an out row still makes only a value class without core_type.
+  for (const row of [...reads.filter((r) => r.unit.core_type === undefined), ...foreignRowClasses(model, 'go').filter((c) => !reads.some((r) => r.library === c.library && r.unit.id === c.unit.id && r.unit.core_type !== undefined))]) {
     if (row.unit.core_type !== undefined || row.unit.origin !== 'value') throw new Unsupported(`the go row of the class ${row.unit.id} of ${row.library} names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner (GN-6ar, GN-6af)`);
   }
   return reads;

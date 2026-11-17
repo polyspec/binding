@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b53c765caff246e7d3f13cd06bddf7980e0481816eaa8ce9b7652731c584eaa7 -->
+<!-- source-sha256: c1628ee28f3c1b4645b015ef1be1dff0aba8f1ef7dc4b232b6ec2ee437b7457c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Go 바인딩은 값 alias의 Go `in` 행이 이름한 core_type이 있는 class의 instance를 그 행의 kind를 가진 node 11로 읽는다(GN-6af, GN-6ar, B2.497). Go는 core_type 없는 값 class만 읽어 그런 행을 건너뛰었으므로, `orm_value`로 준 orm의 `integer_value` instance는 native로 들어가 코어가 unsupported로 거부했다. 이제 class의 package가 `binding.ReadValues`에 행의 kind와 property의 method를 부르는 read를 주어, Python, Node, WASM, PHP가 그 행을 읽듯 읽는다. 다른 레포의 값 alias의 `in` 행도 owner의 그런 class를 이름할 수 있으며 그 method로 읽힌다. json의 `value`의 `in` 행은 값 class의 행(GN-6x)으로, 소비자는 이미 `value.kind`로 읽었고 json의 어떤 값 alias도 그것을 갖지 않으므로 json의 Go는 바뀌지 않는다. 소비자가 할 일: 다시 생성한다. 그러면 orm의 Go는 `integer_value`를 그 정수로 코어에 준다.
 - 들어오거나 나가는 행을 술어 `sequence_keys`로 고르는 value alias는 그 술어가 뜻하는 키 형태를 `"sequence_keys": {"keys": "text"}`(차례로 text `"0"`부터 `"n-1"`)나 `{"keys": "int"}`(차례로 int `0`부터 `n-1`)로 밝히고, `binding check`는 그것이 없는 alias를 alias와 그 행과 함께 거부한다(CK-104, GN-13e, B2.490). 기본값은 없다. 생성기는 case map의 `sequence_keys`를 밝힌 형태로 판단하며, 전에는 int 키만 sequence로 보았다. 빈 map은 두 형태에서 모두 sequence 키를 가지고, 형태를 밝히지 않은 alias의 비어 있지 않은 case map은 판단을 거부한다. 전에는 코어가 text를 뜻하는 orm에 코어와 맞지 않는 생성 시험이 셋 있었다: `codec.decode` / `sequence_map_kind`의 PHP 시험은 코어가 행의 `map_value`를 주는 곳에서 bare map을 기대했고, `map_value.constructor` / `kinds`와 `map_value.entries` / `kinds`는 값 `sequence_map`을 bare array `["0" => true]`로 주었는데, PHP는 키 `"0"`을 int `0`으로 바꾸므로 그것을 list `[true]`로 읽는다. 이제 PHP는 그것을 `new MapValue(["0" => true])`로 주고 키 `int 0`과 함께 `map_value #0`을 기대한다. Python, Node, WASM, Go는 text 키를 유지한다. 그 술어를 쓰는 각 소비자가 할 일은 `packages/rust/interface.json`의 alias에 한 줄이다:
   - php-serialization: `php_value`에 `"sequence_keys": {"keys": "int"}`. 코어는 `Key::Int`를 위치와 비교하며, 이는 생성기가 전에 읽던 형태이므로 생성 시험은 바뀌지 않는다. 이 계약을 읽는 session-store와 hyper는 스스로 할 일이 없다.
   - template: `template_value`에 `"sequence_keys": {"keys": "text"}`. 코어는 키를 그 위치의 text와 비교한다. 키를 가진 case map 중 sequence 키를 가진 것이 없으므로 생성 시험은 바뀌지 않는다.
