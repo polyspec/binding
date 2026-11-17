@@ -2406,12 +2406,19 @@ test('Go makes and reads the class of a row of a value alias of another reposito
   assert.match(lib, /\n +output\.push\(14\);\n +uint_out\(output, 1u64\);\n +Some\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), children: OutChildren::Value \}\)/);
   // GN-15f: go.mod requires the Go module of the owner, whose package the binding imports.
   assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/sample\/packages\/go v0\.0\.0\n/);
-  // G-4: a class with core_type in a Go row is refused by name.
+  // B2.497: an in row of Go may name a class with core_type of the owner, whose property Go reads by its method.
   const cored = classRowsSample();
   cored.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
   cored.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ go: 'ratio', cases: [{ kind: 'float', read: 'ratio.value' }] });
   cored.foreign.get('sample').units.find((u: any) => u.id === 'ratio').only = undefined;
-  assert.throws(() => generate({ contract: cored.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: cored.caseFiles, foreign: cored.foreign, targets: ['go'] }), /the go row of the class ratio of sample names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner \(GN-6ar, GN-6af\)/);
+  const coredOut = generate({ contract: cored.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: cored.caseFiles, foreign: cored.foreign, targets: ['go'] });
+  assert.match(text(coredOut, 'packages/go/internal/binding/zz_generated_binding.go'), /\n\tcase \*sample\.Ratio:\n[\s\S]*?found\.Value\(\)/);
+  // G-4: an out row of Go that makes a class with core_type is still refused by name.
+  const made = classRowsSample();
+  made.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  for (const row of made.foreign.get('sample').units.find((u: any) => u.id === 'data').out) if (row.kind === 'float') row.make.go = 'ratio.constructor';
+  made.foreign.get('sample').units.find((u: any) => u.id === 'ratio').only = undefined;
+  assert.throws(() => generate({ contract: made.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: made.caseFiles, foreign: made.foreign, targets: ['go'] }), /the go row of the class ratio of sample names a class that is no value class without core_type, which Go makes and reads only as the struct of the package of its owner \(GN-6ar, GN-6af\)/);
 });
 
 test('the Go test of the consumer of the end-to-end check makes a reference of a case as an instance of the class of the owner (GN-6ar, GN-6af, GN-13, B2.240)', () => {
