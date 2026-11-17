@@ -1418,7 +1418,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
         document[kase.group] = kase.member === 'forms.parse' ? [{ id: 'no_function', body: { hex: '00' }, functions: value, ...outcome }] : [];
         files.set(kase.file, document);
       }
-      return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files }).filter((f) => f.check === 'CK-22');
+      return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files }).filter((f) => f.check === 'CK-22' && f.path === parseCases());
     };
     const raising = { raises: { kind: 'too_large' } };
     const result = { result: null };

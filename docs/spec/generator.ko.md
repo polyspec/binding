@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0f0709cb3619125f7cb2541fc96c44fc88b2c1197850170fa88f0caffbb37873 -->
+<!-- source-sha256: e6a8e7a2c36aaa91b3c3065342b7a9099207408f550cf91482d4cfb47cb657bc -->
 # 생성기
 
 [English](generator.md)
@@ -743,7 +743,10 @@
   `<map subject>.<key>`(`binding_core::entry_subject`)다: parameter `functions`의 함수가 아닌 entry `shout`은
   `functions.shout is not a function`이다. 이유: 메시지가 map만, 그리고 target마다의 언어 낱말을 이름해서 Python에서
   `functions is not an instance of a callable`이었고, 소비자의 계약은 `functions.shout is not a function`을 기대했다
-  (B2.475). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  (B2.475). 오류를 내는 case는 그런 값을 `{"not_a_function": "<text>"}`로 주며(contract check CK-22), 생성기의 함수
+  하나(`notAFunctionValue`)가 target마다 그것을 쓴다: Python, PHP, Node, WASM에서는 그 text 자체로, 어떤 binding도 호출하지
+  않는 값이고, Go에서는 `nil`로, func 타입이 text를 담지 못하고 binding이 nil func를 거부하기 때문이다. 이유: case는 함수
+  자리에 함수 말고 다른 값을 줄 수 없어서, 어떤 case도 그 거부를 보이지 못했다(B2.525). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는
   list, map, optional 안에 있어도 module `library_<library>`의 `out_<record>`와 `in_<record>`로 변환하고(GN-4c), crate는
   member의 parameter에서처럼 그 변환을 정의한다. crate는 자기가 정의한 변환만 부른다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를

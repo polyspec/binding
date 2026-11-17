@@ -529,7 +529,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   instance value (GN-13f) of a class of the contract that `implements` the interface may stand for the fixture. A
   value of a function type is `{"function": [<row>]}` (generator GN-6z), whose rows have no key but `args`, `result`
   and `once` and give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an
-  object of the language has no row. A value of a function type whose return is `passthrough`, the function of a
+  object of the language has no row. A raising case may instead give `{"not_a_function": "<text>"}`, a value that is
+  no function (generator GN-6z), at a function type, also as an entry of a map: the form has no other key, its value
+  is a text, and a case that gives a result with it is reported, naming the case. Why: the binding refuses such a
+  value, so only a raising case can hold it, and without the form no case could show that refusal (B2.525). A value of a function type whose return is `passthrough`, the function of a
   member with a state machine, is a function fixture (generator GN-6ae), `{"function": {"calls": [<step>], "result":
   <value>}}` or with `"raise"` in place of `"result"`: the fixture has no key but `function`, whose object has the
   list `calls`, one of `result` and `raise`, and no other key but `awaits`. `"awaits": true` states that the function

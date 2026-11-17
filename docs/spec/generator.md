@@ -904,7 +904,11 @@ the design ids are those of the binding design.
   and the subject of an entry of a map is `<map subject>.<key>` (`binding_core::entry_subject`), at every place of a
   map: an entry `shout` of a parameter `functions` that is not a function is `functions.shout is not a function`.
   Why: the message named the map alone and the language word of each target, as `functions is not an instance of a
-  callable` in Python, while the contract of the consumer expected `functions.shout is not a function` (B2.475). A call
+  callable` in Python, while the contract of the consumer expected `functions.shout is not a function` (B2.475). A
+  raising case gives such a value as `{"not_a_function": "<text>"}` (contract check CK-22), which one function of the
+  generator (`notAFunctionValue`) writes per target: the text itself in Python, PHP, Node and WASM, a value that no
+  binding calls, and `nil` in Go, whose func type holds no text and whose binding refuses a nil func. Why: a case
+  could give no value at a function place but a function, so no case showed that refusal (B2.525). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
   return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`

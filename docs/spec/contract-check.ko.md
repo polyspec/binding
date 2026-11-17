@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: dafcb730c89be2255f7311113ee6b154bcd0b7598ce47b9bb2ab52449afaa177 -->
+<!-- source-sha256: 88bdf9e95c96758772d5ae84377e673a16c2b133ba1b4b5fa49eaddf5c3b401a -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -440,7 +440,10 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
   fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고(generator GN-6z), 그 행의 키는 `args`, `result`, `once`뿐이며
-  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다. 반환이 `passthrough`인 함수 타입,
+  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다. 오류를 내는 case는 그 대신
+  함수 타입의 자리에, map의 항목으로도, 함수가 아닌 값 `{"not_a_function": "<text>"}`(generator GN-6z)를 줄 수 있다. 그 형식은
+  다른 키가 없고 값은 text이며, 그것을 주면서 결과를 내는 case는 그 case를 이름으로 들어 지적된다. 이유: binding은 그런 값을
+  거부하므로 오류를 내는 case만 그것을 가질 수 있고, 이 형식이 없으면 어떤 case도 그 거부를 보일 수 없다(B2.525). 반환이 `passthrough`인 함수 타입,
   곧 state machine을 가진 member의 함수의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
   <값>}}`이거나 `"result"` 자리에 `"raise"`를 둔 것이다. fixture의 키는 `function`뿐이고, 그 객체는 list `calls`와
   `result`, `raise` 중 하나를 가지며 `awaits` 말고 다른 키는 없다. `"awaits": true`는 함수가 그 언어의 awaitable을

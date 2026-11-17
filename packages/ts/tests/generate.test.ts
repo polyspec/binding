@@ -10810,10 +10810,10 @@ for (const [target, path] of [
 // WASM, nil in Go, whose func type holds no text.
 for (const [target, path, given] of [
   ['python', 'packages/python/generated/tests/test_generated.py', /pkg\.open\(\{"shout": "a"\}\)/],
-  ['node', 'packages/ts/generated/tests/generated.test.mjs', /\.open\(new Map\(\[\["shout", "a"\]\]\)\)/],
-  ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs', /\.open\(new Map\(\[\["shout", "a"\]\]\)\)/],
-  ['php', 'packages/php-ext/generated/tests/GeneratedTest.php', /open\(\['shout' => 'a'\]\)/],
-  ['go', 'packages/go/zz_generated_test.go', /"shout": nil/],
+  ['node', 'packages/ts/generated/tests/generated.test.mjs', /pkg\.open\(new Map\(\[\['shout', 'a'\]\]\)\)/],
+  ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs', /pkg\.open\(new Map\(\[\['shout', 'a'\]\]\)\)/],
+  ['php', 'packages/php-ext/generated/tests/GeneratedTest.php', /\\Shapes\\open\(\["shout" => "a"\]\)/],
+  ['go', 'packages/go/zz_generated_test.go', /entries0\.Set\("shout", nil\)\n\t_, err := Open\(entries0\)/],
 ] as const) {
   test(`${target}: a raising case gives a value that is no function as {"not_a_function": "a"} (G-5, GN-6z, B2.525)`, () => {
     const { contract, caseFiles } = shapes();
@@ -10828,7 +10828,7 @@ for (const [target, path, given] of [
     const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] });
     const tests = text(out, path);
     assert.match(tests, given, path);
-    assert.match(tests, /functions\.shout is not a function/, path);
+    assert.match(tests, /invalid_argument_type/, path);
   });
 }
 

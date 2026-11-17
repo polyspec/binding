@@ -34,7 +34,7 @@ import {
 import {
   type Fixture, type MadeRaise, type RaisingCase, convertedCause, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
-  fixtureType, ROW_EXCEPTION,
+  fixtureType, ROW_EXCEPTION, notAFunctionValue,
 } from './samples.ts';
 
 interface Values {
@@ -252,7 +252,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     throw new Unsupported(`no Go case value of the type ${type}`);
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
-  if ('function' in type) return machineFunction(type) ? functionValue(v, b, type.function, json) : keptFunctionValue(v, b, type.function, json);
+  if ('function' in type) return notAFunctionValue('go', json) ?? (machineFunction(type) ? functionValue(v, b, type.function, json) : keptFunctionValue(v, b, type.function, json));
   if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough', v.result === true);
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;

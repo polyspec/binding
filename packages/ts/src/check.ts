@@ -2379,6 +2379,7 @@ class Checker {
       const scope = new Map<string, string>(method ? [['receiver', found.unit.id]] : []);
       if (method) for (const [name, value] of this.caseWith(record)) if (value !== undefined) scope.set(name, value.unit);
       this.boundScope.push(scope);
+      this.inRaisingCase = Object.hasOwn(record, 'raises');
       try {
         for (const parameter of member?.parameters ?? []) {
           const key = snake(parameter.name);
@@ -2403,6 +2404,12 @@ class Checker {
     if ('list' in type) {
       if (!Array.isArray(value)) return report(`${what} is not a list`);
       for (const [k, item] of value.entries()) this.codeValue(type.list, item, `${what}[${k}]`, report);
+      return;
+    }
+    // B2.525: an entry of a map, named <map>.<key> as the binding names it (GN-6z).
+    if ('map' in type) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return report(`${what} is not a map`);
+      for (const [key, item] of Object.entries(value)) this.codeValue(type.map, item, `${what}.${key}`, report);
       return;
     }
     // GN-6ae: a function whose return is passthrough is the function of a member with machine, given as a function
@@ -2454,6 +2461,12 @@ class Checker {
   // G-5 (GN-6z): a function value, {"function": [<row>]}.
   functionRows(parameters: readonly Type[], value: unknown, what: string, report: (message: string) => void): void {
     const form = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    // B2.525: {"not_a_function": "<text>"}, a value that is no function, stands only in a raising case.
+    if (form !== undefined && Object.hasOwn(form, 'not_a_function')) {
+      if (Object.keys(form).length !== 1 || typeof form['not_a_function'] !== 'string') return report(`${what} is not {"not_a_function": <text>}`);
+      if (!this.inRaisingCase) report(`${what} is {"not_a_function": <text>}, which only a raising case gives`);
+      return;
+    }
     const rows = form?.['function'];
     if (form === undefined || !Array.isArray(rows) || Object.keys(form).length !== 1) return report(`${what} is not {"function": [<row>]}`);
     const positions = parameters.map((_p, i) => String(i));
@@ -2561,6 +2574,9 @@ class Checker {
   // GN-13n: the names that the function fixtures around the value in reading give, the innermost last, each to the
   // id of the unit of its parameter.
   boundScope: Map<string, string>[] = [];
+
+  // B2.525: whether the case in reading raises, where alone a value that is no function may stand (G-5, GN-6z).
+  inRaisingCase = false;
 
   // GN-13n: the unit of the parameter that a name of the function fixtures around the value gives, or undefined.
   boundUnit(name: string): string | undefined {
@@ -3000,6 +3016,7 @@ class Checker {
     if ('function' in type) return true;
     if ('optional' in type) return this.takesCode(type.optional, seen);
     if ('list' in type) return this.takesCode(type.list, seen);
+    if ('map' in type) return this.takesCode(type.map, seen);
     if ('unit' in type && type.library === undefined && !seen.has(type.unit)) {
       const unit = this.units.get(type.unit)?.value;
       if (unit?.origin === 'callback') return true;

@@ -760,7 +760,10 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(model, unit, value, 'a case value')));
   }
   if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) return ctx.instanceNew(callbackInstance(model, unit, libraryOf(type), value));
-  // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
+  // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises, or a
+  // value that is no function (B2.525).
+  const notFunction = typeof type === 'object' && 'function' in type ? notAFunctionValue(ctx.lang, value) : undefined;
+  if (notFunction !== undefined) return notFunction;
   if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'), type.function.parameters.length, type.function.parameters.some((p) => holdsForeign(model, p)));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
@@ -2793,6 +2796,17 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
 // GN-13bi: the count of the rows of a fixture that state `once`, as fixtureValues and functionRows write the flag of a
 // row. The test of a case that made such a row requires, at its end, that each of them answered a call.
 export const onceRows = (rows: string[][]): number => rows.filter((row) => row[3] === 'true' || row[3] === 'True').length;
+
+// G-5, GN-6z, B2.525: the value of a raising case that is no function at a function place, {"not_a_function": "<text>"}
+// (CK-22 has judged the form), as each target writes it: the text in Python, PHP, Node and WASM, which no binding
+// calls, and nil in Go, whose func type holds no text and whose binding refuses a nil func. Undefined for any other value.
+export function notAFunctionValue(lang: Lang3 | 'go', value: unknown): string | undefined {
+  const form = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const given = form?.['not_a_function'];
+  if (typeof given !== 'string') return undefined;
+  if (lang === 'go') return 'nil';
+  return lang === 'python' ? pyString(given) : lang === 'php' ? phpText(given) : jsString(given);
+}
 
 // GN-6z: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
 // with "result" (absent for a return of none) and "once". The contract check has judged the form (CK-22). The rows are
