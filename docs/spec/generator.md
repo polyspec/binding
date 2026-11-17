@@ -3650,7 +3650,9 @@ the design ids are those of the binding design.
   of a nested scope writes into, and a position names only an argument of the innermost function.
 - **GN-13o** A step of a function fixture and a call of `after` may name `"raises": {"kind": <kind>}` in place of
   `result`, a kind of the raises of the member of the call: the call must fail with that kind, which the test or the
-  function requires before its next call. A call of `after` may name `"on": "<name>"`, a name that a function fixture
+  function requires before its next call. An instance value `{"new": "<static>", ...}` among the args of such a call
+  is made by its static, with the failure check of GN-13f, before the call, in every target, as for a call that
+  names `result` (B2.506). A call of `after` may name `"on": "<name>"`, a name that a function fixture
   of the case gives (GN-13n), and is then a call on the argument that the function kept, after the function returned,
   in place of the receiver of the case; a member without a receiver takes such a call too. Python and PHP keep the
   argument in the store of the test, Node and WASM in the store of the module, and Go in a variable of the test. A

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d875413c0a124c0a9d1a07938918a0840a8f7019d474bf4ca41780716b2c1f5c -->
+<!-- source-sha256: 31887e6a49120a3e9785d6a7b1dcc4c841c36f0e67f1c6897b6c638d6933fd7b -->
 # 생성기
 
 [English](generator.md)
@@ -2992,6 +2992,8 @@
   받을 수 있는데, 위치는 가장 안쪽 함수의 인자만 이름한다.
 - **GN-13o** function fixture의 step과 `after`의 호출은 `result` 대신 `"raises": {"kind": <kind>}`, 즉 그 호출의 member의
   raises의 kind를 이름할 수 있다. 그 호출은 그 kind로 실패해야 하고, 시험이나 함수는 다음 호출 전에 그것을 요구한다.
+  그런 호출의 args에 있는 instance 값 `{"new": "<static>", ...}`은, `result`를 이름하는 호출에서처럼, 모든 target에서 호출
+  전에 그 static으로 GN-13f의 실패 검사와 함께 만들어진다(B2.506).
   `after`의 호출은 `"on": "<name>"`, 즉 case의 function fixture가 주는 이름(GN-13n)을 이름할 수 있고, 그러면 그것은 case의
   receiver 대신 함수가 반환한 뒤 함수가 보관한 인자 위의 호출이다. receiver가 없는 member도 그런 호출을 받는다. Python과
   PHP는 그 인자를 시험의 저장소에, Node와 WASM은 module의 저장소에, Go는 시험의 변수에 보관한다. 그런 호출이 raise하는
