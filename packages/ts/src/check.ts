@@ -1039,6 +1039,27 @@ class Checker {
       }
       if (row.class !== undefined) this.errorUnit(row.class, `${path}/class`, category);
     }
+    // CK-110 (GN-7, GN-7c, B2.489): an outer variant that holds the error of a library L is matched without a wildcard,
+    // so errors.kinds names <outer>/<inner> for every kind that L's contract declares; one that it leaves out is named
+    // here and not as a non-exhaustive match of the generated crate.
+    const outers = new Map<string, { library: string; at: number; named: Set<string> }>();
+    for (const [i, row] of errors.kinds.entries()) {
+      const outer = outerVariant(row.variant);
+      if (row.library === undefined || outer === undefined) continue;
+      const seen = outers.get(`${row.library}\u0000${outer}`) ?? { library: row.library, at: i, named: new Set<string>() };
+      seen.named.add(innerVariant(row.variant));
+      outers.set(`${row.library}\u0000${outer}`, seen);
+    }
+    for (const [key, { library, at, named }] of outers) {
+      const outer = key.slice(key.indexOf('\u0000') + 1);
+      const declared = this.given(library)?.errors.kinds ?? [];
+      // A row of a kind that L does not declare is the finding of CK-10, which names the row.
+      if ([...named].some((inner) => !declared.some((kind) => kind.variant === inner))) continue;
+      for (const kind of declared) {
+        if (named.has(kind.variant)) continue;
+        this.report('CK-110', `/errors/kinds/${at}/variant`, `${outer} holds the error of ${library}, whose contract declares ${kind.variant}, and errors.kinds names no ${outer}/${kind.variant}, so the match of the core error, which has no wildcard, does not cover it (GN-7, GN-7c)`);
+      }
+    }
     // GN-7c, CK-22 (B2.487): a member that states a row with through in its raises takes the unit of the row as an
     // argument, also inside a record, because the kind reaches it only through that object.
     const throughRows = new Map(errors.kinds.flatMap((row) => (row.through === undefined || row.library === undefined ? [] : [[row.variant, { unit: row.through.unit, library: row.library }] as const])));

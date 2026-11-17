@@ -730,6 +730,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   the core and run `make bindings` again. Why: scaffold copies the line into each binding crate, so a core on the tag of
   an older release kept that core runtime under a newer generator, or its binding crates were edited by hand, which
   CK-19 then reported (B2.503).
+- **CK-110** Every kind of a library under its outer variant (generator GN-7, GN-7c): when rows of `errors.kinds` with
+  `library` L name the outer variant `<outer>` (`<outer>/<inner>`), a row names `<outer>/<inner>` for every kind that
+  L's contract declares, because the core error is matched without a wildcard (GN-7), so the variant `<outer>(L's
+  error)` of the core holds each of them. The finding names the outer variant, the library and each kind that no row
+  names. An outer variant with a row of a kind that L does not declare is the finding of CK-10 alone. Why: the
+  consumer of the end-to-end check named only `Sample/Unreadable`, the check passed it, and every generated crate
+  stopped on a non-exhaustive match (E0004) that named no rule (B2.489).
 
 ## Tables of binding
 

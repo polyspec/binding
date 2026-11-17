@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 581d22a0f3c020fedf32afa12a18736dc2b4c7cdd00f3edb8c952db125999029 -->
+<!-- source-sha256: 9a8eae5de6ad61470efc6e5ac43df85970f39f2b1b13ba2229700ae16ea344e1 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -614,6 +614,12 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   때문이다. 이행은 core의 줄을 바꾸고 `make bindings`를 다시 돌리는 것이다. 이유: scaffold는 그 줄을 binding crate마다
   옮기므로, 더 오래된 release의 tag에 있는 core는 새 생성기 아래에서 그 core runtime을 그대로 두었거나, 그 binding crate를
   손으로 고쳤고, CK-19가 그것을 보고했다(B2.503).
+- **CK-110** outer variant 아래의 라이브러리의 모든 kind(생성기 GN-7, GN-7c): `library` L을 가진 `errors.kinds`의 행이 outer
+  variant `<outer>`를 이름하면(`<outer>/<inner>`), L의 계약이 선언하는 모든 kind마다 `<outer>/<inner>`를 이름하는 행이
+  있다. 코어 오류는 wildcard 없이 match되므로(GN-7), 코어의 variant `<outer>(L의 오류)`는 그 각각을 가지기 때문이다.
+  finding은 outer variant, 라이브러리, 어떤 행도 이름하지 않는 각 kind를 이름한다. L이 선언하지 않는 kind의 행을 가진
+  outer variant는 CK-10의 finding일 뿐이다. 이유: end-to-end 검사의 consumer는 `Sample/Unreadable`만 이름했고, 검사는
+  그것을 통과시켰으며, 모든 생성 crate는 아무 규칙도 이름하지 않는 non-exhaustive match(E0004)로 멈췄다(B2.489).
 
 ## binding의 표
 
