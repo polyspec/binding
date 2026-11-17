@@ -290,6 +290,9 @@ export const constantAsserts = (model: Model): string => model.constants.map((c)
 export const resultUnits = (model: Model, enumRust: (unit: Unit) => string, recordRust: (model: Model, unit: Unit) => string, variantRust: (model: Model, variant: Variant) => string): string[] =>
   [...model.enums.map((u) => enumRust(u)), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v))];
 
+// E-1c, U-3: whether the crate converts a Failure: a member that may fail by a callback, or a value alias.
+export const convertsFailure = (model: Model): boolean => model.functions.some((f) => f.failure) || model.objects.some((o) => o.members.some((f) => f.failure)) || model.aliases.length > 0;
+
 // U-3: whether a callback unit that the core takes recognizes an error unit.
 export const recognizesAny = (model: Model): boolean => takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
 

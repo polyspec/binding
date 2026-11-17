@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, convertingFns, poisonArms, recognizesAny, constantAsserts, resultUnits, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, convertingFns, poisonArms, recognizesAny, constantAsserts, resultUnits, convertsFailure, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1293,7 +1293,7 @@ fn read_converted(py_: Python<'_>, exception: &Bound<'_, PyAny>, module: &str, c
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
+  if (!convertsFailure(model)) return '';
   // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no Python code that
   // raises, so it keeps no table, and a Raised that the core gives is a failure of kind internal.
   if (!keepsThrown(model) && model.aliases.length === 0 && !countsThrown(model.contract, model.foreign)) return `

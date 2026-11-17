@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, declarations, typeParameters, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, declarations, typeParameters, convertsFailure, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1434,7 +1434,7 @@ fn raised(error: Thrown) -> binding_core::Raised {
 `;
 
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
+  if (!convertsFailure(model)) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const passing = holdsThrown(model);
   // U-3, U-7: a callback and the walk of a value give an error of napi; a function of a machine gives none, because

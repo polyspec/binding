@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, callbackNames, convertingFns, poisonArms, constantAsserts, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackNames, convertingFns, poisonArms, constantAsserts, convertsFailure, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1517,7 +1517,7 @@ fn read_converted(exception: &ZendObject, classes: &[(&str, &str)], row: fn(&str
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
+  if (!convertsFailure(model)) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   // U-3, GN-6x: an exception of PHP code is kept for a callback or a function type, and for a member of the owner of a
   // value class of another repository, whose exception the call throws again.
