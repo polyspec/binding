@@ -286,6 +286,10 @@ export const categoryIndex = (model: Model): ((category: string) => string) => (
 // The checks of the crate that each constant has the value of its contract, and the defaults of the contract.
 export const constantAsserts = (model: Model): string => model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
 
+// T-4, T-9: the conversions of the enums, the result records and the variants of the crate, in that order.
+export const resultUnits = (model: Model, enumRust: (unit: Unit) => string, recordRust: (model: Model, unit: Unit) => string, variantRust: (model: Model, variant: Variant) => string): string[] =>
+  [...model.enums.map((u) => enumRust(u)), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v))];
+
 // U-3: whether a callback unit that the core takes recognizes an error unit.
 export const recognizesAny = (model: Model): boolean => takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
 

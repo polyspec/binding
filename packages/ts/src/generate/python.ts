@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, convertingFns, poisonArms, recognizesAny, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, convertingFns, poisonArms, recognizesAny, constantAsserts, resultUnits, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1442,14 +1442,10 @@ ${propertyArms}
 
 function libRust(model: Model, layout: PythonLayout): string {
   const classOf = (category: string): string => categoryClass(model, category);
-  const constants = model.constants
-    .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
-    .join('\n') + defaultAsserts(model);
+  const constants = constantAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
   const enums = [
-    ...model.enums.map((u) => enumRust(model, u)),
-    ...model.resultRecords.map((u) => recordRust(model, u)),
-    ...model.variants.map((v) => variantRust(model, v)),
+    ...resultUnits(model, (u) => enumRust(model, u), recordRust, variantRust),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPython(model, a)),
     model.aliases.length > 0 ? pythonHost(model) : '',
     // GN-6bp: the failure conversions of the owners, used as far as a conversion into the core uses them.
