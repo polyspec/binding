@@ -822,7 +822,8 @@ export function collectModel(
       let refused = false;
       for (const field of unit.fields ?? []) {
         refused = refusals.attempt(() => {
-          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true, units);
+          // B2.453: with the contracts of the other libraries, as the default of a parameter is read (U-2, GN-6x).
+          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true, units, foreign);
           supportedType(field.type, units, `${unit.id}.${field.name.join('_')}`, foreign, true);
           return true;
         }) === undefined || refused;
@@ -909,7 +910,7 @@ export function collectModel(
             if (convert(field.name, 'rust', 'variable') === tag) throw new Unsupported(`${where}: a field has the name of the tag (GN-6v)`);
             // GN-6v: an optional field whose default is {literal: null} may be left out, which is the null it holds.
             if (!caseLeftOut(field)) {
-              declaredDefault(field, where, true, units);
+              declaredDefault(field, where, true, units, foreign);
               if (field.default !== undefined) throw new Unsupported(`${where}: a field default of a case other than {literal: null} of an optional field is not generated yet (T-4, T-9)`);
             }
             supportedType(field.type, units, where, foreign);

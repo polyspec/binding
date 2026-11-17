@@ -12942,6 +12942,36 @@ const shownSample = (): ReturnType<typeof relaySample> => {
   return parts;
 };
 
+test('B2.453: a record field of a value class of another repository takes the default {empty: "object"} as a parameter of that type does, in the five targets (U-2, GN-6i, GN-6x)', () => {
+  // The check of a field default read the units of this contract alone, so the value class of json was no value type
+  // there and the field was refused, where the same default of a parameter was generated (B2.172).
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units.push({
+    id: 'sized_options', name: ['sized', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_relay::SizedOptions',
+    fields: [{ name: ['value'], type: 'json_value', default: { empty: 'object' } }],
+  });
+  contract.units.find((u: any) => u.id === 'relay').members.push({
+    id: 'relay.sized', name: ['sized'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['options'], type: { unit: 'sized_options' }, default: { empty: 'object' } }],
+    returns: 'uint', raises: [], wait: 'none', core: 'polyspec_relay::sized',
+  });
+  contract.cases.push({ member: 'relay.sized', file: 'contracts/sized.json', group: 'sized' });
+  caseFiles.set('contracts/sized.json', { sized: [{ id: 'a_text', value: { kind: 'text', value: 'a' }, result: 1 }] });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  // The field is None of the Option of its form when it is left out, in the record that the core takes.
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_relay::sized\(/, path);
+    assert.match(text(out, path), /polyspec_relay::SizedOptions \{/, path);
+  }
+  // The declarations of the field are those of the parameter: `...` in Python, null in PHP, optional in TypeScript.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/relay/_native.pyi'), /def sized\(\*, value: object = \.\.\.\) -> int: \.\.\./);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_relay.stub.php'), /function sized\(mixed \$value = null\): int \{\}/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /value\?: unknown/);
+  // Any other {empty} default of the field is refused as before, by name.
+  contract.units.find((u: any) => u.id === 'sized_options').fields[0].default = { empty: 'list' };
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign }), /sized_options\.value: the default \{empty: "list"\} of the type .* is not generated \(U-2\)/);
+});
+
 test('B2.445: the U-2 test of a result that holds a JSON value compares the two results by what the instances hold, in the five targets (GN-13bg)', () => {
   // crud-ui: 29 Go tests of U-2 failed with `&json.Value{ref:(*binding.Ref)(0x…)} is not &json.Value{…}`, because
   // reflect.DeepEqual compared the handles of the two results of build_list, build_detail, bind_buttons and bind_form.
