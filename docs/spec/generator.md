@@ -2385,8 +2385,8 @@ the design ids are those of the binding design.
   `vX.Y.Z` the release of the repository (GN-3c) writes the files of `binding generate` for the target go, builds the crate
   `polyspec-<repository>-go` for each platform with the release profile and without a feature (the library of
   `linux_<arch>_musl` with `--target <arch>-unknown-linux-musl` on the Linux machine of that arch, whose Rust
-  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so no C compiler of musl
-  takes part), removes the debug
+  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so the crate itself needs no C
+  compiler of musl; a dependency whose build script compiles C needs one, which the repository declares, GN-19b), removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
   sections of the Rust standard library), and runs `binding release-go-module` (GN-19f), which creates one
@@ -3804,6 +3804,37 @@ the design ids are those of the binding design.
   machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
   A Linux entry also builds the library of `linux_<arch>_musl` of its arch with `--target <arch>-unknown-linux-musl`
   (GN-15g) and hands it as `linux_<arch>_musl/libpolyspec_<repository>_go.a`, so the release carries five libraries.
+  The build of the musl target, and no other command of the recipe, takes the C compiler and the archiver of that
+  target, which the Makefile of the repository declares before the include (GN-19h) in `CC_<target>` and
+  `AR_<target>`, where `<target>` is the target with its dashes as underscores: `CC_x86_64_unknown_linux_musl`,
+  `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl` and `AR_aarch64_unknown_linux_musl`. The recipe
+  exports each of the two of the arch of the run that is not empty, under its own name, to the `$(CARGO) rustc` of
+  the musl target alone. These are names that the crate `cc` reads, with which the build script of a dependency
+  compiles C: for the compiler it takes the first that is set of `CC_<target>` with the dashes of the target,
+  `CC_<target>` with underscores, `TARGET_CC` (the build is a cross compilation, because the host is the target of
+  the GNU C library) and `CC`, and for the archiver the same four of `AR`; with none of them it starts
+  `aarch64-linux-musl-gcc` for the arm64 target and, for the x86_64 target, the first that `PATH` holds of
+  `x86_64-linux-musl-gcc` and `musl-gcc`. A repository whose Go crate has no dependency that builds C declares
+  nothing. When one of the two variables of the arch of the run is empty, the recipe runs `$(CARGO) tree --locked -p
+  polyspec-<repository>-go --target <arch>-unknown-linux-musl -e normal,build --prefix none --format '{p}'` before it
+  builds a library, and when a line of its output names the crate `cc`, a dependency builds C for that target: the
+  recipe ends with status 2 and names each empty variable (``release-go-static needs
+  CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the
+  archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a
+  dependency of polyspec-<repository>-go builds C with that crate; define them before the include of
+  packages/release.mk (GN-19b)``). When both are declared it does not ask Cargo. The recipe does not start a declared
+  compiler before the build, so a wrong path fails in the build script, with the message of the crate `cc`. Two cases
+  are outside this rule: a build script that compiles C without the crate `cc` is not seen, and fails in Cargo as
+  before; and a crate `cc` in the build whose build script compiles nothing for the musl target asks for a
+  declaration that no build reads. Why: session-store depends on rustls, whose cryptography, ring 0.17.14, compiles C
+  in its build script, and `release-go-static` failed in its Linux CI because the crate `cc` looked for
+  `x86_64-linux-musl-gcc`, which no runner holds; it went around the recipe by exporting the four variables from its
+  own Makefile to every command, and each next repository with such a dependency would have failed at the same place
+  with a message of Cargo that names no variable. Why the names of the crate `cc` and no names of binding: the
+  declaration that session-store wrote stays valid, and a variable of the environment of a job with that name is a
+  variable of make as well. Why the recipe asks and not `binding check --release`: the variables are of the Makefile,
+  which a command does not read (docs/spec/contract-check.md CK-102), and `release-go-static` runs in CI, as a build
+  of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
 - **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
   SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
   directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
@@ -3955,7 +3986,11 @@ the design ids are those of the binding design.
   release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when
   its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go, which is every job that runs
   a `release-assets-<job>`, whose first step is `release-binding-check` (GN-19i); a command that needs Go and
-  does not find it names the tool, `--go` and `GO` (GN-15l). `NAPI`,
+  does not find it names the tool, `--go` and `GO` (GN-15l). A repository whose Go crate has a dependency that
+  builds C also defines `CC_<target>` and `AR_<target>` of each musl target, the C compiler and the archiver that
+  `release-go-static` passes to the build of that target and requires on a Linux host when the crate `cc` is in that
+  build (GN-19b); `release-binding-check` does not require them, because the need follows from the host and from the
+  dependencies of the build, which `release-go-static` reads. `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
   `llvm.version` of `config/toolchain.json` and the PHP minors of its extension in `phpExtension.minors` of that file
