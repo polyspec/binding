@@ -3523,13 +3523,13 @@ test('a class with a write place holds its value in a tried lock, which each cal
   assert.doesNotMatch(libs.node, /<&class_/);
   // G-5: a poisoned object is kind internal at every place, and an instance at a write place and another is busy.
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
-  assert.match(python, /def test_b5c_counter_refuses_a_poisoned_object\(self\) -> None:\n {8}held = pkg\.Counter\(0\)\n[^\n]*\n {12}_native\._panic_test_held\(held\)\n(?:[^\n]*\n){3} {12}held\.total\n(?:[^\n]*\n){3} {12}pkg\.Counter\(0\)\.absorb\(held\)\n/);
-  assert.match(python, /def test_b5c_counter_absorb_refuses_the_instance_at_two_places\(self\) -> None:\n {8}held = pkg\.Counter\(0\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.absorb\(held\)\n(?:[^\n]*\n){2} {8}held\.total\n/);
+  assert.match(python, /def test_b5c_counter_refuses_a_poisoned_object\(self\) -> None:\n {8}held = pkg\.Counter\(2\)\n[^\n]*\n {12}_native\._panic_test_held\(held\)\n(?:[^\n]*\n){3} {12}held\.total\n(?:[^\n]*\n){3} {12}pkg\.Counter\(2\)\.absorb\(held\)\n/);
+  assert.match(python, /def test_b5c_counter_absorb_refuses_the_instance_at_two_places\(self\) -> None:\n {8}held = pkg\.Counter\(2\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.absorb\(held\)\n(?:[^\n]*\n){2} {8}held\.total\n/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, /test\('B-5c: Ledger refuses a poisoned object', \(\) => \{\n {2}const held = new pkg\.Ledger\('a'\);\n {2}assert\.throws\(\(\) => addon\(\)\.__panicTestHeld\(held\), [^\n]*error\.kind === 'internal'\);\n {2}assert\.throws\(\(\) => held\.size, /);
   assert.match(node, /assert\.throws\(\(\) => held\.absorb\(held\), \(error\) => error\.constructor === pkg\.SampleBusyError && error\.kind === 'busy'\);\n {2}held\.total;/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(php, /public function testB5cCounterRefusesAPoisonedObject\(\): void\n {4}\{\n {8}\$held = new \\Polyspec\\Sample\\Counter\(0\);\n {8}try \{\n {12}\\Polyspec\\Sample\\Internal\\panicTestHeld\(\$held\);/);
+  assert.match(php, /public function testB5cCounterRefusesAPoisonedObject\(\): void\n {4}\{\n {8}\$held = new \\Polyspec\\Sample\\Counter\(2\);\n {8}try \{\n {12}\\Polyspec\\Sample\\Internal\\panicTestHeld\(\$held\);/);
   assert.match(php, /\$held->absorb\(\$held\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleBusyError \$error\)/);
   // A class that meets no condition of GN-6h holds its value without a lock.
   const owner = sample.units.find((u: any) => u.id === 'sample');
@@ -6313,9 +6313,9 @@ test('an entry point runs its core call with the faults that a case armed, and t
   // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
   assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            list_out(&mut buffer, left, text_out);\n'));
   // GN-8a: the call that is refused as busy leaves the arming, which the next call of the member takes.
-  assert.match(text(out, pythonTests), /held = pkg\.Counter\(0\)\n {8}armed = _native\._arm_faults\("counter\.draw", "\[\{\\"point\\":\\"sample\.draw\\",\\"kind\\":\\"broken\\"\}\]"\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.draw\(held\)\n(?:[^\n]*\n)+? {8}with self\.assertRaises\(pkg\.SampleInternalError\) as caught:\n {12}held\.draw\(pkg\.Counter\(0\)\)\n(?:[^\n]*\n){2} {8}self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
-  assert.match(text(out, nodeTests), /const armed = addon\(\)\.__armFaults\('counter\.draw', [^\n]*\n {2}assert\.throws\(\(\) => held\.draw\(held\), [^\n]*'busy'\);\n(?:[^\n]*\n)+? {2}assert\.throws\(\(\) => held\.draw\(new pkg\.Counter\(0\)\), [^\n]*'internal'\);\n {2}assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);
-  assert.match(text(out, phpTests), /\$armed = \\Polyspec\\Sample\\Internal\\armFaults\("counter\.draw", [^\n]*\n {8}try \{\n {12}\$held->draw\(\$held\);[\s\S]*?\$held->draw\(new \\Polyspec\\Sample\\Counter\(0\)\);[\s\S]*?self::assertSame\(\[\], \\Polyspec\\Sample\\Internal\\faultLeft\(\$armed\)\);/);
+  assert.match(text(out, pythonTests), /held = pkg\.Counter\(2\)\n {8}armed = _native\._arm_faults\("counter\.draw", "\[\{\\"point\\":\\"sample\.draw\\",\\"kind\\":\\"broken\\"\}\]"\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.draw\(held\)\n(?:[^\n]*\n)+? {8}with self\.assertRaises\(pkg\.SampleInternalError\) as caught:\n {12}held\.draw\(pkg\.Counter\(2\)\)\n(?:[^\n]*\n){2} {8}self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
+  assert.match(text(out, nodeTests), /const armed = addon\(\)\.__armFaults\('counter\.draw', [^\n]*\n {2}assert\.throws\(\(\) => held\.draw\(held\), [^\n]*'busy'\);\n(?:[^\n]*\n)+? {2}assert\.throws\(\(\) => held\.draw\(new pkg\.Counter\(2\)\), [^\n]*'internal'\);\n {2}assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);
+  assert.match(text(out, phpTests), /\$armed = \\Polyspec\\Sample\\Internal\\armFaults\("counter\.draw", [^\n]*\n {8}try \{\n {12}\$held->draw\(\$held\);[\s\S]*?\$held->draw\(new \\Polyspec\\Sample\\Counter\(2\)\);[\s\S]*?self::assertSame\(\[\], \\Polyspec\\Sample\\Internal\\faultLeft\(\$armed\)\);/);
   const python = text(out, pythonTests);
   assert.match(python, /arg_0 = "abc"\n        armed = _native\._arm_faults\("sample\.measure", "\[\{\\"point\\":\\"sample\.read\\",\\"kind\\":\\"io\\"\}\]"\)\n        with self\.assertRaises\(pkg\.SampleIoError\) as caught:\n            pkg\.measure\(arg_0\)\n        self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
   assert.match(text(out, nodeTests), /const arg0 = 'abc';\n  const armed = addon\(\)\.__armFaults\('sample\.measure', '\[\{"point":"sample\.read","kind":"io"\}\]'\);\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)/);
@@ -6749,8 +6749,9 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.join\(\[pkg\.Tag\("a"\), _made_\d+\(\)\]\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Classes\\join\(\[new \\Polyspec\\Classes\\Tag\("a"\), \(function \(\) \{ /);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.join\(\[new pkg\.Tag\('a'\), \(\(\) => \{ const made0/);
-  // The tests that need any receiver call a function that makes it.
-  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
+  // The G-7 test makes its receiver once, as locals of the test (B2.463); the other tests that need any receiver call
+  // a function that makes it.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  const made0 = new pkg\.Tag\('a'\);\n  const made1 = made0\.gate\(\);\n  assert\.throws\(\(\) => made1\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_\d+\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
 });
 
@@ -12845,4 +12846,90 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   const plain = consumerSample();
   const own = text(generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['go'] }), 'packages/go/zz_generated_test.go');
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
+});
+
+// B2.463: the sample whose counter is a receiver that holds state and whose placeholder the core would refuse: no
+// case of the constructor or of total exists, the first case of the class makes its receiver by new and then add(1),
+// absorb has a case whose other counter starts at 4, and seek takes a counter before its record.
+const statefulSample = (): { contract: any; caseFiles: Map<string, unknown> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const made = { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.add', args: { amount: 1 } }] };
+  cases.counter_new = [];
+  cases.counter_total = [];
+  cases.counter_add = [{ id: 'an_amount_is_added', receiver: made, amount: 3, result: 6 }];
+  cases.counter_absorb = [{ id: 'a_counter_is_absorbed', receiver: made, other: { new: 'counter.new', args: { start: 4 } } }];
+  const seek = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
+  seek.parameters.unshift({ name: ['counter'], type: { unit: 'counter' }, required: true, core: '&' });
+  for (const kase of cases.seek) kase.counter = { new: 'counter.new', args: { start: 4 } };
+  return { contract, caseFiles: new Map([['contracts/cases.json', cases]]) };
+};
+const STATEFUL_TESTS = {
+  python: 'packages/python/generated/tests/test_generated.py',
+  node: 'packages/ts/generated/tests/generated.test.mjs',
+  wasm: 'packages/ts/wasm/generated/tests/generated.test.mjs',
+  php: 'packages/php-ext/generated/tests/GeneratedTest.php',
+} as const;
+const STATEFUL_END = { python: '\n\n', node: '\n});', wasm: '\n});', php: '\n    }\n' } as const;
+// The bodies of the tests of a file whose first line matches start, each to the end of its test.
+const bodiesOf = (all: string, start: RegExp, end: string): string[] =>
+  [...all.matchAll(new RegExp(start.source, 'g'))].map((found) => all.slice(found.index, all.indexOf(end, found.index)));
+
+test('B2.463: the G-7 test of a method makes its receiver once and gives an argument of a class the case value of a case of the member, in PHP, Python, Node and WASM (GN-13t)', () => {
+  // orm: the G-7 test of StepRunner.run made its receiver in each of its three calls, so the second failed with
+  // "table owner already exists", and gave Schema.load("a", "a", "a"), which the core refuses, as its schema.
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php'] });
+  const starts = { python: /def test_g7_counter_absorb_counts/, node: /test\('G-7: Counter\.absorb /, wasm: /test\('G-7: Counter\.absorb /, php: /function testG7CounterAbsorbCounts/ };
+  for (const target of ['python', 'node', 'wasm', 'php'] as const) {
+    const [body] = bodiesOf(text(out, STATEFUL_TESTS[target]), starts[target], STATEFUL_END[target]);
+    assert.ok(body !== undefined, `${target}: no G-7 test of absorb`);
+    // The receiver is made once: its factory and its step are each written once, and every call is on that local.
+    assert.equal(body.match(/Counter\(2\)/g)?.length, 1, `${target}: ${body}`);
+    assert.equal(body.match(/add\(1\)/g)?.length, 1, `${target}: ${body}`);
+    assert.ok((body.match(/made0(->|\.)absorb\(/g)?.length ?? 0) >= 2, `${target}: ${body}`);
+    // The other counter is that of the case of absorb, not the placeholder of its constructor.
+    assert.match(body, /Counter\(4\)/, `${target}: ${body}`);
+    assert.doesNotMatch(body, /Counter\(0\)/, `${target}: ${body}`);
+  }
+});
+
+test('B2.463: the Python test of GN-11a gives an argument of a class the case value of a case of the member (GN-13t)', () => {
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] });
+  const [body] = bodiesOf(text(out, STATEFUL_TESTS.python), /def test_gn11a_seek_takes_lookup_by_keyword_only/, '\n\n');
+  assert.ok(body !== undefined, 'no GN-11a test of seek');
+  assert.match(body, /pkg\.seek\(pkg\.Counter\(4\), /, body);
+  assert.doesNotMatch(body, /Counter\(0\)/, body);
+});
+
+test('B2.463: a B-5c test makes each instance of its class from the first case of the class that does not raise, not from the placeholder of its constructor, in PHP, Python, Node and Go (GN-13t)', () => {
+  // orm: the instance of the B-5c tests of Query and StepRunner was made of Schema.load("a", "a", "a"), which the
+  // core refuses before the poison entry point runs.
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'php', 'go'] });
+  const starts = { python: /def test_b5c_counter_/, node: /test\('B-5c: Counter[. ]/, php: /function testB5cCounter/ };
+  for (const target of ['python', 'node', 'php'] as const) {
+    const all = text(out, STATEFUL_TESTS[target]);
+    // Python makes an instance of several steps in a function of the module, which the test calls: its body is read
+    // with the test.
+    const withHelpers = (body: string): string =>
+      body + [...body.matchAll(/\b(_made_\d+)\(/g)].map((found) => bodiesOf(all, new RegExp(`\\ndef ${found[1] ?? ''}\\(`), '\n\n\n').join('')).join('');
+    const bodies = bodiesOf(all, starts[target], STATEFUL_END[target]).map(withHelpers);
+    // The poisoned counter, absorb at two places and draw at two places.
+    assert.equal(bodies.length, 3, target);
+    for (const body of bodies) {
+      assert.match(body, /Counter\(2\)/, `${target}: ${body}`);
+      assert.match(body, /add\(1\)/, `${target}: ${body}`);
+      assert.doesNotMatch(body, /Counter\(0\)/, `${target}: ${body}`);
+    }
+  }
+  const go = ['packages/go/zz_generated_held_test.go', 'packages/go/zz_generated_test.go', 'packages/go/zz_generated_fault_test.go'].flatMap((path) => bodiesOf(text(out, path), /func TestB5cCounter/, '\n}\n'));
+  assert.equal(go.length, 3);
+  for (const body of go) {
+    assert.match(body, /NewCounter\(2\)/, body);
+    assert.match(body, /\.Add\(1\)/, body);
+    assert.doesNotMatch(body, /NewCounter\(0\)/, body);
+  }
 });

@@ -32,7 +32,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, boundName, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
+  type Fixture, type RaisingCase, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType, ROW_EXCEPTION,
 } from './samples.ts';
@@ -1728,8 +1728,31 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
   const takes = (fn: Fn, object: ObjectClass): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
   const callables = callablesOf(model).filter((m) => m.kind !== 'iterate' && m.special === undefined && m.module === v.module);
   // A call in a block of its own, which requires err to be of the type with the kind, or nil.
+  // GN-13t: an instance of the class is made from the first case of the class that does not raise, because the core
+  // may refuse the placeholder arguments of its first factory (orm: SchemaLoad of three texts "a"); the placeholder of
+  // GN-13 stands only when no case of the class makes an instance.
+  const instanceOf = (b: Body, object: ObjectClass): string => {
+    const sample = sampleInstance(model, object);
+    return sample === undefined ? placeholder(v, b, { unit: object.unit.id }) : made(v, b, sample);
+  };
   const check = (b: Body, fn: Fn, receiver: string, arg: Arg | undefined, held: string, expect: [string, string, string] | undefined): void => {
-    const call = invoke(v, fn, callArgs(v, b, fn, (a) => (a === arg ? held : a.default === undefined ? placeholder(v, b, a.type) : undefined)), receiver);
+    // GN-13t: another argument of a class is the case value of a case of the member, where one gives it.
+    const classGiven = classCaseArgs(model, fn);
+    const other = (a: Arg): string | undefined => {
+      if (classGiven !== undefined && classGiven.has(a) && objectUnit(model, a.type) !== undefined) {
+        // G-4: a case value that the generator does not write fails the test of its own case by name and supplies no
+        // value here; the lines that it wrote before it failed are taken back.
+        const mark = b.lines.length;
+        try {
+          return caseValue(v, b, a, classGiven);
+        } catch (error) {
+          if (!(error instanceof Unsupported)) throw error;
+          b.lines.length = mark;
+        }
+      }
+      return a.default === undefined ? placeholder(v, b, a.type) : undefined;
+    };
+    const call = invoke(v, fn, callArgs(v, b, fn, (a) => (a === arg ? held : other(a))), receiver);
     const after = expect === undefined ? ['\tif err != nil {', '\t\tt.Fatalf("B-5c: the refused call left a lock: %v", err)', '\t}'] : expectKind(...expect).map((l) => `\t${l}`);
     b.lines.push('{', `\t${callLine(fn, call)}`, ...after, '}');
   };
@@ -1748,12 +1771,12 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
     });
     const internal: [string, string, string] = [categoryType(model, 'internal'), 'internal', 'B-5c'];
     const b = new Body();
-    const held = placeholder(v, b, { unit: object.unit.id });
+    const held = instanceOf(b, object);
     b.lines.push(`if err := binding.PanicTestHeld(${model.objects.indexOf(object)}, ${held}.handle()); err == nil {`, '\tt.Fatal("B-5c: the poison entry point did not panic")', '}');
     if (receiverFn !== undefined) check(b, receiverFn, held, undefined, held, internal);
     if (paramFn !== undefined) {
       const owner = objectOf(paramFn);
-      const receiver = paramFn.receiver === undefined || owner === undefined ? '' : placeholder(v, b, { unit: owner.unit.id });
+      const receiver = paramFn.receiver === undefined || owner === undefined ? '' : instanceOf(b, owner);
       check(b, paramFn, receiver, takes(paramFn, object), held, internal);
     }
     out.held.push(`
@@ -1770,13 +1793,13 @@ ${indent(b.lines, 1)}
       const armed = point === undefined || filled === undefined || inject === undefined ? undefined : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), kind: kindText(filled.variant), category: filled.category };
       const c = new Body();
       if (armed !== undefined) c.lines.push('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
-      const instance = placeholder(v, c, { unit: object.unit.id });
+      const instance = instanceOf(c, object);
       if (armed !== undefined) c.lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(armed.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
       check(c, fn, instance, arg, instance, [categoryType(model, 'busy'), 'busy', 'B-5c']);
       if (receiverFn !== undefined) check(c, receiverFn, instance, undefined, instance, undefined);
       if (armed !== undefined) {
         // GN-8a: the refused call did not reach the core, so the next call, with another instance, takes the arming.
-        const other = placeholder(v, c, { unit: object.unit.id });
+        const other = instanceOf(c, object);
         check(c, fn, instance, arg, other, [categoryType(model, armed.category), armed.kind, 'GN-8a']);
         c.lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
       }

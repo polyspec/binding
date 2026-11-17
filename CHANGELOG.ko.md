@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a3055b9069be52e0b792e0018040ebc400b7aa2f450af08307c39c135ba4af20 -->
-<!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
+<!-- source-sha256: a720cd0fb3d28ab7fc889983eb237ddad5c6bec571b90055efcaa2ec67f1e967 -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
 <!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
@@ -15,6 +14,7 @@
 
 ## Unreleased
 
+- 생성된 member의 G-7 시험과 Python의 GN-11a 시험은 class의 인자에 그 member의 case의 case 값을 주고, B-5c 시험은 그 class의 instance 각각을 raise하지 않는 그 class의 첫 case로 만든다. 전에는 core가 거부할 수 있는 첫 constructor의 placeholder를 주었다(GN-13t, B2.463). method의 G-7 시험은 receiver를 한 번 만들고 모든 호출을 그 receiver에 하므로, 상태를 가진 receiver를 같은 case 폴더에서 다시 만들지 않는다.
 - 이 version으로 옮기는 레포가 Go 모듈에 할 일(B2.459): `zz_generated_*.go` 파일을 하나도 추적하지 않는다. `binding release-go-module`이 이제 그 파일을 하나라도 추적하는 tag의 commit을 거부하므로, 그 파일을 추적하는 레포(orm)는 tag를 만들기 전에 그 파일을 index에서 지우고(각각 `git rm --cached`) ignore한다(Go 모듈의 `.gitignore`에 `zz_generated_*.go` 한 줄). 소비자가 받는 모듈에 레포 자신의 시험과 program이 있다고 기대하지 않는다. 소비자가 `go install`로 설치하는 명령에는 자기 Go 모듈을 준다.
 - `binding release-go-module`은 tag의 commit이 추적하는 모든 생성 파일을 거부하고, 하나씩 밝히며, commit도 tag도 만들지 않는다(GN-3, GN-15g, GN-19f, B2.459). 전에는 test feature의 build tag 뒤의 추적 파일과 추적된 guard만 거부했다(B2.446). 나머지 추적 파일 위에는 work tree의 파일을 덮어썼고 생성이 더는 쓰지 않는 추적 파일은 그대로 두었으므로, release 형태가 release가 검사한 commit과 달랐고 아무것도 그것을 말하지 않았다. GN-3은 `zz_generated_*.go` 파일을 추적한다고 적고 G-6을 인용했는데, G-6은 binding의 어떤 문서도 정의하지 않는 규칙이다. 그 문장은 이제 GN-15g와 GN-19h처럼 추적하는 tree가 그 파일을 담지 않는다고 적고, 인용은 지웠다.
 - Go 모듈 tag는 레포의 시험도 program도 싣지 않는다(GN-15g, GN-14f, GN-14h, GN-19f, B2.459). `binding release-go-module`의 commit은 tag의 commit의 tree에서 생성기가 쓰지 않은 모든 `_test.go` 파일, 곧 end-to-end 검사가 없는 것으로 다루는 파일과, 어느 디렉터리에 있든 package 절이 `main`인 모든 Go 파일을 뺀다. 그 밖의 추적 파일은 host 같은 손으로 쓴 package까지 모두 싣고, 뺀 파일은 출력에 하나씩 밝힌다. 전에는 tag가 그것을 모두 가졌으므로, 받은 모듈에 소비자가 돌리는 `go test`가 레포의 runner가 주는 입력이 필요한 시험을 돌렸고, end-to-end 검사는 그 시험이 없는 형태를 증명했다. 함수 하나가 release 형태의 파일을 주고 명령과 end-to-end 검사가 둘 다 그것을 읽는다. tag의 `go.mod`와 `go.sum`은 tag의 commit의 것 그대로다. 빠진 시험이나 program만 쓰던 require는 남고, 명령은 그것을 밝히지 않는다.
