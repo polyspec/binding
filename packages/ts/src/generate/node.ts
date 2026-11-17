@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, conversionLookups, poisonArms, categoryIndex, constantAsserts, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1294,15 +1294,13 @@ const failedFn = (model: Model, fn: Fn): string => (conversionsOf(model, fn).len
 // conversion of the member, and the conversion itself, which runs where the failure is thrown: the one place that
 // holds the environment and the pending exception.
 function convertedRust(model: Model): string {
-  const { fns, failure } = convertingFns(model);
-  if (fns.length === 0) return '';
-  const tables = fns.map((fn) => {
-    const lookups = conversionLookups(model, fn, 'node', (range, arms) => `    if let Some(error) = converted_from(env_, value, ${range}, |kind| match kind {
+  const lookup = (range: string, arms: string[]): string => `    if let Some(error) = converted_from(env_, value, ${range}, |kind| match kind {
 ${arms.join('\n')}
             _ => None,
         })? {
         return Ok(Some(error));
-    }`);
+    }`;
+  const tables = convertedTables(model, 'node', lookup, (fn, lookups, failure) => {
     const name = convertedFn(fn).slice('converted_'.length);
     const libraries = conversionsOf(model, fn).map((c) => c.library).join(', ');
     return `
@@ -1322,7 +1320,8 @@ ${lookups.join('\n')}
 }
 `;
   });
-  return `${tables.join('')}
+  if (tables === undefined) return '';
+  return `${tables}
 /// B2.489: the row of a converted kind: the index of its class in CLASSES, the kind, and the name of each property,
 /// which the class of the other library and this one both define.
 type ConvertedRow = (usize, &'static str, &'static [&'static str]);

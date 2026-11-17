@@ -267,6 +267,14 @@ export const conversionLookups = (model: Model, fn: Fn, lang: 'node' | 'wasm', l
     return lookup(`${base}..${base + ownerErrorClasses(c.owner, lang).length}`, convertedArms(model, c, lang));
   });
 
+// B2.489 (GN-7c): the functions of the members with a conversion table in node and wasm, each written by table from
+// its lookups and the failure of the core; undefined when no member converts.
+export function convertedTables(model: Model, lang: 'node' | 'wasm', lookup: (range: string, arms: string[]) => string, table: (fn: Fn, lookups: string[], failure: string) => string): string | undefined {
+  const { fns, failure } = convertingFns(model);
+  if (fns.length === 0) return undefined;
+  return fns.map((fn) => table(fn, conversionLookups(model, fn, lang, lookup), failure)).join('');
+}
+
 // GN-5, GN-6h: the arms of the poison entry point of the B-5c test, one for each class whose lock is written, with its
 // class name in the language.
 export const poisonArms = (model: Model, lang: Lang, arm: (object: ObjectClass, cls: string) => string): string[] =>
