@@ -715,6 +715,17 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   archive of a release (`polyspec-binding-X.Y.Z.tgz` of the GitHub Release), which carries no commit, and the release of
   the version X.Y.Z is the annotated tag `vX.Y.Z`, which no step moves: a Git source that names the tag `v<version>` of
   the running binding (`?tag=vX.Y.Z`) is then its commit, and any other source is a finding.
+- **CK-109** The line of the core on `polyspec-binding-core` (generator GN-3e): a line of the core's manifest on
+  `polyspec-binding-core` that names a tag, by itself or by the line of `[workspace.dependencies]` that it inherits,
+  names the tag `v<version>` of the version of the running binding, the version of its package. That is the version of
+  a release generator and of a development generator alike: between two releases the manifests of a checkout hold the
+  last released version, so a development generator compares a tag with that version as well, and CK-20 compares its
+  commit. A tag of another version is a finding that names the line, the version of its tag and the version of the
+  binding. A line without a tag is no finding of CK-109 (CK-70 reports a branch in a release), and a core without the
+  line is none, because scaffold then writes the line of the generator itself. The migration is to change the line of
+  the core and run `make bindings` again. Why: scaffold copies the line into each binding crate, so a core on the tag of
+  an older release kept that core runtime under a newer generator, or its binding crates were edited by hand, which
+  CK-19 then reported (B2.503).
 
 ## Tables of binding
 

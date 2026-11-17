@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 6aa61f8c945de3027484c8dbd9fe331a32359c39bc2c8b4cfeb875fc428650bd -->
+<!-- source-sha256: 439193bdf0ba0597622c82429540895590810676c6223b84aff01507c4091d86 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -602,6 +602,15 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   이 커밋을 하나도 알 수 없는 binding은 커밋을 담지 않는 릴리스의 npm archive(GitHub Release의 `polyspec-binding-X.Y.Z.tgz`)이고,
   버전 X.Y.Z의 릴리스는 어떤 단계도 옮기지 않는 annotated tag `vX.Y.Z`다. 그래서 실행 중인 binding의 tag `v<version>`을
   이름하는 Git source(`?tag=vX.Y.Z`)는 그 커밋이고, 다른 source는 finding이다.
+- **CK-109** core의 `polyspec-binding-core` 줄(생성기 GN-3e): core manifest의 `polyspec-binding-core` 줄이 그 자체로든 그것이
+  물려받는 `[workspace.dependencies]`의 줄로든 tag를 이름하면, 그 tag는 실행 중인 binding의 version, 곧 그 package의
+  version의 tag `v<version>`이다. 그것은 release 생성기와 개발 생성기에서 같은 version이다: 두 release 사이에 checkout의
+  manifest는 마지막으로 release한 version을 가지므로, 개발 생성기도 tag를 그 version과 비교하고, 그 commit은 CK-20이 비교한다.
+  다른 version의 tag는 finding이며, 그 줄과 그 tag의 version과 binding의 version을 이름한다. tag가 없는 줄은 CK-109의
+  finding이 아니고(release의 branch는 CK-70이 보고한다), 줄이 없는 core도 아니다. 그때 scaffold가 생성기 자신의 줄을 쓰기
+  때문이다. 이행은 core의 줄을 바꾸고 `make bindings`를 다시 돌리는 것이다. 이유: scaffold는 그 줄을 binding crate마다
+  옮기므로, 더 오래된 release의 tag에 있는 core는 새 생성기 아래에서 그 core runtime을 그대로 두었거나, 그 binding crate를
+  손으로 고쳤고, CK-19가 그것을 보고했다(B2.503).
 
 ## binding의 표
 

@@ -28,13 +28,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { parse } from 'smol-toml';
-import { checkContract } from './check.ts';
+import { bindingCoreTagFinding, checkContract } from './check.ts';
 import { gitPinDiffers, ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goModGraph, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, releaseRequires, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
+import { BINDING_CORE, bindingCoreFinding, casePointLibraries, componentBase, extensionName, goModGraph, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, releaseRequires, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
 import { goModUnusedOf, goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
@@ -556,6 +556,12 @@ if (command === 'check') {
       differs = true;
       process.stderr.write(`${join(coreDir, 'Cargo.toml')}: CK-65 the core ${checked.core.crate} has fault injection points, but its [dev-dependencies] name no ${checked.core.crate} = { path = ".", features = ["fault-test"] }, so cargo test without flags does not arm them (GN-5)\n`);
     }
+  }
+  // CK-109 (GN-3e): the line of the core on polyspec-binding-core names no tag of another version than this binding.
+  const tagFinding = bindingCoreTagFinding(coreDependencies.get(BINDING_CORE), generator.version);
+  if (tagFinding !== undefined) {
+    differs = true;
+    process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: ${tagFinding}\n`);
   }
   // CK-71 (GN-3f): the core names the licence that the manifests of its binding packages carry.
   if (coreLicense === undefined) {

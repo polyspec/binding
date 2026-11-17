@@ -142,7 +142,7 @@ export function dependencyForm(spec: unknown, core?: string): { version?: string
 // binding sits at the same depth as the core, so a relative path means the same place).
 export type CoreDependencies = ReadonlyMap<string, unknown>;
 
-const tomlValue = (value: unknown): string => {
+export const tomlValue = (value: unknown): string => {
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'boolean' || typeof value === 'number') return String(value);
   if (Array.isArray(value)) return `[${value.map(tomlValue).join(', ')}]`;

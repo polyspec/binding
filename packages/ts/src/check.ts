@@ -24,6 +24,7 @@ import {
   outerVariant,
 } from './contract.ts';
 import { asyncFunctionRefusal, carriers } from './generate/model.ts';
+import { BINDING_CORE, tomlValue, WORKSPACE_LINE } from './generate/packages.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KINDS, builtinTypes, madePredicates } from './values.ts';
 
@@ -3212,6 +3213,22 @@ class Checker {
       }
     }
   }
+}
+
+// CK-109 (GN-3e): the line of the core on polyspec-binding-core, which scaffold copies into each binding crate, names
+// no tag of another version than the running generator `version`; a line that the core inherits is read as the line of
+// [workspace.dependencies] that it inherits. A line with no tag is no finding of CK-109, and a core without the line
+// gets the line of the generator itself. The finding names the line, its version and the version of the generator.
+export function bindingCoreTagFinding(spec: unknown, version: string): string | undefined {
+  if (typeof spec !== 'object' || spec === null) return undefined;
+  const inherited = (spec as { workspace?: unknown }).workspace === true;
+  const line = inherited ? (spec as { [WORKSPACE_LINE]?: unknown })[WORKSPACE_LINE] : spec;
+  if (typeof line !== 'object' || line === null) return undefined;
+  const tag = (line as { tag?: unknown }).tag;
+  if (typeof tag !== 'string' || tag === `v${version}`) return undefined;
+  const of = /^v(\d+\.\d+\.\d+)$/.exec(tag)?.[1];
+  const named = `${BINDING_CORE} = ${tomlValue(line)}${inherited ? ', by the line of [workspace.dependencies] of the root manifest,' : ''}`;
+  return `CK-109 the line ${named} names ${of === undefined ? `the tag ${tag}, which is the tag of no version` : `the tag of the version ${of}`}, not ${version}, the version of this binding, whose generated code and core runtime are of one release; change the line to the tag v${version} and run make bindings again (GN-3e)`;
 }
 
 // L-1, P-1: the repository and the component of a contract. A core at packages/<component>/rust is the library
