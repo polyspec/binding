@@ -2194,9 +2194,10 @@ function jsMaker(model: Model, lang: 'node' | 'wasm'): string {
 // repository throws what it makes from a callback unit of ${model.contract.library}.
 const PROPERTIES = new Map();
 ${properties.join('\n')}
-const MAKE = Symbol.for('polyspec.binding.make');
+// A name of its own: the WASM module declares MAKE, by which it makes an instance of a class (T-5).
+const ERROR_MAKER = Symbol.for('polyspec.binding.make');
 for (const made of [${[...model.classes.map((c) => c.name), ...model.errorUnits.map(unitName)].join(', ')}]) {
-  Object.defineProperty(made, MAKE, {
+  Object.defineProperty(made, ERROR_MAKER, {
     value: function make(kind, message, status, errno, properties = {}) {
       const error = new this(message, kind, status, errno);
       const names = PROPERTIES.get(this) ?? new Set();
