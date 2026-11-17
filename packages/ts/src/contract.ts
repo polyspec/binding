@@ -146,7 +146,9 @@ export interface NamingException {
 export interface Errors {
   classes: Partial<Record<Category, Partial<Record<Lang, string>>>>;
   fixed: { lang: Lang; class: string }[];
-  kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; kinds?: string[] }[];
+  // GN-7c, CK-22: `through` names the callback unit of the library of the row through whose object the kind reaches a
+  // member; a row with `library` and without it gives a kind that arrives by a call of the core of this contract.
+  kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; through?: { unit: string; library?: string }; kinds?: string[] }[];
   // GN-7b: the core error of a struct that holds the code enum of the kinds, and the projection to that code.
   code?: { error: string; path: string };
   // U-3, GN-6d: the core function that makes the core error of a recognized kind with its message.

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4acb5c949a292653c83cd0bfb68bd0363c9a0700c94a5010a5c5bfb8246c682c -->
+<!-- source-sha256: 0d6902d6e23df35a450deecb332b063a7d73b48a1130c92a5617d7ffd2b18dcf -->
 # 생성기
 
 [English](generator.md)
@@ -490,7 +490,9 @@
   라이브러리의 코어를 하나의 `binding_core`와 함께 링크하므로, 이 crate의 `fault-test` 진입점(`_arm_faults`와 위 표의
   이름)이 이 계약의 member에 대해 그 지점을 장전하고, member의 진입점이 그 장전을 설치하며, 이 계약의 코어가 그
   라이브러리의 코어를 부르는 곳에서 지점이 그것을 읽는다. 그 라이브러리의 바인딩 package는 여기에 쓰지 않는다. 그 crate는
-  자기 `binding_core`를 링크하고, 이 crate 안의 코어는 그 장전을 읽지 않기 때문이다. 호출이 닿지 않은 지점은
+  자기 `binding_core`를 링크하고, 이 crate 안의 코어는 그 장전을 읽지 않기 때문이다. 그래서 `through`가 있는 행(GN-7c)의
+  kind는 이 crate의 지점이 아니다. 그것은 그 라이브러리 package의 object가 낸 예외이고 코어가 `Failure::Raised`로 전달하며,
+  그것을 주는 지점은 그 package 안에서 발화한다. `binding check`는 그런 지점을 장전하는 case를 거부한다(CK-22). 호출이 닿지 않은 지점은
   `_fault_left`에 남아 시험을 실패시키고(GN-13), `binding check`는 그 이름을 그 라이브러리의 계약과 비교한다(CK-22).
   아직 생성하지 않고 이름을 대고 거부하는 것(G-4): 자기 `faults`가 없는 계약에서 다른 라이브러리의 지점을 장전하는
   case. GN-8a의 항목은 `faults`가 있는 계약에만 쓰기 때문이다. 지점을 가진 코어는 자기 자신을 dev-dependency `<core crate> = { path = ".", features = ["fault-test"] }`로
@@ -1402,7 +1404,9 @@
   계약에서 `<안쪽>` 행의 category이고, 클래스는 이 레포 E-2 표의 그 category 클래스이거나 행이 `class`에 적은 오류 unit이며, kind,
   status, errno는 자기 행처럼 코어 오류가 주는 것(`Kinds`)이다. 그런 kind를 내는 case의 생성 시험은 그 클래스로 쓴 GN-13의
   시험이다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
-  (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
+  (G-4, CK-10). `library`가 있는 행은 `through`에, 그 kind가 member에 닿는 통로인 그 라이브러리의 callback unit을
+  `{"unit": "<unit>", "library": "<library>"}`로 적을 수 있다. 생성 코드는 이 키가 있든 없든 같고, `binding check`가 그것을
+  읽는다(CK-10, CK-22). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
   컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
@@ -2504,7 +2508,15 @@
 - **GN-13d** Python, Node, PHP, WASM은 GN-6i, GN-6j, GN-7a의 형태에 대해 다음도 확인한다. U-2: `{literal}`·`{const}`·`{empty}`
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
-  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. Python과 Node에서 그런
+  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. `machine`이 있는
+  member(GN-6ab)도 그런 member다. 두 호출은 그 case의 함수를 받고, 결과 `passthrough`는 함수가 돌려준 값으로 비교한다. `{computed}` 기본값에는
+  선언된 값이 없다. 코어가 호출마다 값을 만들므로 두 호출의 결과가 다를 수 있다. `optional` 타입의 `{computed}` 기본값에
+  대해서는 같은 member에, Go에서도, 그 parameter나 field를 뺀 호출과 null을 준 호출을 실행하고 각 결과를 버린 뒤 같은
+  outcome을 요구한다: 둘 다 실패가 없거나, 같은 클래스와 kind의 실패다. 이 시험은 값을 비교하지 않으며 이름에 그 기본값의
+  규칙 id를 적는다(Node와 WASM에서 `U-2: Form.addRow without key leaves its value to the core (CURT-004)`, 다른 target은
+  같은 말을 각자의 이름 형식으로). Go는 둘 다 nil을 주므로 두 호출이 같은 호출이다. 다른 타입의 `{computed}` 기본값에는 두
+  번째 호출이 없어 U-2 시험이 없다. `{computed}` 기본값의 값은 그 규칙의 case가 증명하며, `binding check`가 그 case를
+  요구한다(contract-check CK-103). Python과 Node에서 그런
   parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. 단, 기본값이 `{literal: null}`이면 그 null이 선언된 값이므로 제외하고,
   `optional`과 값 타입도 그것을 값으로 받으므로 제외한다(GN-6i). T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
   내고(Python, Node), 짝 없는 surrogate가 든 text는 kind `invalid_text`, 둘 다 아닌 값은 kind `invalid_argument_type`이다.

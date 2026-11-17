@@ -778,6 +778,10 @@
               "class": {
                 "$ref": "#/$defs/id"
               },
+              "through": {
+                "description": "The callback unit of the library through whose object the kind of a row with library reaches a member (GN-7c, CK-22); a row without it gives a kind that arrives by a call of the core of this contract.",
+                "$ref": "#/$defs/unitRef"
+              },
               "kinds": {
                 "description": "The kinds of a variant that gives two or more (E-1); a variant without it gives the one kind of its name in snake_case.",
                 "type": "array",
@@ -787,6 +791,11 @@
                   "$ref": "#/$defs/kind"
                 }
               }
+            },
+            "dependentRequired": {
+              "through": [
+                "library"
+              ]
             },
             "oneOf": [
               {
