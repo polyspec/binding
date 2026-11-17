@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 921e33a276a2fd6a5150023b56c05147e0e0ff675525127b88ab1813bbb36121 -->
+<!-- source-sha256: d5787ae03524759310e18b758e7b33c785222ecccd0bada160edbbb78fffa2ec -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -107,7 +107,7 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은 `/`를 적지 않는다(GN-7c). `library`가 있는 행은
   `"through": {"unit": "<unit>", "library": "<library>"}`를 가질 수 있다. 그 kind는 그 라이브러리의 package가 만든 그 unit의
   object를 통해서만 member에 닿고, 이 계약 코어의 호출로는 닿지 않는다는 뜻이다(검사가 그때 무엇을 묻는지는 CK-22가
-  정한다). schema는 이 키를 `library`가 있는 행에만 허용한다. 그 `library`는 행의 라이브러리이고 `unit`은 그 라이브러리
+  정한다). 두 길로 다 닿는 kind의 행에는 `through`가 없다. schema는 이 키를 `library`가 있는 행에만 허용한다. 그 `library`는 행의 라이브러리이고 `unit`은 그 라이브러리
   계약의 callback unit이며, 그 행을 `raises`에 적은 member는 그 unit을 인자로 받는다(record 안이어도 된다). 다른 형태는 행을,
   또는 member와 variant를 대고 거부한다. `kinds`·`raises`·`in_raises`의
   variant는 Rust 경로이거나 GN-7c의 중첩 경로 `<바깥>/<안쪽>`이고, `errors.code`는 코어 오류 타입과 kinds의 code enum으로 가는
@@ -372,7 +372,11 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   it through the unit <unit> of <library> (through): the point fires in the package of <library>, whose arming a
   generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`. 이유: hyper는
   `open_page`에서 session-store의 callback unit `store`를 받고, 전달하는 session-store의 kind 17개 중 16개는 그 object가 낸
-  것으로만 닿는다. `Random`만 hyper 코어의 호출(`polyspec_session_store::random_hex`)에서 온다. session-store의 package는 자기
+  것으로만 닿는다. `Random`은 두 길로 닿는다. store의 `renew`가 낸 것으로, 그리고 hyper 코어가 부르는
+  `polyspec_session_store::random_hex`에서 온다. 그래서 그 행에는 `through`가 없고, 그 호출에 대해
+  `session_store.random`을 장전하는 그 case를 요구한다. 그 라이브러리 package의 object를 통해서도, 이 계약 코어의
+  호출로도 member에 닿는 kind는 `through`를 갖지 않는다. 코어의 호출이 지점에 닿으므로, 키가 없는 다른 행처럼 X-1
+  case와 경로 case를 요구하고, 생성된 테스트는 object를 통한 길이 아니라 코어의 호출만 증명한다. session-store의 package는 자기
   `binding_core`를 링크하므로(generator GN-5), `session_store.internal`을 장전한 hyper의 테스트는 store가 읽는 것을 아무것도
   장전하지 못했다. 그 case가 있으면 생성된 Node 테스트가 "Missing expected rejection"으로 실패했고, 없으면 검사가 빠진
   case를, 그리고 그 행마다 경로의 빠진 case를 보고했다. 증명되지 않고 남는 것: 검사는 kind가 코어의 호출로 오는지를 Cargo

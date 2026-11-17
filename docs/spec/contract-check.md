@@ -120,7 +120,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `library` names the variant `<outer>/<inner>`, whose `<inner>` the library's contract declares, and a row without
   `library` names no `/` (GN-7c). A row with `library` may hold `"through": {"unit": "<unit>", "library":
   "<library>"}`: the kind reaches a member only through an object of that unit, which the package of the library
-  makes, and by no call of the core of this contract (CK-22 states what the check then asks). The schema allows the
+  makes, and by no call of the core of this contract (CK-22 states what the check then asks). A kind that reaches a
+  member both ways has no `through`. The schema allows the
   key only on a row with `library`. Its `library` is the library of the row and its `unit` a callback unit of the
   contract of that library, and each member that states the row in its `raises` takes that unit as an argument, also
   inside a record; each other form is refused with the row, or with the member and the variant. A variant
@@ -444,8 +445,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   it through the unit <unit> of <library> (through): the point fires in the package of <library>, whose arming a
   generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`. Why: hyper takes
   the callback unit `store` of session-store in `open_page`, and 16 of the 17 kinds of session-store that it passes
-  on reach it only as what that object raised; only `Random` comes from a call of the core of hyper
-  (`polyspec_session_store::random_hex`). The package of session-store links a `binding_core` of its own
+  on reach it only as what that object raised. `Random` reaches it both ways: as what `renew` of the store raised,
+  and from the call of `polyspec_session_store::random_hex` by the core of hyper; so its row has no `through`, and
+  its case, which arms `session_store.random` for that call, is asked. A kind that reaches a member both through an
+  object of the package of its library and by a call of the core of this contract keeps no `through`: the call of
+  the core reaches the point, so its X-1 case and its path case are asked as for any row without the key, and the
+  generated test proves the call of the core alone, not the way through the object. The package of session-store links a `binding_core` of its own
   (generator GN-5), so a test of hyper that armed `session_store.internal` armed nothing that the store read: with
   the case the generated Node test failed with "Missing expected rejection", and without it the check reported the
   missing case, and the missing case of the path for each of those rows. What stays unproven: the check does not
