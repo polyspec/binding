@@ -4074,7 +4074,10 @@ the design ids are those of the binding design.
   (`<module>.<class>.<method>`) and in the earlier one (`<module>.<class>`). Why: methods of two classes may share a
   name, and a failure of one would otherwise stand for the expected failure of the other. A failed test of go test
   whose name holds no `.Test`, such as an example, fails the read with a failure that names it. Why: that name is no
-  name that the file can hold, and it must neither match an expected test nor be dropped.
+  name that the file can hold, and it must neither match an expected test nor be dropped. The reader of expected
+  failures and the guard of the tags (GN-13bf) read the name of a Go test by one function (`goTestName` of
+  `scripts/go-test-events.mts`), and the guard fails on a name without `.Test` with the same failure that names it.
+  Why: two readings of one name drift apart, and the guard would then take a test for another.
 - **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
   by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
   does, ends with the steps of the release form, after every step of the development form. The steps are added to
