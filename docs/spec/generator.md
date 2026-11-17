@@ -66,7 +66,7 @@ the design ids are those of the binding design.
   <subcommand>`, with `$(CARGOFLAGS)` right after the subcommand of a build (`rustc`, `build`), and pass `--cargo
   "$(CARGO)"` to each command of binding that they run that runs Cargo; `binding check` reports a file of recipes that
   runs Cargo in another way (CK-94). A recipe of the repository that runs `binding go-link` passes `--cargo "$(CARGO)"
-  --cargo-flags "$(CARGOFLAGS)"`. maturin, which `uv build` runs, and `napi build` start Cargo themselves and are no
+  --cargo-flags "$(CARGOFLAGS)"`. `maturin build` and `napi build` start Cargo themselves and are no
   call of binding. The go command is given in the same way, and is no requirement of a command: `binding check`,
   `binding scaffold` and `binding release-go-module` take `--go <command>`, the value of `$(GO)`, split into words as
   `--cargo` is, and without it they run the `go` of `PATH` (GN-15l, GN-19f). Why: php-serialization and session-store found that `binding go-link` and the release recipes ran
@@ -590,7 +590,10 @@ the design ids are those of the binding design.
   and the names of the table above) arms the point for a member of this contract, the entry point of the member
   installs the arming, and the point reads it where the core of this contract calls the core of that library. The
   binding package of that library is not used for it: its crate links a `binding_core` of its own, whose arming the
-  core inside this crate does not read. A point that the call does not reach stays in `_fault_left`, which fails the
+  core inside this crate does not read. So a kind of a row with `through` (GN-7c) is no point of this crate: it is
+  an exception that the object of the package of that library raised, which the core passes on as
+  `Failure::Raised`, the point that gives it fires in that package, and `binding check` refuses a case that arms
+  such a point (CK-22). A point that the call does not reach stays in `_fault_left`, which fails the
   test (GN-13), and `binding check` compares its name with the contract of its library (CK-22). Not generated yet,
   refused by name (G-4): a case that arms a point of another library in a contract without `faults` of its own,
   because the items of GN-8a are written only for a contract with `faults`. A core with
@@ -886,7 +889,15 @@ the design ids are those of the binding design.
   digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
   crate, because the lints deny the boxed type at a `let` and as the result of a closure
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
-  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`) and, where
+  is `'static`, `Send` and `Sync`. The form returns its result when the call returns, so the binding awaits nothing
+  that such a function returns: its type states `async_allowed: false`, with `keeps` and without, and a type of this
+  form that states `async_allowed: true` is refused by `binding check` (CK-17) and by the generator of every target
+  with one sentence, which both read from one function (`asyncFunctionRefusal`). Only the function of a machine
+  (GN-6ae), whose return is `passthrough`, is awaited. A Node or WASM function of this form that returns a promise
+  is not awaited: the promise is the value that the binding converts as the declared return, which is kind
+  `invalid_argument_type` of the conversion for a return that a promise is no value of, a `Raised` for the core;
+  where the return is `none` the promise is dropped, and its rejection reaches no caller. Awaiting a kept function is
+  not designed yet (B2.483). When the value enters it must be callable (kind `invalid_argument_type`) and, where
   the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
@@ -1712,7 +1723,10 @@ the design ids are those of the binding design.
   class is the class of that category in this repository's table of E-2, or the error unit that the row names in
   `class`, and the kind, status and errno are those that the core error gives (`Kinds`), as for its own rows. The
   generated test of a raising case of such a kind is the test of GN-13 with that class. A row with `library` whose
-  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
+  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). A
+  row with `library` may name in `through` the callback unit of that library through whose object the kind reaches
+  a member, `{"unit": "<unit>", "library": "<library>"}`; the generated code is the same with and without the key,
+  which `binding check` reads (CK-10, CK-22). Why:
   the core error holds the error of the library inside one of its own variants, so only the path down to the inner
   variant gives a pattern that the compiler checks against the core error (E-1b (a)).
   The conversion of an exception of L's package (B2.489, CK-105): a member that takes a callback unit of L (GN-6s)
@@ -2606,7 +2620,11 @@ the design ids are those of the binding design.
   function gives, of the files of the module, generated and hand-written, those that the released form carries; it
   reads the name of each file, the build constraint of a generated file and the package clause of a Go file, and
   both `binding release-go-module` and the released form of the end-to-end check (GN-14f) read it and remove a file
-  by no other rule (B2.459); it holds no list of file names and no name of a directory. Why the tests and the
+  by no other rule (B2.459). The released form of the end-to-end check makes the tags as the release makes them
+  (B2.488): a module after the modules of its repository that it requires, with the two `go.sum` lines of each of
+  them from `go mod download -json` of their tags in a commit of its own (the function of `binding
+  release-go-module`), and then each module builds alone in the tree of its tag with `go build -mod=readonly` and no
+  workspace; it holds no list of file names and no name of a directory. Why the tests and the
   programs are left out: what the check proves and what the tag carries are one form. A test of the repository
   reads inputs that the runner of the repository gives (GN-14h), so the `go test` of a consumer over the fetched
   module would fail on it, and the end-to-end check runs a form without it. A program is imported by no consumer,
@@ -2711,6 +2729,21 @@ the design ids are those of the binding design.
   `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
   `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
   `go.mod`, and session-store, whose `go.mod` requires php-serialization, had none, so its module did not build alone.
+  The graph of the requirements (B2.488): Go builds a module with `-mod=readonly` only when its `go.mod` requires every
+  module that provides a package of its build, `// indirect` for one that it does not import itself, and its `go.sum`
+  holds the hash of each. So the `go.mod` that scaffold tracks is the generated one followed by a block `require ( …
+  // indirect )` of each module of the build list that it does not require, at the version that the build list
+  selects, and the `go.sum` holds the hash of each of them. binding reads no import graph of another module, so it
+  requires every module of the build list, which selects no other version and adds no module to the module graph.
+  Go is asked again with each module that it gave, until it gives no new one, because the graph of a required
+  module holds that module's requirements alone (graph pruning). A requirement of a module of the same repository
+  adds to that graph the requirements of its tracked `go.mod`, read from its directory in the checkout, and each
+  module of the same repository that it requires in turn is required `// indirect` too, with no line in the `go.sum`
+  (the release writes its hash, GN-19f). A module of the same repository whose `go.mod` is not there, and a
+  requirement below the version that the build list selects, refuse the files with the module named. Before B2.488
+  the tag of a module that required session-store v0.0.4 failed `go build -mod=readonly` with `GOWORK=off`, first with
+  `missing go.sum entry for module providing package github.com/polyspec/php-serialization/packages/go` and, with
+  that hash, with `updates to go.mod needed`. CK-102 does not judge the lines `// indirect` (B2.473).
   The go command: `binding check` and `binding scaffold` take `--go <command>`, the value of `$(GO)` of the release
   recipes (GN-19h), and without it the command is the `go` of `PATH`. The value is split into words at white space, as
   the value of `--cargo` is (GN-1d), and the commands run `<command> mod download -json all`; a value that holds a quote
@@ -2990,8 +3023,8 @@ the design ids are those of the binding design.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
-  none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
-  <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
+  none) and `"once": true` for a row that answers one call, which the case expects (GN-13bi). A row with
+  `"raise": {"error": <error unit>, "kind": <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
   `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
   message and the kind (GN-10); Go by
   `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
@@ -3100,7 +3133,17 @@ the design ids are those of the binding design.
   field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
-  compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
+  compares by value (no class, no result of `none`) and that takes no callback and is no hook. A member with
+  `machine` (GN-6ab) is such a member too: both calls take the function of that case, and its result `passthrough`
+  is compared as the value that the function returned. A `{computed}` default
+  has no declared value, because the core makes the value at each call, so two calls may give two results. For a
+  `{computed}` default of an `optional` type the test, of the same members and in Go too, runs the call without the
+  parameter or field and the call with null, drops the result of each and requires the same outcome: both without a
+  failure, or the same class and kind of failure. It compares no value, and its name states the rule id of the
+  default (`U-2: Form.addRow without key leaves its value to the core (CURT-004)` in Node and WASM, the same words in
+  the naming style of each other target). Go gives nil for both, so its two calls are the same call. A `{computed}`
+  default of another type has no second call and no test of U-2. The value of a `{computed}` default is proven by the
+  case of its rule, which `binding check` requires (contract-check CK-103). In Python and Node an
   explicit `None` or `null` for such a parameter is tested as a value that is refused, except where the default is
   `{literal: null}`, whose declared value is that null, and except for an `optional` or a value type, which takes it
   as a value (GN-6i). T-1: a `source` parameter gives
@@ -3297,7 +3340,8 @@ the design ids are those of the binding design.
   test class (an object by its class and its properties, an instance of a value class of another repository by its in
   row, B2.121), which the fixture takes as `self::same(...)`, and Python by `_same`. Node and WASM compare by
   `isDeepStrictEqual` and Go by `reflect.DeepEqual`, which compare values already; Go reads arguments that hold an
-  instance of a value class of another repository by `foreignRead` first (GN-13bg). Why: PHP `===` of two objects holds
+  instance of a value class of another repository by `foreignRead` first, and Node and WASM by `ordered`, which the
+  fixture is given as its reader (GN-13bg). Why: PHP `===` of two objects holds
   for one instance alone and Python `==` of a class without `__eq__` is its identity, so an argument that the binding
   made, equal to the value of the row, matched no row: the three host functions of template, whose second argument is
   an `Environment`, raised `UnexpectedCall` at every call; the same comparison of results was B2.358.
@@ -3355,7 +3399,13 @@ the design ids are those of the binding design.
   no property, so their U-2 tests passed for any two JSON values and checked nothing of the result. The Go test
   compared the result of a call of `after` and the arguments of a fixture by their handles too, and it added the
   statements that make an instance of an expected call to the lines of the test after it had written them, so the
-  test named a local that it did not declare (B2.445).
+  test named a local that it did not declare (B2.445). Node and WASM read through `ordered` the arguments by which a
+  callback fixture or the fixture of a function value finds its row, and the expected calls of a fixture, where a
+  parameter of a member of the callback, or of the function, holds such an instance: the test gives the fixture
+  `ordered` as its reader, at a parameter and inside another value, and compares `ordered` of the calls. A fixture
+  whose arguments hold no such instance is written as it was. Why: `isDeepStrictEqual` and `assert.deepEqual`
+  compared two instances by no property, so a call with any JSON value took the row of another value and the
+  expected calls held for any value, where Go and PHP read what the instance holds (B2.452).
 - **GN-13bh** The `category` that the `raises` of a case writes is one of the six categories of E-1 (`value`, `type`,
   `io`, `store`, `busy`, `internal`), and it is the category of the kind where the kind has one: the category that
   `errors.kinds` gives the kind (its own rows and the rows with `library`), or the fixed category of a kind of E-1a.
@@ -3371,6 +3421,29 @@ the design ids are those of the binding design.
   parses, so no generated test of those two targets ran, and Python, Node and WASM wrote `pkg.` in the same place. A
   category that is one of the six but not that of the kind names the class of another category, which the test of
   the case then fails at run time for a reason that the contract already shows (B2.448).
+- **GN-13bi** The rows of a callback fixture and of a function value of a case (G-5, GN-6z, CK-22) are a table of
+  answers, and a row with `"once": true` is also a call that the case expects. A call takes the first row of its
+  member that is left and whose arguments equal the call's (GN-13bb). A row without `once` stays: it answers any
+  number of calls, none included, and requires no call. A row with `once` answers one call and is then taken out, so
+  it answers exactly one. At the end of the test of a case, after the call of the case and its calls of `after`, the
+  generated test of each of the five targets requires that every row with `once` of every fixture that the test made
+  answered a call: a row with `once` that is left fails the test, which names the fixture by its place among the
+  fixtures of the test, the row by its place among the rows of the fixture, the member and the arguments. The rule
+  holds when the member returns and when it raises, so a case whose member fails before it calls the callback gives
+  that callback no row with `once`. The fixtures of the test are those at every place of the case: a parameter of a
+  callback or of a function type, a field of a record, an item of a list, an `optional`, the receiver and its calls
+  of `then`, a call of `after` and a step of a function fixture. So a callback or a function that the core keeps
+  (GN-6aa) and a later member calls is judged at the end of the case, not after the member that stored it. A contract
+  that requires a call writes its row with `once`, one row for each call; a contract that requires the calls of a
+  callback in their order names `calls` too. A function fixture of GN-6ae has no rows and is not judged here: its
+  steps run when the function is called. Python, Node and WASM hold the fixtures of the running test in a list of
+  the test module, which is emptied before each test (`setUp`, `test.beforeEach`), and require `_unanswered()` or
+  `unanswered()` to be empty. PHP makes a fixture with such a row through `self::made` of the test class, which
+  `setUp` empties, and requires `self::unanswered()` to be empty. Go adds each fixture with such a row to the slice
+  `onceFixtures` of the test where the fixture is made, also inside a block, and requires `unanswered()` of each to
+  be empty. The test of a case whose fixtures have no row with `once` is written as it was. Why: a fixture failed
+  only on a call that no row answers, so the test of a case passed for a core that never calls the callback or the
+  function, and no case could state that a call must come (orm, B2.482).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
@@ -4086,7 +4159,7 @@ the design ids are those of the binding design.
 ## The release of a repository that holds a binding
 
 - **GN-19** A repository that holds a binding releases it by recipes of make, and the work is divided by one rule. A
-  step that a standard tool of an ecosystem performs (Cargo, maturin through `uv build`, the napi CLI, npm, `zip`,
+  step that a standard tool of an ecosystem performs (Cargo, maturin, the napi CLI, npm, `zip`,
   `llvm-strip`) is a line of a recipe that starts that tool with the arguments of GN-19b to GN-19e; binding gives no
   command that wraps such a call. Those recipes are the same in every repository but for the names that its contract
   gives, so binding writes them for the contract as a file of make that the Makefile of the repository includes
@@ -4159,12 +4232,21 @@ the design ids are those of the binding design.
   variable of make as well. Why the recipe asks and not `binding check --release`: the variables are of the Makefile,
   which a command does not read (docs/spec/contract-check.md CK-102), and `release-go-static` runs in CI, as a build
   of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
-- **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
-  SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
-  directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
-  `macosx_11_0_arm64`), and the wheel is abi3 (GN-1), so one wheel of a platform serves every supported Python. Why
-  the compatibility is named: the PEP 517 backend of maturin passes `--compatibility off` unless it is given one, and
-  then tags a Linux wheel `linux_<arch>`, which PyPI refuses and pip installs on no other system. Why
+- **GN-19c** The Python wheel, on each platform: `$(MISE) install --locked github:PyO3/maturin`, then
+  `SOURCE_DATE_EPOCH=<commit time of the tag> $(MATURIN) build --release --locked --compatibility manylinux_2_34
+  --interpreter python3 --manifest-path <package directory>/Cargo.toml --out <assets>`. `MATURIN` is the maturin of
+  `mise.toml` of the repository, the shim of the mise of the checkout unless the Makefile gives another path to the same
+  tool, such as `link.mjs maturin` of kit; the recipe requires that `$(MATURIN) --version` prints the release of maturin
+  that binding pins (`MATURIN` of `packages/ts/src/generate/packages.ts`, the release of `mise.toml` of binding) and
+  ends with status 2 before a build otherwise. Why not `uv build`: a PEP 517 frontend builds with the backend that it
+  resolves from `requires` of the `[build-system]` table of `pyproject.toml`, at the time of the build and with no hash,
+  so the maturin of a release wheel was the one that the registry gave that day, not the one whose digest `mise.lock`
+  pins and with which the tests of the bindings build (B2.491). `requires` of the generated `pyproject.toml` names the
+  same release exactly, `maturin==<release>`, for a frontend that builds the package from source. maturin names the
+  wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`), and the wheel
+  is abi3 (GN-1), so one wheel of a platform serves every supported Python. Why the compatibility is named: without it
+  a Linux wheel can be tagged `linux_<arch>`, as the PEP 517 backend of maturin does with `--compatibility off`, which
+  PyPI refuses and pip installs on no other system. Why
   `manylinux_2_34`: Rust std links `pthread_key_create`, `pthread_key_delete` and `pthread_setspecific` at
   `GLIBC_2.34` against the glibc of the `ubuntu-26.04` runners (GN-19a), so a library built there needs at least that
   policy, and maturin checks the library against the policy and refuses one that needs a later symbol or a library
@@ -4264,7 +4346,12 @@ the design ids are those of the binding design.
   from the commit of the tag for a tracked file (`git show`) and from the work tree for a generated one. A
   directory of tests alone holds no package to import and Go imports no program, so neither is one (B2.459). `go mod tidy` and `go test -count=1 .` run with `GOPROXY=direct`, `GOSUMDB=off`,
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
-  and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
+  and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. Then the module builds alone in
+  the tree of the commit (B2.488): the command checks the directory of the module out of the bare repository into
+  `--work/alone` with an index of `--work`, and runs `go build -mod=readonly ./...` there with the same settings; a
+  failure names the commit and says to run `binding scaffold` of this version (GN-15l). Why: `go mod tidy` of the
+  consumer writes what the `go.mod` of the module lacks, so a tag whose `go.mod` lacked a module of its graph passed the
+  consumer and failed every build inside the module. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
   fetched from its own remote, so the repositories are released in the order of their Go requirements. A Go module
   of the same repository that the `go.mod` requires at a release version, a sibling, is fetched from the bare
@@ -4286,7 +4373,10 @@ the design ids are those of the binding design.
   and writes to its standard output the one line `refs/tags/<directory>/vX.Y.Z`, the reference that the recipe
   pushes to the remote, or nothing when the remote holds the tag already. The command pushes nothing to the remote.
   Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
-  failed push gives the same reference.
+  failed push gives the same reference. The recipe `release-go-module` adds that reference to
+  `$(RELEASE_TARGET)/go-module-refs`, and `release-go-module-push` pushes every reference of that file with one `git
+  push --atomic` (GN-19h, B2.488), so the remote takes the tags of all the Go modules of a release or none: before
+  B2.488 each recipe pushed its own tag, and a release whose second module failed left the first tag on the remote.
   The rehearsal (B2.479): with `--rehearsal`, an option without a value, the command runs the checks and the proof
   before a release has a tag, and makes no commit and no tag: it writes no object and no reference into the
   repository, asks the remote nothing and pushes nothing. `--tag vX.Y.Z` is then the tag that the release will
@@ -4341,7 +4431,8 @@ the design ids are those of the binding design.
   | `release-php-ext` | `php` | GN-19d, for the PHP of `PHP` |
   | `release-npm-platform` | `node` | GN-19e, the platform package of the host |
   | `release-npm` | `node` or `wasm` | GN-19e, the package itself |
-  | `release-go-module` | `go` | GN-19f, for the tag of `TAG` |
+  | `release-go-module` | `go` | GN-19f, for the tag of `TAG`, whose reference waits in `$(RELEASE_TARGET)/go-module-refs` |
+  | `release-go-module-push` | `go` | GN-19f, one `git push --atomic` of the tags that wait, shared by the contracts of a repository (B2.488) |
   | `release-binding-check` | every contract | GN-19g |
   | `release-platform-assets` | every contract | GN-19g, the upload of the assets of `TAG` |
   | `release-assets-platform` | `go`, `python` or `node` | GN-19i, the builds of the job `platform` |
@@ -4365,8 +4456,8 @@ the design ids are those of the binding design.
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
-  may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
-  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it, and
+  may be empty (GN-1d), `NODE` and `NPM`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
+  target that installs binding, when it has one (`MATURIN` has a default, GN-19c); a recipe that reads one that is empty fails and names it, and
   `release-binding-check` requires each one that a release recipe of the contract reads, so a variable that only a
   recipe after the tag reads is missed before the tag (docs/spec/contract-check.md CK-102, B2.471). `GO`, the
   go command that binding starts, has the default `go`, the go of `PATH`: the recipes pass `--go "$(GO)"` to each
@@ -4440,7 +4531,8 @@ the design ids are those of the binding design.
   Each PHP matrix entry supplies `EXPECTED_PHP_MINOR`; the generated recipe checks and records its native
   selection as GN-19d specifies, so no repository copies this check into a wrapper target.
 
-  The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module`
+  The release workflow downloads every asset artifact into `var/release/assets`, then runs `make release-go-module` of each
+  Go module, then `make release-go-module-push` (B2.488),
   and `make release-platform-assets` after the draft release exists; the latter validates the complete required asset
   set. binding writes no workflow and no recipe `ci-assets-<job>`: GitHub reads a workflow only from the tracked tree, and
   the installs of a job are those of the repository. Why: each PHP job owns one runtime selection and one artifact, so parallel minor

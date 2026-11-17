@@ -154,6 +154,17 @@ test('B2.489: a contract with a callback unit has an internal maker of each erro
   assert.ok(![...hyper('python')].some(([, body]) => String(body).includes('_polyspec_make')), 'hyper has no maker');
 });
 
+test('B2.489: a row with through converts by the same rule as a row without it (CK-105 (d))', () => {
+  const through = generateOnStack({
+    ...inputsOf('hyper', 'polyspec_hyper', HYPER_FOREIGN, (c) => {
+      for (const row of c.errors.kinds) if (row.library === 'session-store' && !row.variant.endsWith('::Random')) row.through = { unit: 'store', library: 'session-store' };
+    }),
+    targets: ['php'],
+  });
+  const crate = (out: ReadonlyMap<string, string | Buffer>): string => rustFn(fileWith(out, '.rs', 'fn converted_opening_functions_open_page('), 'converted_opening_functions_open_page');
+  assert.equal(crate(through), crate(hyper('php')));
+});
+
 // The text of a refusal of the generator, with the refusals by name that it holds (G-4).
 const refusal = (change: (contract: any) => void): string => {
   try {

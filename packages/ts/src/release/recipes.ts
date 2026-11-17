@@ -9,7 +9,7 @@
 
 import { spawnSync } from 'node:child_process';
 import type { Contract } from '../contract.ts';
-import { addonName, componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
+import { addonName, componentBase, extensionName, MATURIN, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
 import { CARRIED_LIBRARIES, goModulePlaceFinding } from './go-module.ts';
 
 // The steps of a release in the order that GN-19h names them; a contract has those of its targets.
@@ -74,10 +74,11 @@ BINDING_RELEASE_SHARED := 1
 # The assets of a release and the target directory of its builds, so that an asset holds nothing of a development build.
 RELEASE_ASSETS ?= var/release/assets
 RELEASE_TARGET ?= var/release/target
-# The napi CLI of the devDependency @napi-rs/cli of the repository, the wasm-bindgen CLI of mise.toml and the mise of the
-# checkout, by their absolute paths (GN-19e).
+# The napi CLI of the devDependency @napi-rs/cli of the repository, the wasm-bindgen CLI and the maturin of mise.toml and
+# the mise of the checkout, by their absolute paths (GN-19c, GN-19e).
 NAPI ?= $(CURDIR)/node_modules/.bin/napi
 WASM_BINDGEN ?= $(CURDIR)/var/tools/mise/shims/wasm-bindgen
+MATURIN ?= $(CURDIR)/var/tools/mise/shims/maturin
 MISE ?= $(CURDIR)/var/tools/bin/mise
 # The go command, which binding starts for the go.sum of a go.mod that requires the release of another polyspec Go
 # module (binding check, GN-15l) and for the consumer that proves the Go module of a release (binding release-go-module,
@@ -111,6 +112,29 @@ binding_release_pack = (cd $(1) && $(NPM) pack --ignore-scripts --pack-destinati
 	cp "$$file" "$(RELEASE_ASSETS)/npm/.$$name.part"; \\
 	mv "$(RELEASE_ASSETS)/npm/.$$name.part" "$(RELEASE_ASSETS)/npm/$$name"; \\
 	done
+endif
+`;
+
+// GN-19f, B2.488: the one push of the tags of the Go modules of a repository, which the files of recipes of its
+// contracts share, as install-wasm-bindgen is shared.
+const GO_MODULE_PUSH = `ifndef BINDING_RELEASE_GO_MODULE_PUSH
+BINDING_RELEASE_GO_MODULE_PUSH := 1
+# release-go-module-push pushes the tags of the Go modules of the release TAG that each release-go-module of the repository
+# added to RELEASE_TARGET/go-module-refs, all of them with one git push --atomic, so the remote takes every tag or none:
+# a release whose second Go module fails keeps no tag of the first on the remote, and the same recipes run again. A
+# reference of another tag than TAG in the file stops it before the push (GN-19f, B2.488).
+.PHONY: release-go-module-push
+release-go-module-push:
+	@test -n "$$TAG" || { echo 'release-go-module-push: TAG is required, for example make release-go-module-push TAG=v0.0.1' >&2; exit 2; }
+	@refs=$(abspath $(RELEASE_TARGET))/go-module-refs; \\
+	set -e; \\
+	if [ ! -s "$$refs" ]; then echo "release-go-module-push: no tag of a Go module of $$TAG waits in $$refs"; exit 0; fi; \\
+	list=$$(sort -u "$$refs"); \\
+	for ref in $$list; do \\
+	case "$$ref" in refs/tags/*/"$$TAG") ;; *) echo "release-go-module-push: $$refs names $$ref, which is no tag of a Go module of $$TAG" >&2; exit 1 ;; esac; \\
+	done; \\
+	(set -x; git push --atomic origin $$list); \\
+	rm -f "$$refs"
 endif
 `;
 
@@ -235,17 +259,21 @@ ${MUSL_TARGETS.map((musl) => `	${musl}) musl_env=${muslEnv(musl)}; musl_cc="$(CC
   }
 
   if (has('python')) {
-    add('release-wheel', `${head('release-wheel', `release-wheel builds the abi3 wheel of the platform of the host (GN-19c) with the uv of the checkout: maturin builds
-with --locked and, on Linux, for the policy ${MANYLINUX}, which it checks, and the time of the commit of HEAD dates the files
-of the wheel.`)}
+    const step = name('release-wheel');
+    add('release-wheel', `${head('release-wheel', `release-wheel builds the abi3 wheel of the platform of the host (GN-19c) with the maturin of MATURIN, which the mise
+of the checkout installs at the digest of mise.lock and which must be the release ${MATURIN} of mise.toml, not with a
+build backend that a PEP 517 frontend resolves from the requires of pyproject.toml (B2.491). maturin builds for release
+with --locked and, on Linux, for the policy ${MANYLINUX}, which it checks, and the time of the commit of HEAD dates the
+files of the wheel.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
-${require('UV', 'the uv of the checkout')}
+	$(ONLINE) $(MISE) install --locked github:PyO3/maturin
+	@test "$$($(MATURIN) --version)" = "maturin ${MATURIN}" || { echo "${step}: $(MATURIN) is $$($(MATURIN) --version), not the release ${MATURIN} of mise.toml (GN-19c)" >&2; exit 2; }
 ${generate('python')}
-	@$(call binding_release_host,${name('release-wheel')}); \\
+	@$(call binding_release_host,${step}); \\
 	set -ex; \\
 	epoch=$$(git log -1 --format=%ct HEAD); \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) MATURIN_PEP517_ARGS='--locked --compatibility ${MANYLINUX}' SOURCE_DATE_EPOCH=$$epoch $(UV) build --wheel --python python3 --out-dir $(RELEASE_ASSETS)/wheel ${base}/python
+	CARGO_TARGET_DIR=$(RELEASE_TARGET) SOURCE_DATE_EPOCH=$$epoch $(MATURIN) build --release --locked --compatibility ${MANYLINUX} --interpreter python3 --manifest-path ${base}/python/Cargo.toml --out $(RELEASE_ASSETS)/wheel
 `);
   }
 
@@ -359,8 +387,10 @@ ${has('wasm') ? `	CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) build $(CARGOFLAGS
     add('release-go-module', `${head('release-go-module', `release-go-module carries the Go module of the release TAG (GN-19f): on the checkout of that tag, after the generation of
 the Go binding, binding release-go-module checks the library of each platform in RELEASE_ASSETS/go, proves a commit that adds
 the generated files and the libraries to the tree of the tag with a consumer, and creates the annotated tag of the Go module
-at it. The recipe pushes the reference that the command prints, and nothing when it prints none, because the remote holds
-that tag already. The folder of the run is made writable before it is removed, since Go writes its module cache read-only.`)}
+at it. The recipe pushes nothing: it adds the reference that the command prints to RELEASE_TARGET/go-module-refs, which
+release-go-module-push pushes with the references of the other Go modules of the repository at once, and adds nothing when
+the command prints none, because the remote holds that tag already (B2.488). The folder of the run is made writable before
+it is removed, since Go writes its module cache read-only.`)}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
@@ -373,7 +403,7 @@ ${generate('go')}
 	ref=$$($(BINDING_RUN) release-go-module --contract ${contractPath} --tag "$$TAG" --libraries $(abspath $(RELEASE_ASSETS))/go --work "$$work" --go "$(GO)"); \\
 	case "$$ref" in \\
 	'') echo "${step}: the remote holds the tag of the Go module of $$TAG already" ;; \\
-	refs/tags/*/"$$TAG") set -x; git push origin "$$ref" ;; \\
+	refs/tags/*/"$$TAG") echo "$$ref" >> $(abspath $(RELEASE_TARGET))/go-module-refs; echo "${step}: $$ref waits for make release-go-module-push" ;; \\
 	*) echo "${step}: binding printed $$ref, not the tag of the Go module of $$TAG" >&2; exit 1 ;; \\
 	esac
 `);
@@ -541,14 +571,15 @@ ${generate('node')}
   const header = `# Generated by binding release-recipes from ${contract.core.path}/interface.json; do not edit, and do not track it.
 # The release recipes of the binding (binding GN-19h): the Makefile of the repository includes this file after it defines
 # BINDING_RUN, the command that starts binding, CARGO, the cargo command of the repository, and CARGOFLAGS, the arguments
-# of its builds (binding GN-1d), NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target that installs
+# of its builds (binding GN-1d), NODE and NPM, the tools of the checkout, and BINDING_DEP, the target that installs
 # binding, if it has one; it runs binding release-recipes to write the file again. It may define GO, the go command that
-# binding starts (binding GN-15l, GN-19f), which is the go of PATH when it does not.${has('go') ? `
+# binding starts (binding GN-15l, GN-19f), which is the go of PATH when it does not, and MATURIN, the maturin of mise.toml
+# (binding GN-19c), which is the shim of the mise of the checkout when it does not.${has('go') ? `
 # A repository whose Go crate has a dependency that builds C defines the C compiler and the archiver of each musl target,
 # ${MUSL_TARGETS.flatMap((musl) => [`CC_${muslEnv(musl)}`, `AR_${muslEnv(musl)}`]).join(', ')}
 # (binding GN-19b), which release-go-static passes to the build of that target alone.` : ''}
 `;
-  const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
+  const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}${has('go') ? `\n${GO_MODULE_PUSH}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };
 }
 

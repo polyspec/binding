@@ -34,7 +34,7 @@ import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goModGraph, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, releaseRequires, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
 import { goModUnusedOf, goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
@@ -482,27 +482,38 @@ function trackedOf(): Tracked {
 // cache alone. A module that Go cannot give refuses the go.sum with the cause; no empty or partial go.sum is written.
 // B2.456: only such a go.mod needs Go, so the go command is looked for here and not before; a run that does not find it
 // ends with the sentence of goCommand, before it writes or compares a file.
+// B2.488: the go.mod takes a line `// indirect` of each module of its graph (goModGraph), which the same downloads give,
+// and the tracked go.mod of a module of the same repository is read from its directory in the checkout.
 function withGoSum(t: Tracked): Tracked {
   const goModPath = `${goModuleDir(checked)}/go.mod`;
   const goMod = t.files.get(goModPath);
   // B2.460: a module of the same repository has no line in the tracked go.sum (sumRequires), so it starts no Go.
-  const releases = goMod === undefined ? [] : sumRequires(goMod);
-  if (goMod === undefined || releases.length === 0) return t;
-  const resolved = goCommand(go, process.env, `${join(root, goModPath)} requires the release ${releases.join(', ')} of another polyspec Go module, so its go.sum is written from \`go mod download\` (GN-15l)`);
-  if ('refusal' in resolved) fail(resolved.refusal);
-  const [program, ...prefix] = resolved.command;
+  if (goMod === undefined || releaseRequires(goMod).length === 0) return t;
   const goSumPath = `${goModuleDir(checked)}/go.sum`;
+  const own = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
   const dir = mkdtempSync(join(tmpdir(), 'binding-go-sum-'));
   try {
-    writeFileSync(join(dir, 'go.mod'), goSumModule(goMod));
-    const ran = spawnSync(program, [...prefix, 'mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
-    if (ran.error !== undefined) throw new Error(`go mod download did not start: ${ran.error.message}`);
-    const text = ran.stdout.trim();
-    const downloads = text === '' ? [] : (JSON.parse(`[${text.replace(/\}\s*\{/g, '},{')}]`) as GoDownload[]);
-    if (ran.status !== 0 && !downloads.some((d) => d.Error !== undefined)) throw new Error(`go mod download (status ${String(ran.status)}): ${ran.stderr.trim()}`);
-    const goSum = goSumOf(goMod, downloads);
-    if (goSum === undefined) return t;
-    return { files: new Map([...t.files, [goSumPath, goSum]]), refused: t.refused };
+    const download = (module: string): GoDownload[] => {
+      const resolved = goCommand(go, process.env, `${join(root, goModPath)} requires the release ${sumRequires(module).join(', ')} of another polyspec Go module, so its go.sum is written from \`go mod download\` (GN-15l)`);
+      if ('refusal' in resolved) fail(resolved.refusal);
+      const [program, ...prefix] = resolved.command;
+      writeFileSync(join(dir, 'go.mod'), module);
+      const ran = spawnSync(program, [...prefix, 'mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
+      if (ran.error !== undefined) throw new Error(`go mod download did not start: ${ran.error.message}`);
+      const text = ran.stdout.trim();
+      const downloads = text === '' ? [] : (JSON.parse(`[${text.replace(/\}\s*\{/g, '},{')}]`) as GoDownload[]);
+      if (ran.status !== 0 && !downloads.some((d) => d.Error !== undefined)) throw new Error(`go mod download (status ${String(ran.status)}): ${ran.stderr.trim()}`);
+      return downloads;
+    };
+    // GN-14f: a module of the same repository is at the directory of its module path below the root.
+    const sibling = (module: string): string | undefined => {
+      const path = join(root, module.split('/').slice(3).join('/'), 'go.mod');
+      return module.split('/').slice(0, 3).join('/') === own.split('/').slice(0, 3).join('/') && existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+    };
+    const graph = goModGraph(goMod, download, sibling);
+    const files = new Map([...t.files, [goModPath, graph.goMod]]);
+    if (graph.goSum !== undefined) files.set(goSumPath, graph.goSum);
+    return { files, refused: t.refused };
   } catch (error) {
     return { files: t.files, refused: [...t.refused, { path: goSumPath, message: error instanceof Error ? error.message : String(error) }] };
   } finally {

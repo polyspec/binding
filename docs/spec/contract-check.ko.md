@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 1528173999ce1272eb9a304971425867df483d18d50513877749175a87c81202 -->
+<!-- source-sha256: 78520d36bf358dd6249dbdbf6e3b261817d45834dceea0175e0b60d32e586792 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -104,7 +104,12 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의
   `class` 덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). variant와 binding
   kind는 한 번만 선언한다. `library`가 있는 행은 variant `<바깥>/<안쪽>`을 적고 그
-  `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은 `/`를 적지 않는다(GN-7c). `kinds`·`raises`·`in_raises`의
+  `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은 `/`를 적지 않는다(GN-7c). `library`가 있는 행은
+  `"through": {"unit": "<unit>", "library": "<library>"}`를 가질 수 있다. 그 kind는 그 라이브러리의 package가 만든 그 unit의
+  object를 통해서만 member에 닿고, 이 계약 코어의 호출로는 닿지 않는다는 뜻이다(검사가 그때 무엇을 묻는지는 CK-22가
+  정한다). 두 길로 다 닿는 kind의 행에는 `through`가 없다. schema는 이 키를 `library`가 있는 행에만 허용한다. 그 `library`는 행의 라이브러리이고 `unit`은 그 라이브러리
+  계약의 callback unit이며, 그 행을 `raises`에 적은 member는 그 unit을 인자로 받는다(record 안이어도 된다). 다른 형태는 행을,
+  또는 member와 variant를 대고 거부한다. `kinds`·`raises`·`in_raises`의
   variant는 Rust 경로이거나 GN-7c의 중첩 경로 `<바깥>/<안쪽>`이고, `errors.code`는 코어 오류 타입과 kinds의 code enum으로 가는
   투영을 적는다(`{error, path}`, generator GN-7b). 그것이 코어의 variant, 타입, 함수를 가리키는지는 생성된 crate를 컴파일러가
   판정한다(I-2).
@@ -118,7 +123,9 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   아래에 적은 것. 예외의 kind가 클래스 둘을 고르기 때문이다. (b) `class`가 L 계약에서 그 안쪽 variant의 category와 다른
   category의 오류 unit을 적은 행. CK-10이 모든 행에 대해 거부하는 것과 같다. (c) 이 계약의 unit에서의 변환. `library`가 없는
   행은 표가 없고, 이 계약의 callback unit은 자기 kind를 recognition으로 내므로(U-3), 이 계약 자신의 클래스의 예외는 바꾸지
-  않고 다시 던진다. 메시지는 member, 행, 라이브러리, kind를 적는다: `the member <id> names <variant> and <variant> of
+  않고 다시 던진다. (d) `through`의 unit이 member의 parameter가 아닌 행(record 안도 포함). CK-10이 그 행을 적는 모든
+  member에 대해 거부하며, 이 표는 변환 경로에 대해 다시 적는다. 변환은 `through`를 읽지 않는다. `through`는 CK-22가 어느
+  case를 요구하는지만 정하므로, 있든 없든 행은 같은 규칙으로 변환된다. 메시지는 member, 행, 라이브러리, kind를 적는다: `the member <id> names <variant> and <variant> of
   <library>, whose inner kind <kind> converts to two classes (CK-105)`. 이유: 변환을 `raises`에서 끌어내므로, L의 예외로도
   코어의 kind로도 오는 kind(hyper의 session-store `Random`, `store.renew`와 `random_hex`를 거쳐)가 규칙 하나로 클래스
   하나를 받고, 계약은 새로 적는 것이 없다. 이름 바꾸기는 형식이 없다. kind가 바뀌지 않으므로 category도 바뀌지 않는다.
@@ -128,7 +135,8 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   그 member의 case를 행마다 하나 가진다. 그 case에서 L의 unit의 callback fixture는 행의 안쪽 kind를 값과 함께 던진다:
   `{"library": L, "kind": <kind>, "message": <text>, "status": <int>, "errno": <int>, "properties": {<property>:
   <value>}}`(CK-22). 그 case의 `raises`는 그 kind를 적는다. fixture는 `status`, `errno`, 행의 클래스가 가진 CK-107의 각
-  property를 null이 아니고 행이 기본으로 줄 값과 다른 값으로 준다. 이유: 각 행은 생성된 match의 갈래 하나이므로, 빠진
+  property를 null이 아니고 행이 기본으로 줄 값과 다른 값으로 준다. case는 실패 주입 지점을 장전하지 않는다. kind가
+  객체를 거쳐서만 member에 닿는 다른 라이브러리의 지점을 장전하는 case를 CK-22가 거부하는 것은 그대로다. 이유: 각 행은 생성된 match의 갈래 하나이므로, 빠진
   갈래는 형제 행의 case를 통과하고, 양쪽이 null인 값은 아무것도 비교하지 않는다.
 - **CK-107** 변환된 행의 property(생성기 GN-7c; B2.489, 아직 돌지 않음): 변환표 행의 클래스가 property를 가진 오류
   unit이면, (a) 같은 안쪽 variant의 L 행이 `class`에 L의 오류 unit U를 적고, (b) `errors.wrapped`가 행의 unit의 모든
@@ -180,7 +188,13 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   실패할 수 있는 언어 코드에 닿지 않기 때문이다. callback이나 함수를 담은 `keeps` 없는 parameter가 있는 member에는
   `core.failure: false`를 두지 않고, `core.result: false`인 member에는 `core.failure: true`를 두지 않는다. 언어 코드의
   실패는 `Result` 안의 `Failure<E>`로 돌아오기 때문이다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
-  가리킨다(CK-17).
+  가리킨다(CK-17). 함수 타입은 반환이 `passthrough`일 때만 `async_allowed: true`를 적는다: 바인딩은 함수가 돌려준 것을
+  member의 machine을 거쳐서만 기다리고(generator GN-6ae), 그 밖의 함수 타입은 코어가 값으로 부르거나 보관하는(`keeps`,
+  CK-90) generator GN-6z의 함수이며 어느 target도 그것을 기다리지 않는다. 그런 타입의 `async_allowed: true`는 `keeps`가
+  있든 없든 그 타입의 반환과 함께 CK-17로 보고되고, 모든 target의 생성기는 같은 타입을 같은 문장으로 거부한다. 둘이 함수
+  하나를 읽기 때문이다. 이유: 검사는 코어가 보관하는 함수의 `async_allowed: true`를 받아들였는데 모든 생성기는 그 함수를
+  결코 기다리지 않는 함수로 썼다. 그래서 계약이 어느 바인딩도 하지 않는 기다림을 적었다(orm, B2.480). 보관된 함수를
+  기다리는 일은 아직 설계되지 않았다(B2.483).
 - **CK-63** WASM 코어(GN-4b): `core.features.wasm`은 플랫폼 I/O의 feature `fs`, `blocking-io`, `process`, `net`을
   적지 않는다.
 - **CK-64** 타입 `int`나 `uint` 자리(인자, 그 타입을 담은 list·tuple·map·optional의 항목, record나 variant의 case의 field, 결과)에 있는 case의 정수는 안전
@@ -234,7 +248,7 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   없다. 검사는 그 형태가 빼는 파일만 import하는 require를 그 파일들과 함께, 어떤 Go 파일도 import하지 않는 require를
   `go.mod`의 경로와 `release-go-module`과 함께 보고한다. `// indirect` 줄은 출력에 쓰되 그것으로 실패하지 않고, Go
   바인딩이 생성되지 않으면 생성기의 거부와 함께 실패한다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
-  모두(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
+  모두(`BINDING_RUN`, `CARGO`, target에 따라 `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
   이유: session-store의 release는 `binding check --release`를 통과한 뒤 tag 뒤의 `release-platform-assets`에서
   `phpExtension.minors`가 없는 `config/toolchain.json` 때문에 멈췄을 것이고, 예행연습이 그것을 찾았다. 검사가 CI의 빌드 recipe의
   첫 단계이므로(generator GN-19i) 그런 설정은 tag 전에 실패한다. recipe와 검사의 reader가 하나인 것은, 두 번째 reader는 recipe가
@@ -385,8 +399,29 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   데에만 읽었다. 그래서 member가 선언하지 않은 kind를 기대하는 case가 통과했고, 그 시험은 모든 target에서 실패할 수밖에
   없었다(B2.449). category `internal`의 kind는 member마다
   case를 요구하지 않는다(X-1). 코어 오류를 옮기는 match가 모든 member에 하나이기 때문이다. 그런 kind를 가진 오류
-  enum마다, 곧 이 계약 자신의 것과 kind를 그대로 전달하는(E-1b (a)) 라이브러리마다, 어느 member의 case 하나가
-  `<library>.internal`을 `broken`으로 장전하고 category `internal`의 kind를 낸다. 값 alias `in_raises`의 kind는 그 alias를
+  enum마다, 곧 이 계약 자신의 것과 자기 코어의 호출로 kind를 그대로 전달하는(E-1b (a)) 라이브러리, 곧 `through`가 없는
+  행(CK-10)의 라이브러리마다, 어느 member의 case 하나가 `<library>.internal`을 `broken`으로 장전하고 category `internal`의
+  kind를 낸다. `through`가 있는 행은 그 kind가 그 라이브러리의 package가 만든 object, 곧 행이 적은 callback unit의 object를
+  통해서만 member에 닿는다고 적은 것이다. 그런 행에는 X-1의 case도, 경로의 case(위의 kind의 case. 한 라이브러리의 어느
+  kind의 case 하나가 그 라이브러리의 `through` 없는 행들에 대해 보인다)도 묻지 않고, 그런 행의 kind를 내는 case는 다른
+  행의 경로를 보이지 않는다. 그 증명은 그 라이브러리 자신의 계약의 case와 이 라이브러리 코어의 테스트다. 다른 라이브러리의
+  지점을 장전하는 case나 `then`의 호출은, 그 지점이 채우는 kind를 전달하는 이 계약의 행이 모두 `through`를 가지면
+  거부한다: `the case <id> of <member> arms the point <library>.<point>, which fills only kinds that the contract states reach
+  it through the unit <unit> of <library> (through): the point fires in the package of <library>, whose arming a
+  generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`. 이유: hyper는
+  `open_page`에서 session-store의 callback unit `store`를 받고, 전달하는 session-store의 kind 17개 중 16개는 그 object가 낸
+  것으로만 닿는다. `Random`은 두 길로 닿는다. store의 `renew`가 낸 것으로, 그리고 hyper 코어가 부르는
+  `polyspec_session_store::random_hex`에서 온다. 그래서 그 행에는 `through`가 없고, 그 호출에 대해
+  `session_store.random`을 장전하는 그 case를 요구한다. 그 라이브러리 package의 object를 통해서도, 이 계약 코어의
+  호출로도 member에 닿는 kind는 `through`를 갖지 않는다. 코어의 호출이 지점에 닿으므로, 키가 없는 다른 행처럼 X-1
+  case와 경로 case를 요구하고, 생성된 테스트는 object를 통한 길이 아니라 코어의 호출만 증명한다. session-store의 package는 자기
+  `binding_core`를 링크하므로(generator GN-5), `session_store.internal`을 장전한 hyper의 테스트는 store가 읽는 것을 아무것도
+  장전하지 못했다. 그 case가 있으면 생성된 Node 테스트가 "Missing expected rejection"으로 실패했고, 없으면 검사가 빠진
+  case를, 그리고 그 행마다 경로의 빠진 case를 보고했다. 증명되지 않고 남는 것: 검사는 kind가 코어의 호출로 오는지를 Cargo
+  의존에서 추측하지 않는다. 그래서 코어가 실제로 호출로 닿는 kind의 행에 적은 `through`는 잡히지 않고, 그 X-1 case와 경로
+  case는 여기서 누구에게도 묻지 않게 된다. 그런 행을 여전히 지키는 것은 그 라이브러리 계약의 X-1 case, GN-7c의 컴파일 검사,
+  소비 저장소의 코어 테스트다. 그리고 클래스를 덮어쓰는 `through` 행의 `class`(hyper의 `Record`와 `RecordWrite`의
+  `record_error`)는 어떤 생성 테스트도 증명하지 않는다. 값 alias `in_raises`의 kind는 그 alias를
   가리키는 `cases` 행의 group에 case를 둔다(U-7). 그 group은 member의 행이 가리키지 않는다. 그 case는
   `{"id", "value", "raises"}`(그리고 `note`, `rule`)이고 `raises.kind`는 `in_raises`의 kind이며, `in_raises`의 kind마다
   하나가 있다.
@@ -525,6 +560,17 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   지목한다. 이 허용이 인자 자체에서처럼 인자 안에서도 성립하는 것은 session-store가 `redis_sessions.new`의 record 인자
   `options`의 uint field `lifetime`과 `lock_expire`에 든 `-1`, `1.5`, `"60"`, `true`를 `invalid_number`로 거부하기
   때문이다. 최상위만 받는 검사는 binding의 그 거부의 유일한 test를 거부하게 된다.
+- **CK-103** `{computed}` 기본값에는 그것을 코어에 맡기는 case가 있다(U-2, generator GN-13d): public unit의 public member가
+  `{computed}` 기본값이 있는 parameter를 받거나, 그런 field가 있는 이 계약의 record를(`optional`로도) 받으면, 계약에는 그
+  member의 case 가운데 `raises`를 적지 않고, fault를 걸지 않으며(`faults`가 없고, instance 값의 `then` 호출에도 fault가
+  없다), 그 parameter나 field를 코어에 맡기는 것이 있다. 맡긴다는 것은 그 키가 없거나 null이라는 뜻이고, field라면 record가
+  없거나 null이거나, record에 그 키가 없거나 그 값이 null이라는 뜻이다. `binding check`는 그런 case가 없는 parameter와
+  field를 member, 자리, 기본값의 규칙 id와 함께 보고한다. callback unit, host unit, error unit의 member와 상수에는
+  CK-22에서처럼 묻지 않는다. case가 함수 fixture의 step이나 `after`의 호출뿐인 member는 보고한다. 그 case는 member 자신의
+  case여야 한다. 이유: `{computed}` 기본값은 코어가 호출 때 만드는 값이다. crud-ui의 새 row의 임의 키(`Form.addRow`)가
+  그렇다. 그래서 U-2 시험은 그 값을 비교하지 않고 두 호출의 outcome만 비교한다(GN-13d). 코어가 만드는 값의 증명은 그
+  기본값이 적은 규칙의 case가 맡는다. 이 검사가 없으면 `{computed}` 선언은 기본값의 시험을 끄기만 하고 그 자리에 아무것도
+  두지 않는다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

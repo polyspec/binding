@@ -17,7 +17,7 @@ import { foreignPhpClass } from '../src/generate/php.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
-import { bindingCoreFinding, dependencyForm, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, dependencyForm, goModGraph, goSumOf, type GoDownload, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -3577,7 +3577,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False, None\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.match(node, /\nfunction fixture\(members, rows\) \{/);
+  assert.match(node, /\nfunction fixture\(members, rows, read = \(value\) => value\) \{/);
   assert.match(node, /const fixture0 = fixture\(\[\['find', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
@@ -4714,7 +4714,8 @@ test('a record parameter whose every field has a default may be left out as a wh
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
     assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
-    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = default_in\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
+    // GN-4c: the helper is field_or_undefined in WASM, where member_ begins the entries of the members of a class.
+    assert.match(text(files, `${dir}/lib.rs`), dir.includes('wasm') ? /let left: Option<String> = default_in\(&field_or_undefined\(&options, "left", "options"\)\?/ : /let left: Option<String> = default_in\(member_or_undefined\(options, "left", "options"\)\?/);
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
     assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
     assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
@@ -4785,6 +4786,35 @@ test('a default of an optional type is one Option, None when it is left out or n
   // returns is generated, and a None of the core is the null of the language.
   const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
   assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None = None\n/);
+});
+
+// B2.436 (crud-ui, Form.addRow): the core makes the value of a {computed} default at each call, so the call without it
+// and the call with null are compared by their outcome alone, in a test whose name states the rule id.
+test('B2.436: the U-2 test of a {computed} default of an optional type compares the outcomes of the two calls and no value (GN-13d)', () => {
+  // The field end of pad_options, an optional text, takes its value from the core by the rule SH-9.
+  const computed = (c: any): void => { unitOf(c, 'pad_options').fields.find((f: any) => f.name.join('_') === 'end').default = { computed: 'SH-9' }; };
+  const out = shaped(computed);
+  const { contract, caseFiles } = shapes();
+  computed(contract);
+  const wasmOut = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  // Each target runs the call without the field and the call with null, drops the value of each and compares what is
+  // left: no failure, or the class and kind of the failure.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_pad_end_left_out_leaves_its_value_to_the_core_sh_9\(self\) -> None:\n {8}left = _outcome\(lambda: \(pkg\.pad\("ab"\), None\)\[1\]\)\n {8}right = _outcome\(lambda: \(pkg\.pad\("ab", end=None\), None\)\[1\]\)\n {8}self\.assertEqual\(left, right\)\n/);
+  for (const tests of [text(out, 'packages/ts/generated/tests/generated.test.mjs'), text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
+    assert.match(tests, /\ntest\('U-2: pad without end leaves its value to the core \(SH-9\)', \(\) => \{\n {2}assert\.deepStrictEqual\(outcome\(\(\) => void pkg\.pad\('ab'\)\), outcome\(\(\) => void pkg\.pad\('ab', undefined, \{ end: null \}\)\)\);\n\}\);\n/);
+    assert.doesNotMatch(tests, /U-2: pad without end is the call with its default/);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2padEndLeftOutLeavesItsValueToTheCoreSh9\(\): void\n {4}\{\n {8}self::assertSame\(\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab"\), null\]\[1\]\),\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab", end: null\), null\]\[1\]\),\n {8}\);\n {4}\}\n/);
+  // Go leaves a field out as nil, which is its null too, so its two calls are one call written twice.
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2PadWithoutEndLeavesItsValueToTheCoreSH9\(t \*testing\.T\) \{\n\t_, err0 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\t_, err1 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\tif !sameFailure\(err0, err1\) \{\n\t\tt\.Fatalf\("U-2: %v is not %v", err0, err1\)\n\t\}\n\}\n/);
+  // No target names the old test of the field, and the field width of the fixture, {computed: SH-2}, has its own.
+  for (const body of [python, php, go]) assert.doesNotMatch(body, /pad_end_left_out_is_its_default|padEndLeftOutIsItsDefault|PadWithoutEndIsTheCallWithItsDefault/);
+  assert.match(python, /def test_u2_pad_width_left_out_leaves_its_value_to_the_core_sh_2\(self\)/);
+  // A {computed} default of a type that is not optional has no second call, so it keeps no test of U-2.
+  for (const body of [python, php, go, text(out, 'packages/ts/generated/tests/generated.test.mjs')]) assert.doesNotMatch(body, /u2_frame_width_left_out|U2frameWidthLeftOut|U2FrameWithoutWidth|U-2: frame without width/);
 });
 
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
@@ -8065,7 +8095,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}tagged<T>\(work: \(arg0: Scope\) => T, options\?: TagOptions\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -8096,8 +8126,8 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
     // each left out (GN-6i), as for a member without a machine.
     const lib = text(files, `${dir}/lib.rs`);
-    assert.match(lib, /let retry: Option<u64> = default_in\(&?member_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
-    assert.match(lib, /let label: Option<String> = default_in\(&?member_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
+    assert.match(lib, /let retry: Option<u64> = default_in\(&?(?:member|field)_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
+    assert.match(lib, /let label: Option<String> = default_in\(&?(?:member|field)_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
     assert.match(lib, record);
     assert.match(lib, new RegExp(String.raw`let mut machine = binding_core::machine::Driving::new\(${taken.source}\);`));
     assert.match(lib, /let label: Option<String> = default_in\(&?label, \|value\| text_in\(value, "label"\)\)\?;/);
@@ -8106,14 +8136,22 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     assert.match(dts, /\n {2}transaction<T>\(work: \(arg0: Scope\) => T, options\?: TransactionOptions\): Promise<Awaited<T>>;\n/);
     assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T, label\?: string\): Promise<Awaited<T>>;\n/);
     // The generated tests: a case that gives no options calls the member without them, and the tests of the fields
-    // give the record. No test compares the call without a field with the call with its default, because the member
-    // takes a function (GN-13a).
+    // give the record. The U-2 test compares the call without each field with the call with its default, with the
+    // function of the first case that does not raise.
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /\ntest\('U-2: Store\.transaction without label is the call with its default', async \(\) => \{\n {2}assert\.deepStrictEqual\(await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}\)\)\), await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}, \{ label: 'plain' \}\)\)\)\);\n\}\);\n/);
     assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n[^\n]*\n[^\n]*await receiver\.transaction\(\(arg0\) => \{[^\n]*return 'done'; \}\)\)\)/);
     assert.match(tests, /test\('GN-12a: Store\.transaction refuses a retry of another type than uint'[^\n]*\n[^\n]*\n[^\n]*\.transaction\(\(arg0\) => \{ return null; \}, \{ retry: bad, label: 'a' \}\)/);
     assert.match(tests, /test\('G-7: Store\.transaction counts and names its arguments'/);
-    assert.doesNotMatch(tests, /U-2: Store\.transaction without/);
   }
+  // Python, PHP and Go write the same test of the call without a field and the call with its default.
+  const python = text(scopedSample(['python'], optioned), 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_store_transaction_label_left_out_is_its_default\(self\) -> None:\n {8}left = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*\)\)\n {8}right = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*, label="plain"\)\)\n/);
+  assert.match(python, /def test_u2_store_transaction_retry_left_out_is_its_default\(self\)/);
+  const php = text(scopedSample(['php'], optioned), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2StoreTransactionLabelLeftOutIsItsDefault\(\): void\n/);
+  const go = text(scopedSample(['go'], optioned), 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2StoreTransactionWithoutLabelIsTheCallWithItsDefault\(t \*testing\.T\) \{\n/);
   // The JavaScript entry takes one or two arguments and gives the addon both places, the second undefined when it is
   // left out.
   assert.match(text(node, 'packages/ts/generated/index.cjs'), /async \['transaction'\]\(arg0, arg1\) \{\n\s+const args = arguments;\n\s+if \(args\.length < 1 \|\| args\.length > 2\) \{\n\s+throw new TypeError\(`Store\.transaction\(\) takes 1 to 2 arguments, \$\{args\.length\} given`\);\n\s+\}\n\s+checkRecord\('Store\.transaction\(\)', 'options', args\[1\], \['retry', 'label'\], \[\]\);\n\s+return drive\(Reflect\.apply\(original, this, \[args\[0\], args\[1\]\]\)\);/);
@@ -8469,7 +8507,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
   // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
   const plain = text(scopedSample(['python'], (contract) => {
-    for (const id of ['store.transaction', 'store.once', 'store.audited', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
+    for (const id of ['store.transaction', 'store.once', 'store.audited', 'store.tagged', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
   }), 'packages/python/generated/lib.rs');
   assert.match(plain, /\|io\| driven\(py_\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);
@@ -11270,11 +11308,82 @@ test('B2.460: package.json names the npm package of a library of the same reposi
   assert.equal(npm({ path: '../../sample/rust' })[name], '*');
 });
 
+// B2.488: what `go mod download -json all` gave, offline from the module cache with Go 1.27, for a module that requires
+// the release v0.0.4 of session-store, whose go.mod requires the release v0.0.15 of php-serialization.
+const SESSION_STORE = 'github.com/polyspec/session-store/packages/go';
+const PHP_SERIALIZATION = 'github.com/polyspec/php-serialization/packages/go';
+const SESSION_STORE_GRAPH: GoDownload[] = [
+  { Path: PHP_SERIALIZATION, Version: 'v0.0.15', Sum: 'h1:6XCAEtRNvQ+0fJYVfme2cU6K4GlESg7kZJAa/JEi2HY=', GoModSum: 'h1:SXutrswTyVJJRX80WkTTiMfadrsJL6ah3IDwr2cRadQ=' },
+  { Path: SESSION_STORE, Version: 'v0.0.4', Sum: 'h1:X6vQDGSUGcIVP17Y+dCqZEBNqgICh6R+q7HIfAIz1Wk=', GoModSum: 'h1:41TOrwZIgxNzwn0bTmZI3Zq63wJSNmIGAgB3u9bOLFU=' },
+];
+
+test('B2.488: the tracked go.mod requires each module of the graph that its requirements require, `// indirect`, and the go.sum holds its hash, so the module builds alone with -mod=readonly (GN-15l)', () => {
+  const goMod = `// Generated by binding.\nmodule github.com/polyspec/hyper/packages/go\n\ngo 1.27.3\n\nrequire ${SESSION_STORE} v0.0.4\n`;
+  // Before B2.488 the go.sum held the go.mod hash of php-serialization alone and the go.mod no line of it: go build
+  // of the module with -mod=readonly and GOWORK=off failed with `missing go.sum entry for module providing package
+  // github.com/polyspec/php-serialization/packages/go`, and with its hash with `updates to go.mod needed`.
+  assert.equal(goSumOf(goMod, SESSION_STORE_GRAPH), `${PHP_SERIALIZATION} v0.0.15/go.mod h1:SXutrswTyVJJRX80WkTTiMfadrsJL6ah3IDwr2cRadQ=\n${SESSION_STORE} v0.0.4 h1:X6vQDGSUGcIVP17Y+dCqZEBNqgICh6R+q7HIfAIz1Wk=\n${SESSION_STORE} v0.0.4/go.mod h1:41TOrwZIgxNzwn0bTmZI3Zq63wJSNmIGAgB3u9bOLFU=\n`);
+  const asked: string[] = [];
+  const graph = goModGraph(goMod, (module) => {
+    asked.push(module);
+    return SESSION_STORE_GRAPH;
+  }, () => assert.fail('no module of the same repository is required'));
+  assert.equal(graph.goMod, `${goMod}\nrequire (\n\t${PHP_SERIALIZATION} v0.0.15 // indirect\n)\n`);
+  assert.equal(graph.goSum, [
+    `${PHP_SERIALIZATION} v0.0.15 h1:6XCAEtRNvQ+0fJYVfme2cU6K4GlESg7kZJAa/JEi2HY=`,
+    `${PHP_SERIALIZATION} v0.0.15/go.mod h1:SXutrswTyVJJRX80WkTTiMfadrsJL6ah3IDwr2cRadQ=`,
+    `${SESSION_STORE} v0.0.4 h1:X6vQDGSUGcIVP17Y+dCqZEBNqgICh6R+q7HIfAIz1Wk=`,
+    `${SESSION_STORE} v0.0.4/go.mod h1:41TOrwZIgxNzwn0bTmZI3Zq63wJSNmIGAgB3u9bOLFU=`,
+    '',
+  ].join('\n'));
+  // Go is asked again with each module that it gave, until it gives no new one: the graph of a required module holds
+  // the requirements of that module alone (graph pruning).
+  assert.deepEqual(asked, [
+    `module github.com/polyspec/hyper/packages/go\n\ngo 1.27.3\n\nrequire ${SESSION_STORE} v0.0.4\n`,
+    `module github.com/polyspec/hyper/packages/go\n\ngo 1.27.3\n\nrequire ${PHP_SERIALIZATION} v0.0.15\nrequire ${SESSION_STORE} v0.0.4\n`,
+  ]);
+  // The tracked go.mod, read again, gives the same files: a requirement `// indirect` is a requirement.
+  assert.deepEqual(goModGraph(graph.goMod, () => SESSION_STORE_GRAPH, () => undefined), graph);
+  // A module deeper in the graph enters in the next round.
+  const deep = { Path: 'github.com/polyspec/deep/packages/go', Version: 'v0.1.0', Sum: 'h1:deep=', GoModSum: 'h1:deepmod=' };
+  const rounds = goModGraph(goMod, (module) => (module.includes(PHP_SERIALIZATION) ? [...SESSION_STORE_GRAPH, deep] : SESSION_STORE_GRAPH), () => undefined);
+  assert.match(rounds.goMod, /\tgithub\.com\/polyspec\/deep\/packages\/go v0\.1\.0 \/\/ indirect\n\tgithub\.com\/polyspec\/php-serialization/);
+  assert.match(rounds.goSum ?? '', /deep\/packages\/go v0\.1\.0 h1:deep=\n/);
+  // A requirement below the version that the build list selects is one that -mod=readonly refuses: it is named.
+  assert.throws(() => goModGraph(`${goMod}require ${PHP_SERIALIZATION} v0.0.12\n`, () => SESSION_STORE_GRAPH, () => undefined), /go\.mod requires github\.com\/polyspec\/php-serialization\/packages\/go v0\.0\.12, and the build list selects github\.com\/polyspec\/php-serialization\/packages\/go v0\.0\.15/);
+});
+
+test('B2.488: the requirements of a module of the same repository enter the graph from its tracked go.mod, and a module of the repository that it requires is required `// indirect` without a hash (GN-15l, B2.479)', () => {
+  const generator = 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/validator/go v0.0.20\n';
+  const tracked: Record<string, string> = {
+    'github.com/polyspec/crud-ui/packages/validator/go': `module github.com/polyspec/crud-ui/packages/validator/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/base/go v0.0.20\n\t${SESSION_STORE} v0.0.4\n)\n\nrequire ${PHP_SERIALIZATION} v0.0.15 // indirect\n`,
+    'github.com/polyspec/crud-ui/packages/base/go': 'module github.com/polyspec/crud-ui/packages/base/go\n\ngo 1.27.3\n',
+  };
+  const asked: string[] = [];
+  const graph = goModGraph(generator, (module) => {
+    asked.push(module);
+    return SESSION_STORE_GRAPH;
+  }, (module) => tracked[module]);
+  assert.equal(asked[0], `module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire ${SESSION_STORE} v0.0.4\nrequire ${PHP_SERIALIZATION} v0.0.15\n`);
+  assert.equal(graph.goMod, `${generator}\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/base/go v0.0.20 // indirect\n\t${PHP_SERIALIZATION} v0.0.15 // indirect\n\t${SESSION_STORE} v0.0.4 // indirect\n)\n`);
+  // No line of a module of the same repository: its hash is the one of the commit of its release (B2.460, B2.479).
+  assert.doesNotMatch(graph.goSum ?? '', /crud-ui/);
+  assert.match(graph.goSum ?? '', /php-serialization\/packages\/go v0\.0\.15 h1:/);
+  // A module of the repository whose tracked go.mod is not there is named, and no file is written from a part of it.
+  assert.throws(() => goModGraph(generator, () => SESSION_STORE_GRAPH, () => undefined), /github\.com\/polyspec\/crud-ui\/packages\/validator\/go v0\.0\.20: the go\.mod of that Go module of this repository is not there, whose requirements the go\.mod of github\.com\/polyspec\/crud-ui\/packages\/generator\/go takes; run binding scaffold of its contract first \(GN-15l\)/);
+  // Modules of the repository alone, with no module of another repository in the graph: no go.sum and no Go.
+  const alone = goModGraph(generator, () => assert.fail('Go is started'), (module) => (module.endsWith('validator/go') ? 'module github.com/polyspec/crud-ui/packages/validator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/base/go v0.0.20\n' : tracked[module]));
+  assert.deepEqual(alone, { goMod: `${generator}\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/base/go v0.0.20 // indirect\n)\n`, goSum: undefined });
+});
+
 test('B2.460: the go.sum that scaffold tracks holds no line of a module of the same repository, whose commit the release makes (GN-15l)', () => {
   const goMod = 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/crud-ui/packages/validator/go v0.0.20\n\tgithub.com/polyspec/json/packages/go v0.0.34\n)\n';
   assert.deepEqual(releaseRequires(goMod), ['github.com/polyspec/crud-ui/packages/validator/go v0.0.20', 'github.com/polyspec/json/packages/go v0.0.34']);
   assert.deepEqual(sumRequires(goMod), ['github.com/polyspec/json/packages/go v0.0.34']);
-  assert.equal(goSumModule(goMod), 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.34\n');
+  assert.equal(goModGraph(goMod, (module) => {
+    assert.equal(module, 'module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.34\n');
+    return [{ Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.34', Sum: 'h1:zip=', GoModSum: 'h1:mod=' }];
+  }, () => 'module github.com/polyspec/crud-ui/packages/validator/go\n\ngo 1.27.3\n').goSum, 'github.com/polyspec/json/packages/go v0.0.34 h1:zip=\ngithub.com/polyspec/json/packages/go v0.0.34/go.mod h1:mod=\n');
   assert.equal(goSumOf(goMod, [{ Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.34', Sum: 'h1:zip=', GoModSum: 'h1:mod=' }]), 'github.com/polyspec/json/packages/go v0.0.34 h1:zip=\ngithub.com/polyspec/json/packages/go v0.0.34/go.mod h1:mod=\n');
   // A go.mod that requires a module of its own repository alone has no go.sum, and starts no Go.
   assert.equal(goSumOf('module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/validator/go v0.0.20\n', []), undefined);
@@ -12477,7 +12586,6 @@ test('B2.385: the K-2 tests take a case whose callback rows give results before 
 test('the go.sum of a go.mod that requires a release holds the sums of Go, sorted, and none for the development form (GN-15l, B2.400)', () => {
   const goMod = '// header\nmodule github.com/polyspec/template/packages/go\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/polyspec/json/packages/go v0.0.31\n\tgithub.com/polyspec/points/packages/go v0.0.0\n)\n\nreplace github.com/polyspec/points/packages/go => ../../points/packages/go\n';
   assert.deepEqual(releaseRequires(goMod), ['github.com/polyspec/json/packages/go v0.0.31']);
-  assert.equal(goSumModule(goMod), 'module github.com/polyspec/template/packages/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/json/packages/go v0.0.31\n');
   const json = { Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.31', Sum: 'h1:AJeTIg16kCtqvxeI+P9vlbIrmGZo+Y7iI5N1t47O1Ec=', GoModSum: 'h1:LKpskKEB7fS5dyNZyExoC6Js1KpFH4uYg1zcyIzZtbQ=' };
   assert.equal(goSumOf(goMod, [json]), 'github.com/polyspec/json/packages/go v0.0.31 h1:AJeTIg16kCtqvxeI+P9vlbIrmGZo+Y7iI5N1t47O1Ec=\ngithub.com/polyspec/json/packages/go v0.0.31/go.mod h1:LKpskKEB7fS5dyNZyExoC6Js1KpFH4uYg1zcyIzZtbQ=\n');
   // A module of the build list that go.mod does not require gives its go.mod line alone.
@@ -13272,6 +13380,49 @@ test('B2.445: a Go callback fixture finds its row and compares its calls by what
   assert.ok(own.includes('\t\tif row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {\n'));
 });
 
+test('B2.452: a Node and a WASM callback fixture find a row and compare the calls by what a JSON value of an argument holds, at a parameter and inside a list (GN-13bg, GN-13bb)', () => {
+  // isDeepStrictEqual and assert.deepEqual compare two instances of json.Value by no property, so a call with any
+  // JSON value took the row of another, and the expected calls held for any value.
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units.push({
+    id: 'sink', name: ['sink'], module: '', kind: 'interface', visibility: 'public', origin: 'callback', core: 'polyspec_relay::Sink', thread: 'owner',
+    members: [{ id: 'sink.put', name: ['put'], kind: 'method', visibility: 'public', parameters: [{ name: ['value'], type: 'json_value', required: true }], returns: 'none', async_allowed: false, core: { path: 'polyspec_relay::Sink::put', receiver: '&mut self' } }],
+  });
+  contract.units.find((u: any) => u.id === 'relay').members.push(
+    { id: 'relay.hand', name: ['hand'], kind: 'function', visibility: 'public', parameters: [{ name: ['sink'], type: { unit: 'sink' }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::hand' },
+    { id: 'relay.spread', name: ['spread'], kind: 'function', visibility: 'public', parameters: [{ name: ['sinks'], type: { list: { unit: 'sink' } }, required: true }, { name: ['value'], type: 'json_value', required: true }], returns: 'bool', raises: [], wait: 'none', core: 'polyspec_relay::spread' },
+  );
+  contract.cases.push({ member: 'relay.hand', file: 'contracts/cases.json', group: 'hand' }, { member: 'relay.spread', file: 'contracts/cases.json', group: 'spread' });
+  const a = { kind: 'text', value: 'a' };
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, any[]>;
+  cases['hand'] = [{ id: 'a_value_is_handed', rule: 'RQ-036', sink: { callback: { 'sink.put': [{ args: { value: a }, result: null }] }, calls: [{ member: 'sink.put', args: { value: a } }] }, value: a, result: true }];
+  cases['spread'] = [{ id: 'a_value_is_spread', rule: 'RQ-036', sinks: [{ callback: { 'sink.put': [{ args: { value: a }, result: null }] } }], value: a, result: true }];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(out, RELAY_TESTS[target]);
+    // The fixture reads the arguments of a row and of a call through the reader that the test gives it.
+    assert.ok(tests.includes('\nfunction fixture(members, rows, read = (value) => value) {\n'), target);
+    assert.ok(tests.includes('      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(read(row[1]), read(args)));\n'), target);
+    assert.match(tests, /\nfunction ordered\(value\) \{\n {2}if \(value instanceof foreign_json\.Value \|\| value instanceof foreign_json\.OrderedMap\) return \{ foreign: readForeign\(value\) \};\n/, target);
+    const hand = bodiesOf(tests, /test\('GN-13e: hand a_value_is_handed'/, '\n});')[0] ?? '';
+    assert.match(hand, /\n {2}const fixture0 = fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\);\n/, `${target}: ${hand}`);
+    assert.match(hand, /\n {2}assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(ordered\(fixture0\.calls\), ordered\(\[\['put', \[[^\n]+\]\]\]\)\);/, `${target}: ${hand}`);
+    assert.doesNotMatch(hand, /assert\.deepEqual\(fixture0\.calls, /, `${target}: the calls are compared by no property`);
+    // A fixture inside a list is given the reader too.
+    const spread = bodiesOf(tests, /test\('GN-13e: spread a_value_is_spread'/, '\n});')[0] ?? '';
+    assert.match(spread, /\[fixture\(\[\['put', \(call\) => \(arg0\) => call\(arg0\)\]\], \[\['put', \[[^\n]+\], null, false, null\]\], ordered\)\.object\]/, `${target}: ${spread}`);
+  }
+  // A fixture whose arguments hold no such instance is written as it was: no reader, and the calls as they are.
+  const plain = consumerSample();
+  const own = generate({ contract: plain.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: plain.caseFiles, foreign: plain.foreign, targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(own, RELAY_TESTS[target]);
+    assert.match(tests, /= fixture\(\[[^\n]+\]\);\n/, target);
+    assert.doesNotMatch(tests, /\], ordered\)/, target);
+    assert.doesNotMatch(tests, /ordered\(fixture\d+\.calls\)/, target);
+  }
+});
+
 test('B2.464: PHP gives the least int64 of a case of a contract type int64 as PHP_INT_MIN, as an argument, as an expected result and as a key of a keyed map (G-5, T-1)', () => {
   // PHP reads -9223372036854775808 as the negation of the float 9223372036854775808, so the argument was a float,
   // which the binding refuses as no int. A case file gives the integer as its token, which cli reads as a bigint.
@@ -13572,6 +13723,139 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
     assert.match(body, /\.Add\(1\)/, body);
     assert.doesNotMatch(body, /NewCounter\(0\)/, body);
   }
+});
+
+test('B2.480: the generator of every target refuses, with the sentence of binding check, a function type that the core calls as a value or keeps and that states async_allowed: true (GN-6z, CK-17)', () => {
+  // orm: binding check accepted async_allowed: true of a kept function while every generator wrote the function as
+  // one that is never awaited. Both read asyncFunctionRefusal now.
+  const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  for (const id of ['functions.apply', 'registry.register']) {
+    const { contract, cases } = e2eContract('functions');
+    const parameter = member(contract, id).parameters.find((p: any) => typeof p.type === 'object' && 'function' in p.type);
+    assert.equal(parameter.keeps === true, id === 'registry.register');
+    parameter.type.function.async_allowed = true;
+    const sentence = 'a function type that returns "text" states async_allowed: true, and the binding awaits only a function that returns passthrough, the function of a member with machine (GN-6ae); a function that the core calls as a value or keeps (GN-6z) is not awaited, so it states async_allowed: false';
+    assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17').map((f) => f.message), [sentence], id);
+    for (const target of ['python', 'node', 'wasm', 'php', 'go'] as const) {
+      assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: [target] }), (error: Error) => error.message.includes(sentence), `${id} ${target}`);
+    }
+  }
+  // The contract as it is states async_allowed: false, which the check and the five targets take.
+  const { contract, cases } = e2eContract('functions');
+  assert.deepEqual(checkContract(contract).filter((f) => f.check === 'CK-17'), []);
+  assert.ok(generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] }).size > 0);
+});
+
+// B2.482: the paths of the generated tests of the five targets, and the end of a test in each.
+const ONCE_TESTS = { ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' } as const;
+const ONCE_END = { ...STATEFUL_END, go: '\n}\n' } as const;
+// The contract of tests/e2e of a name with its cases, which a test changes.
+const e2eContract = (repo: string): { contract: any; cases: any } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  return { contract: read('packages/rust/interface.json'), cases: read('contracts/cases.json') };
+};
+const onceOut = (repo: string, change: (cases: any) => void): Record<keyof typeof ONCE_TESTS, string> => {
+  const { contract, cases } = e2eContract(repo);
+  change(cases);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library}`, caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  return Object.fromEntries(Object.entries(ONCE_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof ONCE_TESTS, string>;
+};
+// The line of the end of the test of a case that requires each row once of its fixtures to have answered a call.
+const ONCE_CHECK = {
+  python: '\n        self.assertEqual(_unanswered(), [])',
+  node: '\n  assert.deepEqual(unanswered(), []);',
+  wasm: '\n  assert.deepEqual(unanswered(), []);',
+  php: '\n        self::assertSame([], self::unanswered());',
+  go: '\n\tfor at, made := range onceFixtures {\n\t\tif left := made.unanswered(); len(left) != 0 {\n\t\t\tt.Fatalf("G-5: the rows once of the fixture %d that answered no call: %v", at, left)\n\t\t}\n\t}',
+} as const;
+const onceBody = (tests: Record<keyof typeof ONCE_TESTS, string>, target: keyof typeof ONCE_TESTS, start: RegExp): string => {
+  const [body] = bodiesOf(tests[target], start, ONCE_END[target]);
+  assert.ok(body !== undefined, `${target}: no test ${String(start)}`);
+  return body;
+};
+
+test('B2.482: the test of a case requires at its end that each row once of a function fixture answered a call, in the five targets (GN-13bi)', () => {
+  // orm: a fixture failed only on a call that no row answers, so the test of a case passed for a core that never
+  // calls the function.
+  const tests = onceOut('functions', (cases) => {
+    // The member calls the function in the call.
+    cases.apply[0].convert.function[0].once = true;
+    // The member raises before it calls the function: the row once answered no call, which the test finds.
+    cases.apply[1].convert.function.push({ args: { 0: 'x', 1: [] }, result: 'X', once: true });
+    // The core keeps the function, which a call of then of the receiver gave, and the member of the case calls it.
+    cases.registry_call[0].receiver.then[0].args.convert.function[0].once = true;
+  });
+  const starts = (pascal: string, snake: string, name: string, rule: string): Record<keyof typeof ONCE_TESTS, RegExp> => ({
+    python: new RegExp(`def test_${rule.toLowerCase().replace('-', '')}_${snake}\\(`), node: new RegExp(`test\\('${rule}: ${name}'`), wasm: new RegExp(`test\\('${rule}: ${name}'`),
+    php: new RegExp(`function test${rule === 'B-4' ? 'B4' : 'Gn13e'}${pascal.replace(/^[A-Z]/, (c) => (pascal.startsWith('Registry') ? c : c.toLowerCase()))}\\(`), go: new RegExp(`func Test${rule.replace('-', '')}${pascal}\\(`),
+  });
+  const cases = [
+    starts('ApplyTheFunctionConvertsTheValue', 'apply_the_function_converts_the_value', 'apply the_function_converts_the_value', 'GN-13e'),
+    starts('ApplyAValueWithoutACharacterIsEmpty', 'apply_a_value_without_a_character_is_empty', 'apply a_value_without_a_character_is_empty', 'B-4'),
+    starts('RegistryCallTheKeptFunctionConvertsTheValue', 'registry_call_the_kept_function_converts_the_value', 'Registry\\.call the_kept_function_converts_the_value', 'GN-13e'),
+  ];
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of cases) {
+      const body = onceBody(tests, target, start[target]);
+      const at = body.indexOf(ONCE_CHECK[target]);
+      assert.ok(at >= 0, `${target}: ${body}`);
+      // The check stands after the call of the member and after the check of the calls that no row answers.
+      assert.ok(at > body.search(/unexpected|\.call\(|Call\(/), `${target}: ${body}`);
+    }
+    // A case whose fixtures have no row once has no such check: a row without once answers any count of calls.
+    assert.ok(!onceBody(tests, target, starts('RegistryRegisterANameWithoutACharacterIsEmpty', 'registry_register_a_name_without_a_character_is_empty', 'Registry\\.register a_name_without_a_character_is_empty', 'B-4')[target]).includes('nanswered'), target);
+  }
+  // The fixtures of a test are those made since it began, and a row once that is left is named by its place.
+  for (const target of ['node', 'wasm'] as const) {
+    assert.ok(tests[target].includes('\nconst fixturesMade = [];\ntest.beforeEach(() => {\n  fixturesMade.length = 0;\n});\n'), target);
+    assert.ok(tests[target].includes('\n  const left = [...rows];\n  fixturesMade.push({ rows, left });\n'), target);
+    assert.match(tests[target], /\nfunction unanswered\(\) \{\n {2}return fixturesMade\.flatMap\(\(\{ rows, left \}, at\) => left\.filter\(\(row\) => row\[3\]\)\.map\(/, target);
+  }
+  assert.ok(tests.python.includes('\n    def setUp(self) -> None:\n        _fixtures_made.clear()\n'));
+  assert.ok(tests.python.includes('\n    left = list(rows)\n    _fixtures_made.append((rows, left))\n'));
+  assert.match(tests.python, /\ndef _unanswered\(\):\n/);
+  assert.ok(tests.php.includes('\n    protected function setUp(): void\n    {\n        self::$fixturesMade = [];\n    }\n'));
+  assert.ok(tests.php.includes('$function0 = self::made(new class([["call", ["ab c", [2, 1]], "AB C", true, null]], self::same(...)) {'), tests.php);
+  assert.match(tests.php, /\n {12}public function unanswered\(\): array\n/);
+  assert.ok(tests.go.includes('\n\tvar onceFixtures []*fixture\n\tfunction0 := &fixture{rows: []fixtureRow{{member: "call", args: []any{"ab c", []int64{2, 1}}, result: "AB C", once: true}}}\n\tonceFixtures = append(onceFixtures, function0)\n'), tests.go);
+  assert.match(tests.go, /\nfunc \(f \*fixture\) unanswered\(\) \[\]string \{\n/);
+});
+
+test('B2.482: the check of the rows once covers a callback fixture at a parameter, in a list and in the receiver, and a contract without a row once has none (GN-13bi)', () => {
+  const change = (cases: any): void => {
+    // A callback parameter of a case that raises, a callback in a list, and one that the receiver keeps.
+    cases.resolve[0].lookup.callback['lookup.find'][0].once = true;
+    cases.first[0].lookups[1].callback['lookup.find'][0].once = true;
+    cases.index_get[3].receiver.args.source.callback['feed.get'][0].once = true;
+  };
+  const tests = onceOut('sample', change);
+  const plain = onceOut('sample', () => undefined);
+  const starts: Record<keyof typeof ONCE_TESTS, RegExp[]> = {
+    python: [/def test_b4_resolve_a_key_without_a_value_is_missing\(/, /def test_gn13e_first_the_first_lookup_that_holds_the_key_gives_its_value\(/, /def test_gn13e_index_get_a_source_kept_alone_gives_its_value_in_a_later_call\(/],
+    node: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    wasm: [/test\('B-4: resolve a_key_without_a_value_is_missing'/, /test\('GN-13e: first the_first_lookup_that_holds_the_key_gives_its_value'/, /test\('GN-13e: Index\.get a_source_kept_alone_gives_its_value_in_a_later_call'/],
+    php: [/function testB4resolveAKeyWithoutAValueIsMissing\(/, /function testGn13efirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /function testGn13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+    go: [/func TestB4ResolveAKeyWithoutAValueIsMissing\(/, /func TestGN13eFirstTheFirstLookupThatHoldsTheKeyGivesItsValue\(/, /func TestGN13eIndexGetASourceKeptAloneGivesItsValueInALaterCall\(/],
+  };
+  for (const target of Object.keys(ONCE_TESTS) as (keyof typeof ONCE_TESTS)[]) {
+    for (const start of starts[target]) {
+      const body = onceBody(tests, target, start);
+      assert.ok(body.includes(ONCE_CHECK[target]), `${target}: ${body}`);
+      // Before the row once, the same case had no check of a call that did not come.
+      assert.ok(!onceBody(plain, target, start).includes('nanswered'), `${target}: ${String(start)}`);
+    }
+    // The cases of the contract as it is name no row once, so no test of it has the check.
+    assert.ok(!plain[target].includes(ONCE_CHECK[target]), target);
+  }
+  // Go adds a fixture to the slice of the test where it is made: the fixture of the list and that of the receiver.
+  const first = onceBody(tests, 'go', starts.go[1] as RegExp);
+  assert.match(first, /\n\t(fixture\d+) := fixtureLookup\{&fixture\{rows: \[\]fixtureRow\{[^\n]*once: true\}\}\}\}\n\tonceFixtures = append\(onceFixtures, \1\.fixture\)\n/, first);
+  assert.equal(first.match(/onceFixtures = append/g)?.length, 1, first);
+  // PHP makes only a fixture with a row once through made.
+  const php = onceBody(tests, 'php', starts.php[1] as RegExp);
+  assert.equal(php.match(/self::made\(new class\(/g)?.length, 1, php);
+  assert.equal(php.match(/new class\(/g)?.length, 2, php);
+  assert.ok(!plain.php.includes('self::made(') && !plain.php.includes('$fixturesMade') && !plain.go.includes('f.places') &&!plain.go.includes('onceFixtures'));
 });
 
 test('B2.478: the hidden names of a construction and of an iteration are names that no member takes, in Node and WASM (GN-6b)', () => {

@@ -8,7 +8,7 @@ import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCh
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { TAKES_NODE, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, armedEntry, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { absentInits, armedEntry, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -54,7 +54,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env_ of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
   const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
   const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
@@ -62,7 +62,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
   const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
   const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 let env_ = match native_env(&native, ${subject}) {
                     Ok(env_) => env_,

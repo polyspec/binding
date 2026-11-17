@@ -6,7 +6,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { conversionsOf, convertedClassBase, convertedClassCount, convertedFn, convertedLibraries, convertsAny, ownerErrorClasses } from './model.ts';
 import { variantPattern } from '../contract.ts';
-import { absentInits, armedEntry, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
+import { absentInits, armedEntry, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -65,7 +65,7 @@ const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'ui
 // GN-6z, GN-6u: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
 // call converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call, goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
   const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
   const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
@@ -73,7 +73,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const returned = type.returns === 'none'
     ? 'function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    Ok(())'
     : `let returned = function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    ${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 let call = || -> Result<${result}, Thrown> {
                     let function: Function = native_object(&native).map_err(Thrown::Binding)?.dyn_into::<Function>().map_err(|error| Thrown::Binding(internal(&error)))?;
@@ -271,8 +271,9 @@ fn member(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> 
 }
 
 /// U-2 {empty: "object"}: a member of an options record that may be left out; a record that is left out (undefined)
-/// leaves out each of its members.
-fn member_or_undefined(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> {
+/// leaves out each of its members. GN-4c: its name does not begin with member_, which the entries of the members of a
+/// class take in the module of the class, so a member named or_undefined does not hide it.
+fn field_or_undefined(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> {
     if record.is_undefined() {
         return Ok(JsValue::UNDEFINED);
     }
@@ -647,7 +648,7 @@ function functionRust(model: Model, fn: Fn): string {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('wasm', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `&${parameter.default === undefined ? 'member' : 'member_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
+        const raw = `&${parameter.default === undefined ? 'member' : 'field_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('wasm', model, fn, field.type, name), typed))}?;`);
         if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }

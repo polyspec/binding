@@ -6,7 +6,7 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
@@ -28,11 +28,25 @@ function phpFixture(values: { members: string[]; rows: string[][] }): string {
   // GN-13bb: the arguments of a call are compared with those of a row by self::same of the test class, which compares an
   // object by its class and its properties and an instance of a value class of another repository by its in row, as
   // a result is compared; === of PHP holds for one instance alone.
-  return `new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}], self::same(...)) {
+  // GN-13bi: a fixture with a row once is made through self::made, which holds it for the test, and gives its rows
+  // once that answered no call: unset keeps the keys of the rows, so the key of a row that is left is its place.
+  const once = onceRows(values.rows) > 0;
+  return `${once ? 'self::made(' : ''}new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}], self::same(...)) {
             public array $unexpected = [];
             public array $calls = [];
             public function __construct(private array $rows, private \\Closure $same) {}
-${values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
+${values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}${once ? `
+            /** @return list<string> */
+            public function unanswered(): array
+            {
+                $left = [];
+                foreach ($this->rows as $at => $row) {
+                    if ($row[3]) {
+                        $left[] = 'the row ' . $at . ': ' . $row[0] . ' ' . \\var_export(($this->same)($row[1]), true);
+                    }
+                }
+                return $left;
+            }` : ''}
             private function answer(string $name, array $args): mixed
             {
                 $this->calls[] = [$name, $args];
@@ -50,8 +64,43 @@ ${values.members.map((member) => `            public function ${member.slice(1, 
                 $this->unexpected[] = [$name, $args];
                 throw new UnexpectedCall($name);
             }
-        }`;
+        }${once ? ')' : ''}`;
 }
+
+// GN-13bi: the fixtures with a row once that the running test made, which setUp empties, and the rows once among them
+// that answered no call, which the test of a case requires to be none at its end.
+const PHP_FIXTURES_MADE = `
+    /** GN-13bi: the fixtures with a row once of the test in progress. @var list<object> */
+    private static array $fixturesMade = [];
+
+    protected function setUp(): void
+    {
+        self::$fixturesMade = [];
+    }
+
+    /**
+     * @template T of object
+     * @param T $fixture
+     * @return T
+     */
+    private static function made(object $fixture): object
+    {
+        self::$fixturesMade[] = $fixture;
+        return $fixture;
+    }
+
+    /** @return list<string> */
+    private static function unanswered(): array
+    {
+        $left = [];
+        foreach (self::$fixturesMade as $at => $fixture) {
+            foreach ($fixture->unanswered() as $row) {
+                $left[] = $row . ' of the fixture ' . $at;
+            }
+        }
+        return $left;
+    }
+`;
 
 // GN-6aq: a Cancellation that was cancelled before the call, or one that is never cancelled.
 const PHP_CANCELLATION = (name: string): string => `
@@ -416,7 +465,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return methods.push(...blocks);
   };
   let usesFixture = false;
-  const invoke = (fn: Fn, args: string, receiver: string): string => {
+  // GN-13bi: the count of the rows once of the fixtures written so far; the test of a case in which the count grew
+  // requires at its end, after the calls of after, that each row once of its fixtures answered a call.
+  let onceMade = 0;
+  const answered = (since: number): string => (onceMade === since ? '' : '\n        self::assertSame([], self::unanswered());');
+  const invoke =(fn: Fn, args: string, receiver: string): string => {
     useExpression(args);
     useExpression(receiver);
     const hook = hookCall('php', fn, receiver);
@@ -479,12 +532,14 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
+    onceMade += onceRows(values.rows);
     return phpFixture(values);
   };
   // GN-6z: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
   ctx.functionMember = 'call';
   ctx.functionNew = (rows) => {
     usesFixture = true;
+    onceMade += onceRows(rows);
     return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;
   };
   let usesOutcome = false;
@@ -707,11 +762,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       usesOutcome = true;
       // GN-13bg: a result that holds an instance of a value class of another repository goes through same, which reads
       // the instance by its in row, before outcome writes it: var_export writes two instances by no property.
-      const read = holdsForeign(model, fn.returns);
+      const read = pair.computed === undefined && holdsForeign(model, fn.returns);
       usesSame ||= read;
-      const result = (call: string): string => (read ? `self::same(${call})` : call);
+      // GN-13d: the two calls of a {computed} default give the value of each to no comparison, only their outcome.
+      const result = (call: string): string => (pair.computed !== undefined ? `[${call}, null][1]` : read ? `self::same(${call})` : call);
       append(`
-    public function testU2${name}${langName('php', pair.arg.name, 'class')}LeftOutIsItsDefault(): void
+    public function testU2${name}${langName('php', pair.arg.name, 'class')}${pair.computed === undefined ? 'LeftOutIsItsDefault' : `LeftOutLeavesItsValueToTheCore${pair.computed.split(/[^A-Za-z0-9]+/).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`).join('')}`}(): void
     {
         self::assertSame(
             self::outcome(static fn (): mixed => ${result(qualified(callArgs(model, ctx, fn, pair.left)))}),
@@ -728,6 +784,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `$function${i}`, values: { members: f.members, rows: f.rows, calls: undefined as string[][] | undefined }, use: `$function${i}->call(...)` })),
       ];
       usesFixture ||= fixtures.length > 0;
+      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
       const before = fixtures
         .map(
           (f) => `
@@ -743,6 +800,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // the entry point of the feature case-test.
     const caseTestOf = (caseId: string): number => caseTestList.findIndex((t) => t.fn === fn && t.id === caseId);
     for (const kase of raisingCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       const id = casePascal(kase.id);
       const entry = caseTestOf(kase.id);
@@ -811,11 +869,12 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
 ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
-        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
+        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       const id = casePascal(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
@@ -838,11 +897,12 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::fail('no error');
         } catch (\\LogicException $error) {
             self::assertSame(self::$raised, $error);
-        }${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
+        }${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
+      const since = onceMade;
       methodMark = caseTextUses;
       const id = casePascal(kase.id);
       if (kase.refused !== undefined) {
@@ -901,7 +961,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       append(`
     public function testGn13e${name}${id}(): void
-    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
@@ -1222,7 +1282,7 @@ final class GeneratedTest extends TestCase
 {${usesCaseTextPath || methods.some((m) => m.includes('$this->casePath(') || m.includes('$this->caseFile(')) ? PHP_CASE_PATH : ''}${usesCaseTextPath ? PHP_CASE_TEXT_PATH : ''}${methods.some((m) => m.includes('$this->caseFile(')) ? PHP_CASE_FILE : ''}${methods.some((m) => /self::service(Address|State)\(/.test(m)) ? PHP_SERVICE : ''}${methods.some((m) => m.includes('self::servicePeer(')) ? PHP_PEER : ''}${methods.some((m) => m.includes('$this->caseListener();')) ? PHP_CASE_LISTENER : ''}${methods.some((m) => m.includes('$this->cancellation(')) ? PHP_CANCELLATION(phpCancellationName(layout)) : ''}${usesBound ? `
     /** GN-13n: the arguments that the function fixtures of the test in progress keep by name. @var array<string, mixed> */
     private static array $bound = [];
-` : ''}${usesRaised ? `
+` : ''}${onceMade > 0 ? PHP_FIXTURES_MADE : ''}${usesRaised ? `
     /** GN-6ae: the exception that a function fixture of the test in progress raises. */
     private static ?\\Throwable $raised = null;
 ` : ''}
