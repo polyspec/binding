@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -70,25 +70,18 @@ function functionIn(model: Model, type: FunctionType, value: string, subject: st
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    // T-2 never: the core's Infallible has no value, so the call has failed before.
-    if (type === 'never') return `match ${value} {}`;
-    if (type === 'none') return 'Ok(JsValue::UNDEFINED)';
-    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no WASM output conversion for ${type}`);
-    return `${name}(${value})`;
-  }
-  // GN-6ae: a result passthrough leaves the table of the module as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(${value})`;
-  if ('list' in type) return `list_out(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
-  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `map_out(${value}, |item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `keyed_map_out(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
-  // An optional is matched where it is, so its item is the value or the reference that the place holds, whose type no
-  // generic conversion needs to infer.
-  if ('optional' in type) return `match ${value} {\n        Some(value) => ${convertOut(model, type.optional, 'value')},\n        None => Ok(JsValue::NULL),\n    }`;
-  if ('tuple' in type) return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, copied(t) ? `*${name}` : name), (parts) => `tuple_out(&[${parts.join(', ')}])`);
+  if (typeof type === 'string') return scalarOut(type, value, 'WASM', 'Ok(JsValue::UNDEFINED)', '', { path: undefined });
+  // GN-6ae: a result passthrough leaves the table of the module as the value that the function returned. An optional is
+  // matched where it is, so its item is the value or the reference that the place holds, whose type no generic
+  // conversion needs to infer.
+  const container = containerOut(model, type, value, {
+    env: '',
+    optional: (place, inner) => `match ${place} {\n        Some(value) => ${convertOut(model, inner, 'value')},\n        None => Ok(JsValue::NULL),\n    }`,
+    part: (t, name) => (copied(t) ? `*${name}` : name),
+    tuple: (parts) => `tuple_out(&[${parts.join(', ')}])`,
+    convert: convertOut,
+  });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   const leaf = cycleLeaf(model, WASM_CYCLE, type, value, '');

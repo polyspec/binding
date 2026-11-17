@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -65,25 +65,9 @@ ${type.parameters.length === 0 ? '' : `                    let args: ${argsType}
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    // T-2 never: the core's Infallible has no value, so the call has failed before.
-    if (type === 'never') return `match ${value} {}`;
-    if (type === 'none') return 'none_out(env_)';
-    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out', path: 'path_out' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
-    return `${name}(env_, ${value})`;
-  }
-  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(env_, ${value})`;
-  if ('list' in type) return `list_out(env_, ${value}, ${closure(['env_', 'item'], convertOut(model, type.list, 'item'))})`;
-  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `map_out(env_, ${value}, |env_, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `keyed_map_out(env_, ${value}, |env_, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `optional_out(env_, ${optionRef(value)}, ${closure(['env_', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(env_, vec![${parts.join(', ')}])`);
-  }
+  if (typeof type === 'string') return scalarOut(type, value, 'Node', 'none_out(env_)', 'env_, ');
+  const container = containerOut(model, type, value, { env: 'env_', tuple: (parts) => `tuple_out(env_, vec![${parts.join(', ')}])`, convert: convertOut });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env_, ${value})`;
   // GN-6bt: the made value takes the env_ of a closure of a list or an optional, which the lints deny unused.

@@ -3,8 +3,8 @@
 
 import type { Type } from '../contract.ts';
 import { functionGiven, givenRust } from './callback_arguments.ts';
-import { boxed, keptFunctionType, type Model, rustType, traitParam, tupleIn, Unsupported } from './model.ts';
-import { closure, rustString } from './text.ts';
+import { boxed, keptFunctionType, type Model, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
 // language that differ, and undefined for a scalar that the language does not take.
@@ -13,6 +13,18 @@ export function scalarIn(type: string, value: string, subject: string, lang: str
   const name = fn[type];
   if (name === undefined) throw new Unsupported(`no ${lang} input conversion for ${type}`);
   return `${name}(${lead}${value}, ${subject})`;
+}
+
+// T-2: the output conversion of a scalar, by the helper of its name in the crate; none is the value of none in the
+// language, and overrides gives the helpers of a language that differ, undefined for a scalar it does not give.
+export function scalarOut(type: string, value: string, lang: string, none: string, lead = '', overrides: Readonly<Record<string, string | undefined>> = {}): string {
+  // T-2 never: the core's Infallible has no value, so the call has failed before.
+  if (type === 'never') return `match ${value} {}`;
+  if (type === 'none') return none;
+  const fn: Record<string, string | undefined> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out', path: 'path_out', ...overrides };
+  const name = fn[type];
+  if (name === undefined) throw new Unsupported(`no ${lang} output conversion for ${type}`);
+  return `${name}(${lead}${value})`;
 }
 
 // GN-6z: what the body of the Rust closure of a function reads: its result type, the names of its arguments, and the
@@ -39,6 +51,36 @@ ${body({ result, names, returns })}
 
 // T-1: the type of a function of a contract.
 export type FunctionType = { parameters: Type[]; returns: Type; async_allowed?: boolean };
+
+// T-2: what the output conversion of a container differs by between the languages.
+export interface ContainersOut {
+  // The token of the language that every conversion takes first ('env_', 'py_'), or ''.
+  readonly env: string;
+  // The output of an optional, when the language does not write it by optional_out.
+  readonly optional?: (value: string, inner: Type) => string;
+  // The place of a part of a tuple, and the tuple made of the converted parts.
+  readonly part?: (type: Type, name: string) => string;
+  readonly tuple: (parts: string[]) => string;
+  readonly convert: (model: Model, type: Type, value: string) => string;
+}
+
+// T-2: the output conversion of a passthrough, a list, a map, a keyed map, an optional or a tuple; undefined for any
+// other type.
+export function containerOut(model: Model, type: Type, value: string, form: ContainersOut): string | undefined {
+  if (typeof type === 'string') return undefined;
+  const lead = form.env === '' ? '' : `${form.env}, `;
+  const params = (name: string): string[] => (form.env === '' ? [name] : [form.env, name]);
+  const convert = (inner: Type, place: string): string => form.convert(model, inner, place);
+  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
+  if ('passthrough' in type) return `passed_out(${lead}${value})`;
+  if ('list' in type) return `list_out(${lead}${value}, ${closure(params('item'), convert(type.list, 'item'))})`;
+  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
+  if ('map' in type) return `map_out(${lead}${value}, |${params('item').join(', ')}| ${convert(type.map, 'item')})`;
+  if ('keyed_map' in type) return `keyed_map_out(${lead}${value}, |${params('item').join(', ')}| ${convert(type.keyed_map, 'item')})`;
+  if ('optional' in type) return form.optional?.(value, type.optional) ??`optional_out(${lead}${optionRef(value)}, ${closure(params('value'), convert(type.optional, 'value'))})`;
+  if ('tuple' in type) return tupleOut(type.tuple, value, (t, name) => convert(t, form.part?.(t, name) ?? name), form.tuple);
+  return undefined;
+}
 
 // T-1: what the input conversion of a container differs by between the languages.
 export interface ContainersIn {

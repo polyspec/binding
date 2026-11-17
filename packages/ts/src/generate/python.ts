@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, keptFunctionIn, scalarIn } from './bindings_shared.ts';
+import { type FunctionType, containerIn, containerOut, keptFunctionIn, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -436,22 +436,9 @@ fn kept_function_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, gi
 `;
 
 function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', bytes: 'bytes_out', float: 'float_out', path: 'path_out', none: 'none_out' };
-    // T-2 never: the core's Infallible has no value, so the call has failed before.
-    if (type === 'never') return `match ${value} {}`;
-    return type === 'none' ? 'none_out(py_)' : `${fn[type]}(py_, ${value})`;
-  }
-  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(py_, ${value})`;
-  if ('list' in type) return `list_out(py_, ${value}, ${closure(['py_', 'item'], convertOut(model, type.list, 'item'))})`;
-  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('keyed_map' in type) return `keyed_map_out(py_, ${value}, |py_, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('map' in type) return `map_out(py_, ${value}, |py_, item| ${convertOut(model, type.map, 'item')})`;
-  if ('optional' in type) return `optional_out(py_, ${optionRef(value)}, ${closure(['py_', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(py_, vec![${parts.join(', ')}])`);
-  }
+  if (typeof type === 'string') return scalarOut(type, value, 'Python', 'none_out(py_)', 'py_, ', { int64: 'int_out' });
+  const container = containerOut(model, type, value, { env: 'py_', tuple: (parts) => `tuple_out(py_, vec![${parts.join(', ')}])`, convert: convertOut });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py_, ${value})`;
   const leaf = cycleLeaf(model, PYTHON_CYCLE, type, value, '');
