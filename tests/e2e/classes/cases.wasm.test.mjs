@@ -75,7 +75,7 @@ test('the value of a collected instance is dropped and its handle is used again 
   const glue = await import(new URL('./classes_wasm.js', import.meta.resolve('@polyspec/classes/wasm')).href);
   // The handle that the next instance takes, read through the module's export of the constructor.
   const next = () => {
-    const handle = glue.__Tag_new('probe');
+    const handle = glue.__new_Tag('probe');
     glue.__free_Tag(handle);
     return handle;
   };
@@ -87,7 +87,7 @@ test('the value of a collected instance is dropped and its handle is used again 
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   // Every handle of the collected instances is free: 1000 new values take no handle above the highest one.
-  const taken = Array.from({ length: 1000 }, () => glue.__Tag_new('probe'));
+  const taken = Array.from({ length: 1000 }, () => glue.__new_Tag('probe'));
   assert.ok(Math.max(...taken) <= before + 1000, `the highest handle is ${Math.max(...taken)}, after ${before}`);
   for (const handle of taken) glue.__free_Tag(handle);
 });

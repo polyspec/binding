@@ -569,8 +569,10 @@ ${arms.join('\n')}
 // T-5: the name of the module's export of a member of a class, which the ES module calls from the class it defines.
 const exportName = (fn: Fn): string => {
   const cls = langName('wasm', fn.unit.name, 'class');
-  if (fn.kind === 'constructor') return `__${cls}_new`;
-  if (fn.kind === 'iterate') return `__${cls}_iterate`;
+  // GN-6b, B2.478: the export of a member starts with the name of its class, a capital letter, so no member has the
+  // export of the construction or of the iteration, which start as __free_<Class> does (GN-4c).
+  if (fn.kind === 'constructor') return `__new_${cls}`;
+  if (fn.kind === 'iterate') return `__iterate_${cls}`;
   return `__${cls}_${memberName('wasm', fn)}`;
 };
 
@@ -583,7 +585,7 @@ const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()
 // is a function of the module class_<unit> of its class (objectRust), so the class and the member are read apart; the
 // prefix keeps a member named as a helper, such as guard, from hiding the helper in that module.
 const rustExport = (fn: Fn): string =>
-  `${fn.kind === 'function' ? 'function' : 'member'}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
+  fn.kind === 'constructor' ? 'construct' : `${fn.kind === 'function' ? 'function' : 'member'}_${rustField(fn.member.name).replace(/^r#/, '')}`;
 
 // GN-6h: whether the class of a member holds its value in a lock.
 const locked = (model: Model, fn: Fn): boolean => model.objects.find((o) => o.unit === fn.unit)?.lock !== undefined;
@@ -909,7 +911,7 @@ ${members.replace(/\n(?=.)/g, '\n    ')}}
 `}
 ${object.constructible ? '' : `/// GN-6b: ${jsClass} has no public constructor (U-1 constructible), so a direct construction, which the constructor of
 /// the ES module hands here, is kind direct_construction.
-#[wasm_bindgen(js_name = ${rustString(`__${jsClass}_new`)})]
+#[wasm_bindgen(js_name = ${rustString(`__new_${jsClass}`)})]
 pub fn new_${name}() -> Result<(), JsValue> {
     Err(throw(binding_error(BindingError::DirectConstruction { class: String::from(${rustString(jsClass)}) })))
 }
@@ -1674,7 +1676,7 @@ ${checked(fn, `${name}()`, name, (call) => `return ${call}`)}
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
     const construct = constructor === undefined
       // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is refused by the module.
-      ? `    if (args[0] !== MAKE) enter(${internal}, () => glue.__${cls}_new());
+      ? `    if (args[0] !== MAKE) enter(${internal}, () => glue.__new_${cls}());
     this.#handle = args[1];`
       : `    if (args[0] === MAKE) {
       this.#handle = args[1];

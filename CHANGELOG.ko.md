@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 986b3c020e6226bbe2df611d0dada600afe9f04167963a9564c8d476ca54e022 -->
+<!-- source-sha256: bc41ea4cf2fb6c0be68eb07294387983259bc1e6eddba5a55ad8db8b8facde84 -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
@@ -11,6 +11,9 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Node와 WASM 클래스의 숨은 이름 가운데 member가 아닌 것은 어떤 member도 가질 수 없는 이름이다(GN-6b, GN-4c, B2.478). Node addon은 클래스의 생성을, 직접 생성의 거부도, static `__new`로 썼고 이름이 `new`인 static member도 `__new`로 썼다. 그래서 member가 그 자리를 차지했다. orm의 `new Query()`가 kind `direct_construction` 대신 `schema is not an instance of Schema`로 실패했다. 이름이 `iterate`인 메서드도 같은 식으로 반복 `__iterate`의 자리를 차지했고, WASM의 export `__<Class>_new`와 `__<Class>_iterate`도 그런 member의 export였다. 이제 생성은 Node에서 `__binding_new`, WASM에서 export `__new_<Class>`이고, 반복은 `__binding_iterate`와 `__iterate_<Class>`다. WASM 생성자의 Rust 함수는 `construct`다. 전에는 member `new`의 함수인 `member_new`였다.
+  - 레포는 `make bindings`를 다시 실행한다. 생성된 addon과 진입점은 함께 쓰이고 공개 이름은 바뀌지 않는다. 숨은 export를 이름으로 부르는 레포의 코드는 그것을 바꾼다: WASM glue의 `glue.__<Class>_new(…)`는 `glue.__new_<Class>(…)`다.
 
 - Python 바인딩 crate의 라이브러리는 그 crate의 이름을 따른다(`[lib] name = "polyspec_<library>_python"`). 전에는 모든 Python crate가 `_native`였다(GN-3i, B2.352). 한 workspace의 두 Python crate(crud-ui의 `packages/validator/python`과 `packages/generator/python`)가 한 파일 `target/<profile>/deps/lib_native.<so|dylib>`를 썼다. 그래서 `cargo build -p … -p …`가 출력 파일 이름 충돌을 경고했고 한 crate의 라이브러리가 다른 crate의 것을 덮어썼다. Python이 import하는 module은 바뀌지 않는다. 그것은 `<module>._native`(host 패키지에서는 `<module>._binding._native`)이고, 생성된 소스가 이제 `#[pymodule(name = "_native")]`로 선언하며 `tool.maturin.module-name`은 전과 같이 그것을 이름한다. 그래서 wheel과 개발 설치는 같은 `_native.abi3.so`를 담는다.
   - target `python`이 있는 모든 레포는 `binding scaffold`와 `make bindings`를 다시 실행하고 Python crate의 `Cargo.toml`을 commit한다. 그때까지 `binding check`가 그 manifest를 보고한다(CK-19). `pyproject.toml`, Python 코드, import는 바뀌지 않고, host 패키지의 host `pyproject.toml`도 바뀌지 않는다.

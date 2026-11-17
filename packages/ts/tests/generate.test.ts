@@ -6151,10 +6151,10 @@ test('a direct construction of a class without a constructor is kind direct_cons
   alone.cases = [];
   const out = generate({ contract: alone, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const refused = /Err\(binding_error\((py_, )?BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)/;
-  // Node: the static __new of the addon fails, and the Proxy of the entry calls it for any arguments.
+  // Node: the static __binding_new of the addon fails, and the Proxy of the entry calls it for any arguments.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /#\[napi\(js_name = "__new", enumerable = false\)\]\n {8}pub fn construct<'env>\(env_: &'env Env\) -> napi::Result<Unknown<'env>> \{\n {12}Err\(throw\(env_, binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)/);
-  assert.match(text(out, 'packages/ts/generated/index.cjs'), /const Tag = new Proxy\(addon\.Tag, \{\n {2}construct\(target\) \{\n {4}return target\.__new\(\);\n {2}\},\n\}\);/);
+  assert.match(node, /#\[napi\(js_name = "__binding_new", enumerable = false\)\]\n {8}pub fn construct<'env>\(env_: &'env Env\) -> napi::Result<Unknown<'env>> \{\n {12}Err\(throw\(env_, binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)/);
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /const Tag = new Proxy\(addon\.Tag, \{\n {2}construct\(target\) \{\n {4}return target\.__binding_new\(\);\n {2}\},\n\}\);/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-6b: new Tag\(\) is kind direct_construction', \(\) => \{\n {2}assert\.throws\(\(\) => new pkg\.Tag\(\), \(error\) => error\.constructor === pkg\.\w+ && error\.kind === 'direct_construction' && error\.message === 'Tag has no public constructor'\);/);
   // Python: #[new] fails for any arguments; an instance of a result is made without it.
   const python = text(out, 'packages/python/generated/lib.rs');
@@ -6169,8 +6169,8 @@ test('a direct construction of a class without a constructor is kind direct_cons
   assert.doesNotMatch(stub, /final class Tag[^\n]*\n {4}\{\n {8}private function __construct/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn6bTagIsNoDirectConstruction\(\): void\n {4}\{\n {8}try \{\n {12}new \\[\w\\]+\\Tag\(\);/);
   // WASM: the constructor calls the export that fails, unless the module makes the instance.
-  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /\}\n\n {4}\/\/\/ GN-6b: [^\n]*\n {4}\/\/\/ [^\n]*\n {4}#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn new_tag\(\) -> Result<\(\), JsValue> \{\n {8}Err\(throw\(binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)\n {4}\}\n\n {4}\/\/\/ T-5: drops/);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__Tag_new\(\)\);\n {4}this\.#handle = args\[1\];/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /\}\n\n {4}\/\/\/ GN-6b: [^\n]*\n {4}\/\/\/ [^\n]*\n {4}#\[wasm_bindgen\(js_name = "__new_Tag"\)\]\n {4}pub fn new_tag\(\) -> Result<\(\), JsValue> \{\n {8}Err\(throw\(binding_error\(BindingError::DirectConstruction \{ class: String::from\("Tag"\) \}\)\)\)\n {4}\}\n\n {4}\/\/\/ T-5: drops/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__new_Tag\(\)\);\n {4}this\.#handle = args\[1\];/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-6b: new Tag\(\) is kind direct_construction'/);
 });
 
@@ -6208,7 +6208,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.match(lib, /static TABLE_TAG: RefCell<Table<binding_core::Shared<polyspec_sample::Tag>>> = const \{ RefCell::new\(Table::new\(\)\) \};/);
   // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
   assert.match(lib, /\n {4}pub mod class_tag \{\n {8}use super::\*;\n/);
-  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {8}pub fn member_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__new_Tag"\)\]\n {8}pub fn construct\(name: JsValue\) -> Result<u32, JsValue> \{/);
   // GN-6h: a value of the class comes in from the language, so the class holds it in a lock that each call reads.
   assert.match(lib, /pub fn member_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {12}guard\(\|\| \{\n {16}let held = held_tag\(this\)\?;\n {16}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {16}let receiver = &\*receiver;\n {16}let result = polyspec_sample::Tag::name\(receiver\);/);
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__free_Tag"\)\]\n {4}pub fn free_tag\(this: u32\) \{/);
@@ -6218,10 +6218,10 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.doesNotMatch(lib, /host_json/);
   const entry = text(out, 'packages/ts/wasm/generated/index.mjs');
   assert.match(entry, /\nexport class Tag \{\n {2}#handle;\n/);
-  assert.match(entry, /this\.#handle = enter\(SampleInternalError, \(\) => glue\.__Tag_new\(args\[0\]\)\);/);
+  assert.match(entry, /this\.#handle = enter\(SampleInternalError, \(\) => glue\.__new_Tag\(args\[0\]\)\);/);
   assert.match(entry, /released\.register\(this, \[glue\.__free_Tag, this\.#handle\]\);/);
   assert.match(entry, /\n {2}get name\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_name\(this\.#handle\)\);/);
-  assert.match(entry, /\n {2}\[Symbol\.iterator\]\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_iterate\(this\.#handle\)\)\[Symbol\.iterator\]\(\);/);
+  assert.match(entry, /\n {2}\[Symbol\.iterator\]\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__iterate_Tag\(this\.#handle\)\)\[Symbol\.iterator\]\(\);/);
   assert.match(entry, /\n {2}toString\(\) \{/);
   assert.doesNotMatch(entry, /toJSON/);
   // A private field is the brand: no other value has a handle.
@@ -6260,7 +6260,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   alone.cases = [];
   const kept = generate({ contract: alone, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   assert.doesNotMatch(text(kept, 'packages/ts/wasm/generated/lib.rs'), /\nfn (in_tag|handle_of)\(/);
-  assert.match(text(kept, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__Tag_new\(\)\);/);
+  assert.match(text(kept, 'packages/ts/wasm/generated/index.mjs'), /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__new_Tag\(\)\);/);
   assert.match(text(kept, 'packages/ts/wasm/generated/index.d.ts'), /export declare class Tag \{\n {2}private constructor\(\);/);
   // A contract without a class unit registers the library classes alone.
   const { contract, caseFiles } = load();
@@ -8716,10 +8716,14 @@ test('the entry of a member of a class of the WASM crate is a function of the mo
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   const defined = definedIn(lib);
   for (const [module, names] of defined) assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), [], module);
-  for (const name of ['new', 'name', 'new_x', 'free', 'guard']) assert.ok((defined.get('exports::class_tag') ?? []).includes(`member_${name}`), name);
-  assert.deepEqual((defined.get('exports::class_tag_new') ?? []).sort(), ['member_new', 'member_x']);
+  for (const name of ['name', 'new_x', 'free', 'guard']) assert.ok((defined.get('exports::class_tag') ?? []).includes(`member_${name}`), name);
+  // B2.478: the entry of the constructor is construct, so a member named new, member_new, is another function.
+  assert.ok((defined.get('exports::class_tag') ?? []).includes('construct'));
+  assert.deepEqual((defined.get('exports::class_tag_new') ?? []).sort(), ['construct', 'member_x']);
   // A member named as a helper does not hide the helper in the module of its class, which names the helper by a glob.
-  for (const [module, names] of defined) if (module.startsWith('exports::class_')) assert.deepEqual(names.filter((name) => !name.startsWith('member_')), [], module);
+  for (const [module, names] of defined) if (module.startsWith('exports::class_')) assert.deepEqual(names.filter((name) => !name.startsWith('member_') && name !== 'construct'), [], module);
+  // No helper of the crate is named construct, which the constructor of a class would hide in the module of the class.
+  assert.doesNotMatch(lib, /\n {0,4}(?:pub )?fn construct\b/);
   assert.equal([...defined.values()].flat().filter((name) => name.startsWith('member_') || name.startsWith('free_')).every((name) => !(defined.get('') ?? []).includes(name)), true);
   assert.ok((defined.get('exports') ?? []).includes('free_tag'));
   assert.ok((defined.get('exports') ?? []).includes('free_tag_new'));
@@ -8825,11 +8829,13 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
     shields: (body ?? '').match(/shielded\(\|\| /g)?.length ?? 0,
     arms: (body ?? '').match(/(?:with_faults|armed_future)\("/g)?.length ?? 0,
   }));
-  const members = entries.filter((entry) => /^(?:function|member)_/.test(entry.name));
+  // B2.478: the entry of a constructor is construct, which no member is named.
+  const ofMember = /^(?:(?:function|member)_|construct$)/;
+  const members = entries.filter((entry) => ofMember.test(entry.name));
   assert.ok(members.length >= 30, String(members.length));
   assert.ok(members.some((entry) => entry.name === 'member_transaction'));
   assert.deepEqual(members.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 1), []);
-  const others = entries.filter((entry) => !/^(?:function|member)_/.test(entry.name) && !entry.test && entry.guards > 0);
+  const others = entries.filter((entry) => !ofMember.test(entry.name) && !entry.test && entry.guards > 0);
   assert.deepEqual(others.map((entry) => entry.name), ['advance']);
   assert.deepEqual(others.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 0), []);
   // No arming and no shield is outside an entry, so the counts of the crate are the sums of its entries.
@@ -13091,6 +13097,53 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
     assert.match(body, /\.Add\(1\)/, body);
     assert.doesNotMatch(body, /NewCounter\(0\)/, body);
   }
+});
+
+test('B2.478: the hidden names of a construction and of an iteration are names that no member takes, in Node and WASM (GN-6b)', () => {
+  // orm: query.new and step_runner.new are static members named new of classes without a constructor. Node wrote the
+  // guard of a direct construction and the member as one static __new, so new Query() ran the member.
+  const made = (constructible: boolean): any => {
+    const contract = classSample(['wasm']);
+    const tag = contract.units.find((u: any) => u.id === 'tag');
+    tag.constructible = constructible;
+    const constructor = tag.members.find((m: any) => m.kind === 'constructor');
+    // A static member named new, and a method named iterate beside the member of kind iterate.
+    const fresh = { ...structuredClone(constructor), id: 'tag.new', name: ['new'], kind: 'static', returns: { unit: 'tag' } };
+    if (constructible) Object.assign(constructor, { id: 'tag.create', name: ['create'] });
+    else Object.assign(constructor, fresh);
+    if (constructible) tag.members.push(fresh);
+    const property = tag.members.find((m: any) => m.id === 'tag.name');
+    tag.members.push({ ...structuredClone(property), id: 'tag.iterate', name: ['iterate'], kind: 'method' });
+    contract.cases = [];
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  };
+  for (const constructible of [false, true]) {
+    const out = made(constructible);
+    // Node: every js_name of the class is written once, so no member takes the place of a hidden name.
+    const node = text(out, 'packages/ts/generated/lib.rs');
+    const tagImpl = node.slice(node.indexOf('impl Tag {'));
+    const names = [...tagImpl.slice(0, tagImpl.indexOf('\n}\n')).matchAll(/js_name = "([^"]+)"/g)].map((found) => found[1]);
+    assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), [], `node, constructible ${constructible}`);
+    for (const name of ['__binding_new', '__new', '__binding_iterate', '__iterate']) assert.ok(names.includes(name), `node: ${name} of ${names.join(' ')}`);
+    const entry = text(out, 'packages/ts/generated/index.cjs');
+    // The Proxy calls the hidden static, and the entry defines the member new over the addon's __new.
+    assert.match(entry, constructible ? /target\.__binding_new\(/ : /construct\(target\) \{\n {4}return target\.__binding_new\(\);/);
+    assert.doesNotMatch(entry, /target\.__new\(/);
+    assert.match(entry, /const original = Tag\.__new;/);
+    assert.match(entry, /return this\.__binding_iterate\(\)\[Symbol\.iterator\]\(\);/);
+    assert.match(entry, /const original = Tag\.prototype\.__iterate;/);
+    // WASM: every export is written once, and the function of the constructor is no function of a member.
+    const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+    const exported = [...wasm.matchAll(/#\[wasm_bindgen\(js_name = "([^"]+)"\)\]/g)].map((found) => found[1]);
+    assert.deepEqual(exported.filter((name, i) => exported.indexOf(name) !== i), [], `wasm, constructible ${constructible}`);
+    for (const name of ['__new_Tag', '__Tag_new', '__iterate_Tag', '__Tag_iterate', '__free_Tag']) assert.ok(exported.includes(name), `wasm: ${name}`);
+    for (const [module, defined] of definedIn(wasm)) assert.deepEqual(defined.filter((name, i) => defined.indexOf(name) !== i), [], `wasm ${module}`);
+    const glue = text(out, 'packages/ts/wasm/generated/index.mjs');
+    assert.match(glue, constructible ? /this\.#handle = enter\(\w+, \(\) => glue\.__new_Tag\(/ : /if \(args\[0\] !== MAKE\) enter\(\w+, \(\) => glue\.__new_Tag\(\)\);/);
+    assert.match(glue, /glue\.__iterate_Tag\(this\.#handle\)\)\[Symbol\.iterator\]\(\)/);
+  }
+  // The generated GN-6b test constructs the class, which now reaches the guard.
+  assert.match(text(made(false), 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-6b: new Tag\(\) is kind direct_construction'/);
 });
 
 test('B2.352: the Python crates of two libraries have libraries of different names, and the module that Python imports stays _native (GN-3i)', () => {
