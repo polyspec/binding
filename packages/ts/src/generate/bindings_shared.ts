@@ -338,6 +338,27 @@ export function iterateItems(model: Model, fn: Fn, convert: (model: Model, type:
   return { yields: fn.yields ?? { value: 'none' }, item: (type, value) => `${convert(model, type, borrowedItem(model, type, value))}?` };
 }
 
+// T-1, T-2: the TypeScript type of a scalar or a container in node and wasm, which differ by whether a path is
+// taken; undefined for a unit. ts is the type of the language for an inner type.
+export function tsCommon(type: Type, input: boolean, ts: (type: Type, input: boolean) => string, path: boolean): string | undefined {
+  if (typeof type === 'string') {
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', ...(path ? { path: 'string | Uint8Array' } : {}), cancel: 'AbortSignal', none: 'void', never: 'never' };
+    return map[type] ?? 'unknown';
+  }
+  // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of
+  // the member.
+  if (machineFunction(type)) return `(${type.function.parameters.map((part, i) => `arg${i}: ${ts(part, false)}`).join(', ')}) => ${ts(type.function.returns, true)}`;
+  if ('passthrough' in type) return type.passthrough;
+  if ('list' in type) return input ? `Iterable<${ts(type.list, input)}>` : `readonly (${ts(type.list, input)})[]`;
+  if ('map' in type) return `ReadonlyMap<string, ${ts(type.map, input)}>`;
+  if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${ts(type.keyed_map, input)}>`;
+  if ('optional' in type) return `${ts(type.optional, input)} | null`;
+  if ('tuple' in type) return `readonly [${type.tuple.map((t) => ts(t, input)).join(', ')}]`;
+  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
+  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${ts(p, false)}`).join(', ')}) => ${ts(type.function.returns, true)})`;
+  return undefined;
+}
+
 // T-2: what the output conversion of a container differs by between the languages.
 export interface ContainersOut {
   // The token of the language that every conversion takes first ('env_', 'py_'), or ''.

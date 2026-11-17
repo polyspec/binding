@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, categoryIndex, constantAsserts, resultUnits, tsCommon, holdsNative, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1567,21 +1567,8 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
 function tsType(model: Model, type: Type, input: boolean): string {
-  if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', cancel: 'AbortSignal', none: 'void', never: 'never' };
-    return map[type] ?? 'unknown';
-  }
-  // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of
-  // the member, as for Node.
-  if (machineFunction(type)) return `(${type.function.parameters.map((part, i) => `arg${i}: ${tsType(model, part, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)}`;
-  if ('passthrough' in type) return type.passthrough;
-  if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
-  if ('map' in type) return `ReadonlyMap<string, ${tsType(model, type.map, input)}>`;
-  if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
-  if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
-  if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
-  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
-  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
+  const common = tsCommon(type, input, (inner, given) => tsType(model, inner, given), false);
+  if (common !== undefined || typeof type === 'string') return common ?? 'unknown';
   const unit = unitOf(model, type);
   // GN-6s: a callback unit of another repository is the interface that the WASM subpath of its package declares.
   const library = libraryOf(type);
