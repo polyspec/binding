@@ -10,28 +10,44 @@ import type { Step } from './consumers.mts';
 
 const CORE = 'polyspec-binding-core';
 
-// The entries of a Cargo.lock other than those of polyspec-binding-core, each as one line: the name, the version and
-// the source, and the dependencies without those on polyspec-binding-core, whose name takes the version of the patch
-// when the lock holds more than one release of it.
-function entriesOutsideCore(lock: string): Set<string> {
-  const entries = new Set<string>();
+// The entries of a Cargo.lock other than those of polyspec-binding-core, by "<name> <version> (<source>)", each with
+// its dependencies without those on polyspec-binding-core, whose name takes the version of the patch when the lock
+// holds more than one release of it. A dependency is "<name>" when the lock holds one release of it, else
+// "<name> <version>".
+function entriesOutsideCore(lock: string): Map<string, string[]> {
+  const entries = new Map<string, string[]>();
   for (const block of lock.split(/^\[\[/m).slice(1)) {
     const name = /^name = "([^"]+)"$/m.exec(block)?.[1];
     if (name === undefined || name === CORE) continue;
     const version = /^version = "([^"]+)"$/m.exec(block)?.[1] ?? '';
     const source = /^source = "([^"]+)"$/m.exec(block)?.[1] ?? 'the workspace';
     const deps = [...block.matchAll(/^ "([^"]+)",$/gm)].map((m) => m[1] ?? '').filter((d) => d !== CORE && !d.startsWith(`${CORE} `));
-    entries.add(`${name} ${version} (${source})${deps.length === 0 ? '' : ` [${deps.join(', ')}]`}`);
+    entries.set(`${name} ${version} (${source})`, deps);
   }
   return entries;
 }
 
+const shown = (key: string, deps: readonly string[]): string => `${key}${deps.length === 0 ? '' : ` [${deps.join(', ')}]`}`;
+
 // GN-14m, GN-14d: the entries that an update changed outside polyspec-binding-core, from the lock of the tag to the
-// lock after it: each removed and each added entry, one line each; empty when the lock changed in that entry alone.
+// lock after it, one line each; empty when the lock changed in that entry alone. An entry whose name, version and
+// source stay may take another list of dependencies when each crate and version that it names is in the lock of the
+// tag: the resolver unifying again the dependencies of the changed core, which changes no code.
 export function lockChanges(tagLock: string, lock: string): string[] {
   const before = entriesOutsideCore(tagLock);
   const after = entriesOutsideCore(lock);
-  return [...[...before].filter((e) => !after.has(e)).map((e) => `removed ${e}`), ...[...after].filter((e) => !before.has(e)).map((e) => `added ${e}`)];
+  const held = (dep: string): boolean => {
+    const [name, version] = dep.split(' ');
+    return [...before.keys()].some((key) => (version === undefined ? key.startsWith(`${name ?? ''} `) : key.startsWith(`${name ?? ''} ${version} (`)));
+  };
+  const changes: string[] = [];
+  for (const [key, deps] of before) if (!after.has(key)) changes.push(`removed ${shown(key, deps)}`);
+  for (const [key, deps] of after) {
+    const old = before.get(key);
+    if (old === undefined) changes.push(`added ${shown(key, deps)}`);
+    else if (old.join('\n') !== deps.join('\n')) for (const dep of deps.filter((d) => !held(d))) changes.push(`${key} names ${dep}, which the lock does not hold`);
+  }
+  return changes;
 }
 
 // A consumer of the list: a GitHub repository at a release tag, the job of the matrix that runs it, and the goals of
@@ -206,6 +222,9 @@ export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], t
       if (changes.length > 0) throw new Error(`the update changed the lock of the tag outside polyspec-binding-core (GN-14d): ${changes.join('; ')}`);
     } } },
     { phase: 'prepare', step: { what: 'binding scaffold of the run', command: g.node, argv: [g.cli, 'scaffold', '--root', dir, '--cargo', 'cargo'] } },
+    // GN-14m: the consumer's own bootstrap installs its package-lock.json, the locked kit among it, as the first step
+    // of its CI does; its install finds the tools of kit only after it. make names a goal that the Makefile lacks.
+    { phase: 'prepare', step: { what: 'make bootstrap of the consumer', command: g.make, argv: make(['bootstrap']), env: own } },
     { phase: 'prepare', step: { what: `make ${c.install.join(' ')} of the consumer`, command: g.make, argv: make(c.install), env: own } },
     { phase: 'generate', step: { what: 'make bindings of the consumer', command: g.make, argv: make(['bindings']), env: { ...own, ...OFFLINE } } },
     { phase: 'test', step: { what: 'make test-bindings of the consumer', command: g.make, argv: make(['test-bindings']), env: { ...own, ...OFFLINE } } },
