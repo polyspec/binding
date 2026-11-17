@@ -49,5 +49,6 @@ export const NOT_READ: readonly Input[] = [
   { path: 'scripts/consumers-check.mts', why: 'make consumers-check runs it (GN-14i); a run of make e2e does not' },
   { path: 'scripts/e2e-npm-install.mts', why: 'the script of the tree of the commit runs it from that tree to install the npm packages as a consumer of a release does (GN-3c); the script of the checkout does not import it' },
   { path: 'scripts/e2e-lint-repos.mts', why: 'make e2e-lint runs it, which reads the matrix of ci.yml and starts a run of scripts/e2e.mts with --until lint for each repository of it (B2.432); the run does not read it' },
+  { path: 'scripts/release-candidate-version.mts', why: 'make release-candidate-assets runs it, which prints the top version of the changelog for the candidate archive (B2.455); a run of make e2e does not read it' },
   { path: 'scripts/go-musl.sh', why: 'make go-musl-check runs it after a run, on the work directory that the run kept; a run of make e2e does not read it' },
 ];
