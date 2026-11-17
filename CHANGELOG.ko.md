@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6edc6a328d32c6917c24bcee0386b775ac3f0e1c22c17d97feef4dd9df593db6 -->
-<!-- source-sha256: ad2f6f50abfd88b070786e7eadd3bf83729b1d562d3db3b23408f728cd9e81fc -->
+<!-- source-sha256: 942a06202c73fea2c2b87c08e7cd9a3cdebec1efe011f5fdd46de000a1bd6a2a -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -8,6 +7,7 @@
 
 ## Unreleased
 
+- `packages/release.mk`의 `release-go-static`은 자기 arch의 musl target의 C 컴파일러와 archiver를 그 target의 빌드에만 넘기고, 의존이 C를 빌드하는데 선언되지 않았으면 그 이름을 댄다(GN-19b, B2.442). Makefile은 include 앞에서 crate `cc`가 읽는 이름으로 선언한다: `CC_x86_64_unknown_linux_musl`, `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl`, `AR_aarch64_unknown_linux_musl`. 실행의 arch의 두 변수 가운데 하나가 비어 있으면 recipe는 빌드 전에 musl target에 대해 Go crate의 `$(CARGO) tree`를 실행하고, crate `cc`가 그 빌드에 있으면 status 2와 `release-go-static needs CC_<target> AR_<target>: …; define them before the include of packages/release.mk (GN-19b)`로 끝난다. 전에는 rustls가 ring 0.17.14에 의존하는 session-store의 빌드가 Linux CI에서 `x86_64-linux-musl-gcc`를 찾지 못했다는 crate `cc`의 메시지로 실패했고, session-store는 자기 Makefile에서 그 변수를 export했다. 이 버전으로 옮기는 레포가 할 일: Go crate에 C를 빌드하는 의존이 없는 레포는 할 일이 없다. 그런 의존이 있는 레포는 include 앞에 네 변수를 절대 경로나 `PATH`의 이름으로 선언하고, job `platform`이 그 도구를 준비한다. session-store의 선언, 곧 `config/toolchain.json`의 LLVM의 clang과 llvm-ar(`CC_x86_64_unknown_linux_musl := $(LLVM_ROOT)/bin/clang`, `AR_x86_64_unknown_linux_musl := $(LLVM_ROOT)/bin/llvm-ar`, 그리고 aarch64의 같은 둘)는 바꿀 것이 없고 `export`가 더는 필요 없다. recipe는 crate `cc` 없이 C를 컴파일하는 build script는 보지 못한다.
 - Python 바인딩 crate의 라이브러리는 그 crate의 이름을 따른다(`[lib] name = "polyspec_<library>_python"`). 전에는 모든 Python crate가 `_native`였다(GN-3i, B2.352). 한 workspace의 두 Python crate(crud-ui의 `packages/validator/python`과 `packages/generator/python`)가 한 파일 `target/<profile>/deps/lib_native.<so|dylib>`를 썼다. 그래서 `cargo build -p … -p …`가 출력 파일 이름 충돌을 경고했고 한 crate의 라이브러리가 다른 crate의 것을 덮어썼다. Python이 import하는 module은 바뀌지 않는다. 그것은 `<module>._native`(host 패키지에서는 `<module>._binding._native`)이고, 생성된 소스가 이제 `#[pymodule(name = "_native")]`로 선언하며 `tool.maturin.module-name`은 전과 같이 그것을 이름한다. 그래서 wheel과 개발 설치는 같은 `_native.abi3.so`를 담는다.
   - target `python`이 있는 모든 레포는 `binding scaffold`와 `make bindings`를 다시 실행하고 Python crate의 `Cargo.toml`을 commit한다. 그때까지 `binding check`가 그 manifest를 보고한다(CK-19). `pyproject.toml`, Python 코드, import는 바뀌지 않고, host 패키지의 host `pyproject.toml`도 바뀌지 않는다.
   - Python crate의 라이브러리를 파일 이름(`target/<profile>/lib_native.so`, `lib_native.dylib`)으로 읽는 레포의 recipe나 script는 `libpolyspec_<library>_python.<so|dylib>`를 읽는다. 생성된 recipe 가운데 그런 것은 없고 polyspec 레포의 checkout 가운데에도 없다. 모두 maturin으로 빌드한다.

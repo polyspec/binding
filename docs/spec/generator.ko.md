@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b08599a2fcf6d44a23628eefbc2b73f3ae458e39b96dd2a547e786b3e7416ecf -->
+<!-- source-sha256: fdb134e71cebf271f9834b32554901bd0848de1bf3adecda3e9a4bbd79c2f196 -->
 # 생성기
 
 [English](generator.md)
@@ -2046,8 +2046,8 @@
   Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. 레포의 release(GN-3c)는 tag `vX.Y.Z`의 commit에서 target go의
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이
   빌드하고(`linux_<arch>_musl`의 라이브러리는 그 arch의 Linux 기계에서 `--target <arch>-unknown-linux-musl`로 빌드하며,
-  그 Rust toolchain은 `rust-toolchain.toml`에 그 target을 적는다. 정적 라이브러리는 linker가 필요 없으므로 musl의 C
-  컴파일러는 쓰지 않는다),
+  그 Rust toolchain은 `rust-toolchain.toml`에 그 target을 적는다. 정적 라이브러리는 linker가 필요 없으므로 crate 자체는 musl의 C
+  컴파일러가 필요 없다. build script가 C를 컴파일하는 의존은 그것이 필요하고, 레포가 선언한다, GN-19b),
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 release 형태가 빌드할 수 있는 생성 파일과 각 플랫폼의
@@ -3279,6 +3279,33 @@
   `<Go 디렉터리>/libpolyspec_<repository>_go.a`로 GN-19f를 실행하는 job에 넘긴다.
   Linux 항목은 자기 arch의 `linux_<arch>_musl` 라이브러리도 `--target <arch>-unknown-linux-musl`로 빌드하고(GN-15g)
   `linux_<arch>_musl/libpolyspec_<repository>_go.a`로 넘기므로, release는 라이브러리 다섯 개를 싣는다.
+  musl target의 빌드는, 그리고 recipe의 다른 어떤 명령도 아닌 그 빌드만, 그 target의 C 컴파일러와 archiver를 받는다. 레포의
+  Makefile이 include 앞에서(GN-19h) `CC_<target>`과 `AR_<target>`에 선언하며, `<target>`은 target의 dash를 underscore로
+  바꾼 것이다: `CC_x86_64_unknown_linux_musl`, `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl`,
+  `AR_aarch64_unknown_linux_musl`. recipe는 실행의 arch의 두 변수 가운데 비어 있지 않은 것을 그 이름 그대로 musl target의
+  `$(CARGO) rustc`에만 export한다. 이 이름은 crate `cc`가 읽는 이름이고, 의존의 build script는 그 crate로 C를 컴파일한다.
+  `cc`는 컴파일러로 target의 dash를 그대로 둔 `CC_<target>`, underscore로 바꾼 `CC_<target>`, `TARGET_CC`(host가 GNU C
+  library의 target이므로 이 빌드는 cross compile이다), `CC` 가운데 처음으로 설정된 것을 쓰고, archiver로는 `AR`의 같은 네
+  이름을 쓴다. 하나도 없으면 arm64 target에는 `aarch64-linux-musl-gcc`를, x86_64 target에는 `x86_64-linux-musl-gcc`와
+  `musl-gcc` 가운데 `PATH`에 처음 있는 것을 시작한다. Go crate에 C를 빌드하는 의존이 없는 레포는 아무것도 선언하지 않는다.
+  실행의 arch의 두 변수 가운데 하나가 비어 있으면 recipe는 라이브러리를 빌드하기 전에 `$(CARGO) tree --locked -p
+  polyspec-<repository>-go --target <arch>-unknown-linux-musl -e normal,build --prefix none --format '{p}'`를 실행하고, 그
+  출력의 한 줄이 crate `cc`를 이름하면 어떤 의존이 그 target에서 C를 빌드하는 것이다. 그때 recipe는 status 2로 끝나고 빈
+  변수를 하나씩 이름한다(``release-go-static needs
+  CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the
+  archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a
+  dependency of polyspec-<repository>-go builds C with that crate; define them before the include of
+  packages/release.mk (GN-19b)``). 둘 다 선언되어 있으면 Cargo에 묻지 않는다. recipe는 선언된 컴파일러를 빌드 전에 시작해
+  보지 않으므로, 틀린 경로는 build script에서 crate `cc`의 메시지로 실패한다. 이 규칙 밖의 경우가 둘 있다. crate `cc` 없이
+  C를 컴파일하는 build script는 보이지 않고, 전처럼 Cargo에서 실패한다. 그리고 빌드에 crate `cc`가 있지만 그 build script가
+  musl target에서 아무것도 컴파일하지 않으면, 어떤 빌드도 읽지 않는 선언을 요구받는다. 이유: session-store는 rustls에
+  의존하고, 그 암호 구현인 ring 0.17.14는 build script에서 C를 컴파일한다. crate `cc`가 어떤 runner에도 없는
+  `x86_64-linux-musl-gcc`를 찾아서 `release-go-static`이 그 Linux CI에서 실패했다. session-store는 자기 Makefile에서 네
+  변수를 모든 명령에 export해서 recipe를 돌아갔고, 그런 의존을 가진 다음 레포도 같은 자리에서, 변수를 이름하지 않는 Cargo의
+  메시지로 실패했을 것이다. binding의 이름이 아니라 crate `cc`의 이름을 쓰는 이유: session-store가 적은 선언이 그대로
+  유효하고, job의 환경에 있는 그 이름의 변수는 make의 변수이기도 하다. `binding check --release`가 아니라 recipe가 묻는 이유:
+  이 변수는 Makefile의 것이고 명령은 Makefile을 읽지 않는다(docs/spec/contract-check.md CK-102). 그리고
+  `release-go-static`은 job `platform`의 빌드로 CI에서 실행되므로(GN-19i), 빠진 선언은 어느 쪽에서든 tag 전에 실패한다.
 - **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
   SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이
   wheel의 이름에 platform tag(`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`)를 붙이고, wheel은
@@ -3432,7 +3459,10 @@
   release-go-module`(GN-19f)에 `--go "$(GO)"`를 넘기고 스스로는 Go를 시작하지 않는다. 그래서 Makefile은 자기 go가 `PATH`의
   `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. `release-assets-<job>`을 실행하는
   job은 모두 그렇다. 그 첫 단계가 `release-binding-check`이기 때문이다(GN-19i). Go가 필요한데 찾지 못한 명령은 도구와
-  `--go`와 `GO`를 이름한다(GN-15l). `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
+  `--go`와 `GO`를 이름한다(GN-15l). Go crate에 C를 빌드하는 의존이 있는 레포는 musl target마다 `CC_<target>`과
+  `AR_<target>`도 정의한다. `release-go-static`이 그 target의 빌드에 넘기는 C 컴파일러와 archiver이고, Linux host에서 crate
+  `cc`가 그 빌드에 있으면 요구한다(GN-19b). `release-binding-check`는 이것을 요구하지 않는다. 필요한지는 host와 빌드의
+  의존에서 나오고, 그것은 `release-go-static`이 읽기 때문이다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
   `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
   ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.
