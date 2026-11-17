@@ -1275,6 +1275,29 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
     assert.match(found[0]?.message ?? '', /row 0 of store\.read raises too_large with the kind "unlisted", which is no kind of too_large \(GN-7a\)/);
   });
+  test('B2.489: a row of a fixture of a callback unit of another library raises a kind of that library with values (CK-22, CK-106)', () => {
+    const reader = { name: ['reader'], type: { unit: 'dep_reader', library: 'forms-dep' } };
+    const raising = (raise: unknown): Finding[] => withParam(reader, 'reader', { callback: { 'dep_reader.read': [{ args: { part: { size: 1 } }, raise }] } });
+    assert.deepEqual(raising({ library: 'forms-dep', kind: 'limit', message: 'over the limit', status: 413, errno: 7, properties: { field: 'name' } }), []);
+    const refused: [unknown, RegExp][] = [
+      [{ library: 'forms-dep', kind: 'limit', message: 'm', code: 1 }, /raises with the key code, which a raise with values has not/],
+      [{ library: 'sample', kind: 'limit', message: 'm' }, /raises an error of "sample", but its callback unit is of forms-dep \(GN-6s\)/],
+      [{ library: 'forms-dep', kind: 'unlisted', message: 'm' }, /raises the kind "unlisted", which is no kind of forms-dep/],
+      [{ library: 'forms-dep', kind: 'limit' }, /raises limit without a message text/],
+      [{ library: 'forms-dep', kind: 'limit', message: 'm', status: '413' }, /raises limit with the status "413", which is no integer/],
+      [{ library: 'forms-dep', kind: 'limit', message: 'm', errno: 1.5 }, /raises limit with the errno 1\.5, which is no integer/],
+      [{ library: 'forms-dep', kind: 'limit', message: 'm', properties: { offset: 1 } }, /raises limit with the property offset, which the class of forms-dep for that kind does not have/],
+    ];
+    for (const [raise, message] of refused) {
+      const found = raising(raise);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], String(message));
+      assert.match(found[0]?.message ?? '', message);
+    }
+    // A fixture of a callback unit of this contract raises no error of another library with values.
+    const own = withStore({ callback: { 'store.read': [{ args: { key: 'a' }, raise: { library: 'forms-dep', kind: 'limit', message: 'm' } }] } });
+    assert.deepEqual(own.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
+    assert.match(own[0]?.message ?? '', /raises an error of "forms-dep" with values, which only a fixture of a callback unit of that library does \(B2\.489\)/);
+  });
   test('B2.411: a raise of a function fixture names one of the kinds of its error unit (GN-7a, GN-6ae)', () => {
     const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }, 'text'], returns: { passthrough: 'T' }, async_allowed: false, errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' } } } };
     const found = withParam(scoped, 'convert', { function: { calls: [], raise: { error: 'too_large', kind: 'unlisted' } } });

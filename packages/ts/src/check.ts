@@ -2244,6 +2244,8 @@ class Checker {
       try {
         for (const parameter of member?.parameters ?? []) {
           const key = snake(parameter.name);
+          // B2.489: a fixture of a callback unit of another library, whose raise rows may carry values.
+          if (Object.hasOwn(record, key) && this.holdsForeignCallback(parameter.type)) this.foreignValue(parameter.type, record[key], key, report);
           if (!this.takesCode(parameter.type) || (!Object.hasOwn(record, key) && parameter.default !== undefined)) continue;
           this.codeValue(parameter.type, record[key], key, report);
         }
@@ -2718,6 +2720,77 @@ class Checker {
     if (!kinds.includes(String(kind))) report(`${at} raises ${error} with the kind ${JSON.stringify(kind)}, which is no kind of ${error} (GN-7a)`);
   }
 
+  // B2.489 (GN-6s): whether a type holds a callback unit of another library, at any depth of this contract's records.
+  holdsForeignCallback(type: Type, seen: ReadonlySet<string> = new Set()): boolean {
+    if (typeof type === 'string') return false;
+    if ('optional' in type) return this.holdsForeignCallback(type.optional, seen);
+    if ('list' in type) return this.holdsForeignCallback(type.list, seen);
+    if (!('unit' in type)) return false;
+    if (type.library !== undefined) return this.given(type.library)?.units.find((u) => u.id === type.unit)?.origin === 'callback';
+    if (seen.has(type.unit)) return false;
+    const unit = this.units.get(type.unit)?.value;
+    return unit?.kind === 'record' && (unit.fields ?? []).some((f) => this.holdsForeignCallback(f.type, new Set([...seen, type.unit])));
+  }
+
+  // B2.489 (CK-22, CK-106): the raise rows of a callback fixture of a unit of another library at a place of the type.
+  // A row raises {"error", "kind"} of a unit that the member recognizes, judged by the owner's binding, or the kind of
+  // the owner with values, {"library", "kind", "message", "status", "errno", "properties"}, judged here.
+  foreignValue(type: Type, value: unknown, what: string, report: (message: string) => void): void {
+    if (typeof type === 'string') return;
+    if ('optional' in type) {
+      if (value !== null) this.foreignValue(type.optional, value, what, report);
+      return;
+    }
+    if ('list' in type) {
+      if (Array.isArray(value)) for (const [k, item] of value.entries()) this.foreignValue(type.list, item, `${what}[${k}]`, report);
+      return;
+    }
+    if (!('unit' in type)) return;
+    const fields = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    if (fields === undefined) return;
+    if (type.library === undefined) {
+      const unit = this.units.get(type.unit)?.value;
+      if (unit?.kind !== 'record') return;
+      for (const field of unit.fields ?? []) {
+        const key = convert(field.name, 'python', 'variable');
+        if (Object.hasOwn(fields, key) && this.holdsForeignCallback(field.type)) this.foreignValue(field.type, fields[key], `${what}.${key}`, report);
+      }
+      return;
+    }
+    const owner = this.given(type.library);
+    const rows = fields['callback'];
+    if (owner === undefined || typeof rows !== 'object' || rows === null || Array.isArray(rows)) return;
+    for (const [member, list] of Object.entries(rows as Record<string, unknown>)) {
+      for (const [r, item] of (Array.isArray(list) ? list : []).entries()) {
+        const raise = typeof item === 'object' && item !== null ? (item as Record<string, unknown>)['raise'] : undefined;
+        if (typeof raise === 'object' && raise !== null && Object.hasOwn(raise, 'library')) this.valuedRaise(type.library, owner, raise as Record<string, unknown>, `${what}: row ${r} of ${member}`, report);
+      }
+    }
+  }
+
+  // B2.489 (CK-22): a raise of a fixture of a callback unit of library L with values: the library is L, the kind is a
+  // kind of a row of L, the message a text, status and errno integers, and properties the properties of L's class of
+  // the kind.
+  valuedRaise(library: string, owner: Contract, raise: Record<string, unknown>, at: string, report: (message: string) => void): void {
+    for (const key of Object.keys(raise)) if (!['library', 'kind', 'message', 'status', 'errno', 'properties'].includes(key)) report(`${at} raises with the key ${key}, which a raise with values has not`);
+    if (raise['library'] !== library) return report(`${at} raises an error of ${JSON.stringify(raise['library'])}, but its callback unit is of ${library} (GN-6s)`);
+    const row = owner.errors.kinds.find((k) => kindsOf(k).includes(String(raise['kind'])));
+    if (row === undefined) return report(`${at} raises the kind ${JSON.stringify(raise['kind'])}, which is no kind of ${library}`);
+    if (typeof raise['message'] !== 'string') report(`${at} raises ${String(raise['kind'])} without a message text`);
+    for (const key of ['status', 'errno']) {
+      if (Object.hasOwn(raise, key) && !Number.isSafeInteger(raise[key])) report(`${at} raises ${String(raise['kind'])} with the ${key} ${JSON.stringify(raise[key])}, which is no integer`);
+    }
+    const given = raise['properties'];
+    if (given === undefined) return;
+    if (typeof given !== 'object' || given === null || Array.isArray(given)) return report(`${at} raises ${String(raise['kind'])} with properties that are no object`);
+    // GN-7a: the properties of the class of the kind, its error unit and its parents.
+    const names = new Set<string>();
+    for (let unit = owner.units.find((u) => u.id === row.class && u.kind === 'error'); unit !== undefined; unit = owner.units.find((u) => u.id === unit?.parent && u.kind === 'error')) {
+      for (const m of unit.members ?? []) if (m.kind === 'property') names.add(convert(m.name, 'python', 'variable'));
+    }
+    for (const key of Object.keys(given)) if (!names.has(key)) report(`${at} raises ${String(raise['kind'])} with the property ${key}, which the class of ${library} for that kind does not have`);
+  }
+
   callbackValue(unit: Unit, value: unknown, what: string, report: (message: string) => void): void {
     const snake = (name: Name): string => convert(name, 'python', 'variable');
     const members = new Map((unit.members ?? []).map((m) => [m.id, m]));
@@ -2749,7 +2822,9 @@ class Checker {
         if (found !== undefined && this.statesNoResult(found, row, 'result')) report(`${at} is of ${owner}, which has no result, so its result is null, not ${JSON.stringify(row['result'])} (GN-13e)`);
         if (row['async'] === true && found?.async_allowed !== true) report(`${at} is async, which ${owner} does not allow`);
         const raise = row['raise'];
-        if (raise !== undefined && raise !== 'exception') {
+        if (typeof raise === 'object' && raise !== null && Object.hasOwn(raise, 'library')) {
+          report(`${at} raises an error of ${JSON.stringify((raise as Record<string, unknown>)['library'])} with values, which only a fixture of a callback unit of that library does (B2.489)`);
+        } else if (raise !== undefined && raise !== 'exception') {
           const error = typeof raise === 'object' && raise !== null ? (raise as Record<string, unknown>)['error'] : undefined;
           const recognized = (found?.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error);
           if (!recognized) report(`${at} raises ${String(error)}, which ${owner} does not recognize (U-3)`);
