@@ -1406,6 +1406,9 @@ ${rows.join('\n')}
 
 /// B2.489 (GN-7a): the instance that polyspec_make makes, or the exception that judging its arguments gave.
 fn made_error(ex: &mut ExecuteData) -> Result<Zval, Fail> {
+    // SAFETY: the This of a static call holds the class that the method was called on. It is read before the parser,
+    // whose arguments borrow ex as long as they are read.
+    let called = unsafe { ex.This.value.ce.as_ref() };
     let mut kind = Arg::new("kind", DataType::Mixed);
     let mut message = Arg::new("message", DataType::Mixed);
     let mut status = Arg::new("status", DataType::Mixed);
@@ -1414,8 +1417,6 @@ fn made_error(ex: &mut ExecuteData) -> Result<Zval, Fail> {
     if ex.parser().arg(&mut kind).arg(&mut message).arg(&mut status).arg(&mut errno).arg(&mut properties).parse().is_err() {
         return Err(PhpException::from_message(String::from("B2.489: polyspec_make takes the kind, the message, the status, the errno and the properties")));
     }
-    // SAFETY: the This of a static call holds the class that the method was called on.
-    let called = unsafe { ex.This.value.ce.as_ref() };
     let Some(class) = called else {
         return Err(PhpException::from_message(String::from("B2.489: polyspec_make is called on a class")));
     };

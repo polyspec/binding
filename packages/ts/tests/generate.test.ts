@@ -14233,7 +14233,8 @@ test('CK-69: the core call of a machine method lends its receiver by lent_receiv
 
 // B2.489 (GN-7a): the maker polyspec_make of the PHP crate reads its arguments by Arg::zval of ext-php-rs 0.16.4, which
 // gives Option<&mut &mut Zval>. It gave them to error_arguments, which takes Option<&Zval>, and to Zval::array as a fn
-// of &Zval, so the crate of the sample failed with E0308 and E0631. A test of the text compiles nothing, and the tests of
+// of &Zval, so the crate of the sample failed with E0308 and E0631, and the class of the call, read from ex after the parser, with
+E0503. A test of the text compiles nothing, and the tests of
 // the maker asserted its kinds and properties, not its calls; this one pins the calls in the form that compiles.
 test('B2.489: the PHP maker reads its arguments by Arg::zval as ext-php-rs 0.16.4 gives them (GN-7a)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
@@ -14243,6 +14244,8 @@ test('B2.489: the PHP maker reads its arguments by Arg::zval as ext-php-rs 0.16.
   assert.match(maker, /\n {4}let \[message, kind, status, errno\] = \[message\.zval\(\), kind\.zval\(\), status\.zval\(\), errno\.zval\(\)\]\.map\(\|zval\| zval\.map\(\|zval\| zval\.shallow_clone\(\)\)\);\n {4}let \(message, kind, status, errno\) = error_arguments\(class, message\.as_ref\(\), kind\.as_ref\(\), status\.as_ref\(\), errno\.as_ref\(\)\)\?;\n/);
   assert.match(maker, /properties\.zval\(\)\.and_then\(\|zval\| zval\.array\(\)\)/);
   assert.doesNotMatch(maker, /Zval::array|error_arguments\(class, message\.zval\(\)/);
+  // The arguments borrow ex while they are read (E0503), so the class of the call is read before the parser.
+  assert.ok(maker.indexOf('ex.This.value.ce.as_ref()') < maker.indexOf('ex.parser()'), maker);
 });
 
 // B2.492 (GN-6af, GN-6x): clippy -D warnings refused the PHP crate of the sample. php_value_class took owned, the
