@@ -225,11 +225,14 @@ export function gateSteps(g: Gate, c: GateConsumer, locked: readonly string[], t
       const changes = lockChanges(tagLock, readFileSync(lockFile, 'utf8'));
       if (changes.length > 0) throw new Error(`the update changed the lock of the tag outside polyspec-binding-core (GN-14d): ${changes.join('; ')}`);
     } } },
-    { phase: 'prepare', step: { what: 'binding scaffold of the run', command: g.node, argv: [g.cli, 'scaffold', '--root', dir, '--cargo', 'cargo'] } },
     // GN-14m: the consumer's own bootstrap installs its package-lock.json, the locked kit among it, as the first step
     // of its CI does; its install finds the tools of kit only after it. make names a goal that the Makefile lacks.
     { phase: 'prepare', step: { what: 'make bootstrap of the consumer', command: g.make, argv: make(['bootstrap']), env: own } },
     ...c.install.map((item) => ({ phase: 'prepare' as const, step: { what: `make ${item} of the consumer`, command: g.make, argv: make(item.split(' ')), env: own } })),
+    // GN-14m: scaffold runs go mod download, so it runs after the install with the Go that the consumer's Makefile
+    // names as GO, the Go of its mise.toml that the install put in var/tools: make expands GO in the clone, where the
+    // Go of the runner is older than the go.mod of the consumer.
+    { phase: 'prepare', step: { what: 'binding scaffold of the run with the GO of the consumer', command: g.make, argv: ['-C', dir, '--eval', 'binding-gate-scaffold: ; $(BINDING_RUN) scaffold --root . --cargo cargo --go "$(GO)"', 'binding-gate-scaffold', ...bindingVariables(g)], env: own } },
     { phase: 'generate', step: { what: 'make bindings of the consumer', command: g.make, argv: make(['bindings']), env: { ...own, ...OFFLINE } } },
     { phase: 'test', step: { what: 'make test-bindings of the consumer', command: g.make, argv: make(['test-bindings']), env: { ...own, ...OFFLINE } } },
     { phase: 'rehearsal', step: { what: 'make release-recipes of the consumer', command: g.make, argv: make(['release-recipes']), env: rehearsal } },
