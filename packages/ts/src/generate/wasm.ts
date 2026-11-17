@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, conversionLookups, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, conversionLookups, categoryIndex, constantAsserts, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -1359,11 +1359,11 @@ function machineRust(model: Model): string {
 }
 
 function libRust(model: Model): string {
-  const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
+  const classIndex = categoryIndex(model);
+  const constants = constantAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), convertedRust(model), passingRust(model)].join('');
+  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), recognizesAny(model) ? RECOGNIZED_KIND : '', failureRust(model), convertedRust(model), passingRust(model)].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.

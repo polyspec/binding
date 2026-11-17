@@ -4,7 +4,8 @@
 import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { defaultAsserts } from './defaults.ts';
+import { takenCallbacks, conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -270,6 +271,15 @@ export const conversionLookups = (model: Model, fn: Fn, lang: 'node' | 'wasm', l
 // class name in the language.
 export const poisonArms = (model: Model, lang: Lang, arm: (object: ObjectClass, cls: string) => string): string[] =>
   model.objects.filter((o) => o.lock?.writes === true).map((o) => arm(o, langName(lang, o.unit.name, 'class')));
+
+// E-2: the index of the class of a category in the classes of the crate, as the text of the crate.
+export const categoryIndex = (model: Model): ((category: string) => string) => (category) => String(model.classes.findIndex((c) => c.category === category));
+
+// The checks of the crate that each constant has the value of its contract, and the defaults of the contract.
+export const constantAsserts = (model: Model): string => model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
+
+// U-3: whether a callback unit that the core takes recognizes an error unit.
+export const recognizesAny = (model: Model): boolean => takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
 
 // U-3: the names of a callback unit in the crate: its Rust name, its struct and its class in the language. GN-6s: a
 // callback unit of another repository is the trait of its core, whose methods return the failure of the core error of

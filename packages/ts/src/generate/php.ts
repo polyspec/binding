@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, callbackNames, convertingFns, poisonArms, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackNames, convertingFns, poisonArms, constantAsserts, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1673,7 +1673,7 @@ fn out_${rustField(object.unit.name)}(value: impl CoreForm<${object.unit.core_ty
 }
 
 function libRust(model: Model, layout: PhpLayout): string {
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
+  const constants = constantAsserts(model);
   const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
   const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '') + (cancelsAny(model) ? CANCELLATION(layout) : '');
   const enums = [

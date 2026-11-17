@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, conversionLookups, poisonArms, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, conversionLookups, poisonArms, categoryIndex, constantAsserts, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1733,10 +1733,10 @@ ${propertyArms}
 const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ObjectFinalize', 'ToNapiValue', 'Uint8Array']);
 
 function libRust(model: Model): string {
-  const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
+  const classIndex = categoryIndex(model);
+  const constants = constantAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + convertedRust(model) + poisonRust(model) +
+    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (recognizesAny(model) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + convertedRust(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),

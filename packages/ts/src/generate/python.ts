@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, convertingFns, poisonArms, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, convertingFns, poisonArms, recognizesAny, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1460,7 +1460,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // The constructor wraps the value itself, so a class that no code gives has none (the lints deny dead code).
   // GN-6z: a function that the core may keep; the function parameter of a member with machine has its own helper (GN-6ae).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
-  const recognizes = takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
+  const recognizes = recognizesAny(model);
   const rest = takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + convertedRust(model) + passingRust(model, layout);
   const draft = (functions + enums + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest).replace(/\/\/[^\n]*/g, '');
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\b`).test(draft);
