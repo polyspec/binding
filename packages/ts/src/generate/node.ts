@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsCommon, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsCommon, countCheck, recordMembers, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -2099,16 +2099,11 @@ function indexCjs(model: Model): string {
   // GN-6m: the entry of a member that waits is an async function, so that every failure of the call, also one of its
   // arguments, rejects the promise.
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
-    const count = fn.params.length;
-    // U-2: the parameters that may be left out are the last ones, a record parameter with {empty: "object"} too.
-    const least = fn.params.filter((p) => p.default === undefined).length;
-    const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
-    const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
+    const lines = countCheck(fn, label);
     const passed = fn.params.map((p, i) => {
       if (fn.record !== undefined && p === fn.record.param) {
         const record = langName('node', p.name, 'variable');
-        const names = (fn.record.unit.fields ?? []).map((f) => langName('node', f.name, 'variable'));
-        const required = (fn.record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => langName('node', f.name, 'variable'));
+        const { names, required } = recordMembers(fn.record.unit, 'node');
         lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }

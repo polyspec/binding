@@ -338,6 +338,23 @@ export function iterateItems(model: Model, fn: Fn, convert: (model: Model, type:
   return { yields: fn.yields ?? { value: 'none' }, item: (type, value) => `${convert(model, type, borrowedItem(model, type, value))}?` };
 }
 
+// G-7: the lines of a JavaScript entry that check the count of its arguments; U-2: the parameters that may be left
+// out are the last ones, a record parameter with {empty: "object"} too.
+export function countCheck(fn: Fn, label: string): string[] {
+  const count = fn.params.length;
+  const least = fn.params.filter((p) => p.default === undefined).length;
+  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+  return [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
+}
+
+// G-7: the members of a record parameter in JavaScript, and those of them that may not be left out.
+export function recordMembers(record: Unit, lang: 'node' | 'wasm'): { names: string[]; required: string[] } {
+  return {
+    names: (record.fields ?? []).map((f) => langName(lang, f.name, 'variable')),
+    required: (record.fields ?? []).filter((f) => f.default === undefined).map((f) => langName(lang, f.name, 'variable')),
+  };
+}
+
 // T-1, T-2: the TypeScript type of a scalar or a container in node and wasm, which differ by whether a path is
 // taken; undefined for a unit. ts is the type of the language for an inner type.
 export function tsCommon(type: Type, input: boolean, ts: (type: Type, input: boolean) => string, path: boolean): string | undefined {
