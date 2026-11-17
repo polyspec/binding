@@ -23,7 +23,16 @@ const EVENTS = [
   '{"Action":"fail","Package":"example.invalid/consumer","Elapsed":0,"FailedBuild":"example.invalid/consumer.test"}',
 ].join('\n');
 
-function box(t: TestContext, consumer: boolean): { work: string; run: () => { status: number | null; output: string } } {
+// The events of a run of the falsepass consumer on musl: one test passes and the one test that its
+// expected-failures.json names fails with its text (GN-14n), so the package fails too.
+const falsepassEvents = (failing: string, text: string): string => [
+  '{"Action":"pass","Package":"github.com/polyspec/falsepass/packages/go","Test":"TestGN13eSealNewASealHoldsItsName","Elapsed":0}',
+  `{"Action":"output","Package":"github.com/polyspec/falsepass/packages/go","Test":"${failing}","Output":"    zz_generated_test.go:93: ${text}\\n"}`,
+  `{"Action":"fail","Package":"github.com/polyspec/falsepass/packages/go","Test":"${failing}","Elapsed":0}`,
+  '{"Action":"fail","Package":"github.com/polyspec/falsepass/packages/go","Elapsed":0}',
+].join('\n');
+
+function box(t: TestContext, consumer: boolean, events = EVENTS): { work: string; run: (repo?: string) => { status: number | null; output: string } } {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'binding-go-musl-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, 'bin');
@@ -55,7 +64,7 @@ exec sh -c "$1"`);
   for (const name of ['apk', 'wget', 'sha256sum', 'tar']) tool(name, 'exit 0');
   tool('go', `if [ "$1" = list ]; then exit 0; fi
 cat <<'EVENTS'
-${EVENTS}
+${events}
 EVENTS
 exit 1`);
   const lock = join(root, 'mise.lock');
@@ -64,8 +73,8 @@ exit 1`);
   writeFileSync(toolchain, '{\n  "goMusl": {\n    "image": "alpine:3.22@sha256:00",\n    "gcc": "14.2.0-r6",\n    "musl-dev": "1.2.5-r13"\n  }\n}\n');
   return {
     work,
-    run: () => {
-      const ran = spawnSync('sh', [script, work, lock, toolchain], { encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin` } });
+    run: (repo?: string) => {
+      const ran = spawnSync('sh', [script, work, lock, toolchain, ...(repo === undefined ? [] : [repo])], { encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin`, NODE: process.execPath } });
       return { status: ran.status, output: `${ran.stdout}${ran.stderr}` };
     },
   };
@@ -77,6 +86,23 @@ test('B2.416: go-musl-check prints the output of each build-output event, the er
   assert.match(ran.output, /ld: cannot find -lunwind: No such file or directory/);
   assert.match(ran.output, /# example\.invalid\/consumer\.test/);
   assert.match(ran.output, /\(musl\): 0 passed, 0 failed, exit 1/);
+});
+
+test('B2.509: go-musl-check of tests/e2e/falsepass judges the failures of the musl run by its expected-failures.json, as make e2e does (GN-14n, GN-14f)', (t) => {
+  const falsepass = join(top, 'tests/e2e/falsepass');
+  const named = 'TestGN13eSealCheckTheArgumentOfACheckAfterItFailsToParse';
+  // The named test fails with its text: the run passes, as the e2e of the same repository passed.
+  const expected = box(t, true, falsepassEvents(named, 'GN-13f: no value for text')).run(falsepass);
+  assert.equal(expected.status, 0, expected.output);
+  assert.match(expected.output, /\(musl\): 1 passed, 1 failed/);
+  // Another test fails: the run fails and names it.
+  const other = box(t, true, falsepassEvents('TestB4SealCheckASealWithoutANameFailsTheCheck', 'GN-13f: no value for text')).run(falsepass);
+  assert.notEqual(other.status, 0, other.output);
+  assert.match(other.output, /the test TestB4SealCheckASealWithoutANameFailsTheCheck failed, which expected-failures\.json does not name/);
+  assert.match(other.output, new RegExp(`the test ${named} passed or did not run`));
+  // Without the repository, a failed test fails the run, as before.
+  const plain = box(t, true, falsepassEvents(named, 'GN-13f: no value for text')).run();
+  assert.notEqual(plain.status, 0, plain.output);
 });
 
 test('B2.417: go-musl-check names a work directory without the consumer of a released form and starts no container (GN-14k, GN-14f)', (t) => {
