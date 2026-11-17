@@ -185,6 +185,18 @@
       ],
       "reason": "G-5",
       "place": "polyspec_sample::Counter::tally"
+    },
+    {
+      "id": "resolve",
+      "core": "polyspec_sample::fault::RESOLVE",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "X-1",
+      "place": "polyspec_sample::resolve"
     }
   ],
   "units": [
@@ -375,7 +387,8 @@
           ],
           "returns": "text",
           "raises": [
-            "polyspec_sample::Error::Missing"
+            "polyspec_sample::Error::Missing",
+            "polyspec_sample::Error::Internal"
           ],
           "wait": "none",
           "core": "polyspec_sample::resolve"

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bf94bfa9a1845e248ce56e4301afb7c9b2db216384f0577a7bcba87de1a85d3c -->
+<!-- source-sha256: d90c452b5b2b21f40a357cf6edb1019bca04e39702a403358baaa632c89083a4 -->
 <!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
 <!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- 생성 바인딩은 바인딩이 건네는 인자를 받지 않는 callback을, member가 아무 일도 하기 전에 거부한다(GN-6bu, B2.467). 바인딩은 계약이 선언한 인자로 host의 callback을 부르는데, 그 인자를 선언하지 않은 callback은 Node와 PHP에서 인자가 버려진 채 실행되었고, Python에서는 member가 시작된 뒤 Python의 `TypeError`를 냈다. `Tx`를 받지 않는 callback을 준 orm의 `db.transaction(callback)`은 모든 statement를 transaction 밖에서 오류 없이 실행했다. 이제 인자를 하나 이상 받는 모든 callback 자리를, 계약의 표시 없이, 값이 들어올 때 검사한다: callback unit의 member, `machine`이 있는 member의 함수, 함수 타입의 값이며, record field, list, map, optional, tuple 안에서도 그렇다. 거부는 기존 kind `invalid_callback`(category `type`)이고, 그 message는 호출, parameter, callback unit의 member, 인자를 이름한다. 예: `Db.transaction(): callback takes 0 arguments, and the binding calls it with 1 (tx)`. Python은 `inspect.signature(...).bind(...)`에 묻고, PHP는 extension이 ext-php-rs로 부르는 Reflection(`ReflectionMethod`, `ReflectionFunction`, `Closure::fromCallable`)으로 engine에 묻는다. 그래서 extension은 `zend_function`의 field를 읽지 않는다. 둘 다 인자를 덜 받는 callback과 더 많이 요구하는 callback을 거부하고, 언어가 설명하지 못하는 callable은 그 호출에 맡긴다. Node와 WASM은 JavaScript가 알려 주는 전부인 `function.length`를 읽어, length가 인자의 수보다 작은 함수를 거부한다. 이름을 더 많이 붙인 함수는 거부하지 않는다. Go에는 검사가 없다. 타입이 인자를 말하기 때문이다. `binding_core`의 `BindingError::InvalidCallback`에는 새 field `arguments: Option<CallbackArguments>`가 있고(`Declared`와 함께), 이 variant를 field로 만들거나 match하는 코드는 그것을 적는다. 이 버전으로 옮기는 consumer가 할 일: 바인딩에 주는 모든 callback이 그 자리의 인자를 선언한다. JavaScript에서는 callback이 default나 rest 앞에서 각 인자에 이름을 붙인다. 그래서 `(...args) => …`와 `(tx = null) => …`는 거부되며 `(tx, ...rest) => …`나 `(tx) => …`로 바꾼다. PHP와 Python에서는 variadic callback과 default를 가진 callback은 통과하고, 받는 것보다 더 많이 요구하는 callback은 거부된다. hyper에는 일부러 인자를 덜 선언한 손으로 쓴 callback이 일곱 개 있으며, hyper가 옮길 때 그 인자를 선언한다. 생성된 시험이 바뀐다: Node와 WASM의 fixture는 자기 인자를 선언하고(`fixture([['find', (call) => (arg0) => call(arg0)]], …)`, `(arg0) => { … }`), 그런 자리마다 인자 없는 callback이 거부되고 한 번도 호출되지 않는다는 시험이 생기며, PHP와 Python에는 더 많이 요구하는 callback이 거부된다는 시험이 생긴다. 그래서 orm의 생성된 시험이 바뀐다. `tests/e2e/sample`에는 `sample.resolve`의 fault injection point `resolve`가 있고, 시험은 그것으로 거부된 호출이 arming을 다음 호출에 남긴다는 것을 보인다(GN-8a). `packages/ts`에서 변경 전에 실패한 `node --test tests/callback-arguments.test.ts`, `binding_core`의 `BindingError` 시험, 그리고 PHP 8.4와 8.5에서 PHP 검사를 돌린 scratch extension으로 검증했다. 생성된 시험을 각 언어에서 돌리는 것은 e2e의 CI run이다.
 
 
 ## 0.0.20

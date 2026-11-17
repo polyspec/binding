@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 69df7b8234f1f706382e8c64f846e6351418b86ceffad45116b6a17c0f66506a -->
+<!-- source-sha256: bb95a740c076433925de288899dc7d126493c613c34a58d841540bdc6bd04c4e -->
 # 생성기
 
 [English](generator.md)
@@ -603,6 +603,7 @@
   가능해야 한다(kind `invalid_callback`). 다만 `default`를 가진 member는 예외다(B2.379, CK-98): callback interface의
   member에 붙는 `"default": {"literal": <value>}`는 parameter default의 U-2 형태로, 객체에 그 member가 없을 때 trait
   method가 돌려주는 값을 말하고, 객체는 그 member를 가지면서 그것이 호출 가능하지 않을 때만 그 member 때문에 거부된다.
+  인자를 하나 이상 받는 member는 그 인자도 받아야 하며, kind는 같다(GN-6bu).
   trait method의 각 호출은 먼저 객체에서 그 member를 찾고(Node와 WASM은 `undefined`가 아닌 property, Python은
   `hasattr`, PHP는 그 class의 method) 없으면 호출 없이 literal을 돌려준다. Go는 그 member를 callback의 interface에서
   빼고, dispatch는 객체가 그 method를 가지면(그 method 하나의 interface로의 type assertion) 그것을 호출하고 아니면
@@ -642,7 +643,8 @@
   타입은 crate 끝의 alias 정의에 한 번만 쓴다. lint가 `let`과 closure의 결과에 쓴 boxed 타입을
   거부하기 때문이다(`clippy::type_complexity`).
   코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
-  들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  들어올 때 호출 가능해야 하고(kind `invalid_argument_type`), 함수가 인자를 하나 이상 받는 곳에서는 그 인자를 받아야
+  한다(kind `invalid_callback`, GN-6bu). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는
   list, map, optional 안에 있어도 module `library_<library>`의 `out_<record>`와 `in_<record>`로 변환하고(GN-4c), crate는
   member의 parameter에서처럼 그 변환을 정의한다. crate는 자기가 정의한 변환만 부른다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
@@ -1009,6 +1011,63 @@
   `parse depth-limit-unary`, 즉 62단계 중첩된 `Unary` 식은 단계마다 자기 자신을 부르는 `out_expr`에서 "memory access
   out of bounds"로 trap했다. binding은 host의 stack을 늘릴 수 없고, 더 큰 stack은 process가 끝나는 깊이를 옮길 뿐이며,
   value alias 변환도 같은 방식을 쓴다(GN-6as).
+- **GN-6bu** callback은 바인딩이 건네는 인자를 받는다(U-3, T-2, B2.467). callback 자리는 callback unit의 member(GN-6d,
+  GN-6s), `machine`이 있는 member의 함수(GN-6ae), 함수 타입의 값(GN-6z)이며, parameter에서도 record field, list, map,
+  optional, tuple의 어느 자리에서도 그렇다. 모든 자리가 같은 helper(`in_<unit>`, `callable_in`, `kept_function_in`)로
+  들어오기 때문이다. 인자를 하나 이상 받는 모든 자리를 검사하며, 계약에는 표시가 없다. 인자를 받지 않는 자리에는 검사가
+  없다. 검사는 값이 들어올 때 하므로 진입점의 lock과 코어 호출보다 앞선다(GN-8a). 그래서 거부된 callback은 한 번도
+  호출되지 않고, member는 아무 일도 하지 않으며, 그 member의 arming은 다음 호출을 위해 남는다. 거부는 category `type`의
+  kind `invalid_callback`(E-1a)이며, member가 없는 callback의 kind와 같다. 함수가 아닌 함수 타입의 값은 kind
+  `invalid_argument_type`으로 남는다(GN-6z). message는 callback을 받은 호출, parameter, callback unit의 member, callback이
+  선언한 것, 바인딩이 건네는 인자를 이름한다: `Db.transaction(): callback takes 0 arguments, and the binding calls it
+  with 1 (tx)`(`arguments`가 있는 `BindingError::InvalidCallback`, docs/core-api.md). callback unit의 member의 인자는 그
+  언어에서의 계약 이름을 갖고, 이름이 없는 함수 타입의 인자는 계약의 타입을 갖는다. 타입이 callback 자리를 갖는
+  parameter, 또는 record parameter의 field의 subject는 그 parameter의 모든 message에서 `<call>: <name>`이며, `<call>`은
+  호출자가 쓰는 대로의 member다: `name()`, `Class.name()`, `new Class()`, PHP에서는 `Class::name()`, Python의
+  constructor는 `Class()`. 값으로 변환되는 record의 field에 있는 callback은 그 record의 변환이 주는 subject를 갖는다.
+  target마다 읽는 것:
+  - Go: 없다. `func` 타입과 interface가 인자를 말하고, 그것을 받지 않는 값은 compiler가 거부하므로, Go에는 검사도 시험도
+    없다.
+  - Python: 인자마다 위치 값 하나를 준 `inspect.signature(<callable>).bind(…)`. callback unit의 member에서는 bound
+    method가 그 callable이다. `bind`의 `TypeError`는 callable을 두 방향 모두에서 거부한다: 인자를 덜 받는 것과, 받는
+    것보다 더 많이 요구하는 것. `inspect.signature` 자체가 `ValueError`나 `TypeError`를 내면(signature가 없는 C의
+    callable) 값은 통과하고 그 호출에 맡겨진다. message는 `bind`의 이유를 담는다. signature는 `inspect`가 주는 그대로
+    읽으며, 보통 함수를 위한 별도의 경로는 없다.
+  - PHP: engine에 Reflection으로 묻는다: callback unit의 member는 `new ReflectionMethod(<object>, <member>)`, 함수
+    타입의 값은 `new ReflectionFunction(<Closure>)`, `machine`이 있는 member의 callable은
+    `new ReflectionFunction(Closure::fromCallable(<callable>))`. extension은 PHP의 여느 method를 부르듯 ext-php-rs로
+    그 instance를 만들고 `getNumberOfParameters`, `getNumberOfRequiredParameters`, `isVariadic`를 부르므로,
+    `zend_function`의 field를 읽지 않고 그 layout에 의존하지 않는다. callable은 인자의 수 이상의 parameter를
+    선언하거나 variadic이고, 인자의 수보다 많이 요구하지 않으면 통과한다. 더 적게 선언하고 variadic이 아닐 때, 그리고
+    더 많이 요구할 때 거부된다. Reflection이 설명하지 못하는 callable은 extension이 그 예외를 거두고 그 호출에 맡긴다.
+  - Node와 WASM: 함수의 `length`. JavaScript가 함수가 받는 것에 대해 알려 주는 유일한 사실이며, default나 rest를 가진 첫
+    parameter 앞의 parameter 수다. `length`가 인자의 수보다 작은 함수는 거부되고, `length`를 읽을 수 없거나 그것이 음이
+    아닌 정수가 아닌 함수도 거부된다. Node는 그 property를 napi로 읽고, WASM은 ES module이 아니라 Rust에서
+    읽는다(`length`의 `Reflect::get`).
+  target은 두 가지에서 다르며 각각 이유가 있다. JavaScript는 rest와 default에 대해 PHP와 Python보다 엄격하다:
+  `fn (...$args)`, `fn ($tx = null)`, `lambda *args: …`, `lambda tx=None: …`가 통과하는 곳에서 `(...args) => …`와
+  `(tx = null) => …`는 거부된다. 읽을 수 있는 것이 `length`뿐이고, 인자에 이름을 붙이지 않은 함수와 인자를 무시하는
+  함수를 구별할 수 없기 때문이다. message는 해결책, 곧 default나 rest 앞에서 각 인자에 이름을 붙이라는 것을
+  `(tx, ...rest)`의 예로 알린다. JavaScript는 반대 방향의 실수에는 느슨하다: 인자보다 많은 parameter에 이름을 붙인 함수는
+  통과한다. 인자 뒤의 parameter는 함수의 코드에 의해 선택적일 수 있는데 `length`는 그것을 알려 주지 않아, 그런 함수가
+  잘못 거부될 것이기 때문이다. PHP와 Python은 어느 parameter가 필수인지 알고, 더 많이 요구하는 callback을 거부한다.
+  생성된 시험(G-5): 모든 객체가 갖고 인자를 받는 member가 있는 callback unit의 첫 parameter, `machine`이 있는 member의 각
+  함수 parameter, 함수 타입의 첫 parameter 가운데 인자를 하나 이상 받는 것마다, Node, WASM, PHP, Python의 시험은 인자를
+  받지 않는 callback을 거부한다: kind `invalid_callback`, category `type`의 class(Python에서는 정확한 class가
+  `TypeError`가 아니다), 인자의 이름을 담은 message, 그리고 callback 호출의 기록이 비어 있을 것. PHP와 Python은 받는
+  것보다 인자 하나를 더 요구하는 callback도 거부한다. member의 코어 호출이 kind 하나를 채우는 fault injection point를
+  가지면, 첫 시험은 거부되는 호출 전에 그것을 arm하고, 인자를 받는 callback을 준 다음 호출이 그 kind로 실패하고 fault를
+  남기지 않을 것을 요구한다(GN-8a). `tests/e2e/sample`에는 이를 위해 callback unit을 받는 member인 `sample.resolve`의
+  point `resolve`가 있다. sample에는 코어가 부르는 함수 타입의 member가 없기 때문이다. `machine`이 있는 member는 진입이
+  아니라 각 wait를 arm하므로(GN-8a) 그 시험에는 이 부분이 없다. Node와 WASM의 생성된 시험의 fixture는 자기 인자를
+  선언한다. 이름을 붙이지 않은 fixture는 거부될 것이기 때문이다: callback fixture의 member는
+  `[<name>, (call) => (arg0, …) => call(arg0, …)]`, 함수 fixture는 `(arg0, …) => { … }`, placeholder callback은
+  `(arg0, …) => null`이다. PHP(`mixed ...$args`)와 Python(`*args`)의 fixture는 variadic이어서 통과한다.
+  Why: orm의 `db.transaction(callback)`은 callback에 transaction의 `Tx`를 건넨다. 그것 없이 쓴 callback
+  `() => db.execute(…)`는 Node와 PHP에서 인자가 버려진 채 실행되어, 모든 statement가 transaction 밖에서 `db`의
+  connection으로 실행되었고 아무것도 그것을 알리지 않았다. Python은 transaction이 시작된 뒤 member 안에서 자기
+  `TypeError`를 냈다. 표시된 자리만 검사하면 표시되지 않은 모든 자리에 같은 조용한 손실이 남으므로, 인자를 받는 모든
+  자리를 검사한다.
 - **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
   native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 자기 자신이나 그 alias의
   변환을 부르지 않는다. row가 container를 만들면 heap의 작업 stack을 가진 loop로 값을 걷는다. 어떤 row도 container를
@@ -1320,7 +1379,9 @@
 - **GN-11a** Python: 호출의 꼴(keyword-only 인자를 위치로 넘긴 것, 인자의 수, 빠지거나 모르는 인자)은 언어의 호출 규칙이므로,
   생성된 함수는 그것을 kind가 없는 Python의 `TypeError`에 맡긴다. 계약의 kind는 꼴이 맞는 호출의 값만 판정한다. 그래서
   `options`가 keyword-only일 때 `parse("1", "options")`는 Python의 `TypeError`이며, 인자의 수가 틀린 TypeScript 호출이
-  kind가 아닌 것과 같다(G-7). 생성된 시험은 keyword-only 인자를 위치로 넘기고 그 `TypeError`를 기대한다.
+  kind가 아닌 것과 같다(G-7). 생성된 시험은 keyword-only 인자를 위치로 넘기고 그 `TypeError`를 기대한다. 이 규칙은 생성된
+  함수의 호출에 대한 것이다. callback 값이 받는 것은 그 호출의 꼴이 아니다: 바인딩이 부르는 값의 꼴이며, 값이 들어올 때
+  판정되어 kind `invalid_callback`이고(GN-6bu), 바인딩이 그것을 부르는 곳에서 Python이 낼 `TypeError`가 아니다.
 - **GN-12** Node: addon은 원시 값을 받는다(T-8). 생성된 CommonJS 진입점은 인자의 개수, 이름, options record member의 존재를
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
@@ -1571,7 +1632,7 @@
   이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
   internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
 - **GN-6s** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
-  trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member를 확인하고(kind `invalid_callback`), `thread: owner`가 적용되며, 각
+  trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member와 각 member가 받는 인자를 확인하고(kind `invalid_callback`, GN-6bu), `thread: owner`가 적용되며, 각
   trait method는 그 언어의 API로 언어 객체의 method를 부르므로, 바인딩은 다른 바인딩의 native 객체를 꺼내지 않는다. trait
   method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
   언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유

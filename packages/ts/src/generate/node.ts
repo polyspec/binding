@@ -5,6 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
+import { TAKES_NODE, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
@@ -60,7 +61,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
   const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
   const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(env_, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 let env_ = match native_env(&native, ${subject}) {
                     Ok(env_) => env_,
@@ -744,7 +745,7 @@ function entryRust(model: Model, fn: Fn): string {
         const name = langName('node', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, rustString(name), typed))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('node', model, fn, field.type, name), typed))}?;`);
         if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
       const recordType = fn.record.unit.core_type ?? '';
@@ -753,11 +754,12 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${fields}${absentInits(fn.record.unit)} };`);
     } else if (machineFunction(parameter.type)) {
       // GN-6ae: a function parameter is the closure that the machine of the member calls.
-      lines.push(...functionClosure(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable'))));
+      lines.push(...functionClosure(model, parameter.type, variable, placeSubject('node', model, fn, parameter.type, langName('node', parameter.name, 'variable'))));
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       const held = heldParam(model, parameter.type);
-      const subject = rustString(langName('node', parameter.name, 'variable'));
+      // GN-6bu: the subject of a parameter that holds a callback place names the member before it.
+      const subject = placeSubject('node', model, fn, parameter.type, langName('node', parameter.name, 'variable'));
       const owned = fn.machine === true ? ownedCallback(model, parameter.type) : undefined;
       // GN-6aa: a parameter with keeps is 'static, and its callbacks are held as Natives.
       const kept = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
@@ -1121,7 +1123,11 @@ fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
     if ${m.absent === undefined ? '' : 'found.get_type().map_err(internal)? != ValueType::Undefined && '}found.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
-    }`;
+    }${m.params.length === 0 ? '' : m.absent === undefined ? `
+    takes_in(env_, found, subject, ${rustString(method)}, ${givenRust(memberGiven('node', m))})?;` : `
+    if found.get_type().map_err(internal)? == ValueType::Function {
+        takes_in(env_, found, subject, ${rustString(method)}, ${givenRust(memberGiven('node', m))})?;
+    }`}`;
   }).join('\n');
   return `
 /// U-3: ${jsName}, a callback that JavaScript code implements; the core calls it through ${cb.unit.core ?? ''}.
@@ -1137,7 +1143,8 @@ unsafe impl Send for ${struct}<'_> {}
 // SAFETY: as for Send; a shared reference reaches the object only through a call, which the owner check guards.
 unsafe impl Sync for ${struct}<'_> {}
 ` : ''}
-/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
+/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback) that names
+/// the arguments that the binding calls it with (GN-6bu).
 fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Object {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
@@ -1206,7 +1213,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = callable_in(env_, ${name}, ${subject})?;`,
+    `        let ${name} = callable_in(env_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     `            let env_ = &Env::from_raw(${name}.env_);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
@@ -1256,11 +1263,13 @@ fn passed_out(env_: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_
     held.unboxed(env_)
 }
 
-/// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn callable_in(env_: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
+/// GN-6ae: a function parameter takes a function (kind invalid_callback) that names the arguments that the machine
+/// calls it with (GN-6bu), which the machine owns.
+fn callable_in(env_: &Env, value: Unknown<'_>, subject: &str, given: &[&str]) -> Result<Owned, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
+    takes_in(env_, value, subject, "", given)?;
     Owned::new(env_, value)
 }
 
@@ -1790,7 +1799,7 @@ function libRust(model: Model): string {
     foreignFailureNode(model),
   ].join('\n');
   // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
-  return withUsedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${RAISED}\n${enums}`,
+  return withUsedHelpers(`${HELPERS}\n${TAKES_NODE}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${RAISED}\n${enums}`,
     libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasNode(model, a)), (used) => {
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
@@ -1947,7 +1956,7 @@ pub fn native_count() -> napi::Result<u32> {
 #[cfg(feature = "thread-test")]
 #[napi(js_name = "__threadTest")]
 pub fn thread_test<'env>(env_: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
-    let native = guard(|| kept_function_in(env_, value, "value")).map_err(|fail| throw(env_, fail))?;
+    let native = guard(|| kept_function_in(env_, value, "value", &[])).map_err(|fail| throw(env_, fail))?;
     let kind = std::thread::spawn(move || match native_env(&native, "value") {
         Ok(_env) => String::from("none"),
         Err(error) => error.kind().to_owned(),

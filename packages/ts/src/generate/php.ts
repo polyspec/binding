@@ -6,6 +6,7 @@ import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
+import { TAKES_PHP, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -90,7 +91,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
   const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
   const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"').replace(/\?$/, '')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 if let Err(error) = native_thread(&native, ${subject}) {
                     return Err(thrown_elsewhere(error));
@@ -190,7 +191,7 @@ const THREAD_TEST = (layout: PhpLayout): string => `/// U-3, GN-6z: the entry po
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\threadTest`)})]
 pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
     guard(|| {
-        let native = kept_function_in(value, "value")?;
+        let native = kept_function_in(value, "value", &[])?;
         let kind = std::thread::spawn(move || match native_thread(&native, "value") {
             Ok(()) => String::from("none"),
             Err(error) => error.kind().to_owned(),
@@ -971,7 +972,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     const held = arg.field ? undefined : heldParam(model, arg.type);
     // GN-6ae: a function parameter of a member with machine is the closure that the machine calls.
     if (machineFunction(arg.type)) {
-      lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
+      lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), placeSubject('php', model, fn, arg.type, variable)));
       continue;
     }
     // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
@@ -979,7 +980,9 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     const kept = (fn.member.parameters ?? []).some((p) => p.name === (arg.field ? fn.record?.param.name : arg.name) && p.keeps === true);
     // A kept argument with a default is read as any argument with a default, through the conversions of the kept model.
     const typed = kept ? keptModel(model) : model;
-    const read = (value: string): string => (kept || arg.field ? boxed(typed, arg.type, convertIn(typed, arg.type, value, rustString(variable))) : convertIn(typed, arg.type, value, rustString(variable)));
+    // GN-6bu: the subject of an argument that holds a callback place names the member before it.
+    const subject = placeSubject('php', model, fn, arg.type, variable);
+    const read = (value: string): string => (kept || arg.field ? boxed(typed, arg.type, convertIn(typed, arg.type, value, subject)) : convertIn(typed, arg.type, value, subject));
     const converted = arg.default === undefined ? read(rustIdent(variable)) : leftOut(arg, `default_in(${rustIdent(variable)}, ${closure(['value'], read('value'))})`);
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(kept ? keptModel(model) : model, arg)} = ${converted}?;`
@@ -1131,8 +1134,16 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     const method = langName('php', m.member.name, 'callable');
     return `    if !has_method(object, ${rustString(method)}) {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
+    }${m.params.length === 0 ? '' : `
+    takes_in(|| reflected("ReflectionMethod", vec![value, &${rustString(method)}]), subject, ${rustString(method)}, ${givenRust(memberGiven('php', m))})?;`}`;
+  }).join('\n') + cb.members.filter((m) => m.absent !== undefined && m.params.length > 0).map((m) => {
+    // GN-6d, GN-6bu: a member with a default that the object has takes its arguments as any member does.
+    const method = langName('php', m.member.name, 'callable');
+    return `
+    if has_method(object, ${rustString(method)}) {
+        takes_in(|| reflected("ReflectionMethod", vec![value, &${rustString(method)}]), subject, ${rustString(method)}, ${givenRust(memberGiven('php', m))})?;
     }`;
-  }).join('\n');
+  }).join('');
   return `
 /// U-3: ${label}, a callback that PHP code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct} {
@@ -1155,7 +1166,8 @@ impl Drop for ${struct} {
     }
 }
 ` : ''}
-/// U-3: a callback object is checked when it enters: each member is a method of its class (kind invalid_callback).
+/// U-3: a callback object is checked when it enters: each member is a method of its class (kind invalid_callback) that
+/// takes the arguments that the binding calls it with (GN-6bu).
 fn in_${name}(value: &Zval, subject: &str) -> Result<${struct}, Fail> {
     let Some(object) = value.object() else {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
@@ -1280,7 +1292,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = callable_in(${value}, ${subject})?;`,
+    `        let ${name} = callable_in(${value}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i}: Zval = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
@@ -1328,11 +1340,13 @@ fn passed_out(value: binding_core::Passthrough) -> Result<Zval, Fail> {
         .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))
 }
 
-/// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback), to which the closure keeps a reference.
-fn callable_in(value: &Zval, subject: &str) -> Result<Zval, Fail> {
+/// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback) that takes the arguments that the machine
+/// calls it with (GN-6bu), to which the closure keeps a reference.
+fn callable_in(value: &Zval, subject: &str, given: &[&str]) -> Result<Zval, Fail> {
     if !value.is_callable() {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
+    takes_in(|| reflected_callable(value), subject, "", given)?;
     Ok(value.shallow_clone())
 }
 
@@ -1759,7 +1773,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     return `fn ${fnName}() -> &'static ClassEntry {\n    builtin(${builtins.indexOf(phpBase(category))}, ext_php_rs::zend::ce::exception)\n}\n`;
   }).join('\n');
   // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
-  return withUsedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`,
+  return withUsedHelpers(`${HELPERS}\n${TAKES_PHP}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${enums}`,
     libraryBlocks(model, (unit, library) => recordRust(model, layout, unit, -1, library), (a) => aliasPhp(model, a)), (used) => `${header('//')}
 // The extension ${layout.extension}. Its functions take the raw values and judge them (T-8); PHP counts the arguments
 // and checks their names (G-7); a failure is an instance of its library class (B-4).

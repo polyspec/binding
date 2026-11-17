@@ -9,6 +9,7 @@ import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
+import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
 import { CASE_JSON_STRING_GOLDENS } from './samples.ts';
 
 // GN-13l: native JSON string quoting preserves valid Unicode and rejects surrogate replacement.
@@ -962,6 +963,33 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
             asyncio.run(${awaited})
         self.assertIs(caught.exception, raised)`);
       }
+    }
+    // GN-6bu: a callback that takes none of the arguments that the binding calls it with, and one that requires more,
+    // is refused with the kind and not with the TypeError of Python, before the member runs: it is never called, and
+    // an arming of the member stays for the next call (GN-8a).
+    for (const place of reachable ? placeTests(model, 'python', fn) : []) {
+      methodMark = caseTextUses;
+      const given = (value: string): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
+      const argName = langName('python', place.arg.name, 'variable');
+      const refused = (declares: Declares): string => `
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${given(refusedPython(place, declares))}
+        self.assertEqual(caught.exception.kind, "invalid_callback")
+        self.assertIsNot(type(caught.exception), TypeError)
+        self.assertIn(${pyString(place.given)}, str(caught.exception))
+        self.assertEqual(calls, [])`;
+      append(`
+    def test_gn6bu_${name}_${argName}_refuses_what_takes_no_argument(self) -> None:
+        calls: list[int] = []${place.armed === undefined ? '' : `\n        armed = _native._arm_faults(${pyString(fn.member.id)}, ${pyString(place.armed.faults)})`}${refused('none')}${place.armed === undefined ? '' : `
+        # GN-8a: the refused call did not reach the core, so the next call takes the arming.
+        with self.assertRaises(pkg.${cls(place.armed.category)}) as caught:
+            ${given(placeholder(model, ctx, place.arg.type, true))}
+        self.assertEqual(caught.exception.kind, ${pyString(place.armed.kind)})
+        self.assertEqual(_native._fault_left(armed), [])`}
+
+    def test_gn6bu_${name}_${argName}_refuses_what_requires_more_arguments(self) -> None:
+        calls: list[int] = []${refused('more')}`);
     }
     // GN-6z: a value of a function type that is not callable is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));

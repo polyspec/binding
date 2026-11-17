@@ -4,6 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
+import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,type Arg, type CallbackUnit, classKinds, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
@@ -421,7 +422,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
   const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
   const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"');
-  return `kept_function_in(py_, ${value}, ${subject}).map(|object| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(py_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|object| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 Python::attach(|py_| {
                     let call = || -> PyResult<${result}> {
@@ -435,11 +436,13 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
 }
 
 const FUNCTION_IN = `
-/// GN-6z: a value of a function type is callable (kind invalid_argument_type); the function holds it.
-fn kept_function_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
+/// GN-6z: a value of a function type is callable (kind invalid_argument_type) and takes the arguments that the binding
+/// calls it with (GN-6bu, kind invalid_callback); the function holds it.
+fn kept_function_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &[&str]) -> PyResult<Py<PyAny>> {
     if !value.is_callable() {
         return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a callable") }));
     }
+    takes_in(py_, value, subject, "", given)?;
     Ok(value.clone().unbind())
 }
 `;
@@ -683,7 +686,8 @@ function entryRust(model: Model, fn: Fn): string {
   const lines: string[] = [];
   for (const arg of fn.args) {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
-    const subject = rustString(langName('python', arg.name, 'variable'));
+    // GN-6bu: the subject of an argument that holds a callback place names the member before it.
+    const subject = placeSubject('python', model, fn, arg.type, langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
     // GN-6ae: a function parameter whose function returns passthrough is the closure that the machine of the member calls.
     if (machineFunction(arg.type)) {
@@ -1036,12 +1040,18 @@ fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
+    // GN-6bu: a member that is given arguments takes them, which its bound method tells.
+    const takes = `takes_in(py_, &value.getattr(${rustString(method)})?, subject, ${rustString(method)}, ${givenRust(memberGiven('python', m))})?;`;
     if (m.absent !== undefined) return `    if value.hasattr(${rustString(method)})? && !value.getattr(${rustString(method)})?.is_callable() {
         return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
-    }`;
+    }${m.params.length === 0 ? '' : `
+    if value.hasattr(${rustString(method)})? {
+        ${takes}
+    }`}`;
     return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
         return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
-    }`;
+    }${m.params.length === 0 ? '' : `
+    ${takes}`}`;
   }).join('\n');
   return `
 /// U-3: ${pyName}, a callback that Python code implements; the core calls it through ${cb.unit.core ?? ''}.
@@ -1049,7 +1059,8 @@ pub struct ${struct} {
     object: Py<PyAny>,
 }
 
-/// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback).
+/// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback) that
+/// takes the arguments that the binding calls it with (GN-6bu).
 fn in_${name}(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${struct}> {
 ${checks}
     Ok(${struct} { object: value.clone().unbind() })
@@ -1100,7 +1111,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = callable_in(py_, ${name}, ${subject})?;`,
+    `        let ${name} = callable_in(py_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     '            Python::attach(|py_| {',
     '                let call = || -> PyResult<binding_core::Passthrough> {',
@@ -1146,12 +1157,13 @@ fn release_passed(handle: binding_core::Handle) {
     Python::attach(|_py| drop(gone));
 }
 
-/// GN-6ae: a function parameter takes a Python callable (kind invalid_callback), to which the closure keeps a
-/// reference.
-fn callable_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
+/// GN-6ae: a function parameter takes a Python callable (kind invalid_callback) that takes the arguments that the
+/// machine calls it with (GN-6bu), to which the closure keeps a reference.
+fn callable_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &[&str]) -> PyResult<Py<PyAny>> {
     if !value.is_callable() {
         return Err(binding_error(py_, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
     }
+    takes_in(py_, value, subject, "", given)?;
     Ok(value.clone().unbind())
 }
 ` : ''}
@@ -1416,7 +1428,7 @@ fn foreign_types<'py>(py_: Python<'py>, module: &str) -> PyResult<Bound<'py, PyM
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
   // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
-  return withUsedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`,
+  return withUsedHelpers(`${HELPERS}\n${TAKES_PYTHON}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`,
     libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasPython(model, a)), (used) => {
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [

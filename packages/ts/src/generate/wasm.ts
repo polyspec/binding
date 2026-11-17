@@ -12,6 +12,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
+import { TAKES_WASM, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
@@ -71,7 +72,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const returned = type.returns === 'none'
     ? 'function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    Ok(())'
     : `let returned = function.apply(&JsValue::NULL, &args).map_err(Thrown::Js)?;\n                    ${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
                 let call = || -> Result<${result}, Thrown> {
                     let function: Function = native_object(&native).map_err(Thrown::Binding)?.dyn_into::<Function>().map_err(|error| Thrown::Binding(internal(&error)))?;
@@ -644,7 +645,7 @@ function functionRust(model: Model, fn: Fn): string {
         const name = langName('wasm', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `&${parameter.default === undefined ? 'member' : 'member_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, rustString(name), typed))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('wasm', model, fn, field.type, name), typed))}?;`);
         if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
       const recordType = fn.record.unit.core_type ?? '';
@@ -652,7 +653,7 @@ function functionRust(model: Model, fn: Fn): string {
       lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${(fn.record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')}${absentInits(fn.record.unit)} };`);
     } else if (machineFunction(parameter.type)) {
       // GN-6ae: a function parameter is the closure that the machine of the member calls.
-      lines.push(...functionClosure(model, parameter.type, variable, rustString(langName('wasm', parameter.name, 'variable'))));
+      lines.push(...functionClosure(model, parameter.type, variable, placeSubject('wasm', model, fn, parameter.type, langName('wasm', parameter.name, 'variable'))));
     } else if (heldParam(model, parameter.type) !== undefined) {
       // GN-6h: a parameter of a class with a lock is the value that its instance holds, whose lock the call takes.
       const object = heldParam(model, parameter.type);
@@ -662,7 +663,9 @@ function functionRust(model: Model, fn: Fn): string {
       // GN-6aa: the callbacks of a parameter with keeps are held as Natives.
       const kept = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true);
       const typed = kept ? keptModel(model) : model;
-      lines.push(`        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))) : converted(arg, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
+      // GN-6bu: the subject of a parameter that holds a callback place names the member before it.
+      const subject = placeSubject('wasm', model, fn, parameter.type, langName('wasm', parameter.name, 'variable'));
+      lines.push(`        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, `&${variable}`, subject)) : converted(arg, parameter.type, `&${variable}`, subject)}?;`);
       if (arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, rustString(langName('wasm', parameter.name, 'variable')), 'binding_error')}`);
     }
   }
@@ -953,7 +956,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const outs = parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?`);
   return [
-    `        let ${name} = callable_in(&${name}, ${subject})?;`,
+    `        let ${name} = callable_in(&${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     `                let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};`,
@@ -999,12 +1002,15 @@ fn passed_out(value: binding_core::Passthrough) -> Result<JsValue, Fail> {
         .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))
 }
 
-/// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn callable_in(value: &JsValue, subject: &str) -> Result<Function, Fail> {
-    value
+/// GN-6ae: a function parameter takes a function (kind invalid_callback) that names the arguments that the machine
+/// calls it with (GN-6bu), which the machine owns.
+fn callable_in(value: &JsValue, subject: &str, given: &[&str]) -> Result<Function, Fail> {
+    let function = value
         .dyn_ref::<Function>()
         .cloned()
-        .ok_or_else(|| binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }))
+        .ok_or_else(|| binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }))?;
+    takes_in(value, subject, "", given)?;
+    Ok(function)
 }
 
 /// GN-6ae: the outcome of the value that a machine awaited, which the ES module gives to the next advance: undefined
@@ -1090,7 +1096,11 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
     if ${m.absent === undefined ? '' : '!found.is_undefined() && '}!found.is_function() {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}), arguments: None }));
-    }`;
+    }${m.params.length === 0 ? '' : m.absent === undefined ? `
+    takes_in(&found, subject, ${rustString(method)}, ${givenRust(memberGiven('wasm', m))})?;` : `
+    if found.is_function() {
+        takes_in(&found, subject, ${rustString(method)}, ${givenRust(memberGiven('wasm', m))})?;
+    }`}`;
   }).join('\n');
   return `
 /// U-3: ${jsName}, a callback that JavaScript code implements; the core calls it through ${cb.unit.core ?? ''}.
@@ -1098,7 +1108,8 @@ struct ${struct} {
     object: JsValue,
 }
 
-/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
+/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback) that names
+/// the arguments that the binding calls it with (GN-6bu).
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${struct}, Fail> {
     if !value.is_object() {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new(), arguments: None }));
@@ -1400,7 +1411,7 @@ function libRust(model: Model): string {
   const aliasUnits = [...(model.aliases.length === 0 ? [] : [...model.aliases.filter((a) => a.library === undefined).map((a) => aliasWasm(model, a)), wasmHost(model)]), ...(usesNative(model) || keepsAny(model) ? [WASM_NATIVE] : [])];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits, foreignFailureWasm(model, failRest(model))].join('\n');
   // GN-4d: the crate holds the helpers that its own text reads, so no part of it calls a helper that it does not hold.
-  return withUsedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`,
+  return withUsedHelpers(`${HELPERS}\n${TAKES_WASM}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`,
     libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasWasm(model, a)), (used) => {
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
