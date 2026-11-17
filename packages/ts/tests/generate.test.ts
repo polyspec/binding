@@ -6044,10 +6044,11 @@ test('the placeholder of a class without a factory of its own is made by a funct
   functions.members.push({ id: 'classes.open', name: ['open'], kind: 'function', visibility: 'public', parameters: [{ name: ['name'], type: 'text', required: true }], returns: { unit: 'gate' }, raises: [], wait: 'none', core: 'polyspec_classes::open' });
   (gate.caseFiles.get('contracts/cases.json') as any).show = [];
   const out = generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'go', 'wasm'] });
-  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.show\(pkg\.open\('a'\)/);
-  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.show\(pkg\.open\('a'\)/);
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.show\(pkg\.open\("a"\)/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /show\(\\[A-Za-z\\]+\\open\("a"\)/);
+  // The G-7 test makes the argument once, as a local, and its calls take that local (B2.508).
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /const argument0 = pkg\.open\('a'\);\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const argument0 = pkg\.open\('a'\);\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /argument0 = pkg\.open\("a"\)\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$argument0 = \\[A-Za-z\\]+\\open\("a"\);\n(?:[^\n]*\n)*?[^\n]*show\(\$argument0/);
 });
 
 test('an instance value at an optional place of a generated interface in a call that makes a receiver is an instance of a class that implements it (G-5, GN-13f, GN-6ap)', () => {
