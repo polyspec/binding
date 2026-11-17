@@ -765,7 +765,8 @@ the design ids are those of the binding design.
   When the object enters, each member must be callable (kind `invalid_callback`), except a member with a `default`
   (B2.379, CK-98): `"default": {"literal": <value>}` on a member of a callback interface, the U-2 form of a parameter
   default, states the value that the trait method returns when the object has no such member, and the object is
-  refused for that member only when it has the member and the member is not callable. Each call of the trait method
+  refused for that member only when it has the member and the member is not callable. A member that is given one
+  argument or more must also take them, with the same kind (GN-6bu). Each call of the trait method
   first looks for the member on the object (Node and WASM a property that is not `undefined`, Python `hasattr`, PHP a
   method of its class) and returns the literal without a call when it is missing; Go leaves the member out of the
   interface of the callback, and its dispatch calls the method when the object has it (a type assertion to an
@@ -812,7 +813,8 @@ the design ids are those of the binding design.
   digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
   crate, because the lints deny the boxed type at a `let` and as the result of a closure
   (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
-  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
+  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`) and, where
+  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
   return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`
@@ -1260,6 +1262,77 @@ the design ids are those of the binding design.
   trapped with "memory access out of bounds" in `out_expr`, which called itself at each level; the binding cannot
   enlarge the stack of a host, a larger stack only moves the depth at which the process ends, and the value alias
   conversions take the same approach (GN-6as).
+- **GN-6bu** A callback takes the arguments that the binding calls it with (U-3, T-2, B2.467). A callback place is a
+  member of a callback unit (GN-6d, GN-6s), the function of a member with `machine` (GN-6ae) or a value of a function
+  type (GN-6z), at a parameter and at any place of a record field, a list, a map, an optional or a tuple, because every
+  place enters through the same helper (`in_<unit>`, `callable_in`, `kept_function_in`). Every place that is given one
+  argument or more is checked, with no mark in the contract; a place that is given no argument has no check. The check
+  runs when the value enters, which is before the locks and the core call of the entry point (GN-8a), so a refused
+  callback is never called, the member does nothing, and an arming of the member stays for its next call. The refusal
+  is kind `invalid_callback` of the category `type` (E-1a), the kind of a callback that lacks a member; a value of a
+  function type that is no function stays kind `invalid_argument_type` (GN-6z). The message names the call that
+  received the callback, the parameter, the member of a callback unit, what the callback declares and the arguments
+  that the binding gives: `Db.transaction(): callback takes 0 arguments, and the binding calls it with 1 (tx)`
+  (`BindingError::InvalidCallback` with `arguments`, docs/core-api.md). The arguments of a member of a callback unit
+  have their names of the contract in the language, and those of a function type, which names none, their types of
+  the contract. The subject of a parameter, or of a field of the record parameter, whose type holds a callback place
+  is `<call>: <name>` in every message of that parameter, where `<call>` is the member as the caller writes it:
+  `name()`, `Class.name()` and `new Class()`, in PHP `Class::name()`, and in Python `Class()` for a constructor. A
+  callback in a field of a record that is converted as a value has the subject that the conversion of its record
+  gives it.
+  What each target reads:
+  - Go: nothing. A `func` type and an interface state the arguments, and the compiler refuses a value that does not
+    take them, so Go has no check and no test.
+  - Python: `inspect.signature(<callable>).bind(…)` with one positional value for each argument; for a member of a
+    callback unit the callable is the bound method. A `TypeError` of `bind` refuses the callable, in both directions:
+    one that takes fewer arguments, and one that requires more than it is given. When `inspect.signature` itself
+    raises `ValueError` or `TypeError` (a callable of C without a signature) the value passes and is left to its call.
+    The message holds the reason of `bind`. The signature is read as `inspect` gives it, with no path of its own for
+    a plain function.
+  - PHP: the engine is asked through Reflection: `new ReflectionMethod(<object>, <member>)` for a member of a callback
+    unit, `new ReflectionFunction(<Closure>)` for a value of a function type, and
+    `new ReflectionFunction(Closure::fromCallable(<callable>))` for the callable of a member with `machine`. The
+    extension makes the instance and calls `getNumberOfParameters`, `getNumberOfRequiredParameters` and `isVariadic`
+    through ext-php-rs, as it calls any method of PHP, so it reads no field of `zend_function` and depends on no
+    layout of it. The callable passes when it declares at least as many parameters as the arguments or is variadic,
+    and requires no more than the arguments; it is refused when it declares fewer and is not variadic, and when it
+    requires more. A callable that Reflection does not describe, whose exception the extension takes, is left to its
+    call.
+  - Node and WASM: the `length` of the function, the only fact that JavaScript tells of what a function takes: the
+    count of the parameters before the first one with a default or a rest. A function whose `length` is below the
+    count of the arguments is refused, and so is one whose `length` cannot be read or is no non-negative integer.
+    Node reads the property through napi; WASM reads it in Rust (`Reflect::get` of `length`), not in the ES module.
+    The generated JavaScript entry of a function and of a method of a class declares its parameters
+    (`function name(arg0, arg1) { const args = arguments; … }`), so its `length` is their count, and counts the
+    arguments that it was given in `arguments` (G-7): an entry that took them as a rest alone had the length 0, and an
+    instance of a class that implements a callback unit (GN-6w) would be refused at the place of that callback.
+  The targets differ in two ways, each for a reason. JavaScript is stricter than PHP and Python about a rest and a
+  default: `(...args) => …` and `(tx = null) => …` are refused where `fn (...$args)`, `fn ($tx = null)`,
+  `lambda *args: …` and `lambda tx=None: …` pass, because `length` is all that can be read, and a function that names
+  no argument cannot be told from one that ignores them; the message tells the remedy, to name each argument before a
+  default or a rest, as in `(tx, ...rest)`. JavaScript is looser about the opposite mistake: a function that names
+  more parameters than the arguments passes, because a parameter after the arguments may be optional by the code of
+  the function, which `length` does not tell, so such a function would be refused wrongly; PHP and Python know which
+  parameters are required and refuse a callback that requires more.
+  Generated tests (G-5): for the first parameter of a callback unit with a member that every object has and that is
+  given an argument, for each function parameter of a member with `machine` and for the first parameter of a function
+  type, each with one argument or more, the tests of Node, WASM, PHP and Python refuse a callback that takes no
+  argument: kind `invalid_callback`, the class of the category `type` (in Python the exact class is not
+  `TypeError`), a message that holds the names of the arguments, and an empty record of the calls of the callback.
+  PHP and Python also refuse a callback that requires one argument more than it is given. Where the core call of the
+  member holds a fault injection point that fills one kind, the first test arms it before the refused call and
+  requires the next call, with a callback that takes the arguments, to fail with that kind and to leave no fault
+  (GN-8a); `tests/e2e/sample` has the point `resolve` of `sample.resolve` for it, a member that takes a callback
+  unit, because the sample has no member of a function type that the core calls. A member with `machine` arms each
+  wait and not its entry (GN-8a), so its test has no such part. The fixtures of the generated tests of Node and WASM
+  declare their arguments, since a fixture that named none would be refused: a member of a callback fixture is
+  `[<name>, (call) => (arg0, …) => call(arg0, …)]`, a function fixture is `(arg0, …) => { … }`, and a placeholder
+  callback is `(arg0, …) => null`; those of PHP (`mixed ...$args`) and Python (`*args`) are variadic and pass.
+  Why: orm `db.transaction(callback)` gives the callback the `Tx` of the transaction. A callback written without it,
+  `() => db.execute(…)`, ran in Node and PHP with the argument dropped, so every statement ran outside the
+  transaction, on the connection of `db`, and nothing said so; Python raised its own `TypeError` from inside the
+  member, after the transaction began. A check of marked places would leave every unmarked place with the same
+  silent loss, so every place with an argument is checked.
 - **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
   of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
   `make_<name>`, which makes the value of the language from the `OutValue` of the core, never calls itself or a
@@ -1633,7 +1706,9 @@ the design ids are those of the binding design.
   `TypeError` of Python, which has no kind; a kind of the contract judges only the values of a call of the right shape.
   So `parse("1", "options")` with `options` keyword-only is the `TypeError` of Python, as a call of TypeScript with
   the wrong number of arguments is no kind (G-7). The generated test passes the keyword-only arguments by position
-  and expects that `TypeError`.
+  and expects that `TypeError`. This rule is of the call of a generated function. What a callback value takes is no
+  shape of that call: it is the shape of a value that the binding calls, which is judged when the value enters and is
+  kind `invalid_callback` (GN-6bu), not the `TypeError` that Python would raise where the binding calls it.
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
@@ -1928,7 +2003,8 @@ the design ids are those of the binding design.
   public one, while a user of a package reads it as no API (U-1, P-3).
 - **GN-6s** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
   an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
-  members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
+  members are checked when the object enters, and the arguments that each takes (kind `invalid_callback`, GN-6bu),
+  `thread: owner` holds, and each trait method
   calls the method of the language object through the API of its language, so the binding never takes the native
   object of another binding out. A trait method returns the failure of the core error of the owning repository
   (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the

@@ -5,6 +5,7 @@
 
 import type { Lang, Name, Type } from '../contract.ts';
 import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
+import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
@@ -39,7 +40,8 @@ export interface Context {
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
   // GN-6z: the expression of a function value of a case from its rows, where the test reads no record of its calls.
-  functionNew?: (rows: string[][]) => string;
+  // GN-6bu: with the count of the arguments of the function, which a JavaScript fixture declares.
+  functionNew?: (rows: string[][], parameters: number) => string;
   // GN-6z: the member of the fixture that functionNew makes, which its rows name; `__call__` when the language names none.
   functionMember?: string;
   // GN-6aa: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
@@ -128,7 +130,8 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if ('function' in type) {
     const returns = type.function.returns;
     const value = returns === 'none' ? { python: 'None', node: 'undefined', php: 'null' }[ctx.lang] : placeholder(model, ctx, returns, rich);
-    return { python: `lambda *_arguments: ${value}`, node: `(() => ${value})`, php: `fn (...$arguments) => ${value}` }[ctx.lang];
+    // GN-6bu: the JavaScript function declares the arguments that the binding calls it with.
+    return { python: `lambda *_arguments: ${value}`, node: `((${jsArguments(type.function.parameters.length)}) => ${value})`, php: `fn (...$arguments) => ${value}` }[ctx.lang];
   }
   // GN-6t: a value of a tuple is the sequence of the placeholders of its parts, a tuple in Python.
   if ('tuple' in type) {
@@ -753,7 +756,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   }
   if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) return ctx.instanceNew(callbackInstance(model, unit, libraryOf(type), value));
   // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
-  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'));
+  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'), type.function.parameters.length);
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
@@ -2564,7 +2567,8 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
   return {
     // GN-6d, G-5: a member with a default that no row and no call of the case names is left out of the object, which
     // the binding answers with the default.
-    members: members.flatMap((m, i) => (m.default !== undefined && !fixture.rows.some((row) => row.member === i) && !(fixture.calls ?? []).some((call) => call.member === i) ? [] : [text(name(i))])),
+    // GN-6bu: a member of a JavaScript fixture declares the arguments that the binding calls it with.
+    members: members.flatMap((m, i) => (m.default !== undefined && !fixture.rows.some((row) => row.member === i) && !(fixture.calls ?? []).some((call) => call.member === i) ? [] : [ctx.lang === 'node' ? jsDeclaredMember(text(name(i)), (m.parameters ?? []).length) : text(name(i))])),
     rows: fixture.rows.map((row) => {
       const returns = members[row.member]?.returns ?? 'none';
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, typed(returns), row.result);
@@ -2609,7 +2613,8 @@ export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: strin
     // GN-6ae: the function of a member with machine is a function fixture, which the test writes with its own hook.
     if (typeof type !== 'object' || !('function' in type) || machineFunction(type)) return [];
     const what = `the case ${id} of ${fn.member.id} for ${caseName(arg.name)}`;
-    return [{ arg, members: [text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
+    // GN-6bu: the call of a JavaScript fixture declares the arguments that the binding calls the function with.
+    return [{ arg, members: [ctx.lang === 'node' ? jsDeclaredMember(text(call), type.function.parameters.length) : text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
   });
 }
 
