@@ -6,7 +6,7 @@ import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,numberRefusesNull, isPath, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, awaitsFunction, callbackCases, stepExpected, caseFilesOf, BYTE_NAME_LINUX, caseListenerOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
@@ -1077,14 +1077,16 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     // A receiver that one factory call makes is an expression, which the test keeps as a local too.
     const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        receiver = ${built.expr}`, expr: 'receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
+    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
+    const given = onceArgs(model, fn, values, (local, expr) => `\n        ${local} = ${expr}`, (local) => local);
     append(`
-    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${once.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
+    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${once.lines}${given.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${onOnce('')}`}
         with self.assertRaisesRegex(TypeError, "${extra}"):
-            ${onOnce(callArgs(model, ctx, fn, values, 'None'))}
+            ${onOnce(callArgs(model, ctx, fn, given.value, 'None'))}
         with self.assertRaisesRegex(TypeError, "${unknown}"):
-            ${onOnce([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
+            ${onOnce([callArgs(model, ctx, fn, given.value), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
     // GN-11a: a keyword-only argument passed by position is a call of the wrong shape, the TypeError of Python and
     // no kind of the contract.
     const keywordOnly = fn.args.find((a) => a.field);

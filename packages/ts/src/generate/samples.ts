@@ -2876,6 +2876,22 @@ export function otherValue(model: Model, ctx: Context, arg: Arg, given: Readonly
   return placeholder(model, ctx, arg.type, rich);
 }
 
+// G-7 (B2.508): the arguments of a class or of a generated interface of a G-7 test, each made once as a local of the
+// test (`argument<i>`), and the values of every argument, where those take their local. An instance can hold state
+// in the case folder, so the second call of the test would make it again over what the first made (orm:
+// StepRunner.new, "table owner already exists"); the calls of G-7 fail before the core runs and leave it as it was.
+export function onceArgs(model: Model, fn: Fn, value: (arg: Arg) => string, local: (name: string, expr: string) => string, ref: (name: string) => string): { lines: string; value: (arg: Arg) => string } {
+  const names = new Map<Arg, string>();
+  let lines = '';
+  for (const arg of fn.args) {
+    if (!takesCaseInstance(model, arg)) continue;
+    const name = `argument${names.size}`;
+    lines += local(name, value(arg));
+    names.set(arg, ref(name));
+  }
+  return { lines, value: (arg) => names.get(arg) ?? value(arg) };
+}
+
 export function callbackArg(model: Model, fn: Fn): Arg | undefined {
   return fn.args.find((a) => unitOf(model, a.type)?.origin === 'callback');
 }

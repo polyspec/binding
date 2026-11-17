@@ -6,7 +6,7 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, phpTokens, type PhpTokenForm, tokenForms, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type MadeRaise, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, phpTokens, type PhpTokenForm, tokenForms, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
@@ -1085,9 +1085,11 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     // A receiver that one factory call makes is an expression, which the test keeps as a local too.
     const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        $receiver = ${built.expr};`, expr: '$receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
+    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
+    const given = onceArgs(model, fn, values, (local, expr) => `\n        $${local} = ${expr};`, (local) => `$${local}`);
     append(`
     public function testG7${name}CountsAndNamesItsArguments(): void
-    {${once.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
+    {${once.lines}${given.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
         try {
             ${onOnce('')};
             self::fail('no error for no argument');
@@ -1095,13 +1097,13 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertStringContainsString('expects', $error->getMessage());
         }`}
         try {
-            ${onOnce([...fn.args.map(values), 'null'].join(', '))};
+            ${onOnce([...fn.args.map(given.value), 'null'].join(', '))};
             self::fail('no error for one argument more');
         } catch (\\ArgumentCountError $error) {
             self::assertStringContainsString('expects', $error->getMessage());
         }
         try {
-            ${onOnce([callArgs(model, ctx, fn, values), 'notAParameter: 1'].filter((a) => a !== '').join(', '))};
+            ${onOnce([callArgs(model, ctx, fn, given.value), 'notAParameter: 1'].filter((a) => a !== '').join(', '))};
             self::fail('no error for an unknown name');
         } catch (\\Error $error) {
             self::assertSame(\\Error::class, $error::class);
