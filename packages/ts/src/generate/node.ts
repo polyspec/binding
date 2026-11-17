@@ -7,7 +7,7 @@ import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCh
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { TAKES_NODE, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { absentInits, armedEntry, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -690,7 +690,7 @@ ${arms.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
-// N-4 iterate: the addon's __iterate gives the items, or [key, value] for the entries, as an array converted when the
+// N-4 iterate: the addon's __binding_iterate gives the items, or [key, value] for the entries, as an array converted when the
 // iteration starts (a snapshot of the class's value); the JavaScript entry makes it the class's Symbol.iterator.
 function iterateRust(model: Model, fn: Fn): string {
   const yields = fn.yields ?? { value: 'none' };
@@ -700,7 +700,7 @@ function iterateRust(model: Model, fn: Fn): string {
     : `                let (key, value) = item;
                 items.push(tuple_out(env_, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
   return `
-    #[napi(js_name = "__iterate", enumerable = false)]
+    #[napi(js_name = "__binding_iterate", enumerable = false)]
     pub fn iterate<'env>(&self, env_: &'env Env) -> napi::Result<Unknown<'env>> {
         guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut items = Vec::new();
@@ -787,7 +787,7 @@ function entryRust(model: Model, fn: Fn): string {
     const given = convertOut(model, fn.returns, 'result');
     const reads = /\bresult\b/.test(given);
     const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
-    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`, true);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
             match (awaiting, outcome_of(env_, settled)?) {
@@ -803,7 +803,7 @@ function entryRust(model: Model, fn: Fn): string {
                     Ok((1, passed_out(env_, value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
-        let given = std::sync::Arc::new(std::sync::Mutex::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));${armedEntry(model, fn) === '' ? '' : `\n        ${armedEntry(model, fn)}`}${passes(fn) ? '\n        let mut awaiting = false;' : ''}
         Driven::start(env_, advancing(move |env_, ${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
             if let Some(output) = output {
@@ -844,9 +844,10 @@ function entryRust(model: Model, fn: Fn): string {
   }
   // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
   // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the
-  // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
-  // in a Proxy whose construct calls it.
-  const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
+  // static __binding_new instead, which makes the instance as any static member does, and the JavaScript entry wraps
+  // the class in a Proxy whose construct calls it.
+  // GN-6b, B2.478: the name of a member holds letters and digits alone (N-1), so no member is __binding_<what>.
+  const jsMember = fn.kind === 'constructor' ? 'binding_new' : jsName;
   if (!waitsAsync(fn) && !pooled(fn) && fn.machine !== true) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
@@ -1613,11 +1614,11 @@ ${implementorsOf(model, iface).map((o) => `    // SAFETY: napi unwraps the nativ
 // A value of a class that comes in is unwrapped as a ClassInstance, by its type tag: napi-rs gives a reference `&T` only
 // in the argument conversion that it generates, which these functions do not use, because they take the raw values and
 // judge them (T-8), and a reference made in the body of a call is refused.
-// GN-6b: the static __new of a class without a constructor (U-1 constructible), which the Proxy of the entry calls for a
+// GN-6b: the static __binding_new of a class without a constructor (U-1 constructible), which the Proxy of the entry calls for a
 // direct construction: it fails with kind direct_construction, and the addon makes the instances without it.
 const refusedConstruction = (jsClass: string): string => `
     /// GN-6b: ${jsClass} has no public constructor (U-1 constructible), so a direct construction is kind direct_construction.
-    #[napi(js_name = "__new", enumerable = false)]
+    #[napi(js_name = "__binding_new", enumerable = false)]
     pub fn construct<'env>(env_: &'env Env) -> napi::Result<Unknown<'env>> {
         Err(throw(env_, binding_error(BindingError::DirectConstruction { class: String::from(${rustString(jsClass)}) })))
     }
@@ -2171,25 +2172,25 @@ ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${
   });
 }`;
     });
-    // N-4 iterate: the class is iterable over the snapshot that the addon's __iterate gives.
+    // N-4 iterate: the class is iterable over the snapshot that the addon's __binding_iterate gives.
     if (o.members.some((fn) => fn.kind === 'iterate')) {
       wraps.push(`Object.defineProperty(${cls}.prototype, Symbol.iterator, {
   value: function iterator() {
-    return this.__iterate()[Symbol.iterator]();
+    return this.__binding_iterate()[Symbol.iterator]();
   },
   writable: true,
   configurable: true,
 });`);
     }
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
-    // GN-6b: a class without a constructor (U-1 constructible) is constructed through __new too, which refuses it.
+    // GN-6b: a class without a constructor (U-1 constructible) is constructed through __binding_new too, which refuses it.
     const construct = constructor === undefined ? `new Proxy(addon.${cls}, {
   construct(target) {
-    return target.__new();
+    return target.__binding_new();
   },
 })` : `new Proxy(addon.${cls}, {
   construct(target, args) {
-${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).split('\n').map((l) => `  ${l}`).join('\n')}
+${checked(constructor, `new ${cls}()`, (passed) => `target.__binding_new(${passed})`).split('\n').map((l) => `  ${l}`).join('\n')}
   },
 })`;
     return `

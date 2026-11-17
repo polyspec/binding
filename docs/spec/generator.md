@@ -219,6 +219,36 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
+- **GN-3j** The PHP of the build is an input of the PHP binding crate, and a build whose ext-php-rs is built for another
+  PHP fails (B2.470). The `build.rs` of the crate finds `php` and `php-config` as the build script of ext-php-rs does
+  (the path that `PHP` or `PHP_CONFIG` names, or the first file of that name in `PATH`), emits
+  `cargo:rerun-if-changed` for both files and for itself and `cargo:rerun-if-env-changed` for `PHP`, `PHP_CONFIG`,
+  `PATH` and `POLYSPEC_PHP_API`, reads the lines `PHP Extension` (the module API), `Thread Safety` and `Debug Build` of
+  `php -n -i`, and writes `php_build.rs` in `OUT_DIR`: a constant assertion that `ext_php_rs::ffi::ZEND_MODULE_API_NO`,
+  `ext_php_rs::PHP_ZTS` and `ext_php_rs::PHP_DEBUG` are those three values. The entry `src/lib.rs` of the crate
+  includes that file. When they differ the compilation of the crate fails with a sentence that names the PHP, its
+  module API and the command `cargo clean -p ext-php-rs`, with the profile and the target of the build, since that
+  command removes the output of one profile. `POLYSPEC_PHP_API` is read for no value: a recipe gives it any text that
+  names its PHP, such as the output of `php -n -r 'echo PHP_VERSION_ID, PHP_ZTS, PHP_DEBUG;'`. Why: the build script of
+  ext-php-rs 0.16.4 emits `rerun-if-env-changed` for `PHP`, `PHP_CONFIG`, `PATH` and two variables of its own and reads
+  PHP by its path, so when the PHP behind one path changes Cargo keeps the bindings of the PHP before; hyper built
+  with 8.5 behind the `php` of its tools, built again with 8.4 behind the same path, and PHP refused the extension
+  with `Module compiled with module API=20250925`, `PHP compiled with module API=20240924`. No crate can make Cargo
+  build a dependency again, so the crate cannot build ext-php-rs for the new PHP; it can fail before the load, with
+  the command. Cargo compares a file by its time and a variable by its value: a wrapper that is written again, as the
+  `php` of the tools of a checkout is when its PHP changes, or a binary that is installed again runs the script
+  again, and a link that moves to a file older than the last build does not, which the variable of a recipe covers.
+  A script that runs in every build (`rerun-if-changed` of a file that never exists) would see every change with no
+  variable, and Cargo compiles the crate again after each run of its build script, so every build would compile the
+  extension. A plain `cargo build` has the two files and the three variables of ext-php-rs as its inputs. The release
+  recipe builds each PHP minor and build in a target directory of its own (GN-19d), so it meets no stale ext-php-rs.
+  The check does not catch one case: the wrapper and the three variables stay as they were and only the link behind
+  the wrapper moves to a file older than the last build, which the time comparison of Cargo reads as unchanged; a
+  recipe that gives `POLYSPEC_PHP_API` catches it. Not verified: a run with the real ext-php-rs in which PHP changes
+  from one minor to another. The script was run in a crate with a stand-in for ext-php-rs and for PHP, and the
+  assertion compiles against the constants of the real ext-php-rs in the lint of the end-to-end check. The end-to-end
+  check has no step for it: such a step needs two PHP minors in one job behind one path, since a changed value of
+  `PHP` runs the build script of ext-php-rs again by itself, and a second build of ext-php-rs.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
   the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
   code names: each library that the contract names in its units and its types, each library whose error a row of
@@ -244,7 +274,12 @@ the design ids are those of the binding design.
   value class has its Composer package in `require` beside its extension. A value alias of another library, which
   the core of its owner converts without a class of its extension, and a callback unit whose members recognize no
   error, which is called on the object that the caller gave, add no requirement. One function of the generator names
-  these kinds, and both the model that the PHP emitter reads and `scaffold` take them from it. Why: in crud-ui the
+  these kinds, and both the model that the PHP emitter reads and `scaffold` take them from it. The emitters of the
+  extension take the PHP name of a class of another library from one function, which refuses, by the name of the
+  library and of the unit, a unit of a kind that the first function does not know, and an owner that names no PHP
+  namespace; a map class of a value class and an error unit that a callback unit recognizes are named through that
+  value class or callback unit (B2.454). So a lookup of a class cannot be written without the requirement of its
+  extension, where before only a test that compares the two sets on the generated text stood between them. Why: in crud-ui the
   generator takes the callback unit `file_loader` of its validator, and its tests failed with
   `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found` until the generator loaded the validator
   extension (`BINDING_PHP_REQUIRES_generator = validator` of its Makefile), while the composer.json of the generator
@@ -307,18 +342,31 @@ the design ids are those of the binding design.
   for the other three:
   - npm: the consumer names, in its own root `package.json`, the npm package of every polyspec library of its graph
     by the URL of its release asset (GN-3c), also a package that only another package requires, and each platform
-    package of each; it writes no `overrides`. The release that each URL names is the one whose version the packed
-    manifests require. Why: npm satisfies a requirement `X.Y.Z` of a packed manifest with the root dependency of that
-    name when the package at its URL has that version, and installs one copy of it; otherwise it asks the registry
-    for that version, which holds none. A URL in the packed manifest is refused under `allow-remote=root` (GN-3c),
-    and an `overrides` entry would state a second time the version that the manifest of the package already states.
+    package of each; it writes no `overrides`, and it installs with its lock (`package-lock.json`). The release that
+    each URL names is the one whose version the packed manifests require. Why: npm satisfies a requirement `X.Y.Z` of
+    a packed manifest with the root dependency of that name when the package at its URL has that version, and
+    installs one copy of it; otherwise it asks the registry for that version, which holds none. A URL in the packed
+    manifest is refused under `allow-remote=root` (GN-3c), and an `overrides` entry would state a second time the
+    version that the manifest of the package already states. Why the lock, as measured with npm 12 in hyper: an
+    install with no lock at all resolves the graph from scratch and stops under `allow-remote=root` with
+    `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`, because a package of the registry that is not
+    a dependency of the root cannot be fetched; with a lock, a workspace package that requires a sibling by its name
+    and the exact version is resolved by the URL entry of the root with no `overrides`, the lock is byte for byte
+    the one that an install with `overrides` writes, and no registry is asked.
   - Python: the consumer gives the installer the wheel of every polyspec library of its graph, the one of its
     platform, by the URL of its release asset, all in one install (a requirement `polyspec-<library> @ <URL>` of its
     project, or the URL as an argument of `pip install`). The release that each URL names is the one whose version
     the metadata of the wheels require. Why: pip and uv satisfy `polyspec-<library>==X.Y.Z` of the metadata of a wheel
     with a wheel of that name and version that the same install was given by a URL, and pip fails when none was given
     or its version differs; a release has no index page that an installer reads, so no `--find-links` names it; and
-    the file name of a wheel differs by platform (GN-19c), so the metadata of a wheel cannot name one URL.
+    the file name of a wheel differs by platform (GN-19c), so the metadata of a wheel cannot name one URL. The
+    tests of a library are a consumer too: a repository whose Python package requires the wheel of another library
+    declares the source of that wheel in its own root, a uv project with its lock or requirements with hashes, by
+    the URL of the release asset, and does not build that wheel from a clone of the other repository. Why: the
+    generator cannot write the source, since no contract names the owner and the repository of a library and the
+    file name of a wheel holds constants of the binding that released it, and the metadata of a wheel carries no
+    source to the one that installs it; session-store built the wheel of php-serialization from a clone and
+    installed it with `pip --no-index`, because nothing declared where it comes from.
   - PHP: the consumer adds `packages.json` of the release of each library of its graph, the Composer repository that
     the release utility writes beside the archives
     (`https://github.com/<owner>/<repository>/releases/download/v<version>/packages.json`), as a `composer`
@@ -335,8 +383,10 @@ the design ids are those of the binding design.
   npm starts it reads the manifest of each tarball: a requirement `X.Y.Z` on another package of the run whose tarball
   of that version the run does not hold fails with the two names (`scripts/e2e-npm-install.mts`), because npm would
   ask the registry for it and name neither. Every repository of `tests/e2e` names its dependency by a path, so the
-  requirements that the installs of a run satisfy are development forms (GN-3e); the install of the release form of
-  npm is a test of `packages/ts`, which packs two packages and runs that script on them.
+  requirements that these installs satisfy first are development forms (GN-3e); the run then writes the release form
+  of the copy and installs it in the same two forms (GN-14l), and a test of `packages/ts` packs two packages and
+  runs that script on them. The npm install of a run has no lock: the packages that the generator writes require no
+  package of a registry, so the resolution from scratch meets none.
 - **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
   `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
   names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
@@ -355,6 +405,18 @@ the design ids are those of the binding design.
   `extension-name` of each `composer.json` of the run, and the process fails with the name before a test runs when it
   is not. Why: PIE and a release tool load the binary and ask PHP for the extension by `extension-name`, so an
   extension under another name is installed and reported as not loaded.
+- **GN-3i** The library of the Python binding crate is named after its crate: `[lib] name` of its manifest is
+  `polyspec_<library>_python`, the library with `_` for each `-`, as the libraries of the other binding crates are
+  named after theirs. The name of the library is not the name of the module that Python imports. That module stays
+  `<module>._native` (`<module>._binding._native` of a host package, GN-3b), and two items name it: the generated
+  source declares it with `#[pymodule(name = "_native")]`, which gives the symbol `PyInit__native` that CPython asks
+  the extension file for, and `tool.maturin.module-name` of `pyproject.toml` names the file that maturin copies the
+  library to (`_native.abi3.so`) in a wheel and in a development install. No recipe and no step of the end-to-end
+  check reads the library of the Python crate by its file name: maturin takes it from the build that it runs. Why:
+  Cargo writes the library of every member of a workspace into one directory, `target/<profile>/deps/lib<name>`, so
+  two Python crates of one workspace that are both named `_native` (crud-ui: `packages/validator/python` and
+  `packages/generator/python`) wrote one file, a build of both warned of an output filename collision, which Cargo
+  states may become an error, and the library of one crate replaced that of the other (B2.352).
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3
@@ -434,7 +496,9 @@ the design ids are those of the binding design.
   the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
   class of the WASM crate, which has no `impl` block of the class, is the function `member_<member>` of the module
   `class_<unit>` of that module, which holds `use super::*;`, and the release of a class is the function
-  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. Why: a name that joins the class and
+  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. The entry of the constructor is the
+  function `construct` of the module of its class, which is the name of no member, since each has the prefix, and of
+  no helper of the crate, so a class with a constructor and a member `new` has two functions (B2.478). Why: a name that joins the class and
   the member with `_` reads in two ways, so the member `new_x` of the class `a` and the member `x` of the class
   `a_new` were one function `class_a_new_x`, and a member `free` was the release `class_<unit>_free` with its export
   `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
@@ -649,8 +713,8 @@ the design ids are those of the binding design.
   every instance itself from a result of the core, and a direct construction by language code fails with the kind
   `direct_construction` (category `type`) whose message names the class, as any binding failure of that category does.
   Python's `#[new]` fails so, PHP declares a public `__construct` that fails so, the `Proxy` of the Node entry calls the
-  static `__new`, which fails so, and the WASM constructor calls the export `__<Class>_new`, which fails so, unless the
-  module makes the instance (T-5). Go has no direct construction to refuse: a struct literal or the zero value of
+  static `__binding_new`, which fails so, and the WASM constructor calls the export `__new_<Class>`, which fails so,
+  unless the module makes the instance (T-5). Go has no direct construction to refuse: a struct literal or the zero value of
   `<Class>` runs no code of the binding and holds no value, so a call that takes it fails with kind
   `invalid_argument_type` (GN-15a). Why: the json repository found (T3.25-1) that a direct construction failed without a
   kind, in Node with the plain Error of napi-rs, in Python with the TypeError of pyo3 and in PHP with the Error of the
@@ -662,8 +726,17 @@ the design ids are those of the binding design.
   method with the computed key `<name>`, not as a function expression named `<name>`: a member may take a name that
   JavaScript reserves (`null`, `delete`), which names no function, and the method keeps `<name>` as its `name`. napi-rs keeps the classes it parsed in
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
-  Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
-  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
+  Node constructor is the static `__binding_new` and the entry exports the class in a `Proxy` whose `construct` checks the
+  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A hidden name of a class that
+  is no member of it is a name that no member takes. The JavaScript name of a member holds letters and digits alone
+  and starts with a small letter (N-1: a word is `[a-z][a-z0-9]*`), so the addon's name of a member, `__<name>`, has
+  no `_` after its first two: the construction of a Node class is `__binding_new` and its iteration (N-4) is
+  `__binding_iterate`. The export of a member of a WASM class, `__<Class>_<member>`, has the capital letter of its
+  class after `__`: the construction is the export `__new_<Class>` and the iteration `__iterate_<Class>`, as the
+  release is `__free_<Class>` (GN-4c). Why: orm has a static member `new` of a class without a constructor
+  (`query.new`, `step_runner.new`), and the Node addon wrote that member and the refusal of a direct construction as
+  one static `__new`, so `new Query()` ran the member and failed with its argument error in place of the kind
+  `direct_construction`; a method named `iterate` took the place of the iteration in the same way (B2.478). A parameter of a class takes an
   instance of it (another value is kind `invalid_argument_type`) and the core borrows the held value (GN-6h). In Node
   the instance is unwrapped as a `ClassInstance`, which checks the type tag of the class: napi-rs gives a reference
   `&T` only in the argument conversion that it generates and refuses one that the body of a call makes, and the
@@ -1650,8 +1723,13 @@ the design ids are those of the binding design.
   iteration, whose items the entry point collects inside `with_faults`. So the call that makes a receiver or an
   argument does not take the arming of the member under test, and an entry point that a callback enters, the
   conversion of its arguments too, does not see the arming around it. A member with `machine` arms each wait of
-  its machine instead, with `armed_future("<member id>", …)` (GN-6n), so each entry of a member holds one arming and
-  one shield. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
+  its machine instead: its entry takes the arming of the member once, by `armed_waits("<member id>", …)`, and every
+  wait of the machine installs that one arming around each of its polls (`binding_core::fault::Armed::wait`), so the
+  arming of a call covers every wait of the call and each entry of a member holds one arming and one shield (B2.477).
+  The waits share the record of what fired, so `nth` counts the visits of a point over the whole call. Why: a take
+  removes the arming, and the generated code took it at each wait (`armed_future("<member id>", io)`), so only the
+  first wait ran armed and a fault of a later wait, such as the rollback of orm `db.transaction` after its callback
+  raised, never stood. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
   its own: its work runs in `shielded(…)`, because language code may call it inside the call of another member, and
   it arms nothing. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
@@ -2056,8 +2134,10 @@ the design ids are those of the binding design.
   of its receiver carries language code) names `"machine": true` in its `core` (CK-68), and its core path returns a
   state machine without I/O in place of a future (c6 6.2): a value of `binding_core::machine::Machine`, which owns the
   arguments, so the core path takes each argument by value: a callback as the generated struct (`impl <Trait> +
-  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h); a parameter with a
-  default is refused by name (G-4). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
+  'static`), a text as a `String`, and a class parameter only with the borrow `value` (GN-6h). A parameter or a field
+  with a default is left out by the rule of GN-6i in each language, and the core path takes its `Option<T>` by value
+  too, with no borrowed form: `Option<String>` for a text, `Option<Vec<T>>` for a list, and the record of a record
+  parameter, each field `None` when the record is left out as a whole (`{empty: "object"}`). `resume(io)` advances the machine with the output of its last wait (`None` at the start and after a call)
   and gives one step:
   - `Step::Io(future)`: a future of the core that touches no language code, which the driver polls on a tokio runtime
     and whose output it gives to the next `resume`;
@@ -2242,6 +2322,12 @@ the design ids are those of the binding design.
     that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
     function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
+    That exception is one value that the test makes before the call, with the message `raised by the function of the
+    case`, in every test that calls the member with such a fixture: the test of a case that raises `"callback"`,
+    which requires that very value, and the B-4 test of a case that raises a kind after its function raised, such as
+    a rollback that fails (B2.476). Why: the function throws the value that the test holds, and the B-4 test of
+    Python, Node, WASM and PHP did not set it, so the callback failed with `IndexError` or `ReferenceError` in
+    place of its exception (orm `db.transaction`), where the Go test set it.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
     def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose
@@ -2469,8 +2555,8 @@ the design ids are those of the binding design.
   `vX.Y.Z` the release of the repository (GN-3c) writes the files of `binding generate` for the target go, builds the crate
   `polyspec-<repository>-go` for each platform with the release profile and without a feature (the library of
   `linux_<arch>_musl` with `--target <arch>-unknown-linux-musl` on the Linux machine of that arch, whose Rust
-  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so no C compiler of musl
-  takes part), removes the debug
+  toolchain lists that target in `rust-toolchain.toml`; a static library needs no linker, so the crate itself needs no C
+  compiler of musl; a dependency whose build script compiles C needs one, which the repository declares, GN-19b), removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
   sections of the Rust standard library), and runs `binding release-go-module` (GN-19f), which creates one
@@ -2496,12 +2582,31 @@ the design ids are those of the binding design.
   serve its tests, such as a probe that a test starts. Why the package clause and not a directory `tests`: the
   clause is what Go reads to tell a program from a package, while the name of a directory would leave out a
   package that a consumer can import and carry a program placed elsewhere. A repository that publishes a command
-  for `go install` gives it a Go module of its own. The `go.mod` and the `go.sum` of the released form are those
-  of the commit of the tag, byte for byte. A requirement that only a left-out test or program used stays in that
-  `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
-  build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
-  over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
-  the repository holds and no check of the repository read. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
+  for `go install` gives it a Go module of its own. The `go.mod` of the released form is the one
+  of the commit of the tag, byte for byte. Its `go.sum` holds the lines of the `go.sum` of the commit of the tag
+  and, for each Go module of the same repository that the `go.mod` requires at a release version and each one that
+  such a module requires in turn, the two lines of that module, its hash and the hash of its `go.mod`, sorted in as
+  binding sorts a `go.sum` (GN-15l); a released form whose `go.mod` requires no module of its own repository has
+  the `go.sum` of the commit of the tag, byte for byte, or none when that commit tracks none (B2.479). Why the
+  command writes those lines: a module builds alone inside the commit of its tag (GN-15l), and `go build` in the
+  generator module of crud-ui at its tag failed with `missing go.sum entry for module providing package` of the
+  validator module that it requires. Why no tracked file holds them: they are the hashes of the commit that the
+  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). The
+  `go.mod` of a release requires only what the released form uses (B2.473): each requirement, a line that is not
+  `// indirect`, is of a module of which a carried Go file imports a package, the module path or a path below it,
+  where an import belongs to the required module with the longest path that holds it. A carried Go file is a
+  hand-written file of a package or a generated file that the form carries, a generated test without a tag of a
+  test feature among them; a requirement of a module of the same repository is used in the same way. A requirement
+  that only files that the form leaves out import, a test of the repository, a program or a generated file behind
+  a tag of a test feature, is refused with those files, and one that no Go file imports is refused; a line
+  `// indirect` is not judged, and the command says so. The check reads the import declarations of the files and
+  starts no Go; `binding release-go-module` runs it (GN-19f), and `binding check --release` runs it before a tag
+  (docs/spec/contract-check.md CK-102). A dependency of tests or programs alone lives in a Go module of its own,
+  with its own `go.mod`, in the same repository or not, as a command for `go install` does. Why it is refused:
+  such a requirement takes part in the version selection of every consumer of the tag, which fetches its
+  `go.mod`, while no package of the form imports it. Why the command writes no `go.mod` without it: the result
+  would be a file that no commit of the repository holds and no check of the repository read. Before B2.473 the
+  requirement stayed in the `go.mod` of the tag and no command named it. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
   calls test entry points, which the library of a release may not hold (GN-19f), so no build of the released form
   can compile it with its tag, and the guard would ask a run for tags that the form does not carry, so the untagged
   `go test` of a fetched module, the right run of that form, would fail on it. The releases before B2.446 carried
@@ -2713,7 +2818,7 @@ the design ids are those of the binding design.
   same argument checks (G-7). The WebAssembly module keeps the core values of the instances of a class in a table of
   that class, and an instance keeps the handle of its value in a private field, which no other code reads or forges: a
   value is an instance of the class exactly when it has that field. The module exports each member as
-  `__<Class>_<member>`, which is not part of the API: `__<Class>_new` gives the handle of the new value, and a method, a
+  `__<Class>_<member>`, which is not part of the API: `__new_<Class>` (GN-6b) gives the handle of the new value, and a method, a
   getter or a hook takes the handle of its instance first. When the module loads, the ES module hands over for each
   class a function that makes an instance around a handle, by which a value of the class leaves, and one that reads the
   handle of an instance and answers `undefined` for any other value, which is kind `invalid_argument_type`. A call
@@ -2777,8 +2882,12 @@ the design ids are those of the binding design.
   and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,
   whose texts are code points or UTF-16, and the byte 0xFF in PHP and Go, whose texts are bytes; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
-  the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
-  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values,
+  the kinds of the value table: `null` has no `value`; `bool`, `int`, `int64` (an integer of the range of i64, a
+  number or, outside the safe integers, its decimal text; B2.465), `float` (a number or the form above), `text` and
+  `bytes` (`{"hex": ...}`) hold that value; `number` holds its literal as a text and has a form only where a class of
+  origin value represents the value type, whose member takes that text (below): no built-in form of a language makes
+  the kind (`BUILTIN_FORMS`), so a value alias gives it no case value, and `binding check` refuses one (CK-22);
+  `list` holds an array of such values,
   or, for a value nested deeper than a JSON reader takes, `{"kind": "list", "repeat": <n>, "value": <value>}`: n
   lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
   in a loop;
@@ -2895,12 +3004,21 @@ the design ids are those of the binding design.
   one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
-  safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
+  safe integers: a Node `bigint`, a Python `int`), `int64` (an integer of the range of i64, given as `int` is: a Node
+  and WASM `bigint`, a Python and PHP `int`, a Go `int64`; a value outside that range is refused by name; B2.465),
+  `float`, `text`, `bytes`, `list` and `map`, each as the value that
+  the built-in form of the kind makes. Why `int64` is a kind of a case value: a row of an alias may have the kind
+  (`VALUE_KINDS`, the schema), and an alias of orm reads a PHP and a Python `int` as `int64` and a class as `int`, so a
+  case could not state the value that such a row reads, and its test failed with "is not generated yet". PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
   `-9223372036854775808` as the negation of a float, and Go gives a negative zero as `math.Copysign(0, -1)`, because
-  the Go constant `-0.0` is 0. A `float` whose out row of the alias in the language makes an
-  instance of a value class (`<unit>.constructor`, such as a Node integral float, which a `number` would carry as an
-  `int`) is that instance made from the number, because the binding takes back the form that it gives. A value of the
+  the Go constant `-0.0` is 0. A value whose out row of the alias in the target, the row of its
+  kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
+  from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
+  `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
+  alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
+  sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value
+  entered as another kind. GN-13v stays the rule of an alias whose row makes no class for the empty map. A value of the
   language that is no value of the value type is `{"host": <sort>}`
   of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
   `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
@@ -3000,8 +3118,12 @@ the design ids are those of the binding design.
   <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
   PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
   `list <n>`, then its items; `map <n>`, then each key and its value, a key in the form of its keyed map (a PHP key
-  that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
-  `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
+  that is the decimal text of an integer is that integer); a value of the kind `int64` has the text of an integer in
+  the form of its row; and an instance of a value class that an out row names as
+  `<unit>.constructor`, of every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes` and `map`;
+  B2.465, where only `float` and `map` had it, so an `int` or a byte string that orm gives as an instance of
+  `integer_value` or `bytes_value` was expected as the bare value), a PHP `stdClass` and a PHP reference, numbered
+  together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
   `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
   id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one
@@ -3742,14 +3864,26 @@ the design ids are those of the binding design.
   directory that stands for the
   remote: one commit whose tree is the Go module at its place with the library of the platform of the run in
   `internal/ffi/lib/<platform>`, and the tag `<directory of the Go module>/<version>`, where the version is `v` and
-  the version of the core, and for a dependency the version that the `go.mod` requires. Git reads
-  `https://github.com/<owner>/` as the directory of these repositories (`url.<base>.insteadOf` of a configuration
-  file of the run, the one configuration that the Git of these commands reads), so `go` fetches each module by its
-  module path and its tag without a network. A consumer module, whose `go.mod` holds the line `require` of the Go
+  the version of the core of that module, of the repository or of a dependency. A run that writes the release form
+  (GN-14l) makes these repositories in two parts, among the steps of that form: the one of each dependency before
+  `binding scaffold` of the release form, which writes `go.sum` from its tag (GN-15l), and the one of the repository
+  after it, so its commit holds the `go.mod` and the `go.sum` of a release; the consumer below is then the last step
+  of the run. A run that writes no release form, the one of a repository without a dependency among them, makes them
+  all in one step after the Go tests, and tags a dependency that its `go.mod` requires at `v0.0.0`, a development
+  form that the run does not rewrite, at `v0.0.0`. What B2.458 changed: before it a dependency always had the tag of
+  the version that the `go.mod` required, `v0.0.0` for a path, so the consumer of a repository of `tests/e2e` with a
+  dependency fetched a module whose `go.mod` required `v0.0.0`, which no release holds (GN-19f refuses it); the
+  released form of such a repository is now proven in the release form alone, and no longer with the `go.mod` of the
+  development form. Git reads `https://github.com/` as the directory of these repositories (`url.<base>.insteadOf`
+  of a configuration file of the run, the one configuration that the Git of these commands reads: `GIT_CONFIG_GLOBAL`
+  names it, with no system file and none of the variables of the Git dependency of Cargo) and opens no transport but
+  a file (`GIT_ALLOW_PROTOCOL=file`), so `go` fetches each module by its module path and its tag without a network: a
+  repository or a tag that the run did not make fails by the directory of the run, and a URL that the configuration
+  does not turn into that directory is refused before a connection. A consumer module, whose `go.mod` holds the line `require` of the Go
   module of each contract and nothing else of them, imports every package of those modules in a test; the run writes
   its `go.sum` with `go mod tidy`, then runs `go test` of the consumer and of every package of the fetched modules
-  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOFLAGS` empty and
-  no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
+  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOSUMDB=off`,
+  `GOENV=off`, `GOFLAGS` empty and no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. The tree of the commit
   holds the files that the commit of a release carries, which the run reads from the function of GN-15g that
   `binding release-go-module` reads, and the run removes a file of the module by no other rule: no generated file
@@ -3794,6 +3928,65 @@ the design ids are those of the binding design.
   `tests/e2e/lent` is such a repository: its core keeps a lent record beyond the call (GN-6d), and every target is
   refused, with E0597 and in Node with E0521. Why: a one-time check proves the lifetime of the call once, and a run in
   CI keeps a change of the generator from giving a lent record `'static` again.
+- **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
+  by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
+  does, ends with the steps of the release form, after every step of the development form. The steps are added to
+  the run and stand in place of none: the development form is what a repository holds until its dependency has a
+  release, and no other run of CI checks it. No option turns the steps on or off; a run of a repository without
+  such a line, and one with `--until lint`, has none, and a repository with a host package (L-2a) is left out and
+  named, because the manifest of a host package is written by hand and no scaffold of the run writes its release
+  form. The four ecosystems are in the release form together, in one order, which one function of
+  `scripts/e2e-release-form.mts` gives:
+  - The Go module of each dependency that a `go.mod` of the repository requires stands at the tag of its own
+    version in a remote of the run (GN-14f). Before the run makes that repository it asks Go for the module at that
+    tag, and the step fails unless Go fails and names the directory of the remotes of the run, which shows in each
+    run that these commands read that directory and no network.
+  - In the copy, each such line of a core becomes `version = "=X.Y.Z"` with the version of the core of that
+    dependency, every other field kept, and the root workspace gets a `[patch.crates-io]` with the path of the copy
+    of each; the run prints each change (GN-14d). A line that is not one inline table and a root manifest that
+    already patches crates.io are named failures.
+  - `binding scaffold` of each contract writes the manifests of a release, the `go.sum` from the tag of the first
+    step among them (GN-15l), and `binding check` passes on them; both get `--go` and the settings of Git and Go of
+    GN-14f. The step fails unless both end with status 0, `Cargo.lock` is byte for byte what it was, and each
+    manifest that named a dependency in the development form names it at its version: `package.json` and
+    `composer.json` `X.Y.Z`, `pyproject.toml` `polyspec-<library>==X.Y.Z`, `go.mod` `require <module> vX.Y.Z` with no
+    `replace` line, and `go.sum` the two hashes of that module.
+  - Python: the wheel of the repository is built again, because its metadata hold the requirements of
+    `pyproject.toml`, and installed with the wheels of the dependencies of the run in one `pip install --no-index`,
+    each by its URL on the loopback, into a venv of its own (GN-3h); the step fails unless the installed
+    distribution requires `polyspec-<library>==X.Y.Z`. The generated tests then run on unittest in that venv.
+  - npm: the package of the repository is packed again and installed with the tarballs of the run, those of the
+    dependencies and of the platforms, through one root manifest that names each by its URL (GN-3c, GN-3h), after
+    the check that the tarball of each requirement `X.Y.Z` of a packed manifest is among them. The generated tests
+    of Node and of WASM then run in that directory. When no packed manifest requires the package of a dependency,
+    which a manifest names only for a value class or a callback unit (GN-3e), the run says so and installs nothing.
+  - Go: the Go module of the repository, with the `go.mod` and the `go.sum` that the scaffold wrote, is carried at
+    its tag in a remote of the run, and the consumer of GN-14f fetches it with the module of each dependency at the
+    version that its `go.mod` requires, and runs its test and the tests of every fetched module.
+  - PHP has no install here: its evidence is the PIE step of a real release (GN-3h). Its `composer.json` is
+    written and checked with the other manifests.
+  Cargo has no release form of its own in the run: a release names a dependency by its tag, whose requirement is
+  `*`, so Cargo would take a crate of any version at that tag, and it needs the remote of the dependency; the run
+  uses the form `=X.Y.Z` with the patch, which Cargo refuses when the version of the crate at the path differs and
+  which resolves to the crates that the lock already names.
+  What runs in the release form is what the form changes: the manifests, the install of each package manager and
+  the load of the package of a dependency by the installed package, which the generated tests exercise on each
+  target. The run does not repeat what the form leaves as it was: the contract cases, the measurements, the lints
+  (`cargo clippy`, `tsc`, `gofmt`, `go vet`, `deadcode`), the checks of `llvm-nm`, the test of the core and the test
+  of the tag guard (GN-13bf); the generation, since `binding check` reads the contract of each dependency through
+  Cargo as `binding generate` does (GN-15f), so the generated files are those of the development form; the builds
+  of the Node addon, the WASM module and the PHP extension, whose crates resolve to the same crates under the same
+  lock, so the tarballs of the platforms and the module inside the package are those of the development form; and
+  the tests of PHP, whose extension the run loads by its path and not by `composer.json`. The wheel and the static
+  library of Go are built in the release form, because the wheel carries the requirement and the tag carries the
+  library.
+  No command of these steps opens a network: Cargo runs offline (`CARGO_NET_OFFLINE=true`), Git and Go read the
+  remotes of the run alone (GN-14f), pip reads no index, and npm takes each package from the loopback after the
+  check of the tarballs. Why: every repository of `tests/e2e` names its dependency by a path, so before these steps
+  no run installed a manifest of the release form, and the first install of one was the release of a consumer. The
+  first attempt at the scaffold of the release form ended with status 1 and reached out to github.com: the `go.mod`
+  required a release, `go mod download` ran (GN-15l), and no tag of the dependency stood anywhere, so the remote of
+  the dependency comes first.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on
@@ -3801,9 +3994,12 @@ the design ids are those of the binding design.
   tag of that repository and the run takes the packages of that release from its assets. The run has no such step
   yet: it takes the packages of a dependency from the copies of `DEPS` alone (GN-14d) and reads
   `https://github.com/polyspec/` as the directory beside the checkout, so a core that names the tag does not build in
-  the job, and the release tag alone ends nothing (B2.451). The step is the one of B2.458. Until then
-  `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
-  that ends it, and the job has no entry of it. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
+  the job, and the release tag alone ends nothing (B2.451). The steps of the release form (GN-14l, B2.458) install
+  the release form of the copies of `DEPS`, not the assets of a release: the step that downloads those assets is
+  not written. Until then `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
+  that ends it, and the job has no entry of it. At least one entry of the job runs the steps of the release form,
+  by a core that names a repository of its `DEPS` by a path, and `packages/ts/tests/ci-workflow.test.ts` fails when
+  none does. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
   neither in the job nor in the list, one that is in both, and a listed contract whose core no longer names by a
   path a repository that `tests/e2e` does not hold. `tests/e2e/relay`, whose core depends on the repository json, is
   listed until the run installs the release of json from its assets; json has a release tag since v0.0.35. A listed contract is still checked by `make e2e` with a checkout of
@@ -3930,6 +4126,37 @@ the design ids are those of the binding design.
   machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
   A Linux entry also builds the library of `linux_<arch>_musl` of its arch with `--target <arch>-unknown-linux-musl`
   (GN-15g) and hands it as `linux_<arch>_musl/libpolyspec_<repository>_go.a`, so the release carries five libraries.
+  The build of the musl target, and no other command of the recipe, takes the C compiler and the archiver of that
+  target, which the Makefile of the repository declares before the include (GN-19h) in `CC_<target>` and
+  `AR_<target>`, where `<target>` is the target with its dashes as underscores: `CC_x86_64_unknown_linux_musl`,
+  `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl` and `AR_aarch64_unknown_linux_musl`. The recipe
+  exports each of the two of the arch of the run that is not empty, under its own name, to the `$(CARGO) rustc` of
+  the musl target alone. These are names that the crate `cc` reads, with which the build script of a dependency
+  compiles C: for the compiler it takes the first that is set of `CC_<target>` with the dashes of the target,
+  `CC_<target>` with underscores, `TARGET_CC` (the build is a cross compilation, because the host is the target of
+  the GNU C library) and `CC`, and for the archiver the same four of `AR`; with none of them it starts
+  `aarch64-linux-musl-gcc` for the arm64 target and, for the x86_64 target, the first that `PATH` holds of
+  `x86_64-linux-musl-gcc` and `musl-gcc`. A repository whose Go crate has no dependency that builds C declares
+  nothing. When one of the two variables of the arch of the run is empty, the recipe runs `$(CARGO) tree --locked -p
+  polyspec-<repository>-go --target <arch>-unknown-linux-musl -e normal,build --prefix none --format '{p}'` before it
+  builds a library, and when a line of its output names the crate `cc`, a dependency builds C for that target: the
+  recipe ends with status 2 and names each empty variable (``release-go-static needs
+  CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the
+  archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a
+  dependency of polyspec-<repository>-go builds C with that crate; define them before the include of
+  packages/release.mk (GN-19b)``). When both are declared it does not ask Cargo. The recipe does not start a declared
+  compiler before the build, so a wrong path fails in the build script, with the message of the crate `cc`. Two cases
+  are outside this rule: a build script that compiles C without the crate `cc` is not seen, and fails in Cargo as
+  before; and a crate `cc` in the build whose build script compiles nothing for the musl target asks for a
+  declaration that no build reads. Why: session-store depends on rustls, whose cryptography, ring 0.17.14, compiles C
+  in its build script, and `release-go-static` failed in its Linux CI because the crate `cc` looked for
+  `x86_64-linux-musl-gcc`, which no runner holds; it went around the recipe by exporting the four variables from its
+  own Makefile to every command, and each next repository with such a dependency would have failed at the same place
+  with a message of Cargo that names no variable. Why the names of the crate `cc` and no names of binding: the
+  declaration that session-store wrote stays valid, and a variable of the environment of a job with that name is a
+  variable of make as well. Why the recipe asks and not `binding check --release`: the variables are of the Makefile,
+  which a command does not read (docs/spec/contract-check.md CK-102), and `release-go-static` runs in CI, as a build
+  of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
 - **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
   SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
   directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
@@ -3967,7 +4194,7 @@ the design ids are those of the binding design.
   that does not hold the package by name: the release of npm is fixed by the repository, so a second form would be a
   path that no run takes.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>] [--go <command>]` makes the commit and the tag of GN-15g in the
+  <directory> --work <directory> [--remote <name>] [--go <command>] [--rehearsal]` makes the commit and the tag of GN-15g in the
   repository of the contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target
   go` wrote the files `zz_generated_*.go` of the Go module into the work tree; `--libraries` holds
   `<Go directory>/libpolyspec_<repository>_go.a` of each platform (GN-19b); `--work` is a directory of the run, in
@@ -3986,6 +4213,17 @@ the design ids are those of the binding design.
     the tag `<directory>/vX.Y.Z` is the one that Go reads for it.
   - The `go.mod` of that commit holds no `replace` line and requires no module at `v0.0.0`: both are development
     forms (GN-15f), which a consumer of a tag cannot resolve.
+  - The repository holds the tag `<directory of that module>/vA.B.C` of each Go module of the same repository (a
+    module path with the same first three elements, GN-14f) that the `go.mod` requires at a release version
+    `vA.B.C`, and of each one that the `go.mod` of such a module at its tag requires in turn (B2.479). The command
+    names each module whose tag is missing and the `go.mod` that requires it, and says to run `binding
+    release-go-module` of that module first. So the modules of one repository are released in the order of their
+    requirements: the required module first.
+  - Each requirement of that `go.mod` that is not `// indirect` is imported by a Go file that the released form
+    carries (GN-15g, B2.473). The command names a requirement that only files that the form leaves out import,
+    with those files, and one that no Go file imports, and it tells the reader of the run each line `// indirect`,
+    which it does not judge. It reads a tracked file from the commit of the tag and a generated one from the work
+    tree, and the files that the form leaves out only when a requirement is not used.
   - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
     `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
     the directory of a library.
@@ -4009,7 +4247,8 @@ the design ids are those of the binding design.
   of the file and by its package clause in the commit of the tag (`git show`) and names to the reader of the run,
   `git update-index --add --cacheinfo` with mode 100644 for each generated file
   that a release carries (GN-15g) and for `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a` of each platform, whose objects `git
-  hash-object -w --no-filters` writes, `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
+  hash-object -w --no-filters` writes, in the same way for the `go.sum` of the released form when the `go.mod`
+  requires a module of the same repository (GN-15g, B2.479), `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
   message `chore(release): Carry the Go module of vX.Y.Z`. Its author and committer dates are the committer date of
   the commit of the tag and its identity is the one of the Git of the run, so the same inputs under the same
   identity give the same commit. A tag `<directory>/vX.Y.Z` of the repository or of the remote that names another
@@ -4025,7 +4264,20 @@ the design ids are those of the binding design.
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
   and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
-  fetched from its own remote, so the repositories are released in the order of their Go requirements. The proof
+  fetched from its own remote, so the repositories are released in the order of their Go requirements. A Go module
+  of the same repository that the `go.mod` requires at a release version, a sibling, is fetched from the bare
+  repository of `--work`, because Git reads that repository for every module of
+  `https://github.com/<owner>/<repository>`: before the commit, the command pushes the commit of the tag of each
+  sibling of the check above into it under that tag, and runs `go mod download -json <module>@<version>` for each
+  in a module of `--work` with the settings of the consumer, whose `Sum` and `GoModSum` are the lines of the
+  `go.sum` of the commit (GN-15g); it removes the module cache after it, so the consumer fetches each sibling
+  again. A tracked `go.sum` that gives a sibling another hash is refused with its line, before the commit. Before
+  B2.479 that repository held the tag of the module of the run alone: the release of the generator module of
+  crud-ui, which requires the validator module of the same repository, failed in `go mod tidy` of the consumer
+  with `unknown revision packages/validator/go/v0.0.1` in either order of the two runs, with no word of the cause.
+  A release that stopped between two modules of a repository is run again as it is: the command leaves the tag of
+  the first module, which names the commit of this run, as it is and gives no reference when the remote holds it,
+  and the run of the second module finds that tag in the repository. The proof
   links the library of the platform of the run alone; the libraries of the other platforms are checked by their
   objects.
   Then the command creates the annotated tag `<directory>/vX.Y.Z` at the commit (`git tag -a`, with the same date)
@@ -4033,6 +4285,33 @@ the design ids are those of the binding design.
   pushes to the remote, or nothing when the remote holds the tag already. The command pushes nothing to the remote.
   Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
   failed push gives the same reference.
+  The rehearsal (B2.479): with `--rehearsal`, an option without a value, the command runs the checks and the proof
+  before a release has a tag, and makes no commit and no tag: it writes no object and no reference into the
+  repository, asks the remote nothing and pushes nothing. `--tag vX.Y.Z` is then the tag that the release will
+  make, which need not exist: the rehearsal reads `HEAD` in place of the commit of the tag, and the generated
+  files of the work tree. A platform is absent when its library, its `native-static-libs` or one of its two
+  generated files is not there; the rehearsal names each absent platform with what is missing and checks the
+  others as a release does, so a library that is there and fails a check fails the rehearsal. The proof links the
+  library of the platform of the run, `<GOOS>_<GOARCH>` of `go env`, so the rehearsal is refused when that platform
+  is absent or is no platform of a Go module. The commit of the proof is made in a bare repository of `--work`,
+  `rehearsal.git`, whose alternates are the objects of the repository (`objects/info/alternates`): every command
+  that writes an object or the index runs with `git --git-dir` of that repository, the commit has the identity
+  `binding rehearsal` and the message `chore(release): Rehearse the Go module of vX.Y.Z`, and `git update-ref`
+  sets the tag `<directory>/vX.Y.Z` there. That repository is kept between runs, and `git prune` removes the
+  objects of the earlier rehearsals from it. A sibling module of the check above is taken from its tag of the
+  repository when it has one, which the rehearsal pushes into that repository over a rehearsal of an earlier run;
+  a sibling without a tag, which is every sibling before the first release of a version, is taken from the
+  rehearsal of that module in the same `--work`, when the parent of its commit is the `HEAD` of this run. So the
+  modules of one repository are rehearsed in the order of their requirements with one `--work`; a sibling with
+  neither, or one rehearsed from another commit, is refused with the name of the module and the run that makes
+  it. A rehearsal writes nothing to its standard output, so no recipe pushes a reference, and the last lines of
+  its error output are the list of what it did not see: that it read `HEAD` and not a tag, each sibling that it
+  took from a rehearsal, each absent platform, that it compared no earlier tag of the repository or of the remote,
+  and last that it made no commit and no tag. Why the list ends the output: a rehearsal that passed on one
+  platform reads like a release that passed unless its last lines say what is still unproved. Why a form of the
+  command and not a script of a repository: crud-ui could not rehearse its release, because the command asked for
+  the libraries of the five platforms and their generated files before it reached the proof, and the defect of
+  B2.479 was found by a release that had already pushed a tag.
 - **GN-19g** Before a recipe of a release builds an archive, it runs `binding check <interface.json> --release` for
   each contract of the repository, every one to its end, and stops when one fails (CK-70). The recipe
   `release-binding-check` is that call, and each build recipe of the assets runs it first, in CI as in a release
@@ -4068,6 +4347,18 @@ the design ids are those of the binding design.
   | `release-assets-npm` | `node` or `wasm` | GN-19i, the build of the job `npm` |
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
   | `checkout-node-addon` | `node` | GN-3c, the addon of the checkout beside the generated entry |
+  | `rehearse-go-module` | `go` | GN-19f, the rehearsal for the tag of `TAG`, with no commit and no tag |
+
+  `rehearse-go-module` is no step of a release: a repository runs it before it makes the tag `TAG`. Its
+  prerequisite is `release-go-static`, which builds the library of the host, and it runs `binding
+  release-go-module --rehearsal` with `--work $(RELEASE_TARGET)/go-module-rehearsal`, a folder without the name of
+  a component, which the contracts of one repository share, so the rehearsal of a module finds the one of the
+  module that it requires (GN-19f, B2.479); the required module is rehearsed first, and two rehearsals do not run
+  at once.
+  A repository with two contracts of which the Go module of one requires the Go module of the other at a release
+  version (crud-ui: the generator requires the validator) runs `release-go-module-<component>` of the required
+  module before that of the module that requires it (GN-19f, B2.479): the second run reads the tag of the first in
+  the repository, and a run in the other order is refused with the name of the module whose tag is missing.
 
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
@@ -4081,7 +4372,11 @@ the design ids are those of the binding design.
   release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when
   its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go, which is every job that runs
   a `release-assets-<job>`, whose first step is `release-binding-check` (GN-19i); a command that needs Go and
-  does not find it names the tool, `--go` and `GO` (GN-15l). `NAPI`,
+  does not find it names the tool, `--go` and `GO` (GN-15l). A repository whose Go crate has a dependency that
+  builds C also defines `CC_<target>` and `AR_<target>` of each musl target, the C compiler and the archiver that
+  `release-go-static` passes to the build of that target and requires on a Linux host when the crate `cc` is in that
+  build (GN-19b); `release-binding-check` does not require them, because the need follows from the host and from the
+  dependencies of the build, which `release-go-static` reads. `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
   `llvm.version` of `config/toolchain.json` and the PHP minors of its extension in `phpExtension.minors` of that file

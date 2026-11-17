@@ -2178,6 +2178,43 @@ describe('CK-96 a key that the tests of the repository read is declared in reads
   });
 });
 
+test('B2.465: CK-22 reads a case value of a value alias at an argument, a result, an item and an argument of a receiver, and refuses a kind without a form and a form that is not that of its kind', () => {
+  // orm: 19 places of 12 cases gave a map as a JSON object, and a kind int64 had no form; binding check said nothing.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const messages = (change: (cases: any) => void): string[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-22' && /a case value of the kind/.test(f.message)).map((f) => f.message);
+  };
+  const echo = (value: unknown, result: unknown = value): string[] => messages((cases) => { cases.echo = [{ id: 'k', value, result }]; });
+  const text = { kind: 'text', value: 'x' };
+  // The forms of the kinds, which the generator writes.
+  for (const value of [text, { kind: 'null' }, { kind: 'int64', value: 7 }, { kind: 'list', value: [text] }, { kind: 'list', repeat: 2, value: text }, { kind: 'map', value: [] }, { kind: 'map', value: [['a', text]] },
+    { kind: 'object', id: 0, value: [['a', { kind: 'object', id: 0 }]] }, { kind: 'object', repeat: 2, key: 'a', value: text }, { kind: 'reference', value: { id: 0, value: text } }, { host: 'date' }, 'a']) {
+    assert.deepEqual(echo(value, text), [], JSON.stringify(value));
+  }
+  // A kind for which the generator has no form, at the argument and at the result.
+  assert.deepEqual(echo({ kind: 'number', value: '1' }, text), ['the case k of sample.echo: value of the case is a case value of the kind number of the alias data, for which the generator has no form: a case value is of the kind null, bool, int, int64, float, text, bytes, list, map, object, reference (G-5, GN-13f)']);
+  assert.deepEqual(echo(text, { kind: 'text16', value: [] }), ['the case k of sample.echo: the result result is a case value of the kind text16 of the alias data, for which the generator has no form: a case value is of the kind null, bool, int, int64, float, text, bytes, list, map, object, reference (G-5, GN-13)']);
+  // A map and an object are an array of [key, value] pairs, also inside a list and inside a map.
+  assert.deepEqual(echo({ kind: 'map', value: { a: text } }, text), ['the case k of sample.echo: value of the case is a case value of the kind map of the alias data whose value is {"a":{"kind":"text","value":"x"}}, not an array of [key, value] pairs in order (G-5, GN-13f)']);
+  assert.match(echo({ kind: 'list', value: [text, { kind: 'object', value: {} }] }, text)[0] ?? '', /value of the case\[1\] is a case value of the kind object of the alias data whose value is \{\}, not an array of \[key, value\] pairs/);
+  assert.match(echo({ kind: 'map', value: [['a', { kind: 'map', value: [['b']] }]] }, text)[0] ?? '', /value of the case\.a is a case value of the kind map of the alias data whose value is \[\["b"\]\], not an array/);
+  // A list is an array or the repeat form.
+  assert.match(echo(text, { kind: 'list', value: { 0: text } })[0] ?? '', /the result result is a case value of the kind list of the alias data whose value is \{"0":\{"kind":"text","value":"x"\}\}, not an array of case values or the form/);
+  // An argument of the factory of a receiver, which holds the alias in a keyed map.
+  // given among the keys of the case (GN-13f).
+  const boxed = messages((cases) => { cases.box_entries = [{ id: 'k', entries: [['a', { kind: 'map', value: {} }]], result: [['a', { kind: 'map', value: [] }]] }]; });
+  assert.equal(boxed.length, 1, boxed.join('\n'));
+  assert.match(boxed[0] ?? '', /the case k of box\.entries: entries of the case\.a is a case value of the kind map of the alias data whose value is \{\}, not an array/);
+  // An argument of an instance value and of a call of then.
+  contract.units.find((u: any) => u.id === 'counter').members.push({ id: 'counter.keep', name: ['keep'], kind: 'method', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, required: true }], returns: 'none', raises: [], wait: 'none', core: { path: 'polyspec_sample::Counter::keep', receiver: '&self' } });
+  const bad = { kind: 'object', value: 1 };
+  const called = messages((cases) => { cases.counter_add = [{ id: 'k', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.keep', args: { value: bad } }] }, amount: 3, result: 5, after: [{ call: 'counter.keep', args: { value: bad }, result: null }] }]; });
+  assert.deepEqual(called.map((m) => m.replace(/ is a case value.*/, '')), ['the case k of counter.add: value of then 0 of the receiver', 'the case k of counter.add: value of after 0']);
+});
+
 test('B2.466: CK-22 refuses another result than null of a case of a member without a result, and takes the null and the key left out', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

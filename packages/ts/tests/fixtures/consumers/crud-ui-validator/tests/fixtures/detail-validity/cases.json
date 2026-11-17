@@ -1,0 +1,875 @@
+{
+  "cases": [
+    {
+      "id": "ok_basic_detail",
+      "name": "ok-basic-detail",
+      "note": "the smallest valid detail specification with text and badge fields.",
+      "expect": "ok",
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ],
+                      [
+                        "label",
+                        {
+                          "kind": "text",
+                          "value": "Name"
+                        }
+                      ],
+                      [
+                        "format",
+                        {
+                          "kind": "text",
+                          "value": "text"
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "state",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "state"
+                        }
+                      ],
+                      [
+                        "format",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "type",
+                              {
+                                "kind": "text",
+                                "value": "badge"
+                              }
+                            ],
+                            [
+                              "map",
+                              {
+                                "kind": "map",
+                                "value": [
+                                  [
+                                    "active",
+                                    {
+                                      "kind": "text",
+                                      "value": "success"
+                                    }
+                                  ]
+                                ]
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_detail_sortable",
+      "name": "red-detail-sortable",
+      "note": "sortable is a list column key; the meta-schema rejects it on a detail field, and the four-language engine accepts it because it is not a forbidden key.",
+      "expect": "fail",
+      "reason": "additionalProperties",
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ],
+                      [
+                        "sortable",
+                        {
+                          "kind": "bool",
+                          "value": true
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "ok_compose_ref_patch_fields",
+      "name": "ok-compose-ref-patch-fields",
+      "note": "$ref and $patch on the fields map use the same composition engine as form properties; files resolve the base for the engine.",
+      "expect": "ok",
+      "options": {
+        "files": {
+          "base-fields.yml": {
+            "kind": "map",
+            "value": [
+              [
+                "properties",
+                {
+                  "kind": "map",
+                  "value": [
+                    [
+                      "name",
+                      {
+                        "kind": "map",
+                        "value": [
+                          [
+                            "field",
+                            {
+                              "kind": "text",
+                              "value": "name"
+                            }
+                          ],
+                          [
+                            "label",
+                            {
+                              "kind": "text",
+                              "value": "Name"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "$ref",
+                  {
+                    "kind": "text",
+                    "value": "base-fields.yml"
+                  }
+                ],
+                [
+                  "$patch",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "extra",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "field",
+                              {
+                                "kind": "text",
+                                "value": "extra"
+                              }
+                            ],
+                            [
+                              "label",
+                              {
+                                "kind": "text",
+                                "value": "Extra"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "root_ref_without_own_fields",
+      "name": "root-ref-without-own-fields",
+      "note": "a root $ref inherits a base detail specification exposed under a properties layer. The meta-schema reads only spec and requires fields; the four-language engine composes the base and accepts it.",
+      "expect": "fail",
+      "reason": "required",
+      "options": {
+        "files": {
+          "base-detail.yml": {
+            "kind": "map",
+            "value": [
+              [
+                "properties",
+                {
+                  "kind": "map",
+                  "value": [
+                    [
+                      "fields",
+                      {
+                        "kind": "map",
+                        "value": [
+                          [
+                            "name",
+                            {
+                              "kind": "map",
+                              "value": [
+                                [
+                                  "field",
+                                  {
+                                    "kind": "text",
+                                    "value": "name"
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "$ref",
+            {
+              "kind": "text",
+              "value": "base-detail.yml"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_forbidden_field_key",
+      "name": "red-forbidden-field-key",
+      "note": "a forbidden condition meta key used as a field key is a load failure.",
+      "expect": "fail",
+      "reason": "propertyNames",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "fields.display_switch"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "display_switch",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "x"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_show_if_on_field",
+      "name": "red-show-if-on-field",
+      "note": "show_if on a field is a forbidden meta key.",
+      "expect": "fail",
+      "reason": "additionalProperties",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "fields.name.show_if"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ],
+                      [
+                        "show_if",
+                        {
+                          "kind": "text",
+                          "value": ".admin"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_forbidden_key_in_format_options",
+      "name": "red-forbidden-key-in-format-options",
+      "note": "a forbidden meta key inside the open format options object is a load failure.",
+      "expect": "fail",
+      "reason": "propertyNames",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "fields.name.format.if"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ],
+                      [
+                        "format",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "type",
+                              {
+                                "kind": "text",
+                                "value": "badge"
+                              }
+                            ],
+                            [
+                              "if",
+                              {
+                                "kind": "text",
+                                "value": ".admin"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "patched_field_forbidden_key",
+      "name": "patched-field-forbidden-key",
+      "note": "a forbidden key introduced by $patch is rejected by the meta-schema inside the patch and by the four-language engine after composition.",
+      "expect": "fail",
+      "reason": "propertyNames",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "fields.extra.when"
+      },
+      "options": {
+        "files": {
+          "base-fields.yml": {
+            "kind": "map",
+            "value": [
+              [
+                "properties",
+                {
+                  "kind": "map",
+                  "value": [
+                    [
+                      "name",
+                      {
+                        "kind": "map",
+                        "value": [
+                          [
+                            "field",
+                            {
+                              "kind": "text",
+                              "value": "name"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "$ref",
+                  {
+                    "kind": "text",
+                    "value": "base-fields.yml"
+                  }
+                ],
+                [
+                  "$patch",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "extra",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "field",
+                              {
+                                "kind": "text",
+                                "value": "extra"
+                              }
+                            ],
+                            [
+                              "when",
+                              {
+                                "kind": "text",
+                                "value": ".admin"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_forbidden_root_key",
+      "name": "red-forbidden-root-key",
+      "note": "a forbidden meta key at the detail root is a load failure.",
+      "expect": "fail",
+      "reason": "additionalProperties",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "if"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "if",
+            {
+              "kind": "text",
+              "value": ".admin"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_unresolved_fields_ref",
+      "name": "red-unresolved-fields-ref",
+      "note": "an unresolved $ref on the fields map is a load failure.",
+      "expect": "ok",
+      "raises": {
+        "kind": "ref_file_not_found",
+        "status": null,
+        "category": "value",
+        "at": "missing.yml"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "$ref",
+                  {
+                    "kind": "text",
+                    "value": "missing.yml"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "ok_detail_actions",
+      "name": "ok-detail-actions",
+      "note": "a detail declares actions as a list does: a script string or an action object.",
+      "expect": "ok",
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "actions",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "edit",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "label",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "ko",
+                              {
+                                "kind": "text",
+                                "value": "수정"
+                              }
+                            ],
+                            [
+                              "en",
+                              {
+                                "kind": "text",
+                                "value": "Edit"
+                              }
+                            ]
+                          ]
+                        }
+                      ],
+                      [
+                        "format",
+                        {
+                          "kind": "map",
+                          "value": [
+                            [
+                              "type",
+                              {
+                                "kind": "text",
+                                "value": "link"
+                              }
+                            ],
+                            [
+                              "href",
+                              {
+                                "kind": "text",
+                                "value": "/members/7/edit"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "remove",
+                  {
+                    "kind": "text",
+                    "value": "remove()"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_unknown_detail_action_key",
+      "name": "red-unknown-detail-action-key",
+      "note": "an unknown key on a detail action fails the meta-schema; the runtime scan passes it.",
+      "expect": "fail",
+      "reason": "additionalProperties",
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "actions",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "edit",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "label",
+                        {
+                          "kind": "text",
+                          "value": "Edit"
+                        }
+                      ],
+                      [
+                        "onclick",
+                        {
+                          "kind": "text",
+                          "value": "x()"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "red_forbidden_detail_action_name",
+      "name": "red-forbidden-detail-action-name",
+      "note": "a forbidden key as a detail action name fails the meta-schema and the runtime scan.",
+      "expect": "fail",
+      "reason": "propertyNames",
+      "raises": {
+        "kind": "forbidden_meta_key",
+        "status": null,
+        "category": "value",
+        "at": "actions.show_if"
+      },
+      "spec": {
+        "kind": "map",
+        "value": [
+          [
+            "fields",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "name",
+                  {
+                    "kind": "map",
+                    "value": [
+                      [
+                        "field",
+                        {
+                          "kind": "text",
+                          "value": "name"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "actions",
+            {
+              "kind": "map",
+              "value": [
+                [
+                  "show_if",
+                  {
+                    "kind": "text",
+                    "value": "x()"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "specification_not_an_object",
+      "name": "specification-not-an-object",
+      "note": "a specification that is no object fails before the composition (CUDF-091, CUDF-032).",
+      "spec": {
+        "kind": "list",
+        "value": []
+      },
+      "expect": "fail",
+      "reason": "type",
+      "raises": {
+        "kind": "invalid_form_input",
+        "status": null,
+        "category": "value",
+        "message": "Detail specification must be an object",
+        "at": ""
+      }
+    }
+  ]
+}

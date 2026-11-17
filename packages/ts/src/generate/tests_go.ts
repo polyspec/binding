@@ -495,10 +495,12 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
     const float = floatValue(held);
     return float.startsWith('math.') ? float : `float64(${float})`;
   }
-  if (kind === 'int') {
+  if (kind === 'int' || kind === 'int64') {
     const token = typeof held === 'bigint' || (typeof held === 'number' && Number.isSafeInteger(held)) ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Unsupported(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
+    if (token === undefined) throw new Unsupported(`a case value of the kind ${kind} of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
     const wide = BigInt(token);
+    // GN-13, B2.465: an int64 is an integer of the range of i64, a Go int64.
+    if (kind === 'int64' && (wide < -(2n ** 63n) || wide >= 2n ** 63n)) throw new Unsupported(`a case value of ${where}: the int64 ${token} is outside the range of i64 (G-5)`);
     if (wide >= -(2n ** 63n) && wide < 2n ** 63n) return `int64(${token})`;
     if (wide >= 0n && wide < 2n ** 64n) return `uint64(${token})`;
     // G-5: an integer outside int64 and uint64 is a *big.Int, which package binding describes as its decimal text, the

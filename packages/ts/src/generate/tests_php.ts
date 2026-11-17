@@ -6,7 +6,7 @@ import { type Model, callsCode, categoryClass,Unsupported, machineFunction, POIS
 import { heldTests } from './tests_held.ts';
 import { foreignReaders, phpForeignRead, foreignClassNames, holdsForeign } from './value_class.ts';
 import { type PhpLayout, phpNamespace, phpCancellationName } from './php.ts';
-import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson,judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
+import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, FIXTURE_RAISED, callbackCases, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, isNumber, numberRefusesNull, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected, caseFilesOf, serviceSteps, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
@@ -859,7 +859,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
       const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       append(`
     public function testB4${name}${id}(): void
-    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${arming}
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${raisedLines('php', kase.args)}${before}${arming}
         try {
             ${call};
             self::fail('no error');
@@ -890,8 +890,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
       usesRaised = true;
       append(`
     public function testGn6ae${name}${id}(): void
-    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}
-        self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});
+    {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        $receiver = ${receiverMade.expr};`}${raisedLines('php', kase.args, true)}
         try {
             ${call};
             self::fail('no error');
@@ -1054,7 +1053,9 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
     // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const once = receiverOfCase(sample);
+    const built = receiverOfCase(sample);
+    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
+    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        $receiver = ${built.expr};`, expr: '$receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
     append(`
     public function testG7${name}CountsAndNamesItsArguments(): void

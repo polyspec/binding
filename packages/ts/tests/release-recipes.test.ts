@@ -12,7 +12,7 @@ import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
 import { generate } from '../src/generate/index.ts';
 import { NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
-import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
+import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, REHEARSAL_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -26,7 +26,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
   assert.equal(recipes.path, 'packages/release.mk');
-  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon']);
+  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon', 'rehearse-go-module']);
   for (const target of recipes.targets) assert.match(recipes.text, new RegExp(`^${target}:`, 'm'), target);
   assert.match(recipes.text, /-p polyspec-sample-go\b/);
   assert.match(recipes.text, /-p polyspec-sample-php-ext\b/);
@@ -50,7 +50,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   assert.match(component.text, /--manifest-path packages\/forms\/ts\/Cargo\.toml/);
   assert.match(component.text, /\$\(CURDIR\)\/packages\/forms\/rust\/interface\.json/);
   // Every step of a release that GN-19h names is a target of a contract with every target.
-  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS].sort(), [...recipes.targets].sort());
+  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS, ...REHEARSAL_STEPS].sort(), [...recipes.targets].sort());
 });
 
 /** A copy of the fixture repository with its recipes, a Makefile that includes them and the stand-ins of one case. */
@@ -71,7 +71,7 @@ function standIn(dir: string, name: string, body: string): void {
 const fs = require('fs');
 const path = require('path');
 const args = process.argv.slice(2);
-const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS', 'CARGO_VIA'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
+const kept = Object.fromEntries(['CARGO_TARGET_DIR', 'LIBCLANG_PATH', 'CLANG_PATH', 'PHP', 'PHP_CONFIG', 'SOURCE_DATE_EPOCH', 'MATURIN_PEP517_ARGS', 'CARGO_VIA', 'CC_x86_64_unknown_linux_musl', 'AR_x86_64_unknown_linux_musl', 'CC_aarch64_unknown_linux_musl', 'AR_aarch64_unknown_linux_musl'].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 fs.appendFileSync(process.env.CALLS, JSON.stringify({ tool: ${JSON.stringify(name)}, args, env: kept }) + '\\n');
 const option = (name) => args[args.indexOf(name) + 1];
 ${body}
@@ -101,6 +101,9 @@ if (args[0] === 'pkgid') { console.log('path+file:///repository#' + crate + '@0.
 // cargo metadata names the target directory, CARGO_TARGET_DIR or the target of the workspace.
 const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(process.cwd(), 'target');
 if (args[0] === 'metadata') { console.log(JSON.stringify({ packages: [], target_directory: targetDir })); process.exit(0); }
+// cargo tree --prefix none --format {p} prints a line <name> v<version> for each package of the build of the crate; a
+// case names the packages of its dependencies in CARGO_TREE (B2.442).
+if (args[0] === 'tree') { console.log([crate + ' v0.0.3', ...(process.env.CARGO_TREE ?? '').split(',').filter((line) => line !== '')].join('\\n')); process.exit(0); }
 const lib = crate.replaceAll('-', '_');
 const cdylib = process.platform === 'darwin' ? 'dylib' : 'so';
 const name = crate.endsWith('-go') ? 'lib' + lib + '.a' : crate.endsWith('-wasm') ? lib + '.wasm' : crate.endsWith('-php-ext') ? 'libpolyspec_sample.' + cdylib : crate.endsWith('-node') ? 'lib' + lib + '.' + cdylib : 'lib' + lib;
@@ -261,6 +264,80 @@ test('B2.367: release-go-static fails when cargo prints no native-static-libs, a
   assert.equal(existsSync(join(mac.root, 'var/release/assets/go/darwin_arm64/native-static-libs')), false);
 });
 
+// B2.442: a dependency of the Go crate that builds C (ring of rustls, in session-store) needs the C compiler and the
+// archiver of the musl target, which the crate cc reads as CC_<target> and AR_<target>. The Makefile of the repository
+// declares them before the include, as a consumer does; a variable of the command line of make would reach every
+// command of the recipe, so a case writes the declarations into the Makefile.
+const MUSL_TREE = 'rustls v0.23.46,ring v0.17.14,cc v1.11.1,shlex v1.3.0';
+function declare(box: Sandbox, ...lines: string[]): void {
+  const makefile = join(box.root, 'Makefile');
+  writeFileSync(makefile, readFileSync(makefile, 'utf8').replace('include packages/release.mk\n', `${lines.join('\n')}\ninclude packages/release.mk\n`));
+}
+const cargoCalls = (box: Sandbox, subcommand: string): ReturnType<Sandbox['calls']> => box.calls().filter((call) => call.tool === 'cargo' && call.args[0] === subcommand);
+
+test('B2.442: release-go-static passes the C compiler and the archiver of the musl target that the Makefile declares to the build of that target, and to no other command (GN-19b)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  box.env['CARGO_TREE'] = MUSL_TREE;
+  declare(box, 'CC_aarch64_unknown_linux_musl := /llvm/bin/clang', 'AR_aarch64_unknown_linux_musl := /llvm/bin/llvm-ar', 'CC_x86_64_unknown_linux_musl := /other/clang', 'AR_x86_64_unknown_linux_musl := /other/llvm-ar');
+  const run = box.make('release-go-static');
+  assert.equal(run.status, 0, run.output);
+  const target = join('var/release/target');
+  assert.deepEqual(cargoCalls(box, 'rustc').map((call) => call.env), [
+    { CARGO_TARGET_DIR: target },
+    { CARGO_TARGET_DIR: target, CC_aarch64_unknown_linux_musl: '/llvm/bin/clang', AR_aarch64_unknown_linux_musl: '/llvm/bin/llvm-ar' },
+  ]);
+  // Every other command of the recipe runs without them, and so does a recipe of another target.
+  assert.equal(box.make('release-wheel').status, 0);
+  for (const call of box.calls().filter((c) => !(c.tool === 'cargo' && c.args.includes('--target')))) {
+    assert.deepEqual(Object.keys(call.env).filter((key) => /^(CC|AR)_/.test(key)), [], `${call.tool} ${call.args.join(' ')}`);
+  }
+  // Both are declared, so the recipe does not ask cargo whether a dependency builds C.
+  assert.deepEqual(cargoCalls(box, 'tree'), []);
+  assert.equal(readFileSync(join(box.root, 'var/release/assets/go/linux_arm64_musl/native-static-libs'), 'utf8'), '-lnative_aarch64_unknown_linux_musl -lc\n');
+});
+
+test('B2.442: release-go-static names the C compiler and the archiver of the musl target that the Makefile does not declare when the crate cc is in the build of the Go crate, before a build (GN-19b)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  box.env['CARGO_TREE'] = MUSL_TREE;
+  const none = box.make('release-go-static');
+  assert.equal(none.status, 2, none.output);
+  assert.match(none.output, /release-go-static needs CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a dependency of polyspec-sample-go builds C with that crate; define them before the include of packages\/release\.mk \(GN-19b\)/);
+  assert.deepEqual(cargoCalls(box, 'tree').map((call) => call.args), [['tree', '--locked', '-p', 'polyspec-sample-go', '--target', 'x86_64-unknown-linux-musl', '-e', 'normal,build', '--prefix', 'none', '--format', '{p}']]);
+  assert.deepEqual(cargoCalls(box, 'rustc'), [], 'no library is built before the refusal');
+  assert.equal(existsSync(join(box.root, 'var/release/assets')), false);
+  // The pair of the other arch does not stand for the one of the arch of the run, and one of a pair names the other.
+  declare(box, 'CC_aarch64_unknown_linux_musl := /llvm/bin/clang', 'AR_aarch64_unknown_linux_musl := /llvm/bin/llvm-ar', 'CC_x86_64_unknown_linux_musl := /llvm/bin/clang');
+  const one = box.make('release-go-static');
+  assert.equal(one.status, 2, one.output);
+  assert.match(one.output, /release-go-static needs AR_x86_64_unknown_linux_musl: /);
+  assert.deepEqual(cargoCalls(box, 'rustc'), []);
+});
+
+test('B2.442: a build of the Go crate without the crate cc, a macOS host and a contract without the target go are not asked for a C compiler (GN-19b)', (t) => {
+  // No dependency builds C: the recipe asks cargo, builds both libraries and passes nothing.
+  const plain = sandbox(t, 'x86_64-unknown-linux-gnu');
+  plain.env['CARGO_TREE'] = 'libc v0.2.186,cc-traits v2.0.0';
+  const built = plain.make('release-go-static');
+  assert.equal(built.status, 0, built.output);
+  assert.equal(cargoCalls(plain, 'tree').length, 1);
+  assert.deepEqual(cargoCalls(plain, 'rustc').map((call) => Object.keys(call.env)), [['CARGO_TARGET_DIR'], ['CARGO_TARGET_DIR']]);
+  // A macOS host builds no library of musl.
+  const mac = sandbox(t, 'aarch64-apple-darwin');
+  mac.env['CARGO_TREE'] = MUSL_TREE;
+  const macRun = mac.make('release-go-static');
+  assert.equal(macRun.status, 0, macRun.output);
+  assert.deepEqual(cargoCalls(mac, 'tree'), []);
+  // A contract without the target go has no recipe that reads the variables.
+  const other = sandbox(t, 'x86_64-unknown-linux-gnu', (contract) => { contract.targets = contract.targets.filter((target) => target !== 'go'); });
+  other.env['CARGO_TREE'] = MUSL_TREE;
+  const text = readFileSync(join(other.root, 'packages/release.mk'), 'utf8');
+  assert.doesNotMatch(text, /unknown_linux_musl|\$\(CARGO\) tree/);
+  const assets = other.make('release-assets-platform');
+  assert.equal(assets.status, 0, assets.output);
+  assert.deepEqual(cargoCalls(other, 'tree'), []);
+  assert.match(readFileSync(join(plain.root, 'packages/release.mk'), 'utf8'), /CC_x86_64_unknown_linux_musl, AR_x86_64_unknown_linux_musl, CC_aarch64_unknown_linux_musl, AR_aarch64_unknown_linux_musl/);
+});
+
 // Defect 2: the bindgen of ext-php-rs takes the libclang and the clang of the pinned LLVM, which the recipe checks first.
 test('the PHP extension is built with the libclang and the clang of the LLVM of config/toolchain.json, each PHP minor in its own target directory (GN-19d)', (t) => {
   const box = sandbox(t, 'x86_64-unknown-linux-gnu');
@@ -389,6 +466,29 @@ test('the release check and the Go module run the commands of binding on the con
   assert.equal(box.make('release-go-module', 'TAG=v0.0.3').status, 0);
   const calls = box.calls();
   assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'go')) < callIndex(calls, 'binding', 'release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3'));
+});
+
+test('B2.479: rehearse-go-module builds the library of the host and runs the rehearsal of binding release-go-module for TAG in the folder that the contracts of the repository share, and pushes nothing (GN-19f, GN-19h)', (t) => {
+  const box = sandbox(t, 'aarch64-apple-darwin');
+  const noTag = box.make('rehearse-go-module');
+  assert.equal(noTag.status, 2);
+  assert.match(noTag.output, /rehearse-go-module: TAG is required, the tag that the release will make/);
+  writeFileSync(box.env['CALLS'] as string, '');
+  const run = box.make('rehearse-go-module', 'TAG=v0.0.3');
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  const rehearsal = callIndex(calls, 'binding', 'release-go-module');
+  assert.deepEqual(calls[rehearsal]?.args, ['release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3', '--libraries', join(box.root, 'var/release/assets/go'), '--work', join(box.root, 'var/release/target/go-module-rehearsal'), '--go', 'go', '--rehearsal']);
+  // The library of the host is built before the rehearsal reads it.
+  assert.ok(callIndex(calls, 'cargo', 'rustc') < rehearsal);
+  assert.equal(existsSync(join(box.root, 'var/release/assets/go/darwin_arm64/libpolyspec_sample_go.a')), true);
+  assert.deepEqual(calls.filter((call) => call.tool === 'git').map((call) => call.args.join(' ')).filter((line) => /\b(push|tag)\b/.test(line)), []);
+  // The folder has no name of a component, so the rehearsals of two contracts of one repository share it.
+  const component = releaseRecipes({ ...fixtureContract(), core: { ...fixtureContract().core, path: 'packages/forms/rust' } });
+  assert.match(component.text, /^rehearse-go-module-forms: \$\(BINDING_DEP\) release-go-static-forms$/m);
+  assert.match(component.text, /--work \$\(abspath \$\(RELEASE_TARGET\)\)\/go-module-rehearsal --go "\$\(GO\)" --rehearsal$/m);
+  // It is no step of a release: no recipe of a release runs it.
+  assert.doesNotMatch(releaseRecipes(fixtureContract()).text, /^release-[a-z-]+:.*rehearse-go-module/m);
 });
 
 // B2.267: the wheel that release-wheel builds on each platform is one that release-platform-assets takes, a manylinux
@@ -748,6 +848,30 @@ test('B2.471: binding check --release refuses a Go module whose module path name
   assert.match(refused.stderr, new RegExp(`${join(box.root, 'packages/rust/interface.json')}: CK-102 release-go-module: github\\.com/polyspec/sample/go: the Go module is at packages/go of its repository, not at go, the directory of its module path \\(GN-15\\)\\n`));
   const other = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { (contract.packages['go'] as { module: string }).module = 'example.org/sample/packages/go'; });
   assert.match(releaseCheck(other.root).stderr, /interface\.json: CK-102 release-go-module: example\.org\/sample\/packages\/go: the Go module is not github\.com\/<owner>\/<repository>\[\/<directory>\]/);
+});
+
+test('B2.473: binding check --release refuses a go.mod with a requirement that no file of the released form imports, before a tag (CK-102, GN-15g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const goMod = join(box.root, 'packages/go/go.mod');
+  // The go.mod that scaffold writes has no finding: the generated files are judged as binding writes them, and the
+  // work tree of the case holds none.
+  assert.doesNotMatch(releaseCheck(box.root).stderr, /CK-102 release-go-module/);
+  writeFileSync(goMod, `${readFileSync(goMod, 'utf8')}\nrequire (\n\ta.example/assert v1.0.0\n\ta.example/nothing v0.1.0\n\ta.example/old v0.2.0 // indirect\n)\n`);
+  mkdirSync(join(box.root, 'packages/go/tests/probe'), { recursive: true });
+  writeFileSync(join(box.root, 'packages/go/tests/cases_test.go'), 'package tests\n\nimport "a.example/assert"\n');
+  writeFileSync(join(box.root, 'packages/go/tests/probe/main.go'), 'package main\n\nimport _ "a.example/assert/deep"\n\nfunc main() {}\n');
+  const refused = releaseCheck(box.root);
+  assert.equal(refused.status, 1);
+  const lines = refused.stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module'));
+  assert.deepEqual(lines, [
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/assert v1.0.0, and only files that the released form leaves out import it (tests/cases_test.go, tests/probe/main.go): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/nothing v0.1.0, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/old v0.2.0 with \`// indirect\`, which is not judged: no file of the module imports the module of such a line`,
+  ]);
+  // A hand-written package of the module that imports it makes it a requirement of the released form.
+  mkdirSync(join(box.root, 'packages/go/host'));
+  writeFileSync(join(box.root, 'packages/go/host/host.go'), 'package host\n\nimport (\n\t_ "a.example/assert"\n\t_ "a.example/nothing/x"\n)\n');
+  assert.deepEqual(releaseCheck(box.root).stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module') && !line.includes('indirect')), []);
 });
 
 test('B2.471: a repository without the target is not asked for the setting of that target (CK-102)', (t) => {

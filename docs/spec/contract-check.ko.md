@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: acd6e5c1664da090c310f04d2d80be1f26e3c223e770dc70c62de027c117b12c -->
+<!-- source-sha256: 8a9a743ba08ef6e0233a5a00ab56fd30c53c2de6466b419d84bcc03fa243011c -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -210,7 +210,12 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   script로 읽는다. 그 script는 `"llvm": {` 줄 아래 `"version": "<major>"` 줄의 값을 가져오므로 한 줄로 쓴 파일은 아무것도
   고정하지 않는다. target `go`: `packages.go`의 module path, 곧
   `github.com/<owner>/<repository>/<Go module의 디렉터리>`(generator GN-15, GN-19f). `binding release-go-module`이 다른 path를
-  거부할 때 쓰는 함수로 읽는다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
+  거부할 때 쓰는 함수로 읽는다. 그리고 Go module의 `go.mod`의 require. 각각을 release 형태가 싣는 Go 파일이
+  import하며(generator GN-15g, B2.473), `binding release-go-module`의 함수가 checkout의 손으로 쓴 Go 파일과 `binding
+  generate`가 쓰는 그대로의 생성 파일로 판정한다. 검사가 생성 파일을 메모리에서 생성하므로 work tree에는 하나도 필요
+  없다. 검사는 그 형태가 빼는 파일만 import하는 require를 그 파일들과 함께, 어떤 Go 파일도 import하지 않는 require를
+  `go.mod`의 경로와 `release-go-module`과 함께 보고한다. `// indirect` 줄은 출력에 쓰되 그것으로 실패하지 않고, Go
+  바인딩이 생성되지 않으면 생성기의 거부와 함께 실패한다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
   모두(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
   이유: session-store의 release는 `binding check --release`를 통과한 뒤 tag 뒤의 `release-platform-assets`에서
   `phpExtension.minors`가 없는 `config/toolchain.json` 때문에 멈췄을 것이고, 예행연습이 그것을 찾았다. 검사가 CI의 빌드 recipe의
@@ -398,6 +403,16 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   결과 키(그런 case는 생략할 수 있다), `result`나 `raises`를 적는 `after`의 호출, function fixture의 step, callback
   fixture의 row에서 그것은 `null`이고, 거기의 다른 값은 보고된다. 이유: 생성기는 이 자리마다 그것을 값 없음으로
   시험하므로, 거기에 값을 적은 case는 실패하는 시험을 받는데, check가 그것을 먼저 말한다.
+  계약의 값 alias의 case 값 `{"kind": <kind>, "value": ...}`(생성기 GN-13)은 member의 case가 그것을 주는 모든 자리에서
+  읽는다(B2.465). 곧 case의 인자와 case가 적는 모든 호출(instance value, `then`의 호출, function fixture의 step,
+  `after`의 호출)의 인자, 결과, 그리고 어느 깊이든 list, map, tuple, optional의 항목과 record나 variant의 field, 또 그 값
+  안의 각 값에서 읽는다. 보고되는 것: 생성기가 꼴을 주지 않는 kind, 곧 `null`, `bool`, `int`, `int64`, `float`, `text`,
+  `bytes`, `list`, `map`, `object`, `reference`가 아닌 kind. `value`가 배열이 아니고 repeat 꼴도 아닌 `list`. `value`가
+  `[key, value]` 쌍의 배열이 아니고 repeat 꼴도 아닌 `map`이나 `object`(`id`로 다시 가리키는 `object`는 `value`가
+  없다). `{"kind": ...}` object가 아닌 값, 이를테면 `{"host": <sort>}`나 binding이 거부하라고 case가 주는 다른 JSON kind의
+  값은 여기서 판정하지 않는다. 이유: 생성기는 그런 값에 "is not generated yet"으로 실패하는 시험으로 답하는데 check는
+  아무 말도 하지 않아서, orm의 12 case의 19곳이 map을 JSON object로 주고(JSON은 그 순서를 지키지 않는다) check를
+  통과했다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
   만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과

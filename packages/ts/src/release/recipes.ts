@@ -29,6 +29,9 @@ export const ASSET_JOBS = ['release-assets-platform', 'release-assets-php', 'rel
 // the platform package is not installed (B2.407).
 export const CHECKOUT_STEPS = ['checkout-node-addon'] as const;
 
+// GN-19f, B2.479: the recipe that rehearses a step of a release before the tag, with no commit and no tag.
+export const REHEARSAL_STEPS = ['rehearse-go-module'] as const;
+
 export interface Recipes {
   // The path of the file of recipes from the root of the repository, beside the packages of the contract.
   path: string;
@@ -51,6 +54,11 @@ const PLATFORMS = [
   { triple: 'aarch64-unknown-linux-gnu', go: 'linux_arm64', pie: 'arm64-linux-glibc', musl: 'aarch64-unknown-linux-musl', wheel: '*manylinux*_aarch64.whl' },
   { triple: 'aarch64-apple-darwin', go: 'darwin_arm64', pie: 'arm64-darwin-bsdlibc', musl: '', wheel: '*macosx*_arm64.whl' },
 ].map((p) => ({ ...p, platform: platformOf(p.triple) }));
+// GN-19b, B2.442: the musl targets of the release, and the part of the names of the variables of the C compiler and the
+// archiver of a target, CC_<part> and AR_<part>: the target with its dashes as underscores, the second of the names
+// that the crate cc reads for a target and the one that make and the shell can hold.
+const MUSL_TARGETS = PLATFORMS.map((p) => p.musl).filter((musl) => musl !== '');
+const muslEnv = (target: string): string => target.replaceAll('-', '_');
 
 // GN-19d: the script of sed by which the recipes read the major release of LLVM from config/toolchain.json: the value of
 // a line "version": "<major>" between a line "llvm": { and the next }. It reads the lines of the file, so a file on one
@@ -155,7 +163,7 @@ export function releaseRecipes(contract: Contract): Recipes {
     `${comment.split('\n').map((line) => `# ${line}`).join('\n')}\n.PHONY: ${name(step)}\n${name(step)}:${prerequisites === '' ? '' : ` ${prerequisites}`}`;
   const sections: string[] = [];
   const defined: string[] = [];
-  const add = (step: (typeof RELEASE_STEPS)[number] | (typeof ASSET_JOBS)[number] | (typeof CHECKOUT_STEPS)[number], text: string): void => {
+  const add = (step: (typeof RELEASE_STEPS)[number] | (typeof ASSET_JOBS)[number] | (typeof CHECKOUT_STEPS)[number] | (typeof REHEARSAL_STEPS)[number], text: string): void => {
     defined.push(name(step));
     sections.push(text);
   };
@@ -169,11 +177,29 @@ pinned toolchain, never the strip of PATH, and the stripped copy enters the asse
 $(CARGO) rustc builds each library with the print of rustc, and the native-static-libs that it printed enter the file
 native-static-libs beside the library, which binding release-go-module writes into the link file of the platform (GN-15k).
 A library that they name and that the Rust toolchain ships for the target in its self-contained directory, which no C
-compiler of the platform brings (libunwind.a of musl), is copied from there beside the library (GN-15k).`)}
+compiler of the platform brings (libunwind.a of musl), is copied from there beside the library (GN-15k).
+The build of the musl target, and no other, takes the C compiler and the archiver of that target that the Makefile
+declares, CC_<target> and AR_<target> with the dashes of the target as underscores, the names that the crate cc reads
+(GN-19b). When one of the two is empty and $(CARGO) tree names the crate cc in the build of the Go crate for the musl
+target, a dependency builds C there, and the recipe fails before a build and names what is missing (B2.442).`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
 ${generate('go')}
 	@$(call binding_release_host,${name('release-go-static')}); \\
+	case "$$musl" in \\
+${MUSL_TARGETS.map((musl) => `	${musl}) musl_env=${muslEnv(musl)}; musl_cc="$(CC_${muslEnv(musl)})"; musl_ar="$(AR_${muslEnv(musl)})" ;; \\`).join('\n')}
+	*) musl_env=; musl_cc=; musl_ar= ;; \\
+	esac; \\
+	if [ -n "$$musl" ] && { [ -z "$$musl_cc" ] || [ -z "$$musl_ar" ]; }; then \\
+	closure=$$($(CARGO) tree --locked -p ${crate('go')} --target "$$musl" -e normal,build --prefix none --format '{p}') || exit 1; \\
+	if printf '%s\\n' "$$closure" | grep -q '^cc v'; then \\
+	missing=; \\
+	[ -n "$$musl_cc" ] || missing="$$missing CC_$$musl_env"; \\
+	[ -n "$$musl_ar" ] || missing="$$missing AR_$$musl_env"; \\
+	echo "${name('release-go-static')} needs$$missing: the C compiler CC_$$musl_env and the archiver AR_$$musl_env of the target $$musl, which the crate cc reads, because a dependency of ${crate('go')} builds C with that crate; define them before the include of ${path} (GN-19b)" >&2; \\
+	exit 2; \\
+	fi; \\
+	fi; \\
 	set -ex; \\
 	publish() { \\
 	copy=$(RELEASE_TARGET)/stripped/$$2; \\
@@ -189,7 +215,7 @@ ${generate('go')}
 	mkdir -p $(RELEASE_TARGET); \\
 	log=$(RELEASE_TARGET)/native-static-libs-$$2.log; \\
 	status=0; \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) rustc $(CARGOFLAGS) --release --locked --color never -p ${crate('go')} $$3 --lib --crate-type staticlib -- --print native-static-libs 2> "$$log" || status=$$?; \\
+	( [ -z "$$5" ] || export "CC_$$7=$$5"; [ -z "$$6" ] || export "AR_$$7=$$6"; CARGO_TARGET_DIR=$(RELEASE_TARGET) $(CARGO) rustc $(CARGOFLAGS) --release --locked --color never -p ${crate('go')} $$3 --lib --crate-type staticlib -- --print native-static-libs ) 2> "$$log" || status=$$?; \\
 	cat "$$log" >&2; \\
 	test "$$status" = 0 || exit "$$status"; \\
 	libs=$$(sed -n 's/^note: native-static-libs: *//p' "$$log"); \\
@@ -203,7 +229,7 @@ ${generate('go')}
 	}; \\
 	build $(RELEASE_TARGET)/release "$$go" '' "$$host"; \\
 	if [ -n "$$musl" ]; then \\
-	build "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl "--target $$musl" "$$musl"; \\
+	build "$(RELEASE_TARGET)/$$musl/release" "$$go"_musl "--target $$musl" "$$musl" "$$musl_cc" "$$musl_ar" "$$musl_env"; \\
 	fi
 `);
   }
@@ -353,6 +379,21 @@ ${generate('go')}
 `);
   }
 
+  // rehearse-go-module is no step of a release, so the file names it after the steps and the recipes of the checkout.
+  // It requires no variable itself: its prerequisite release-go-static requires those that it reads.
+  const rehearse = (): void => {
+    const step = name('rehearse-go-module');
+    add('rehearse-go-module', `${head('rehearse-go-module', `rehearse-go-module rehearses release-go-module before the tag of a release (GN-19f, B2.479): for TAG, the tag that the release
+will make, binding release-go-module --rehearsal runs the checks and the proof of the consumer on HEAD, with the library of
+each platform that RELEASE_ASSETS/go holds, of which the one of the host, which release-go-static builds first, is required.
+It makes no commit and no tag and pushes nothing, and its last lines name what it did not see, so it is no release. The
+contracts of one repository share its folder: the rehearsal of a Go module that requires another one of the repository
+reads the rehearsal of that module there, so the required module is rehearsed first, and never two at once.`, `$(BINDING_DEP) ${name('release-go-static')}`)}
+	@test -n "$$TAG" || { echo '${step}: TAG is required, the tag that the release will make, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
+	$(BINDING_RUN) release-go-module --contract ${contractPath} --tag "$$TAG" --libraries $(abspath $(RELEASE_ASSETS))/go --work $(abspath $(RELEASE_TARGET))/go-module-rehearsal --go "$(GO)" --rehearsal
+`);
+  };
+
   // The text of release-binding-check is written after the other release recipes (bindingCheck), which it reads.
   const bindingCheckAt = sections.length;
   add('release-binding-check', '');
@@ -495,13 +536,17 @@ ${generate('node')}
 	mv "${entryDir}/.${file}.part" "${entryDir}/${file}"
 `);
   }
+  if (has('go')) rehearse();
 
   const header = `# Generated by binding release-recipes from ${contract.core.path}/interface.json; do not edit, and do not track it.
 # The release recipes of the binding (binding GN-19h): the Makefile of the repository includes this file after it defines
 # BINDING_RUN, the command that starts binding, CARGO, the cargo command of the repository, and CARGOFLAGS, the arguments
 # of its builds (binding GN-1d), NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target that installs
 # binding, if it has one; it runs binding release-recipes to write the file again. It may define GO, the go command that
-# binding starts (binding GN-15l, GN-19f), which is the go of PATH when it does not.
+# binding starts (binding GN-15l, GN-19f), which is the go of PATH when it does not.${has('go') ? `
+# A repository whose Go crate has a dependency that builds C defines the C compiler and the archiver of each musl target,
+# ${MUSL_TARGETS.flatMap((musl) => [`CC_${muslEnv(musl)}`, `AR_${muslEnv(musl)}`]).join(', ')}
+# (binding GN-19b), which release-go-static passes to the build of that target alone.` : ''}
 `;
   const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };

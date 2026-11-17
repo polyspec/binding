@@ -1,0 +1,373 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "http-cookie",
+  "core": {
+    "crate": "polyspec-http-cookie",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/http-cookie",
+      "namespace": "Polyspec\\HttpCookie"
+    },
+    "python": {
+      "package": "polyspec-http-cookie",
+      "module": "polyspec.http_cookie"
+    },
+    "node": {
+      "package": "@polyspec/http-cookie",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/http-cookie/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieValueError",
+        "python": "HTTPCookieValueError",
+        "node": "HttpCookieValueError",
+        "wasm": "HttpCookieValueError"
+      },
+      "type": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieTypeError",
+        "python": "HTTPCookieTypeError",
+        "node": "HttpCookieTypeError",
+        "wasm": "HttpCookieTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieIoError",
+        "python": "HTTPCookieIoError",
+        "node": "HttpCookieIoError",
+        "wasm": "HttpCookieIoError"
+      },
+      "store": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieStoreError",
+        "python": "HTTPCookieStoreError",
+        "node": "HttpCookieStoreError",
+        "wasm": "HttpCookieStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieBusyError",
+        "python": "HTTPCookieBusyError",
+        "node": "HttpCookieBusyError",
+        "wasm": "HttpCookieBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\HttpCookie\\HttpCookieInternalError",
+        "python": "HTTPCookieInternalError",
+        "node": "HttpCookieInternalError",
+        "wasm": "HttpCookieInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_http_cookie::Error::InvalidName",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_http_cookie::Error::InvalidCookiePath",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_http_cookie::Error::TooLarge",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_http_cookie::Error::PrefixNotMet",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_http_cookie::Error::SameSiteNoneNotSecure",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "cookies",
+      "name": [
+        "cookies"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "parse_cookie",
+          "name": [
+            "parse",
+            "cookie"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lines"
+              ],
+              "type": {
+                "list": "latin1"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "tuple": [
+                "text",
+                "text"
+              ]
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_http_cookie::parse_cookie"
+          }
+        },
+        {
+          "id": "set_cookie",
+          "name": [
+            "set",
+            "cookie"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "attributes"
+              ],
+              "type": {
+                "unit": "attributes"
+              },
+              "required": true
+            }
+          ],
+          "returns": "latin1",
+          "raises": [
+            "polyspec_http_cookie::Error::InvalidName",
+            "polyspec_http_cookie::Error::InvalidCookiePath",
+            "polyspec_http_cookie::Error::TooLarge",
+            "polyspec_http_cookie::Error::PrefixNotMet",
+            "polyspec_http_cookie::Error::SameSiteNoneNotSecure"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_http_cookie::set_cookie"
+          }
+        },
+        {
+          "id": "max_name_and_value",
+          "name": [
+            "max",
+            "name",
+            "and",
+            "value"
+          ],
+          "kind": "constant",
+          "visibility": "public",
+          "type": "uint",
+          "value": 4096,
+          "core": "polyspec_http_cookie::MAX_NAME_AND_VALUE"
+        },
+        {
+          "id": "max_path",
+          "name": [
+            "max",
+            "path"
+          ],
+          "kind": "constant",
+          "visibility": "public",
+          "type": "uint",
+          "value": 1024,
+          "core": "polyspec_http_cookie::MAX_PATH"
+        }
+      ]
+    },
+    {
+      "id": "attributes",
+      "name": [
+        "attributes"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_http_cookie::Attributes",
+      "fields": [
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "max",
+            "age"
+          ],
+          "type": {
+            "optional": "uint"
+          },
+          "required": true,
+          "reason": "CK-6.3"
+        },
+        {
+          "name": [
+            "secure"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "http",
+            "only"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "same",
+            "site"
+          ],
+          "type": {
+            "optional": {
+              "unit": "same_site"
+            }
+          },
+          "required": true,
+          "reason": "CK-6.3"
+        }
+      ]
+    },
+    {
+      "id": "same_site",
+      "name": [
+        "same",
+        "site"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_http_cookie::SameSite",
+      "variants": [
+        {
+          "name": [
+            "strict"
+          ],
+          "value": "Strict"
+        },
+        {
+          "name": [
+            "lax"
+          ],
+          "value": "Lax"
+        },
+        {
+          "name": [
+            "none"
+          ],
+          "value": "None"
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "id": "change-names",
+      "rule": "N-1",
+      "reason": "plan N-1, N-2: a repository is named after the one thing it handles, in the singular, and a library of one part of an HTTP message has the prefix http-, so the repository is http-cookie; design P-1 and E-2 give its package, module and error class names: Composer polyspec/http-cookie, PHP Polyspec\\HttpCookie, PyPI polyspec-http-cookie, Python polyspec.http_cookie, npm @polyspec/http-cookie, PHP extension polyspec_http_cookie, the error classes HttpCookie<Category>Error in PHP and Node and HTTPCookie<Category>Error in Python (N-2: an acronym word is one capital word in PHP and Node and all capitals in Python)",
+      "symbol": "polyspec/http-cookies, Polyspec\\HttpCookies, polyspec-http-cookies, polyspec.http_cookies, @polyspec/http-cookies",
+      "from": {
+        "php": "Composer polyspec/http-cookies, namespace Polyspec\\HttpCookies, extension polyspec_http_cookies, Cookies<Category>Error",
+        "python": "PyPI polyspec-http-cookies, module polyspec.http_cookies, Cookies<Category>Error",
+        "node": "npm @polyspec/http-cookies, Cookies<Category>Error"
+      },
+      "to": "cookies"
+    }
+  ],
+  "cases": [
+    {
+      "member": "parse_cookie",
+      "file": "contracts/cookies.json",
+      "group": "parse",
+      "result": "cookies",
+      "reads": ["rules"]
+    },
+    {
+      "member": "set_cookie",
+      "file": "contracts/cookies.json",
+      "group": "set_cookie",
+      "result": "header",
+      "reads": ["rules"]
+    }
+  ]
+}

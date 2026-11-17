@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { absentInits, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
+import { absentInits, armedEntry, keptFunctionType, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -570,8 +570,10 @@ ${arms.join('\n')}
 // T-5: the name of the module's export of a member of a class, which the ES module calls from the class it defines.
 const exportName = (fn: Fn): string => {
   const cls = langName('wasm', fn.unit.name, 'class');
-  if (fn.kind === 'constructor') return `__${cls}_new`;
-  if (fn.kind === 'iterate') return `__${cls}_iterate`;
+  // GN-6b, B2.478: the export of a member starts with the name of its class, a capital letter, so no member has the
+  // export of the construction or of the iteration, which start as __free_<Class> does (GN-4c).
+  if (fn.kind === 'constructor') return `__new_${cls}`;
+  if (fn.kind === 'iterate') return `__iterate_${cls}`;
   return `__${cls}_${memberName('wasm', fn)}`;
 };
 
@@ -584,7 +586,7 @@ const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()
 // is a function of the module class_<unit> of its class (objectRust), so the class and the member are read apart; the
 // prefix keeps a member named as a helper, such as guard, from hiding the helper in that module.
 const rustExport = (fn: Fn): string =>
-  `${fn.kind === 'function' ? 'function' : 'member'}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
+  fn.kind === 'constructor' ? 'construct' : `${fn.kind === 'function' ? 'function' : 'member'}_${rustField(fn.member.name).replace(/^r#/, '')}`;
 
 // GN-6h: whether the class of a member holds its value in a lock.
 const locked = (model: Model, fn: Fn): boolean => model.objects.find((o) => o.unit === fn.unit)?.lock !== undefined;
@@ -691,7 +693,7 @@ function functionRust(model: Model, fn: Fn): string {
     const given = convertOut(model, fn.returns, 'result');
     const reads = /\bresult\b/.test(given);
     const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${failed})?;\n                    ` : '';
-    const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())');
+    const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())', true);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
             match (awaiting, outcome_of(&settled)?) {
@@ -707,7 +709,7 @@ function functionRust(model: Model, fn: Fn): string {
                     Ok((1, passed_out(value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
-        let given = Rc::new(RefCell::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
+        let given = Rc::new(RefCell::new(None));${armedEntry(model, fn) === '' ? '' : `\n        ${armedEntry(model, fn)}`}${passes(fn) ? '\n        let mut awaiting = false;' : ''}
         Ok(JsValue::from(Driven::new(move |${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.borrow_mut().take();
             if let Some(output) = output {
@@ -912,7 +914,7 @@ ${members.replace(/\n(?=.)/g, '\n    ')}}
 `}
 ${object.constructible ? '' : `/// GN-6b: ${jsClass} has no public constructor (U-1 constructible), so a direct construction, which the constructor of
 /// the ES module hands here, is kind direct_construction.
-#[wasm_bindgen(js_name = ${rustString(`__${jsClass}_new`)})]
+#[wasm_bindgen(js_name = ${rustString(`__new_${jsClass}`)})]
 pub fn new_${name}() -> Result<(), JsValue> {
     Err(throw(binding_error(BindingError::DirectConstruction { class: String::from(${rustString(jsClass)}) })))
 }
@@ -1687,7 +1689,7 @@ ${checked(fn, `${name}()`, name, (call) => `return ${call}`)}
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
     const construct = constructor === undefined
       // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is refused by the module.
-      ? `    if (args[0] !== MAKE) enter(${internal}, () => glue.__${cls}_new());
+      ? `    if (args[0] !== MAKE) enter(${internal}, () => glue.__new_${cls}());
     this.#handle = args[1];`
       : `    if (args[0] === MAKE) {
       this.#handle = args[1];

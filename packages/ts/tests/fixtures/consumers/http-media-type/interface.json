@@ -1,0 +1,98 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "http-media-type",
+  "core": {"crate": "polyspec-http-media-type", "path": "packages/rust"},
+  "targets": ["php", "python", "node", "go", "wasm"],
+  "packages": {
+    "php": {"package": "polyspec/http-media-type", "namespace": "Polyspec\\HttpMediaType"},
+    "python": {"package": "polyspec-http-media-type", "module": "polyspec.http_media_type"},
+    "node": {"package": "@polyspec/http-media-type", "entries": {".": {"conditions": {"node": "napi", "browser": "wasm"}, "formats": ["import", "require"]}}},
+    "go": {"module": "github.com/polyspec/http-media-type/packages/go"}
+  },
+  "naming": {"exceptions": []},
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeValueError", "python": "HTTPMediaTypeValueError", "node": "HttpMediaTypeValueError", "wasm": "HttpMediaTypeValueError"},
+      "type": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeTypeError", "python": "HTTPMediaTypeTypeError", "node": "HttpMediaTypeTypeError", "wasm": "HttpMediaTypeTypeError"},
+      "io": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeIoError", "python": "HTTPMediaTypeIoError", "node": "HttpMediaTypeIoError", "wasm": "HttpMediaTypeIoError"},
+      "store": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeStoreError", "python": "HTTPMediaTypeStoreError", "node": "HttpMediaTypeStoreError", "wasm": "HttpMediaTypeStoreError"},
+      "busy": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeBusyError", "python": "HTTPMediaTypeBusyError", "node": "HttpMediaTypeBusyError", "wasm": "HttpMediaTypeBusyError"},
+      "internal": {"php": "Polyspec\\HttpMediaType\\HttpMediaTypeInternalError", "python": "HTTPMediaTypeInternalError", "node": "HttpMediaTypeInternalError", "wasm": "HttpMediaTypeInternalError"}
+    },
+    "fixed": [
+      {"lang": "php", "class": "ArgumentCountError"},
+      {"lang": "php", "class": "Error"},
+      {"lang": "python", "class": "TypeError"},
+      {"lang": "node", "class": "TypeError"},
+      {"lang": "wasm", "class": "TypeError"}
+    ],
+    "kinds": [
+      {"variant": "polyspec_http_media_type::Error::MalformedMediaType", "category": "value"},
+      {"variant": "polyspec_http_media_type::Error::InvalidMediaType", "category": "value"}
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "parameter", "name": ["parameter"], "module": "media_type", "kind": "record", "visibility": "public",
+      "origin": "generated", "core_type": "polyspec_http_media_type::Parameter",
+      "fields": [
+        {"name": ["name"], "type": "text", "required": true},
+        {"name": ["value"], "type": "latin1", "required": true}
+      ]
+    },
+    {
+      "id": "media_type", "name": ["media", "type"], "module": "media_type", "kind": "record", "visibility": "public",
+      "origin": "generated", "core_type": "polyspec_http_media_type::MediaType",
+      "fields": [
+        {"name": ["type"], "type": "text", "required": true},
+        {"name": ["subtype"], "type": "text", "required": true},
+        {"name": ["parameters"], "type": {"list": {"unit": "parameter"}}, "required": true}
+      ]
+    },
+    {
+      "id": "media_types", "name": ["media", "types"], "module": "media_type", "kind": "functions",
+      "visibility": "public", "origin": "generated",
+      "members": [
+        {
+          "id": "media_types.parse", "name": ["parse"], "kind": "function", "visibility": "public",
+          "parameters": [{"name": ["value"], "type": "latin1", "required": true}],
+          "returns": {"unit": "media_type"},
+          "raises": ["polyspec_http_media_type::Error::MalformedMediaType"],
+          "wait": "none",
+          "core": "polyspec_http_media_type::parse"
+        },
+        {
+          "id": "media_types.format", "name": ["format"], "kind": "function", "visibility": "public",
+          "parameters": [{"name": ["media", "type"], "type": {"unit": "media_type"}, "required": true}],
+          "returns": "latin1",
+          "raises": ["polyspec_http_media_type::Error::InvalidMediaType"],
+          "wait": "none",
+          "core": "polyspec_http_media_type::format"
+        },
+        {
+          "id": "media_types.same_value", "name": ["same", "value"], "kind": "function", "visibility": "public",
+          "parameters": [
+            {"name": ["name"], "type": "text", "required": true},
+            {"name": ["left"], "type": "latin1", "required": true},
+            {"name": ["right"], "type": "latin1", "required": true}
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_http_media_type::same_value"
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {"id": "error-class-names", "rule": "E-2", "reason": "E-2, plan N-1: the <Library> of a category class is the PascalCase of the repository name http-media-type, in the class form of each language (design N-2: an acronym word is one capital word in PHP and Node and all capitals in Python), so the classes are HttpMediaType<Category>Error in PHP and Node and HTTPMediaType<Category>Error in Python", "symbol": "MediaType<Category>Error", "from": {"php": "Polyspec\\HttpMediaType\\MediaTypeValueError and the other MediaType<Category>Error", "python": "MediaTypeValueError and the other MediaType<Category>Error", "node": "MediaTypeValueError and the other MediaType<Category>Error"}, "to": null}
+  ],
+  "cases": [
+    {"member": "media_types.parse", "file": "contracts/media-type.json", "group": "parse", "result": "media_type", "reads": ["rules"]},
+    {"member": "media_types.format", "file": "contracts/media-type.json", "group": "format", "result": "text", "reads": ["rules"]},
+    {"member": "media_types.same_value", "file": "contracts/media-type.json", "group": "sameValue", "result": "same", "reads": ["rules"]}
+  ]
+}

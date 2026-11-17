@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f3e54875dbcf3e1440bf3e65d4dfb55866bff076cd74bde873130c30a697fbca -->
+<!-- source-sha256: 32f3521fd71696c96f7981bbb31022d0e7530c9bfdff89b62c499b0feac34f5e -->
 # 생성기
 
 [English](generator.md)
@@ -177,6 +177,32 @@
   Cargo를 어디서 어떻게 시작하느냐에 따라 다르게 링크된다. build script는 host에서 돌므로 대상의 OS는 `cfg!(target_os)`가
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
+- **GN-3j** 빌드의 PHP는 PHP 바인딩 crate의 입력이고, ext-php-rs가 다른 PHP로 빌드된 빌드는 실패한다(B2.470). 그 crate의
+  `build.rs`는 ext-php-rs의 build script가 찾는 대로 `php`와 `php-config`를 찾고(`PHP`나 `PHP_CONFIG`가 이름하는 경로, 없으면
+  `PATH`에서 그 이름의 첫 파일), 두 파일과 자신에 `cargo:rerun-if-changed`를, `PHP`, `PHP_CONFIG`, `PATH`,
+  `POLYSPEC_PHP_API`에 `cargo:rerun-if-env-changed`를 내고, `php -n -i`의 `PHP Extension`(module API), `Thread Safety`,
+  `Debug Build` 줄을 읽어 `OUT_DIR`에 `php_build.rs`를 쓴다. 그 파일은 `ext_php_rs::ffi::ZEND_MODULE_API_NO`,
+  `ext_php_rs::PHP_ZTS`, `ext_php_rs::PHP_DEBUG`가 그 세 값이라는 상수 단언이다. 그 crate의 진입 파일 `src/lib.rs`가 그
+  파일을 include한다. 값이 다르면 그 crate의 컴파일이 실패하고, 문장은 그 PHP와 그 module API, 그리고 빌드의 profile과
+  target을 붙인 명령 `cargo clean -p ext-php-rs`를 이름한다. 그 명령은 한 profile의 출력만 지우기 때문이다.
+  `POLYSPEC_PHP_API`는 값을 읽지 않는다. recipe가 자기 PHP를 이름하는 아무 글이나 준다. 예: `php -n -r 'echo PHP_VERSION_ID,
+  PHP_ZTS, PHP_DEBUG;'`의 출력. 이유: ext-php-rs 0.16.4의 build script는 `PHP`, `PHP_CONFIG`, `PATH`와 자기 변수 둘에만
+  `rerun-if-env-changed`를 내고 PHP를 경로로 읽으므로, 한 경로 뒤의 PHP가 바뀌면 Cargo는 앞 PHP의 바인딩을 그대로 둔다.
+  hyper는 도구의 `php` 뒤가 8.5일 때 빌드하고 같은 경로 뒤가 8.4가 된 뒤 다시 빌드했고, PHP는 `Module compiled with module
+  API=20250925`, `PHP compiled with module API=20240924`로 그 확장을 거부했다. 어떤 crate도 Cargo가 의존 crate를 다시
+  빌드하게 할 수 없으므로 이 crate는 ext-php-rs를 새 PHP로 빌드할 수 없다. 로드 전에 명령과 함께 실패할 수는 있다. Cargo는
+  파일을 시각으로, 변수를 값으로 비교한다. checkout 도구의 `php`처럼 PHP가 바뀔 때 다시 쓰이는 wrapper나 다시 설치된
+  실행 파일은 스크립트를 다시 돌리고, 마지막 빌드보다 오래된 파일로 옮겨 간 링크는 돌리지 않는다. 이 경우는 recipe의
+  변수가 맡는다. 매 빌드마다 도는 스크립트(없는 파일의 `rerun-if-changed`)는 변수 없이 모든 변경을 보지만, Cargo는
+  build script가 돌 때마다 그 crate를 다시 컴파일하므로 매 빌드가 확장을 컴파일하게 된다. 손으로 하는 `cargo build`의
+  입력은 그 두 파일과 ext-php-rs의 세 변수다. release recipe는 PHP minor와 빌드마다 자기 target 디렉터리에서 빌드하므로
+  (GN-19d) 낡은 ext-php-rs를 만나지 않는다. 이 확인이 잡지 못하는 경우가 하나 있다. wrapper와 세 변수는 그대로이고
+  wrapper 뒤의 링크만 마지막 빌드보다 오래된 파일로 옮겨 간 경우로, Cargo의 시각 비교는 이것을 바뀌지 않은 것으로
+  읽는다. `POLYSPEC_PHP_API`를 주는 recipe는 이 경우를 잡는다. 검증하지 않은 것: 실제 ext-php-rs로 PHP가 한 minor에서
+  다른 minor로 바뀌는 실행. 스크립트는 ext-php-rs와 PHP의 대역을 둔 crate에서 실행했고, 단언은 끝에서 끝까지 확인의
+  lint에서 실제 ext-php-rs의 상수에 대해 컴파일된다. 끝에서 끝까지 확인에는 이 단계가 없다. 그런 단계에는 한 job에서 한
+  경로 뒤에 놓인 PHP minor 둘이 필요하고(`PHP`의 값이 바뀌면 ext-php-rs의 build script가 스스로 다시 돈다), ext-php-rs를 한
+  번 더 빌드해야 한다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
   manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 unit과 types에서 이름하는 라이브러리,
   `errors.kinds`의 행이 그 오류를 그대로 전달하는 라이브러리(그 행의 `library`, E-1b (a)), 계약이 다른 라이브러리의 callback
@@ -198,7 +224,11 @@
   recognize하는 callback unit은 그 오류 class와 category class를 읽는다(GN-6s). record나 값 class의 소유자는 확장 옆에
   Composer package도 `require`에 가진다. 다른 라이브러리의 값 alias는 소유자의 코어가 그 확장의 class 없이 변환하고, member가
   아무 오류도 recognize하지 않는 callback unit은 호출자가 준 객체에서 호출되므로, 둘 다 require를 더하지 않는다. 생성기의
-  함수 하나가 이 종류를 이름하고, PHP emitter가 읽는 model과 `scaffold`가 모두 거기서 가져온다. 이유: crud-ui에서 generator는 validator의
+  함수 하나가 이 종류를 이름하고, PHP emitter가 읽는 model과 `scaffold`가 모두 거기서 가져온다. 확장의 emitter는 다른
+  라이브러리 class의 PHP 이름을 함수 하나에서 받는다. 그 함수는 앞의 함수가 모르는 종류의 unit과 PHP namespace를 이름하지
+  않는 소유자를 라이브러리와 unit의 이름으로 거부한다. value class의 map class와 callback unit이 인식하는 error unit은 그
+  value class나 callback unit을 통해 이름한다(B2.454). 그래서 class를 찾는 코드는 그 확장의 요구 없이 쓸 수 없다. 전에는
+  생성된 글에서 두 집합을 비교하는 시험 하나만 그 사이에 있었다. 이유: crud-ui에서 generator는 validator의
   callback unit `file_loader`를 받고, 그 시험은 generator가 validator 확장을 로드할 때까지(Makefile의
   `BINDING_PHP_REQUIRES_generator = validator`) `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found`로
   실패했는데, generator의 composer.json은 자기 확장 말고는 아무 확장도 require하지 않았다(B2.441). 다른 라이브러리의 계약이 다른
@@ -247,16 +277,28 @@
   tag에서 받는다(GN-15l, GN-14f, GN-19f). 나머지 셋은 다음과 같다.
   - npm: 소비자는 자신의 root `package.json`에, 자신의 그래프에 있는 모든 polyspec 라이브러리의 npm 패키지를 그 release
     asset의 URL로 적고(GN-3c), 다른 패키지만 require하는 패키지도 적으며, 각 패키지의 플랫폼 패키지도 적는다.
-    `overrides`는 쓰지 않는다. 각 URL이 적는 release는 pack한 manifest들이 require하는 버전의 release다. 이유: npm은 pack한
+    `overrides`는 쓰지 않으며, 자신의 lock(`package-lock.json`)과 함께 설치한다. 각 URL이 적는 release는 pack한
+    manifest들이 require하는 버전의 release다. 이유: npm은 pack한
     manifest의 요구 `X.Y.Z`를, 그 이름의 root 의존의 URL에 있는 패키지가 그 버전일 때 그 root 의존으로 만족시키고 그것을
     한 벌만 설치한다. 그렇지 않으면 그 버전을 registry에 묻는데, registry에는 없다. pack한 manifest 안의 URL은
     `allow-remote=root`에서 거부되고(GN-3c), `overrides` 항목은 패키지의 manifest가 이미 적은 버전을 한 번 더 적게 된다.
+    lock인 이유는 hyper에서 npm 12로 잰 것이다. lock이 전혀 없는 설치는 그래프를 처음부터 풀다가 `allow-remote=root`에서
+    `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`로 멈춘다. root의 의존이 아닌 registry의 패키지는
+    받을 수 없기 때문이다. lock이 있으면, 형제 패키지를 이름과 정확한 버전으로 require하는 workspace 패키지는 `overrides`
+    없이 root의 URL 항목으로 풀리고, 그 lock은 `overrides`를 쓴 설치가 쓰는 lock과 byte 단위로 같으며, registry에는 묻지
+    않는다.
   - Python: 소비자는 자신의 그래프에 있는 모든 polyspec 라이브러리의 wheel, 곧 자신의 플랫폼의 wheel을 그 release asset의
     URL로 installer에 주며, 모두 한 번의 설치에 준다(프로젝트의 요구 `polyspec-<library> @ <URL>`, 또는 `pip install`의
     인자인 URL). 각 URL이 적는 release는 wheel들의 metadata가 require하는 버전의 release다. 이유: pip와 uv는 wheel의
     metadata의 `polyspec-<library>==X.Y.Z`를, 같은 설치가 URL로 받은 그 이름과 버전의 wheel로 만족시키고, pip는 받은 것이
     없거나 그 버전이 다르면 실패한다. release에는 installer가 읽는 index 페이지가 없으므로 `--find-links`로 적을 수 없다.
-    wheel의 파일 이름은 플랫폼마다 다르므로(GN-19c) wheel의 metadata는 URL 하나를 적을 수 없다.
+    wheel의 파일 이름은 플랫폼마다 다르므로(GN-19c) wheel의 metadata는 URL 하나를 적을 수 없다. library 자신의 시험도
+    소비자다. Python package가 다른 library의 wheel을 require하는 저장소는 자기 root에 그 wheel의 출처를 release
+    asset의 URL로 선언하고(lock을 가진 uv project, 또는 hash를 가진 requirements), 다른 저장소의 clone에서 그 wheel을
+    빌드하지 않는다. 이유: 생성기는 그 출처를 쓸 수 없다. 어떤 contract도 library의 owner와 repository를 이름하지 않고,
+    wheel의 파일 이름은 그것을 release한 binding의 상수를 담으며, wheel의 metadata는 그것을 설치하는 쪽에 출처를 전하지
+    않는다. session-store는 아무것도 출처를 선언하지 않아서 php-serialization의 wheel을 clone에서 빌드해
+    `pip --no-index`로 설치했다.
   - PHP: 소비자는 자신의 그래프에 있는 각 라이브러리의 release의 `packages.json`, 곧 release utility가 archive 옆에 쓰는
     Composer repository(`https://github.com/<owner>/<repository>/releases/download/v<version>/packages.json`)를 PIE의
     `composer` repository로 더하고(`pie repository:add composer <URL>`), 확장을 의존 순서대로 각각
@@ -270,8 +312,10 @@
   끝에서 끝까지 확인은 실행의 npm 패키지와 wheel을 이 두 형식으로 설치한다(GN-3c, GN-14a). npm이 시작하기 전에 각 tarball의
   manifest를 읽는다. 실행의 다른 패키지에 대한 요구 `X.Y.Z` 가운데 그 버전의 tarball을 실행이 갖지 않은 것은 두 이름과
   함께 실패한다(`scripts/e2e-npm-install.mts`). npm은 그것을 registry에 묻고 어느 이름도 대지 않기 때문이다. `tests/e2e`의
-  모든 저장소는 의존을 path로 적으므로, 실행의 설치가 만족시키는 요구는 development 형식이다(GN-3e). npm의 release 형식의
-  설치는 `packages/ts`의 시험이며, 그 시험은 패키지 둘을 pack하고 그 script를 그 위에서 실행한다.
+  모든 저장소는 의존을 path로 적으므로, 이 설치들이 먼저 만족시키는 요구는 development 형식이다(GN-3e). 그다음 실행은
+  사본의 release 형식을 쓰고 그것을 같은 두 형식으로 설치하며(GN-14l), `packages/ts`의 시험 하나가 패키지 둘을 pack하고 그
+  script를 그 위에서 실행한다. 실행의 npm 설치에는 lock이 없다. 생성기가 쓰는 패키지는 registry의 패키지를 require하지
+  않으므로, 처음부터 푸는 설치가 그런 패키지를 만나지 않는다.
 - **GN-3f** `scaffold`가 쓰는 manifest 가운데 licence 항목이 있는 것은 모두 코어 crate의 licence를 담는다. 그것은 코어
   manifest의 `package.license`이며, 코어가 `license.workspace = true`를 적으면 root manifest의 `workspace.package.license`다.
   바인딩 crate의 Cargo manifest는 그것을 `license`로, `pyproject.toml`은 `project.license`로, `package.json`과
@@ -287,6 +331,18 @@
   각 `composer.json`의 `extension-name`에 대해 `extension_loaded`가 참인지 묻고, 참이 아니면 그 프로세스는 시험이 실행되기
   전에 그 이름과 함께 실패한다. 이유: PIE와 release 도구는 binary를 로드하고 PHP에 `extension-name`으로 확장을 묻는다.
   그래서 다른 이름의 확장은 설치되고도 로드되지 않았다고 보고된다.
+- **GN-3i** Python 바인딩 crate의 라이브러리는 그 crate의 이름을 따른다. manifest의 `[lib] name`은
+  `polyspec_<library>_python`이고, 라이브러리 이름의 `-`는 `_`로 적는다. 다른 바인딩 crate의 라이브러리가 자기 crate의
+  이름을 따르는 것과 같다. 라이브러리의 이름은 Python이 import하는 module의 이름이 아니다. 그 module은 그대로
+  `<module>._native`(host 패키지에서는 `<module>._binding._native`, GN-3b)이고 두 항목이 그것을 이름한다. 생성된 소스는
+  `#[pymodule(name = "_native")]`로 그것을 선언하고, 이것이 CPython이 확장 파일에 묻는 symbol `PyInit__native`를 준다.
+  `pyproject.toml`의 `tool.maturin.module-name`은 maturin이 wheel과 개발 설치에서 라이브러리를 복사해 두는 파일
+  (`_native.abi3.so`)을 이름한다. 어떤 recipe도, end-to-end 확인의 어떤 단계도 Python crate의 라이브러리를 파일 이름으로
+  읽지 않는다. maturin이 자기가 실행한 빌드에서 그것을 받는다. 이유: Cargo는 workspace의 모든 구성원의 라이브러리를 한
+  디렉터리에 `target/<profile>/deps/lib<name>`으로 쓴다. 그래서 한 workspace의 두 Python crate가 모두 `_native`라는
+  이름이면(crud-ui의 `packages/validator/python`과 `packages/generator/python`) 한 파일을 썼고, 둘을 함께 빌드하면 Cargo가
+  출력 파일 이름 충돌을 경고했으며(Cargo는 이것이 오류가 될 수 있다고 적는다) 한 crate의 라이브러리가 다른 crate의 것을
+  덮어썼다(B2.352).
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
@@ -354,7 +410,9 @@
   진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
   class의 `impl` 블록이 없어서, class의 member의 진입은 그 module 안의 module `class_<unit>`의 함수
   `member_<member>`다. 그 module은 `use super::*;`를 갖는다. class의 해제는 export의 module의 함수 `free_<unit>`이고, 그
-  export는 `__free_<Class>`다. 이유: class와 member를 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 class `a`의 member
+  export는 `__free_<Class>`다. 생성자의 진입은 그 class의 module의 함수 `construct`다. member는 모두 접두어를 가지므로
+  그것은 어떤 member의 이름도 아니고 crate의 어떤 helper의 이름도 아니다. 그래서 생성자와 member `new`를 가진 class는
+  함수 둘을 갖는다(B2.478). 이유: class와 member를 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 class `a`의 member
   `new_x`와 class `a_new`의 member `x`가 한 함수 `class_a_new_x`였고, member `free`는 해제 `class_<unit>_free`와 그 export
   `__<Class>_free`였다. 밑줄 둘의 구분자는 snake_case 이름이 아니어서 lint가 거부한다. member는 자기 class의 module
   안에서도 접두어를 유지한다. `guard`처럼 helper와 같은 이름의 member가 그 안에서 helper를 가리기 때문이다. class의
@@ -527,8 +585,8 @@
   out_<class>)`)로 적을 때도 그렇다. 그 밖에는 쓰지 않는데, lint가 dead code를 거부하기 때문이다. `constructible: false`면 인스턴스를 만드는 생성자가 없다:
   바인딩이 모든 인스턴스를 코어의 결과에서 스스로 만들고, 언어 코드의 직접 생성은 그 범주의 다른 바인딩 실패와 같이 kind
   `direct_construction`(범주 `type`)으로 실패하며 그 메시지가 클래스를 이름 짓는다. Python의 `#[new]`가 그렇게 실패하고, PHP는
-  그렇게 실패하는 public `__construct`를 선언하며, Node 진입점의 `Proxy`는 그렇게 실패하는 static `__new`를 부르고, WASM
-  생성자는 모듈이 인스턴스를 만드는 때가 아니면 그렇게 실패하는 export `__<Class>_new`를 부른다(T-5). Go에는 거부할 직접 생성이
+  그렇게 실패하는 public `__construct`를 선언하며, Node 진입점의 `Proxy`는 그렇게 실패하는 static `__binding_new`를 부르고, WASM
+  생성자는 모듈이 인스턴스를 만드는 때가 아니면 그렇게 실패하는 export `__new_<Class>`를 부른다(T-5). Go에는 거부할 직접 생성이
   없다: `<Class>`의 struct literal이나 zero value는 바인딩의 코드를 실행하지 않고 값을 담지 않으므로, 그것을 받는 호출이 kind
   `invalid_argument_type`으로 실패한다(GN-15a). Why: json 저장소가 발견했듯이(T3.25-1) 직접 생성은 kind 없이 실패했다. Node에서는
   napi-rs의 일반 Error로, Python에서는 pyo3의 TypeError로, PHP에서는 private 생성자에 대한 엔진의 Error로 실패했는데, 코어는
@@ -539,8 +597,16 @@
   하는 `<name>`을 정의한다. 진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다.
   member는 JavaScript가 예약한 이름(`null`, `delete`)을 가질 수 있는데 그 이름은 함수 이름이 될 수 없고, 메서드는 `<name>`을
   `name`으로 지닌다. napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를
-  유지하지 않으므로, Node 생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를
-  내보낸다. `instanceof`는 proxy를 거쳐 클래스의 prototype을 읽는다. 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind
+  유지하지 않으므로, Node 생성자는 static `__binding_new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를
+  내보낸다. `instanceof`는 proxy를 거쳐 클래스의 prototype을 읽는다. 클래스의 숨은 이름 가운데 member가 아닌 것은 어떤
+  member도 가질 수 없는 이름이다. member의 JavaScript 이름은 글자와 숫자만 담고 소문자로 시작한다(N-1: 단어는
+  `[a-z][a-z0-9]*`). 그래서 member의 addon 이름 `__<name>`에는 처음 둘 뒤에 `_`가 없다. Node 클래스의 생성은
+  `__binding_new`이고 반복(N-4)은 `__binding_iterate`다. WASM 클래스의 member의 export `__<Class>_<member>`는 `__` 뒤에
+  클래스의 대문자가 온다. 생성은 export `__new_<Class>`이고 반복은 `__iterate_<Class>`다. 해제가 `__free_<Class>`인 것과
+  같다(GN-4c). 이유: orm에는 생성자 없는 클래스의 static member `new`가 있다(`query.new`, `step_runner.new`). Node addon은
+  그 member와 직접 생성의 거부를 한 static `__new`로 썼다. 그래서 `new Query()`가 member를 실행했고 kind
+  `direct_construction` 대신 그 member의 인자 오류로 실패했다. 이름이 `iterate`인 메서드도 같은 식으로 반복의 자리를
+  차지했다(B2.478). 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind
   `invalid_argument_type`) 코어는 가진 값을 빌린다(GN-6h). Node에서는 인스턴스를 그 class의 type tag를 확인하는
   `ClassInstance`로 꺼낸다: napi-rs는 참조 `&T`를 자기가 생성한 인자 변환에서만 주고 호출 본문이 만든 참조를 거부하며,
   생성 함수는 날 값을 받아 스스로 판정한다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는 그런 클래스로
@@ -1355,7 +1421,12 @@
   member의 다음 호출에 남긴다. iterate의 코어 호출은 순회 전체이며, 진입점은 그 항목을 `with_faults` 안에서 모은다.
   그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback 안에서 다시 들어온
   진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `machine`이 있는 member는 그 대신 machine의 wait마다
-  `armed_future("<member id>", …)`로 장전한다(GN-6n). 그래서 member의 각 진입은 장전 하나와 shield 하나를 갖는다. Node와
+  장전한다. 진입이 `armed_waits("<member id>", …)`로 member의 장전을 한 번 가져오고, machine의 모든 wait가 그 장전
+  하나를 poll마다 설치한다(`binding_core::fault::Armed::wait`). 그래서 한 호출의 장전은 그 호출의 모든 wait를 덮고,
+  member의 각 진입은 장전 하나와 shield 하나를 갖는다(B2.477). wait들은 무엇이 발화했는지의 기록을 함께 쓰므로 `nth`는
+  호출 전체에서 주입점의 방문을 센다. 이유: take는 장전을 지우는데, 생성된 코드는 wait마다 그것을 가져왔다
+  (`armed_future("<member id>", io)`). 그래서 첫 wait만 장전된 채 돌았고, 뒤의 wait의 fault, 이를테면 callback이
+  raise한 뒤 orm `db.transaction`의 rollback의 fault는 서지 않았다. Node와
   WASM의 `Driven` 객체의 `advance`(GN-6ab)는 자기 코어 호출이 없는 진입점이다. 언어 코드가 다른 member의 호출 안에서
   그것을 부를 수 있으므로 그 작업은 `shielded(…)` 안에서 돌고, 아무것도 장전하지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.
@@ -1692,7 +1763,9 @@
   member는 `core`에 `"machine": true`를 적고(CK-68), 그 코어 경로는 future 대신 I/O 없는 state machine을 돌려준다(c6
   6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이므로 코어 경로는 각 인자를 값으로 받는다. callback은
   생성된 struct(`impl <Trait> + 'static`)로, text는 `String`으로 받고, class parameter는 빌림 `value`일 때만 받는다(GN-6h).
-  기본값이 있는 parameter는 이름을 대고 거부한다(G-4). `resume(io)`는 마지막 기다림의 출력(처음과
+  기본값이 있는 parameter나 field는 각 언어에서 GN-6i의 규칙대로 생략하며, 코어 경로는 그 `Option<T>`도 빌린 형태 없이
+  값으로 받는다. text는 `Option<String>`, list는 `Option<Vec<T>>`이고, record parameter는 record 자체이며 record를 통째로
+  생략하면(`{empty: "object"}`) 각 field가 `None`이다. `resume(io)`는 마지막 기다림의 출력(처음과
   call 뒤에는 `None`)으로 machine을 진행시키고 한 단계를 준다:
   - `Step::Io(future)`: 언어 코드에 닿지 않는 코어의 future. driver는 그것을 tokio runtime에서 poll하고 그 출력을 다음
     `resume`에 준다;
@@ -1844,6 +1917,11 @@
     {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다). `result`를 적은 단계는 그 호출이 그 값을 돌려줄 것을 시험의 단언으로
     요구하고(CK-22), 그 단언의 실패는 함수의 예외다. 함수는 그 뒤 `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
+    그 예외는 시험이 호출 전에 만드는 값 하나이고 메시지는 `raised by the function of the case`다. 그런 fixture로
+    member를 부르는 모든 시험이 그것을 만든다. 곧 `"callback"`을 raise하는 case의 시험(바로 그 값을 요구한다)과, 함수가
+    raise한 뒤 kind를 raise하는 case(실패하는 rollback 같은)의 B-4 시험이다(B2.476). 이유: 함수는 시험이 든 값을
+    던지는데, Python, Node, WASM, PHP의 B-4 시험은 그것을 정하지 않아서 callback이 자기 예외 대신 `IndexError`나
+    `ReferenceError`로 실패했다(orm `db.transaction`). Go 시험은 그것을 정했다.
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
     `"awaits": true`(CK-22)가 있는 fixture는 awaitable을 돌려주는 함수다. Python은 `async def`, Node와 WASM은 `async`
     함수이고, 그 step은 binding이 awaitable을 기다릴 때 돌며 `result`나 `raise`는 그 awaitable의 결과다. 그런 함수의
@@ -2027,8 +2105,8 @@
   Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. 레포의 release(GN-3c)는 tag `vX.Y.Z`의 commit에서 target go의
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이
   빌드하고(`linux_<arch>_musl`의 라이브러리는 그 arch의 Linux 기계에서 `--target <arch>-unknown-linux-musl`로 빌드하며,
-  그 Rust toolchain은 `rust-toolchain.toml`에 그 target을 적는다. 정적 라이브러리는 linker가 필요 없으므로 musl의 C
-  컴파일러는 쓰지 않는다),
+  그 Rust toolchain은 `rust-toolchain.toml`에 그 target을 적는다. 정적 라이브러리는 linker가 필요 없으므로 crate 자체는 musl의 C
+  컴파일러가 필요 없다. build script가 C를 컴파일하는 의존은 그것이 필요하고, 레포가 선언한다, GN-19b),
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 release 형태가 빌드할 수 있는 생성 파일과 각 플랫폼의
@@ -2048,11 +2126,26 @@
   모듈의 program은 시험이 시작하는 probe처럼 그 시험에 쓰인다. 디렉터리 `tests`가 아니라 package 절로 정하는 이유: Go가
   program과 package를 가르는 데 읽는 것이 그 절이고, 디렉터리의 이름으로 정하면 소비자가 import할 수 있는 package를 빼고
   다른 곳에 둔 program을 싣게 된다. `go install`용 명령을 공개하는 레포는 그 명령에 자기 Go 모듈을 준다. release 형태의
-  `go.mod`와 `go.sum`은 tag의 commit의 것 그대로이며 한 byte도 다르지 않다. 빠진 시험이나 program만 쓰던 require는 그
-  `go.mod`에 남는다. 그 require는 소비자의 version 선택에 들어가고, 그 형태의 어떤 package도 그것을 import하지 않으므로
-  소비자의 빌드는 그 소스를 컴파일하지 않는다. 명령은 그런 require를 밝히지 않는다. release 형태에 `go mod tidy`를 돌려야만
-  찾을 수 있기 때문이다. 명령은 `go.mod`를 쓰지도 않는다. 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도
-  읽지 않은 파일이기 때문이다. 생성 파일을 빼는 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
+  `go.mod`는 tag의 commit의 것 그대로이며 한 byte도 다르지 않다. 그 `go.sum`은 tag의 commit의 `go.sum`의 줄들과, `go.mod`가
+  release version으로 require하는 같은 레포의 Go 모듈 각각과 그런 모듈이 다시 require하는 모듈 각각의 두 줄, 곧 그 모듈의
+  hash와 그 `go.mod`의 hash를 담으며, binding이 `go.sum`을 정렬하는 대로 정렬한다(GN-15l). `go.mod`가 자기 레포의 모듈을
+  require하지 않는 release 형태의 `go.sum`은 tag의 commit의 것 그대로이며 한 byte도 다르지 않고, 그 commit이 `go.sum`을
+  추적하지 않으면 없다(B2.479). 명령이 그 줄들을 쓰는 이유: 모듈은 자기 tag의 commit 안에서 혼자 빌드된다(GN-15l). crud-ui의
+  generator 모듈은 자기 tag에서 `go build`가 자기가 require하는 validator 모듈에 대한 `missing go.sum entry for module
+  providing package`로 실패했다. 추적 파일이 그 줄들을 갖지 못하는 이유: 그것은 require된 모듈의 release가 정적
+  라이브러리와 함께 만드는 commit의 hash이므로 그 실행 뒤에야 생긴다(GN-19f). release의
+  `go.mod`는 release 형태가 쓰는 것만 require한다(B2.473). `// indirect`가 아닌 줄인 require 각각은, 실린 Go 파일이 그
+  모듈의 package, 곧 module path나 그 아래의 path를 import하는 모듈의 것이다. import는 그것을 담는 path가 가장 긴 require된
+  모듈에 속한다. 실린 Go 파일은 package의 손으로 쓴 파일이나 그 형태가 싣는 생성 파일이고, test feature의 tag가 없는 생성
+  시험도 그 가운데 있다. 같은 레포의 모듈의 require도 같은 방법으로 쓰인 것이 된다. 그 형태가 빼는 파일, 곧 레포의 시험,
+  program, test feature의 tag 뒤의 생성 파일만 import하는 require는 그 파일들을 대며 거부하고, 어떤 Go 파일도 import하지
+  않는 require도 거부한다. `// indirect` 줄은 판정하지 않으며 명령이 그렇게 말한다. 검사는 파일의 import 선언을 읽고 Go를
+  시작하지 않는다. `binding release-go-module`이 그것을 실행하고(GN-19f), `binding check --release`가 tag 전에
+  실행한다(docs/spec/contract-check.md CK-102). 시험이나 program만의 의존성은 자기 `go.mod`를 가진 자기 Go 모듈에 둔다.
+  같은 레포든 아니든 같고, `go install`용 명령도 그렇게 한다. 거부하는 이유: 그런 require는 tag의 모든 소비자의 version
+  선택에 들어간다. 소비자가 그 `go.mod`를 받기 때문이며, 그 형태의 어떤 package도 그것을 import하지 않는다. 명령이 그것을
+  뺀 `go.mod`를 쓰지 않는 이유: 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도 읽지 않은 파일이기 때문이다.
+  B2.473 전에는 그 require가 tag의 `go.mod`에 남았고 어떤 명령도 그것을 밝히지 않았다. 생성 파일을 빼는 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
   부르는데 release의 라이브러리는 그것을 가질 수 없으므로(GN-19f), release 형태의 어떤 빌드도 그 파일을 그 tag로 컴파일할 수
   없다. 그리고 guard는 그 형태가 싣지 않은 tag를 run에 요구하므로, 받은 모듈의 태그 없는 `go test`, 곧 그 형태의 올바른
   실행이 guard에서 실패한다. B2.446 이전의 release들은 그 파일들을 실었다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
@@ -2222,7 +2315,7 @@
   member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
   그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
   읽거나 꾸며낼 수 없다: 어떤 값이 그 class의 인스턴스인 것은 그 field를 가질 때뿐이다. 모듈은 member마다
-  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__<Class>_new`는 새 값의 handle을 주고, 메서드, getter, hook은
+  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__new_<Class>`(GN-6b)는 새 값의 handle을 주고, 메서드, getter, hook은
   인스턴스의 handle을 첫 인자로 받는다. 모듈을 읽을 때 ES 모듈은 class마다 handle로 인스턴스를 만드는 함수(그 class의 값이
   나갈 때 쓴다)와 인스턴스의 handle을 읽는 함수를 넘긴다. 읽는 함수는 다른 값에 `undefined`를 답하고 그 값은 kind
   `invalid_argument_type`이다. 호출은 읽은 값을 공유하므로 코어가 도는 동안 어떤 표도 빌리지 않으며, class parameter는 그 값의
@@ -2273,7 +2366,11 @@
   텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
   텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
   `php_value`, `template_value`)의 값은 값 표의 kind로 적은 `{"kind": <값 kind>, "value": ...}`다: `null`은 `value`가 없고,
-  `bool`, `int`, `float`(수 또는 위 형태), `number`(리터럴 텍스트), `text`, `bytes`(`{"hex": ...}`)는 그 값을, `list`는 그런
+  `bool`, `int`, `int64`(i64 범위의 정수이고, 수 또는 안전 정수 밖이면 10진 텍스트다. B2.465), `float`(수 또는 위 형태),
+  `text`, `bytes`(`{"hex": ...}`)는 그 값을 담는다. `number`는 리터럴을 텍스트로 담고, origin value class가 그 값 타입을
+  나타내는 곳에서만 꼴을 가진다. 그 class의 member가 그 텍스트를 받는다(아래). 어느 언어의 내장 형태도 이 kind를
+  만들지 않으므로(`BUILTIN_FORMS`) 값 alias는 그 kind에 case 값을 주지 않고, `binding check`는 그것을 거부한다(CK-22).
+  `list`는 그런
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
@@ -2362,12 +2459,20 @@
   불러 kind의 정확한 클래스와 kind를 확인한다. 그 클래스는 kind의 행이 적은 error unit의 클래스이고, 없으면 category의 클래스다(E-2). parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
-  주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
-  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
+  주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `int64`(i64 범위의 정수이고 `int`처럼
+  준다: Node와 WASM의 `bigint`, Python과 PHP의 `int`, Go의 `int64`. 그 범위 밖의 값은 이름을 대며 거부한다. B2.465),
+  `float`,
+  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. `int64`가 case 값의 kind인 이유: alias의
+  행은 그 kind를 가질 수 있고(`VALUE_KINDS`, schema), orm의 alias는 PHP와 Python의 `int`를 `int64`로, class를 `int`로
+  읽는다. 그래서 case는 그런 행이 읽는 값을 적을 수 없었고 그 시험은 "is not generated yet"으로 실패했다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
   `-9223372036854775808`을 float의 부정으로 읽기 때문이다. Go는 음의 0을 `math.Copysign(0, -1)`로 준다. Go 상수
-  `-0.0`은 0이기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
-  만드는(`<unit>.constructor`) `float`은 그 수로 만든 그 인스턴스다(`number`가 `int`로 실어 나를 Node의 정수 float이
-  그렇다). binding은 자기가 주는 형태를 다시 받기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  `-0.0`은 0이기 때문이다. 그 target에서 alias의 out 행, 곧 그 kind의 행 중 값이
+  `when`을 만족하는 행이 값 class의 인스턴스를 만드는(`<unit>.constructor`) 값은, 내장 값으로 만든 그 인스턴스다. 행이
+  그렇게 만드는 모든 kind(`int`, `int64`, `float`, `text`, `bytes`, `list`, `map`)에서, PHP, Python, Node, WASM에서,
+  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
+  정수 float을 `int`로 실어 나른다. orm의 alias는 PHP `int`를 `int64`로, `integer_value`의 인스턴스를 `int`로 읽고,
+  sequence key를 가진 PHP array(빈 array도 그렇다)를 list로, `map_value`의 인스턴스를 map으로 읽어서, 내장 값은 다른
+  kind로 들어갔다. GN-13v는 빈 map에 class를 만드는 행이 없는 alias의 규칙으로 남는다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
   표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
   Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
   `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
@@ -2448,8 +2553,11 @@
   형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
   bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
   `text <hex>`와 `bytes <hex>`, PHP의 `string <hex>`, `list <n>`과 그 항목들, `map <n>`과 각 key와 그 값(key는 그 keyed
-  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
-  인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
+  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. kind `int64`의 값은 그 행의 형태로 적은 정수의
+  텍스트를 가진다. out 행이 `<unit>.constructor`로 적는 값 class의
+  인스턴스(행이 그렇게 만드는 모든 kind, 곧 `int`, `int64`, `float`, `text`, `bytes`, `map`에서 그렇다. B2.465 전에는
+  `float`과 `map`만 그랬고, orm이 `integer_value`나 `bytes_value`의 인스턴스로 주는 `int`나 byte string을 맨 값으로
+  기대했다), PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
   자리의 동일성과 각 순환을 비교한다. case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
   PHP는 한 자리가 가진 reference를 유지하지 않는다. `ReflectionReference::fromArrayElement`는 그것에 null을 주고
@@ -3059,13 +3167,24 @@
   각 의존 레포의 정적 라이브러리를 release profile로 feature 없이 빌드하고, `llvm-tools`의 `llvm-strip --strip-debug`로
   debug section을 떼고, `llvm-size -A`가 그 안에 debug section을 여전히 적으면 실패하며, 각각에 대해 remote를 대신하는 Git 레포를 work
   디렉터리에 만든다. commit 하나의 tree는 제자리의 Go 모듈과 `internal/ffi/lib/<platform>`에 둔 실행 플랫폼의
-  라이브러리이고, tag는 `<Go 모듈 디렉터리>/<version>`이다. version은 `v`와 코어의 version이고, 의존 레포는 `go.mod`가
-  require하는 version이다. Git은 `https://github.com/<owner>/`를 이 레포들의 디렉터리로 읽는다(실행의 설정 파일의
-  `url.<base>.insteadOf`이며, 이 명령들의 Git이 읽는 설정은 그 파일 하나다). 그래서 `go`는 network 없이 각 모듈을 모듈
-  경로와 tag로 받는다. 소비자 모듈의 `go.mod`는 각 계약의 Go 모듈의 `require` 줄만 담고, 소비자의 시험 하나가 그
+  라이브러리이고, tag는 `<Go 모듈 디렉터리>/<version>`이다. version은 `v`와 그 모듈의 코어의 version이며, 레포의 모듈도
+  의존의 모듈도 그렇다. release 형식을 쓰는 실행(GN-14l)은 이 레포들을 그 형식의 단계들 가운데 두 부분으로 만든다. 각
+  의존의 레포는 release 형식의 `binding scaffold`보다 먼저 만든다. 그 scaffold가 그 tag에서 `go.sum`을 쓰기
+  때문이다(GN-15l). 레포 자신의 것은 그 뒤에 만들어서, 그 commit이 release의 `go.mod`와 `go.sum`을 담는다. 그러면 아래의
+  소비자가 실행의 마지막 단계다. release 형식을 쓰지 않는 실행은, 의존이 없는 레포의 실행도 그 가운데 하나인데, Go 시험
+  뒤의 한 단계에서 이 레포들을 모두 만들고, `go.mod`가 `v0.0.0`으로 require하는 의존, 곧 실행이 고쳐 쓰지 않는
+  development 형식의 의존에는 `v0.0.0`의 tag를 단다. B2.458이 바꾼 것: 그 전에는 의존의 tag가 언제나 `go.mod`가
+  require하는 version이었고 path에서는 `v0.0.0`이었다. 그래서 의존이 있는 `tests/e2e` 레포의 소비자는 `go.mod`가
+  `v0.0.0`을 require하는 모듈을 받았는데, 그런 모듈은 어떤 release에도 없다(GN-19f가 거부한다). 이제 그런 레포의 release
+  형태는 release 형식에서만 증명하고, development 형식의 `go.mod`로는 더 증명하지 않는다. Git은
+  `https://github.com/`를 이 레포들의 디렉터리로 읽는다(실행의 설정 파일의 `url.<base>.insteadOf`이며, 이 명령들의 Git이
+  읽는 설정은 그 파일 하나다. `GIT_CONFIG_GLOBAL`이 그 파일을 적고, system 파일도 Cargo의 Git 의존의 변수도 읽지
+  않는다). 그리고 file 말고는 어떤 transport도 열지 않는다(`GIT_ALLOW_PROTOCOL=file`). 그래서 `go`는 network 없이 각
+  모듈을 모듈 경로와 tag로 받는다. 실행이 만들지 않은 레포나 tag는 실행의 디렉터리에서 실패하고, 설정이 그 디렉터리로
+  바꾸지 않는 URL은 연결하기 전에 거부된다. 소비자 모듈의 `go.mod`는 각 계약의 Go 모듈의 `require` 줄만 담고, 소비자의 시험 하나가 그
   모듈들의 모든 패키지를 import한다. 실행은 `go mod tidy`로 `go.sum`을 쓴 다음, 소비자와 받은 모듈의 모든 패키지의
-  `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`, 빈
-  `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
+  `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`,
+  `GOSUMDB=off`, `GOENV=off`, 빈 `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
   단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. commit의 tree는 release의 commit이 싣는 파일을 담으며,
   실행은 그것을 `binding release-go-module`이 읽는 GN-15g의 함수에서 읽고 다른 규칙으로는 모듈의 파일을 빼지 않는다. test
   feature의 build tag 뒤의 생성 파일도, 그 tag들의 guard(GN-13bf)도, 레포의 시험도 없으며, 실행이 모듈에 복사한 계약
@@ -3103,14 +3222,65 @@
   실패하는 검사는 그 target을 실패시킨다(`scripts/e2e-refusal.mts`). `tests/e2e/lent`가 그런 레포다. 그 코어는 빌린
   record를 호출 뒤까지 가지며(GN-6d), 모든 target이 E0597로, Node는 E0521로 거부된다. 이유: 한 번의 검사는 호출의
   lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
+- **GN-14l** 실행의 release 형식(B2.458; GN-3e, GN-3h). 레포의 코어가 `[dependencies]`의 한 줄에서 `DEPS`의 레포를
+  `path`로 적는 실행은, 의존이 있는 `tests/e2e`의 모든 레포가 그런데, development 형식의 모든 단계 뒤에 release 형식의
+  단계들로 끝난다. 이 단계들은 실행에 더해지며 어떤 단계도 대신하지 않는다. development 형식은 의존이 release를 가질
+  때까지 레포가 가지는 형식이고, CI의 다른 어떤 실행도 그것을 확인하지 않기 때문이다. 이 단계들을 켜거나 끄는 option은
+  없다. 그런 줄이 없는 레포의 실행과 `--until lint`의 실행에는 이 단계들이 없고, host 패키지(L-2a)가 있는 레포는 빼고
+  그 이름을 적는다. host 패키지의 manifest는 손으로 쓰므로 실행의 scaffold가 그 release 형식을 쓰지 못하기 때문이다. 네
+  생태계는 함께 release 형식이 되며, 그 순서는 하나이고 `scripts/e2e-release-form.mts`의 함수 하나가 준다.
+  - 레포의 `go.mod`가 require하는 각 의존의 Go 모듈은 실행의 remote에서 자기 version의 tag에 선다(GN-14f). 실행은 그
+    레포를 만들기 전에 Go에 그 tag의 모듈을 요청하며, Go가 실패하면서 실행의 remote 디렉터리를 적지 않으면 그 단계는
+    실패한다. 이것은 이 명령들이 그 디렉터리를 읽고 network를 읽지 않는다는 것을 실행마다 보인다.
+  - 사본에서 코어의 그런 줄은 각각 그 의존의 코어의 version으로 `version = "=X.Y.Z"`가 되고 다른 항목은 그대로 남으며,
+    root workspace는 각 의존의 사본의 path를 담은 `[patch.crates-io]`를 얻는다. 실행은 각 변경을 찍는다(GN-14d). 한 줄의
+    inline table이 아닌 줄과, 이미 crates.io를 patch하는 root manifest는 이름을 적은 실패다.
+  - 각 계약의 `binding scaffold`는 release의 manifest를 쓰고, 그 가운데 `go.sum`은 첫 단계의 tag에서 쓰며(GN-15l),
+    `binding check`는 그 위에서 통과한다. 둘 다 `--go`와 GN-14f의 Git과 Go의 설정을 받는다. 둘이 status 0으로 끝나고,
+    `Cargo.lock`이 byte 단위로 전과 같고, development 형식에서 의존을 적던 각 manifest가 그것을 그 version으로 적어야
+    이 단계가 통과한다. `package.json`과 `composer.json`은 `X.Y.Z`, `pyproject.toml`은 `polyspec-<library>==X.Y.Z`,
+    `go.mod`는 `replace` 줄 없이 `require <module> vX.Y.Z`, `go.sum`은 그 모듈의 hash 둘이다.
+  - Python: 레포의 wheel을 다시 빌드한다. wheel의 metadata가 `pyproject.toml`의 요구를 담기 때문이다. 그리고 실행의
+    의존의 wheel들과 함께, 각각 loopback의 URL로, 한 번의 `pip install --no-index`로 따로 만든 venv에 설치한다(GN-3h).
+    설치된 distribution이 `polyspec-<library>==X.Y.Z`를 require하지 않으면 이 단계는 실패한다. 그다음 생성된 시험을 그
+    venv의 unittest로 실행한다.
+  - npm: 레포의 패키지를 다시 pack하고, 실행의 tarball들, 곧 의존의 것과 플랫폼의 것과 함께, 각각을 URL로 적은 root
+    manifest 하나로 설치한다(GN-3c, GN-3h). 그 전에 pack한 manifest의 요구 `X.Y.Z`마다 그 tarball이 그 가운데 있는지
+    확인한다. 그다음 Node와 WASM의 생성된 시험을 그 디렉터리에서 실행한다. pack한 manifest가 의존의 패키지를 require하지
+    않으면, manifest는 value class나 callback unit 때문에만 그것을 적는데(GN-3e), 실행은 그렇다고 적고 아무것도 설치하지
+    않는다.
+  - Go: scaffold가 쓴 `go.mod`와 `go.sum`을 담은 레포의 Go 모듈을 실행의 remote에서 그 tag에 싣고, GN-14f의 소비자가
+    그것을, 그 `go.mod`가 require하는 version의 각 의존 모듈과 함께 받아서 자신의 시험과 받은 모든 모듈의 시험을
+    실행한다.
+  - PHP는 여기서 설치하지 않는다. 그 증거는 실제 release의 PIE 단계다(GN-3h). 그 `composer.json`은 다른 manifest와
+    함께 쓰고 확인한다.
+  Cargo는 실행에서 자기 release 형식을 가지지 않는다. release는 의존을 tag로 적는데, 그 요구는 `*`이므로 Cargo는 그
+  tag에 있는 어떤 version의 crate도 받고, 의존의 remote도 필요하다. 실행은 patch와 함께 `=X.Y.Z` 형식을 쓴다. Cargo는 그
+  path에 있는 crate의 version이 다르면 그것을 거부하고, 그 형식은 lock이 이미 적은 crate로 풀린다.
+  release 형식에서 실행하는 것은 그 형식이 바꾸는 것이다. manifest, 각 package manager의 설치, 그리고 설치된 패키지가
+  의존의 패키지를 싣는 일이며, 마지막 것은 생성된 시험이 각 target에서 실행한다. 실행은 그 형식이 그대로 두는 것을
+  되풀이하지 않는다. 계약 case, 측정, lint(`cargo clippy`, `tsc`, `gofmt`, `go vet`, `deadcode`), `llvm-nm`의 확인, 코어의
+  시험, tag guard의 시험(GN-13bf)이 그렇다. 생성도 되풀이하지 않는다. `binding check`가 `binding generate`처럼 각 의존의
+  계약을 Cargo로 읽으므로(GN-15f), 생성된 파일은 development 형식의 것이다. Node addon, WASM 모듈, PHP 확장의 빌드도
+  되풀이하지 않는다. 그 crate들은 같은 lock에서 같은 crate로 풀리므로, 플랫폼의 tarball과 패키지 안의 모듈은
+  development 형식의 것이다. PHP의 시험도 되풀이하지 않는다. 실행은 그 확장을 `composer.json`이 아니라 path로 싣는다.
+  wheel과 Go의 정적 라이브러리는 release 형식에서 빌드한다. wheel은 요구를 담고 tag는 라이브러리를 담기 때문이다.
+  이 단계들의 어떤 명령도 network를 열지 않는다. Cargo는 offline으로 실행하고(`CARGO_NET_OFFLINE=true`), Git과 Go는
+  실행의 remote만 읽으며(GN-14f), pip는 index를 읽지 않고, npm은 tarball의 확인 뒤에 각 패키지를 loopback에서 받는다.
+  이유: `tests/e2e`의 모든 레포는 의존을 path로 적으므로, 이 단계들 전에는 어떤 실행도 release 형식의 manifest를
+  설치하지 않았고, 그런 manifest의 첫 설치는 소비자의 release였다. release 형식의 scaffold를 처음 시도했을 때는 status
+  1로 끝났고 github.com에 닿았다. `go.mod`가 release를 require해서 `go mod download`가 실행되었는데(GN-15l) 의존의 tag가
+  어디에도 없었기 때문이다. 그래서 의존의 remote가 먼저다.
 - **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
   의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
   적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적고
   run이 그 release의 package를 그 asset에서 가져올 때에만 job이 실행한다. run에는 아직 그런 단계가 없다. run은 의존의
   package를 `DEPS`의 사본에서만 가져오고(GN-14d) `https://github.com/polyspec/`를 checkout 옆의 디렉터리로 읽으므로,
-  tag를 적은 코어는 job에서 빌드되지 않고, release tag만으로는 아무것도 끝나지 않는다(B2.451). 그 단계는 B2.458의
-  것이다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고, job에는 그
-  항목이 없다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
+  tag를 적은 코어는 job에서 빌드되지 않고, release tag만으로는 아무것도 끝나지 않는다(B2.451). release 형식의
+  단계들(GN-14l, B2.458)은 `DEPS`의 사본의 release 형식을 설치하고, release의 asset을 설치하지 않는다. 그 asset을
+  내려받는 단계는 아직 쓰지 않았다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고,
+  job에는 그 항목이 없다. job의 항목 가운데 적어도 하나는, 코어가 자신의 `DEPS`의 레포를 path로 적어서 release 형식의
+  단계들을 실행하며, 그런 항목이 없으면 `packages/ts/tests/ci-workflow.test.ts`가 실패한다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
   `tests/e2e`에 없는 레포를 경로로 더는 적지 않는데 목록에 남은 계약을 실패로 한다. 코어가 json 레포에 의존하는
   `tests/e2e/relay`는 run이 json의 release를 그 asset에서 설치할 때까지 목록에 있다. json은 v0.0.35부터 release tag를
   가진다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
@@ -3217,6 +3387,33 @@
   `<Go 디렉터리>/libpolyspec_<repository>_go.a`로 GN-19f를 실행하는 job에 넘긴다.
   Linux 항목은 자기 arch의 `linux_<arch>_musl` 라이브러리도 `--target <arch>-unknown-linux-musl`로 빌드하고(GN-15g)
   `linux_<arch>_musl/libpolyspec_<repository>_go.a`로 넘기므로, release는 라이브러리 다섯 개를 싣는다.
+  musl target의 빌드는, 그리고 recipe의 다른 어떤 명령도 아닌 그 빌드만, 그 target의 C 컴파일러와 archiver를 받는다. 레포의
+  Makefile이 include 앞에서(GN-19h) `CC_<target>`과 `AR_<target>`에 선언하며, `<target>`은 target의 dash를 underscore로
+  바꾼 것이다: `CC_x86_64_unknown_linux_musl`, `AR_x86_64_unknown_linux_musl`, `CC_aarch64_unknown_linux_musl`,
+  `AR_aarch64_unknown_linux_musl`. recipe는 실행의 arch의 두 변수 가운데 비어 있지 않은 것을 그 이름 그대로 musl target의
+  `$(CARGO) rustc`에만 export한다. 이 이름은 crate `cc`가 읽는 이름이고, 의존의 build script는 그 crate로 C를 컴파일한다.
+  `cc`는 컴파일러로 target의 dash를 그대로 둔 `CC_<target>`, underscore로 바꾼 `CC_<target>`, `TARGET_CC`(host가 GNU C
+  library의 target이므로 이 빌드는 cross compile이다), `CC` 가운데 처음으로 설정된 것을 쓰고, archiver로는 `AR`의 같은 네
+  이름을 쓴다. 하나도 없으면 arm64 target에는 `aarch64-linux-musl-gcc`를, x86_64 target에는 `x86_64-linux-musl-gcc`와
+  `musl-gcc` 가운데 `PATH`에 처음 있는 것을 시작한다. Go crate에 C를 빌드하는 의존이 없는 레포는 아무것도 선언하지 않는다.
+  실행의 arch의 두 변수 가운데 하나가 비어 있으면 recipe는 라이브러리를 빌드하기 전에 `$(CARGO) tree --locked -p
+  polyspec-<repository>-go --target <arch>-unknown-linux-musl -e normal,build --prefix none --format '{p}'`를 실행하고, 그
+  출력의 한 줄이 crate `cc`를 이름하면 어떤 의존이 그 target에서 C를 빌드하는 것이다. 그때 recipe는 status 2로 끝나고 빈
+  변수를 하나씩 이름한다(``release-go-static needs
+  CC_x86_64_unknown_linux_musl AR_x86_64_unknown_linux_musl: the C compiler CC_x86_64_unknown_linux_musl and the
+  archiver AR_x86_64_unknown_linux_musl of the target x86_64-unknown-linux-musl, which the crate cc reads, because a
+  dependency of polyspec-<repository>-go builds C with that crate; define them before the include of
+  packages/release.mk (GN-19b)``). 둘 다 선언되어 있으면 Cargo에 묻지 않는다. recipe는 선언된 컴파일러를 빌드 전에 시작해
+  보지 않으므로, 틀린 경로는 build script에서 crate `cc`의 메시지로 실패한다. 이 규칙 밖의 경우가 둘 있다. crate `cc` 없이
+  C를 컴파일하는 build script는 보이지 않고, 전처럼 Cargo에서 실패한다. 그리고 빌드에 crate `cc`가 있지만 그 build script가
+  musl target에서 아무것도 컴파일하지 않으면, 어떤 빌드도 읽지 않는 선언을 요구받는다. 이유: session-store는 rustls에
+  의존하고, 그 암호 구현인 ring 0.17.14는 build script에서 C를 컴파일한다. crate `cc`가 어떤 runner에도 없는
+  `x86_64-linux-musl-gcc`를 찾아서 `release-go-static`이 그 Linux CI에서 실패했다. session-store는 자기 Makefile에서 네
+  변수를 모든 명령에 export해서 recipe를 돌아갔고, 그런 의존을 가진 다음 레포도 같은 자리에서, 변수를 이름하지 않는 Cargo의
+  메시지로 실패했을 것이다. binding의 이름이 아니라 crate `cc`의 이름을 쓰는 이유: session-store가 적은 선언이 그대로
+  유효하고, job의 환경에 있는 그 이름의 변수는 make의 변수이기도 하다. `binding check --release`가 아니라 recipe가 묻는 이유:
+  이 변수는 Makefile의 것이고 명령은 Makefile을 읽지 않는다(docs/spec/contract-check.md CK-102). 그리고
+  `release-go-static`은 job `platform`의 빌드로 CI에서 실행되므로(GN-19i), 빠진 선언은 어느 쪽에서든 tag 전에 실패한다.
 - **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
   SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이
   wheel의 이름에 platform tag(`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`)를 붙이고, wheel은
@@ -3252,7 +3449,7 @@
   [{"path": …}]}}`)로 쓰고, recipe는 그 형식만 읽으며 패키지를 이름으로 담지 않은 목록은 거부한다. npm의 release는
   레포가 정하므로, 두 번째 형식은 어떤 실행도 지나지 않는 경로가 되기 때문이다.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>] [--go <command>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
+  <directory> --work <directory> [--remote <name>] [--go <command>] [--rehearsal]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
   tag `vX.Y.Z`의 commit에 있다. `binding generate --target go`가 Go 모듈의 파일 `zz_generated_*.go`를 work tree에 썼다.
   `--libraries`는 플랫폼마다 `<Go 디렉터리>/libpolyspec_<repository>_go.a`를 갖는다(GN-19b). `--work`는 실행의 디렉터리이고
   명령은 거기에 자기 index, 증명의 저장소와 소비자, Go의 cache를 둔다. `--remote`는 레포의 Git remote이고 주지 않으면
@@ -3268,6 +3465,15 @@
     `<directory>/vX.Y.Z`가 Go가 그 모듈에서 읽는 tag다.
   - 그 commit의 `go.mod`에 `replace` 줄이 없고 `v0.0.0`으로 require하는 모듈이 없다. 둘 다 개발 꼴이며(GN-15f) tag의
     소비자가 풀 수 없다.
+  - `go.mod`가 release version `vA.B.C`로 require하는 같은 레포의 Go 모듈(module path의 앞 세 요소가 같은 모듈,
+    GN-14f) 각각과, 그런 모듈의 tag에 있는 `go.mod`가 다시 require하는 모듈 각각의 tag `<그 모듈의 디렉터리>/vA.B.C`가
+    레포에 있다(B2.479). 명령은 tag가 없는 모듈과 그것을 require하는 `go.mod`를 각각 밝히고, 그 모듈의 `binding
+    release-go-module`을 먼저 실행하라고 말한다. 그래서 한 레포의 모듈들은 require의 순서로 release한다. require되는
+    모듈이 먼저다.
+  - 그 `go.mod`의 `// indirect`가 아닌 require 각각을 release 형태가 싣는 Go 파일이 import한다(GN-15g, B2.473). 명령은 그
+    형태가 빼는 파일만 import하는 require를 그 파일들과 함께 밝히고, 어떤 Go 파일도 import하지 않는 require를 밝히며,
+    판정하지 않는 `// indirect` 줄 각각을 실행을 읽는 쪽에 알린다. 추적 파일은 tag의 commit에서, 생성 파일은 work
+    tree에서 읽고, 그 형태가 빼는 파일은 쓰이지 않은 require가 있을 때만 읽는다.
   - work tree가 플랫폼마다 `internal/binding/zz_generated_link_<platform>.go`와
     `internal/ffi/lib/<platform>/zz_generated_lib.go`를 갖는다. 없으면 생성이 실행되지 않은 것이고, 라이브러리의 디렉터리를
     적는 파일이 없다.
@@ -3287,7 +3493,8 @@
   release 형태가 빼는 추적 파일(GN-15g), 곧 레포의 시험과 program의 Go 파일 각각을 `git update-index --force-remove`하며(명령은
   그것을 파일의 이름과 tag의 commit에 있는 package 절(`git show`)로 가려내고 실행을 읽는 쪽에 밝힌다),
   release가 싣는 생성 파일(GN-15g) 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
-  `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `git write-tree`와
+  `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `go.mod`가 같은 레포의
+  모듈을 require하면 release 형태의 `go.sum`도 같은 방법으로 넣고(GN-15g, B2.479), `git write-tree`와
   `git commit-tree -p <tag의 commit>`을 message `chore(release): Carry the Go module of vX.Y.Z`로 실행한다. author와
   committer의 날짜는 tag의 commit의 committer 날짜이고 identity는 실행의 Git의 것이므로, 같은 identity의 같은 입력은 같은
   commit을 준다. 레포나 remote의 tag `<directory>/vX.Y.Z`가 다른 commit을 가리키면 명령은 실패한다. 이 commit을
@@ -3301,12 +3508,43 @@
   `go test -count=1 .`를 `GOPROXY=direct`, `GOSUMDB=off`, `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, 빈 `GOFLAGS`와
   `CGO_LDFLAGS`, `CGO_ENABLED=1`, `--work`의 module cache와 build cache로 실행하고, 그 뒤 소비자의 `go.mod`에 `replace`가
   있으면 명령은 실패한다. module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기
-  remote에서 받으므로, 레포는 Go require의 순서로 release한다. 증명은 실행의 플랫폼의 라이브러리만 링크한다. 다른
+  remote에서 받으므로, 레포는 Go require의 순서로 release한다. `go.mod`가 release version으로 require하는 같은 레포의 Go
+  모듈, 곧 형제 모듈은 `--work`의 bare 저장소에서 받는다. Git이 `https://github.com/<owner>/<repository>`의 모든 모듈에
+  그 저장소를 읽기 때문이다. 명령은 commit 전에 위 검사의 형제 모듈 각각의 tag의 commit을 그 tag로 그 저장소에 push하고,
+  `--work`의 모듈 안에서 소비자의 설정으로 형제마다 `go mod download -json <module>@<version>`을 실행한다. 그 `Sum`과
+  `GoModSum`이 commit의 `go.sum`의 줄이다(GN-15g). 명령은 그 뒤 module cache를 지우므로 소비자는 형제 모듈을 다시
+  받는다. 추적된 `go.sum`이 형제 모듈에 다른 hash를 주면 commit 전에 그 줄을 대며 거부한다. B2.479 전에는 그 저장소가
+  실행의 모듈의 tag만 가졌다. 같은 레포의 validator 모듈을 require하는 crud-ui의 generator 모듈의 release는 두 실행의
+  순서가 어느 쪽이든 소비자의 `go mod tidy`에서 `unknown revision packages/validator/go/v0.0.1`로 실패했고, 원인을
+  말하는 문장이 없었다. 한 레포의 두 모듈 사이에서 멈춘 release는 그대로 다시 실행한다. 명령은 이 실행의 commit을
+  가리키는 첫 모듈의 tag를 그대로 두고, remote가 그 tag를 가지면 reference를 주지 않으며, 둘째 모듈의 실행은 레포에서 그
+  tag를 찾는다. 증명은 실행의 플랫폼의 라이브러리만 링크한다. 다른
   플랫폼의 라이브러리는 그 object로 검사한다.
   그다음 명령은 commit에 annotated tag `<directory>/vX.Y.Z`를 만들고(`git tag -a`, 같은 날짜), 표준 출력에 한 줄
   `refs/tags/<directory>/vX.Y.Z`를 쓴다. recipe가 remote에 push하는 reference다. remote가 이미 그 tag를 가지면 아무것도
   쓰지 않는다. 명령은 remote에 아무것도 push하지 않는다. 이유: 실행이 무엇을 공개하는지는 그것을 시작한 recipe가 정하고,
   push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다.
+  rehearsal(B2.479): 값이 없는 option `--rehearsal`을 주면 명령은 release에 tag가 생기기 전에 검사와 증명을 실행하고
+  commit도 tag도 만들지 않는다. 레포에 object도 reference도 쓰지 않고, remote에 아무것도 묻지 않으며 아무것도 push하지
+  않는다. 이때 `--tag vX.Y.Z`는 release가 만들 tag이고 있을 필요가 없다. rehearsal은 tag의 commit 대신 `HEAD`를 읽고 work
+  tree의 생성 파일을 읽는다. 플랫폼의 라이브러리, `native-static-libs`, 두 생성 파일 가운데 하나라도 없으면 그 플랫폼은
+  없는 것이다. rehearsal은 없는 플랫폼을 빠진 것과 함께 각각 밝히고 나머지를 release처럼 검사하므로, 있는 라이브러리가
+  검사에 실패하면 rehearsal도 실패한다. 증명은 실행의 플랫폼, 곧 `go env`의 `<GOOS>_<GOARCH>`의 라이브러리를 링크하므로,
+  그 플랫폼이 없거나 Go 모듈의 플랫폼이 아니면 rehearsal은 거부된다. 증명의 commit은 `--work`의 bare 저장소
+  `rehearsal.git`에 만들고, 그 저장소의 alternates는 레포의 object다(`objects/info/alternates`). object나 index를 쓰는 모든
+  명령은 그 저장소의 `git --git-dir`로 실행하고, commit의 identity는 `binding rehearsal`, message는 `chore(release):
+  Rehearse the Go module of vX.Y.Z`이며, `git update-ref`가 거기에 tag `<directory>/vX.Y.Z`를 둔다. 그 저장소는 실행
+  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. 위 검사의 형제 모듈은 레포에 tag가 있으면 그
+  tag에서 가져오며, rehearsal은 그것을 이전 실행의 rehearsal 위에 그 저장소로 push한다. tag가 없는 형제, 곧 한 version의
+  첫 release 전의 모든 형제는 같은 `--work`에 있는 그 모듈의 rehearsal에서 가져오되, 그 commit의 부모가 이 실행의
+  `HEAD`일 때만 그렇다. 그래서 한 레포의 모듈들은 `--work` 하나로 require의 순서대로 rehearsal한다. 둘 다 없는 형제와
+  다른 commit에서 rehearsal한 형제는 그 모듈의 이름과 그것을 만드는 실행을 대며 거부한다. rehearsal은 표준 출력에 아무것도
+  쓰지 않으므로 어떤 recipe도 reference를 push하지 않고, 오류 출력의 마지막 줄들은 rehearsal이 보지 못한 것의 목록이다:
+  tag가 아니라 `HEAD`를 읽었다는 것, rehearsal에서 가져온 형제 각각, 없는 플랫폼 각각, 레포나 remote의 이전 tag와
+  비교하지 않았다는 것, 그리고 마지막으로 commit도 tag도 만들지 않았다는 것. 목록이 출력의 끝인 이유: 한 플랫폼에서
+  통과한 rehearsal은 마지막 줄들이 아직 증명되지 않은 것을 말하지 않으면 통과한 release처럼 읽힌다. 레포의 script가 아니라
+  명령의 한 형태인 이유: crud-ui는 release를 rehearsal할 수 없었다. 명령이 증명에 이르기 전에 다섯 플랫폼의 라이브러리와
+  그 생성 파일을 요구했기 때문이며, B2.479의 결함은 이미 tag를 push한 release가 찾았다.
 - **GN-19g** release의 recipe는 archive를 빌드하기 전에 레포의 contract마다 `binding check <interface.json> --release`를
   실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). recipe `release-binding-check`가 그 호출이고, asset의 빌드
   recipe는 CI에서도 release에서도 그것을 먼저 실행한다(GN-19i). GitHub Release의 asset은 label
@@ -3338,6 +3576,17 @@
   | `release-assets-npm` | `node`나 `wasm` | GN-19i, job `npm`의 빌드 |
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
   | `checkout-node-addon` | `node` | GN-3c, checkout의 addon을 생성된 진입점 옆에 |
+  | `rehearse-go-module` | `go` | GN-19f, `TAG`의 tag에 대한 rehearsal, commit도 tag도 없이 |
+
+  `rehearse-go-module`은 release의 단계가 아니다. 레포는 tag `TAG`를 만들기 전에 그것을 실행한다. 그 prerequisite는
+  host의 라이브러리를 빌드하는 `release-go-static`이고, `--work $(RELEASE_TARGET)/go-module-rehearsal`로 `binding
+  release-go-module --rehearsal`을 실행한다. 그 폴더는 component의 이름이 없어서 한 레포의 계약들이 함께 쓰므로, 한
+  모듈의 rehearsal이 자기가 require하는 모듈의 rehearsal을 찾는다(GN-19f, B2.479). require되는 모듈을 먼저 rehearsal하고,
+  두 rehearsal을 동시에 실행하지 않는다.
+  계약이 둘이고 한 계약의 Go 모듈이 다른 계약의 Go 모듈을 release version으로 require하는 레포(crud-ui: generator가
+  validator를 require한다)는 require되는 모듈의 `release-go-module-<component>`를 그것을 require하는 모듈의 것보다 먼저
+  실행한다(GN-19f, B2.479). 둘째 실행은 레포에서 첫 실행의 tag를 읽고, 순서가 반대인 실행은 tag가 없는 모듈의 이름을
+  대며 거부된다.
 
   레포의 Makefile은 `include <파일 경로>` 줄 앞에 recipe가 읽는 변수를 정의한다. `BINDING_RUN`은 binding을 시작하는
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
@@ -3349,7 +3598,10 @@
   release-go-module`(GN-19f)에 `--go "$(GO)"`를 넘기고 스스로는 Go를 시작하지 않는다. 그래서 Makefile은 자기 go가 `PATH`의
   `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. `release-assets-<job>`을 실행하는
   job은 모두 그렇다. 그 첫 단계가 `release-binding-check`이기 때문이다(GN-19i). Go가 필요한데 찾지 못한 명령은 도구와
-  `--go`와 `GO`를 이름한다(GN-15l). `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
+  `--go`와 `GO`를 이름한다(GN-15l). Go crate에 C를 빌드하는 의존이 있는 레포는 musl target마다 `CC_<target>`과
+  `AR_<target>`도 정의한다. `release-go-static`이 그 target의 빌드에 넘기는 C 컴파일러와 archiver이고, Linux host에서 crate
+  `cc`가 그 빌드에 있으면 요구한다(GN-19b). `release-binding-check`는 이것을 요구하지 않는다. 필요한지는 host와 빌드의
+  의존에서 나오고, 그것은 `release-go-static`이 읽기 때문이다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
   `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
   ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.

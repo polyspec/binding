@@ -1,0 +1,4251 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "hyper",
+  "core": {
+    "crate": "polyspec-hyper",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/hyper",
+      "namespace": "Polyspec\\Hyper",
+      "host": true
+    },
+    "python": {
+      "package": "polyspec-hyper",
+      "module": "polyspec.hyper",
+      "host": true
+    },
+    "node": {
+      "package": "@polyspec/hyper",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      },
+      "host": true
+    },
+    "go": {
+      "module": "github.com/polyspec/hyper/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "template_value": {
+      "library": "template",
+      "unit": "template_value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Hyper\\HyperValueError",
+        "python": "HyperValueError",
+        "node": "HyperValueError",
+        "wasm": "HyperValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Hyper\\HyperTypeError",
+        "python": "HyperTypeError",
+        "node": "HyperTypeError",
+        "wasm": "HyperTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Hyper\\HyperIoError",
+        "python": "HyperIoError",
+        "node": "HyperIoError",
+        "wasm": "HyperIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Hyper\\HyperStoreError",
+        "python": "HyperStoreError",
+        "node": "HyperStoreError",
+        "wasm": "HyperStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Hyper\\HyperBusyError",
+        "python": "HyperBusyError",
+        "node": "HyperBusyError",
+        "wasm": "HyperBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Hyper\\HyperInternalError",
+        "python": "HyperInternalError",
+        "node": "HyperInternalError",
+        "wasm": "HyperInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_hyper::ErrorCode::NotApplicationPath",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::NotRedirectResult",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::NotOutsideLocation",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::OutsideRedirectStores",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::PageStatusNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::ReplyStatusNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::CookieNameNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::CookieValueNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::NegativeMaxAge",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::IntegerRange",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::CacheControlNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::CacheControlShared",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::ReferrerPolicyNotAllowed",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidCsrfForm",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidSessionToken",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidSessionRecord",
+        "category": "store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::SharedHoldsContext",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::NotSelected",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::MalformedContentType",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidApplication",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidBuild",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::InvalidRepresentation",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::MalformedJson",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Internal",
+        "category": "internal"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::RecordValue",
+        "category": "internal"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::InvalidAccept",
+        "library": "http-negotiation"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::InvalidWeight",
+        "library": "http-negotiation"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::InvalidCandidate",
+        "library": "http-negotiation"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::Internal",
+        "library": "http-negotiation"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LexInvalidUtf8",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedTag",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedComment",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedString",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedToken",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidNumber",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidEscape",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedClose",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnclosedBlock",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseOutsideBlock",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseDuplicateElse",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifAfterElse",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifNotInIf",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseReservedName",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidPath",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidBlockTag",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidWrapper",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidDirective",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadNotFound",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadCycle",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadOutsideRoot",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadFailed",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadNotLoaded",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberRange",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberNotFinite",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidUtf8",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataUnsupportedType",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataDepth",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidJson",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeType",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeCompare",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeDivZero",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeStringify",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeUnknownFunction",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeArity",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeHostFunction",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeUnknownLoop",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeBlockUndefined",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeBlockRedefined",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeDepth",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeLimit",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ArgumentDelimiters",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ArgumentFunctionName",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ArgumentSourceRange",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ArgumentIndent",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::FormatInvariant",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::FormatHtml",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::AstInvalid",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::Internal",
+        "library": "template"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Random",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Record",
+        "library": "session-store",
+        "class": "record_error"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordNotArray",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordWrite",
+        "library": "session-store",
+        "class": "record_error"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::InvalidDirectory",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::InvalidLifetime",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Cancelled",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::IdentifierTaken",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Io",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::InvalidLockExpire",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::InvalidSetting",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockTimeout",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockLost",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Reply",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Redis",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Connection",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Internal",
+        "library": "session-store"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::InvalidName",
+        "library": "http-cookie"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::InvalidCookiePath",
+        "library": "http-cookie"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::TooLarge",
+        "library": "http-cookie"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::PrefixNotMet",
+        "library": "http-cookie"
+      },
+      {
+        "variant": "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::SameSiteNoneNotSecure",
+        "library": "http-cookie"
+      }
+    ],
+    "code": {
+      "error": "polyspec_hyper::Error",
+      "path": "polyspec_hyper::Error::code"
+    },
+    "binding": [],
+    "wrapped": [
+      {
+        "library": "session-store",
+        "unit": "record_error",
+        "property": [
+          "offset"
+        ],
+        "forward": "record_error"
+      }
+    ]
+  },
+  "faults": [
+    {
+      "id": "internal",
+      "core": "polyspec_hyper::fault::INTERNAL",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "HY-132.6",
+      "place": "each check of an invariant of the core that gives Error::Internal: polyspec_hyper::front::route_request, polyspec_hyper::client_rendering, polyspec_hyper::media::select, polyspec_hyper::manifest::Manifest::page, polyspec_hyper::read_paths, polyspec_hyper::render, polyspec_hyper::session, polyspec_hyper::build, polyspec_hyper::steps"
+    }
+  ],
+  "units": [
+    {
+      "id": "app",
+      "name": [
+        "app"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "host",
+      "constructible": false,
+      "final": true,
+      "members": []
+    },
+    {
+      "id": "rules",
+      "name": [
+        "rules"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "internal",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "rules.csrf_mask",
+          "name": [
+            "csrf",
+            "mask"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "token"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "mask"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidCsrfForm"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::csrf::mask"
+        },
+        {
+          "id": "rules.csrf_verify",
+          "name": [
+            "csrf",
+            "verify"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "token"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidCsrfForm"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::csrf::verify"
+        },
+        {
+          "id": "rules.browser",
+          "name": [
+            "browser"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "masked"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "HY-24.12",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidCsrfForm"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::csrf::browser"
+        },
+        {
+          "id": "rules.stored_token",
+          "name": [
+            "stored",
+            "token"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "stored"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidSessionToken"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::csrf::stored_token"
+        },
+        {
+          "id": "rules.is_application_path",
+          "name": [
+            "is",
+            "application",
+            "path"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "location"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::location::is_application_path"
+        },
+        {
+          "id": "rules.redirect_location",
+          "name": [
+            "redirect",
+            "location"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "location"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::NotApplicationPath"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::location::redirect_location"
+        },
+        {
+          "id": "rules.outside_location",
+          "name": [
+            "outside",
+            "location"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "location"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::NotOutsideLocation"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::location::outside_location"
+        },
+        {
+          "id": "rules.origin",
+          "name": [
+            "origin"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "HY-133.13",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::location::origin"
+        },
+        {
+          "id": "rules.cache_control",
+          "name": [
+            "cache",
+            "control"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::CacheControlNotAllowed",
+            "polyspec_hyper::ErrorCode::CacheControlShared"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::reply::cache_control"
+        },
+        {
+          "id": "rules.keeps_out_of_shared_caches",
+          "name": [
+            "keeps",
+            "out",
+            "of",
+            "shared",
+            "caches"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::reply::keeps_out_of_shared_caches"
+        },
+        {
+          "id": "rules.referrer_policy",
+          "name": [
+            "referrer",
+            "policy"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::ReferrerPolicyNotAllowed"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::reply::referrer_policy"
+        },
+        {
+          "id": "rules.session_name",
+          "name": [
+            "session",
+            "name"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "https"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::cookies::session_name"
+        },
+        {
+          "id": "rules.keep_name",
+          "name": [
+            "keep",
+            "name"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "https"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::cookies::keep_name"
+        },
+        {
+          "id": "rules.session_cookie",
+          "name": [
+            "session",
+            "cookie"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "identifier"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "https"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": "latin1",
+          "raises": [
+            "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::InvalidName",
+            "polyspec_hyper::ErrorCode::Cookies/polyspec_http_cookie::Error::TooLarge"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::cookies::session_cookie"
+        },
+        {
+          "id": "rules.reply_cookie",
+          "name": [
+            "reply",
+            "cookie"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "max",
+                "age"
+              ],
+              "type": {
+                "optional": "int"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "https"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": "latin1",
+          "raises": [
+            "polyspec_hyper::ErrorCode::CookieNameNotAllowed",
+            "polyspec_hyper::ErrorCode::CookieValueNotAllowed",
+            "polyspec_hyper::ErrorCode::IntegerRange",
+            "polyspec_hyper::ErrorCode::NegativeMaxAge"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::reply::reply_cookie"
+        },
+        {
+          "id": "rules.page_tag",
+          "name": [
+            "page",
+            "tag"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "body"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "masked",
+                "token"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "token"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::etag::page_tag"
+        },
+        {
+          "id": "rules.representation_tag",
+          "name": [
+            "representation",
+            "tag"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "content",
+                "type"
+              ],
+              "type": "latin1",
+              "required": true
+            },
+            {
+              "name": [
+                "body"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::etag::representation_tag"
+        },
+        {
+          "id": "rules.media_type",
+          "name": [
+            "media",
+            "type"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "content",
+                "type"
+              ],
+              "type": "latin1",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::MalformedContentType"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::front::media_type"
+        },
+        {
+          "id": "rules.page_status",
+          "name": [
+            "page",
+            "status"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "int",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_hyper::ErrorCode::PageStatusNotAllowed"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::location::page_status"
+        },
+        {
+          "id": "rules.reply_status",
+          "name": [
+            "reply",
+            "status"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "int",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_hyper::ErrorCode::ReplyStatusNotAllowed"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::reply::status"
+        },
+        {
+          "id": "rules.page_vary",
+          "name": [
+            "page",
+            "vary"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "has",
+                "context"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::media::page_vary"
+        },
+        {
+          "id": "rules.context_hash",
+          "name": [
+            "context",
+            "hash"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "build"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::context::hash"
+        },
+        {
+          "id": "rules.current_path",
+          "name": [
+            "current",
+            "path"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "header"
+              ],
+              "type": {
+                "optional": "latin1"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "HY-11.5",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::page::current_path"
+        },
+        {
+          "id": "rules.check_shell_path",
+          "name": [
+            "check",
+            "shell",
+            "path"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::client_rendering::check_shell_path"
+        },
+        {
+          "id": "rules.shell_text",
+          "name": [
+            "shell",
+            "text"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "bytes"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::client_rendering::shell_text"
+        },
+        {
+          "id": "rules.build_id",
+          "name": [
+            "build",
+            "id"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "outputs"
+              ],
+              "type": {
+                "list": {
+                  "unit": "build_output"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidBuild"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::build::id"
+        },
+        {
+          "id": "rules.check_build_id",
+          "name": [
+            "check",
+            "build",
+            "id"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidBuild"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::build::check_id"
+        },
+        {
+          "id": "rules.build_file_text",
+          "name": [
+            "build",
+            "file",
+            "text"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "id"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidBuild"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::build::file_text"
+        },
+        {
+          "id": "rules.read_build",
+          "name": [
+            "read",
+            "build"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "bytes"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidBuild"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::build::read"
+        },
+        {
+          "id": "rules.template_problems",
+          "name": [
+            "template",
+            "problems"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "manifest"
+              ],
+              "type": "bytes",
+              "required": true
+            },
+            {
+              "name": [
+                "templates"
+              ],
+              "type": {
+                "map": "text"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": "text"
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::template_rules::problems"
+        },
+        {
+          "id": "rules.route_reads",
+          "name": [
+            "route",
+            "reads"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "manifest"
+              ],
+              "type": "bytes",
+              "required": true
+            },
+            {
+              "name": [
+                "templates"
+              ],
+              "type": {
+                "map": "text"
+              },
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::read_paths::route_reads"
+        },
+        {
+          "id": "rules.template_reads",
+          "name": [
+            "template",
+            "reads"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "templates"
+              ],
+              "type": {
+                "map": "text"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::read_paths::template_reads"
+        },
+        {
+          "id": "rules.reserved_data_template",
+          "name": [
+            "reserved",
+            "data",
+            "template"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [],
+          "returns": {
+            "unit": "data_template"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::render::data_template"
+        },
+        {
+          "id": "rules.valid_context_header",
+          "name": [
+            "valid",
+            "context",
+            "header"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "optional": "latin1"
+              },
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::context::valid_header"
+        },
+        {
+          "id": "rules.json_read",
+          "name": [
+            "json",
+            "read"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [
+            "polyspec_hyper::ErrorCode::MalformedJson",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataDepth"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::json::json_read"
+        },
+        {
+          "id": "rules.json_write",
+          "name": [
+            "json",
+            "write"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "template_value",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataUnsupportedType"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::json::json_write"
+        },
+        {
+          "id": "rules.flash_of",
+          "name": [
+            "flash",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "stored"
+              ],
+              "type": "template_value",
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidSessionRecord"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::session::flash_record"
+        },
+        {
+          "id": "rules.kept_of",
+          "name": [
+            "kept",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "stored"
+              ],
+              "type": "template_value",
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidSessionRecord"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::session::kept_record"
+        },
+        {
+          "id": "rules.kept_cookie",
+          "name": [
+            "kept",
+            "cookie"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "template_value",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::keep::cookie_record"
+        },
+        {
+          "id": "rules.accept_ranges",
+          "name": [
+            "accept",
+            "ranges"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "accept",
+                "lines"
+              ],
+              "type": {
+                "list": "latin1"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "unit": "accept_range"
+            }
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::InvalidAccept",
+            "polyspec_hyper::ErrorCode::Negotiate/polyspec_http_negotiation::Error::InvalidWeight"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::media::accept_ranges"
+        },
+        {
+          "id": "rules.file_over",
+          "name": [
+            "file",
+            "over"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "sizes"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "limit"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::front::file_over"
+        }
+      ]
+    },
+    {
+      "id": "accept_range",
+      "name": [
+        "accept",
+        "range"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::media::AcceptRange",
+      "fields": [
+        {
+          "name": [
+            "type"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "subtype"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "parameters"
+          ],
+          "type": {
+            "list": {
+              "tuple": [
+                "text",
+                "latin1"
+              ]
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "weight"
+          ],
+          "type": "uint",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "build_output",
+      "name": [
+        "build",
+        "output"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::build::Output",
+      "fields": [
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "bytes"
+          ],
+          "type": "bytes",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "data_template",
+      "name": [
+        "data",
+        "template"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::render::DataTemplate",
+      "fields": [
+        {
+          "name": [
+            "name"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "source"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "host_options",
+      "name": [
+        "host",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "host",
+      "fields": [
+        {
+          "name": [
+            "files"
+          ],
+          "type": {
+            "optional": "path"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-97.6"
+        },
+        {
+          "name": [
+            "around"
+          ],
+          "type": {
+            "optional": {
+              "function": {
+                "parameters": [
+                  {
+                    "passthrough": "Request"
+                  },
+                  {
+                    "function": {
+                      "parameters": [
+                        {
+                          "passthrough": "Request"
+                        }
+                      ],
+                      "returns": {
+                        "passthrough": "Response"
+                      },
+                      "async_allowed": true
+                    }
+                  }
+                ],
+                "returns": {
+                  "passthrough": "Response"
+                },
+                "async_allowed": true
+              }
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-97.1"
+        },
+        {
+          "name": [
+            "written"
+          ],
+          "type": {
+            "optional": {
+              "function": {
+                "parameters": [
+                  {
+                    "passthrough": "Request"
+                  },
+                  {
+                    "optional": {
+                      "passthrough": "Response"
+                    }
+                  },
+                  "bool",
+                  "float",
+                  {
+                    "optional": "text"
+                  }
+                ],
+                "returns": "none",
+                "async_allowed": false
+              }
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-99.1"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "name": [
+        "host"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "host",
+      "members": [
+        {
+          "id": "host.listener",
+          "name": [
+            "listener"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "node"
+            ],
+            "reason": "HY-100.28"
+          }
+        },
+        {
+          "id": "host.server",
+          "name": [
+            "server"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "node"
+            ],
+            "reason": "HY-100.28"
+          }
+        },
+        {
+          "id": "host.run",
+          "name": [
+            "run"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "php"
+            ],
+            "reason": "HY-100.30"
+          }
+        },
+        {
+          "id": "host.create_server",
+          "name": [
+            "create",
+            "server"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "python"
+            ],
+            "reason": "HY-100.3"
+          }
+        },
+        {
+          "id": "host.create_wsgi",
+          "name": [
+            "create",
+            "wsgi"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "python"
+            ],
+            "reason": "HY-100.3"
+          }
+        },
+        {
+          "id": "host.create_asgi",
+          "name": [
+            "create",
+            "asgi"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "app"
+              ],
+              "type": {
+                "unit": "app"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "sessions"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "host_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "only": {
+            "targets": [
+              "python"
+            ],
+            "reason": "HY-100.15"
+          }
+        }
+      ]
+    },
+    {
+      "id": "pages_options",
+      "name": [
+        "pages",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::PagesOptions",
+      "fields": [
+        {
+          "name": [
+            "build"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "timezone"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "context"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "base",
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "form",
+            "types"
+          ],
+          "type": {
+            "list": "text"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "data",
+            "base",
+            "path"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-62.14"
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "name": [
+        "pages"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::Pages",
+      "constructible": true,
+      "final": true,
+      "members": [
+        {
+          "id": "pages.open",
+          "name": [
+            "open"
+          ],
+          "kind": "constructor",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "manifest"
+              ],
+              "type": "bytes",
+              "required": true
+            },
+            {
+              "name": [
+                "templates"
+              ],
+              "type": {
+                "map": "text"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "reads"
+              ],
+              "type": "template_value",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "pages_options"
+              },
+              "required": true
+            }
+          ],
+          "returns": "self",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_hyper::steps::Pages::open"
+          }
+        },
+        {
+          "id": "pages.register",
+          "name": [
+            "register"
+          ],
+          "kind": "method",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "host",
+                "function"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "list": "template_value"
+                    },
+                    {
+                      "unit": "environment",
+                      "library": "template"
+                    }
+                  ],
+                  "returns": "template_value",
+                  "async_allowed": false
+                }
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidApplication",
+            "polyspec_hyper::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_hyper::steps::Pages::register",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_kind",
+      "name": [
+        "page",
+        "kind"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::PageKind",
+      "variants": [
+        {
+          "name": [
+            "html"
+          ],
+          "value": "html"
+        },
+        {
+          "name": [
+            "document",
+            "json"
+          ],
+          "value": "document_json"
+        },
+        {
+          "name": [
+            "region",
+            "json"
+          ],
+          "value": "region_json"
+        }
+      ]
+    },
+    {
+      "id": "page_input",
+      "name": [
+        "page",
+        "input"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::PageInput",
+      "fields": [
+        {
+          "name": [
+            "route"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "params"
+          ],
+          "type": {
+            "map": "text"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "kind"
+          ],
+          "type": {
+            "unit": "page_kind"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "action"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "csrf"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "changed"
+          ],
+          "type": {
+            "list": "text"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "stored"
+          ],
+          "type": {
+            "map": {
+              "map": "template_value"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "now"
+          ],
+          "type": "float",
+          "required": true
+        },
+        {
+          "name": [
+            "keep",
+            "cookie"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-38.10"
+        },
+        {
+          "name": [
+            "held",
+            "hash"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-127.1"
+        }
+      ]
+    },
+    {
+      "id": "call",
+      "name": [
+        "call"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::Call",
+      "tag": [
+        "call"
+      ],
+      "cases": [
+        {
+          "value": "action",
+          "fields": []
+        },
+        {
+          "value": "context",
+          "fields": []
+        },
+        {
+          "value": "shared",
+          "fields": []
+        },
+        {
+          "value": "route_loader",
+          "fields": []
+        },
+        {
+          "value": "route_region_loader",
+          "fields": [
+            {
+              "name": [
+                "region"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "region_loader",
+          "fields": [
+            {
+              "name": [
+                "region"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "reply",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "id": "action_outcome",
+      "name": [
+        "action",
+        "outcome"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::ActionOutcome",
+      "tag": [
+        "outcome"
+      ],
+      "cases": [
+        {
+          "value": "page",
+          "fields": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "data"
+              ],
+              "type": {
+                "map": "template_value"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "revision_changed",
+          "fields": []
+        },
+        {
+          "value": "no_page",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "id": "page_step_input",
+      "name": [
+        "page",
+        "step",
+        "input"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::Input",
+      "tag": [
+        "input"
+      ],
+      "cases": [
+        {
+          "value": "start",
+          "fields": []
+        },
+        {
+          "value": "action",
+          "fields": [
+            {
+              "name": [
+                "outcome"
+              ],
+              "type": {
+                "unit": "action_outcome"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "context",
+          "fields": [
+            {
+              "name": [
+                "context"
+              ],
+              "type": {
+                "map": "template_value"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "shared",
+          "fields": [
+            {
+              "name": [
+                "shared"
+              ],
+              "type": {
+                "map": "template_value"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "loaded",
+          "fields": [
+            {
+              "name": [
+                "data"
+              ],
+              "type": {
+                "map": "template_value"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "absent",
+          "fields": []
+        },
+        {
+          "value": "no_handler",
+          "fields": []
+        },
+        {
+          "value": "reply",
+          "fields": [
+            {
+              "name": [
+                "embeds"
+              ],
+              "type": "bool",
+              "required": true
+            },
+            {
+              "name": [
+                "status"
+              ],
+              "type": {
+                "optional": "uint"
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "HY-69"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "answer",
+      "name": [
+        "answer"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::Answer",
+      "tag": [
+        "answer"
+      ],
+      "cases": [
+        {
+          "value": "document",
+          "fields": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "html"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "json",
+          "fields": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "no_page",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "id": "step",
+      "name": [
+        "step"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::Step",
+      "tag": [
+        "step"
+      ],
+      "cases": [
+        {
+          "value": "call",
+          "fields": [
+            {
+              "name": [
+                "call"
+              ],
+              "type": {
+                "unit": "call"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "answer",
+          "fields": [
+            {
+              "name": [
+                "answer"
+              ],
+              "type": {
+                "unit": "answer"
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page_request",
+      "name": [
+        "page",
+        "request"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::steps::PageRequest",
+      "constructible": true,
+      "final": true,
+      "members": [
+        {
+          "id": "page_request.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "pages"
+              ],
+              "type": {
+                "unit": "pages"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "input"
+              ],
+              "type": {
+                "unit": "page_input"
+              },
+              "required": true
+            }
+          ],
+          "returns": "self",
+          "raises": [
+            "polyspec_hyper::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_hyper::steps::PageRequest::new"
+          }
+        },
+        {
+          "id": "page_request.next",
+          "name": [
+            "next"
+          ],
+          "kind": "method",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "input"
+              ],
+              "type": {
+                "unit": "page_step_input"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "step"
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::Internal",
+            "polyspec_hyper::ErrorCode::SharedHoldsContext",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadCycle",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataDepth",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeType",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeCompare",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeDivZero",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeStringify",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeUnknownFunction",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeArity",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeHostFunction",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeUnknownLoop",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeBlockUndefined",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeBlockRedefined",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeDepth",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_hyper::steps::PageRequest::next",
+            "receiver": "&mut self",
+            "failure": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "front",
+      "name": [
+        "front"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::front::Front",
+      "fields": [
+        {
+          "name": [
+            "method"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "accept"
+          ],
+          "type": {
+            "list": "latin1"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "hx",
+            "request"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "context",
+            "header"
+          ],
+          "type": {
+            "optional": "latin1"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-127.1"
+        },
+        {
+          "name": [
+            "content",
+            "type"
+          ],
+          "type": {
+            "optional": "latin1"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-59.12"
+        }
+      ]
+    },
+    {
+      "id": "plain",
+      "name": [
+        "plain"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::front::Plain",
+      "fields": [
+        {
+          "name": [
+            "status"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "body"
+          ],
+          "type": "bytes",
+          "required": true
+        },
+        {
+          "name": [
+            "vary",
+            "accept"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "allow"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-27.6"
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "name": [
+        "route"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::front::Route",
+      "tag": [
+        "route"
+      ],
+      "cases": [
+        {
+          "value": "plain",
+          "fields": [
+            {
+              "name": [
+                "answer"
+              ],
+              "type": {
+                "unit": "plain"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "shell",
+          "fields": []
+        },
+        {
+          "value": "keep",
+          "fields": []
+        },
+        {
+          "value": "representation",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "params"
+              ],
+              "type": {
+                "list": {
+                  "tuple": [
+                    "text",
+                    "text"
+                  ]
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "entry"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "values"
+              ],
+              "type": {
+                "list": "latin1"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "page",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "params"
+              ],
+              "type": {
+                "list": {
+                  "tuple": [
+                    "text",
+                    "text"
+                  ]
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "kind"
+              ],
+              "type": {
+                "unit": "page_kind"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "action"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page_response",
+      "name": [
+        "page",
+        "response"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::front::PageResponse",
+      "fields": [
+        {
+          "name": [
+            "status"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "json"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "body"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "context"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "masked",
+            "token"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "token"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "method"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "cache",
+            "control"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-52"
+        },
+        {
+          "name": [
+            "if",
+            "none",
+            "match"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-53.4"
+        },
+        {
+          "name": [
+            "referrer",
+            "policy"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-103.6"
+        }
+      ]
+    },
+    {
+      "id": "page_headers",
+      "name": [
+        "page",
+        "headers"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::front::PageHeaders",
+      "fields": [
+        {
+          "name": [
+            "status"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "headers"
+          ],
+          "type": {
+            "list": {
+              "tuple": [
+                "text",
+                "text"
+              ]
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "body"
+          ],
+          "type": "bool",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "front_functions",
+      "name": [
+        "front",
+        "functions"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "internal",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "front_functions.route_request",
+          "name": [
+            "route",
+            "request"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "pages"
+              ],
+              "type": {
+                "unit": "pages"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "chosen"
+              ],
+              "type": "bool",
+              "required": true
+            },
+            {
+              "name": [
+                "front"
+              ],
+              "type": {
+                "unit": "front"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "route"
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::front::route_request"
+        },
+        {
+          "id": "front_functions.compute_page_headers",
+          "name": [
+            "compute",
+            "page",
+            "headers"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "response"
+              ],
+              "type": {
+                "unit": "page_response"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "page_headers"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::front::page_headers"
+        },
+        {
+          "id": "front_functions.frame_headers",
+          "name": [
+            "frame",
+            "headers"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "frame",
+                "ancestors"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "tuple": [
+                "text",
+                "text"
+              ]
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::front::frame_headers"
+        },
+        {
+          "id": "front_functions.kept_value",
+          "name": [
+            "kept",
+            "value"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "pages"
+              ],
+              "type": {
+                "unit": "pages"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "region"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "template_value"
+          },
+          "optional_reason": "HY-40.1",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_hyper::front::kept_value"
+        }
+      ]
+    },
+    {
+      "id": "opening",
+      "name": [
+        "opening"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::opening::Opening",
+      "fields": [
+        {
+          "name": [
+            "route"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "params"
+          ],
+          "type": {
+            "list": {
+              "tuple": [
+                "text",
+                "text"
+              ]
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "kind"
+          ],
+          "type": {
+            "unit": "page_kind"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "action"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "base",
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "mask"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "now"
+          ],
+          "type": "float",
+          "required": true
+        },
+        {
+          "name": [
+            "current",
+            "url"
+          ],
+          "type": {
+            "optional": "latin1"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-11.5"
+        },
+        {
+          "name": [
+            "keep",
+            "cookie"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-38.10"
+        },
+        {
+          "name": [
+            "held",
+            "hash"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-127.1"
+        },
+        {
+          "name": [
+            "form",
+            "csrf"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-24.5"
+        }
+      ]
+    },
+    {
+      "id": "opened",
+      "name": [
+        "opened"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::opening::Opened",
+      "tag": [
+        "opened"
+      ],
+      "cases": [
+        {
+          "value": "refused",
+          "fields": [
+            {
+              "name": [
+                "answer"
+              ],
+              "type": {
+                "unit": "plain"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "page",
+          "fields": [
+            {
+              "name": [
+                "input"
+              ],
+              "type": {
+                "unit": "page_input"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "flash"
+              ],
+              "type": {
+                "map": "template_value"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "token"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "keep_request",
+      "name": [
+        "keep",
+        "request"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "internal",
+      "origin": "generated",
+      "core_type": "polyspec_hyper::opening::KeepRequest",
+      "fields": [
+        {
+          "name": [
+            "region"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "value"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "form",
+            "csrf"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "HY-24.5"
+        }
+      ]
+    },
+    {
+      "id": "opening_functions",
+      "name": [
+        "opening",
+        "functions"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "internal",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "opening_functions.open_page",
+          "name": [
+            "open",
+            "page"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "pages"
+              ],
+              "type": {
+                "unit": "pages"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "store"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "opening"
+              ],
+              "type": {
+                "unit": "opening"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "opened"
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidSessionToken",
+            "polyspec_hyper::ErrorCode::InvalidSessionRecord",
+            "polyspec_hyper::ErrorCode::InvalidCsrfForm",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataDepth",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Record",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordWrite",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Random",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordNotArray",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Cancelled",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::IdentifierTaken",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Io",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockTimeout",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockLost",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Reply",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Redis",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Connection",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Internal",
+            "polyspec_hyper::ErrorCode::RecordValue"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::opening::open_page"
+        },
+        {
+          "id": "opening_functions.answer_keep_request",
+          "name": [
+            "answer",
+            "keep",
+            "request"
+          ],
+          "kind": "function",
+          "visibility": "internal",
+          "parameters": [
+            {
+              "name": [
+                "pages"
+              ],
+              "type": {
+                "unit": "pages"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "store"
+              ],
+              "type": {
+                "unit": "store",
+                "library": "session-store"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "request"
+              ],
+              "type": {
+                "unit": "keep_request"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "plain"
+          },
+          "raises": [
+            "polyspec_hyper::ErrorCode::InvalidSessionToken",
+            "polyspec_hyper::ErrorCode::InvalidSessionRecord",
+            "polyspec_hyper::ErrorCode::InvalidCsrfForm",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_hyper::ErrorCode::Template/polyspec_template::ErrorCode::DataDepth",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Record",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordWrite",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Random",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::RecordNotArray",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Cancelled",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::IdentifierTaken",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Io",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockTimeout",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::LockLost",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Reply",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Redis",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Connection",
+            "polyspec_hyper::ErrorCode::Sessions/polyspec_session_store::Error::Internal",
+            "polyspec_hyper::ErrorCode::RecordValue"
+          ],
+          "wait": "none",
+          "core": "polyspec_hyper::opening::keep_request"
+        }
+      ]
+    },
+    {
+      "id": "record_error",
+      "name": [
+        "record",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "store",
+      "members": [
+        {
+          "id": "record_error.offset",
+          "name": [
+            "offset"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "uint"
+          },
+          "optional_reason": "HY-104.8",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_hyper::Error::offset",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "id": "package",
+      "rule": "P-1",
+      "reason": "P-1: the main spec package of a repository has the name of the repository and other components add their name, so the server library is Composer polyspec/hyper, PyPI polyspec-hyper and npm @polyspec/hyper, whose namespace and module stay Polyspec\\Hyper and polyspec.hyper; server is the role of the specification, not a package name. Before 0.0.7 @polyspec/hyper was the browser package, which is @polyspec/hyper-client",
+      "symbol": "polyspec/hyper, polyspec-hyper, @polyspec/hyper",
+      "from": {
+        "php": "composer require polyspec/hyper-server",
+        "python": "pip install polyspec-hyper-server",
+        "node": "npm install @polyspec/hyper-server"
+      },
+      "to": "app"
+    },
+    {
+      "id": "native",
+      "rule": "L-2a",
+      "reason": "L-2a, H-1b: a host package without a component has its native module in packages/<lang>/native/: the PHP extension polyspec_hyper of the Composer package polyspec/hyper-native, which polyspec/hyper requires as ext-polyspec_hyper, the Python module polyspec.hyper._binding._native and the Node addon hyper.<target>.node of the crate polyspec-hyper-node, over the core crate polyspec-hyper with the library polyspec_hyper",
+      "symbol": "polyspec/hyper-native, polyspec.hyper._binding._native, hyper.<target>.node",
+      "from": {
+        "php": "extension polyspec_hyper_server of crate polyspec-hyper-server-php-ext",
+        "python": "module polyspec.hyper.server._native of crate polyspec-hyper-server-python",
+        "node": "addon of crate polyspec-hyper-server-node"
+      },
+      "to": null
+    },
+    {
+      "id": "open-error",
+      "rule": "HY-106.21",
+      "reason": "HY-106.21, B-4: the open error is HyperValueError of kind invalid_application, and the build file kind invalid_build, so a caller tells the failures apart by the kind",
+      "symbol": "App::open, App.open",
+      "from": {
+        "php": "throws \\InvalidArgumentException, Polyspec\\Hyper\\InvalidBuild",
+        "python": "raises ValueError, InvalidBuild",
+        "node": "throws Error, InvalidBuild"
+      },
+      "to": "app"
+    },
+    {
+      "id": "message-prefix",
+      "rule": "HY-106.19",
+      "reason": "HY-106.19, B-1: a binding adds nothing to a message, so no message has the prefix hyper:",
+      "symbol": "Error messages",
+      "from": {
+        "node": "message starts with 'hyper: '"
+      },
+      "to": null
+    },
+    {
+      "id": "argument-types",
+      "rule": "HY-52.15",
+      "reason": "HY-52.15, HY-25.7, HY-60.32, HY-69.10, HY-103.9, B-2: an argument of another type is refused by the binding with invalid_argument_type or invalid_number, without a message of hyper",
+      "symbol": "Reply.cookie, Reply.removeCookie, Reply.cacheControl, Reply.status, Reply.referrerPolicy, Reply.note, Result.flash, Result.changed",
+      "from": {
+        "php": "throws \\TypeError('a cookie name is not a string (HY-52)')",
+        "python": "raises TypeError('a cookie name is not a string (HY-52)')",
+        "node": "throws TypeError('a cookie name is not a string (HY-52)')"
+      },
+      "to": null
+    },
+    {
+      "id": "float-integer",
+      "rule": "HY-52.19",
+      "reason": "HY-52.19, B-2: a float is no integer of the interface contract in PHP and Python, so Max-Age 60.0 and status 403.0 fail with invalid_number, as an integer outside ±(2^53 − 1) does, which is outside the type int",
+      "symbol": "Reply.cookie, Reply.status",
+      "from": {
+        "php": "cookie(string $name, string $value, int|float|null $maxAge = null)",
+        "python": "cookie(name: str, value: str, max_age: int | float | None = None)"
+      },
+      "to": null
+    },
+    {
+      "id": "value-error-classes",
+      "rule": "HY-46.3",
+      "reason": "HY-46.3, HY-132.2, B-4: every error is the class Hyper<Category>Error of its category with kind and status, in place of the built-in classes",
+      "symbol": "Result.redirect, Result.page, Reply, Csrf",
+      "from": {
+        "php": "throws \\InvalidArgumentException",
+        "python": "raises ValueError",
+        "node": "throws RangeError"
+      },
+      "to": null
+    },
+    {
+      "id": "text-class",
+      "rule": "HY-42.7",
+      "reason": "HY-42.7, B-3: a character above U+00FF in a request text is invalid_text of the binding",
+      "symbol": "new Request",
+      "from": {
+        "python": "raises ValueError",
+        "node": "throws Error"
+      },
+      "to": null
+    },
+    {
+      "id": "not-selected",
+      "rule": "HY-116.21",
+      "reason": "HY-116.21, B-4: a request without a selection fails with kind not_selected in the class of the category type",
+      "symbol": "Request.wantsJson, Request.isRegionRequest",
+      "from": {
+        "php": "throws \\LogicException",
+        "python": "raises RuntimeError",
+        "node": "throws Error"
+      },
+      "to": null
+    },
+    {
+      "id": "host-listener",
+      "rule": "HY-106.20",
+      "reason": "HY-106.20, G-3: a host entry is a host function that takes the application first and no member of the generated App",
+      "symbol": "App.listener, App.server",
+      "from": {
+        "node": "app.listener(sessions, options), app.server(sessions, options)"
+      },
+      "to": "host.listener"
+    },
+    {
+      "id": "host-run",
+      "rule": "HY-106.20",
+      "reason": "HY-106.20, G-3: a host entry is a host function that takes the application first",
+      "symbol": "App::run",
+      "from": {
+        "php": "$app->run(?int $started = null): void"
+      },
+      "to": "host.run"
+    },
+    {
+      "id": "session-setup",
+      "rule": "HY-104.26",
+      "reason": "HY-104.26: the PHP server keeps its sessions in the file store of the session-store library, so the option of the native session module is gone",
+      "symbol": "App::open sessionSetup",
+      "from": {
+        "php": "App::open(..., ?\\Closure $sessionSetup = null)"
+      },
+      "to": null
+    },
+    {
+      "id": "redis-php-stores",
+      "rule": "HY-115.29",
+      "reason": "HY-115.26, HY-115.27, HY-115.29: the Redis store takes connection settings and asks Sentinel per request in every server, so the PHP stores of Sentinel and Cluster are gone",
+      "symbol": "RedisSentinelSessions, RedisClusterSessions",
+      "from": {
+        "php": "Polyspec\\Hyper\\RedisSentinelSessions, Polyspec\\Hyper\\RedisClusterSessions"
+      },
+      "to": null
+    },
+    {
+      "id": "redis-command-function",
+      "rule": "HY-115.29",
+      "reason": "HY-115.29: the Redis store takes connection settings, not a function that runs a command on a client of the application",
+      "symbol": "RedisSessions",
+      "from": {
+        "python": "RedisSessions(command, lifetime=..., lock_expire=...)",
+        "node": "new RedisSessions({ command, lifetime, lockExpire })"
+      },
+      "to": null
+    },
+    {
+      "id": "array-session",
+      "rule": "HY-104.30",
+      "reason": "HY-104.30, C-6: the store that keeps one session in memory belongs to the session-store library as MemoryStore, which hyper uses through the store interface",
+      "symbol": "ArraySession",
+      "from": {
+        "php": "Polyspec\\Hyper\\ArraySession",
+        "python": "polyspec.hyper.array_session.ArraySession",
+        "node": "ArraySession"
+      },
+      "to": null
+    },
+    {
+      "id": "orm-recognition",
+      "rule": "HY-107.7",
+      "reason": "HY-107.7, B-4: an error of the ORM is recognized by the error classes of the orm package and its kind, not by the class name OrmException or OrmError and the property code_ or code",
+      "symbol": "App (loader, action and representation answers)",
+      "from": {
+        "php": "OrmException::$code_",
+        "python": "OrmError.code",
+        "node": "OrmError.code"
+      },
+      "to": null
+    }
+  ],
+  "cases": [
+    {
+      "member": "front_functions.route_request",
+      "file": "packages/rust/tests/cases/faults.json",
+      "group": "internal"
+    },
+    {
+      "member": "rules.template_reads",
+      "file": "packages/rust/tests/cases/faults.json",
+      "group": "template"
+    },
+    {
+      "member": "opening_functions.open_page",
+      "file": "packages/rust/tests/cases/faults.json",
+      "group": "session"
+    },
+    {
+      "member": "rules.csrf_mask",
+      "file": "var/binding-cases/csrf.json",
+      "group": "mask"
+    },
+    {
+      "member": "rules.csrf_verify",
+      "file": "var/binding-cases/csrf.json",
+      "group": "verify"
+    },
+    {
+      "member": "rules.browser",
+      "file": "var/binding-cases/csrf.json",
+      "group": "browser"
+    },
+    {
+      "member": "rules.redirect_location",
+      "file": "var/binding-cases/result.json",
+      "group": "redirect"
+    },
+    {
+      "member": "rules.page_status",
+      "file": "var/binding-cases/result.json",
+      "group": "page"
+    },
+    {
+      "member": "rules.outside_location",
+      "file": "var/binding-cases/result.json",
+      "group": "outside"
+    },
+    {
+      "member": "rules.origin",
+      "file": "var/binding-cases/result.json",
+      "group": "origin"
+    },
+    {
+      "member": "rules.cache_control",
+      "file": "var/binding-cases/reply.json",
+      "group": "cacheControl"
+    },
+    {
+      "member": "rules.referrer_policy",
+      "file": "var/binding-cases/reply.json",
+      "group": "referrerPolicy"
+    },
+    {
+      "member": "rules.reply_status",
+      "file": "var/binding-cases/reply.json",
+      "group": "status"
+    },
+    {
+      "member": "rules.context_hash",
+      "file": "var/binding-cases/context.json",
+      "group": "contexts"
+    },
+    {
+      "member": "rules.read_build",
+      "file": "var/binding-cases/build.json",
+      "group": "read"
+    }
+  ]
+}

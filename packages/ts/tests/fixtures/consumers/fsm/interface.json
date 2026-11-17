@@ -1,0 +1,653 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "fsm",
+  "core": {
+    "crate": "polyspec-fsm",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/fsm",
+      "namespace": "Polyspec\\Fsm"
+    },
+    "python": {
+      "package": "polyspec-fsm",
+      "module": "polyspec.fsm"
+    },
+    "node": {
+      "package": "@polyspec/fsm",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/fsm/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Fsm\\FsmValueError",
+        "python": "FSMValueError",
+        "node": "FsmValueError",
+        "wasm": "FsmValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Fsm\\FsmTypeError",
+        "python": "FSMTypeError",
+        "node": "FsmTypeError",
+        "wasm": "FsmTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Fsm\\FsmIoError",
+        "python": "FSMIoError",
+        "node": "FsmIoError",
+        "wasm": "FsmIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Fsm\\FsmStoreError",
+        "python": "FSMStoreError",
+        "node": "FsmStoreError",
+        "wasm": "FsmStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Fsm\\FsmBusyError",
+        "python": "FSMBusyError",
+        "node": "FsmBusyError",
+        "wasm": "FsmBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Fsm\\FsmInternalError",
+        "python": "FSMInternalError",
+        "node": "FsmInternalError",
+        "wasm": "FsmInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_fsm::Error::Conflict",
+        "category": "value",
+        "class": "machine_error"
+      },
+      {
+        "variant": "polyspec_fsm::Error::InvalidTransition",
+        "category": "value",
+        "class": "machine_error"
+      },
+      {
+        "variant": "polyspec_fsm::Error::UnknownCode",
+        "category": "value",
+        "class": "machine_error"
+      },
+      {
+        "variant": "polyspec_fsm::Error::ReservedCode",
+        "category": "value",
+        "class": "machine_error"
+      },
+      {
+        "variant": "polyspec_fsm::Error::UnknownState",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_fsm::Error::UnknownEvent",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_fsm::Error::InvalidDefinition",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "machine",
+      "name": [
+        "machine"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_fsm::Machine",
+      "constructible": false,
+      "final": true,
+      "members": [
+        {
+          "id": "machine.parse",
+          "name": [
+            "parse"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "definition"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "reserved"
+              ],
+              "type": {
+                "list": "int"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "machine"
+          },
+          "raises": [
+            "polyspec_fsm::Error::InvalidDefinition"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::parse"
+          }
+        },
+        {
+          "id": "machine.initial",
+          "name": [
+            "initial"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::initial",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.code",
+          "name": [
+            "code"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "state"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "int",
+          "raises": [
+            "polyspec_fsm::Error::UnknownState"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::code",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.key",
+          "name": [
+            "key"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "code"
+              ],
+              "type": "int",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_fsm::Error::UnknownCode",
+            "polyspec_fsm::Error::ReservedCode"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::key",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.from_code",
+          "name": [
+            "from",
+            "code"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "code"
+              ],
+              "type": "int",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_fsm::Error::UnknownCode",
+            "polyspec_fsm::Error::ReservedCode"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::from_code",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.is_final",
+          "name": [
+            "is",
+            "final"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "state"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [
+            "polyspec_fsm::Error::UnknownState"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::is_final",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.events_from",
+          "name": [
+            "events",
+            "from"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "state"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": "text"
+          },
+          "raises": [
+            "polyspec_fsm::Error::UnknownState"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::events_from",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.target",
+          "name": [
+            "target"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "expected"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "event"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_fsm::Error::UnknownState",
+            "polyspec_fsm::Error::UnknownEvent",
+            "polyspec_fsm::Error::InvalidTransition"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::target",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.apply",
+          "name": [
+            "apply"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "expected"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "event"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "actual"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "step"
+          },
+          "raises": [
+            "polyspec_fsm::Error::UnknownState",
+            "polyspec_fsm::Error::UnknownEvent",
+            "polyspec_fsm::Error::InvalidTransition",
+            "polyspec_fsm::Error::Conflict"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::apply",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine.validate",
+          "name": [
+            "validate"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "definitions"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "unit": "finding"
+            }
+          },
+          "raises": [
+            "polyspec_fsm::Error::InvalidDefinition"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_fsm::Machine::validate"
+          }
+        }
+      ]
+    },
+    {
+      "id": "step",
+      "name": [
+        "step"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_fsm::Step",
+      "fields": [
+        {
+          "name": [
+            "to"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "changed"
+          ],
+          "type": "bool",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "finding",
+      "name": [
+        "finding"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_fsm::Finding",
+      "fields": [
+        {
+          "name": [
+            "code"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "machine"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "required": true,
+          "reason": "B-5"
+        },
+        {
+          "name": [
+            "path"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "message"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "machine_error",
+      "name": [
+        "machine",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": [
+        {
+          "id": "machine_error.expected",
+          "name": [
+            "expected"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "int"
+          },
+          "optional_reason": "B-6",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_fsm::Error::expected",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine_error.actual",
+          "name": [
+            "actual"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "int"
+          },
+          "optional_reason": "B-6",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_fsm::Error::actual",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "machine_error.event",
+          "name": [
+            "event"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "int"
+          },
+          "optional_reason": "B-6",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_fsm::Error::event",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "machine.initial",
+      "file": "contracts/cases.json",
+      "group": "machine.initial"
+    },
+    {
+      "member": "machine.code",
+      "file": "contracts/cases.json",
+      "group": "machine.code"
+    },
+    {
+      "member": "machine.key",
+      "file": "contracts/cases.json",
+      "group": "machine.key"
+    },
+    {
+      "member": "machine.from_code",
+      "file": "contracts/cases.json",
+      "group": "machine.from_code"
+    },
+    {
+      "member": "machine.is_final",
+      "file": "contracts/cases.json",
+      "group": "machine.is_final"
+    },
+    {
+      "member": "machine.events_from",
+      "file": "contracts/cases.json",
+      "group": "machine.events_from"
+    },
+    {
+      "member": "machine.target",
+      "file": "contracts/cases.json",
+      "group": "machine.target"
+    },
+    {
+      "member": "machine.apply",
+      "file": "contracts/cases.json",
+      "group": "machine.apply"
+    },
+    {
+      "member": "machine.parse",
+      "file": "contracts/cases.json",
+      "group": "machine.parse"
+    },
+    {
+      "member": "machine.validate",
+      "file": "contracts/cases.json",
+      "group": "machine.validate"
+    }
+  ]
+}

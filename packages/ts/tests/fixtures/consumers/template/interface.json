@@ -1,0 +1,4866 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "template",
+  "core": {
+    "crate": "polyspec-template",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/template",
+      "namespace": "Polyspec\\Template"
+    },
+    "python": {
+      "package": "polyspec-template",
+      "module": "polyspec.template"
+    },
+    "node": {
+      "package": "@polyspec/template",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import"
+          ]
+        },
+        "./render": {
+          "types": "./render/render.d.ts",
+          "import": "./render/render.mjs",
+          "require": "./render/render.cjs",
+          "files": [
+            "render"
+          ],
+          "formats": [
+            "import",
+            "require"
+          ]
+        },
+        "./decode": {
+          "types": "./render/decode.d.ts",
+          "import": "./render/decode.mjs",
+          "require": "./render/decode.cjs",
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/template/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "json_value": {
+      "library": "json",
+      "unit": "value"
+    },
+    "template_value": {
+      "library": "template",
+      "unit": "template_value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Template\\TemplateValueError",
+        "python": "TemplateValueError",
+        "node": "TemplateValueError",
+        "wasm": "TemplateValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Template\\TemplateTypeError",
+        "python": "TemplateTypeError",
+        "node": "TemplateTypeError",
+        "wasm": "TemplateTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Template\\TemplateIoError",
+        "python": "TemplateIoError",
+        "node": "TemplateIoError",
+        "wasm": "TemplateIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Template\\TemplateStoreError",
+        "python": "TemplateStoreError",
+        "node": "TemplateStoreError",
+        "wasm": "TemplateStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Template\\TemplateBusyError",
+        "python": "TemplateBusyError",
+        "node": "TemplateBusyError",
+        "wasm": "TemplateBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Template\\TemplateInternalError",
+        "python": "TemplateInternalError",
+        "node": "TemplateInternalError",
+        "wasm": "TemplateInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_template::ErrorCode::LexInvalidUtf8",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnterminatedTag",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnterminatedComment",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnterminatedString",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnexpectedToken",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidNumber",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidEscape",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnexpectedClose",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseUnclosedBlock",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseDuplicateElse",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseElseifAfterElse",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseElseifNotInIf",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseReservedName",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidPath",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidWrapper",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ParseInvalidDirective",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::LoadNotFound",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::LoadCycle",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::LoadOutsideRoot",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::LoadFailed",
+        "category": "io"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::LoadNotLoaded",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataNumberRange",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataNumberNotFinite",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataInvalidUtf8",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataUnsupportedType",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataDepth",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::DataInvalidJson",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeType",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeCompare",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeDivZero",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeStringify",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeUnknownFunction",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeArity",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeHostFunction",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeUnknownLoop",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeBlockUndefined",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeBlockRedefined",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeDepth",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::RuntimeLimit",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ArgumentDelimiters",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ArgumentFunctionName",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ArgumentSourceRange",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::ArgumentIndent",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::FormatInvariant",
+        "category": "internal"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::FormatHtml",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::AstInvalid",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_template::ErrorCode::Internal",
+        "category": "internal"
+      }
+    ],
+    "code": {
+      "error": "polyspec_template::TemplateError",
+      "path": "polyspec_template::TemplateError::code"
+    },
+    "binding": [],
+    "wrapped": []
+  },
+  "faults": [
+    {
+      "id": "internal",
+      "core": "polyspec_template::fault::INTERNAL",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "ERR-13",
+      "place": "polyspec_template::parse"
+    },
+    {
+      "id": "format_invariant",
+      "core": "polyspec_template::fault::FORMAT_INVARIANT",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "format_invariant"
+      ],
+      "reason": "FMT-1",
+      "place": "polyspec_template::format"
+    }
+  ],
+  "units": [
+    {
+      "id": "template_value",
+      "name": [
+        "template",
+        "value"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_template::Value",
+      "core": {
+        "in": "polyspec_template::value_in",
+        "out": "polyspec_template::value_out"
+      },
+      "in_raises": [
+        "polyspec_template::ErrorCode::DataNumberRange",
+        "polyspec_template::ErrorCode::DataNumberNotFinite",
+        "polyspec_template::ErrorCode::DataInvalidUtf8",
+        "polyspec_template::ErrorCode::DataUnsupportedType",
+        "polyspec_template::ErrorCode::DataDepth"
+      ],
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null",
+            "go": "null",
+            "wasm": "null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "bool",
+            "python": "bool",
+            "node": "bool",
+            "go": "bool",
+            "wasm": "bool"
+          }
+        },
+        {
+          "kind": "float",
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "text",
+            "python": "text",
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list",
+            "go": "list",
+            "wasm": "list"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": false
+          },
+          "make": {
+            "php": "map",
+            "python": "map",
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": true
+          },
+          "make": {
+            "php": "php_object",
+            "python": "map",
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
+          }
+        },
+        {
+          "kind": "native",
+          "make": {
+            "php": "native",
+            "python": "native",
+            "node": "native",
+            "go": "native",
+            "wasm": "native"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "int",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": true
+              },
+              "kind": "list",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": false
+              },
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "int",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "dict",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
+          "go": "nil",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "go": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "int64",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "float64",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]any",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "map[string]any",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "any",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
+          "wasm": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "wasm": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "template",
+      "name": [
+        "template"
+      ],
+      "module": "ast",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Template",
+      "fields": [
+        {
+          "name": [
+            "name"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "body"
+          ],
+          "type": {
+            "list": {
+              "unit": "node"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "comments"
+          ],
+          "type": {
+            "list": {
+              "unit": "comment"
+            }
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "comment",
+      "name": [
+        "comment"
+      ],
+      "module": "ast",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Comment",
+      "fields": [
+        {
+          "name": [
+            "value"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "span"
+          ],
+          "type": {
+            "tuple": [
+              "uint",
+              "uint"
+            ]
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "if_branch",
+      "name": [
+        "if",
+        "branch"
+      ],
+      "module": "ast",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::IfBranch",
+      "fields": [
+        {
+          "name": [
+            "test"
+          ],
+          "type": {
+            "unit": "expr"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "body"
+          ],
+          "type": {
+            "list": {
+              "unit": "node"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "span"
+          ],
+          "type": {
+            "tuple": [
+              "uint",
+              "uint"
+            ]
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "scope_item",
+      "name": [
+        "scope",
+        "item"
+      ],
+      "module": "ast",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::ScopeItem",
+      "fields": [
+        {
+          "name": [
+            "name"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "expr"
+          ],
+          "type": {
+            "unit": "expr"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "node",
+      "name": [
+        "node"
+      ],
+      "module": "ast",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Node",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "Text",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Echo",
+          "fields": [
+            {
+              "name": [
+                "expr"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "If",
+          "fields": [
+            {
+              "name": [
+                "branches"
+              ],
+              "type": {
+                "list": {
+                  "unit": "if_branch"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "else"
+              ],
+              "type": {
+                "optional": {
+                  "list": {
+                    "unit": "node"
+                  }
+                }
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "For",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "iter"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "body"
+              ],
+              "type": {
+                "list": {
+                  "unit": "node"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "empty"
+              ],
+              "type": {
+                "optional": {
+                  "list": {
+                    "unit": "node"
+                  }
+                }
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Set",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "expr"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Include",
+          "fields": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Block",
+          "fields": [
+            {
+              "name": [
+                "id"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "path"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "scope"
+              ],
+              "type": {
+                "list": {
+                  "unit": "scope_item"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "IfBlock",
+          "fields": [
+            {
+              "name": [
+                "id"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "body"
+              ],
+              "type": {
+                "list": {
+                  "unit": "node"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "else"
+              ],
+              "type": {
+                "optional": {
+                  "list": {
+                    "unit": "node"
+                  }
+                }
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "literal_value",
+      "name": [
+        "literal",
+        "value"
+      ],
+      "module": "ast",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::LiteralValue",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "null",
+          "fields": []
+        },
+        {
+          "value": "bool",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "number",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "string",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "map_entry",
+      "name": [
+        "map",
+        "entry"
+      ],
+      "module": "ast",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::MapEntry",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "entry",
+          "fields": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "spread",
+          "fields": [
+            {
+              "name": [
+                "expr"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unary_op",
+      "name": [
+        "unary",
+        "op"
+      ],
+      "module": "ast",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::UnaryOp",
+      "variants": [
+        {
+          "name": [
+            "not"
+          ],
+          "value": "!"
+        },
+        {
+          "name": [
+            "negate"
+          ],
+          "value": "-"
+        }
+      ]
+    },
+    {
+      "id": "binary_op",
+      "name": [
+        "binary",
+        "op"
+      ],
+      "module": "ast",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::BinaryOp",
+      "variants": [
+        {
+          "name": [
+            "add"
+          ],
+          "value": "+"
+        },
+        {
+          "name": [
+            "subtract"
+          ],
+          "value": "-"
+        },
+        {
+          "name": [
+            "multiply"
+          ],
+          "value": "*"
+        },
+        {
+          "name": [
+            "divide"
+          ],
+          "value": "/"
+        },
+        {
+          "name": [
+            "remainder"
+          ],
+          "value": "%"
+        },
+        {
+          "name": [
+            "equal"
+          ],
+          "value": "=="
+        },
+        {
+          "name": [
+            "not",
+            "equal"
+          ],
+          "value": "!="
+        },
+        {
+          "name": [
+            "strict",
+            "equal"
+          ],
+          "value": "==="
+        },
+        {
+          "name": [
+            "strict",
+            "not",
+            "equal"
+          ],
+          "value": "!=="
+        },
+        {
+          "name": [
+            "less"
+          ],
+          "value": "<"
+        },
+        {
+          "name": [
+            "greater"
+          ],
+          "value": ">"
+        },
+        {
+          "name": [
+            "less",
+            "equal"
+          ],
+          "value": "<="
+        },
+        {
+          "name": [
+            "greater",
+            "equal"
+          ],
+          "value": ">="
+        },
+        {
+          "name": [
+            "and"
+          ],
+          "value": "&&"
+        },
+        {
+          "name": [
+            "or"
+          ],
+          "value": "||"
+        },
+        {
+          "name": [
+            "coalesce"
+          ],
+          "value": "??"
+        },
+        {
+          "name": [
+            "in"
+          ],
+          "value": "in"
+        }
+      ]
+    },
+    {
+      "id": "loop_meta_field",
+      "name": [
+        "loop",
+        "meta",
+        "field"
+      ],
+      "module": "ast",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::LoopMetaField",
+      "variants": [
+        {
+          "name": [
+            "index"
+          ],
+          "value": "index_"
+        },
+        {
+          "name": [
+            "key"
+          ],
+          "value": "key_"
+        },
+        {
+          "name": [
+            "value"
+          ],
+          "value": "value_"
+        },
+        {
+          "name": [
+            "last"
+          ],
+          "value": "last_"
+        },
+        {
+          "name": [
+            "first"
+          ],
+          "value": "first_"
+        },
+        {
+          "name": [
+            "size"
+          ],
+          "value": "size_"
+        }
+      ]
+    },
+    {
+      "id": "expr",
+      "name": [
+        "expr"
+      ],
+      "module": "ast",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Expr",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "Literal",
+          "fields": [
+            {
+              "name": [
+                "kind"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "literal_value"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Var",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "LoopMeta",
+          "fields": [
+            {
+              "name": [
+                "loop"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "field"
+              ],
+              "type": {
+                "unit": "loop_meta_field"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Member",
+          "fields": [
+            {
+              "name": [
+                "object"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "MemberCall",
+          "fields": [
+            {
+              "name": [
+                "object"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "method"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "args"
+              ],
+              "type": {
+                "list": {
+                  "unit": "expr"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "ClassCall",
+          "fields": [
+            {
+              "name": [
+                "class",
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "method"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "args"
+              ],
+              "type": {
+                "list": {
+                  "unit": "expr"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Index",
+          "fields": [
+            {
+              "name": [
+                "object"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "index"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Call",
+          "fields": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "args"
+              ],
+              "type": {
+                "list": {
+                  "unit": "expr"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Unary",
+          "fields": [
+            {
+              "name": [
+                "op"
+              ],
+              "type": {
+                "unit": "unary_op"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "operand"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Binary",
+          "fields": [
+            {
+              "name": [
+                "op"
+              ],
+              "type": {
+                "unit": "binary_op"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "left"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "right"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Ternary",
+          "fields": [
+            {
+              "name": [
+                "test"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "then"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "expr"
+                }
+              },
+              "default": {
+                "literal": null
+              },
+              "reason": "AST-8"
+            },
+            {
+              "name": [
+                "else"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "List",
+          "fields": [
+            {
+              "name": [
+                "items"
+              ],
+              "type": {
+                "list": {
+                  "unit": "expr"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Map",
+          "fields": [
+            {
+              "name": [
+                "entries"
+              ],
+              "type": {
+                "list": {
+                  "unit": "map_entry"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "Spread",
+          "fields": [
+            {
+              "name": [
+                "expr"
+              ],
+              "type": {
+                "unit": "expr"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tag_kind",
+      "name": [
+        "tag",
+        "kind"
+      ],
+      "module": "analysis",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::TagKind",
+      "variants": [
+        {
+          "name": [
+            "assignment"
+          ],
+          "value": "assignment"
+        },
+        {
+          "name": [
+            "block"
+          ],
+          "value": "block"
+        },
+        {
+          "name": [
+            "close"
+          ],
+          "value": "close"
+        },
+        {
+          "name": [
+            "comment"
+          ],
+          "value": "comment"
+        },
+        {
+          "name": [
+            "directive"
+          ],
+          "value": "directive"
+        },
+        {
+          "name": [
+            "echo"
+          ],
+          "value": "echo"
+        },
+        {
+          "name": [
+            "else"
+          ],
+          "value": "else"
+        },
+        {
+          "name": [
+            "elseif"
+          ],
+          "value": "elseif"
+        },
+        {
+          "name": [
+            "for"
+          ],
+          "value": "for"
+        },
+        {
+          "name": [
+            "if"
+          ],
+          "value": "if"
+        },
+        {
+          "name": [
+            "ifblock"
+          ],
+          "value": "ifblock"
+        },
+        {
+          "name": [
+            "include"
+          ],
+          "value": "include"
+        }
+      ]
+    },
+    {
+      "id": "token_kind",
+      "name": [
+        "token",
+        "kind"
+      ],
+      "module": "analysis",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::TokenKind",
+      "variants": [
+        {
+          "name": [
+            "delimiter"
+          ],
+          "value": "delimiter"
+        },
+        {
+          "name": [
+            "keyword"
+          ],
+          "value": "keyword"
+        },
+        {
+          "name": [
+            "variable"
+          ],
+          "value": "variable"
+        },
+        {
+          "name": [
+            "property"
+          ],
+          "value": "property"
+        },
+        {
+          "name": [
+            "function"
+          ],
+          "value": "function"
+        },
+        {
+          "name": [
+            "string"
+          ],
+          "value": "string"
+        },
+        {
+          "name": [
+            "number"
+          ],
+          "value": "number"
+        },
+        {
+          "name": [
+            "operator"
+          ],
+          "value": "operator"
+        },
+        {
+          "name": [
+            "comment"
+          ],
+          "value": "comment"
+        },
+        {
+          "name": [
+            "path"
+          ],
+          "value": "path"
+        }
+      ]
+    },
+    {
+      "id": "syntax_tag",
+      "name": [
+        "syntax",
+        "tag"
+      ],
+      "module": "analysis",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::SyntaxTag",
+      "fields": [
+        {
+          "name": [
+            "start"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "end"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "echo"
+          ],
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": [
+            "kind"
+          ],
+          "type": {
+            "unit": "tag_kind"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "body",
+            "start"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "body",
+            "end"
+          ],
+          "type": "uint",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "syntax_token",
+      "name": [
+        "syntax",
+        "token"
+      ],
+      "module": "analysis",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::SyntaxToken",
+      "fields": [
+        {
+          "name": [
+            "start"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "end"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "kind"
+          ],
+          "type": {
+            "unit": "token_kind"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "template_analysis",
+      "name": [
+        "template",
+        "analysis"
+      ],
+      "module": "analysis",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::TemplateAnalysis",
+      "fields": [
+        {
+          "name": [
+            "ast"
+          ],
+          "type": {
+            "unit": "template"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "tags"
+          ],
+          "type": {
+            "list": {
+              "unit": "syntax_tag"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "tokens"
+          ],
+          "type": {
+            "list": {
+              "unit": "syntax_token"
+            }
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "prefix_analysis",
+      "name": [
+        "prefix",
+        "analysis"
+      ],
+      "module": "analysis",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::PrefixAnalysis",
+      "fields": [
+        {
+          "name": [
+            "ast"
+          ],
+          "type": {
+            "optional": {
+              "unit": "template"
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "EDT-11"
+        },
+        {
+          "name": [
+            "tags"
+          ],
+          "type": {
+            "list": {
+              "unit": "syntax_tag"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "tokens"
+          ],
+          "type": {
+            "list": {
+              "unit": "syntax_token"
+            }
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "error"
+          ],
+          "type": {
+            "optional": {
+              "unit": "template_error_object"
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "EDT-11"
+        }
+      ]
+    },
+    {
+      "id": "template_error_object",
+      "name": [
+        "template",
+        "error",
+        "object"
+      ],
+      "module": "analysis",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::TemplateErrorObject",
+      "fields": [
+        {
+          "name": [
+            "code"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "template"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "line"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "col"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "offset"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "end"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "message"
+          ],
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "template_blocks",
+      "name": [
+        "template",
+        "blocks"
+      ],
+      "module": "format",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::TemplateBlocks",
+      "variants": [
+        {
+          "name": [
+            "indent"
+          ],
+          "value": "indent"
+        },
+        {
+          "name": [
+            "flat"
+          ],
+          "value": "flat"
+        }
+      ]
+    },
+    {
+      "id": "format_options",
+      "name": [
+        "format",
+        "options"
+      ],
+      "module": "format",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::FormatOptions",
+      "fields": [
+        {
+          "name": [
+            "name"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "template.tpl"
+          },
+          "default_core": "polyspec_template::DEFAULT_FORMAT_NAME"
+        },
+        {
+          "name": [
+            "delimiters"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "FMT-1"
+        },
+        {
+          "name": [
+            "range"
+          ],
+          "type": {
+            "optional": {
+              "tuple": [
+                "uint",
+                "uint"
+              ]
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "FMT-1"
+        },
+        {
+          "name": [
+            "indent"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "  "
+          },
+          "default_core": "polyspec_template::DEFAULT_INDENT"
+        },
+        {
+          "name": [
+            "keep",
+            "indentation"
+          ],
+          "type": "bool",
+          "default": {
+            "literal": false
+          },
+          "default_core": "polyspec_template::DEFAULT_KEEP_INDENTATION"
+        },
+        {
+          "name": [
+            "template",
+            "blocks"
+          ],
+          "type": {
+            "unit": "template_blocks"
+          },
+          "default": {
+            "literal": "indent"
+          },
+          "default_core": "polyspec_template::DEFAULT_TEMPLATE_BLOCKS"
+        }
+      ]
+    },
+    {
+      "id": "formatted",
+      "name": [
+        "formatted"
+      ],
+      "module": "format",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Formatted",
+      "fields": [
+        {
+          "name": [
+            "text"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "changed"
+          ],
+          "type": "bool",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "artifact_refresh",
+      "name": [
+        "artifact",
+        "refresh"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::ArtifactRefresh",
+      "variants": [
+        {
+          "name": [
+            "dev"
+          ],
+          "value": "dev"
+        },
+        {
+          "name": [
+            "true"
+          ],
+          "value": "true"
+        },
+        {
+          "name": [
+            "false"
+          ],
+          "value": "false"
+        }
+      ]
+    },
+    {
+      "id": "limits",
+      "name": [
+        "limits"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Limits",
+      "fields": [
+        {
+          "name": [
+            "iterations"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "depth"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "output",
+            "bytes"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "expression",
+            "depth"
+          ],
+          "type": "uint",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "environment",
+      "name": [
+        "environment"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Environment",
+      "fields": [
+        {
+          "name": [
+            "timezone"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "now"
+          ],
+          "type": "float",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "define_input",
+      "name": [
+        "define",
+        "input"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::DefineInput",
+      "fields": [
+        {
+          "name": [
+            "template"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-24"
+        },
+        {
+          "name": [
+            "data"
+          ],
+          "type": {
+            "optional": "template_value"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-24"
+        },
+        {
+          "name": [
+            "bound"
+          ],
+          "type": {
+            "optional": {
+              "unit": "bound_map"
+            }
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-24"
+        },
+        {
+          "name": [
+            "html"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-24"
+        }
+      ]
+    },
+    {
+      "id": "parse_options",
+      "name": [
+        "parse",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::ParseOptions",
+      "fields": [
+        {
+          "name": [
+            "delimiters"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-24"
+        }
+      ]
+    },
+    {
+      "id": "render_options",
+      "name": [
+        "render",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::RenderOptions",
+      "fields": [
+        {
+          "name": [
+            "define"
+          ],
+          "type": {
+            "map": {
+              "unit": "define_input"
+            }
+          },
+          "default": {
+            "empty": "map"
+          }
+        },
+        {
+          "name": [
+            "env"
+          ],
+          "type": {
+            "optional": {
+              "unit": "environment"
+            }
+          },
+          "default": {
+            "computed": "FUN-42"
+          },
+          "reason": "FUN-42"
+        }
+      ]
+    },
+    {
+      "id": "engine_options",
+      "name": [
+        "engine",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::EngineOptions",
+      "fields": [
+        {
+          "name": [
+            "loader"
+          ],
+          "type": {
+            "optional": {
+              "unit": "loader"
+            }
+          },
+          "default": {
+            "computed": "RT-5"
+          },
+          "reason": "RT-5"
+        },
+        {
+          "name": [
+            "functions"
+          ],
+          "type": {
+            "map": {
+              "function": {
+                "parameters": [
+                  {
+                    "list": "template_value"
+                  },
+                  {
+                    "unit": "environment"
+                  }
+                ],
+                "returns": "template_value",
+                "async_allowed": false
+              }
+            }
+          },
+          "default": {
+            "empty": "map"
+          }
+        },
+        {
+          "name": [
+            "limits"
+          ],
+          "type": {
+            "optional": {
+              "unit": "limits"
+            }
+          },
+          "default": {
+            "computed": "RT-5"
+          },
+          "reason": "RT-5"
+        },
+        {
+          "name": [
+            "delimiters"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "RT-5"
+        },
+        {
+          "name": [
+            "artifact",
+            "refresh"
+          ],
+          "type": {
+            "unit": "artifact_refresh"
+          },
+          "default": {
+            "literal": "true"
+          },
+          "default_core": "polyspec_template::DEFAULT_ARTIFACT_REFRESH"
+        }
+      ]
+    },
+    {
+      "id": "loaded",
+      "name": [
+        "loaded"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_template::Loaded",
+      "tag": [
+        "type"
+      ],
+      "cases": [
+        {
+          "value": "source",
+          "fields": [
+            {
+              "name": [
+                "bytes"
+              ],
+              "type": "bytes",
+              "required": true
+            },
+            {
+              "name": [
+                "version"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "ast",
+          "fields": [
+            {
+              "name": [
+                "ast"
+              ],
+              "type": {
+                "unit": "template"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "version"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "lines"
+              ],
+              "type": {
+                "optional": {
+                  "list": "uint"
+                }
+              },
+              "required": true,
+              "reason": "RT-24"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "loader",
+      "name": [
+        "loader"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_template::Loader",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "loader.load",
+          "name": [
+            "load"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": {
+              "unit": "loaded"
+            }
+          },
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::Loader::load",
+            "receiver": "&self"
+          },
+          "optional_reason": "RT-9",
+          "async_allowed": false
+        },
+        {
+          "id": "loader.blocking_io",
+          "name": [
+            "blocking",
+            "io"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "bool",
+          "default": {
+            "literal": false
+          },
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::Loader::blocking_io",
+            "receiver": "&self"
+          },
+          "async_allowed": false
+        }
+      ]
+    },
+    {
+      "id": "fs_loader",
+      "name": [
+        "fs",
+        "loader"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "final": true,
+      "core_type": "polyspec_template::FsLoader",
+      "implements": [
+        {
+          "unit": "loader"
+        }
+      ],
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "RT-10"
+      },
+      "members": [
+        {
+          "id": "fs_loader.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "root"
+              ],
+              "type": "path",
+              "required": true
+            }
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::FsLoader::new"
+          }
+        }
+      ]
+    },
+    {
+      "id": "map_loader",
+      "name": [
+        "map",
+        "loader"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "final": true,
+      "core_type": "polyspec_template::MapLoader",
+      "implements": [
+        {
+          "unit": "loader"
+        }
+      ],
+      "members": [
+        {
+          "id": "map_loader.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::MapLoader::new"
+          }
+        },
+        {
+          "id": "map_loader.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "source"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::MapLoader::set",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "map_loader.set_ast_lines",
+          "name": [
+            "set",
+            "ast",
+            "lines"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "lines"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "ast"
+              ],
+              "type": {
+                "unit": "template"
+              },
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::MapLoader::set_ast_lines",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "map_loader.set_ast",
+          "name": [
+            "set",
+            "ast"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "ast"
+              ],
+              "type": {
+                "unit": "template"
+              },
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::MapLoader::set_ast",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "bound_map",
+      "name": [
+        "bound",
+        "map"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "final": true,
+      "constructible": false,
+      "core_type": "polyspec_template::BoundMap",
+      "members": []
+    },
+    {
+      "id": "prepared_render",
+      "name": [
+        "prepared",
+        "render"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "final": true,
+      "constructible": false,
+      "core_type": "polyspec_template::PreparedRender",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "RT-10"
+      },
+      "members": [
+        {
+          "id": "prepared_render.render",
+          "name": [
+            "render"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadCycle",
+            "polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::RuntimeType",
+            "polyspec_template::ErrorCode::RuntimeCompare",
+            "polyspec_template::ErrorCode::RuntimeDivZero",
+            "polyspec_template::ErrorCode::RuntimeStringify",
+            "polyspec_template::ErrorCode::RuntimeUnknownFunction",
+            "polyspec_template::ErrorCode::RuntimeArity",
+            "polyspec_template::ErrorCode::RuntimeUnknownLoop",
+            "polyspec_template::ErrorCode::RuntimeBlockUndefined",
+            "polyspec_template::ErrorCode::RuntimeBlockRedefined",
+            "polyspec_template::ErrorCode::RuntimeDepth",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::PreparedRender::render",
+            "receiver": "&self",
+            "failure": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "name": [
+        "engine"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "final": true,
+      "core_type": "polyspec_template::AstProgram",
+      "members": [
+        {
+          "id": "engine.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "engine_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_template::ErrorCode::ArgumentDelimiters",
+            "polyspec_template::ErrorCode::ArgumentFunctionName"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::from_options"
+          }
+        },
+        {
+          "id": "engine.register",
+          "name": [
+            "register"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "host",
+                "function"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "list": "template_value"
+                    },
+                    {
+                      "unit": "environment"
+                    }
+                  ],
+                  "returns": "template_value",
+                  "async_allowed": false
+                }
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_template::ErrorCode::ArgumentFunctionName"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::register_function",
+            "receiver": "&mut self",
+            "failure": true
+          }
+        },
+        {
+          "id": "engine.register_class",
+          "name": [
+            "register",
+            "class"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "class",
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "method"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "host",
+                "function"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "list": "template_value"
+                    },
+                    {
+                      "unit": "environment"
+                    }
+                  ],
+                  "returns": "template_value",
+                  "async_allowed": false
+                }
+              },
+              "required": true,
+              "keeps": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_template::ErrorCode::ArgumentFunctionName"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::register_class_function",
+            "receiver": "&mut self",
+            "failure": true
+          }
+        },
+        {
+          "id": "engine.render",
+          "name": [
+            "render"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "assign"
+              ],
+              "type": "template_value",
+              "default": {
+                "literal": null
+              }
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadCycle",
+            "polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LoadNotLoaded",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::RuntimeType",
+            "polyspec_template::ErrorCode::RuntimeCompare",
+            "polyspec_template::ErrorCode::RuntimeDivZero",
+            "polyspec_template::ErrorCode::RuntimeStringify",
+            "polyspec_template::ErrorCode::RuntimeUnknownFunction",
+            "polyspec_template::ErrorCode::RuntimeArity",
+            "polyspec_template::ErrorCode::RuntimeUnknownLoop",
+            "polyspec_template::ErrorCode::RuntimeBlockUndefined",
+            "polyspec_template::ErrorCode::RuntimeBlockRedefined",
+            "polyspec_template::ErrorCode::RuntimeDepth",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::render_values_named",
+            "receiver": "&self",
+            "failure": true
+          }
+        },
+        {
+          "id": "engine.render_json",
+          "name": [
+            "render",
+            "json"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "assign"
+              ],
+              "type": "json_value",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadCycle",
+            "polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LoadNotLoaded",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::DataDepth",
+            "polyspec_template::ErrorCode::RuntimeType",
+            "polyspec_template::ErrorCode::RuntimeCompare",
+            "polyspec_template::ErrorCode::RuntimeDivZero",
+            "polyspec_template::ErrorCode::RuntimeStringify",
+            "polyspec_template::ErrorCode::RuntimeUnknownFunction",
+            "polyspec_template::ErrorCode::RuntimeArity",
+            "polyspec_template::ErrorCode::RuntimeUnknownLoop",
+            "polyspec_template::ErrorCode::RuntimeBlockUndefined",
+            "polyspec_template::ErrorCode::RuntimeBlockRedefined",
+            "polyspec_template::ErrorCode::RuntimeDepth",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::render_named",
+            "receiver": "&self",
+            "failure": true
+          }
+        },
+        {
+          "id": "engine.render_bound",
+          "name": [
+            "render",
+            "bound"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "assign"
+              ],
+              "type": {
+                "unit": "bound_map"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadCycle",
+            "polyspec_template::ErrorCode::LoadOutsideRoot",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LoadNotLoaded",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::RuntimeType",
+            "polyspec_template::ErrorCode::RuntimeCompare",
+            "polyspec_template::ErrorCode::RuntimeDivZero",
+            "polyspec_template::ErrorCode::RuntimeStringify",
+            "polyspec_template::ErrorCode::RuntimeUnknownFunction",
+            "polyspec_template::ErrorCode::RuntimeArity",
+            "polyspec_template::ErrorCode::RuntimeUnknownLoop",
+            "polyspec_template::ErrorCode::RuntimeBlockUndefined",
+            "polyspec_template::ErrorCode::RuntimeBlockRedefined",
+            "polyspec_template::ErrorCode::RuntimeDepth",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::AstProgram::render_bound_named",
+            "receiver": "&self",
+            "failure": true
+          }
+        },
+        {
+          "id": "engine.load",
+          "name": [
+            "load"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_template::AstProgram::load_named",
+            "receiver": "&self",
+            "failure": true
+          },
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "RT-10"
+          }
+        },
+        {
+          "id": "engine.prepare",
+          "name": [
+            "prepare"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "assign"
+              ],
+              "type": "json_value",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "prepared_render"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataNumberRange",
+            "polyspec_template::ErrorCode::DataNumberNotFinite",
+            "polyspec_template::ErrorCode::DataInvalidUtf8",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::DataDepth",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_template::AstProgram::prepare_named",
+            "receiver": "&self",
+            "failure": true
+          },
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "RT-10"
+          }
+        },
+        {
+          "id": "engine.prepare_bound",
+          "name": [
+            "prepare",
+            "bound"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "assign"
+              ],
+              "type": {
+                "unit": "bound_map"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "render_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "prepared_render"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::LoadNotFound",
+            "polyspec_template::ErrorCode::LoadFailed",
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_template::AstProgram::prepare_bound_named",
+            "receiver": "&self",
+            "failure": true
+          },
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "RT-10"
+          }
+        }
+      ]
+    },
+    {
+      "id": "functions",
+      "name": [
+        "functions"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "parse",
+          "name": [
+            "parse"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "source",
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "parse_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "template"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::ArgumentDelimiters",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::parse"
+          }
+        },
+        {
+          "id": "analyze",
+          "name": [
+            "analyze"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "source",
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "parse_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "template_analysis"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::ArgumentDelimiters",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::analyze"
+          }
+        },
+        {
+          "id": "analyze_prefix",
+          "name": [
+            "analyze",
+            "prefix"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "source",
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "parse_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "prefix_analysis"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::LexInvalidUtf8",
+            "polyspec_template::ErrorCode::ArgumentDelimiters",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::analyze_prefix"
+          }
+        },
+        {
+          "id": "format",
+          "name": [
+            "format"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "format_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "unit": "formatted"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::ParseUnterminatedTag",
+            "polyspec_template::ErrorCode::ParseUnterminatedComment",
+            "polyspec_template::ErrorCode::ParseUnterminatedString",
+            "polyspec_template::ErrorCode::ParseUnexpectedToken",
+            "polyspec_template::ErrorCode::ParseInvalidNumber",
+            "polyspec_template::ErrorCode::ParseInvalidEscape",
+            "polyspec_template::ErrorCode::ParseUnexpectedClose",
+            "polyspec_template::ErrorCode::ParseUnclosedBlock",
+            "polyspec_template::ErrorCode::ParseElseOutsideBlock",
+            "polyspec_template::ErrorCode::ParseDuplicateElse",
+            "polyspec_template::ErrorCode::ParseElseifAfterElse",
+            "polyspec_template::ErrorCode::ParseElseifNotInIf",
+            "polyspec_template::ErrorCode::ParseReservedName",
+            "polyspec_template::ErrorCode::ParseInvalidPath",
+            "polyspec_template::ErrorCode::ParseInvalidBlockTag",
+            "polyspec_template::ErrorCode::ParseInvalidWrapper",
+            "polyspec_template::ErrorCode::ParseInvalidDirective",
+            "polyspec_template::ErrorCode::RuntimeLimit",
+            "polyspec_template::ErrorCode::ArgumentDelimiters",
+            "polyspec_template::ErrorCode::ArgumentIndent",
+            "polyspec_template::ErrorCode::FormatHtml",
+            "polyspec_template::ErrorCode::FormatInvariant",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::format"
+          }
+        },
+        {
+          "id": "resolve_path",
+          "name": [
+            "resolve",
+            "path"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "current"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "path"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::LoadOutsideRoot"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::resolve_path"
+          }
+        },
+        {
+          "id": "encode_template",
+          "name": [
+            "encode",
+            "template"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "template"
+              ],
+              "type": {
+                "unit": "template"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::encode_template"
+          }
+        },
+        {
+          "id": "decode_template",
+          "name": [
+            "decode",
+            "template"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "json"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "template"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::AstInvalid",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::decode_template"
+          }
+        },
+        {
+          "id": "bind",
+          "name": [
+            "bind"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "template_value",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "bound_map"
+          },
+          "raises": [
+            "polyspec_template::ErrorCode::DataUnsupportedType",
+            "polyspec_template::ErrorCode::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::bind"
+          }
+        },
+        {
+          "id": "merge",
+          "name": [
+            "merge"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "first"
+              ],
+              "type": {
+                "unit": "bound_map"
+              },
+              "required": true,
+              "core": "&"
+            },
+            {
+              "name": [
+                "second"
+              ],
+              "type": {
+                "unit": "bound_map"
+              },
+              "required": true,
+              "core": "&"
+            }
+          ],
+          "returns": {
+            "unit": "bound_map"
+          },
+          "wait": "none",
+          "core": {
+            "path": "polyspec_template::merge"
+          }
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "id": "change-kinds",
+      "rule": "ERR-1",
+      "reason": "ERR-1: an error code is a kind in lowercase snake_case, the one kind format of every library, so a host that handles several libraries tells failures apart by one format",
+      "symbol": "ErrorCode",
+      "from": {
+        "node": "code: 'E_DATA_DEPTH' and the other E_ codes",
+        "python": "code 'E_DATA_DEPTH' and the other E_ codes",
+        "php": "ErrorCode::DataDepth and the other E_ constants",
+        "go": "errs.Code DataDepth = \"E_DATA_DEPTH\""
+      },
+      "to": null
+    },
+    {
+      "id": "change-error-classes",
+      "rule": "B-4",
+      "reason": "B-4, E-2: every failure is an instance of the library class of its category, Template<Category>Error, with kind and status; one TemplateError class for every code does not tell a type error from a value error by class",
+      "symbol": "TemplateError",
+      "from": {
+        "node": "class TemplateError extends Error",
+        "python": "class TemplateError(Exception)",
+        "php": "final class TemplateError extends \\RuntimeException",
+        "go": "*errs.Error"
+      },
+      "to": null
+    },
+    {
+      "id": "change-render-assign",
+      "rule": "VAL-12",
+      "reason": "VAL-11, VAL-12: render binds a host value of the language as template_value; JSON input is a json_value of the json library, the one JSON reader (C-1), so a second JSON text entry point per implementation is gone",
+      "symbol": "render",
+      "from": {
+        "node": "Engine.render(target, assign?: unknown, options?)",
+        "python": "Engine.render(target, assign=None, options=None)",
+        "php": "Engine::render(string $target, mixed $assign = null, array $options = [])",
+        "go": "Engine.Render(target, assign any, options RenderOptions) (string, error)"
+      },
+      "to": "engine.render"
+    },
+    {
+      "id": "change-render-json",
+      "rule": "VAL-12",
+      "reason": "VAL-12: JSON text reaches the core as a json_value, which the json library reads; the PHP extension method render_json took the text itself",
+      "symbol": "render_json",
+      "from": {
+        "php": "Polyspec\\Template\\Engine::renderJson(string $target, string $json, string $options = \"{}\")"
+      },
+      "to": "engine.render_json"
+    },
+    {
+      "id": "change-host-function-errors",
+      "rule": "FUN-46",
+      "reason": "FUN-46, R-4: an exception that host code raises goes back to the caller as the same object; wrapping it in E_RUNTIME_HOST_FUNCTION with the template position lost the original class",
+      "symbol": "register",
+      "from": {
+        "node": "a host function that throws fails the render with E_RUNTIME_HOST_FUNCTION",
+        "python": "a host function that raises fails the render with E_RUNTIME_HOST_FUNCTION",
+        "php": "a host function that throws fails the render with E_RUNTIME_HOST_FUNCTION",
+        "go": "a host function error is wrapped in E_RUNTIME_HOST_FUNCTION"
+      },
+      "to": "engine.register"
+    },
+    {
+      "id": "change-integer-arguments",
+      "rule": "FUN-50",
+      "reason": "FUN-50: an integer argument of a built-in function is never truncated, rounded or clamped; a fraction is runtime_type and a magnitude above 2^53 - 1 runtime_limit",
+      "symbol": "slice",
+      "from": {
+        "node": "slice, truncate, number, round and date truncate a fractional argument",
+        "python": "slice, truncate, number, round and date truncate a fractional argument",
+        "php": "slice, truncate, number, round and date truncate a fractional argument",
+        "go": "slice, truncate, number, round and date truncate a fractional argument"
+      },
+      "to": null
+    },
+    {
+      "id": "change-lone-surrogate-escape",
+      "rule": "EXP-3",
+      "reason": "EXP-3: a \\u escape of a lone surrogate is parse_invalid_escape instead of U+FFFD, which turned an input that names no code point into a plausible text",
+      "symbol": "parse",
+      "from": {
+        "node": "a lone surrogate escape decodes to U+FFFD",
+        "python": "a lone surrogate escape decodes to U+FFFD",
+        "php": "a lone surrogate escape decodes to U+FFFD",
+        "go": "a lone surrogate escape decodes to U+FFFD"
+      },
+      "to": "parse"
+    },
+    {
+      "id": "change-fs-loader-absence",
+      "rule": "RT-10",
+      "reason": "RT-10: only ENOENT and ENOTDIR are a name that does not exist; a directory or another metadata error is load_failed",
+      "symbol": "FsLoader",
+      "from": {
+        "node": "FsLoader reports a directory or an unreadable path as not found",
+        "python": "FsLoader reports a directory or an unreadable path as not found",
+        "php": "FilesystemLoader reports a directory as not found",
+        "go": "FSLoader reports a directory as not found"
+      },
+      "to": "fs_loader"
+    },
+    {
+      "id": "change-php-maps",
+      "rule": "VAL-21",
+      "reason": "VAL-21, P8: a map whose keys are 0 to n-1, or an empty map, reaches PHP code as a stdClass object, so it binds back as a map; as a list array it came back as a list",
+      "symbol": "host arguments",
+      "from": {
+        "php": "a map with the keys 0 to n-1 or no key arrives as a list array"
+      },
+      "to": "template_value"
+    },
+    {
+      "id": "change-go-maps",
+      "rule": "VAL-4",
+      "reason": "U-7 (binding design): a template map reaches Go code as the built-in Go map form of the binding, map[string]any, which has no entry order; the order of a map that comes back from Go is the order of its keys as Go hands them over",
+      "symbol": "host arguments",
+      "from": {
+        "go": "a map arrives as *template.OrderedMap, which keeps the entry order"
+      },
+      "to": "template_value"
+    },
+    {
+      "id": "change-lookup-key-type",
+      "rule": "EXP-19",
+      "reason": "EXP-19, P8: a key of a type that names no entry of a map, a list or a native object, such as a boolean or a fractional number, is runtime_type; as null it hid the mistake of the template",
+      "symbol": "lookup",
+      "from": {
+        "node": "a[true], list[1.5] and object[1] are null",
+        "python": "a[true], list[1.5] and object[1] are None",
+        "php": "a[true], list[1.5] and object[1] are null",
+        "go": "a[true], list[1.5] and object[1] are nil"
+      },
+      "to": null
+    },
+    {
+      "id": "change-render-file-io",
+      "rule": "RT-77",
+      "reason": "RT-77: a render reads no file; with the filesystem loader, prepare or load reads the templates where blocking I/O is expected, and render takes them from the cache, so a render on the thread of an event loop never blocks on a file",
+      "symbol": "render",
+      "from": {
+        "node": "Engine.render with FsLoader reads the files of the templates during the render",
+        "python": "Engine.render with FsLoader reads the files of the templates during the render",
+        "php": "Engine::render with FilesystemLoader reads the files of the templates during the render",
+        "go": "Engine.Render with FSLoader reads the files of the templates during the render"
+      },
+      "to": "engine.load"
+    },
+    {
+      "id": "change-render-template",
+      "rule": "RT-2",
+      "reason": "RT-2, T-4: a parsed template reaches a program through a loader (map_loader.set_ast) and renders by its name; render of a template object beside the options took two records, which a language API cannot spread",
+      "symbol": "render",
+      "from": {
+        "node": "Engine.render(template: Template, assign, options)",
+        "python": "Engine.render(template: Template, assign, options)",
+        "go": "Engine.Render(RenderTarget{AST: template}, assign, options)"
+      },
+      "to": "map_loader.set_ast"
+    },
+    {
+      "id": "change-package-names",
+      "rule": "P-1",
+      "reason": "P-1 (binding design): one name form in every repository: Composer polyspec/template, PHP Polyspec\\Template, PyPI polyspec-template with the module polyspec.template, npm @polyspec/template, Go module packages/go",
+      "symbol": "package",
+      "from": {
+        "php": "polyspec/template-php-ext and the extension polyspec_template",
+        "python": "polyspec_template"
+      },
+      "to": null
+    }
+  ],
+  "cases": [
+    {
+      "member": "fs_loader.new",
+      "file": "contracts/core-cases.json",
+      "group": "fs_loader.new"
+    },
+    {
+      "member": "map_loader.new",
+      "file": "contracts/core-cases.json",
+      "group": "map_loader.new"
+    },
+    {
+      "member": "map_loader.set",
+      "file": "contracts/core-cases.json",
+      "group": "map_loader.set"
+    },
+    {
+      "member": "map_loader.set_ast",
+      "file": "contracts/core-cases.json",
+      "group": "map_loader.set_ast"
+    },
+    {
+      "member": "map_loader.set_ast_lines",
+      "file": "contracts/core-cases.json",
+      "group": "map_loader.set_ast_lines"
+    },
+    {
+      "member": "engine.new",
+      "file": "contracts/core-cases.json",
+      "group": "engine.new"
+    },
+    {
+      "member": "engine.register",
+      "file": "contracts/core-cases.json",
+      "group": "engine.register"
+    },
+    {
+      "member": "engine.register_class",
+      "file": "contracts/core-cases.json",
+      "group": "engine.register_class"
+    },
+    {
+      "member": "engine.render",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render"
+    },
+    {
+      "member": "engine.render",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render/files",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "RT-77"
+      }
+    },
+    {
+      "member": "engine.render",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render/bound-data"
+    },
+    {
+      "member": "engine.render_json",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render_json"
+    },
+    {
+      "member": "engine.render_json",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render_json/files",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "RT-77"
+      }
+    },
+    {
+      "member": "engine.render_bound",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render_bound"
+    },
+    {
+      "member": "engine.render_bound",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render_bound/files",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "RT-77"
+      }
+    },
+    {
+      "member": "engine.render_bound",
+      "file": "contracts/core-cases.json",
+      "group": "engine.render_bound/bound-data"
+    },
+    {
+      "member": "engine.load",
+      "file": "contracts/core-cases.json",
+      "group": "engine.load"
+    },
+    {
+      "member": "engine.prepare",
+      "file": "contracts/core-cases.json",
+      "group": "engine.prepare"
+    },
+    {
+      "member": "engine.prepare_bound",
+      "file": "contracts/core-cases.json",
+      "group": "engine.prepare_bound"
+    },
+    {
+      "member": "prepared_render.render",
+      "file": "contracts/core-cases.json",
+      "group": "prepared_render.render"
+    },
+    {
+      "member": "parse",
+      "file": "contracts/core-cases.json",
+      "group": "parse"
+    },
+    {
+      "member": "parse",
+      "file": "contracts/core-cases.json",
+      "group": "parse/expr"
+    },
+    {
+      "member": "analyze",
+      "file": "contracts/core-cases.json",
+      "group": "analyze"
+    },
+    {
+      "member": "analyze",
+      "file": "contracts/core-cases.json",
+      "group": "analyze/context"
+    },
+    {
+      "member": "analyze_prefix",
+      "file": "contracts/core-cases.json",
+      "group": "analyze_prefix"
+    },
+    {
+      "member": "analyze_prefix",
+      "file": "contracts/core-cases.json",
+      "group": "analyze_prefix/context"
+    },
+    {
+      "member": "format",
+      "file": "contracts/core-cases.json",
+      "group": "format"
+    },
+    {
+      "member": "format",
+      "file": "contracts/core-cases.json",
+      "group": "format/sdk"
+    },
+    {
+      "member": "resolve_path",
+      "file": "contracts/core-cases.json",
+      "group": "resolve_path"
+    },
+    {
+      "member": "encode_template",
+      "file": "contracts/core-cases.json",
+      "group": "encode_template"
+    },
+    {
+      "member": "decode_template",
+      "file": "contracts/core-cases.json",
+      "group": "decode_template"
+    },
+    {
+      "member": "decode_template",
+      "file": "contracts/core-cases.json",
+      "group": "decode_template/fixtures"
+    },
+    {
+      "member": "bind",
+      "file": "contracts/core-cases.json",
+      "group": "bind"
+    },
+    {
+      "member": "merge",
+      "file": "contracts/core-cases.json",
+      "group": "merge"
+    },
+    {
+      "alias": "template_value",
+      "file": "contracts/core-cases.json",
+      "group": "template_value"
+    },
+    {
+      "alias": "template_value",
+      "file": "contracts/core-cases.json",
+      "group": "template_value/bytes",
+      "only": {
+        "targets": [
+          "python",
+          "node",
+          "wasm",
+          "go"
+        ],
+        "reason": "VAL-23"
+      }
+    }
+  ]
+}

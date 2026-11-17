@@ -1,0 +1,1399 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "php-serialization",
+  "core": {
+    "crate": "polyspec-php-serialization",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/php-serialization",
+      "namespace": "Polyspec\\PhpSerialization"
+    },
+    "python": {
+      "package": "polyspec-php-serialization",
+      "module": "polyspec.php_serialization"
+    },
+    "node": {
+      "package": "@polyspec/php-serialization",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/php-serialization/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "php_value": {
+      "library": "php-serialization",
+      "unit": "php_value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationValueError",
+        "python": "PHPSerializationValueError",
+        "node": "PhpSerializationValueError",
+        "wasm": "PhpSerializationValueError"
+      },
+      "type": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationTypeError",
+        "python": "PHPSerializationTypeError",
+        "node": "PhpSerializationTypeError",
+        "wasm": "PhpSerializationTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationIoError",
+        "python": "PHPSerializationIoError",
+        "node": "PhpSerializationIoError",
+        "wasm": "PhpSerializationIoError"
+      },
+      "store": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationStoreError",
+        "python": "PHPSerializationStoreError",
+        "node": "PhpSerializationStoreError",
+        "wasm": "PhpSerializationStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationBusyError",
+        "python": "PHPSerializationBusyError",
+        "node": "PhpSerializationBusyError",
+        "wasm": "PhpSerializationBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\PhpSerialization\\PhpSerializationInternalError",
+        "python": "PHPSerializationInternalError",
+        "node": "PhpSerializationInternalError",
+        "wasm": "PhpSerializationInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_php_serialization::Error::Syntax",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::Depth",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::Reference",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::IntRange",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::TrailingData",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::Class",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::TopArrayReference",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::PropertyName",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::ArrayHeld",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::NestedReference",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::TopReference",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::UnknownId",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::UnsupportedValue",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::InvalidText",
+        "category": "value",
+        "class": "format_error"
+      },
+      {
+        "variant": "polyspec_php_serialization::Error::Internal",
+        "category": "internal"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "faults": [
+    {
+      "id": "internal",
+      "core": "polyspec_php_serialization::fault::INTERNAL",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "RQ-014",
+      "place": "polyspec_php_serialization::serialize"
+    }
+  ],
+  "units": [
+    {
+      "id": "format_error",
+      "name": [
+        "format",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": [
+        {
+          "id": "format_error.offset",
+          "name": [
+            "offset"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "uint"
+          },
+          "optional_reason": "RQ-010",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_php_serialization::Error::offset",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "functions",
+      "name": [
+        "php",
+        "serialize"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "unserialize",
+          "name": [
+            "unserialize"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "data"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "php_value",
+          "raises": [
+            "polyspec_php_serialization::Error::Syntax",
+            "polyspec_php_serialization::Error::Depth",
+            "polyspec_php_serialization::Error::Reference",
+            "polyspec_php_serialization::Error::IntRange",
+            "polyspec_php_serialization::Error::TrailingData",
+            "polyspec_php_serialization::Error::Class",
+            "polyspec_php_serialization::Error::TopArrayReference",
+            "polyspec_php_serialization::Error::PropertyName",
+            "polyspec_php_serialization::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_php_serialization::unserialize"
+          }
+        },
+        {
+          "id": "serialize",
+          "name": [
+            "serialize"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "required": true
+            }
+          ],
+          "returns": "bytes",
+          "raises": [
+            "polyspec_php_serialization::Error::Depth",
+            "polyspec_php_serialization::Error::PropertyName",
+            "polyspec_php_serialization::Error::NestedReference",
+            "polyspec_php_serialization::Error::TopReference",
+            "polyspec_php_serialization::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_php_serialization::serialize"
+          }
+        },
+        {
+          "id": "depth_limit",
+          "name": [
+            "depth",
+            "limit"
+          ],
+          "kind": "constant",
+          "visibility": "public",
+          "type": "uint",
+          "value": 4096,
+          "core": "polyspec_php_serialization::DEPTH_LIMIT"
+        }
+      ]
+    },
+    {
+      "id": "php_float",
+      "name": [
+        "php",
+        "float"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "node",
+          "wasm"
+        ],
+        "reason": "RQ-008"
+      },
+      "members": [
+        {
+          "id": "php_float.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_php_serialization::PhpFloat::new"
+        },
+        {
+          "id": "php_float.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_php_serialization::PhpFloat::value",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "php_float.value_of",
+          "name": [
+            "value",
+            "of"
+          ],
+          "kind": "primitive",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_php_serialization::PhpFloat::value",
+            "receiver": "&self"
+          }
+        }
+      ],
+      "core_type": "polyspec_php_serialization::PhpFloat"
+    },
+    {
+      "id": "std_class",
+      "name": [
+        "std",
+        "class"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "node",
+          "python",
+          "go",
+          "wasm"
+        ],
+        "reason": "RQ-008"
+      },
+      "members": [
+        {
+          "id": "std_class.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "properties"
+              ],
+              "type": {
+                "keyed_map": "php_value",
+                "key": [
+                  "int",
+                  "text",
+                  "bytes"
+                ]
+              },
+              "default": {
+                "empty": "map"
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_php_serialization::Error::Depth",
+            "polyspec_php_serialization::Error::PropertyName",
+            "polyspec_php_serialization::Error::NestedReference",
+            "polyspec_php_serialization::Error::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_php_serialization::check_std_class"
+        },
+        {
+          "id": "std_class.properties",
+          "name": [
+            "properties"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "keyed_map": "php_value",
+            "key": [
+              "int",
+              "text",
+              "bytes"
+            ]
+          },
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "id": "reference",
+      "name": [
+        "reference"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "node",
+          "python",
+          "go",
+          "wasm"
+        ],
+        "reason": "RQ-008"
+      },
+      "members": [
+        {
+          "id": "reference.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "php_value",
+              "default": {
+                "literal": null
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_php_serialization::Error::Depth",
+            "polyspec_php_serialization::Error::PropertyName",
+            "polyspec_php_serialization::Error::NestedReference",
+            "polyspec_php_serialization::Error::Internal"
+          ],
+          "wait": "none",
+          "core": "polyspec_php_serialization::check_reference"
+        },
+        {
+          "id": "reference.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "php_value",
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "id": "php_value",
+      "name": [
+        "value"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_php_serialization::PhpValue",
+      "core": {
+        "in": "polyspec_php_serialization::from_host",
+        "out": "polyspec_php_serialization::to_host"
+      },
+      "in_raises": [
+        "polyspec_php_serialization::Error::IntRange",
+        "polyspec_php_serialization::Error::UnsupportedValue"
+      ],
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null",
+            "go": "null",
+            "wasm": "null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "bool",
+            "python": "bool",
+            "node": "bool",
+            "go": "bool",
+            "wasm": "bool"
+          }
+        },
+        {
+          "kind": "int",
+          "when": {
+            "predicate": "safe_integer",
+            "is": true
+          },
+          "make": {
+            "php": "int",
+            "python": "int",
+            "node": "int",
+            "go": "int",
+            "wasm": "int"
+          }
+        },
+        {
+          "kind": "int",
+          "when": {
+            "predicate": "safe_integer",
+            "is": false
+          },
+          "make": {
+            "php": "int",
+            "python": "int",
+            "node": "bigint",
+            "go": "int",
+            "wasm": "bigint"
+          }
+        },
+        {
+          "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": true
+          },
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "php_float.constructor",
+            "go": "float",
+            "wasm": "php_float.constructor"
+          }
+        },
+        {
+          "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": false
+          },
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "bytes",
+          "when": {
+            "predicate": "utf8",
+            "is": true
+          },
+          "make": {
+            "php": "bytes",
+            "python": "text",
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
+          }
+        },
+        {
+          "kind": "bytes",
+          "when": {
+            "predicate": "utf8",
+            "is": false
+          },
+          "make": {
+            "php": "bytes",
+            "python": "bytes",
+            "node": "bytes",
+            "go": "bytes",
+            "wasm": "bytes"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": true
+          },
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list",
+            "go": "list",
+            "wasm": "list"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": false
+          },
+          "make": {
+            "php": {
+              "keyed_map": {
+                "key": [
+                  "int",
+                  "bytes"
+                ]
+              }
+            },
+            "python": {
+              "keyed_map": {
+                "key": [
+                  "int",
+                  "text",
+                  "bytes"
+                ]
+              }
+            },
+            "node": {
+              "keyed_map": {
+                "key": [
+                  "int",
+                  "text",
+                  "bytes"
+                ]
+              }
+            },
+            "go": {
+              "keyed_map": {
+                "key": [
+                  "int",
+                  "text",
+                  "bytes"
+                ]
+              }
+            },
+            "wasm": {
+              "keyed_map": {
+                "key": [
+                  "int",
+                  "text",
+                  "bytes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "object",
+          "make": {
+            "php": "php_object",
+            "python": "std_class.constructor",
+            "node": "std_class.constructor",
+            "go": "std_class.constructor",
+            "wasm": "std_class.constructor"
+          }
+        },
+        {
+          "kind": "reference",
+          "make": {
+            "php": "php_reference",
+            "python": "reference.constructor",
+            "node": "reference.constructor",
+            "go": "reference.constructor",
+            "wasm": "reference.constructor"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "int",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "int",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "bytes",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "dict",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "std_class",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "std_class.properties"
+            }
+          ]
+        },
+        {
+          "python": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "reference.value"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "when": {
+                "predicate": "integral_float",
+                "is": false
+              },
+              "kind": "float",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "safe_integer",
+                "is": true
+              },
+              "kind": "int",
+              "read": "builtin"
+            },
+            {
+              "when": "else",
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "bigint",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Uint8Array",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "php_float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "php_float.value"
+            }
+          ]
+        },
+        {
+          "node": "std_class",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "std_class.properties"
+            }
+          ]
+        },
+        {
+          "node": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "reference.value"
+            }
+          ]
+        },
+        {
+          "go": "nil",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "go": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "int64",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "float64",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]byte",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]any",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "map[string]any",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "*KeyedMap[any]",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "std_class",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "std_class.properties"
+            }
+          ]
+        },
+        {
+          "go": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "reference.value"
+            }
+          ]
+        },
+        {
+          "wasm": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "wasm": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "number",
+          "cases": [
+            {
+              "when": {
+                "predicate": "integral_float",
+                "is": false
+              },
+              "kind": "float",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "safe_integer",
+                "is": true
+              },
+              "kind": "int",
+              "read": "builtin"
+            },
+            {
+              "when": "else",
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "bigint",
+          "cases": [
+            {
+              "kind": "int",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "string",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Uint8Array",
+          "cases": [
+            {
+              "kind": "bytes",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Array",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "php_float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "php_float.value"
+            }
+          ]
+        },
+        {
+          "wasm": "std_class",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "std_class.properties"
+            }
+          ]
+        },
+        {
+          "wasm": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "reference.value"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "id": "change-errors-node",
+      "rule": "RQ-010",
+      "reason": "RQ-010: every failure has a kind; P-5: a class without a kind does not tell a refusal on purpose from a corrupt record",
+      "symbol": "UnserializeError, serialize",
+      "from": {
+        "node": "class UnserializeError extends Error { readonly offset: number }; serialize throws TypeError or RangeError"
+      },
+      "to": "format_error"
+    },
+    {
+      "id": "change-errors-python",
+      "rule": "RQ-010",
+      "reason": "RQ-010, as change-errors-node",
+      "symbol": "UnserializeError, serialize",
+      "from": {
+        "python": "class UnserializeError(ValueError) with offset; serialize raises TypeError, OverflowError or ValueError"
+      },
+      "to": "format_error"
+    },
+    {
+      "id": "change-top-reference",
+      "rule": "RQ-008",
+      "reason": "RQ-008: PHP has no top reference; writing its value turns a value that PHP cannot hold into another (P-3)",
+      "symbol": "serialize",
+      "from": {
+        "node": "serialize(new Reference(v)) writes v",
+        "python": "serialize(Reference(v)) writes v"
+      },
+      "to": "serialize"
+    },
+    {
+      "id": "change-php-package",
+      "rule": "RQ-011",
+      "reason": "RQ-011: the PHP extension is a new package of the crate; PHP's own serialize stays the oracle",
+      "symbol": "Polyspec\\PhpSerialization",
+      "from": {
+        "php": "none"
+      },
+      "to": "functions"
+    },
+    {
+      "id": "change-names",
+      "rule": "N-3",
+      "reason": "plan N-3, N-1: a library of a data format is named after the format, so the repository is php-serialization; design P-1 and E-2 give its package, module and error class names: Composer polyspec/php-serialization, PHP Polyspec\\PhpSerialization, PyPI polyspec-php-serialization, Python polyspec.php_serialization, npm @polyspec/php-serialization, PHP extension polyspec_php_serialization, the error classes PhpSerialization<Category>Error in PHP and Node and PHPSerialization<Category>Error in Python (N-2: an acronym word is one capital word in PHP and Node and all capitals in Python)",
+      "symbol": "polyspec-php-serialize, polyspec.php_serialize, @polyspec/php-serialize",
+      "from": {
+        "python": "PyPI polyspec-php-serialize, module polyspec.php_serialize",
+        "node": "npm @polyspec/php-serialize"
+      },
+      "to": "functions"
+    }
+  ],
+  "cases": [
+    {
+      "member": "unserialize",
+      "file": "contracts/php-serialize.json",
+      "group": "cases",
+      "result": "value",
+      "reads": ["bytes", "serialized", "tree"]
+    },
+    {
+      "member": "unserialize",
+      "file": "contracts/php-serialize.json",
+      "group": "forms",
+      "result": "value",
+      "reads": ["bytes", "serialized", "tree", "written"]
+    },
+    {
+      "member": "unserialize",
+      "file": "contracts/php-serialize.json",
+      "group": "deep",
+      "result": "value",
+      "reads": ["bytes", "serialized"]
+    },
+    {
+      "member": "unserialize",
+      "file": "contracts/php-serialize.json",
+      "group": "rejected",
+      "reads": ["bytes"]
+    },
+    {
+      "member": "unserialize",
+      "file": "contracts/php-serialize.json",
+      "group": "stricter",
+      "reads": ["bytes"]
+    },
+    {
+      "member": "serialize",
+      "file": "contracts/php-serialize.json",
+      "group": "cases",
+      "result": "serialized",
+      "reads": ["bytes", "data", "tree"]
+    },
+    {
+      "member": "serialize",
+      "file": "contracts/php-serialize.json",
+      "group": "forms",
+      "result": "serialized",
+      "reads": ["bytes", "data", "tree", "written"]
+    },
+    {
+      "member": "serialize",
+      "file": "contracts/php-serialize.json",
+      "group": "deep",
+      "result": "serialized",
+      "reads": ["bytes", "data"]
+    },
+    {
+      "member": "serialize",
+      "file": "contracts/php-serialize.json",
+      "group": "refused_values",
+      "reads": ["tree", "written"]
+    },
+    {
+      "member": "serialize",
+      "file": "contracts/host-values.json",
+      "group": "serialize",
+      "result": "serialized"
+    },
+    {
+      "member": "php_float.constructor",
+      "file": "contracts/host-values.json",
+      "group": "php_float.constructor"
+    },
+    {
+      "member": "php_float.value",
+      "file": "contracts/host-values.json",
+      "group": "php_float.value"
+    },
+    {
+      "member": "php_float.value_of",
+      "file": "contracts/host-values.json",
+      "group": "php_float.value_of"
+    },
+    {
+      "member": "std_class.constructor",
+      "file": "contracts/host-values.json",
+      "group": "std_class.constructor"
+    },
+    {
+      "member": "std_class.properties",
+      "file": "contracts/host-values.json",
+      "group": "std_class.properties"
+    },
+    {
+      "member": "reference.constructor",
+      "file": "contracts/host-values.json",
+      "group": "reference.constructor"
+    },
+    {
+      "member": "reference.value",
+      "file": "contracts/host-values.json",
+      "group": "reference.value"
+    },
+    {
+      "alias": "php_value",
+      "file": "contracts/host-values.json",
+      "group": "php_value"
+    }
+  ]
+}
