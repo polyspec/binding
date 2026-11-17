@@ -366,6 +366,105 @@ export function goReleaseFiles(files: readonly string[], read: (path: string) =>
   return { carried: carried.sort(), leftOut };
 }
 
+// The import paths of a Go file: those of its import declarations, which follow the package clause, in both forms, a
+// declaration of one path and a block, with or without a name before the path. The text is read without its comments
+// up to the first declaration that is no import.
+export function goImports(text: string): string[] {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, ' ').split('\n').map((line) => line.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/.*$/, '')).join('\n');
+  const found: string[] = [];
+  const clause = /^\s*package\s+[\p{L}_][\p{L}\p{N}_]*[ \t]*;?/u.exec(code);
+  if (clause === null) return found;
+  let rest = code.slice(clause[0].length);
+  const path = /^\s*(?:[\p{L}_.][\p{L}\p{N}_]*\s+)?(?:"([^"\n]*)"|`([^`\n]*)`)\s*;?/u;
+  for (;;) {
+    const single = /^\s*import\s*(?!\()/.exec(rest);
+    const block = /^\s*import\s*\(/.exec(rest);
+    if (block !== null) {
+      rest = rest.slice(block[0].length);
+      for (let entry = path.exec(rest); entry !== null; entry = path.exec(rest)) {
+        found.push(entry[1] ?? entry[2] ?? '');
+        rest = rest.slice(entry[0].length);
+      }
+      const close = /^\s*\)\s*;?/.exec(rest);
+      if (close === null) return found;
+      rest = rest.slice(close[0].length);
+    } else if (single !== null) {
+      const entry = path.exec(rest.slice(single[0].length));
+      if (entry === null) return found;
+      found.push(entry[1] ?? entry[2] ?? '');
+      rest = rest.slice(single[0].length + entry[0].length);
+    } else return found;
+  }
+}
+
+export interface GoModUnused {
+  // Each requirement that no carried file imports, one sentence each.
+  findings: string[];
+  // Each requirement that is not judged, one sentence each: a line `// indirect`.
+  notJudged: string[];
+}
+
+// GN-15g, GN-19f, B2.473: the requirements of `goMod` that the released form does not use. `carried` and `leftOut`
+// are the files of the module that the form carries and leaves out (goReleaseFiles), and `read` gives the text of a
+// Go file. A requirement is used when a carried Go file imports a package of its module, the module path itself or a
+// path below it; an import belongs to the required module with the longest path that holds it. A requirement that
+// only files that the form leaves out import is named with those files, and one that no file imports is named; a
+// line `// indirect` is not judged, because no file of the module imports the module of such a line. No Go is started
+// and no go.mod is written. The files that the form leaves out are read only when a requirement is not used.
+export function goModUnused(goMod: string, carried: readonly string[], leftOut: readonly string[], read: (path: string) => string): GoModUnused {
+  const required = goModRequires(goMod);
+  const judged = required.filter((r) => !r.indirect);
+  const notJudged = required.filter((r) => r.indirect).map((r) => `go.mod requires ${r.module} ${r.version} with \`// indirect\`, which is not judged: no file of the module imports the module of such a line`);
+  if (judged.length === 0) return { findings: [], notJudged };
+  const own = /^module\s+(\S+)/m.exec(goMod)?.[1];
+  const modules = [...required.map((r) => r.module), ...(own === undefined ? [] : [own])];
+  // The module of `modules` that an import path belongs to, the one with the longest path.
+  const moduleOf = (path: string): string | undefined => modules.filter((module) => path === module || path.startsWith(`${module}/`)).sort((a, b) => b.length - a.length)[0];
+  const importers = (files: readonly string[]): Map<string, string[]> => {
+    const by = new Map<string, string[]>();
+    for (const file of files.filter((path) => path.endsWith('.go'))) {
+      for (const module of new Set(goImports(read(file)).map(moduleOf))) {
+        if (module !== undefined) by.set(module, [...(by.get(module) ?? []), file]);
+      }
+    }
+    return by;
+  };
+  const used = importers(carried);
+  const unused = judged.filter((r) => !used.has(r.module));
+  if (unused.length === 0) return { findings: [], notJudged };
+  const outside = importers(leftOut);
+  return {
+    findings: unused.map((r) => {
+      const files = (outside.get(r.module) ?? []).sort();
+      return files.length === 0
+        ? `go.mod requires ${r.module} ${r.version}, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`
+        : `go.mod requires ${r.module} ${r.version}, and only files that the released form leaves out import it (${files.join(', ')}): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`;
+    }),
+    notJudged,
+  };
+}
+
+// CK-102, B2.473: goModUnused of the Go module of a checkout, before a tag: `moduleDir` is its directory, whose go.mod
+// and hand-written files are read from the disk, and `generated` the generated Go files by their paths in the module,
+// as `binding generate` writes them, so the check needs no generation in the work tree. undefined without a go.mod.
+// A directory that Go reads no package from (`testdata`, `vendor`, a name that starts with `.` or `_`) is not walked.
+export function goModUnusedOf(moduleDir: string, generated: ReadonlyMap<string, string>): GoModUnused | undefined {
+  if (!existsSync(join(moduleDir, 'go.mod'))) return undefined;
+  const written: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(join(moduleDir, dir), { withFileTypes: true })) {
+      const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!/^[._]/.test(entry.name) && entry.name !== 'testdata' && entry.name !== 'vendor') walk(path);
+      } else if (entry.isFile() && path.endsWith('.go') && !isGoGenerated(path)) written.push(path);
+    }
+  };
+  walk('');
+  const read = (path: string): string => generated.get(path) ?? readFileSync(join(moduleDir, path), 'utf8');
+  const form = goReleaseFiles([...written, ...generated.keys()], read);
+  return goModUnused(readFileSync(join(moduleDir, 'go.mod'), 'utf8'), form.carried, [...form.leftOut.keys()], read);
+}
+
 // GN-19f: the checks of a release that failed, one sentence each. No commit and no tag was made.
 export class Refused extends Error {
   findings: string[];
@@ -594,6 +693,10 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const handWritten = tracked.filter((path) => !isGoGenerated(path));
   const form = goReleaseFiles([...handWritten, ...written.keys()], read);
   const generated = form.carried.filter((path) => written.has(path));
+  // B2.473: each requirement of the go.mod is imported by a file that the form carries; go.mod is not rewritten.
+  const requirements = goModUnused(goMod, form.carried, [...form.leftOut.keys()], read);
+  findings.push(...requirements.findings);
+  for (const line of requirements.notJudged) release.log(line);
   // The tracked files that the released form leaves out, which the commit removes from the tree of the commit of the tag.
   const removed = handWritten.filter((path) => form.leftOut.has(path)).sort();
   // GN-15k: the link file of each platform with the native-static-libs that the release build of that platform printed,

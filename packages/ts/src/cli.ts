@@ -36,7 +36,7 @@ import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
-import { goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
+import { goModUnusedOf, goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
@@ -641,6 +641,26 @@ if (command === 'check') {
     for (const { path, message } of releaseSettingFindings(checked, root)) {
       differs = true;
       process.stderr.write(`${join(root, path)}: CK-102 ${message}\n`);
+    }
+    // B2.473: each requirement of the go.mod of the Go module is imported by a file that the released form carries,
+    // judged by the function of `binding release-go-module` on the generated files as binding writes them, so a
+    // requirement that only a test or a program uses fails before a tag.
+    if (checked.targets.includes('go')) {
+      const goModPath = join(root, goModuleDir(checked), 'go.mod');
+      try {
+        const prefix = `${goModuleDir(checked)}/`;
+        const written = generateOnStack({ contract: checked, version: version as string, coreLib: manifest.lib?.name ?? (core?.name ?? '').replaceAll('-', '_'), caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets: ['go'] });
+        const generated = new Map([...written].filter(([path]) => path.startsWith(prefix) && isGoGenerated(path)).map(([path, text]) => [path.slice(prefix.length), String(text)]));
+        const judged = goModUnusedOf(join(root, goModuleDir(checked)), generated);
+        for (const finding of judged?.findings ?? []) {
+          differs = true;
+          process.stderr.write(`${goModPath}: CK-102 release-go-module: ${finding}\n`);
+        }
+        for (const line of judged?.notJudged ?? []) process.stderr.write(`${goModPath}: CK-102 release-go-module: ${line}\n`);
+      } catch (error) {
+        differs = true;
+        for (const sentence of sentences(error)) process.stderr.write(`${goModPath}: CK-102 release-go-module: the requirements of go.mod are not judged, because the Go binding is not generated: ${sentence}\n`);
+      }
     }
   }
   const names = failedChecks.has('CK-18');

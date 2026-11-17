@@ -244,7 +244,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   the recipes, which takes the value of a line `"version": "<major>"` under a line `"llvm": {`, so a file on one line
   pins none. For the target `go`: the module path of `packages.go`, which is
   `github.com/<owner>/<repository>/<directory of the Go module>` (generator GN-15, GN-19f), read by the function with
-  which `binding release-go-module` refuses another path. The recipe `release-binding-check` itself first requires
+  which `binding release-go-module` refuses another path; and the requirements of the `go.mod` of the Go module,
+  each of which a Go file that the released form carries imports (generator GN-15g, B2.473), judged by the function
+  of `binding release-go-module` on the hand-written Go files of the checkout and on the generated files as
+  `binding generate` writes them, which the check generates in memory, so it needs none in the work tree. It
+  reports a requirement that only files that the form leaves out import, with those files, and one that no Go file
+  imports, with the path of the `go.mod` and `release-go-module`; it writes a line `// indirect` to its output and
+  does not fail on it, and it fails when the Go binding is not generated, with the refusal of the generator. The recipe `release-binding-check` itself first requires
   every variable of the Makefile that a release recipe of the contract reads (`BINDING_RUN`, `CARGO`, and `UV`, `NPM`
   and `NODE` by its targets), which the check, a command, cannot read. Why: the release of session-store passed
   `binding check --release` and would then have stopped in `release-platform-assets`, after the tag, on a

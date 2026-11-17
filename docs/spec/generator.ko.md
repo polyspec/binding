@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 29216433b30adbf1441fcbee5d9ef700e4593b4d6160a6124e2961519da33122 -->
+<!-- source-sha256: 25d405f1defa52dfd68a05cc5486aad6722ef77779f5ae48c6cb6b131ea88f4a -->
 # 생성기
 
 [English](generator.md)
@@ -1984,11 +1984,19 @@
   추적하지 않으면 없다(B2.479). 명령이 그 줄들을 쓰는 이유: 모듈은 자기 tag의 commit 안에서 혼자 빌드된다(GN-15l). crud-ui의
   generator 모듈은 자기 tag에서 `go build`가 자기가 require하는 validator 모듈에 대한 `missing go.sum entry for module
   providing package`로 실패했다. 추적 파일이 그 줄들을 갖지 못하는 이유: 그것은 require된 모듈의 release가 정적
-  라이브러리와 함께 만드는 commit의 hash이므로 그 실행 뒤에야 생긴다(GN-19f). 빠진 시험이나 program만 쓰던 require는 그
-  `go.mod`에 남는다. 그 require는 소비자의 version 선택에 들어가고, 그 형태의 어떤 package도 그것을 import하지 않으므로
-  소비자의 빌드는 그 소스를 컴파일하지 않는다. 명령은 그런 require를 밝히지 않는다. release 형태에 `go mod tidy`를 돌려야만
-  찾을 수 있기 때문이다. 명령은 `go.mod`를 쓰지도 않는다. 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도
-  읽지 않은 파일이기 때문이다. 생성 파일을 빼는 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
+  라이브러리와 함께 만드는 commit의 hash이므로 그 실행 뒤에야 생긴다(GN-19f). release의
+  `go.mod`는 release 형태가 쓰는 것만 require한다(B2.473). `// indirect`가 아닌 줄인 require 각각은, 실린 Go 파일이 그
+  모듈의 package, 곧 module path나 그 아래의 path를 import하는 모듈의 것이다. import는 그것을 담는 path가 가장 긴 require된
+  모듈에 속한다. 실린 Go 파일은 package의 손으로 쓴 파일이나 그 형태가 싣는 생성 파일이고, test feature의 tag가 없는 생성
+  시험도 그 가운데 있다. 같은 레포의 모듈의 require도 같은 방법으로 쓰인 것이 된다. 그 형태가 빼는 파일, 곧 레포의 시험,
+  program, test feature의 tag 뒤의 생성 파일만 import하는 require는 그 파일들을 대며 거부하고, 어떤 Go 파일도 import하지
+  않는 require도 거부한다. `// indirect` 줄은 판정하지 않으며 명령이 그렇게 말한다. 검사는 파일의 import 선언을 읽고 Go를
+  시작하지 않는다. `binding release-go-module`이 그것을 실행하고(GN-19f), `binding check --release`가 tag 전에
+  실행한다(docs/spec/contract-check.md CK-102). 시험이나 program만의 의존성은 자기 `go.mod`를 가진 자기 Go 모듈에 둔다.
+  같은 레포든 아니든 같고, `go install`용 명령도 그렇게 한다. 거부하는 이유: 그런 require는 tag의 모든 소비자의 version
+  선택에 들어간다. 소비자가 그 `go.mod`를 받기 때문이며, 그 형태의 어떤 package도 그것을 import하지 않는다. 명령이 그것을
+  뺀 `go.mod`를 쓰지 않는 이유: 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도 읽지 않은 파일이기 때문이다.
+  B2.473 전에는 그 require가 tag의 `go.mod`에 남았고 어떤 명령도 그것을 밝히지 않았다. 생성 파일을 빼는 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
   부르는데 release의 라이브러리는 그것을 가질 수 없으므로(GN-19f), release 형태의 어떤 빌드도 그 파일을 그 tag로 컴파일할 수
   없다. 그리고 guard는 그 형태가 싣지 않은 tag를 run에 요구하므로, 받은 모듈의 태그 없는 `go test`, 곧 그 형태의 올바른
   실행이 guard에서 실패한다. B2.446 이전의 release들은 그 파일들을 실었다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
@@ -3183,6 +3191,10 @@
     레포에 있다(B2.479). 명령은 tag가 없는 모듈과 그것을 require하는 `go.mod`를 각각 밝히고, 그 모듈의 `binding
     release-go-module`을 먼저 실행하라고 말한다. 그래서 한 레포의 모듈들은 require의 순서로 release한다. require되는
     모듈이 먼저다.
+  - 그 `go.mod`의 `// indirect`가 아닌 require 각각을 release 형태가 싣는 Go 파일이 import한다(GN-15g, B2.473). 명령은 그
+    형태가 빼는 파일만 import하는 require를 그 파일들과 함께 밝히고, 어떤 Go 파일도 import하지 않는 require를 밝히며,
+    판정하지 않는 `// indirect` 줄 각각을 실행을 읽는 쪽에 알린다. 추적 파일은 tag의 commit에서, 생성 파일은 work
+    tree에서 읽고, 그 형태가 빼는 파일은 쓰이지 않은 require가 있을 때만 읽는다.
   - work tree가 플랫폼마다 `internal/binding/zz_generated_link_<platform>.go`와
     `internal/ffi/lib/<platform>/zz_generated_lib.go`를 갖는다. 없으면 생성이 실행되지 않은 것이고, 라이브러리의 디렉터리를
     적는 파일이 없다.

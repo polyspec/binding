@@ -2421,12 +2421,22 @@ the design ids are those of the binding design.
   command writes those lines: a module builds alone inside the commit of its tag (GN-15l), and `go build` in the
   generator module of crud-ui at its tag failed with `missing go.sum entry for module providing package` of the
   validator module that it requires. Why no tracked file holds them: they are the hashes of the commit that the
-  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). A
-  requirement that only a left-out test or program used stays in that
-  `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
-  build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
-  over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
-  the repository holds and no check of the repository read. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
+  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). The
+  `go.mod` of a release requires only what the released form uses (B2.473): each requirement, a line that is not
+  `// indirect`, is of a module of which a carried Go file imports a package, the module path or a path below it,
+  where an import belongs to the required module with the longest path that holds it. A carried Go file is a
+  hand-written file of a package or a generated file that the form carries, a generated test without a tag of a
+  test feature among them; a requirement of a module of the same repository is used in the same way. A requirement
+  that only files that the form leaves out import, a test of the repository, a program or a generated file behind
+  a tag of a test feature, is refused with those files, and one that no Go file imports is refused; a line
+  `// indirect` is not judged, and the command says so. The check reads the import declarations of the files and
+  starts no Go; `binding release-go-module` runs it (GN-19f), and `binding check --release` runs it before a tag
+  (docs/spec/contract-check.md CK-102). A dependency of tests or programs alone lives in a Go module of its own,
+  with its own `go.mod`, in the same repository or not, as a command for `go install` does. Why it is refused:
+  such a requirement takes part in the version selection of every consumer of the tag, which fetches its
+  `go.mod`, while no package of the form imports it. Why the command writes no `go.mod` without it: the result
+  would be a file that no commit of the repository holds and no check of the repository read. Before B2.473 the
+  requirement stayed in the `go.mod` of the tag and no command named it. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
   calls test entry points, which the library of a release may not hold (GN-19f), so no build of the released form
   can compile it with its tag, and the guard would ask a run for tags that the form does not carry, so the untagged
   `go test` of a fetched module, the right run of that form, would fail on it. The releases before B2.446 carried
@@ -3887,6 +3897,11 @@ the design ids are those of the binding design.
     names each module whose tag is missing and the `go.mod` that requires it, and says to run `binding
     release-go-module` of that module first. So the modules of one repository are released in the order of their
     requirements: the required module first.
+  - Each requirement of that `go.mod` that is not `// indirect` is imported by a Go file that the released form
+    carries (GN-15g, B2.473). The command names a requirement that only files that the form leaves out import,
+    with those files, and one that no Go file imports, and it tells the reader of the run each line `// indirect`,
+    which it does not judge. It reads a tracked file from the commit of the tag and a generated one from the work
+    tree, and the files that the form leaves out only when a requirement is not used.
   - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
     `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
     the directory of a library.

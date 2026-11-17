@@ -773,6 +773,30 @@ test('B2.471: binding check --release refuses a Go module whose module path name
   assert.match(releaseCheck(other.root).stderr, /interface\.json: CK-102 release-go-module: example\.org\/sample\/packages\/go: the Go module is not github\.com\/<owner>\/<repository>\[\/<directory>\]/);
 });
 
+test('B2.473: binding check --release refuses a go.mod with a requirement that no file of the released form imports, before a tag (CK-102, GN-15g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const goMod = join(box.root, 'packages/go/go.mod');
+  // The go.mod that scaffold writes has no finding: the generated files are judged as binding writes them, and the
+  // work tree of the case holds none.
+  assert.doesNotMatch(releaseCheck(box.root).stderr, /CK-102 release-go-module/);
+  writeFileSync(goMod, `${readFileSync(goMod, 'utf8')}\nrequire (\n\ta.example/assert v1.0.0\n\ta.example/nothing v0.1.0\n\ta.example/old v0.2.0 // indirect\n)\n`);
+  mkdirSync(join(box.root, 'packages/go/tests/probe'), { recursive: true });
+  writeFileSync(join(box.root, 'packages/go/tests/cases_test.go'), 'package tests\n\nimport "a.example/assert"\n');
+  writeFileSync(join(box.root, 'packages/go/tests/probe/main.go'), 'package main\n\nimport _ "a.example/assert/deep"\n\nfunc main() {}\n');
+  const refused = releaseCheck(box.root);
+  assert.equal(refused.status, 1);
+  const lines = refused.stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module'));
+  assert.deepEqual(lines, [
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/assert v1.0.0, and only files that the released form leaves out import it (tests/cases_test.go, tests/probe/main.go): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/nothing v0.1.0, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/old v0.2.0 with \`// indirect\`, which is not judged: no file of the module imports the module of such a line`,
+  ]);
+  // A hand-written package of the module that imports it makes it a requirement of the released form.
+  mkdirSync(join(box.root, 'packages/go/host'));
+  writeFileSync(join(box.root, 'packages/go/host/host.go'), 'package host\n\nimport (\n\t_ "a.example/assert"\n\t_ "a.example/nothing/x"\n)\n');
+  assert.deepEqual(releaseCheck(box.root).stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module') && !line.includes('indirect')), []);
+});
+
 test('B2.471: a repository without the target is not asked for the setting of that target (CK-102)', (t) => {
   // No PHP target: no config/toolchain.json is read. No Go target: no module path is read.
   const box = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { contract.targets = contract.targets.filter((target) => target !== 'php' && target !== 'go'); });

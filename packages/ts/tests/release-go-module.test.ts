@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
 import { generate } from '../src/generate/index.ts';
-import { carriedLibraries, goModFindings, goModRequires, goPackageOf, goReleaseFiles, goSumWith, libraryFindings, publicPackages, Refused, rehearsalReport, releaseGoModule, siblingRequires, type GoModuleRelease } from '../src/release/go-module.ts';
+import { carriedLibraries, goImports, goModFindings, goModRequires, goModUnused, goPackageOf, goReleaseFiles, goSumWith, libraryFindings, publicPackages, Refused, rehearsalReport, releaseGoModule, siblingRequires, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
 
@@ -186,7 +186,8 @@ function scene(t: { after: (fn: () => void) => void }, answers: Answer[] = []): 
   };
   const module = join(root, 'packages/go');
   write(join(module, 'go.mod'), GO_MOD);
-  write(join(module, 'zz_generated_sample.go'), 'package sample\n');
+  // B2.473: the generated package imports the modules that the go.mod of a case requires.
+  write(join(module, 'zz_generated_sample.go'), 'package sample\n\nimport (\n\t_ "github.com/polyspec/points/packages/go"\n\tvalidator "github.com/polyspec/sample/packages/validator/go/errors"\n)\n');
   write(join(module, 'internal/binding/zz_generated_binding.go'), 'package binding\n');
   for (const platform of PLATFORMS) {
     write(join(module, `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), linkFile(platform));
@@ -590,6 +591,77 @@ test('B2.479: a run after a release that stopped between two modules goes on: th
   const failed = scene(t, pair([tagOf('packages/validator/go', VALIDATOR_COMMIT), tagOf('packages/base/go', BASE_COMMIT)]));
   assert.deepEqual(releaseGoModule(failed.release), { commit: RELEASE_COMMIT, reference: 'refs/tags/packages/go/v0.0.1' });
   assert.deepEqual(failed.lines().filter((line) => line.startsWith('git tag ')), [`git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`]);
+});
+
+// ---- The requirements that the released form uses -------------------------------------------------------------------
+
+const UNUSED_BY_ALL = (requirement: string): string => `go.mod requires ${requirement}, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`;
+const UNUSED_BY_CARRIED = (requirement: string, files: string): string => `go.mod requires ${requirement}, and only files that the released form leaves out import it (${files}): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`;
+
+test('B2.473: the import paths of a Go file are read from its import declarations, of one path and of a block, with a name or without (GN-19f)', () => {
+  assert.deepEqual(goImports('// Code generated.\n\n//go:build !musl\n\npackage sample\n\n/* #include <x.h> */\nimport "C"\nimport (\n\t"fmt" // the standard library\n\n\t_ "a.example/x"\n\t. "b.example/y/z"\n\tnamed "c.example/w"\n)\nimport other `d.example/v`\n\nvar text = "import \\"e.example/not\\""\n\nimport "f.example/late"\n'), ['C', 'fmt', 'a.example/x', 'b.example/y/z', 'c.example/w', 'd.example/v']);
+  assert.deepEqual(goImports('package sample\n'), []);
+  assert.deepEqual(goImports('// import "a.example/x"\n'), []);
+});
+
+test('B2.473: a requirement of the go.mod of a release is imported by a file that the released form carries, and one that only left-out files import, or none, is named (GN-15g, GN-19f)', () => {
+  const texts = new Map([
+    // Carried: a hand-written package, a generated file and a generated test without a tag of a test feature.
+    ['host/host.go', 'package host\n\nimport "a.example/carried"\n'],
+    ['zz_generated_sample.go', 'package sample\n\nimport (\n\t"fmt"\n\n\tpoints "a.example/sub/geometry/shapes"\n\tsibling "github.com/polyspec/sample/packages/validator/go"\n)\n'],
+    ['zz_generated_test.go', 'package sample\n\nimport _ "a.example/generated-test"\n'],
+    // Left out: a test of the repository, a program and a generated file behind a tag of a test feature.
+    ['tests/cases_test.go', 'package tests\n\nimport (\n\t"a.example/carried"\n\t"a.example/test-only/assert"\n)\n'],
+    ['host/host_test.go', 'package host\n\nimport "a.example/test-only"\n'],
+    ['tests/probe/main.go', 'package main\n\nimport "a.example/program-only"\n'],
+    ['zz_generated_fault_test.go', '//go:build polyspec_sample_fault_test\n\npackage sample\n\nimport "a.example/tagged-only"\n'],
+  ]);
+  const form = formOf(texts);
+  const read: string[] = [];
+  const judge = (goMod: string) => goModUnused(goMod, form.carried, [...form.leftOut.keys()], (path) => {
+    read.push(path);
+    return texts.get(path) ?? assert.fail(`${path} is no file of the case`);
+  });
+  const module = 'module github.com/polyspec/sample/packages/go\n\ngo 1.27.3\n';
+  // Imported by a carried file: a hand-written package, a sub-package path, a sibling of the repository, a
+  // generated test. Both forms of the directive are read, and the files that the form leaves out are not.
+  assert.deepEqual(judge(`${module}\nrequire a.example/carried v1.0.0\n\nrequire (\n\ta.example/sub v0.2.0\n\tgithub.com/polyspec/sample/packages/validator/go v0.0.1\n\ta.example/generated-test v0.0.3\n)\n`), { findings: [], notJudged: [] });
+  assert.deepEqual([...new Set(read)].sort(), ['host/host.go', 'zz_generated_sample.go', 'zz_generated_test.go']);
+  // Only by a left-out test, only by a program, only behind a tag of a test feature, and by nothing.
+  assert.deepEqual(judge(`${module}\nrequire a.example/test-only v1.0.0\nrequire (\n\ta.example/program-only v1.1.0\n\ta.example/tagged-only v1.2.0\n\ta.example/nothing v1.3.0\n\ta.example/carried v1.0.0\n)\n`), {
+    findings: [
+      UNUSED_BY_CARRIED('a.example/test-only v1.0.0', 'host/host_test.go, tests/cases_test.go'),
+      UNUSED_BY_CARRIED('a.example/program-only v1.1.0', 'tests/probe/main.go'),
+      UNUSED_BY_CARRIED('a.example/tagged-only v1.2.0', 'zz_generated_fault_test.go'),
+      UNUSED_BY_ALL('a.example/nothing v1.3.0'),
+    ],
+    notJudged: [],
+  });
+  // A line `// indirect` is not judged and is said so; a module whose path only starts like another is not that one.
+  assert.deepEqual(judge(`${module}\nrequire (\n\ta.example/nothing v1.3.0 // indirect\n\ta.example/carr v0.1.0\n)\n`), {
+    findings: [UNUSED_BY_ALL('a.example/carr v0.1.0')],
+    notJudged: ['go.mod requires a.example/nothing v1.3.0 with `// indirect`, which is not judged: no file of the module imports the module of such a line'],
+  });
+  // An import belongs to the required module with the longest path: a package of a/sub/geometry is none of a/sub.
+  assert.deepEqual(judge(`${module}\nrequire a.example/sub v0.2.0\nrequire a.example/sub/geometry v0.1.0\n`).findings, [UNUSED_BY_ALL('a.example/sub v0.2.0')]);
+  // A go.mod without a requirement reads no file.
+  read.length = 0;
+  assert.deepEqual(judge(module), { findings: [], notJudged: [] });
+  assert.deepEqual(read, []);
+});
+
+test('B2.473: binding release-go-module refuses a go.mod with a requirement that only a left-out test imports, with the test, and makes no commit and no tag (GN-19f)', (t) => {
+  const goMod = `${GO_MOD}\nrequire (\n\tgithub.com/polyspec/points/packages/go v0.0.3\n\ta.example/assert v1.0.0\n\ta.example/old v0.1.0 // indirect\n)\n`;
+  const s = scene(t, [
+    { tool: 'git', match: ' show 1+:packages/go/go\\.mod$', stdout: goMod },
+    ...tracks([['host/host.go', 'package host\n'], ['tests/cases_test.go', 'package tests\n\nimport "a.example/assert"\n']]).filter((a) => !a.match.includes('go\\.mod')),
+  ]);
+  const logged: string[] = [];
+  assert.deepEqual(refusal(() => releaseGoModule({ ...s.release, log: (line) => logged.push(line) })), [UNUSED_BY_CARRIED('a.example/assert v1.0.0', 'tests/cases_test.go')]);
+  assert.deepEqual(s.lines().filter((line) => WRITES.test(line)), []);
+  assert.deepEqual(logged.filter((line) => line.includes('indirect')), ['go.mod requires a.example/old v0.1.0 with `// indirect`, which is not judged: no file of the module imports the module of such a line']);
+  // The go.mod is not rewritten: the checkout holds the file as it was.
+  assert.equal(readFileSync(join(s.release.root, 'packages/go/go.mod'), 'utf8'), GO_MOD);
 });
 
 // ---- The rehearsal --------------------------------------------------------------------------------------------------
