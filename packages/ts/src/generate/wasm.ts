@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, type RecordForm, recordFns, recordParts, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -448,65 +448,18 @@ const wasmCycles = resultCycles;
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
 function variantRust(model: Model, variant: Variant): string {
   const cycle = cycleOf(wasmCycles(model), variant.unit);
-  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode));
-  const name = recordFn(variant.unit);
-  const core = variant.unit.core_type ?? '';
-  const jsName = langName('wasm', variant.unit.name, 'class');
-  const tag = langName('wasm', variant.unit.tag ?? [], 'variable');
-  const { ins, outs } = variantParts(model, variant, 'in');
-  return `
-/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode, WASM_VARIANT));
+  return variantFns('wasm', variant, 'value: &JsValue', `(value: impl Borrow<${variant.unit.core_type ?? ''}>) -> Result<JsValue, Fail>`, variantParts(model, variant, 'in', WASM_VARIANT));
 }
 
-/// T-9: a value of the variant ${jsName} leaves as the object of its case.
-fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const jsName = langName('wasm', variant.unit.name, 'class');
-  const tag = langName('wasm', variant.unit.tag ?? [], 'variable');
-  const kids = mode === 'kids';
-  const set = (key: string, value: string): string => `            Reflect::set(&object, &JsValue::from_str(${rustString(key)}), &${value}?).map_err(|error| internal(&error))?;`;
-  const insArms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => {
-      const js = langName('wasm', f.field.name, 'variable');
-      // GN-6v: a field that may be left out is null when its member is missing or undefined.
-      const read = caseLeftOut(f.field) ? `default_in(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.field.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
-      const variable = `${kids ? '_' : ''}${f.variable}`;
-      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? `${read}?` : caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(js), 'binding_error')}` : ''}`;
-    });
-    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
-    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
-  });
-  const arms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    // An optional Box gives its value as Option<&T>, which the match of the optional takes.
-    const value = (f: CaseField): string => (f.boxed === 'optional' ? `${f.variable}.as_deref()` : copied(f.field.type) || f.boxed === 'box' ? caseValue(model, f) : f.variable);
-    const writes = [set(tag, `text_out(${rustString(kase.value)})`), ...fields.map((f) => set(langName('wasm', f.field.name, 'variable'), convertOut(model, f.field.type, value(f))))];
-    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
-  });
-  return {
-    ins: `    let tag = text_in(&member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
-    match tag.as_str() {
-${insArms.join('\n')}
-        _ => Err(type_error(subject, ${rustString(jsName)})),
-    }`,
-    outs: `    let object = Object::new();
-    match value.borrow() {
-${arms.join('\n')}
-    }
-    Ok(object.into())`,
-  };
-}
+// T-9: a variant in WASM reads and sets its members as a record does; an optional Box gives its value as Option<&T>,
+// which the match of the optional takes.
+const WASM_VARIANT: VariantForm = {
+  ...WASM_RECORD,
+  set: (key, value) => `            Reflect::set(&object, &JsValue::from_str(${rustString(key)}), &${value}?).map_err(|error| internal(&error))?;`,
+  field: (model, f) => convertOut(model, f.field.type, f.boxed === 'optional' ? `${f.variable}.as_deref()` : copied(f.field.type) || f.boxed === 'box' ? caseValue(model, f) : f.variable),
+  text: (literal) => `text_out(${literal})`,
+};
 
 // T-5: the name of the module's export of a member of a class, which the ES module calls from the class it defines.
 const exportName = (fn: Fn): string => {

@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, type RecordForm, recordFns, recordParts, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -574,65 +574,17 @@ const nodeCycles = resultCycles;
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
 function variantRust(model: Model, variant: Variant): string {
   const cycle = cycleOf(nodeCycles(model), variant.unit);
-  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode));
-  const name = recordFn(variant.unit);
-  const core = variant.unit.core_type ?? '';
-  const jsName = langName('node', variant.unit.name, 'class');
-  const tag = langName('node', variant.unit.tag ?? [], 'variable');
-  const { ins, outs } = variantParts(model, variant, 'in');
-  return `
-/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(${envParam(model, variant.unit, undefined)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode, NODE_VARIANT));
+  return variantFns('node', variant, `${envParam(model, variant.unit, undefined)}value: Unknown<'_>`, `<'env>(env_: &'env Env, value: impl Borrow<${variant.unit.core_type ?? ''}>) -> Result<Unknown<'env>, Fail>`, variantParts(model, variant, 'in', NODE_VARIANT));
 }
 
-/// T-9: a value of the variant ${jsName} leaves as the object of its case.
-fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const jsName = langName('node', variant.unit.name, 'class');
-  const tag = langName('node', variant.unit.tag ?? [], 'variable');
-  const kids = mode === 'kids';
-  const insArms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => {
-      const memberName = langName('node', f.field.name, 'variable');
-      // GN-6v: a field that may be left out is null when its member is missing or undefined.
-      const read = caseLeftOut(f.field) ? `default_in(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
-      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
-      const variable = `${kids ? '_' : ''}${f.variable}`;
-      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? `${read}?` : caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(memberName), 'binding_error')}` : ''}`;
-    });
-    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
-    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
-  });
-  const arms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    const writes = [
-      `            object.set_named_property(${rustString(tag)}, text_out(env_, ${rustString(kase.value)})?).map_err(internal)?;`,
-      ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
-    ];
-    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
-  });
-  return {
-    ins: `    let tag = text_in(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
-    match tag.as_str() {
-${insArms.join('\n')}
-        _ => Err(type_error(subject, ${rustString(jsName)})),
-    }`,
-    outs: `    let mut object = Object::new(env_).map_err(internal)?;
-    match value.borrow() {
-${arms.join('\n')}
-    }
-    Ok(object.to_unknown())`,
-  };
-}
+// T-9: a variant in Node reads and sets its members as a record does.
+const NODE_VARIANT: VariantForm = {
+  ...NODE_RECORD,
+  set: (key, value) => `            object.set_named_property(${rustString(key)}, ${value}?).map_err(internal)?;`,
+  field: (model, f) => caseWritten(f, convertOut(model, f.field.type, caseValue(model, f))),
+  text: (literal) => `text_out(env_, ${literal})`,
+};
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 

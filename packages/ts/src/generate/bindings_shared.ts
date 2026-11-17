@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -94,6 +94,73 @@ export function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids', form:
     ins: recordIns(model, unit, mode === 'kids', form.lang, form.place, form.convert),
     outs: `    let value = value.borrow();\n    ${form.object}\n${writes.join('\n')}\n    ${form.made}`,
   };
+}
+
+// T-9: what the conversions of a variant in node and wasm differ by, besides those of a record: the line that sets a
+// member of the object, the converted value of a field, and the text of the tag.
+export interface VariantForm {
+  readonly lang: 'node' | 'wasm';
+  readonly place: (member: string) => string;
+  readonly convert: (model: Model, type: Type, value: string, subject: string) => string;
+  readonly set: (key: string, value: string) => string;
+  readonly field: (model: Model, field: CaseField) => string;
+  readonly text: (literal: string) => string;
+  readonly object: string;
+  readonly made: string;
+}
+
+// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+export function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids', form: VariantForm): { ins: string; outs: string } {
+  const jsName = langName(form.lang, variant.unit.name, 'class');
+  const tag = langName(form.lang, variant.unit.tag ?? [], 'variable');
+  const kids = mode === 'kids';
+  const insArms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => {
+      const member = langName(form.lang, f.field.name, 'variable');
+      // GN-6v: a field that may be left out is null when its member is missing or undefined.
+      const read = caseLeftOut(f.field) ? `default_in(${form.place(member)}, |value| ${form.convert(model, f.field.type, 'value', rustString(member))}).map(Option::flatten)` : form.convert(model, f.field.type, form.place(member), rustString(member));
+      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
+      const variable = `${kids ? '_' : ''}${f.variable}`;
+      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? `${read}?` : caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(member), 'binding_error')}` : ''}`;
+    });
+    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
+    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const writes = [form.set(tag, form.text(rustString(kase.value))), ...fields.map((f) => form.set(langName(form.lang, f.field.name, 'variable'), form.field(model, f)))];
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
+  });
+  return {
+    ins: `    let tag = text_in(${form.place(tag)}, ${rustString(tag)})?;
+    match tag.as_str() {
+${insArms.join('\n')}
+        _ => Err(type_error(subject, ${rustString(jsName)})),
+    }`,
+    outs: `    ${form.object}
+    match value.borrow() {
+${arms.join('\n')}
+    }
+    ${form.made}`,
+  };
+}
+
+// T-9: the conversions in and out of a variant, whose signatures in and out the language gives.
+export function variantFns(lang: 'node' | 'wasm', variant: Variant, inParams: string, outSignature: string, parts: { ins: string; outs: string }): string {
+  const jsName = langName(lang, variant.unit.name, 'class');
+  return `
+/// T-9: a value of the variant ${jsName} is an object whose member ${langName(lang, variant.unit.tag ?? [], 'variable')} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
+fn in_${recordFn(variant.unit)}(${inParams}, subject: &str) -> Result<${variant.unit.core_type ?? ''}, Fail> {
+${parts.ins}
+}
+
+/// T-9: a value of the variant ${jsName} leaves as the object of its case.
+fn out_${recordFn(variant.unit)}${outSignature} {
+${parts.outs}
+}
+`;
 }
 
 // T-4: the conversions in and out of a record, whose signatures in and out the language gives.
