@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 50e39a107d1c8b5335016390363a311cfc7c75cc23e184ae304d08dc7afd8f17 -->
+<!-- source-sha256: ab59d41ad8cb33d8aa3e196b140e68ed65eb4313b41e3685982eb481b2d42620 -->
 # 생성기
 
 [English](generator.md)
@@ -3700,7 +3700,12 @@
   asset 하나씩 요구한다. GN-19a의 플랫폼마다의 wheel, npm 패키지와 target `node`이면 플랫폼마다의 플랫폼 패키지, GN-19a의
   PHP minor마다 플랫폼마다의 PHP 확장이다. 빠진 asset마다 그 label을 대며 실패하고, 플랫폼이나 지원 PHP minor를 적지 않은
   파일과 label이 같은 두 파일에도 실패한다. 이유: 플랫폼이나 PHP minor가 빠진 release는 거기에 설치되지
-  않는 패키지를 내고, 파일의 개수는 두 플랫폼 대신 한 플랫폼의 두 파일이 있는 것을 보지 못한다.
+  않는 패키지를 내고, 파일의 개수는 두 플랫폼 대신 한 플랫폼의 두 파일이 있는 것을 보지 못한다. GitHub이 받지 않으므로
+  빈 asset과 2 GiB 이상인 asset에도 그 이름을 대며 실패한다. `make release-platform-assets TAG=<tag> REHEARSAL=1
+  WORK=<directory>`는 tag 전의 rehearsal이다(B2.496). 같은 검사를 돌고, upload 목록을 asset마다 한 줄
+  `<size> <file>#<label>`로 `WORK/platform-assets.txt`에 쓰며, `WORK` 밖에는 쓰지 않고, `gh`도 `git`도 부르지 않으며,
+  마지막 줄은 `no upload`다. `WORK` 없는 `REHEARSAL=1`은 거부된다. 이유: upload가 label 검사 바로 뒤에 이어져
+  rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]`는 계약의
   release recipe를 `<계약의 packages>/release.mk`에 쓴다. core가 `packages/rust`이면 `packages/release.mk`이고, core가
   `packages/<component>/rust`이면 `packages/<component>/release.mk`이며, 그 target은 `-<component>`로 끝나서 한 레포의 두

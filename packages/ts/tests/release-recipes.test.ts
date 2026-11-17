@@ -550,7 +550,7 @@ test('the wheel that release-wheel builds on each platform is a wheel of that pl
   }
   const put = (path: string): void => {
     mkdirSync(join(assets, path, '..'), { recursive: true });
-    writeFileSync(join(assets, path), '');
+    writeFileSync(join(assets, path), 'asset');
   };
   // The names that npm pack and the PHP recipe gave in a release run (json 0.0.27), for the sample at 0.0.3.
   put('npm/polyspec-sample-0.0.3.tgz');
@@ -603,7 +603,7 @@ test('the assets of each platform are required and labelled before an upload (GN
   const assets = join(box.root, 'var/release/assets');
   const put = (path: string): void => {
     mkdirSync(join(assets, path, '..'), { recursive: true });
-    writeFileSync(join(assets, path), '');
+    writeFileSync(join(assets, path), 'asset');
   };
   put('wheel/polyspec_sample-0.0.3-cp314-abi3-manylinux_2_39_x86_64.whl');
   put('wheel/polyspec_sample-0.0.3-cp314-abi3-manylinux_2_39_aarch64.whl');
@@ -677,7 +677,7 @@ test('B2.496: release-platform-assets REHEARSAL=1 runs the checks of the labels 
   assert.deepEqual(listing(box.root).filter((path) => !path.startsWith('var/rehearsal-work')), before);
   const upload = readFileSync(join(work, 'platform-assets.txt'), 'utf8').trimEnd().split('\n');
   assert.equal(upload.length, 13);
-  assert.ok(upload.includes(`5 ${join(assets, 'npm/polyspec-sample-0.0.3.tgz')}#polyspec-sample-ts-0.0.3`), upload.join('\n'));
+  assert.ok(upload.includes('5 var/release/assets/npm/polyspec-sample-0.0.3.tgz#polyspec-sample-ts-0.0.3'), upload.join('\n'));
   // The rehearsal and the upload refuse an empty asset, which GitHub does not take, by its name.
   put('npm/polyspec-sample-0.0.3.tgz', '');
   for (const extra of [['REHEARSAL=1', `WORK=${work}`], []]) {
@@ -697,7 +697,7 @@ test('the upload requires the asset of each label: each platform, and each PHP m
   const assets = join(box.root, 'var/release/assets');
   const put = (path: string): void => {
     mkdirSync(join(assets, path, '..'), { recursive: true });
-    writeFileSync(join(assets, path), '');
+    writeFileSync(join(assets, path), 'asset');
   };
   const remove = (path: string): void => { rmSync(join(assets, path)); };
   const platforms = { 'x86_64-linux-glibc': 'linux-x64-gnu', 'arm64-linux-glibc': 'linux-arm64-gnu', 'arm64-darwin-bsdlibc': 'darwin-arm64' };

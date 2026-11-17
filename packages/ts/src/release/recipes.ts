@@ -485,16 +485,23 @@ under the label ${label}-<runtime>-<version>-<platform>, or -php<X.Y>-<platform>
 without a platform under ${label}-ts-<version>. A file keeps the name that its packer gave, which PIE and the package
 managers read. Before an upload it requires one asset of each label that the targets of the contract give: each platform${has('php') ? `,
 and each PHP minor of phpExtension.minors of config/toolchain.json for the PHP extension` : ''}. It names the label of each
-missing asset, and fails for a file that names no platform${has('php') ? ' or no such PHP minor' : ''} and for two files of one label.`, '')}
+missing asset, and fails for a file that names no platform${has('php') ? ' or no such PHP minor' : ''}, for two files of one label, and for an
+empty asset or one of 2 GiB or more, which GitHub does not take. REHEARSAL=1 with WORK, a directory, runs the same
+checks before the tag, writes the list of the upload with the size of each asset to WORK/platform-assets.txt, writes
+nothing else, calls neither gh nor git, and ends with the line "no upload" (B2.496).`, '')}
 	@test -n "$$TAG" || { echo '${step}: TAG is required, for example make ${step} TAG=v0.0.1' >&2; exit 2; }
+	@test -z "$(REHEARSAL)" || test -n "$(WORK)" || { echo '${step}: REHEARSAL=1 requires WORK, the directory of the rehearsal, for example make ${step} TAG=v0.0.1 REHEARSAL=1 WORK=var/rehearsal' >&2; exit 2; }
 ${has('php') ? `${require('NODE', 'the Node.js of the checkout')}\n` : ''}	@set -e; version=$$(echo "$$TAG" | sed 's/^v//'); dir=$(RELEASE_ASSETS); fail() { echo "${step}: $$1" >&2; exit 1; }; \\
 	set --; seen=' '; wanted=; \\
-	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; }; \\
+	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; \\
+	size=$$(($$(wc -c < "$$1"))); test "$$size" -gt 0 || fail "$$1 is empty, and GitHub takes no empty asset"; \\
+	test "$$size" -lt 2147483648 || fail "$$1 is $$size bytes, and GitHub takes no asset of 2 GiB or more"; }; \\
 ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loops.join('\n')}
 	missing=; for want in ${wanted.join(' ')} $$wanted; do case "$$seen" in *" $$want "*) ;; *) missing="$$missing $$want" ;; esac; done; \\
 	test -z "$$missing" || fail "$$dir lacks$$missing"; \\
-	set -x; \\
-	gh release upload "$$TAG" "$$@"
+$(if $(REHEARSAL),	mkdir -p "$(WORK)"; for asset in "$$@"; do file=$$(echo "$$asset" | sed 's/#[^#]*$$//'); echo "$$(($$(wc -c < "$$file"))) $$asset"; done > "$(WORK)/platform-assets.txt"; \\
+	echo "${step}: the rehearsal of $$TAG checked $$# assets and wrote the upload to $(WORK)/platform-assets.txt"; echo 'no upload',	set -x; \\
+	gh release upload "$$TAG" "$$@")
 `);
 
 

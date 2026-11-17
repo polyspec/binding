@@ -4497,7 +4497,12 @@ the design ids are those of the binding design.
   for each PHP minor of GN-19a. It fails and names the label of each missing asset, a file that names no platform or no
   supported PHP minor, and two files of one label. Why: a release whose assets miss a platform or a
   PHP minor publishes a package that does not install there, and a count of the files does not see two files of one
-  platform in place of two platforms.
+  platform in place of two platforms. It also fails for an empty asset and for one of 2 GiB or more, naming it, since
+  GitHub takes neither. `make release-platform-assets TAG=<tag> REHEARSAL=1 WORK=<directory>` is its rehearsal before
+  the tag (B2.496): it runs the same checks, writes the list of the upload, one line `<size> <file>#<label>` for each
+  asset, to `WORK/platform-assets.txt`, writes nothing outside `WORK`, calls neither `gh` nor `git`, and ends with the
+  line `no upload`; `REHEARSAL=1` without `WORK` is refused. Why: the upload followed the check of the labels at once,
+  so a rehearsal could not reach the step, and template 0.0.28 was lost in its asset job.
 - **GN-19h** `binding release-recipes (--root <repository> | --contract <interface.json>) [--out <directory>]` writes
   the release recipes of the contract into `<packages of the contract>/release.mk`: `packages/release.mk` for a core
   at `packages/rust`, and `packages/<component>/release.mk` for a core at `packages/<component>/rust`, whose targets
