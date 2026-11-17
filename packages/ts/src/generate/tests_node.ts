@@ -661,11 +661,11 @@ test('GN-6ae: ${name} refuses a ${langName('node', arg.name, 'variable')} that i
       const argName = langName('node', pair.arg.name, 'variable');
       // GN-13bg: two results that hold an instance of a value class of another repository are compared through
       // ordered, which reads the instance by its in row; assert.deepStrictEqual compares two instances by no property.
-      const read = holdsForeign(model, fn.returns);
+      const read = pair.computed === undefined && holdsForeign(model, fn.returns);
       usesOrdered ||= read;
-      const outcomeOf = (expr: string): string => (read ? `ordered(${nodeOutcome(expr)})` : nodeOutcome(expr));
+      const outcomeOf = (expr: string): string => (pair.computed !== undefined ? nodeOutcome(`void ${expr}`) : read ? `ordered(${nodeOutcome(expr)})` : nodeOutcome(expr));
       emit(`
-test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
+test('${pair.computed !== undefined ? `U-2: ${name} without ${argName} leaves its value to the core (${pair.computed})` : pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
   assert.deepStrictEqual(${outcomeOf(target(callArgs(model, ctx, fn, pair.left)))}, ${outcomeOf(target(callArgs(model, ctx, fn, pair.right)))});
 });`);
     }

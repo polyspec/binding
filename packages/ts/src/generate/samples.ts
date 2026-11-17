@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
 import { classMakes } from './value_class.ts';
-import { defaultCaseValue } from './defaults.ts';
+import { computedRule, defaultCaseValue } from './defaults.ts';
 import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
 import { CATEGORIES, kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
@@ -1691,17 +1691,24 @@ const leftOutNew = (ctx: Context, record: Unit, fields: string[]): string => {
 // the class and kind of the failure): for each argument with a {literal}, {const} or {empty} default, the call that
 // leaves it out and the call that gives its default (U-2); for each source parameter, the call with a text and the
 // call with its UTF-8 bytes (T-1; PHP has one string). The other arguments are those of the first case of the member
-// that does not raise, or placeholders. A member whose result the language cannot compare, or that takes a callback,
-// has no such test (GN-13a).
+// that does not raise, or placeholders, and a function of that case. A member whose result the language cannot
+// compare, or that takes a callback unit, has no such test (GN-13a); a result passthrough of a member with machine is
+// compared as the value that the function of the case returned (B2.486).
 export interface SamePair {
   rule: 'U-2' | 'T-1';
   arg: Arg;
   left: (arg: Arg) => string | undefined;
   right: (arg: Arg) => string | undefined;
+  // GN-13d: the rule id of a {computed} default, whose two calls, without the argument and with null, are compared by
+  // their outcome alone (both without a failure, or the same class and kind of failure) and by no value.
+  computed?: string;
 }
 
 export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
-  if (!comparable(model, fn.returns) || callbackArg(model, fn) !== undefined || fn.special !== undefined) return [];
+  // GN-6ae, B2.486: a result passthrough of a member with machine is the value that its function returned, which the
+  // case gives, so the two calls compare what the function of the case returned in each.
+  const passed = typeof fn.returns === 'object' && 'passthrough' in fn.returns && fn.machine === true;
+  if (!(passed || comparable(model, fn.returns)) || callbackArg(model, fn) !== undefined || fn.special !== undefined) return [];
   let given: Map<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
@@ -1717,6 +1724,11 @@ export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
     if (declared !== undefined) {
       const explicit = fromJson(model, ctx, arg.type, declared.value);
       pairs.push({ rule: 'U-2', arg, left: (a) => (a === arg ? undefined : other(a)), right: (a) => (a === arg ? explicit : other(a)) });
+    }
+    const computed = computedRule(arg);
+    if (computed !== undefined) {
+      const absent = fromJson(model, ctx, arg.type, null);
+      pairs.push({ rule: 'U-2', arg, left: (a) => (a === arg ? undefined : other(a)), right: (a) => (a === arg ? absent : other(a)), computed });
     }
     const base = typeof arg.type === 'object' && 'optional' in arg.type ? arg.type.optional : arg.type;
     if (base === 'source' && ctx.lang !== 'php') {
