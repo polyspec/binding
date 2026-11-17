@@ -14236,6 +14236,25 @@ test('CK-69: the core call of a machine method lends its receiver by lent_receiv
 // of &Zval, so the crate of the sample failed with E0308 and E0631, and the class of the call, read from ex after the parser, with
 // E0503. A test of the text compiles nothing, and the tests of
 // the maker asserted its kinds and properties, not its calls; this one pins the calls in the form that compiles.
+// B2.489 (GN-7a): the WASM entry of the sample, a contract with a callback unit and with classes, declared MAKE twice,
+// the symbol of the maker of its error classes and the symbol by which the module makes an instance of a class, so the
+// module did not load (SyntaxError: Identifier 'MAKE' has already been declared) and no WASM test of the end-to-end
+// check ran. Each name that a JavaScript entry declares at its top level is declared once, in Node and WASM.
+test('B2.489: a JavaScript entry of a contract with a callback unit and classes declares each top-level name once, in Node and WASM (GN-7a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  for (const target of ['node', 'wasm'] as Lang[]) {
+    const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: [target] });
+    let entries = 0;
+    for (const [path, content] of out) {
+      if (!/\/generated\/index\.(mjs|cjs)$/.test(path)) continue;
+      entries += 1;
+      const names = [...String(content).matchAll(/^(?:export )?(?:const|let|class|function) ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
+      assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), [], `${target} ${path}`);
+    }
+    assert.ok(entries > 0, target);
+  }
+});
+
 test('B2.489: the PHP maker reads its arguments by Arg::zval as ext-php-rs 0.16.4 gives them (GN-7a)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] });
