@@ -7547,7 +7547,7 @@ test('the generated test of a callback of a member that waits awaits it, and a G
   assert.doesNotMatch(go, /want := \[\]\[\]any\{\}/);
 });
 
-test('a member with machine takes a function parameter and returns passthrough, which each target refuses by name until it generates them (GN-6ae)', () => {
+test('a member with machine takes a function parameter and returns passthrough, which the five targets generate, and a member without machine is refused by name (GN-6ae)', () => {
   const sample = (change: (contract: any) => void, targets: string[]): Map<string, string | Buffer> => {
     const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     change(contract);
