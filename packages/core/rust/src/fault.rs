@@ -155,6 +155,14 @@ mod armed {
             }
         }
 
+        /// A future that installs this arming around each poll of one wait of a machine (GN-6ab, B2.477). The entry
+        /// of a member with a machine takes its arming once ([`take`]) and calls this for every wait, so a fault of a
+        /// later wait stands: a second `take` gives an empty arming, because the first removed it. The waits share the
+        /// record of what fired, since a clone is the same arming.
+        pub fn wait<F: Future>(&self, future: F) -> Around<F> {
+            self.clone().around(future)
+        }
+
         /// The names of the faults that did not fire, in the order of the arming.
         fn left(&self) -> Vec<String> {
             self.slots
@@ -342,6 +350,7 @@ mod armed {
     mod tests {
         use super::super::{point, Injected};
         use super::{arm, left, take, ArmError, Armed};
+        use std::future::Future;
 
         const COPY: &str = "sample.copy";
         const RENAME: &str = "sample.rename";
@@ -423,6 +432,73 @@ mod armed {
             });
             assert_eq!(seen, (true, Some(Injected::Broken)));
             assert_eq!(left(id)?, Vec::<String>::new());
+            Ok(())
+        }
+
+        /// One wait of a machine: a future that reaches the point, polled to its end on this thread.
+        fn wait(armed: &Armed) -> Option<Injected> {
+            let mut future = std::pin::pin!(armed.wait(async { point!(RENAME) }));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            match future.as_mut().poll(&mut context) {
+                std::task::Poll::Ready(seen) => seen,
+                std::task::Poll::Pending => None,
+            }
+        }
+
+        #[test]
+        fn b2_477_the_arming_of_an_entry_stands_at_every_wait_of_its_machine() -> Result<(), ArmError> {
+            let id = arm(
+                "a.machine",
+                r#"[{"point": "sample.rename", "kind": "broken", "nth": 2}]"#,
+            )?;
+            // The entry of a member with a machine takes its arming once and arms each wait with it, as the generated
+            // code does: the fault of the second wait stands.
+            let entry = take("a.machine");
+            let first = wait(&entry);
+            let second = wait(&entry);
+            assert_eq!((first, second), (None, Some(Injected::Broken)));
+            assert_eq!(left(id)?, Vec::<String>::new());
+            // A take at each wait armed the first wait alone, which is what the generated code did: the second take
+            // finds no arming, so its wait runs with an empty one.
+            let again = arm(
+                "a.machine",
+                r#"[{"point": "sample.rename", "kind": "broken", "nth": 2}]"#,
+            )?;
+            assert_eq!((wait(&take("a.machine")), wait(&take("a.machine"))), (None, None));
+            assert_eq!(left(again)?, vec![String::from(RENAME)]);
+            // The helper of the generated crates, as they write it: the waits of one entry, in the form of Node and
+            // WASM, which keep it as a local, and in the form of an argument of `machine::drive`.
+            fn armed_waits<F: Future, T>(
+                member: &str,
+                mut wait: impl FnMut(super::Around<F>) -> T,
+            ) -> impl FnMut(F) -> T {
+                let armed = take(member);
+                move |future| wait(armed.wait(future))
+            }
+            fn polled<F: Future<Output = Option<Injected>>>(future: F) -> Option<Injected> {
+                let mut future = std::pin::pin!(future);
+                let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+                match future.as_mut().poll(&mut context) {
+                    std::task::Poll::Ready(seen) => seen,
+                    std::task::Poll::Pending => None,
+                }
+            }
+            let kept = arm(
+                "a.machine",
+                r#"[{"point": "sample.rename", "kind": "broken", "nth": 2}]"#,
+            )?;
+            let mut armed = armed_waits("a.machine", |wait| wait);
+            let seen = [(); 2].map(|()| polled(armed(async { point!(RENAME) })));
+            assert_eq!(seen, [None, Some(Injected::Broken)]);
+            assert_eq!(left(kept)?, Vec::<String>::new());
+            let driven = arm(
+                "a.machine",
+                r#"[{"point": "sample.rename", "kind": "broken", "nth": 2}]"#,
+            )?;
+            let mut waits = armed_waits("a.machine", polled);
+            let seen = [(); 2].map(|()| waits(async { point!(RENAME) }));
+            assert_eq!(seen, [None, Some(Injected::Broken)]);
+            assert_eq!(left(driven)?, Vec::<String>::new());
             Ok(())
         }
 

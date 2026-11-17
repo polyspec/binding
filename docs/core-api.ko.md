@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: 66938cd13a56c2038ccca94a67e622b2b7dd4df07b3f75954ca16f8f6583af7d -->
+<!-- source-sha256: a4ef6b047608f61be3e82609b43d6fbae10d3f7c27a4d62b6d0763e5786dd692 -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -74,6 +74,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | `fault-test`가 있을 때. case의 `faults` JSON 목록(`point`, `kind`, `errno`, `bytes`, `nth`)을 이 스레드에서 그 member id를 다음에 부르는 호출에 장전하고 장전 id를 준다. fault는 그 점에 `nth`번째(없으면 첫 번째)로 닿을 때 한 번 주입된다. errno 기호는 Linux와 macOS가 함께 가진 POSIX 기호다. 대상에 없는 기호나 errno가 없는 대상은 `ArmError::Errno`다. |
 | `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | `fault-test`가 있을 때. 생성 진입점은 동기 부분에서 자기 member와 스레드의 장전을 꺼내고, 없으면 빈 장전을 꺼내, 작업과 함께 옮겨 `run` 안에서 작업을 실행한다. `run`은 장전을 그 스레드에 설치하고 끝나면(panic 뒤에도) 이전 장전으로 되돌린다. `point`는 설치된 장전만 읽으므로, callback 안에서 다시 들어온 진입점은 바깥 장전을 보지 않고, 코어가 새로 만든 task·스레드에는 장전이 이어지지 않는다. |
 | `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | `fault-test`가 있을 때. `future`의 poll마다 장전을 설치하고 그 뒤 앞의 장전을 되돌리는 future다. panic 뒤에도 되돌린다. 그래서 `async fn`의 주입점은 runtime의 어느 스레드에서도 자기 호출의 장전을 본다. |
+| `fault::Armed::wait(&self, future) -> Around<F>` | G-5, GN-6ab | `fault-test`가 있을 때. machine의 wait 하나의 future이고 poll마다 이 장전을 설치한다. clone의 `around`와 같다. machine이 있는 member의 진입은 장전을 한 번 가져와 모든 wait에 이것을 부른다. 그래서 뒤의 wait의 fault가 서고, wait들은 무엇이 발화했는지의 기록을 함께 쓴다(B2.477). |
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
 | `Passthrough` | T-2 `passthrough`, GN-6ae | 바인딩이 handle 아래 자기 table에 쥐는 언어 값이며, 코어는 그것을 옮기기만 하고 읽지 않는다. 언어 코드의 함수가 돌려준 값이다. `Passthrough::from_generated(Handle, release: fn(Handle))`와 `into_handle(self) -> Handle`은 `construct`가 있을 때만 있다. 버려지는 `Passthrough`는 자기 handle을 `release`에 주고, handle을 꺼낸 것은 아무것도 놓지 않는다. `Debug`이며 `Send`가 아니다. 바인딩의 table은 언어 코드의 스레드에 묶여 있어서, 다른 스레드에서 끝난 값은 table에 남기 때문이다. |

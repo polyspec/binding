@@ -2863,8 +2863,10 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
   const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
-  assert.match(text(own, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(\{\}\)\)\n/);
-  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
+  // B2.465: the empty map of data leaves Python and Node as an instance of box (its row of sequence keys), so the
+  // test gives it as that instance.
+  assert.match(text(own, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(pkg\.Box\(\{\}\)\)\)\n/);
+  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new pkg\.Box\(new Map\(\[\]\)\)\)\)/);
   assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(new \\stdClass\(\)\)\),/);
   assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
   // Any other {empty} of a value type stays refused by name.
@@ -6315,7 +6317,7 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // GN-6n, GN-6ab: an entry point that waits for a future installs its faults around each poll (armed_future); the
     // advance of a Driven object (Node) is an entry point without a core call of its own.
     const advances = (lib.match(/pub fn advance<'env>/g) ?? []).length;
-    assert.equal((lib.match(/(?:with_faults|armed_future)\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
+    assert.equal((lib.match(/(?:with_faults|armed_future|armed_waits)\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
   // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
   assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            list_out(&mut buffer, left, text_out);\n'));
@@ -6420,7 +6422,7 @@ test('fault injection points and the point of another library are armed for the 
   // machine armed_future (GN-6n); the advance of a Driven object is shielded and arms nothing. The test of the entries
   // of the WASM crate reads this entry by entry; here the counts of the crate agree with it.
   const advances = (lib.match(/pub fn advance\(&mut self/g) ?? []).length;
-  assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
+  assert.equal((lib.match(/with_faults\("|armed_future\("|armed_waits\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
@@ -7475,17 +7477,19 @@ test('a member with wait async_driver that reaches language code drives the stat
   const out = sample();
   // Each Io future is polled as the machine gave it, with the faults of the member around it; the machine is a
   // temporary of the call of drive, so no block is the scrutinee of the match of its result (clippy).
-  const wait = String.raw`binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_driven", io\)\)\)`;
+  // B2.477: armed_waits takes the arming of the entry once and installs it at each wait.
+  const wait = String.raw`binding_core::driver::block_on\(binding_core::driver::Caught::new\(io\)\)`;
+  const armed = String.raw`armed_waits\("sample\.resolve_driven", `;
   // The machine owns its arguments, so the core takes each by value.
   const made = /match binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), /;
   // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, made);
-  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
+  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, made);
-  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(py_\.detach\(\|\| ${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(\|error\| binding_error\(py_, error\)\)\?`));
+  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(py_\.detach\(\|\| ${wait}\)\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(\|error\| binding_error\(py_, error\)\)\?`));
   assert.match(python, /#\[pyfunction\(name = "aresolve_driven", signature = \(\*args, \*\*kwargs\)\)\]/);
   // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
   const node = text(out, 'packages/ts/generated/lib.rs');
@@ -7515,13 +7519,15 @@ test('a member with wait async_driver that reaches language code drives the stat
   // GN-15: a helper that only an entry point of a test feature uses carries the feature, so the build without it has
   // no dead code.
   assert.match(go, /\n#\[cfg\(feature = "fault-test"\)\]\nfn list_out</);
-  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
+  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
   // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
   // wait is a promise of the event loop of JavaScript.
   const wasmOut = sample((c) => { delete member(c, 'sample.resolve_driven').only; }, ['wasm']);
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*let mut armed = armed_waits\("sample\.resolve_driven", \|wait\| wait\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
+  // B2.477: the entry takes its arming once, and each wait of the machine installs it.
+  assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(armed\(async move \{/);
   assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
   assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(2, text_out\(result\)\?\)\)/);
   assert.match(wasm, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
@@ -8830,7 +8836,7 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
     test: /#\[cfg\(feature = "(?:panic|fault|codec)-test"\)\]/.test(attributes ?? ''),
     guards: (body ?? '').match(/\bguard\(/g)?.length ?? 0,
     shields: (body ?? '').match(/shielded\(\|\| /g)?.length ?? 0,
-    arms: (body ?? '').match(/(?:with_faults|armed_future)\("/g)?.length ?? 0,
+    arms: (body ?? '').match(/(?:with_faults|armed_future|armed_waits)\("/g)?.length ?? 0,
   }));
   const members = entries.filter((entry) => /^(?:function|member)_/.test(entry.name));
   assert.ok(members.length >= 30, String(members.length));
@@ -8840,7 +8846,7 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
   assert.deepEqual(others.map((entry) => entry.name), ['advance']);
   assert.deepEqual(others.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 0), []);
   // No arming and no shield is outside an entry, so the counts of the crate are the sums of its entries.
-  assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future)\("/g)?.length);
+  assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future|armed_waits)\("/g)?.length);
   assert.equal(entries.reduce((sum, entry) => sum + entry.shields, 0), lib.match(/shielded\(\|\| /g)?.length);
 });
 
@@ -13014,6 +13020,153 @@ test('B2.466: a case of a member without a result that states the result null is
   }
 });
 
+test('B2.476: the B-4 test of a case whose function fixture raises an exception sets the value that the function throws, in Python, Node, WASM and PHP (GN-6ae)', () => {
+  // orm db.transaction, a_rollback_that_fails_after_the_callback_raised: the case raises the kind rollback_failed, so
+  // its test is the B-4 test, whose callback threw a value that only the test of GN-6ae set: IndexError at
+  // `raise _raised[0]` in Python, `ReferenceError: raised is not defined` in Node.
+  const out = scopedSample(['python', 'node', 'wasm', 'php'], (contract, cases) => {
+    const group = contract.cases.find((row: any) => row.member === 'store.transaction').group;
+    cases[group].push({ id: 'a_kind_after_the_function_raised', work: { function: { calls: [], raise: 'exception' } }, raises: { kind: 'missing', status: null, category: 'value' } });
+  });
+  const body = (target: keyof typeof STATEFUL_TESTS, start: RegExp): string => bodiesOf(text(out, STATEFUL_TESTS[target]), start, STATEFUL_END[target])[0] ?? '';
+  const python = body('python', /def test_b4_store_transaction_a_kind_after_the_function_raised\(/);
+  assert.match(python, /\n {8}raised = LookupError\("raised by the function of the case"\)\n {8}_raised\[:\] = \[raised\]\n[\s\S]*\.transaction\(/, python);
+  for (const target of ['node', 'wasm'] as const) {
+    const js = body(target, /test\('B-4: Store\.transaction a_kind_after_the_function_raised'/);
+    assert.match(js, /\n {2}const raised = new Error\('raised by the function of the case'\);\n[\s\S]*\.transaction\([\s\S]*throw raised;/, `${target}: ${js}`);
+  }
+  const php = body('php', /function testB4StoreTransactionAKindAfterTheFunctionRaised\(/);
+  assert.match(php, /\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n[\s\S]*throw self::\$raised;/, php);
+  // A B-4 test whose fixtures raise nothing sets no value.
+  assert.doesNotMatch(body('python', /def test_b4_counter_add_a_text_amount_is_another_type\(/), /_raised/);
+});
+
+test('B2.477: the entry of a member with a machine takes its arming once, and every wait of the machine installs it, in the crates of PHP, Python, Go and Node (GN-8a, GN-6ab)', () => {
+  // The WASM crate of the sample has no member with a machine; the test of GN-6ab reads its lines in the fixture that
+  // has one.
+  // orm db.transaction: the fault of the rollback, a later wait, never stood, because each wait took the arming of the
+  // member and the first take removed it; the test got the error of the callback in place of rollback_failed.
+  const out = generateTargets({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['php', 'python', 'node', 'go'] });
+  const libs = { php: 'packages/php-ext/generated/lib.rs', python: 'packages/python/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs', node: 'packages/ts/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(out, path);
+    // No wait takes the arming by itself.
+    assert.doesNotMatch(lib, /armed_future\("[a-z_.]+", io\)/, target);
+    // The helper takes the arming once and installs it around each wait.
+    assert.ok(lib.includes('fn armed_waits<F: std::future::Future, T>(member: &str, mut wait: impl FnMut(binding_core::fault::Around<F>) -> T) -> impl FnMut(F) -> T {\n    let armed = binding_core::fault::take(member);\n    move |future| wait(armed.wait(future))\n}\n'), target);
+    assert.ok(lib.includes('#[cfg(not(feature = "fault-test"))]\nfn armed_waits<F: std::future::Future, T>(_member: &str, wait: impl FnMut(F) -> T) -> impl FnMut(F) -> T {\n    wait\n}\n'), target);
+    if (target === 'node') {
+      assert.match(lib, /\n {8}let mut armed = armed_waits\("sample\.resolve_driven", \|wait\| wait\);\n/, target);
+      assert.match(lib, /Next::Wait\(io\) => \{\n[^\n]*\n\s*let promise = (?:driving\(env_, |awaited\()armed\(async move \{/, target);
+    } else {
+      assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), armed_waits\("sample\.resolve_driven", \|io\| driven\(/, target);
+    }
+  }
+});
+
+// B2.465: the sample whose alias data has the rows of orm_value: a row of the kind int64 that makes the integer of the
+// language, and the kinds int and bytes made as instances of the value classes whole and octets in PHP and Python.
+const kindRows = (echo: object[]): { contract: any; caseFiles: Map<string, unknown> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const cls = (id: string, core: string, type: string): any => ({
+    id, name: [id], module: '', kind: 'class', visibility: 'public', origin: 'value', core_type: `polyspec_sample::${core}`,
+    members: [
+      { id: `${id}.constructor`, name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type, required: true }], raises: [], wait: 'none', core: `polyspec_sample::${core}::new` },
+      { id: `${id}.value`, name: ['value'], kind: 'property', visibility: 'public', returns: type, raises: [], wait: 'none', core: { path: `polyspec_sample::${core}::value`, receiver: '&self' } },
+    ],
+  });
+  contract.units.push(cls('whole', 'Whole', 'int64'), cls('octets', 'Octets', 'bytes'));
+  const data = contract.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'int', make: { php: 'whole.constructor', python: 'whole.constructor', node: 'int', go: 'int', wasm: 'int' } },
+    { kind: 'int64', make: { php: 'int', python: 'int', node: 'bigint', go: 'int', wasm: 'bigint' } },
+    { kind: 'bytes', make: { php: 'octets.constructor', python: 'octets.constructor', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  // A map with sequence keys leaves PHP as an instance of the class bag, as map_value of orm: a PHP array with such
+  // keys, the empty array among them, is read as a list.
+  const bag = cls('bag', 'Bag', 'int64');
+  bag.members[0].parameters[0] = { name: ['value'], type: { map: { unit: 'data' } }, required: true };
+  bag.members[1].returns = { map: { unit: 'data' } };
+  bag.only = { targets: ['php'], reason: 'Q-4' };
+  contract.units.push(bag);
+  data.out.find((row: any) => row.kind === 'map' && row.when?.is === true).make.php = 'bag.constructor';
+  cases.echo = echo;
+  return { contract, caseFiles: new Map([['contracts/cases.json', cases]]) };
+};
+
+test('B2.465: a case value that its out row makes as an instance of a value class is given as that instance, for an int, bytes and a map, in PHP too (GN-13)', () => {
+  // orm in PHP: a PHP int is read as an int64 and the int is an instance of integer_value; an empty PHP array is
+  // read as a list and the empty map is an instance of map_value. The test gave 7 and [].
+  const x = { kind: 'text', value: 'x' };
+  const { contract, caseFiles } = kindRows([
+    { id: 'an_int', value: { kind: 'int', value: 7 }, result: x },
+    { id: 'bytes', value: { kind: 'bytes', value: { hex: 'ff00' } }, result: x },
+    { id: 'an_empty_map', value: { kind: 'map', value: [] }, result: x },
+    { id: 'a_named_map', value: { kind: 'map', value: [['a', { kind: 'int', value: 7 }], ['b', { kind: 'map', value: [] }]] }, result: x },
+    { id: 'an_int64', value: { kind: 'int64', value: 7 }, result: x },
+  ]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'php'] });
+  const call = (target: 'python' | 'node' | 'php', id: RegExp, end: string): string => /(?:\\Polyspec\\Sample\\|pkg\.)same\(.*\);?$/m.exec(bodiesOf(text_(target), id, end)[0] ?? '')?.[0] ?? '';
+  const text_ = (target: 'python' | 'node' | 'php'): string => text(out, STATEFUL_TESTS[target]);
+  const php = (id: string): string => call('php', new RegExp(`function testGn13esame${id}\\(`), '\n    }\n');
+  assert.equal(php('AnInt'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Whole(7));');
+  assert.equal(php('Bytes'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Octets(hex2bin("ff00")));');
+  assert.equal(php('AnEmptyMap'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Bag([]));');
+  // A map whose keys are no sequence keys stays the array of its row, and its values take their own rows.
+  assert.equal(php('ANamedMap'), '\\Polyspec\\Sample\\same(["a" => new \\Polyspec\\Sample\\Whole(7), "b" => new \\Polyspec\\Sample\\Bag([])]);');
+  // A kind whose row makes a built-in form stays that value.
+  assert.equal(php('AnInt64'), '\\Polyspec\\Sample\\same(7);');
+  assert.equal(call('python', /def test_gn13e_same_an_int\(/, '\n\n'), 'pkg.same(pkg.Whole(7))');
+  assert.equal(call('node', /test\('GN-13e: same an_int'/, '\n});'), 'pkg.same(7);');
+});
+
+test('B2.465: a case value of the kind int64 of a value alias has a form in the five targets, as an argument and as an expected result (GN-13, GN-13e)', () => {
+  // orm: the case kinds of map_value gives {"kind": "int64"}, and its test failed with "a case value of the kind
+  // int64 of the alias orm_value is not generated yet".
+  const int64 = (value: unknown): object => ({ kind: 'int64', value });
+  const { contract, caseFiles } = kindRows([{ id: 'an_int64', value: int64(7), result: int64(7) }, { id: 'the_least_int64', value: int64('-9223372036854775808'), result: int64('-9223372036854775808') }]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const all = Object.fromEntries(Object.entries({ ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' }).map(([target, path]) => [target, text(out, path)])) as Record<'python' | 'node' | 'wasm' | 'php' | 'go', string>;
+  for (const [target, body] of Object.entries(all)) assert.doesNotMatch(body, /of the kind int64 of [^\n]* is not (generated|compared) yet/, target);
+  // The member sample.echo has the name same.
+  assert.match(all.python, /result = pkg\.same\(7\)\n {8}expected = json\.loads\("\[\\"int 7\\"\]"\)/);
+  assert.match(all.python, /result = pkg\.same\(-9223372036854775808\)\n {8}expected = json\.loads\("\[\\"int -9223372036854775808\\"\]"\)/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(all[target], /const result = pkg\.same\(7n\);\n {2}const expected = JSON\.parse\('\["bigint 7"\]'\);/, target);
+    assert.match(all[target], /const result = pkg\.same\(-9223372036854775808n\);\n {2}const expected = JSON\.parse\('\["bigint -9223372036854775808"\]'\);/, target);
+  }
+  assert.match(all.php, /\$result = \\Polyspec\\Sample\\same\(7\);\n {8}\$expected = json_decode\("\[\\"int 7\\"\]", /);
+  assert.match(all.php, /\$result = \\Polyspec\\Sample\\same\(\\PHP_INT_MIN\);\n {8}\$expected = json_decode\("\[\\"int -9223372036854775808\\"\]", /);
+  assert.match(all.go, /value0, err := Same\(int64\(7\)\)\n(?:[^\n]*\n){3}\tif want := \(any\)\(int64\(7\)\); /);
+  assert.match(all.go, /value0, err := Same\(int64\(-9223372036854775808\)\)\n/);
+  // An integer outside the range of i64 is no int64: the test of the case fails with the reason.
+  const wide = kindRows([{ id: 'too_wide', value: int64('9223372036854775808'), result: int64(7) }]);
+  const refused = text(generateTargets({ ...wide, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['python'] }), STATEFUL_TESTS.python);
+  assert.match(refused, /the case too_wide of sample\.echo: [^\n]*the int64 9223372036854775808 is outside the range of i64 \(G-5\)/);
+});
+
+test('B2.465: the expected texts of a value that its out row makes as an instance of a value class name the class for an int and for bytes, as for a float (GN-13e)', () => {
+  // orm: integer_value and bytes_value. The texts named the class for a float alone, so the expected texts of an int
+  // of PHP were ["int 7"] where the binding gives an instance of the class.
+  const { contract, caseFiles } = kindRows([
+    { id: 'an_int', value: { kind: 'text', value: 'x' }, result: { kind: 'int', value: 7 } },
+    { id: 'bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: 'ff00' } } },
+    { id: 'a_list', value: { kind: 'text', value: 'x' }, result: { kind: 'list', value: [{ kind: 'int', value: 7 }, { kind: 'bytes', value: { hex: 'ff' } }, { kind: 'int64', value: 7 }] } },
+  ]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'php'] });
+  const expected = (target: 'python' | 'node' | 'php', id: RegExp, end: string): string => /(?:json\.loads|JSON\.parse|json_decode)\((["'])(\[.*?\])\1[,)]/.exec(bodiesOf(text(out, STATEFUL_TESTS[target]), id, end)[0] ?? '')?.[2]?.replaceAll('\\"', '"') ?? '';
+  assert.equal(expected('php', /function testGn13esameAnInt\(/, '\n    }\n'), '["whole #0","int 7"]');
+  assert.equal(expected('php', /function testGn13esameBytes\(/, '\n    }\n'), '["octets #0","string ff00"]');
+  assert.equal(expected('php', /function testGn13esameAList\(/, '\n    }\n'), '["list 3","whole #0","int 7","octets #1","string ff","int 7"]');
+  assert.equal(expected('python', /def test_gn13e_same_an_int\(/, '\n\n'), '["whole #0","int 7"]');
+  assert.equal(expected('python', /def test_gn13e_same_bytes\(/, '\n\n'), '["octets #0","bytes ff00"]');
+  // Node makes both as its built-in forms, so its texts name no class.
+  assert.equal(expected('node', /test\('GN-13e: same an_int'/, '\n});'), `["number ${Buffer.from(new Float64Array([7]).buffer).reverse().toString('hex')}"]`);
+  assert.equal(expected('node', /test\('GN-13e: same bytes'/, '\n});'), '["bytes ff00"]');
+});
+
 // B2.463: the sample whose counter is a receiver that holds state and whose placeholder the core would refuse: no
 // case of the constructor or of total exists, the first case of the class makes its receiver by new and then add(1),
 // absorb has a case whose other counter starts at 4, and seek takes a counter before its record.
@@ -13058,6 +13211,14 @@ test('B2.463: the G-7 test of a method makes its receiver once and gives an argu
     // The other counter is that of the case of absorb, not the placeholder of its constructor.
     assert.match(body, /Counter\(4\)/, `${target}: ${body}`);
     assert.doesNotMatch(body, /Counter\(0\)/, `${target}: ${body}`);
+  }
+  // A receiver that one factory call makes, the ledger of the key "a", is made once too.
+  const plain = { python: /def test_g7_ledger_note_counts/, node: /test\('G-7: Ledger\.note /, wasm: /test\('G-7: Ledger\.note /, php: /function testG7LedgerNoteCounts/ };
+  for (const target of ['python', 'node', 'wasm', 'php'] as const) {
+    const [body] = bodiesOf(text(out, STATEFUL_TESTS[target]), plain[target], STATEFUL_END[target]);
+    assert.ok(body !== undefined, `${target}: no G-7 test of note`);
+    assert.equal(body.match(/Ledger\(['"]a['"]\)/g)?.length, 1, `${target}: ${body}`);
+    assert.ok((body.match(/receiver(->|\.)note\(/g)?.length ?? 0) >= 2, `${target}: ${body}`);
   }
 });
 

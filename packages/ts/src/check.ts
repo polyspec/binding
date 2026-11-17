@@ -66,6 +66,8 @@ export const BINDING_KINDS: Readonly<Record<string, Category>> = {
 
 // G-5: the symbol of an errno, which each target gives its value.
 const ERRNO_SYMBOL = /^E[A-Z0-9]+$/;
+// CK-22, B2.465 (GN-13): the kinds of a case value of a value alias for which the generator has a form.
+const ALIAS_CASE_KINDS: ReadonlySet<string> = new Set(['null', 'bool', 'int', 'int64', 'float', 'text', 'bytes', 'list', 'map', 'object', 'reference']);
 // G-5: a point is named <library>.<id> with the library in snake_case, as its crate's library name is.
 export const pointLibrary = (library: string): string => library.replaceAll('-', '_');
 
@@ -1659,6 +1661,22 @@ class Checker {
       else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
     }
     this.instanceArgs(found.member, record, report, 'the case');
+    // CK-22, B2.465: a case without the key receiver gives the arguments of a factory of its class among its own keys
+    // (GN-13f), each read once as a case value where it holds a value alias.
+    if (record['receiver'] === undefined && found.member.kind !== 'constructor') {
+      const read = new Set((found.member.parameters ?? []).map((p) => convert(p.name, 'python', 'variable')));
+      const receives = (m: Member): boolean => m.kind !== 'constructor' && (m.core === undefined || (typeof m.core === 'object' && m.core !== null && m.core.receiver !== undefined));
+      if (receives(found.member)) {
+        for (const factory of (found.unit.members ?? []).filter((m) => !receives(m))) {
+          for (const parameter of factory.parameters ?? []) {
+            const key = convert(parameter.name, 'python', 'variable');
+            if (read.has(key) || !Object.hasOwn(record, key)) continue;
+            read.add(key);
+            this.aliasPlaces(parameter.type, record[key], `${key} of the case`, report);
+          }
+        }
+      }
+    }
     // GN-13pa: with names instance values of the case, which the test makes after the receiver.
     if (record['with'] !== undefined) {
       if (!method) report(`${memberId} has no receiver, so the case gives no with`);
@@ -1869,6 +1887,81 @@ class Checker {
     }
     const returns = found.member.returns;
     if (returns !== undefined && returns !== 'self' && Object.hasOwn(record, resultKey)) walk(returns, record[resultKey], `the result ${resultKey}`, false);
+    // CK-22, B2.465: the case values of a value alias that the result holds; those of the arguments are read with
+    // the arguments of every call (aliasArgs).
+    if (returns !== undefined && returns !== 'self' && Object.hasOwn(record, resultKey)) this.aliasPlaces(returns, record[resultKey], `the result ${resultKey}`, (message) => this.report('CK-22', path, `${where}: ${message} (G-5, GN-13)`));
+  }
+
+  // CK-22, B2.465: the places of a value of the type that hold a value alias of this contract, at any depth of a
+  // list, a map, a tuple, an optional, a record and a variant, each judged as a case value of that alias.
+  aliasPlaces(type: Type, value: unknown, what: string, report: (message: string) => void, seen: ReadonlySet<string> = new Set()): void {
+    if (typeof type === 'string' || value === null || value === undefined || 'function' in type || 'passthrough' in type) return;
+    if ('optional' in type) return this.aliasPlaces(type.optional, value, what, report, seen);
+    if ('list' in type) {
+      if (Array.isArray(value)) for (const [k, item] of value.entries()) this.aliasPlaces(type.list, item, `${what}[${k}]`, report, seen);
+      return;
+    }
+    if ('tuple' in type) {
+      if (Array.isArray(value)) for (const [k, item] of value.entries()) if (type.tuple[k] !== undefined) this.aliasPlaces(type.tuple[k], item, `${what}[${k}]`, report, seen);
+      return;
+    }
+    if ('map' in type || 'keyed_map' in type) {
+      const item = 'map' in type ? type.map : type.keyed_map;
+      if (Array.isArray(value)) {
+        for (const entry of value) if (Array.isArray(entry) && entry.length === 2) this.aliasPlaces(item, entry[1], `${what}.${typeof entry[0] === 'string' ? entry[0] : JSON.stringify(entry[0])}`, report, seen);
+      } else if (typeof value === 'object') {
+        for (const [k, entry] of Object.entries(value)) this.aliasPlaces(item, entry, `${what}.${k}`, report, seen);
+      }
+      return;
+    }
+    if (type.library !== undefined && type.library !== this.contract.library) return;
+    const unit = this.unit(type.unit);
+    if (unit?.kind === 'alias') return this.aliasCaseValue(unit.id, value, what, report);
+    if (unit === undefined || seen.has(unit.id) || typeof value !== 'object' || Array.isArray(value)) return;
+    const inner = new Set([...seen, unit.id]);
+    const given = value as Record<string, unknown>;
+    const tag = unit.kind === 'variant' && unit.tag !== undefined ? given[convert(unit.tag, 'python', 'variable')] : undefined;
+    const fields = unit.kind === 'record' ? (unit.fields ?? []) : unit.kind === 'variant' ? ((unit.cases ?? []).find((c) => c.value === tag)?.fields ?? []) : [];
+    for (const field of fields) {
+      const key = convert(field.name, 'python', 'variable');
+      if (Object.hasOwn(given, key)) this.aliasPlaces(field.type, given[key], `${what}.${key}`, report, inner);
+    }
+  }
+
+  // CK-22, B2.465: the case values of a value alias among the arguments `given` of a call of the member.
+  aliasArgs(member: Member, given: Record<string, unknown>, what: string, report: (message: string) => void): void {
+    for (const parameter of member.parameters ?? []) {
+      const key = convert(parameter.name, 'python', 'variable');
+      if (Object.hasOwn(given, key)) this.aliasPlaces(parameter.type, given[key], `${key} of ${what}`, report);
+    }
+  }
+
+  // CK-22, B2.465 (GN-13): a case value {"kind": <kind>, "value": ...} of the value alias `aliasId` at `what`, and each
+  // value inside it. Reported: a kind that the generator gives no form, a list that is no array and no repeat form,
+  // and a map or an object that is no array of [key, value] pairs and no repeat form. A value that is no {"kind": ...}
+  // object ({"host": <sort>}, a value of another JSON kind that the binding refuses) is not judged here.
+  aliasCaseValue(aliasId: string, value: unknown, what: string, report: (message: string) => void): void {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+    const record = value as Record<string, unknown>;
+    const kind = record['kind'];
+    if (typeof kind !== 'string') return;
+    const shown = (given: unknown): string => JSON.stringify(given, (_key, item: unknown) => (typeof item === 'bigint' ? String(item) : item)) ?? 'no value';
+    if (!ALIAS_CASE_KINDS.has(kind)) return report(`${what} is a case value of the kind ${kind} of the alias ${aliasId}, for which the generator has no form: a case value is of the kind ${[...ALIAS_CASE_KINDS].join(', ')}`);
+    const held = record['value'];
+    const repeated = record['repeat'] !== undefined;
+    if (kind === 'list') {
+      if (repeated) return this.aliasCaseValue(aliasId, held, `${what}[]`, report);
+      if (!Array.isArray(held)) return report(`${what} is a case value of the kind list of the alias ${aliasId} whose value is ${shown(held)}, not an array of case values or the form {"kind": "list", "repeat": <n>, "value": <value>}`);
+      for (const [i, item] of held.entries()) this.aliasCaseValue(aliasId, item, `${what}[${i}]`, report);
+    } else if (kind === 'map' || kind === 'object') {
+      if (repeated) return this.aliasCaseValue(aliasId, held, `${what}.${shown(record['key'])}`, report);
+      // An object that its id names again has no value.
+      if (kind === 'object' && !Object.hasOwn(record, 'value') && record['id'] !== undefined) return;
+      if (!Array.isArray(held) || !held.every((pair) => Array.isArray(pair) && pair.length === 2)) return report(`${what} is a case value of the kind ${kind} of the alias ${aliasId} whose value is ${shown(held)}, not an array of [key, value] pairs in order`);
+      for (const [key, item] of held as [unknown, unknown][]) this.aliasCaseValue(aliasId, item, `${what}.${typeof key === 'string' ? key : shown(key)}`, report);
+    } else if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
+      this.aliasCaseValue(aliasId, (held as Record<string, unknown>)['value'], what, report);
+    }
   }
 
   // G-5 (GN-13): a value of the type cancel is {"cancel": "fired"}, a cancellation that fired before the call, or
@@ -1894,6 +1987,7 @@ class Checker {
 
   // The arguments of a member in an instance value or a case whose class type is given as an instance value.
   instanceArgs(member: Member, given: Record<string, unknown>, report: (message: string) => void, what: string): void {
+    this.aliasArgs(member, given, what, report);
     for (const parameter of member.parameters ?? []) {
       const key = convert(parameter.name, 'python', 'variable');
       const value = given[key];
@@ -2390,6 +2484,7 @@ class Checker {
     }
     const args = callArgs(at, call['args'], found.member.parameters ?? [], found.member.id, 'call', report);
     if (args === undefined) return found.member;
+    this.aliasArgs(found.member, args, at, report);
     for (const parameter of found.member.parameters ?? []) {
       const key = convert(parameter.name, 'python', 'variable');
       // CK-101: a parameter with a default that the call leaves out has no value to judge.

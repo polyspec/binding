@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
@@ -350,7 +350,7 @@ test('B-4: ${name} ${kase.id}', () => {
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((c) => `[${c.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       emit(`
-test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${before}${arming}
+test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${raisedLines('node', kase.args)}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -372,8 +372,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
       const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
       emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}
-  const raised = new Error(${jsString(FIXTURE_RAISED)});
+test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${raisedLines('node', kase.args, true)}
   assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
@@ -483,7 +482,9 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
     // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const once = receiverOfCase(sample);
+    const built = receiverOfCase(sample);
+    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
+    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n  const receiver = ${built.expr};`, expr: 'receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
     const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);

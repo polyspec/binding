@@ -1669,8 +1669,13 @@ the design ids are those of the binding design.
   iteration, whose items the entry point collects inside `with_faults`. So the call that makes a receiver or an
   argument does not take the arming of the member under test, and an entry point that a callback enters, the
   conversion of its arguments too, does not see the arming around it. A member with `machine` arms each wait of
-  its machine instead, with `armed_future("<member id>", …)` (GN-6n), so each entry of a member holds one arming and
-  one shield. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
+  its machine instead: its entry takes the arming of the member once, by `armed_waits("<member id>", …)`, and every
+  wait of the machine installs that one arming around each of its polls (`binding_core::fault::Armed::wait`), so the
+  arming of a call covers every wait of the call and each entry of a member holds one arming and one shield (B2.477).
+  The waits share the record of what fired, so `nth` counts the visits of a point over the whole call. Why: a take
+  removes the arming, and the generated code took it at each wait (`armed_future("<member id>", io)`), so only the
+  first wait ran armed and a fault of a later wait, such as the rollback of orm `db.transaction` after its callback
+  raised, never stood. The `advance` of a `Driven` object of Node and WASM (GN-6ab) is an entry point without a core call of
   its own: its work runs in `shielded(…)`, because language code may call it inside the call of another member, and
   it arms nothing. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
@@ -2261,6 +2266,12 @@ the design ids are those of the binding design.
     that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
     function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
+    That exception is one value that the test makes before the call, with the message `raised by the function of the
+    case`, in every test that calls the member with such a fixture: the test of a case that raises `"callback"`,
+    which requires that very value, and the B-4 test of a case that raises a kind after its function raised, such as
+    a rollback that fails (B2.476). Why: the function throws the value that the test holds, and the B-4 test of
+    Python, Node, WASM and PHP did not set it, so the callback failed with `IndexError` or `ReferenceError` in
+    place of its exception (orm `db.transaction`), where the Go test set it.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
     def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose
@@ -2805,8 +2816,12 @@ the design ids are those of the binding design.
   and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,
   whose texts are code points or UTF-16, and the byte 0xFF in PHP and Go, whose texts are bytes; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
-  the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
-  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values,
+  the kinds of the value table: `null` has no `value`; `bool`, `int`, `int64` (an integer of the range of i64, a
+  number or, outside the safe integers, its decimal text; B2.465), `float` (a number or the form above), `text` and
+  `bytes` (`{"hex": ...}`) hold that value; `number` holds its literal as a text and has a form only where a class of
+  origin value represents the value type, whose member takes that text (below): no built-in form of a language makes
+  the kind (`BUILTIN_FORMS`), so a value alias gives it no case value, and `binding check` refuses one (CK-22);
+  `list` holds an array of such values,
   or, for a value nested deeper than a JSON reader takes, `{"kind": "list", "repeat": <n>, "value": <value>}`: n
   lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
   in a loop;
@@ -2923,12 +2938,21 @@ the design ids are those of the binding design.
   one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
-  safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
+  safe integers: a Node `bigint`, a Python `int`), `int64` (an integer of the range of i64, given as `int` is: a Node
+  and WASM `bigint`, a Python and PHP `int`, a Go `int64`; a value outside that range is refused by name; B2.465),
+  `float`, `text`, `bytes`, `list` and `map`, each as the value that
+  the built-in form of the kind makes. Why `int64` is a kind of a case value: a row of an alias may have the kind
+  (`VALUE_KINDS`, the schema), and an alias of orm reads a PHP and a Python `int` as `int64` and a class as `int`, so a
+  case could not state the value that such a row reads, and its test failed with "is not generated yet". PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
   `-9223372036854775808` as the negation of a float, and Go gives a negative zero as `math.Copysign(0, -1)`, because
-  the Go constant `-0.0` is 0. A `float` whose out row of the alias in the language makes an
-  instance of a value class (`<unit>.constructor`, such as a Node integral float, which a `number` would carry as an
-  `int`) is that instance made from the number, because the binding takes back the form that it gives. A value of the
+  the Go constant `-0.0` is 0. A value whose out row of the alias in the target, the row of its
+  kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
+  from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
+  `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
+  alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
+  sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value
+  entered as another kind. GN-13v stays the rule of an alias whose row makes no class for the empty map. A value of the
   language that is no value of the value type is `{"host": <sort>}`
   of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
   `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
@@ -3028,8 +3052,12 @@ the design ids are those of the binding design.
   <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
   PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
   `list <n>`, then its items; `map <n>`, then each key and its value, a key in the form of its keyed map (a PHP key
-  that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
-  `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
+  that is the decimal text of an integer is that integer); a value of the kind `int64` has the text of an integer in
+  the form of its row; and an instance of a value class that an out row names as
+  `<unit>.constructor`, of every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes` and `map`;
+  B2.465, where only `float` and `map` had it, so an `int` or a byte string that orm gives as an instance of
+  `integer_value` or `bytes_value` was expected as the bare value), a PHP `stdClass` and a PHP reference, numbered
+  together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
   `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
   id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one

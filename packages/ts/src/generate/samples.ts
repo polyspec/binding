@@ -959,7 +959,11 @@ function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): unknown {
   if ((unit.out ?? []).some((r) => r.kind === kind)) {
     const make = aliasOutForm(unit, lang, kind, record);
     if (kind === 'bytes' && make === 'text') return { kind: 'text', value: caseBytes(record['value']).toString('utf8') };
-    if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${shown(make)}, with which a result is not compared yet`);
+    // GN-13, B2.465: a value that its row makes as an instance of a value class is compared with that instance,
+    // which valueOf makes from the built-in value.
+    // An int64 is made as the integer of the language, a bigint in Node and WASM.
+    const integer = kind === 'int64' && make === (lang === 'node' ? 'bigint' : 'int');
+    if (make !== BUILT[kind] && !integer && !(typeof make === 'string' && make.endsWith('.constructor'))) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${shown(make)}, with which a result is not compared yet`);
   }
   const held = record['value'];
   if (kind === 'list' && record['repeat'] !== undefined) return { ...record, value: madeAsBuilt(unit, lang, held) };
@@ -1046,6 +1050,18 @@ export const awaitsFunction = (args: Map<Arg, unknown>): boolean =>
   [...args.values()].some((value) => (value as { function?: { awaits?: unknown } } | null)?.function?.awaits === true);
 
 // GN-6ae: whether a value of a case holds a function fixture that raises the exception of the language.
+// GN-6ae, B2.476: the lines of a test of Python, Node, WASM or PHP that set the value that a function fixture of the
+// arguments throws by "raise": "exception", before the call; none when no fixture throws it. The test of a case that
+// raises "callback" (GN-6ae) and the test of a case that raises a kind after its callback raised (B-4) write them, as
+// the Go tests do (raisedLine).
+export function raisedLines(lang: Lang3, args: ReadonlyMap<Arg, unknown>, always = false): string {
+  // always: the test of GN-6ae requires the value itself, so it sets it whatever its fixtures are.
+  if (!always && ![...args.values()].some(raisesException)) return '';
+  if (lang === 'python') return `\n        raised = LookupError(${pyString(FIXTURE_RAISED)})\n        _raised[:] = [raised]`;
+  if (lang === 'node') return `\n  const raised = new Error(${jsString(FIXTURE_RAISED)});`;
+  return `\n        self::$raised = new \\LogicException(${phpText(FIXTURE_RAISED)});`;
+}
+
 export const raisesException = (value: unknown): boolean => {
   if (typeof value !== 'object' || value === null) return false;
   if (Array.isArray(value)) return value.some(raisesException);
@@ -1233,22 +1249,27 @@ export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown
     }
     const form = formOf(kind, node);
     const cls = keptOfForm(form);
+    const classed = (token: string): void => {
+      if (cls === undefined) out.push(token);
+      else out.push(`${cls.unit} #${String(count++)}`, token);
+    };
     switch (kind) {
+      // GN-13e, B2.465: a value that its row makes as an instance of a value class is `<unit> #k`, then its one field,
+      // for every kind that a row makes so.
       case 'int':
-        out.push(form === 'bigint' ? `bigint ${String(held)}` : intToken(String(held)));
+      case 'int64':
+        classed(form === 'bigint' ? `bigint ${String(held)}` : intToken(String(held)));
         break;
-      case 'float': {
-        const bits = floatBits(caseNumber(held));
-        const token = `${lang === 'node' ? 'number' : 'float'} ${bits}`;
-        if (cls === undefined) out.push(token);
-        else out.push(`${cls.unit} #${String(count++)}`, token);
+      case 'float':
+        classed(`${lang === 'node' ? 'number' : 'float'} ${floatBits(caseNumber(held))}`);
         break;
-      }
       case 'text':
       case 'bytes': {
         if (caseTextParts(held) !== undefined) throw new Unsupported(`a composed case text is not an alias ${kind} value (GN-13l)`);
         const bytes = caseBytes(held);
-        out.push(textToken(bytes, form === 'text'));
+        // The field of a value class holds a text where the one parameter of its constructor is a text, and else bytes.
+        const held_ = cls === undefined ? form : model.contract.units.find((u) => u.id === cls.unit)?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
+        classed(textToken(bytes, held_ === 'text'));
         break;
       }
       case 'list':
@@ -1378,6 +1399,33 @@ function idOf(raw: unknown, where: string): number {
 // GN-13: a value of valueFromJson, and slot says whether the value is the value of a place of an array or of a
 // property, the one place where PHP holds a reference.
 function valueOf(model: Model, ctx: Context, value: unknown, where: string, making: Making, slot: boolean): string {
+  const built = builtOf(model, ctx, value, where, making, slot);
+  // GN-13, B2.465: a value that the out row of its alias in the target makes as an instance of a value class, the row
+  // of its kind whose predicate the value holds, is that instance made from the built-in value, for every kind and in
+  // PHP too, because the binding takes back the form that it gives (a Node integral float, which a number would give
+  // as an int; an int of orm in PHP, where a PHP int is read as an int64; a map whose keys PHP would read as a list).
+  const record = value as Record<string, unknown>;
+  const kind = String(record['kind']);
+  const alias = making.alias;
+  if (alias === undefined || making.library !== undefined || !CLASSED_KINDS.has(kind) || !(alias.out ?? []).some((row) => row.kind === kind)) return built;
+  const form = aliasOutForm(alias, ctx.target ?? ctx.lang, kind, record);
+  if (typeof form !== 'string' || !form.endsWith('.constructor')) return built;
+  const factory = memberById(model, form);
+  // GN-13v gives an empty map of PHP as a stdClass where an array would be read as a list; the constructor of the
+  // class takes a map, so its empty content is the empty array.
+  const content = kind === 'map' && built === 'new \\stdClass()' ? '[]' : built;
+  if (factory !== undefined && ctx.objectNew !== undefined) return ctx.objectNew(factory, content);
+  // GN-6af: a value class without core_type is a class of the package in Python, Node and WASM.
+  const cls = model.contract.units.find((u) => `${u.id}.constructor` === form);
+  if (cls === undefined || ctx.lang === 'php') throw new Unsupported(`a case value of the kind ${kind} of ${where} is an instance of ${form}, which this target does not make in a case yet (GN-13)`);
+  return ctx.lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(${built})` : `new pkg.${langName('node', cls.name, 'class')}(${built})`;
+}
+
+// GN-13, B2.465: the kinds whose value an out row may make as an instance of a value class of one value.
+const CLASSED_KINDS: ReadonlySet<string> = new Set(['int', 'int64', 'float', 'text', 'bytes', 'list', 'map']);
+
+// The value of valueOf as the built-in form of its kind makes it.
+function builtOf(model: Model, ctx: Context, value: unknown, where: string, making: Making, slot: boolean): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
@@ -1402,16 +1450,17 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   if (kind === 'bytes') return fromJson(model, ctx, 'bytes', held);
   if (kind === 'float') {
     const float = fromJson(model, ctx, 'float', held);
-    // GN-13: a float that the out row of its alias gives as an instance of a value class (a Node integral float, which a
-    // number would give as an int) is that instance, the form that the binding gives and takes back as the float.
-    const form = making.alias !== undefined && lang !== 'php' && (making.alias.out ?? []).some((row) => row.kind === 'float') ? aliasOutForm(making.alias, ctx.target ?? lang, 'float', record) : undefined;
-    const cls = typeof form === 'string' && form.endsWith('.constructor') ? model.contract.units.find((u) => `${u.id}.constructor` === form) : undefined;
-    if (cls !== undefined) return lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(float(${float}))` : `new pkg.${langName('node', cls.name, 'class')}(${float})`;
     return lang === 'python' ? `float(${float})` : lang === 'php' ? `(float) ${float}` : float;
   }
-  if (kind === 'int') {
+  if (kind === 'int' || kind === 'int64') {
     const token = typeof held === 'number' && Number.isSafeInteger(held) ? String(held) : typeof held === 'bigint' ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Unsupported(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${shown(held)}`);
+    if (token === undefined) throw new Unsupported(`a case value of the kind ${kind} of ${where} is a safe integer or a decimal text, not ${shown(held)}`);
+    // GN-13, B2.465: an int64 is an integer of the range of i64: a bigint in Node and WASM (T-1), and the int of
+    // Python and PHP.
+    if (kind === 'int64') {
+      if (BigInt(token) < -(2n ** 63n) || BigInt(token) >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int64 ${token} is outside the range of i64 (G-5)`);
+      return lang === 'node' ? `${token}n` : lang === 'php' ? phpInt(token) : token;
+    }
     if (typeof held === 'number' || lang === 'python') return token;
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);

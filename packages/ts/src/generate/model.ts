@@ -1895,10 +1895,17 @@ export const drivesAsync = (model: Model): boolean => [...model.functions, ...mo
 
 // GN-6n: the future of the core call of a member with wait async_driver, which owns the converted arguments and the
 // guards, with the arming of its faults installed around each poll.
-export function futureOf(model: Model, fn: Fn, body: string): string {
+// GN-6ab, B2.477: wait says that the future is one wait of the machine of the member, which installs the arming that
+// the entry took once (armedEntry), so a fault of a later wait stands; a take at each wait armed the first alone.
+export function futureOf(model: Model, fn: Fn, body: string, wait = false): string {
   const future = `async move { ${body} }`;
-  return model.faults.length === 0 ? future : `armed_future(${JSON.stringify(fn.member.id)}, ${future})`;
+  if (model.faults.length === 0) return future;
+  return wait ? `armed(${future})` : `armed_future(${JSON.stringify(fn.member.id)}, ${future})`;
 }
+
+// GN-6ab, B2.477: the statement of the entry of a member with a machine that takes the arming of the member, once, for
+// every wait of its machine; nothing for a contract without faults.
+export const armedEntry = (model: Model, fn: Fn): string => (model.faults.length === 0 ? '' : `let mut armed = armed_waits(${JSON.stringify(fn.member.id)}, |wait| wait);`);
 
 // GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
 // gives the form of the wait around block_on, and failed the conversion of a BindingError. GN-6ab: the core call of a
@@ -1907,7 +1914,10 @@ export function futureOf(model: Model, fn: Fn, body: string): string {
 // and Go have no awaitable, so they settle the value at once.
 export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string, awaited = '|value| Ok(Ok(value))'): string =>
   fn.machine === true
-    ? `binding_core::machine::drive(&mut ${core}, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${model.faults.length === 0 ? 'io' : `armed_future(${JSON.stringify(fn.member.id)}, io)`}))`)}), ${awaited}).map_err(${failed})?`
+    // B2.477: armed_waits takes the arming of the entry once and installs it at each wait of the machine. It is an
+    // argument of drive and no block, so the call stays the scrutinee of the match of its result (clippy).
+    ? ((wait: string): string => `binding_core::machine::drive(&mut ${core}, ${model.faults.length === 0 ? wait : `armed_waits(${JSON.stringify(fn.member.id)}, ${wait})`}, ${awaited}).map_err(${failed})?`)(
+        `|io| driven(${blocked('binding_core::driver::block_on(binding_core::driver::Caught::new(io))')})`)
     : `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
 
 // GN-6ae: the arm of an awaited value of a machine that Node or WASM advances, for a member without a function
@@ -2362,6 +2372,20 @@ fn armed_future<F: std::future::Future>(member: &str, future: F) -> binding_core
 #[cfg(not(feature = "fault-test"))]
 fn armed_future<F: std::future::Future>(_member: &str, future: F) -> F {
     future
+}
+
+` : ''}${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `/// G-5, GN-6ab: the waits of the machine of a member, each with the arming that a test armed for the member on this
+/// thread installed around each poll. The entry takes the arming once, so a fault of a later wait stands (B2.477): a
+/// take at each wait removed it at the first.
+#[cfg(feature = "fault-test")]
+fn armed_waits<F: std::future::Future, T>(member: &str, mut wait: impl FnMut(binding_core::fault::Around<F>) -> T) -> impl FnMut(F) -> T {
+    let armed = binding_core::fault::take(member);
+    move |future| wait(armed.wait(future))
+}
+
+#[cfg(not(feature = "fault-test"))]
+fn armed_waits<F: std::future::Future, T>(_member: &str, wait: impl FnMut(F) -> T) -> impl FnMut(F) -> T {
+    wait
 }
 
 ` : ''}/// G-5: the work of an entry point runs with no fault, so an entry point that a callback enters does not see the
