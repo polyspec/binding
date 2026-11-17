@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: c8d88de982a84061ed4a9ecb8463bb0f2c4e19b7c5307937a20ea7ec13c74937 -->
+<!-- source-sha256: c2637559577acd8e2a4c85c1e62fdcb56a0eba1e8c5b21074969f0b085d1ff0e -->
 # 개발
 
 [English](AGENTS.md)
@@ -98,7 +98,8 @@
   `## Unreleased`를 둔다. `main`으로의 그 push의 CI 실행이 성공하면 `.github/workflows/release.yml`이 스스로 시작하고,
   `gh workflow run release.yml -f run=<id>`가 그것을 다시 시작한다. 그 step 하나인 `make ci-release`가 실행하는 `make release-tag`가 그 commit에 annotated tag
   `vX.Y.Z`를 만들어 push하고, `make release-assets`, `make release-publish`, `make release-undraft`가 archive를 만들고
-  GitHub Release를 만든다. tag를 손으로 만들지 않는다. 이유: release는 성공한 실행이 확인한 commit이고, 그 version은 그것이
+  GitHub Release를 만든다. version commit의 CI 실행이 실패해 그 version에 tag가 없으면, `## Unreleased`가 빈 `main`의
+  나중 green commit이 그것을 release하고, 그 고침의 항목은 그 version의 절에 들어간다(K988, K990). tag를 손으로 만들지 않는다. 이유: release는 성공한 실행이 확인한 commit이고, 그 version은 그것이
   release하는 모든 manifest의 version이다. version-bump commit 전에 checkout은 `make docs-check`, `make lint-rust`,
   `make typecheck-ts`, `make test-ts`, `make e2e-lint`를 통과한다. `make e2e-lint`는 CI의 job `e2e` matrix에 있는
   `tests/e2e` 레포들(그 DEPS와 함께, 컴파일러가 crate를 거부하는 `lent`는 빼고)을 HEAD의 CLI로 생성하고, 각 binding crate를

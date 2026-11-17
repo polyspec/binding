@@ -111,7 +111,9 @@ rules of this repository.
   `## Unreleased` of both changelogs to `## X.Y.Z`, with a new empty `## Unreleased` above it. When the CI run of that
   push to `main` succeeds, `.github/workflows/release.yml` starts by itself, and `gh workflow run release.yml -f run=<id>`
   starts it again: its one step `make ci-release` runs `make release-tag`, which creates and pushes the annotated tag `vX.Y.Z` at that commit, and `make
-  release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. No
+  release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. When
+  the CI run of the version commit fails, so that the version has no tag, a later green commit of `main` whose `## Unreleased`
+  is empty releases it, and the entries of its fix go into the section of that version (K988, K990). No
   tag is created by hand. Why: the release is the commit that a successful run checked, and its version is the version of
   every manifest that it releases. Before the version-bump commit the checkout passes `make docs-check`, `make
   lint-rust`, `make typecheck-ts`, `make test-ts` and `make e2e-lint`. `make e2e-lint` generates the repositories of
