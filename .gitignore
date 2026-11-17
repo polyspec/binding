@@ -3,4 +3,7 @@ node_modules
 dist/
 *.tsbuildinfo
 var/
+# B2.363: the directory of a copy of a consumer contract stands for the root of that repository, and the contract of
+# hyper names its case files under var/binding-cases; they are data of the fixture, not output of this checkout.
+!packages/ts/tests/fixtures/consumers/*/var/
 __pycache__/

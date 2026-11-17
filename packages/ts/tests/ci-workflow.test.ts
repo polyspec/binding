@@ -158,6 +158,27 @@ process.exit((process.env.FAIL ?? '').split(' ').includes(goal) ? 1 : 0);
   return { run, temp };
 }
 
+// B2.447: make install is the one command of a new checkout or worktree (AGENTS.md). install-tools TOOLS=npm runs the
+// bootstrap of @polyspec/kit from node_modules, which a new checkout does not hold, so install runs bootstrap first
+// there and only there.
+test('B2.447: make install runs bootstrap first in a checkout whose node_modules holds no bootstrap of kit, and no bootstrap in one that holds it', (t) => {
+  const { run, temp } = recipes(t);
+  const steps = (calls: Call[]): string[] => calls.map((c) => (c.vars.TOOLS === undefined ? c.goal : `${c.goal} TOOLS=${c.vars.TOOLS}`));
+  const fresh = run('install', []);
+  assert.equal(fresh.status, 0, fresh.output);
+  assert.deepEqual(steps(fresh.calls), ['bootstrap', 'install-tools TOOLS=npm', 'install-packages', 'install-tools'], fresh.output);
+  // A failed bootstrap stops the install before the step that needs it.
+  const failed = run('install', [], ['bootstrap']);
+  assert.notEqual(failed.status, 0, 'make install passes after a failed bootstrap');
+  assert.deepEqual(steps(failed.calls), ['bootstrap'], failed.output);
+  const kit = join(temp, '..', 'node_modules/@polyspec/kit/dist/bootstrap');
+  mkdirSync(kit, { recursive: true });
+  writeFileSync(join(kit, 'bootstrap.mjs'), '');
+  const installed = run('install', []);
+  assert.equal(installed.status, 0, installed.output);
+  assert.deepEqual(steps(installed.calls), ['install-tools TOOLS=npm', 'install-packages', 'install-tools'], installed.output);
+});
+
 test('B2.278: make ci-check installs its tools, stops at a failed install, runs its targets and writes the summary in every case with the outcome of the install', (t) => {
   const { run } = recipes(t);
   const vars = ['NAME=ts', 'TOOLS=rust', 'TARGETS=typecheck-ts unit-ts'];

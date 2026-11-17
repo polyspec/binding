@@ -32,13 +32,14 @@ its grounding, and a repository changes its copy as its own file (K1055).
 
 - P6 A standard is never lowered because it is hard to meet; lowering it while testing is betrayal of the standard. A standard
   that is wrong is raised as a problem and corrected, with the reason.
-  Enforced by: none, a guided rule: whether a standard was lowered is a judgement (H27.92).
+  Enforced by: none, a guided rule: each repository runs its own tests, and kit reads no test (K1129)
 - P7 No tricks, in any case. A goal reached by an abnormal method is not reached. When a requirement can be met only by a
   trick, that is stated exactly instead of done.
   Enforced by: none, a guided rule: kit refuses no command or commit (K1053).
 - P8 Errors are never hidden: no fallback that turns a wrong input into a plausible one, no silent drop of an input or an
   output, no swallowed error. A fallback stands only where it is truly needed, with that need stated.
-  Enforced by: `make lint-ts`, `make lint-python`, `make lint-php`, `make suppression-check`
+  Enforced by: `make lint-ts`, `make lint-python`, `make lint-go`, `make lint-php`, `make lint-rust`, `make suppression-check`,
+  and, in kit's own CI, catch-check (no catch without a statement)
 - P9 Correct first; fast only when it stays correct.
   Enforced by: none, the order of correctness and speed is a judgement.
 - P10 Work reaches main in one of two ways. Direct work on main is committed through the commits of P38. Parallel or
@@ -61,7 +62,7 @@ its grounding, and a repository changes its copy as its own file (K1055).
   Enforced by: none, whether a path is kept for compatibility is a design judgement.
 - P13 The simplest implementation that fully meets the current requirements: no abstraction, setting or indirection for an
   uncertain future.
-  Enforced by: `make lint-ts`, `make lint-python`
+  Enforced by: `make lint-ts`, `make lint-python`, `make lint-go`
 - P14 What an outside ecosystem already provides is used as it is, never redeveloped: its standard tool, library or protocol.
   Enforced by: `make rebuild-check`
 - P15 Components are modular, each concern clearly separated.
@@ -152,15 +153,8 @@ repository.
 - P31 No gate is bypassed: a test, script or Makefile never sets the CI identity (`GITHUB_ACTIONS`, `CI`) outside a workflow, never
   names a gate of the repository in `make -o`, `--old-file` or `--assume-old`, and never uses `--no-verify` (K308).
   Enforced by: none, a guided rule: a repository's own recipes and scripts are its own (K1051).
-- P32 Scope: shared contract behaviour exists in every implementation (S6, S10), implemented with its tests. A language- or
-  runtime-native integration is written once as a neutral rule in docs/spec, and each applicable implementation binds its native form
-  to it. A component- or artifact-specific requirement is tested only by a feature unit whose owner resolves from an existing
-  coverage part or released package; an unscoped unit still applies to every implementation. An implementation-internal test is a
-  plain test of its package, not a parity unit, and it cites no requirement; a symbol that is public by accident becomes non-public.
-  Enforced by: none, a guided rule: each implementation runs its own tests; kit does not check how implementations relate (H27.92).
-- P33 A rule that the work needs and docs/spec lacks is written in docs/spec first. A requirement is cited only by a test that
-  tests it, a unit is never dropped to pass, and nothing is renamed to escape a check.
-  Enforced by: none, a guided rule: a test cites only the requirement it tests (H27.91).
+- P33 A rule that the work needs and docs/spec lacks is written in docs/spec first, and nothing is renamed to escape a check.
+  Enforced by: none, a guided rule: kit does not check how implementations relate; each repository runs its own tests (K1129)
 - P34 Repeated code is fixed by restructuring it into one module, never by excluding it; a tool source is classified; generated
   output is never tracked in Git, except a generated source that a consumer installs as the tagged tree itself (a Go module, a Rust
   crate), which is tracked and declared with its reason in config/generated.json. A released package that needs generated output
@@ -218,10 +212,10 @@ tool lands, a standard binds the work as written here.
   Enforced by: `make lint-php`
 - S3 Tests run only on the ecosystem's standard runner (`node --test` or vitest, PHPUnit, `go test`, `cargo test` or
   nextest, unittest), with no runner protocol, `check()` helper or file chain of our own, and against installed packages:
-  no `PYTHONPATH`, no `sys.path` change, no path that leaves the repository. kit fixes the test files of each runner
+  no `PYTHONPATH`, no `sys.path` change, no path that leaves the repository. The test files are those of each runner
   (`*.test.{ts,mts,cts,mjs,cjs,js}`, vitest's `*.{test,spec}.*`, `*Test.php`, `*_test.go`, `tests/` and `#[test]`,
-  `test_*.py`); a repository may add files but never narrow the set, and a file named like a test is run by a binding.
-  Enforced by: none, a guided rule: each runner runs its own test files (H27.91).
+  `test_*.py`) as the runner finds them.
+  Enforced by: none, a guided rule: each repository runs its own tests, and kit reads no test (K1129)
 - S4 Versions: kit compares and pins no version or lock; each package manager and its lock decide. Two exceptions: the
   digest of kit's bootstrap tool mise, which the bootstrap checks as the anchor before any package manager runs, with the
   installed state of mise judged by that digest alone; and the order of the repository's own release headings in its change
@@ -237,15 +231,6 @@ tool lands, a standard binds the work as written here.
   of a VitePress site (K245). `make layout-check` checks it with alint against `config/layout.yml`, the map of the repository over the common rules of its copy of config/layout.kit.yml;
   each exception there carries its reason.
   Enforced by: `make layout-check`
-- S6 Language parity: every implementation of a repository tests the same shared feature units, vectors and API at the same
-  level, and each requirement that docs/spec defines (a list item, bulleted or numbered, `**<id>**` or a heading `<id>`) is cited by a unit.
-  An unscoped unit binds every implementation. A component- or artifact-specific requirement may scope a feature unit only to one owner
-  derived from a coverage part in `contracts/features.json` or a package in `config/release.json`, or to an explicit nonempty set of
-  coverage-part owners of one feature; every resolved implementation has its own native binding, the requirement names each owner or an
-  implementation whose tests it explicitly shares, and each native test names the requirement. A free-form profile, implementation
-  allow-list, exclusion or native-only symbol is not scope.
-  A case of a directory suite lists the requirements it tests in its `case.json`.
-  Enforced by: none, a guided rule: each implementation's own tests run the shared vectors of contracts/ (H27.91).
 - S7 Test placement: a test of a basic feature lives in the package and repository that own the feature; a consumer keeps
   only tests from the consumer's point of view.
   Enforced by: `make layout-check`
@@ -254,7 +239,7 @@ tool lands, a standard binds the work as written here.
   Enforced by: `make rebuild-check`
 - S9 Cross-language orchestration and checks, kit included, are written in TypeScript, checked by `tsc` with
   `erasableSyntaxOnly`. Exceptions: a harness that drives one language's implementation is a test of that language; a
-  language-specific static check is a plugin of that ecosystem's analyzer; a symbol extractor runs that ecosystem's tool.
+  language-specific static check is a plugin of that ecosystem's analyzer; a program of kit that reads one language's code runs that ecosystem's tool.
   Enforced by: `make layout-check`
 - S10 PHP extension: a PHP extension implements every PHP library of its repository and registers their classes and functions
   under the same names and signatures. A library is `packages/php` named `polyspec/<repository>`, or `packages/<component>/php`
@@ -266,12 +251,11 @@ tool lands, a standard binds the work as written here.
   `src/`, so that `config.m4` takes the version of the extension from `../composer.json`; `make test-php-ext` compares by
   Reflection what it registers with the libraries, each name with the library that declares it, before its unit tests, which
   are the PHPUnit files run with the extension loaded and none of the sources of the library (its dependencies and autoload-dev
-  are loaded, its own autoload is not, so the library has no guard against the extension) of the folders of
-  its tests: the roots of its implementation and of the PHP implementations whose tests it shares by this layout, with no
-  relative path in a configuration (K905). A Composer package of type `project` is an application:
-  it is outside the S10 library checks and is run with the extension only when it is a PHP
-  implementation, and `make test-php` runs its tests as its own package.
-  Enforced by: none, a guided rule: hyper has no PHP extension of its own (packages/php-ext), so no check of it runs here.
+  are loaded, its own autoload is not, so the library has no guard against the extension) of the roots that the caller names
+  (K1106). A Composer package of type `project` is an application: it is not an S10 library and is run with the extension only
+  when the caller names it as a root, and `make test-php` runs its tests as its own package.
+  Enforced by: `make lint-php-ext` (the stub hash of each arginfo header), `make test-php-ext` (the build, the declarations and the
+  unit tests); the names and the single stub are a guided rule that each repository enforces with its own check, if it has one (K1075)
 - S11 Local links: during development each polyspec package's install folder (node_modules, vendor, site-packages) is one
   plain directory symlink to its checkout. No package-manager link step (npm link, Composer path repository, pip/uv editable)
   (K591, K761, K765).
@@ -281,7 +265,7 @@ tool lands, a standard binds the work as written here.
 - S12 A repository's CI is one pipeline of its own: one run holds every job of a commit, each gate runs once in it, independent
   jobs run concurrently, dependencies order only work that consumes preceding results, and a final job requires every other job.
   kit's `ci-pipeline.yml` is one example of such a pipeline (K910, K1052, K1055).
-  Enforced by: `make hyper-test-scripts`, whose tests/scripts/ci-workflow.test.mts checks ci.yml
+  Enforced by: none, a guided rule: kit checks no recipe, workflow or file of a repository (K1051).
 - S13 Shared files are examples: kit ships this file, ci-pipeline.yml, release.yml, the bootstrap action and
   config/layout.kit.yml in its package; a repository that takes one copies it and owns the copy, and kit writes
   no file of a repository and compares none (K1052).

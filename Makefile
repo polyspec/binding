@@ -39,8 +39,11 @@ bootstrap: ## Install package-lock.json with the npm of devEngines before the to
 
 # install installs, in order, the mise, node and npm of mise.toml, the packages of package-lock.json and of packages/ts, and the
 # other tools: those of mise.toml at the digests of mise.lock, the Rust toolchain of rust-toolchain.toml with its targets, the
-# PHP of the machine (.php-version) and the PHPUnit of config/phpunit, all into var/tools of this checkout.
-install: ## Install the pinned tools and the packages into this checkout; ONLINE
+# PHP of the machine (.php-version) and the PHPUnit of config/phpunit, all into var/tools of this checkout. It is the one
+# command of a new checkout or worktree (B2.447): where node_modules does not hold the bootstrap of @polyspec/kit yet,
+# which install-tools TOOLS=npm runs, it runs bootstrap first; a checkout that holds it runs no bootstrap again.
+install: ## Install the pinned tools and the packages into this checkout, a new one too; ONLINE
+	$(if $(wildcard $(KIT)/bootstrap/bootstrap.mjs),,$(MAKE) --no-print-directory bootstrap)
 	$(MAKE) --no-print-directory install-tools TOOLS=npm
 	$(MAKE) --no-print-directory install-packages
 	$(MAKE) --no-print-directory install-tools
