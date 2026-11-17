@@ -297,7 +297,7 @@ function namesRead(tokens: readonly Token[]): Set<string> {
 }
 
 // The attributes that the compiler reads itself; any other attribute is of a macro.
-const COMPILER_ATTRIBUTES = new Set(['allow', 'expect', 'cfg', 'cfg_attr', 'derive', 'doc', 'inline', 'must_use', 'repr', 'deprecated']);
+const COMPILER_ATTRIBUTES = new Set(['allow', 'expect', 'cfg', 'cfg_attr', 'derive', 'doc', 'inline', 'must_use', 'repr', 'deprecated', 'diagnostic']);
 
 interface HelperGroup {
   text: string;
