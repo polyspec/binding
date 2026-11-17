@@ -50,6 +50,19 @@ export function goPackageFailure(read: GoTestEvents, status: number | null): str
   return `go test failed the packages ${read.packageFailures.join(', ')} (status ${String(status)})${builds}`;
 }
 
+// GN-13bf: the judgement of the run of go test with a wrong build tag (the form before GN-13ba), which must fail on
+// the guard of the tags and name a missing tag: the cause when it does not, or undefined when it does. A run that
+// passed, a failed test other than the guard, or a package that failed without a failed test is a cause.
+export const GO_TAG_GUARD = 'TestGN13bfEveryBuildTagOfThePackageIsBuilt';
+export function goTagGuardFailure(read: GoTestEvents, status: number | null): string | undefined {
+  if (status === 0 && read.counts.fail.length === 0) return `go test with a wrong build tag passed, so the guard of the tags (${GO_TAG_GUARD}) did not fail`;
+  const others = read.counts.fail.filter((name) => !name.endsWith(`.${GO_TAG_GUARD}`));
+  if (others.length > 0) return `go test with a wrong build tag failed other tests than the guard of the tags: ${others.join(', ')}`;
+  if (read.counts.fail.length === 0) return goPackageFailure(read, status) ?? `go test with a wrong build tag failed (status ${String(status)}) without a failed test`;
+  if (!/GN-13bf: the generated tests of the build tags \[polyspec_\w+/.test(read.printed)) return `the guard of the tags (${GO_TAG_GUARD}) failed without naming a missing tag`;
+  return undefined;
+}
+
 // GN-14h: go test of the run reads the tests that the generator writes, the files zz_generated*_test.go, and the
 // contract cases that the run copied into tests/cases_test.go, as the other targets run their generated tests and the
 // contract cases alone. Every other test file of the module is a test of the repository, whose inputs its own runner
